@@ -354,6 +354,22 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     letter-spacing: -0.01em;
     margin: 1px 0;
   }
+  .hname a,
+  .cname a,
+  td.name a,
+  .deadline-group__row-name a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+    text-underline-offset: 3px;
+  }
+  .hname a:hover,
+  .cname a:hover,
+  td.name a:hover,
+  .deadline-group__row-name a:hover {
+    color: inherit;
+    text-decoration-color: currentcolor;
+  }
   .cgroup {
     display: flex;
     align-items: baseline;
@@ -393,10 +409,29 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     color: var(--muted);
   }
   .clink {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
     margin-top: auto;
+    color: var(--ink-2);
     font-size: 13.5px;
     font-family: var(--mono);
+    line-height: 1.2;
+    text-decoration: none;
     white-space: nowrap;
+  }
+  .clink--button {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .clink:hover,
+  .clink:focus-visible {
+    color: var(--ink);
+  }
+  .clink--button:hover,
+  .clink--button:focus-visible {
+    border-color: var(--ink-2);
   }
 
   .deadline-board__group-list {
@@ -542,6 +577,16 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   .deadline-group__row .clink {
     grid-area: source;
     margin: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .deadline-group__row-actions {
+    grid-area: source;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   /* table */
@@ -577,6 +622,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   td.name {
     white-space: normal;
     min-width: 260px;
+  }
+  td .clink {
+    margin-top: 0;
   }
   td .dot {
     display: inline-block;
@@ -650,6 +698,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       grid-template-columns: 1fr;
       gap: 0;
     }
+    .deadline-group__row-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     * {
@@ -684,6 +736,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
 
     <details class="archival-guide">
       <summary>What archival status means</summary>
+      <p>Workshop status follows its own CFP or an official parent policy. A workshop can offer archival, non-archival, or separate archival and non-archival routes.</p>
       <dl>
         <div>
           <dt>Archival</dt>
@@ -692,6 +745,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         <div>
           <dt>Non-archival</dt>
           <dd>does not count as publishing; you can still submit the paper elsewhere.</dd>
+        </div>
+        <div>
+          <dt>Archival + non-archival</dt>
+          <dd>choose the CFP's non-archival route if the paper may be submitted elsewhere.</dd>
         </div>
         <div>
           <dt>Unknown</dt>
@@ -836,7 +893,6 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     };
     chips.appendChild(b);
   }
-
   function rebuildChips(entries) {
     if (activeGroup !== "All" && !entries.some((x) => x.venue_group === activeGroup)) {
       activeGroup = "All";
@@ -909,12 +965,16 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       const u = urgencyLabel(next._sub, now);
       hero.style.setProperty("--h-color", u.cvar);
       const p = parts(next._sub - now);
+      const call = titleUrl(next);
+      const title = call
+        ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(next.name)}</a>\`
+        : esc(next.name);
       hero.innerHTML = \`<div class="lbl">Next deadline · \${esc(next.venue_group)}</div>
-      <div class="hname">\${esc(next.name)}</div>
+      <div class="hname">\${title}</div>
       <div class="hmeta">\${cap(next.deadline_label)} · \${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:\${u.cvar}">\${u.txt}</span></div>
       <div class="cd" data-t="\${next._sub}">
         \${unit(p.d, "days")}<span class="sep">:</span>\${unit(pad(p.h), "hrs")}<span class="sep">:</span>\${unit(pad(p.m), "min")}<span class="sep">:</span>\${unit(pad(p.s), "sec")}
-      </div>\`;
+      </div><div class="hlinks">\${sourceLinks(next)}</div>\`;
     } else
       hero.innerHTML =
         '<div class="lbl">Next deadline</div><div class="hname">Nothing upcoming</div>';
@@ -922,8 +982,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     if (view === "cards") renderCards(list, now);
     else if (view === "groups") renderGroups(list, now);
     else renderTable(list, now);
+    const checked = DATA.map((x) => x.source_checked_at || "").filter(Boolean).sort().at(-1);
     document.getElementById("foot").textContent =
-      \`Showing \${list.length} of \${matches.length} upcoming deadlines · source: aideadlines.org + OpenReview (NeurIPS.cc/2026/Workshop) · generated 2026-07-25\`;
+      \`Showing \${list.length} of \${matches.length} upcoming deadlines · official venue sites + OpenReview\${checked ? \` · source checks through \${checked.slice(0, 10)}\` : ""}\`;
   }
   function unit(v, c) {
     return \`<div class="unit"><span class="num">\${v}</span><span class="cap">\${c}</span></div>\`;
@@ -950,6 +1011,25 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   function entryTypeLabel(x) {
     return ENTRY_TYPE_LABELS[x.entry_type] || ENTRY_TYPE_LABELS.other;
   }
+  function titleUrl(x) {
+    return x.entry_type === "workshop" ? x.homepage_url || "" : x.link || "";
+  }
+  function sourceLinks(x) {
+    if (x.entry_type !== "workshop") {
+      return x.link
+        ? \`<a class="clink clink--button" href="\${esc(x.link)}" target="_blank" rel="noopener noreferrer">Official site ↗</a>\`
+        : "";
+    }
+    const source = x.cfp_url
+      ? \`<a class="clink clink--button" href="\${esc(x.cfp_url)}" target="_blank" rel="noopener noreferrer">Call for papers ↗</a>\`
+      : x.homepage_url
+        ? \`<a class="clink clink--button" href="\${esc(x.homepage_url)}" target="_blank" rel="noopener noreferrer">Official site ↗</a>\`
+        : \`<span class="cnote">Call for papers not found yet</span>\`;
+    const review = x.openreview_url
+      ? \`<a class="clink clink--button" href="\${esc(x.openreview_url)}" target="_blank" rel="noopener noreferrer">OpenReview ↗</a>\`
+      : "";
+    return source + review;
+  }
 
   function renderCards(list, now) {
     grid.innerHTML = list
@@ -957,19 +1037,20 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         const u = urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
-        const link = x.link
-          ? \`<a class="clink" href="\${esc(x.link)}" target="_blank" rel="noopener">Open call ↗</a>\`
-          : "";
+        const call = titleUrl(x);
+        const title = call
+          ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(x.name)}</a>\`
+          : esc(x.name);
         const notif = x._notif
           ? \`<div class="cnote">Accept/reject: \${fmtAoe(x.notification_aoe)} AoE</div>\`
           : "";
         return \`<div class="card" style="--u:\${u.cvar}">
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
-      <div class="cname">\${esc(x.name)}</div>
+      <div class="cname">\${title}</div>
       <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</div>
-      \${notif}\${link}
+      \${notif}\${sourceLinks(x)}
     </div>\`;
       })
       .join("");
@@ -980,11 +1061,15 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         const u = urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
-        const link = x.link ? \`<a href="\${esc(x.link)}" target="_blank" rel="noopener">↗</a>\` : "";
+        const call = titleUrl(x);
+        const title = call
+          ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(x.name)}</a>\`
+          : esc(x.name);
+        const actions = sourceLinks(x);
         return \`<tr style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
       <td class="tcd countdown" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</td>
-      <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${esc(x.name)}</td>
-      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${link}</td></tr>\`;
+      <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
+      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${actions}</td></tr>\`;
       })
       .join("");
   }
@@ -999,13 +1084,15 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
             ? "archival"
             : entry.archival_status === "non_archival"
               ? "nonArchival"
-              : "unknown";
+              : entry.archival_status === "mixed"
+                ? "mixed"
+                : "unknown";
       const current = groups.get(id);
       if (current) {
         current.entries.push(entry);
         current.sections[kind].push(entry);
       } else {
-        const sections = { archival: [], nonArchival: [], unknown: [], other: [] };
+        const sections = { archival: [], nonArchival: [], mixed: [], unknown: [], other: [] };
         sections[kind].push(entry);
         groups.set(id, {
           id,
@@ -1040,10 +1127,12 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       .map((x) => {
         const rowUrgency = urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
-        const link = x.link
-          ? \`<a class="clink" href="\${esc(x.link)}" target="_blank" rel="noopener noreferrer" aria-label="Open call for \${esc(x.name)}">↗</a>\`
-          : "";
         const title = groupRowTitle(x, group.label);
+        const call = titleUrl(x);
+        const linkedTitle = call
+          ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
+          : esc(title.name);
+        const actions = sourceLinks(x);
         const detail = [x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : ""]
           .filter(Boolean)
           .join(" · ");
@@ -1051,7 +1140,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         return \`<div class="deadline-group__row" style="--u:\${rowUrgency.cvar}">
           <span class="deadline-group__row-countdown" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
-          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">\${esc(title.name)}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span></span></p></div>\${link}
+          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span></span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
       })
       .join("");
@@ -1070,6 +1159,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           group.sections.nonArchival.length
             ? \`\${group.sections.nonArchival.length} non-archival\`
             : "",
+          group.sections.mixed.length
+            ? \`\${group.sections.mixed.length} archival + non-archival\`
+            : "",
           group.sections.unknown.length ? \`\${group.sections.unknown.length} unknown\` : "",
           group.sections.other.length ? \`\${group.sections.other.length} other\` : "",
         ]
@@ -1078,6 +1170,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         const panel = [
           renderGroupSection("Archival", group.sections.archival, group, now),
           renderGroupSection("Non-archival", group.sections.nonArchival, group, now),
+          renderGroupSection("Archival + non-archival", group.sections.mixed, group, now),
           renderGroupSection("Archival status unknown", group.sections.unknown, group, now),
           renderGroupSection("Other dates", group.sections.other, group, now),
         ].join("");

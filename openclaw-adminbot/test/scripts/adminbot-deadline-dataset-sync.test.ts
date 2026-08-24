@@ -24,6 +24,18 @@ describe("AdminBot deadline dataset generation", () => {
     expect(venuesDoc.count).toBe(venuesDoc.items.length);
   });
 
+  it("preserves the NLP4PI workshop introduced by the original deadline PR", () => {
+    const nlp4pi = venuesDoc.items.find((item) => item.id === "emnlp2026_ws_nlp4pi");
+    expect(nlp4pi).toMatchObject({
+      deadline_aoe: "2026-08-03 23:59:59",
+      notification_aoe: "2026-08-15 23:59:59",
+      submission_type: "commitment",
+      venue_group: "EMNLP 2026 Workshops",
+      openreview_url: "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
+    });
+    expect(nlp4pi?.cfp_url).toMatch(/^https?:\/\//u);
+  });
+
   it("keeps both generated datasets in step with venues.json", () => {
     expect(pluginVenues.map((venue) => venue.id)).toEqual(venuesDoc.items.map((item) => item.id));
     expect(controlUiVenues.map((venue) => venue.id)).toEqual(
@@ -52,7 +64,7 @@ describe("AdminBot deadline dataset generation", () => {
     ]);
     for (const venue of controlUiVenues) {
       expect(entryTypes).toContain(venue.entry_type);
-      expect(["archival", "non_archival", "unknown"]).toContain(venue.archival_status);
+      expect(["archival", "non_archival", "mixed", "unknown"]).toContain(venue.archival_status);
       expect(["primary", "secondary", "standard"]).toContain(venue.venue_priority);
     }
   });
@@ -69,6 +81,17 @@ describe("AdminBot deadline dataset generation", () => {
     expect(labels).not.toContain("NeurIPS 2026");
   });
 
+  it("stores workshop title, OpenReview, and provenance links separately", () => {
+    const workshops = controlUiVenues.filter((venue) => venue.entry_type === "workshop");
+    expect(workshops.length).toBeGreaterThan(0);
+    for (const workshop of workshops) {
+      expect(workshop.cfp_url || workshop.homepage_url).toMatch(/^https?:\/\//u);
+      expect(workshop.openreview_url).toMatch(/^https:\/\/openreview\.net\/group\?id=/u);
+      expect(workshop.source_url).toBe(workshop.openreview_url);
+      expect(workshop.source_checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00Z$/u);
+    }
+  });
+
   it("uses sortable AoE timestamps and keeps the list ordered by deadline", () => {
     const deadlines = venuesDoc.items.map((item) => item.deadline_aoe!);
     for (const deadline of deadlines) {
@@ -79,8 +102,8 @@ describe("AdminBot deadline dataset generation", () => {
   });
 
   // Kept only for older non-display consumers. New surfaces use archival_status so false never
-  // turns an unknown venue into a claim that it is non-archival.
-  it("keeps the legacy archival boolean aligned with the tri-state classification", () => {
+  // turns an unresolved venue into a claim that it is non-archival.
+  it("keeps the legacy archival boolean aligned with the explicit classification", () => {
     for (const venue of controlUiVenues) {
       expect(typeof venue.archival).toBe("boolean");
       expect(venue.archival).toBe(venue.archival_status === "archival");
@@ -88,19 +111,22 @@ describe("AdminBot deadline dataset generation", () => {
     expect(controlUiVenues.some((venue) => venue.archival)).toBe(true);
   });
 
-  it("only calls a venue archival when its family and track say so", () => {
-    const ARR = ["ACL", "EMNLP", "NAACL", "EACL"];
+  it("keeps conference policy separate from source-established workshop policy", () => {
+    const ARR = ["ACL", "EMNLP", "NAACL", "EACL", "AACL"];
     const ML = ["NeurIPS", "ICML", "ICLR", "COLM", "CLeaR"];
-    for (const venue of controlUiVenues.filter((candidate) => candidate.archival)) {
+    for (const venue of controlUiVenues.filter(
+      (candidate) => candidate.archival && candidate.track !== "workshop",
+    )) {
       expect([...ARR, ...ML]).toContain(venue.venue_family);
       expect(["main", "demo"]).toContain(venue.track);
     }
-    // Workshop status is not inferred from its entry type.
-    for (const venue of controlUiVenues.filter((candidate) => candidate.track === "workshop")) {
-      expect(venue.archival).toBe(false);
-      expect(venue.archival_status).toBe("unknown");
+    const workshops = controlUiVenues.filter((candidate) => candidate.track === "workshop");
+    for (const venue of workshops) {
+      expect(["archival", "non_archival", "mixed", "unknown"]).toContain(venue.archival_status);
       expect(venue.venue_priority).toBe("standard");
     }
+    expect(workshops.some((venue) => venue.archival_status === "mixed")).toBe(true);
+    expect(workshops.some((venue) => venue.archival_status === "unknown")).toBe(false);
   });
 
   it("tags each ARR-family entry with the route it opens", () => {

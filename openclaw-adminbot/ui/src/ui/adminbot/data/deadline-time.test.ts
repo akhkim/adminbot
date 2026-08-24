@@ -79,8 +79,7 @@ describe("upcomingMajorDeadlines", () => {
     expect(picked[0].instant).toBe(soonest);
   });
 
-  // The snapshot is 101 workshops to 4 conferences, so without this filter the summary would be
-  // two NeurIPS workshop rows every time and never name a conference anyone is submitting to.
+  // Workshops dominate the snapshot, so without this filter they would bury conference targets.
   it("ignores workshops and rebuttals", () => {
     const picked = upcomingMajorDeadlines(now, 10);
     expect(picked.every((entry) => entry.venue.venue_type === "conference")).toBe(true);

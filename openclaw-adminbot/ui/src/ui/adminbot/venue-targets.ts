@@ -13,6 +13,7 @@
 // backfill, not a rewrite: the shape below is already the row shape.
 
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
+import { aoeInstantMs } from "./data/deadline-time.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
 export type VenueTarget = {
@@ -27,10 +28,8 @@ export type VenueTarget = {
 /**
  * What members are offered, and deliberately not the whole deadline board.
  *
- * The board carries 147 venues, 137 of which have a deadline inside the next 45 days -- almost
- * all of them workshop ARR commitments. Offering that list would bury the two deadlines the lab
- * is actually working toward. This is the curated set; "Other" is the escape hatch, and the
- * board remains the place to browse everything.
+ * Offering the full board would bury the few deadlines the lab is actually working toward. This
+ * is the curated set; "Other" is the escape hatch, and the board remains the place to browse all.
  */
 export const PRE_REGISTRATION_VENUES: Array<{
   venue_id: string;
@@ -94,11 +93,14 @@ export function daysUntil(deadline: string | undefined, now = new Date()): numbe
   if (!deadline) {
     return undefined;
   }
-  const due = Date.parse(`${deadline}T23:59:59Z`);
+  const due = aoeInstantMs(`${deadline} 23:59:59`);
   if (!Number.isFinite(due)) {
     return undefined;
   }
-  return Math.ceil((due - now.getTime()) / 86_400_000);
+  const remaining = due - now.getTime();
+  return remaining >= 0
+    ? Math.ceil(remaining / 86_400_000)
+    : -Math.ceil(-remaining / 86_400_000);
 }
 
 /**

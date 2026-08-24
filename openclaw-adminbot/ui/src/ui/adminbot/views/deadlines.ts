@@ -19,7 +19,7 @@ import {
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
 
 export type DeadlineBoardEntry = { venue: DeadlineVenue; instant: number };
-type DeadlineGroupKind = "archival" | "nonArchival" | "unknown" | "other";
+type DeadlineGroupKind = "archival" | "nonArchival" | "mixed" | "unknown" | "other";
 export type DeadlineBoardGroup = {
   id: string;
   label: string;
@@ -72,7 +72,9 @@ export function groupDeadlineBoardEntries(
           ? "archival"
           : entry.venue.archival_status === "non_archival"
             ? "nonArchival"
-            : "unknown";
+            : entry.venue.archival_status === "mixed"
+              ? "mixed"
+              : "unknown";
     const current = groups.get(id);
     if (current) {
       current.entries.push(entry);
@@ -81,6 +83,7 @@ export function groupDeadlineBoardEntries(
       const sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]> = {
         archival: [],
         nonArchival: [],
+        mixed: [],
         unknown: [],
         other: [],
       };
@@ -112,6 +115,32 @@ function groupOptions(entries: readonly DeadlineBoardEntry[]) {
     }
   }
   return [...groups.values()];
+}
+
+export function workshopSourceLinks(venue: DeadlineVenue): {
+  titleUrl: string;
+  sourceUrl: string;
+  sourceLabel: "Call for papers" | "Official site" | "";
+  openReviewUrl: string;
+} | null {
+  if (venue.entry_type !== "workshop") {
+    return null;
+  }
+  const cfpUrl = venue.cfp_url?.trim() || "";
+  const homepageUrl = venue.homepage_url?.trim() || "";
+  return {
+    titleUrl: homepageUrl,
+    sourceUrl: cfpUrl || homepageUrl,
+    sourceLabel: cfpUrl ? "Call for papers" : homepageUrl ? "Official site" : "",
+    openReviewUrl: venue.openreview_url?.trim() || "",
+  };
+}
+
+function renderDeadlineTitle(venue: DeadlineVenue, label = venue.name) {
+  const titleUrl = workshopSourceLinks(venue)?.titleUrl || venue.link?.trim();
+  return titleUrl
+    ? html`<a href=${titleUrl} target="_blank" rel="noopener noreferrer">${label}</a>`
+    : label;
 }
 
 const ENTRY_TYPE_LABELS: Record<DeadlineVenue["entry_type"], string> = {
@@ -245,7 +274,7 @@ class AdminbotDeadlinesView extends LitElement {
     return html`
       <section class="deadline-board__hero" data-urgency=${urgency(entry, this.now)}>
         <p class="deadline-board__eyebrow">Next deadline · ${entry.venue.venue_group}</p>
-        <h2 class="deadline-board__hero-name">${entry.venue.name}</h2>
+        <h2 class="deadline-board__hero-name">${renderDeadlineTitle(entry.venue)}</h2>
         <p class="deadline-board__hero-meta">
           ${capitalize(entry.venue.deadline_label)} · ${aoeDateTimeLabel(entry.venue.deadline_aoe)}
           ·
@@ -374,6 +403,10 @@ class AdminbotDeadlinesView extends LitElement {
     return html`
       <details class="deadline-board__guide">
         <summary>What archival status means</summary>
+        <p>
+          Workshop status follows its own CFP or an official parent policy. A workshop can offer
+          archival, non-archival, or separate archival and non-archival routes.
+        </p>
         <dl>
           <div>
             <dt>Archival</dt>
@@ -382,6 +415,10 @@ class AdminbotDeadlinesView extends LitElement {
           <div>
             <dt>Non-archival</dt>
             <dd>does not count as publishing; you can still submit the paper elsewhere.</dd>
+          </div>
+          <div>
+            <dt>Archival + non-archival</dt>
+            <dd>choose the CFP's non-archival route if the paper may be submitted elsewhere.</dd>
           </div>
           <div>
             <dt>Unknown</dt>
@@ -404,7 +441,7 @@ class AdminbotDeadlinesView extends LitElement {
           <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
           <span class="deadline-card__urgency">${urgencyLabel(entry, this.now)}</span>
         </div>
-        <h2 class="deadline-card__name">${venue.name}</h2>
+        <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
         <p
           class="deadline-card__group"
           title=${`${venue.venue_group} · ${capitalize(venue.deadline_label)}`}
@@ -422,23 +459,49 @@ class AdminbotDeadlinesView extends LitElement {
               Accept/reject: ${aoeDateLabel(venue.notification_aoe)} AoE
             </p>`
           : nothing}
-        ${this.renderSourceLink(venue, "Open call ↗")}
+        ${this.renderSourceActions(venue)}
       </article>
     `;
   }
 
-  private renderSourceLink(venue: DeadlineVenue, label: string) {
-    const accessibleLabel = label === "↗" ? "Open call" : label.replace(" ↗", "");
-    return venue.link
-      ? html`<a
-          class="deadline-card__source"
-          href=${venue.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label=${`${accessibleLabel} for ${venue.name}`}
-          >${label}</a
-        >`
-      : nothing;
+  private renderSourceActions(venue: DeadlineVenue) {
+    const workshop = workshopSourceLinks(venue);
+    if (!workshop) {
+      return venue.link
+        ? html`<span class="deadline-card__actions"
+            ><a
+              class="deadline-card__source deadline-card__source--button"
+              href=${venue.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label=${`Official site for ${venue.name}`}
+              >Official site ↗</a
+            ></span
+          >`
+        : nothing;
+    }
+    return html`<span class="deadline-card__actions">
+      ${workshop.sourceUrl
+        ? html`<a
+            class="deadline-card__source deadline-card__source--button"
+            href=${workshop.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label=${`${workshop.sourceLabel} for ${venue.name}`}
+            >${workshop.sourceLabel} ↗</a
+          >`
+        : html`<span class="deadline-card__missing">Call for papers not found yet</span>`}
+      ${workshop.openReviewUrl
+        ? html`<a
+            class="deadline-card__source deadline-card__source--button"
+            href=${workshop.openReviewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label=${`OpenReview for ${venue.name}`}
+            >OpenReview ↗</a
+          >`
+        : nothing}
+    </span>`;
   }
 
   private renderTable(entries: readonly DeadlineBoardEntry[]) {
@@ -468,14 +531,14 @@ class AdminbotDeadlinesView extends LitElement {
                   <td class="deadline-table__countdown">
                     ${countdownLabel(entry.instant - this.now)}
                   </td>
-                  <td class="deadline-table__name">${entry.venue.name}</td>
+                  <td class="deadline-table__name">${renderDeadlineTitle(entry.venue)}</td>
                   <td>
                     <span class="deadline-card__type"
                       >${ENTRY_TYPE_LABELS[entry.venue.entry_type]}</span
                     >
                   </td>
                   <td class="deadline-table__venue">${entry.venue.venue_group}</td>
-                  <td>${this.renderSourceLink(entry.venue, "↗")}</td>
+                  <td>${this.renderSourceActions(entry.venue)}</td>
                 </tr>
               `,
             )}
@@ -503,7 +566,7 @@ class AdminbotDeadlinesView extends LitElement {
           ${aoeDateTimeLabel(venue.deadline_aoe)}
         </time>
         <div class="deadline-group__row-main">
-          <h3 class="deadline-group__row-name">${title.name}</h3>
+          <h3 class="deadline-group__row-name">${renderDeadlineTitle(venue, title.name)}</h3>
           <p class="deadline-group__row-note">
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels"
@@ -511,7 +574,7 @@ class AdminbotDeadlinesView extends LitElement {
             >
           </p>
         </div>
-        ${this.renderSourceLink(venue, "↗")}
+        ${this.renderSourceActions(venue)}
       </div>
     `;
   }
@@ -544,6 +607,9 @@ class AdminbotDeadlinesView extends LitElement {
           group.sections.nonArchival.length
             ? `${group.sections.nonArchival.length} non-archival`
             : "",
+          group.sections.mixed.length
+            ? `${group.sections.mixed.length} archival + non-archival`
+            : "",
           group.sections.unknown.length ? `${group.sections.unknown.length} unknown` : "",
           group.sections.other.length ? `${group.sections.other.length} other` : "",
         ].filter(Boolean);
@@ -575,6 +641,11 @@ class AdminbotDeadlinesView extends LitElement {
               ${this.renderGroupSection("Archival", group.sections.archival, group.label)}
               ${this.renderGroupSection("Non-archival", group.sections.nonArchival, group.label)}
               ${this.renderGroupSection(
+                "Archival + non-archival",
+                group.sections.mixed,
+                group.label,
+              )}
+              ${this.renderGroupSection(
                 "Archival status unknown",
                 group.sections.unknown,
                 group.label,
@@ -600,6 +671,11 @@ class AdminbotDeadlinesView extends LitElement {
     }
     const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "");
     const next = filtered[0];
+    const latestSourceCheck = DEADLINE_VENUES.map((venue) => venue.source_checked_at || "")
+      .filter(Boolean)
+      .toSorted()
+      .at(-1)
+      ?.slice(0, 10);
     return html`
       <section class="deadline-board">
         <header class="deadline-board__header">
@@ -620,8 +696,8 @@ class AdminbotDeadlinesView extends LitElement {
               : this.renderTable(filtered)
           : html`<p class="deadline-board__empty">No deadlines match your filter.</p>`}
         <p class="deadline-board__foot">
-          Showing ${filtered.length} of ${entries.length} deadlines · official venue and OpenReview
-          sources
+          ${entries.length} upcoming deadlines · official venue sites + OpenReview
+          ${latestSourceCheck ? ` · source checks through ${latestSourceCheck}` : ""}
         </p>
       </section>
     `;

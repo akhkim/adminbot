@@ -1393,9 +1393,7 @@ function addableVenues(
   // Matched on the label because that is what an added venue is stored as -- the milestone list
   // holds no venue id, and inventing one would mean a second identity for the same row.
   const added = new Set(milestones.map((row) => row.label.trim()));
-  // Conferences only. The snapshot is 107 entries and 101 of them are workshops sharing a handful
-  // of instants, so an all-venues picker was a hundred NeurIPS workshops with the conference
-  // somebody actually wanted buried among them.
+  // Conferences only: workshop-heavy rounds would otherwise bury conference targets.
   return allUpcomingConferences(now).filter(
     (entry) => !shown.has(entry.venue.id) && !added.has(entry.venue.name.trim()),
   );
