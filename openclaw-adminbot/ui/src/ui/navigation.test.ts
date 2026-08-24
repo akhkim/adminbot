@@ -162,7 +162,7 @@ describe("subtitleForTab", () => {
       adminbotConferencePapers: "Accepted papers at a conference, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
       adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
-      adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+      adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
       activity: "Browser-local tool activity summaries.",
       channels: "Channels and settings.",
       sessions: "Active sessions and defaults.",

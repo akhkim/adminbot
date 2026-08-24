@@ -186,7 +186,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   }
   .modes {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
     margin: 18px 0 10px;
   }
   .search {
@@ -200,11 +202,25 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     font-size: 15px;
     font-family: var(--sans);
   }
+  .filter {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  #entry-type {
+    width: 170px;
+  }
+  #archival-status {
+    width: 180px;
+  }
+  #priority {
+    width: 150px;
+  }
   .search::placeholder {
     color: var(--muted);
   }
   .chips {
     display: flex;
+    flex: 1 0 100%;
     gap: 8px;
     flex-wrap: wrap;
   }
@@ -665,6 +681,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     font-family: var(--mono);
   }
   @media (max-width: 600px) {
+    .filter {
+      flex: 1 1 100%;
+      width: 100%;
+    }
     .deadline-group__summary {
       grid-template-columns: 16px minmax(0, 1fr) auto;
     }
@@ -713,9 +733,13 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
 <div class="wrap">
   <div class="container">
     <h1>Deadlines</h1>
-    <p class="sub">Upcoming conference &amp; workshop deadlines.</p>
+    <p class="sub">Past and upcoming conference &amp; workshop deadlines.</p>
 
     <div class="modes">
+      <div class="toggle" role="group" aria-label="Deadline period">
+        <button id="p-past" aria-pressed="false">Past</button>
+        <button id="p-upcoming" aria-pressed="true">Upcoming</button>
+      </div>
       <div class="toggle" role="group" aria-label="View">
         <button id="v-groups" aria-pressed="true">Groups</button>
         <button id="v-cards" aria-pressed="false">Cards</button>
@@ -731,6 +755,29 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         placeholder="Search conferences & workshops…"
         aria-label="Search deadlines"
       />
+      <select class="search filter" id="entry-type" aria-label="Filter by entry type">
+        <option value="all">All entry types</option>
+        <option value="main_conference">Main conferences</option>
+        <option value="demo_track">Demo tracks</option>
+        <option value="workshop">Workshops</option>
+        <option value="arr_direct_submission">ARR direct submissions</option>
+        <option value="arr_commitment">ARR commitments</option>
+        <option value="rebuttal">Rebuttals</option>
+        <option value="other">Other</option>
+      </select>
+      <select class="search filter" id="archival-status" aria-label="Filter by archival status">
+        <option value="all">All archival statuses</option>
+        <option value="archival">Archival</option>
+        <option value="non_archival">Non-archival</option>
+        <option value="mixed">Archival + non-archival</option>
+        <option value="unknown">Archival status unknown</option>
+      </select>
+      <select class="search filter" id="priority" aria-label="Filter by priority">
+        <option value="all">All priorities</option>
+        <option value="primary">Primary priority</option>
+        <option value="secondary">Secondary priority</option>
+        <option value="standard">Standard priority</option>
+      </select>
       <div class="chips" id="chips" role="group" aria-label="Filter by venue"></div>
     </div>
 
@@ -764,15 +811,15 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           <span class="k">Matching deadlines</span><span class="v" id="s-total">–</span>
         </div>
         <div class="stat">
-          <span class="k">Due today</span
+          <span class="k" id="s-today-label">Due today</span
           ><span class="v" id="s-today" style="color: var(--crit)">–</span>
         </div>
         <div class="stat">
-          <span class="k">Due within 7 days</span
+          <span class="k" id="s-7-label">Due within 7 days</span
           ><span class="v" id="s-7" style="color: var(--serious)">–</span>
         </div>
         <div class="stat">
-          <span class="k">Due within 30 days</span
+          <span class="k" id="s-30-label">Due within 30 days</span
           ><span class="v" id="s-30" style="color: var(--warn)">–</span>
         </div>
       </div>
@@ -876,6 +923,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
 
   let activeGroup = "All",
     view = "groups",
+    period = "upcoming",
+    entryType = "all",
+    archivalStatus = "all",
+    priority = "all",
     query = "",
     renderedAoeDay = "";
   const expandedGroups = new Set();
@@ -913,6 +964,18 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     query = e.target.value.toLowerCase().trim();
     render();
   });
+  document.getElementById("entry-type").addEventListener("change", (e) => {
+    entryType = e.target.value;
+    render();
+  });
+  document.getElementById("archival-status").addEventListener("change", (e) => {
+    archivalStatus = e.target.value;
+    render();
+  });
+  document.getElementById("priority").addEventListener("change", (e) => {
+    priority = e.target.value;
+    render();
+  });
   function setView(v) {
     view = v;
     document.getElementById("v-cards").setAttribute("aria-pressed", v === "cards");
@@ -926,14 +989,39 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   document.getElementById("v-cards").onclick = () => setView("cards");
   document.getElementById("v-groups").onclick = () => setView("groups");
   document.getElementById("v-table").onclick = () => setView("table");
+  function setPeriod(value) {
+    period = value;
+    document.getElementById("p-upcoming").setAttribute("aria-pressed", value === "upcoming");
+    document.getElementById("p-past").setAttribute("aria-pressed", value === "past");
+    render();
+  }
+  document.getElementById("p-upcoming").onclick = () => setPeriod("upcoming");
+  document.getElementById("p-past").onclick = () => setPeriod("past");
 
   function matching(now) {
     return DATA.filter(
       (x) =>
-        x._sub > now &&
+        (period === "upcoming" ? x._sub > now : x._sub <= now) &&
+        (entryType === "all" || x.entry_type === entryType) &&
+        (archivalStatus === "all" || x.archival_status === archivalStatus) &&
+        (priority === "all" || x.venue_priority === priority) &&
         (!query ||
-          (x.name + " " + x.venue_group + " " + x.entry_type).toLowerCase().includes(query)),
-    );
+          (
+            x.name +
+            " " +
+            x.venue_group +
+            " " +
+            x.entry_type +
+            " " +
+            x.deadline_label +
+            " " +
+            x.archival_status +
+            " " +
+            x.venue_priority
+          )
+            .toLowerCase()
+            .includes(query)),
+    ).toSorted((a, b) => (period === "upcoming" ? a._sub - b._sub : b._sub - a._sub));
   }
   const grid = document.getElementById("grid"),
     groupList = document.getElementById("group-list"),
@@ -952,14 +1040,18 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     document.getElementById("s-today").textContent = list.filter(
       (x) => x.deadline_aoe.slice(0, 10) === aoeDayKey(now),
     ).length;
+    const distance = (x) => (period === "upcoming" ? x._sub - now : now - x._sub);
     document.getElementById("s-7").textContent = list.filter(
-      (x) => x._sub - now <= 7 * 86400000,
+      (x) => distance(x) >= 0 && distance(x) <= 7 * 86400000,
     ).length;
     document.getElementById("s-30").textContent = list.filter(
-      (x) => x._sub - now <= 30 * 86400000,
+      (x) => distance(x) >= 0 && distance(x) <= 30 * 86400000,
     ).length;
+    const direction = period === "upcoming" ? "Due" : "Passed";
+    document.getElementById("s-today-label").textContent = \`\${direction} today\`;
+    document.getElementById("s-7-label").textContent = \`\${direction} within 7 days\`;
+    document.getElementById("s-30-label").textContent = \`\${direction} within 30 days\`;
 
-    // hero = soonest upcoming (respect current filter)
     const next = list[0];
     if (next) {
       const u = urgencyLabel(next._sub, now);
@@ -969,22 +1061,26 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       const title = call
         ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(next.name)}</a>\`
         : esc(next.name);
-      hero.innerHTML = \`<div class="lbl">Next deadline · \${esc(next.venue_group)}</div>
+      hero.innerHTML = \`<div class="lbl">\${period === "upcoming" ? "Next" : "Most recent"} deadline · \${esc(next.venue_group)}</div>
       <div class="hname">\${title}</div>
       <div class="hmeta">\${cap(next.deadline_label)} · \${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:\${u.cvar}">\${u.txt}</span></div>
-      <div class="cd" data-t="\${next._sub}">
+      \${
+        period === "upcoming"
+          ? \`<div class="cd" data-t="\${next._sub}">
         \${unit(p.d, "days")}<span class="sep">:</span>\${unit(pad(p.h), "hrs")}<span class="sep">:</span>\${unit(pad(p.m), "min")}<span class="sep">:</span>\${unit(pad(p.s), "sec")}
-      </div><div class="hlinks">\${sourceLinks(next)}</div>\`;
-    } else
-      hero.innerHTML =
-        '<div class="lbl">Next deadline</div><div class="hname">Nothing upcoming</div>';
+      </div>\`
+          : ""
+      }<div class="hlinks">\${staleNote(next)}\${historyNote(next)}\${sourceLinks(next)}</div>\`;
+    } else {
+      hero.innerHTML = \`<div class="lbl">\${period === "upcoming" ? "Next" : "Most recent"} deadline</div><div class="hname">Nothing matches this filter</div>\`;
+    }
 
     if (view === "cards") renderCards(list, now);
     else if (view === "groups") renderGroups(list, now);
     else renderTable(list, now);
     const checked = DATA.map((x) => x.source_checked_at || "").filter(Boolean).sort().at(-1);
     document.getElementById("foot").textContent =
-      \`Showing \${list.length} of \${matches.length} upcoming deadlines · official venue sites + OpenReview\${checked ? \` · source checks through \${checked.slice(0, 10)}\` : ""}\`;
+      \`Showing \${list.length} of \${matches.length} matching \${period} deadlines · official venue sites + OpenReview\${checked ? \` · source checks through \${checked.slice(0, 10)}\` : ""}\`;
   }
   function unit(v, c) {
     return \`<div class="unit"><span class="num">\${v}</span><span class="cap">\${c}</span></div>\`;
@@ -1030,11 +1126,26 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       : "";
     return source + review;
   }
+  function historyNote(x) {
+    const earlier = (x.revisions || []).slice(0, -1);
+    return earlier.length
+      ? \`<details class="cnote"><summary>Deadline history (\${earlier.length})</summary><ul>\${earlier
+          .map(
+            (revision) =>
+              \`<li>\${fmtAoeDateTime(revision.deadline_aoe)} · \${esc(cap(revision.deadline_label || "deadline"))} · recorded \${esc((revision.observed_at || "").slice(0, 10))}\${revision.link ? \` · <a href="\${esc(revision.link)}" target="_blank" rel="noopener noreferrer">source ↗</a>\` : ""}</li>\`,
+          )
+          .join("")}</ul></details>\`
+      : "";
+  }
+  function staleNote(x) {
+    return x.stale ? \`<span class="cnote">Source not observed in the latest sweep.</span>\` : "";
+  }
 
   function renderCards(list, now) {
     grid.innerHTML = list
       .map((x) => {
-        const u = urgencyLabel(x._sub, now);
+        const u =
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
@@ -1049,8 +1160,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       <div class="cname">\${title}</div>
       <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
-      <div class="ccd" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</div>
-      \${notif}\${sourceLinks(x)}
+      <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "Passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
+      \${notif}\${staleNote(x)}\${historyNote(x)}\${sourceLinks(x)}
     </div>\`;
       })
       .join("");
@@ -1058,7 +1169,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   function renderTable(list, now) {
     tbody.innerHTML = list
       .map((x) => {
-        const u = urgencyLabel(x._sub, now);
+        const u =
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
@@ -1067,9 +1179,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           : esc(x.name);
         const actions = sourceLinks(x);
         return \`<tr style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
-      <td class="tcd countdown" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</td>
+      <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "Passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
-      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${actions}</td></tr>\`;
+      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${staleNote(x)}\${historyNote(x)}\${actions}</td></tr>\`;
       })
       .join("");
   }
@@ -1125,7 +1237,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     if (!entries.length) return "";
     const rows = entries
       .map((x) => {
-        const rowUrgency = urgencyLabel(x._sub, now);
+        const rowUrgency =
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
         const title = groupRowTitle(x, group.label);
         const call = titleUrl(x);
@@ -1133,12 +1246,19 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
           : esc(title.name);
         const actions = sourceLinks(x);
-        const detail = [x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : ""]
+        const earlier = (x.revisions || []).slice(0, -1);
+        const detail = [
+          x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
+          earlier.length
+            ? \`Previously \${earlier.map((revision) => \`\${fmtAoeDateTime(revision.deadline_aoe)} (\${cap(revision.deadline_label || "deadline")})\`).join(", ")}\`
+            : "",
+          x.stale ? "Source not observed in the latest sweep" : "",
+        ]
           .filter(Boolean)
           .join(" · ");
         const note = [title.stage, detail].filter(Boolean).join(" · ");
         return \`<div class="deadline-group__row" style="--u:\${rowUrgency.cvar}">
-          <span class="deadline-group__row-countdown" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</span>
+          <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "Passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
           <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span></span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
@@ -1150,7 +1270,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     groupList.innerHTML = groupEntries(list)
       .map((group, index) => {
         const first = group.entries[0];
-        const firstUrgency = urgencyLabel(first._sub, now);
+        const firstUrgency =
+          period === "past"
+            ? { txt: "passed", cvar: "var(--muted)" }
+            : urgencyLabel(first._sub, now);
         const firstParts = parts(first._sub - now);
         const open = expandedGroups.has(group.id);
         const panelId = \`deadline-group-panel-\${index}\`;
@@ -1176,7 +1299,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         ].join("");
         return \`<section class="deadline-group" data-count="\${group.entries.length}" style="--u:\${firstUrgency.cvar}"\${open ? " data-open" : ""}>
           <button class="deadline-group__summary" data-group="\${esc(group.id)}" aria-expanded="\${open}" aria-controls="\${panelId}">
-            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown" data-t="\${first._sub}">\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}</span>
+            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"\${period === "upcoming" ? \` data-t="\${first._sub}"\` : ""}>\${period === "past" ? "Passed" : \`\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}\`}</span>
             <span class="deadline-group__heading"><strong>\${esc(group.label)}</strong><small>\${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">\${counts}</span>
           </button><div class="deadline-group__panel\${open ? "" : " hidden"}" id="\${panelId}">\${panel}</div>
         </section>\`;

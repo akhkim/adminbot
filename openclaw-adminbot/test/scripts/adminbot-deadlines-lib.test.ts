@@ -224,6 +224,65 @@ describe("workshop source URLs", () => {
       ),
     ).toBe("2035-01-03 23:59:59");
   });
+
+  it("marks a retained workshop deadline as unobserved without advancing its source check", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}}}]}\n" +
+          "m._openreview_submission_deadline = lambda group_id: ''\n" +
+          "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'group': 'TEST 2035 Workshops'}\n" +
+          "previous = {'test2035_ws_Example': {'deadline_aoe': '2035-01-02 23:59:59', 'source_checked_at': '2034-12-01T00:00:00Z'}}\n" +
+          "item = m.fetch_workshop_source(source, previous)[0]\n" +
+          "print(json.dumps([item['_source_observed'], item['source_checked_at']]))",
+      ),
+    ).toEqual([false, "2034-12-01T00:00:00Z"]);
+  });
+
+  it("shares one canonical workshop identity across direct and ARR commitment routes", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "base = {'venue_type': 'workshop', 'venue_group': 'EMNLP 2035 Workshops', 'track': 'workshop', 'venue_family': 'EMNLP', 'deadline_label': 'submission', 'deadline_aoe': '2035-01-02 23:59:59'}\n" +
+          "direct = m.classify(dict(base, id='emnlp2035_ws_MINT', name='MINT', openreview_url='https://openreview.net/group?id=EMNLP/2035/Workshop/MINT'))\n" +
+          "commit = m.classify(dict(base, id='emnlp2035_ws_MINT_ARR_Commitment', name='MINT ARR', openreview_url='https://openreview.net/group?id=EMNLP/2035/Workshop/MINT_ARR_Commitment'))\n" +
+          "print(json.dumps([m.merge_history(direct)['venue_id'], m.merge_history(commit)['venue_id']]))",
+      ),
+    ).toEqual(["EMNLP/2035/Workshop/MINT", "EMNLP/2035/Workshop/MINT"]);
+  });
+});
+
+describe("deadline history", () => {
+  it("appends a changed date while keeping one current projection", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "old = {'id':'iclr2027_paper','entry_type':'main_conference','venue_family':'ICLR','track':'main','deadline_aoe':'2026-09-25 23:59:59','deadline_label':'paper','link':'https://example.test'}\n" +
+          "new = dict(old, deadline_aoe='2026-09-26 23:59:59')\n" +
+          "item = m.merge_history(new, old)\n" +
+          "print(json.dumps({'current': item['deadline_aoe'], 'dates': [r['deadline_aoe'] for r in item['revisions']], 'aliases': item['venue_aliases']}))",
+      ),
+    ).toEqual({
+      current: "2026-09-26 23:59:59",
+      dates: ["2026-09-25 23:59:59", "2026-09-26 23:59:59"],
+      aliases: ["ICLR", "iclr2027_paper"],
+    });
+  });
+
+  it("keeps retained past workshops out of new matching suggestions", () => {
+    const directory = datasetDir([
+      venue("emnlp2026_ws_old", "2026-08-01 23:59:59", { venue_type: "workshop" }),
+      venue("emnlp2026_ws_open", "2026-09-01 23:59:59", { venue_type: "workshop" }),
+    ]);
+    expect(
+      runPython(
+        "import datetime\n" +
+          "m = load('adminbot-deadline-match')\n" +
+          `m.DDIR = ${JSON.stringify(directory)}\n` +
+          "print(json.dumps(sorted(m.build_workshop_registry(AoEClock(datetime.date(2026, 8, 24))).keys())))",
+      ),
+    ).toEqual(["open"]);
+  });
 });
 
 describe("DeadlineDataset.upcoming", () => {
@@ -252,6 +311,21 @@ describe("DeadlineDataset.upcoming", () => {
           "print(json.dumps([v['id'] for v in d.upcoming(AoEClock.resolve('2026-08-04'), 45)]))",
       ),
     ).toEqual([]);
+  });
+
+  it("returns expired current projections newest first", () => {
+    const directory = datasetDir([
+      venue("old", "2026-06-01 23:59:59"),
+      venue("future", "2026-09-01 23:59:59"),
+      venue("recent", "2026-08-03 23:59:59"),
+    ]);
+
+    expect(
+      runPython(
+        `d = DeadlineDataset(${JSON.stringify(directory)})\n` +
+          "print(json.dumps([v['id'] for v in d.past(AoEClock.resolve('2026-08-04'))]))",
+      ),
+    ).toEqual(["recent", "old"]);
   });
 });
 
@@ -317,7 +391,7 @@ describe("deadline digest message", () => {
       venue("ws4", "2026-08-29 12:00:00", {
         venue_type: "workshop",
         venue_group: "NeurIPS 2026 Workshops",
-        name: "Different-time Workshop",
+        name: "Different Time Workshop",
       }),
     ]);
 
@@ -333,7 +407,7 @@ describe("deadline digest message", () => {
     // the date and a series of one still shows under its own name.
     expect(message).toContain("*2 NeurIPS 2026 Workshops* (unified deadline)");
     expect(message).not.toContain("WS Two");
-    expect(message).toContain("Different-time Workshop");
+    expect(message).toContain("— Different Time Workshop");
     expect(message).toContain("— Lone Workshop");
   });
 

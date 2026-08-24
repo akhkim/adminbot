@@ -443,7 +443,7 @@ export const id: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "Ringkasan aktivitas alat lokal browser.",
     overview: "Status, titik masuk, kesehatan.",
     workboard: "Antrean kerja agen dan serah terima sesi.",

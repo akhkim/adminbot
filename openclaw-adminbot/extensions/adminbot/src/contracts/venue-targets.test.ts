@@ -56,4 +56,11 @@ describe("paperTargetsVenue", () => {
     expect(paperTargetsVenue(paper, "ICLR")).toBe(false);
     expect(paperTargetsVenue(paper, "")).toBe(false);
   });
+
+  it("does not use substring matching for venue identities", () => {
+    const paper = withTargets(
+      '[{"venue_id":"iclr2027_paper","label":"ICLR 2027","confidence":80}]',
+    );
+    expect(paperTargetsVenue(paper, "CLR")).toBe(false);
+  });
 });

@@ -440,7 +440,7 @@ export const zh_CN: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "浏览器本地工具活动摘要。",
     overview: "状态、入口点、健康。",
     workboard: "智能体工作队列和会话交接。",

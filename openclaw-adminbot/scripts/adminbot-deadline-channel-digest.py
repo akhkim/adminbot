@@ -52,7 +52,7 @@ def build_message(venues, clock, window_days):
             grouped_workshops[(venue["venue_group"], venue["deadline_aoe"])].append(venue)
         else:
             entries.append((venue["deadline_aoe"], venue["name"], digest_line(venue, clock)))
-    for (group, _date), members in grouped_workshops.items():
+    for (group, _instant), members in grouped_workshops.items():
         first = members[0]
         if len(members) == 1:
             entries.append((first["deadline_aoe"], first["name"], digest_line(first, clock)))
