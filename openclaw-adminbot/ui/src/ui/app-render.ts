@@ -3207,11 +3207,11 @@ export function renderApp(state: AppViewState) {
                 onApplyPolishedPhoto: (variantId) =>
                   void applyAdminBotOwnProfilePhoto(state, variantId),
               })}
-              <!-- Bottom of the page on purpose: the checklist is required reading a member works
-                   through once, not the thing they came to this page to do on the other days. -->
-              ${renderOnboardingChecklist(state)}
+              <!-- The checklist moved to Getting Set Up. It is required reading a member works
+                   through once, and it was ending a page they edit every week. -->
             `
           : nothing}
+        ${state.tab === "myOnboarding" ? renderOnboardingChecklist(state) : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
         ${state.tab === "adminbotProfileOverview"
           ? renderAdminBotProfileOverview({
