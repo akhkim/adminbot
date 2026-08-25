@@ -618,6 +618,15 @@ function renderMemberForm(state: AppViewState) {
             ${t("login.member.reset.done")}
           </div>`
         : ""}
+      <!-- Above the fields, not under the button: the person this is for is about to type the
+           wrong thing or press Claim profile, and a hint they reach after doing so is a hint that
+           arrived too late. Sign-in only -- it is an answer to "do I already have an account", which
+           is not the question either reset step or the claim flow is asking. -->
+      ${mode === "signin"
+        ? html`<p class="login-gate__hint" data-testid="login-full-member-hint">
+            ${t("login.member.fullMemberHint")}
+          </p>`
+        : ""}
       ${isResetConfirm
         ? ""
         : html`
