@@ -9996,3 +9996,44 @@ select.target__select optgroup {
   flex-direction: row-reverse;
   justify-content: space-between;
 }
+
+/* Profile Overview: the adoption column and the roll-up above the table.
+   Adoption sits next to completeness rather than replacing it -- the two disagreeing is the
+   finding, so both have to be readable on the same row. */
+.profile-overview__adoption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-overview__adoption-detail {
+  font-size: 11px;
+}
+
+/* Zero is the number this page exists to find, so it is the one that is coloured. */
+.profile-overview__percent.is-zero {
+  color: var(--warn);
+}
+
+.profile-overview__adoption-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.profile-overview__adoption-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  max-width: 220px;
+}
+
+.profile-overview__adoption-figure {
+  font-size: 22px;
+  font-weight: 600;
+}

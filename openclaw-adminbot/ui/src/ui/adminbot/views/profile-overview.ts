@@ -16,7 +16,7 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { MemberProfileOverviewRow } from "../auth/session.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
 
 /**
  * Which gap the page is looking at.
@@ -38,6 +38,8 @@ export type ProfileOverviewFilter = {
 export type AdminBotProfileOverviewProps = {
   members: MemberProfileOverviewRow[];
   mandatoryFieldCount: number;
+  /** The lab-wide roll-up. Null before the first read answers. */
+  adoption: MemberAdoptionSummary | null;
   loading: boolean;
   error: string | null;
   notice: string | null;
@@ -160,6 +162,81 @@ function renderProgressCell(row: MemberProfileOverviewRow, total: number) {
   `;
 }
 
+/**
+ * The adoption cell: how much of this record its own member wrote.
+ *
+ * Deliberately next to the completeness bar rather than instead of it. The two disagreeing is the
+ * whole signal -- a row that is 12/12 complete and 0/12 self-filled is somebody whose profile the
+ * spreadsheet filled in and who has never been here, and that is not visible from either number
+ * alone. "Never signed in" is called out in words because it is the strongest version of the same
+ * finding and the one worth reading across a table at a glance.
+ */
+function renderAdoptionCell(row: MemberProfileOverviewRow, total: number) {
+  const percent = total > 0 ? Math.round((row.self_filled_field_count / total) * 100) : 0;
+  const neverSignedIn = !row.last_login_at;
+  return html`
+    <div
+      class="profile-overview__adoption"
+      title=${t("profileOverview.adoption.breakdown", {
+        self: String(row.self_filled_field_count),
+        total: String(total),
+        filled: String(row.filled_field_count),
+        lastLogin: row.last_login_at
+          ? formatDay(row.last_login_at)
+          : t("profileOverview.adoption.never"),
+        lastSelfEdit: row.last_self_edit_at
+          ? formatDay(row.last_self_edit_at)
+          : t("profileOverview.adoption.never"),
+        updated: row.updated_at ? formatDay(row.updated_at) : "—",
+      })}
+    >
+      <span class="profile-overview__percent ab-num ${percent === 0 ? "is-zero" : ""}"
+        >${percent}%</span
+      >
+      <span class="profile-overview__adoption-detail muted">
+        ${t("profileOverview.adoption.projects", {
+          done: String(row.projects.self_updated),
+          total: String(row.projects.total),
+        })}
+      </span>
+      ${neverSignedIn
+        ? html`<span class="profile-overview__flag" data-testid="profile-overview-never-signed-in"
+            >${t("profileOverview.adoption.neverSignedIn")}</span
+          >`
+        : nothing}
+    </div>
+  `;
+}
+
+/**
+ * The one line at the top: what fraction of the lab's own record the lab's own members wrote.
+ *
+ * Over every field of every member rather than an average of per-member percentages, so one
+ * brand-new member with a blank profile does not move the lab figure as much as somebody with a
+ * full one -- see adoptionSummary service-side, which is where the arithmetic lives.
+ */
+function renderAdoptionSummary(adoption: MemberAdoptionSummary) {
+  const pct = (rate: number) => `${Math.round(rate * 100)}%`;
+  return html`
+    <div class="profile-overview__adoption-summary" data-testid="profile-overview-adoption">
+      <div>
+        <span class="profile-overview__adoption-figure ab-num">${pct(adoption.profile_rate)}</span>
+        <span class="muted">${t("profileOverview.adoption.summaryProfile")}</span>
+      </div>
+      <div>
+        <span class="profile-overview__adoption-figure ab-num">${pct(adoption.project_rate)}</span>
+        <span class="muted">${t("profileOverview.adoption.summaryProjects")}</span>
+      </div>
+      <div>
+        <span class="profile-overview__adoption-figure ab-num"
+          >${adoption.signed_in_ever}/${adoption.members}</span
+        >
+        <span class="muted">${t("profileOverview.adoption.summarySignedIn")}</span>
+      </div>
+    </div>
+  `;
+}
+
 function renderMissingCell(row: MemberProfileOverviewRow) {
   if (!row.missing_fields.length) {
     return html`<span class="profile-overview__done">${t("profileOverview.allFilled")}</span>`;
@@ -211,6 +288,7 @@ function renderRow(props: AdminBotProfileOverviewProps, row: MemberProfileOvervi
         ${row.status ? html`<span class="profile-overview__status">${row.status}</span>` : nothing}
       </td>
       <td class="profile-overview__cell">${renderProgressCell(row, props.mandatoryFieldCount)}</td>
+      <td class="profile-overview__cell">${renderAdoptionCell(row, props.mandatoryFieldCount)}</td>
       <td class="profile-overview__cell profile-overview__cell--missing">
         ${renderMissingCell(row)}
       </td>
@@ -316,6 +394,7 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
           </div>
         </div>
 
+        ${props.adoption ? renderAdoptionSummary(props.adoption) : nothing}
         ${props.notice
           ? html`<p class="profile-overview__notice" role="status">${props.notice}</p>`
           : nothing}
@@ -335,6 +414,9 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                         </th>
                         <th scope="col" class="profile-overview__head">
                           ${t("profileOverview.profile")}
+                        </th>
+                        <th scope="col" class="profile-overview__head">
+                          ${t("profileOverview.adoption.column")}
                         </th>
                         <th scope="col" class="profile-overview__head">
                           ${t("profileOverview.missing")}

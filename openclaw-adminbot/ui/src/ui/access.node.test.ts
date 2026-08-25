@@ -83,25 +83,27 @@ describe("visibleTabsForRole", () => {
   });
 
   it("adds the roster and the shared tools for a member", () => {
-    // Sidebar order: the dashboard, then the profile, then own work, then the shared tools, then
-    // Lab Sharing with the roster under it. `chat` is absent because no group lists it -- it
-    // renders in the pinned sidebar footer instead.
+    // Sidebar order: the dashboard, then My Info, then Lab Sharing with the recordings and the
+    // roster under it, then the three requests, then the shared tools. `chat` is absent because no
+    // group lists it -- it renders in the pinned sidebar footer instead.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",
       "myWork",
-      "adminbotLogistics",
+      "labSharing",
+      // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
+      "adminbotMeetings",
+      "adminbotMembers",
+      "adminbotSignatures",
+      "adminbotRecLetters",
+      "adminbotMeetingRequests",
       "adminbotReimbursements",
       "adminbotDeadlines",
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
-      "labSharing",
-      // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
-      "adminbotMeetings",
-      "adminbotMembers",
     ]);
   });
 

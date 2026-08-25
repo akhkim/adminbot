@@ -11,26 +11,30 @@ import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 // sees only the two open tools inside "General Tools".
 export const TAB_GROUPS = [
   { label: "home", tabs: ["dashboard"] },
-  // Time Availability sits here rather than in the shared tools: it is the viewer's own schedule
-  // that they edit, and only incidentally other people's that they read. Someone looking for
-  // "where do I say when I am free" looks under their own profile.
-  { label: "myProfile", tabs: ["profile", "adminbotTimeAvailability"] },
-  { label: "myProjects", tabs: ["myWork"] },
+  // "My Info" is everything the viewer holds about themselves: the record, the schedule they keep
+  // on it, and the work it is attached to. Time Availability sits here rather than in the shared
+  // tools because it is the viewer's own schedule that they edit, and only incidentally other
+  // people's that they read.
+  { label: "myInfo", tabs: ["profile", "adminbotTimeAvailability", "myWork"] },
+  // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
+  // which is what someone browsing the lab's shared surface came to look at.
+  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
+  // The three logistics templates, each with its own heading. They used to be one "Logistics
+  // Requests" tab whose first screen was a picker between them, which meant every request started
+  // with a step that carried no information -- the member already knew which of the three they
+  // came for. Naming them in the sidebar makes that choice the click that opens the form, and it
+  // names the person the request actually goes to.
+  {
+    label: "requestsToZhijing",
+    tabs: ["adminbotSignatures", "adminbotRecLetters", "adminbotMeetingRequests"],
+  },
   // Ordered by how often a member reaches for them. Chat is not here any more: asking AdminBot
   // something is now the second half of the guidebook surface (`adminbotGuidebook`), which the
   // sidebar footer offers in place of the old external docs link.
   {
     label: "generalTools",
-    tabs: [
-      "adminbotLogistics",
-      "adminbotReimbursements",
-      "adminbotDeadlines",
-      "adminbotConferencePapers",
-    ],
+    tabs: ["adminbotReimbursements", "adminbotDeadlines", "adminbotConferencePapers"],
   },
-  // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
-  // which is what someone browsing the lab's shared surface came to look at.
-  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
   {
     label: "admin",
     tabs: [
@@ -74,6 +78,17 @@ export const TAB_GROUPS = [
 // its own would have been a second place to start the same job, with no paper in hand.
 export const UNIMPLEMENTED_TABS: readonly Tab[] = [];
 
+/**
+ * Whether an arbitrary string names a tab.
+ *
+ * For values that arrive from the service rather than from this file -- a notification says which
+ * tab it is about, and the service has no reason to know the UI's tab list. Rather than casting and
+ * routing at a view that does not exist, the caller checks first and simply does not offer a link.
+ */
+export function isKnownTab(value: string | undefined): value is Tab {
+  return value !== undefined && value in TAB_PATHS;
+}
+
 export function isTabImplemented(tab: Tab): boolean {
   return !UNIMPLEMENTED_TABS.includes(tab);
 }
@@ -94,7 +109,9 @@ export type Tab =
   | "adminbotProfileOverview"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
-  | "adminbotLogistics"
+  | "adminbotSignatures"
+  | "adminbotRecLetters"
+  | "adminbotMeetingRequests"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
@@ -117,6 +134,31 @@ export type Tab =
   | "aiAgents"
   | "debug"
   | "logs";
+
+/**
+ * Which request form each of the three "Requests to Zhijing" tabs opens.
+ *
+ * The template is still one piece of view state on the logistics surface (it decides which form is
+ * drawn and which draft is saved); what changed is that the sidebar sets it instead of a picker
+ * inside the page. Keeping the mapping here rather than in app-render keeps "these three tabs are
+ * the same view" a fact about navigation, which is what it is.
+ */
+export const LOGISTICS_TAB_TEMPLATES = {
+  adminbotSignatures: "documentSignature",
+  adminbotRecLetters: "recommendationLetters",
+  adminbotMeetingRequests: "bookMeeting",
+} as const satisfies Partial<Record<Tab, string>>;
+
+export type LogisticsTab = keyof typeof LOGISTICS_TAB_TEMPLATES;
+
+/** The inverse: which tab holds a given form, for anything that has a template and needs a route. */
+export const LOGISTICS_TAB_FOR_TEMPLATE = Object.fromEntries(
+  Object.entries(LOGISTICS_TAB_TEMPLATES).map(([tab, template]) => [template, tab as LogisticsTab]),
+) as Record<(typeof LOGISTICS_TAB_TEMPLATES)[LogisticsTab], LogisticsTab>;
+
+export function isLogisticsTab(tab: Tab): tab is LogisticsTab {
+  return tab in LOGISTICS_TAB_TEMPLATES;
+}
 
 export const SETTINGS_TABS = [
   "config",
@@ -147,7 +189,9 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotProfileOverview: "/adminbot/profile-overview",
   adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotMeetings: "/adminbot/meetings",
-  adminbotLogistics: "/adminbot/logistics",
+  adminbotSignatures: "/adminbot/signatures",
+  adminbotRecLetters: "/adminbot/rec-letters",
+  adminbotMeetingRequests: "/adminbot/meeting-requests",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotConferencePapers: "/adminbot/conference-papers",
@@ -172,7 +216,11 @@ const TAB_PATHS: Record<Tab, string> = {
   logs: "/logs",
 };
 
-const PATH_ALIASES: Record<string, Tab> = {};
+// The one tab that became three. Links to it are in members' bookmarks, in Slack threads and in
+// onboarding mail, and all three still want the same place: the request forms.
+const PATH_ALIASES: Record<string, Tab> = {
+  "/adminbot/logistics": "adminbotSignatures",
+};
 
 const PATH_TO_TAB = new Map<string, Tab>([
   ...Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab] as const),
@@ -310,8 +358,12 @@ export function iconForTab(tab: Tab): IconName {
       return "clock";
     case "adminbotMeetings":
       return "play";
-    case "adminbotLogistics":
-      return "paperclip";
+    case "adminbotSignatures":
+      return "penLine";
+    case "adminbotRecLetters":
+      return "fileText";
+    case "adminbotMeetingRequests":
+      return "clock";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":

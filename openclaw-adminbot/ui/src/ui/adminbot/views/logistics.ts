@@ -1,9 +1,10 @@
 // Templates that start a logistics request -- the routine asks a member makes of the lab, each of
 // which always takes the same shape (a signature, a letter, a meeting slot).
 //
-// The three buttons name the request types and pick which container is on screen. Each one grows
-// into a form that proposes a typed action from contracts/actions.ts, so none of them may reach a
-// connector directly -- propose -> approve -> execute is the only path out of here.
+// Which of the three is on screen is decided by the sidebar tab (see LOGISTICS_TAB_TEMPLATES in
+// navigation.ts) and arrives as `template`. Each form proposes a typed action from
+// contracts/actions.ts, so none of them may reach a connector directly -- propose -> approve ->
+// execute is the only path out of here.
 //
 // Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
 // request survives a reload; Submit sends it to the service (POST /logistics/requests), which
@@ -99,7 +100,6 @@ export type AdminBotLogisticsProps = {
    */
   queue: AdminBotLogisticsQueueProps;
   template: LogisticsTemplate;
-  onTemplateChange: (template: LogisticsTemplate) => void;
   signature: RequestSaveProps & {
     files: File[];
     onFilesChange: (files: File[]) => void;
@@ -1054,57 +1054,6 @@ function renderMeetingRequest(props: MeetingProps) {
   `;
 }
 
-const TEMPLATE_BUTTONS: {
-  template: LogisticsTemplate | null;
-  labelKey: string;
-  icon: (typeof icons)[keyof typeof icons];
-}[] = [
-  {
-    template: "documentSignature",
-    labelKey: "logistics.templates.documentSignature",
-    icon: icons.penLine,
-  },
-  {
-    template: "recommendationLetters",
-    labelKey: "logistics.templates.recommendationLetters",
-    icon: icons.fileText,
-  },
-  {
-    template: "bookMeeting",
-    labelKey: "logistics.templates.bookMeeting",
-    icon: icons.clock,
-  },
-];
-
-function renderTemplates(props: AdminBotLogisticsProps) {
-  return html`
-    <div class="card adminbot-card adminbot-card--wide" data-testid="logistics-templates">
-      <div class="card-title">${t("logistics.templates.title")}</div>
-      <div class="card-sub">${t("logistics.templates.sub")}</div>
-      <div class="logistics__templates">
-        ${TEMPLATE_BUTTONS.map((entry) => {
-          const selected = entry.template !== null && entry.template === props.template;
-          return html`
-            <button
-              class="btn logistics__template ${selected ? "active" : ""}"
-              type="button"
-              aria-pressed=${entry.template ? String(selected) : nothing}
-              @click=${() => {
-                if (entry.template) {
-                  props.onTemplateChange(entry.template);
-                }
-              }}
-            >
-              <span class="logistics__template-icon" aria-hidden="true">${entry.icon}</span>
-              ${t(entry.labelKey)}
-            </button>
-          `;
-        })}
-      </div>
-    </div>
-  `;
-}
-
 /**
  * Above the templates, because it decides what the rest of the page is: making a request, or
  * reading the ones already made.
@@ -1148,9 +1097,11 @@ function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
   `;
 }
 
+// Which form, and only that form. The picker that used to sit above it is the sidebar now: each of
+// the three templates has its own tab under "Requests to Zhijing", so arriving here already means
+// having chosen, and a picker would be a second place to make the same choice.
 function renderMakeRequest(props: AdminBotLogisticsProps) {
   return html`
-    ${renderTemplates(props)}
     ${props.template === "recommendationLetters"
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"

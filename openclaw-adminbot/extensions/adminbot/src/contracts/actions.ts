@@ -239,6 +239,23 @@ export type AdminBotMemberProfileOverviewRow = {
   timeline: AdminBotMemberTimelineCounts;
   /** When the daily reminder pass last nudged them, so nobody is chased twice in a day. */
   last_reminded_at?: string;
+  /**
+   * How much of their own record this member filled in themselves, as opposed to an admin or the
+   * spreadsheet importer doing it for them. This is the adoption number: a row can be complete and
+   * still have `self_filled_field_count: 0`, which is exactly the person to chase.
+   *
+   * Fields written before provenance was recorded count as not-self, which understates adoption for
+   * the first few weeks and never overstates it.
+   */
+  self_filled_field_count: number;
+  /** Papers this member is on, and how many carry a weekly update they wrote themselves. */
+  projects: { total: number; self_updated: number };
+  /** Last successful sign-in. Absent means never — which is the strongest possible non-adoption signal. */
+  last_login_at?: string;
+  /** When any hand last wrote to this record, whoever it was. */
+  updated_at?: string;
+  /** When this member last changed anything themselves. Absent means they never have. */
+  last_self_edit_at?: string;
 };
 
 /**
@@ -944,10 +961,42 @@ export type AdminBotLabMemberInput = {
   availability_updated_at?: string;
 };
 
+/**
+ * Who last put a value in a field.
+ *
+ * The roster is written by three different hands and until now the record could not tell them
+ * apart: a member filling in their own profile, an admin correcting it for them, and the
+ * spreadsheet importer merging in a column. `updated_at` said only that *something* wrote, so
+ * "has this person actually engaged with their profile, or did I type it all in for them" had no
+ * answer -- which is the question the adoption rate exists to ask.
+ *
+ * `member` is the only one of the three that counts as adoption. `admin` is a correction made on
+ * somebody's behalf and `import` is the spreadsheet; both mean the field is filled and neither
+ * means the member has been here.
+ */
+export type AdminBotFieldSource = "member" | "admin" | "import";
+
+export type AdminBotFieldProvenance = {
+  source: AdminBotFieldSource;
+  /** When this source last *changed* the value. Unchanged rewrites do not re-stamp. */
+  at: string;
+  /** The member id or script name behind it, when there is one. Free text: a cron has no member id. */
+  actor?: string;
+};
+
 export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> & {
   privilege_level: AdminBotPrivilegeLevel;
   access: AdminBotAccessGrant[];
   onboarding?: AdminBotMemberOnboarding;
+  /**
+   * Per-field: who last changed it and when. Keyed by field name.
+   *
+   * Derived state, never an input -- it is stamped by the service on every write from the source
+   * the route authenticated, so a client cannot claim a member filled in a field they did not.
+   * Sparse: a field nobody has written since this was introduced simply has no entry, which reads
+   * as "unknown provenance", not as "imported".
+   */
+  field_provenance?: Record<string, AdminBotFieldProvenance>;
   created_at: string;
   updated_at: string;
 };
@@ -1477,6 +1526,9 @@ export type AdminBotAuditEvent = {
     | "meeting.recorded"
     | "meeting.updated"
     | "meeting.attendance_updated"
+    // One row per member per streak of missed meetings. Keyed on the meetings themselves rather
+    // than on the day it ran, so a cron, a retry and an admin's button collapse into one message.
+    | "meeting_attendance.nudged"
     | "meeting.deleted"
     // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
     // external effect with no undo, so who triggered a pass and what it did is recorded here.
@@ -1700,6 +1752,43 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
    * anybody. Absent on the admin view, which has the roster itself.
    */
   attendee_count?: number;
+};
+
+// ---------------------------------------------------------------------------
+// Member notifications
+//
+// Something the lab has told one person, kept so it survives the moment it was sent. A Slack DM is
+// the loudest channel the lab has and also the easiest to lose: it scrolls away, it arrives while
+// somebody is asleep, and it is unreadable to anyone who has not linked their Slack account. So
+// every nudge that is worth a DM is also filed here, where the member's own dashboard can show it
+// and where "was this person actually told" has an answer that does not depend on Slack.
+//
+// Deliberately small. This is not an inbox and it is not a message bus: each row is one sentence
+// the lab has already decided to say, plus where to go about it. Anything that needs a
+// conversation belongs in Slack, which is why every notification carries a Slack DM alongside it
+// rather than replacing one.
+// ---------------------------------------------------------------------------
+
+/** What produced a notification. One per sender, so a resend can find and replace its own row. */
+export type AdminBotMemberNotificationKind = "meeting_attendance";
+
+export type AdminBotMemberNotification = {
+  id: string;
+  member_id: string;
+  kind: AdminBotMemberNotificationKind;
+  /** One line, shown as the card heading and as the popup title. */
+  title: string;
+  /** A sentence or two of detail. Plain text: this is rendered in three places and styled in none. */
+  body: string;
+  /**
+   * The Control UI tab this is about, by tab id, so the card and the popup both have somewhere to
+   * send the reader. Untyped here on purpose -- contracts/ is service-side and the tab list is a
+   * UI fact; the UI validates it against its own Tab union on the way in.
+   */
+  tab?: string;
+  created_at: string;
+  /** When the member acknowledged it. Absent is unread, which is what the popup fires on. */
+  read_at?: string;
 };
 
 // ---------------------------------------------------------------------------

@@ -496,11 +496,11 @@ describe("control UI routing", () => {
   });
 
   it("hides child nav items when the active group is collapsed", async () => {
-    const app = mountApp("/adminbot/logistics");
+    const app = mountApp("/adminbot/reimbursements");
     await app.updateComplete;
 
-    // Logistics sits in the "General Tools" group alongside the deadline board and the
-    // reimbursement assistant; collapsing that group is what hides it.
+    // The reimbursement assistant sits in the "General Tools" group alongside the deadline board;
+    // collapsing that group is what hides it.
     app.applySettings({
       ...app.settings,
       navGroupsCollapsed: {
@@ -512,13 +512,13 @@ describe("control UI routing", () => {
 
     const groupLink = expectElement(
       app,
-      'a.nav-item[href="/adminbot/logistics"]',
+      'a.nav-item[href="/adminbot/reimbursements"]',
       HTMLAnchorElement,
     );
     const section = groupLink.closest(".nav-section");
     expect(section).toBeInstanceOf(HTMLElement);
     if (!(section instanceof HTMLElement)) {
-      throw new Error("Expected the logistics link to be inside a nav section");
+      throw new Error("Expected the reimbursements link to be inside a nav section");
     }
 
     expect([...section.classList]).toContain("nav-section--collapsed");

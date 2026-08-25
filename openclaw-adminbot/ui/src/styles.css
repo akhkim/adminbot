@@ -12,6 +12,7 @@
 @import "./styles/meetings.css";
 @import "./styles/paper-slots.css";
 @import "./styles/time-allocation-chart.css";
+@import "./styles/toast.css";
 @import "./styles/usage.css";
 @import "@create-markdown/preview/themes/system.css";
 

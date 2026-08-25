@@ -1943,6 +1943,117 @@ export async function createMeeting(
 }
 
 // ---------------------------------------------------------------------------
+// Attendance nudges, and the notifications they leave behind
+//
+// Two audiences, two calls each. An admin previews who has missed the last two group meetings and
+// then sends; a member reads what the lab has told them and marks it read. The member's half is
+// strictly own-scope -- the service takes the member id from the session, so there is no parameter
+// here that could ask for somebody else's.
+// ---------------------------------------------------------------------------
+
+export type MeetingAbsence = {
+  member_id: string;
+  name: string;
+  missed_meeting_ids: string[];
+  missed_topics: string[];
+  reason: "invite" | "full_member";
+};
+
+export type MeetingAttendanceNudgePreview = {
+  streak: number;
+  meeting_label: string;
+  meetings: Array<{ id: string; topic: string; started_at: string }>;
+  absent: MeetingAbsence[];
+  /** False when the calendar could not be read, so the audience is the roster's full members alone. */
+  invite_resolved: boolean;
+  audience_size: number;
+};
+
+export type MeetingAttendanceNudgeResult = {
+  notified: string[];
+  already_told: string[];
+  slack_skipped: Array<{ member_id: string; reason: string }>;
+  invite_resolved: boolean;
+};
+
+export async function fetchMeetingAttendanceNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingAttendanceNudgePreview>> {
+  const result = await authedJson(baseUrl, "/meetings/attendance-nudges", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingAttendanceNudgePreview };
+}
+
+export async function sendMeetingAttendanceNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingAttendanceNudgeResult>> {
+  const result = await authedJson(baseUrl, "/meetings/attendance-nudges", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingAttendanceNudgeResult };
+}
+
+export type MemberNotification = {
+  id: string;
+  member_id: string;
+  kind: "meeting_attendance";
+  title: string;
+  body: string;
+  /** A Control UI tab id. Validated against the Tab union where it is used, never trusted as one here. */
+  tab?: string;
+  created_at: string;
+  read_at?: string;
+};
+
+export async function fetchNotifications(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberNotification[]>> {
+  const result = await authedJson(baseUrl, "/notifications", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { notifications?: MemberNotification[] } | null;
+  return { ok: true, value: body?.notifications ?? [] };
+}
+
+/** No ids marks every unread one read, which is what "dismiss all" on the popup stack means. */
+export async function markNotificationsRead(
+  sessionToken: string,
+  baseUrl: string,
+  notificationIds?: readonly string[],
+): Promise<AuthResult<{ read: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/notifications/read",
+    "POST",
+    sessionToken,
+    notificationIds?.length ? { notification_ids: [...notificationIds] } : {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { read: number } };
+}
+
+// ---------------------------------------------------------------------------
 // "You seem to have moved"
 //
 // The inferred half of a member's location never writes to their profile — see the service. These
@@ -2276,10 +2387,33 @@ export type MemberProfileOverviewRow = {
   filled_field_count: number;
   timeline: MemberTimelineCounts;
   last_reminded_at?: string;
+  /**
+   * Of `filled_field_count`, how many the member typed themselves rather than an admin or the
+   * spreadsheet importer. This is the adoption number: a row can be 12/12 complete and 0/12 adopted.
+   */
+  self_filled_field_count: number;
+  /** Their papers, and how many carry a weekly update they wrote themselves. */
+  projects: { total: number; self_updated: number };
+  /** Last successful sign-in. Absent means never. */
+  last_login_at?: string;
+  /** When any hand last wrote to the record. */
+  updated_at?: string;
+  /** When this member last changed anything themselves. Absent means they never have. */
+  last_self_edit_at?: string;
+};
+
+/** The lab-wide roll-up, so the page leads with one number instead of asking an admin to add up 77 rows. */
+export type MemberAdoptionSummary = {
+  members: number;
+  /** 0..1, over every mandatory field of every member -- not an average of per-member percentages. */
+  profile_rate: number;
+  project_rate: number;
+  signed_in_ever: number;
 };
 
 export type MemberProfileOverview = {
   members: MemberProfileOverviewRow[];
+  adoption: MemberAdoptionSummary;
   /**
    * How many fields count toward "complete".
    *
@@ -2304,12 +2438,21 @@ export async function fetchMemberProfileOverview(
   const body = result.body as {
     members?: MemberProfileOverviewRow[];
     mandatory_field_count?: number;
+    adoption?: MemberAdoptionSummary;
   } | null;
   return {
     ok: true,
     value: {
       members: body?.members ?? [],
       mandatoryFieldCount: body?.mandatory_field_count ?? 0,
+      // Zeroed rather than optional: the page renders a percentage either way, and an older service
+      // that does not send this should read as "nothing adopted yet" rather than blank the card.
+      adoption: body?.adoption ?? {
+        members: body?.members?.length ?? 0,
+        profile_rate: 0,
+        project_rate: 0,
+        signed_in_ever: 0,
+      },
     },
   };
 }

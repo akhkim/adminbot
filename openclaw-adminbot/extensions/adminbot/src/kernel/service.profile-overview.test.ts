@@ -187,3 +187,45 @@ describe("listMemberProfileOverview", () => {
     expect(unwrap(service.listMemberProfileOverview()).members[0]?.last_reminded_at).toBeTruthy();
   });
 });
+
+describe("adoption", () => {
+  it("separates 'the field is filled' from 'the member filled it'", () => {
+    // The state most of the roster is actually in: bulk-imported, complete, adopted by nobody.
+    const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
+    const imported = unwrap(service.listMemberProfileOverview());
+    expect(imported.members[0]?.missing_fields).toEqual([]);
+    expect(imported.members[0]?.self_filled_field_count).toBe(0);
+    expect(imported.adoption.profile_rate).toBe(0);
+    expect(imported.adoption.signed_in_ever).toBe(0);
+
+    // The member changes one thing about themselves, and only that one counts.
+    unwrap(service.updateOwnProfile("ada", { location: "Zurich" }));
+    const edited = unwrap(service.listMemberProfileOverview());
+    expect(edited.members[0]?.self_filled_field_count).toBe(1);
+    expect(edited.members[0]?.last_self_edit_at).toBeTruthy();
+    expect(edited.members[0]?.updated_at).toBeTruthy();
+  });
+
+  it("does not credit the member when an admin corrects their record", () => {
+    const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
+    unwrap(
+      service.upsertLabMember({ id: "ada", location: "Zurich" } as never, {
+        source: "admin",
+        actor: "zhijing",
+      }),
+    );
+    const overview = unwrap(service.listMemberProfileOverview());
+    expect(overview.members[0]?.self_filled_field_count).toBe(0);
+    expect(overview.members[0]?.last_self_edit_at).toBeUndefined();
+  });
+
+  it("does not launder an unchanged re-import into member-authored data", () => {
+    const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
+    unwrap(service.updateOwnProfile("ada", { location: "Zurich" }));
+    // The nightly spreadsheet sync re-sends everything it has, including the value already stored.
+    unwrap(service.upsertLabMember({ id: "ada", ...COMPLETE, location: "Zurich" } as never));
+    const overview = unwrap(service.listMemberProfileOverview());
+    // Still one: the import changed nothing, so it re-stamped nothing.
+    expect(overview.members[0]?.self_filled_field_count).toBe(1);
+  });
+});

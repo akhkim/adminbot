@@ -14,6 +14,7 @@ import type {
   AdminBotLabMember,
   AdminBotLogisticsRequest,
   AdminBotMeetingRecord,
+  AdminBotMemberNotification,
   AdminBotMemberLocationEntry,
   AdminBotMemberCredential,
   AdminBotOpenReviewCycleRecord,
@@ -348,6 +349,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_member_notifications (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      -- One read only: this member's notifications, newest first. The kind rides along because a
+      -- resend replaces its own row rather than adding a second copy of the same sentence.
+      CREATE INDEX IF NOT EXISTS adminbot_member_notifications_member_idx
+        ON adminbot_member_notifications(member_id, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_logistics_requests (
         id TEXT PRIMARY KEY,
@@ -1368,6 +1383,50 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
+  }
+
+  saveMemberNotification(notification: AdminBotMemberNotification): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_member_notifications (
+          id,
+          member_id,
+          kind,
+          created_at,
+          read_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          member_id = excluded.member_id,
+          kind = excluded.kind,
+          created_at = excluded.created_at,
+          read_at = excluded.read_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        notification.id,
+        notification.member_id,
+        notification.kind,
+        notification.created_at,
+        notification.read_at ?? null,
+        JSON.stringify(notification),
+      );
+  }
+
+  listMemberNotifications(memberId: string): AdminBotMemberNotification[] {
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM adminbot_member_notifications WHERE member_id = ? ORDER BY created_at DESC",
+      )
+      .all(memberId) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
+  }
+
+  deleteMemberNotification(notificationId: string): boolean {
+    return (
+      this.db.prepare("DELETE FROM adminbot_member_notifications WHERE id = ?").run(notificationId)
+        .changes > 0
+    );
   }
 
   saveLogisticsRequest(request: AdminBotLogisticsRequest): void {

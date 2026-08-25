@@ -20,6 +20,7 @@ import type {
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
   AdminBotMeetingRecord,
+  AdminBotMemberNotification,
   AdminBotMemberLocationEntry,
   AdminBotPaperRecord,
   AdminBotPasswordReset,
@@ -59,6 +60,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
   private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
+  private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
   private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
@@ -378,6 +380,20 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.meetings.delete(meetingId);
+  }
+
+  saveMemberNotification(notification: AdminBotMemberNotification): void {
+    this.memberNotifications.set(notification.id, notification);
+  }
+
+  listMemberNotifications(memberId: string): AdminBotMemberNotification[] {
+    return [...this.memberNotifications.values()]
+      .filter((notification) => notification.member_id === memberId)
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteMemberNotification(notificationId: string): boolean {
+    return this.memberNotifications.delete(notificationId);
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {

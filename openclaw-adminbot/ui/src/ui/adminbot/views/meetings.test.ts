@@ -71,7 +71,12 @@ describe("renderAdminBotMeetings", () => {
         {
           ...MEETING,
           attendees: [
-            { member_id: "m-ada", display_name: "Ada", source: "participant_report", present: true },
+            {
+              member_id: "m-ada",
+              display_name: "Ada",
+              source: "participant_report",
+              present: true,
+            },
           ],
           attendee_count: 7,
         },
@@ -97,7 +102,12 @@ describe("renderAdminBotMeetings", () => {
         {
           ...MEETING,
           attendees: [
-            { member_id: "m-ada", display_name: "Ada Attendee", source: "transcript", present: true },
+            {
+              member_id: "m-ada",
+              display_name: "Ada Attendee",
+              source: "transcript",
+              present: true,
+            },
           ],
         },
       ],
@@ -165,5 +175,99 @@ describe("renderAdminBotMeetings", () => {
       .querySelector("form")
       ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     expect(onFileMeeting).not.toHaveBeenCalled();
+  });
+});
+
+describe("attendance nudge panel", () => {
+  const NUDGE_PREVIEW = {
+    streak: 2,
+    meeting_label: "Monday meeting",
+    meetings: [
+      { id: "m2", topic: "Group meeting 2", started_at: "2026-08-17T13:30:00.000Z" },
+      { id: "m1", topic: "Group meeting 1", started_at: "2026-08-10T13:30:00.000Z" },
+    ],
+    absent: [
+      {
+        member_id: "mei",
+        name: "Mei Chen",
+        missed_meeting_ids: ["m2", "m1"],
+        missed_topics: ["Group meeting 2", "Group meeting 1"],
+        reason: "full_member" as const,
+      },
+    ],
+    invite_resolved: true,
+    audience_size: 12,
+  };
+
+  function nudgeProps(overrides: Partial<NonNullable<AdminBotMeetingsProps["nudge"]>> = {}) {
+    return {
+      nudge: {
+        preview: NUDGE_PREVIEW,
+        result: null,
+        busy: false,
+        error: null,
+        onPreview: vi.fn(),
+        onSend: vi.fn(),
+        ...overrides,
+      },
+    };
+  }
+
+  it("is not offered to a member", () => {
+    const container = renderView({ viewerIsAdmin: false, ...nudgeProps() });
+    expect(container.querySelector("[data-testid='meetings-nudge']")).toBeNull();
+  });
+
+  it("names who has been missing, and how many the button is about", () => {
+    const container = renderView({ viewerIsAdmin: true, ...nudgeProps() });
+    const list = container.querySelector<HTMLElement>("[data-testid='meetings-nudge-list']");
+    expect(list?.textContent).toContain("Mei Chen");
+    expect(list?.textContent).toContain("full member");
+    // The count is on the button because what it sends names people on Slack: "Send" alone does
+    // not say how many.
+    expect(
+      container.querySelector<HTMLElement>("[data-testid='meetings-nudge-send']")?.textContent,
+    ).toContain("1");
+  });
+
+  it("loads on first open, and not again on the next toggle", () => {
+    const onPreview = vi.fn();
+    const container = renderView({
+      viewerIsAdmin: true,
+      nudge: {
+        preview: null,
+        result: null,
+        busy: false,
+        error: null,
+        onPreview,
+        onSend: vi.fn(),
+      },
+    });
+    const panel = container.querySelector<HTMLDetailsElement>("[data-testid='meetings-nudge']");
+    panel!.open = true;
+    panel!.dispatchEvent(new Event("toggle"));
+    expect(onPreview).toHaveBeenCalledTimes(1);
+    panel!.open = false;
+    panel!.dispatchEvent(new Event("toggle"));
+    expect(onPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when the calendar could not be read, so the list may be short", () => {
+    const container = renderView({
+      viewerIsAdmin: true,
+      ...nudgeProps({ preview: { ...NUDGE_PREVIEW, invite_resolved: false } }),
+    });
+    expect(container.querySelector("[data-testid='meetings-nudge-no-invite']")).not.toBeNull();
+  });
+
+  it("says nothing can qualify yet when fewer than two meetings have a roster", () => {
+    const container = renderView({
+      viewerIsAdmin: true,
+      ...nudgeProps({
+        preview: { ...NUDGE_PREVIEW, meetings: [NUDGE_PREVIEW.meetings[0]!], absent: [] },
+      }),
+    });
+    expect(container.textContent).toContain("Fewer than 2 meetings");
+    expect(container.querySelector("[data-testid='meetings-nudge-send']")).toBeNull();
   });
 });

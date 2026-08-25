@@ -9,10 +9,12 @@
 // whatever came back, which is why a bug in this file cannot leak an attendance list.
 import {
   createMeeting,
+  fetchMeetingAttendanceNudges,
   fetchMeetings,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   saveMeetingAttendance,
+  sendMeetingAttendanceNudges,
   type MeetingAttendee,
   type MeetingRecord,
 } from "../auth/session.ts";
@@ -132,4 +134,69 @@ export async function fileAdminBotMeeting(
 function replaceMeeting(meetings: MeetingRecord[], updated: MeetingRecord): MeetingRecord[] {
   // A new array, not a mutated one: lit only re-renders a @state() array when the reference changes.
   return meetings.map((meeting) => (meeting.id === updated.id ? updated : meeting));
+}
+
+/**
+ * Who has missed the last two meetings, without telling them yet.
+ *
+ * Always a preview before a send. The message names people and goes out on Slack, so an admin gets
+ * to see the list -- and, when the calendar could not be read, to see that the audience fell back
+ * to the roster's full members and may be missing somebody who is only on the invite.
+ */
+export async function loadAdminBotMeetingNudges(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotMeetingNudgeError = SIGN_IN_FIRST;
+    return;
+  }
+  host.adminBotMeetingNudgeBusy = true;
+  host.adminBotMeetingNudgeError = null;
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  try {
+    const result = await fetchMeetingAttendanceNudges(stored.sessionToken, baseUrl);
+    if (!result.ok) {
+      host.adminBotMeetingNudgeError = failureText(
+        result,
+        "Could not work out who has been missing meetings.",
+        baseUrl,
+      );
+      return;
+    }
+    host.adminBotMeetingNudgePreview = result.value;
+  } finally {
+    host.adminBotMeetingNudgeBusy = false;
+  }
+}
+
+/**
+ * Send them.
+ *
+ * The preview is re-read afterwards rather than cleared: the service refuses to tell somebody twice
+ * about the same pair of meetings, so the list that comes back is what a second press would do --
+ * which is nothing, and it should look like nothing.
+ */
+export async function sendAdminBotMeetingNudges(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotMeetingNudgeError = SIGN_IN_FIRST;
+    return;
+  }
+  host.adminBotMeetingNudgeBusy = true;
+  host.adminBotMeetingNudgeError = null;
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  try {
+    const result = await sendMeetingAttendanceNudges(stored.sessionToken, baseUrl);
+    if (!result.ok) {
+      host.adminBotMeetingNudgeError = failureText(
+        result,
+        "Could not send the reminders.",
+        baseUrl,
+      );
+      return;
+    }
+    host.adminBotMeetingNudgeResult = result.value;
+  } finally {
+    host.adminBotMeetingNudgeBusy = false;
+  }
+  await loadAdminBotMeetingNudges(host);
 }

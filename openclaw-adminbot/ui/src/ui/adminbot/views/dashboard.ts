@@ -18,7 +18,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
-import { iconForTab, type Tab } from "../../navigation.ts";
+import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { nextStepFor } from "../next-step.ts";
 import { renderDeadlines } from "./deadlines.ts";
@@ -102,6 +102,35 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
       </ul>
     `,
   };
+}
+
+/**
+ * Anything the lab has told this member, as one card per notification.
+ *
+ * The same sentence reached them on Slack and popped in the corner when it arrived. This is the
+ * copy that is still here tomorrow: a DM scrolls away and a popup is dismissed in a second, and
+ * neither is a place to look something up. Read notifications stay on the card -- "read" means the
+ * member has seen it, not that they have done it, and an attendance reminder is worth keeping on
+ * screen until they have actually turned up to a meeting.
+ */
+function notificationItems(state: AppViewState, role: AccessRole): AttentionItem[] {
+  if (role === "anonymous") {
+    return [];
+  }
+  return (state.adminBotNotifications ?? []).map((notification) => ({
+    id: `notification-${notification.id}`,
+    title: notification.title,
+    summary: notification.body,
+    actionLabel: t("dashboard.notifications.open"),
+    onAction: () => {
+      void state.markNotificationsRead?.([notification.id]);
+      // Checked rather than cast: the tab is a string the service chose, and routing at a view that
+      // does not exist would be worse than the card simply not navigating.
+      if (isKnownTab(notification.tab)) {
+        state.setTab(notification.tab);
+      }
+    },
+  }));
 }
 
 function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
@@ -195,6 +224,9 @@ function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] 
   // someone else's to clear. Onboarding itself is not in this stack -- it is the checklist at the
   // very bottom of the profile page, see renderOnboardingChecklist.
   return [
+    // Above the member's own housekeeping: a notification is the lab having decided to say
+    // something to this person, which outranks a blank field nobody has asked about.
+    ...notificationItems(state, role),
     mandatoryFieldsItem(state),
     nextStepItem(state, role),
     proposalsItem(state, role),
