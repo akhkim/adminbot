@@ -527,13 +527,22 @@ export type AdminBotSlackChannelNamingRecord = {
 };
 
 import { AdminBotMemoryStore } from "../persistence/memory.js";
-// The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
-// re-exported so callers that import it from the service keep working.
 import {
   adminBotCityChannelMinimumMembers,
   buildCityChannelMessage,
   cityChannelPlan,
 } from "../workflows/members/city-channels.js";
+// The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
+// re-exported so callers that import it from the service keep working.
+import {
+  adminBotThesisGradingDelayDays,
+  adminBotThesisGuidanceLeadDays,
+  buildThesisGradingMessage,
+  buildThesisGuidanceMessage,
+  thesisLedgerSubject,
+  thesisMilestoneActions,
+  thesisMilestones,
+} from "../workflows/members/thesis-milestones.js";
 
 // Re-exported so callers that imported the store from the service keep working.
 export { AdminBotMemoryStore };
@@ -5675,6 +5684,155 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * The two things a thesis date on somebody's own timeline is worth saying.
+   *
+   * Before it: the member is pointed at the guidebook section on submitting, two weeks out, while
+   * reading it can still change what they do. After it: the head professor is asked to grade what
+   * was due, five days on.
+   *
+   * The date is the member's own milestone rather than a field the lab keeps about them, which is
+   * the right source and also the fragile one -- so moving a thesis re-arms both messages, because
+   * the ledger subject carries the date. Re-saving the same timeline does not.
+   *
+   * The grading reminder is one message however many theses are due, addressed to the professor
+   * about them. Unlike the escalation DM the member is not in it: this is a task of hers, and a
+   * student who has just submitted does not need to watch their supervisor being reminded to mark
+   * it.
+   */
+  async sweepThesisMilestones(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      guidance: Array<{ member_id: string; date: string; days_until: number }>;
+      grading: Array<{ member_id: string; date: string; days_since: number }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const ledger = this.nudgeLedgerIndex();
+    const actions = thesisMilestoneActions(thesisMilestones(this.store.listLabMembers()), now);
+    const guidance: Array<{ member_id: string; date: string; days_until: number }> = [];
+    const gradingDue: Array<{
+      member_id: string;
+      member_name: string;
+      label: string;
+      date: string;
+      days_since: number;
+    }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    const alreadySaid = (subject: string) =>
+      Boolean(ledger.get(`thesis_milestone|${subject}`)?.last_nudged_at);
+    const remember = (subject: string, memberId: string) => {
+      this.store.saveNudgeLedgerEntry({
+        domain: "thesis_milestone",
+        subject_id: subject,
+        member_id: memberId,
+        last_nudged_at: nowIso,
+        nudge_count: 1,
+      });
+    };
+
+    for (const action of actions) {
+      const subject = thesisLedgerSubject(action);
+      if (alreadySaid(subject)) {
+        continue;
+      }
+      if (action.kind === "guidance") {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [action.member_id],
+            message: buildThesisGuidanceMessage(action),
+            kind: "nudge",
+            title: "Your thesis deadline is coming up",
+            tab: "adminbotTimeAvailability",
+          },
+          actor,
+        );
+        // Stamped either way: a member with no Slack still got the notification, and a failure that
+        // re-fired nightly would be a fortnight of identical messages.
+        remember(subject, action.member_id);
+        if (!sent.ok) {
+          skipped.push({ member_id: action.member_id, reason: sent.error.message });
+          continue;
+        }
+        skipped.push(...sent.payload.skipped);
+        guidance.push({
+          member_id: action.member_id,
+          date: action.date,
+          days_until: action.days_until,
+        });
+        continue;
+      }
+      gradingDue.push({
+        member_id: action.member_id,
+        member_name: action.member_name,
+        label: action.label,
+        date: action.date,
+        days_since: action.days_since,
+      });
+    }
+
+    if (gradingDue.length) {
+      const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+      if (!headProfessorId) {
+        skipped.push({
+          member_id: "head_professor",
+          reason: "no head professor is configured to remind",
+        });
+      } else {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [headProfessorId],
+            message: buildThesisGradingMessage(gradingDue),
+            kind: "nudge",
+            title: gradingDue.length === 1 ? "A thesis is ready to grade" : "Theses ready to grade",
+            tab: "adminbotMembers",
+          },
+          actor,
+        );
+        for (const action of gradingDue) {
+          remember(`thesis|grading|${action.member_id}|${action.date}`, headProfessorId);
+        }
+        if (!sent.ok) {
+          skipped.push({ member_id: headProfessorId, reason: sent.error.message });
+        } else {
+          skipped.push(...sent.payload.skipped);
+        }
+      }
+    }
+
+    this.recordAudit({
+      type: "thesis_milestones.swept",
+      actor,
+      details: {
+        lead_days: adminBotThesisGuidanceLeadDays,
+        grading_delay_days: adminBotThesisGradingDelayDays,
+        guidance: guidance.length,
+        grading: gradingDue.length,
+        skipped: skipped.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        guidance,
+        grading: gradingDue.map((action) => ({
+          member_id: action.member_id,
+          date: action.date,
+          days_since: action.days_since,
+        })),
+        skipped,
+      },
+    };
   }
 
   /**

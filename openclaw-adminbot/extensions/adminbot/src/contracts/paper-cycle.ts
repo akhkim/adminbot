@@ -140,6 +140,11 @@ export const adminBotNudgeDomains = [
   "social_consent",
   "conference_attendance",
   "paper_reimbursement",
+  // A thesis on somebody's own timeline: the read-the-guidebook nudge before it, and the reminder
+  // to the head professor to grade it after. Same ledger for the same reason as the rest -- the
+  // cadence belongs to the person, and a thesis week is exactly when nobody needs a fourth Slack
+  // message about a poster.
+  "thesis_milestone",
   "profile_field",
 ] as const;
 
