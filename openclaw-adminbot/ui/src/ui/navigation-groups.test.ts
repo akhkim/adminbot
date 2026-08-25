@@ -70,8 +70,8 @@ describe("TAB_GROUPS", () => {
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
     expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
-    // Seven entries, not ten: the nudge surfaces and the membership surfaces are each one page
-    // with a tab bar inside it (TAB_PAGES), and only the landing tab is listed here.
+    // Seven entries, not ten: Lab Overview, Nudges and Membership are each one page with a tab bar
+    // inside it (TAB_PAGES), and only the landing tab is listed here.
     expect(byLabel("admin")).toEqual([
       "adminbot",
       "adminbotPapers",
@@ -107,6 +107,7 @@ describe("TAB_GROUPS", () => {
     expect(isTabInGroup(admin, "adminbotWorkshopNudges")).toBe(true);
     expect(isTabInGroup(admin, "adminbotOnboarding")).toBe(true);
     expect(isTabInGroup(admin, "adminbotProfileOverview")).toBe(true);
+    expect(sidebarTabFor("adminbotProfileOverview")).toBe("adminbotPapers");
   });
 
   it("keeps every sub-tab path routable so existing links still land", () => {

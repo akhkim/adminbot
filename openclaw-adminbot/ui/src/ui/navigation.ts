@@ -83,11 +83,14 @@ export const TAB_GROUPS = [
  * entries; requests, onboarding and profile completeness are three views of one person's arrival.
  */
 export const TAB_PAGES = [
+  // Where the lab stands, in its two halves. Profile Completeness is not a smaller version of
+  // Active Papers: it counts a member's own fields, their timeline entries and how many of their
+  // papers carry an update they wrote themselves, while Active Papers is the pipeline across every
+  // paper in the lab. Neither answers the other's question, and an administrator taking stock wants
+  // both, so they sit on one page rather than two entries that look interchangeable and are not.
+  { page: "labOverview", tabs: ["adminbotPapers", "adminbotProfileOverview"] },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
-  {
-    page: "membership",
-    tabs: ["adminbotRegistrations", "adminbotOnboarding", "adminbotProfileOverview"],
-  },
+  { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding"] },
 ] as const satisfies ReadonlyArray<{ page: string; tabs: readonly Tab[] }>;
 
 type TabPage = (typeof TAB_PAGES)[number];
@@ -423,8 +426,9 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotMeetingRequests":
       return "clock";
+    // The landing tab of the Lab Overview page, so this is where the lab stands as a whole.
     case "adminbotPapers":
-      return "fileText";
+      return "barChart";
     case "adminbotWorkshopNudges":
       return "send";
     // The landing tab of the Nudges page, so this is the whole page's icon: what AdminBot sends.

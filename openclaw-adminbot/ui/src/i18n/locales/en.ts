@@ -402,6 +402,7 @@ export const en: TranslationMap = {
   // What the sidebar and the page heading call a page that holds several tabs. The tabs keep their
   // own `tabs.*` labels for the bar inside the page.
   pages: {
+    labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
   },

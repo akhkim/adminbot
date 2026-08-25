@@ -70,7 +70,11 @@ describe("profile overview controller", () => {
       "/members/profile-overview": () => json({ members: [ROW], mandatory_field_count: 12 }),
     });
     await loadAdminBotProfileOverview(host);
-    expect(host.adminBotProfileOverview).toEqual([ROW]);
+    // ROW is what a service older than the adoption columns sends. The counts it leaves out arrive
+    // zeroed rather than absent, because the page reads every one of them unguarded while rendering.
+    expect(host.adminBotProfileOverview).toEqual([
+      { ...ROW, self_filled_field_count: 0, projects: { total: 0, self_updated: 0 } },
+    ]);
     expect(host.adminBotProfileOverviewFieldCount).toBe(12);
     expect(host.adminBotProfileOverviewLoading).toBe(false);
   });
