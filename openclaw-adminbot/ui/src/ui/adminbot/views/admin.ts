@@ -67,6 +67,8 @@ export type AdminBotProps = {
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
   paperFilter?: PaperOverviewFilter;
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
+  /** Opens one paper's own card over the table. See renderPaperCardDialog. */
+  onOpenPaperCard?: (paperId: string) => void;
   onVenueFilter?: (venueId: string) => void;
   mode?: "admin" | "general";
   /** Which column the reported-blocker list is sorted by. */
@@ -1655,19 +1657,16 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     slots: props.paperSlotOverview ?? [],
     blockerCounts: openBlockerCounts(papers),
     stepLabel: (step) => stepLabels[step] ?? friendly(step),
+    stepCount: paperSteps.length,
   });
   const canAdd = props.mode !== "general" || Boolean(props.signedInMemberId);
   const table = renderPaperOverviewTable({
     rows,
     filter: props.paperFilter ?? EMPTY_PAPER_OVERVIEW_FILTER,
     onFilterChange: (filter) => props.onPaperFilter?.(filter),
-    // The row is a summary. Editing a paper is the edit popover this page already carries, which
-    // the title opens by the index it was rendered at.
-    onOpenPaper: (paperId) => {
-      const index = papers.findIndex((paper) => paper.id === paperId);
-      const popover = document.querySelector<HTMLElement>(`#adminbot-edit-paper-${index}`);
-      popover?.showPopover?.();
-    },
+    // The row is a summary; the paper's own card is the detail. Not the edit popover -- that is a
+    // form over the record's raw fields, where the card is the paper as everyone else reads it.
+    onOpenPaper: (paperId) => props.onOpenPaperCard?.(paperId),
     stages: paperSteps.map((step) => ({ value: step, label: stepLabels[step] ?? friendly(step) })),
   });
   const editPopovers = papers.map((paper, index) =>

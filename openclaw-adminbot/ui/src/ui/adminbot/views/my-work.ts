@@ -20,11 +20,17 @@
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
 import { html, nothing } from "lit";
+import { ref } from "lit/directives/ref.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
+import {
+  draftLinkedInPost,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+} from "../auth/session.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -39,8 +45,8 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
-import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -51,11 +57,6 @@ import {
   venueYears,
 } from "../data/venue-catalog.ts";
 import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
-import {
-  draftLinkedInPost,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
   completedOnLabel,
@@ -83,8 +84,8 @@ import {
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderPaperCycle } from "./paper-cycle.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
-import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
+import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
 import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
@@ -196,8 +197,7 @@ export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
       (memberId && paper.submitted_by_member_id === memberId) ||
       (memberId && paper.first_author_member_id === memberId) ||
       (memberId && paper.mentor_member_id === memberId) ||
-      (memberId &&
-        (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
+      (memberId && (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
       // Author entries carry marks that are about authorship, not identity -- "Joeun Yook*" for
       // equal contribution, "Yook, Joeun" from a BibTeX paste, an accent the roster spells
       // differently. This used to be a raw lowercase comparison, so a co-first author was
@@ -915,7 +915,10 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   // throws is worse than one whose draft box starts empty.
                   coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" },
                   onCoauthorDraftChange: (draft) => {
-                    const current = state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" };
+                    const current = state.myWorkCoauthorDraft?.[paper.id] ?? {
+                      email: "",
+                      name: "",
+                    };
                     state.myWorkCoauthorDraft = {
                       ...state.myWorkCoauthorDraft,
                       [paper.id]: { ...current, ...draft },
@@ -1355,7 +1358,10 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         <span class="register__label">Target venues</span>
         ${targets.map(
           (target, index) => html`
-            <div class="register__row register__row--venue" data-testid=${`register-venue-row-${index}`}>
+            <div
+              class="register__row register__row--venue"
+              data-testid=${`register-venue-row-${index}`}
+            >
               <label class="sr-only" for=${`register-venue-${index}`}>Target venue</label>
               <select
                 class="input"
@@ -1379,9 +1385,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
               >
                 ${venueYears().map(
                   (year) => html`
-                    <option value=${String(year)} ?selected=${year === target.year}>
-                      ${year}
-                    </option>
+                    <option value=${String(year)} ?selected=${year === target.year}>${year}</option>
                   `,
                 )}
               </select>
@@ -1410,9 +1414,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
                     title="Remove this venue"
                     data-testid=${`register-venue-remove-${index}`}
                     @click=${() => {
-                      state.myWorkProjectVenues = currentTargets().filter(
-                        (_, at) => at !== index,
-                      );
+                      state.myWorkProjectVenues = currentTargets().filter((_, at) => at !== index);
                       props.onRerender?.();
                     }}
                   >
@@ -1833,6 +1835,91 @@ function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWor
         Pre-register a paper
       </button>
     </section>
+  `;
+}
+
+/**
+ * Opens the dialog once it is in the document.
+ *
+ * `showModal()` and not the `open` attribute: only the modal form gives the focus trap, the Escape
+ * key and the backdrop, and a card with a dozen editable fields behind a non-modal panel is a way
+ * to type into the wrong one.
+ */
+function showPaperDialog(element?: Element) {
+  // `showModal` is guarded rather than assumed: jsdom does not implement it, and a render helper
+  // that throws there takes down every test of any page this dialog happens to be on.
+  if (!(element instanceof HTMLDialogElement) || element.open) {
+    return;
+  }
+  const open = () => {
+    if (element.isConnected && !element.open && typeof element.showModal === "function") {
+      element.showModal();
+    }
+  };
+  if (element.isConnected) {
+    open();
+  } else {
+    queueMicrotask(open);
+  }
+}
+
+/**
+ * One paper's card, opened from the row that names it.
+ *
+ * Active Papers used to render this card for every paper in the lab, stacked under the table -- the
+ * same deck a member gets for their own three or four papers, over seventy. That is not a page an
+ * administrator reads; it is a page they scroll past to reach the boards below it. The card is
+ * still exactly the card, with the same fields and the same writes. It just arrives when somebody
+ * asks for a specific paper, which is the only time it answers anything.
+ *
+ * Always expanded: the dialog was opened to read this paper, so making its body a second click is
+ * asking the same question twice.
+ */
+export function renderPaperCardDialog(params: {
+  state: AppViewState;
+  props: MyWorkProps;
+  paper: AdminBotPaperRecord;
+  onClose: () => void;
+}) {
+  return html`
+    <dialog
+      class="paper-card-dialog"
+      data-testid="paper-card-dialog"
+      ${ref(showPaperDialog)}
+      @click=${(event: Event) => {
+        // The backdrop is the dialog itself; a click that lands on a child is not a dismissal.
+        if (event.target === event.currentTarget) {
+          (event.currentTarget as HTMLDialogElement).close();
+        }
+      }}
+      @close=${params.onClose}
+    >
+      <div class="paper-card-dialog__panel">
+        <div class="paper-card-dialog__header">
+          <strong>${params.paper.title}</strong>
+          <button
+            class="btn btn--sm"
+            type="button"
+            data-testid="paper-card-dialog-close"
+            @click=${(event: Event) => {
+              const dialog = (event.currentTarget as HTMLElement).closest("dialog");
+              // Same reason as showPaperDialog: `close` is absent in jsdom. Without it the host
+              // never learns the card was dismissed and the row stays lit.
+              if (typeof dialog?.close === "function") {
+                dialog.close();
+              } else {
+                dialog?.dispatchEvent(new Event("close"));
+              }
+            }}
+          >
+            ${t("common.close")}
+          </button>
+        </div>
+        <div class="paper-card-dialog__body">
+          ${renderItem(params.state, params.paper, { ...params.props, openIds: [params.paper.id] })}
+        </div>
+      </div>
+    </dialog>
   `;
 }
 
