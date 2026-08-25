@@ -15,7 +15,13 @@ export const TAB_GROUPS = [
   // on it, and the work it is attached to. Time Availability sits here rather than in the shared
   // tools because it is the viewer's own schedule that they edit, and only incidentally other
   // people's that they read.
-  { label: "myInfo", tabs: ["profile", "adminbotTimeAvailability", "myWork"] },
+  // Onboarding sits beside the profile rather than at the bottom of it. It used to be the last
+  // card on My Profile, which made a page somebody edits weekly end with a checklist they walk
+  // once -- so the thing they came for was above a wall of steps they had already done.
+  {
+    label: "myInfo",
+    tabs: ["profile", "myOnboarding", "adminbotTimeAvailability", "myWork"],
+  },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
   { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
@@ -160,6 +166,7 @@ export type Tab =
   | "adminbot"
   | "adminbotRegistrations"
   | "adminbotOnboarding"
+  | "myOnboarding"
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
@@ -241,6 +248,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbot: "/adminbot",
   adminbotRegistrations: "/adminbot/registrations",
   adminbotOnboarding: "/adminbot/onboarding",
+  myOnboarding: "/onboarding",
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
@@ -408,6 +416,8 @@ export function iconForTab(tab: Tab): IconName {
       return "user";
     case "adminbotOnboarding":
       return "send";
+    case "myOnboarding":
+      return "check";
     case "adminbotReimbursements":
       return "fileText";
     case "adminbotSettings":

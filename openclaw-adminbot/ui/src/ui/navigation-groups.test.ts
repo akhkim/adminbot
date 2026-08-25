@@ -52,7 +52,14 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("home")).toEqual(["dashboard"]);
     // Your own schedule is a thing you edit about yourself, and Active Papers is the lab-wide
     // pipeline (under Admin), so "My Info" is the record, the schedule kept on it and your work.
-    expect(byLabel("myInfo")).toEqual(["profile", "adminbotTimeAvailability", "myWork"]);
+    // Onboarding sits beside the profile rather than at the bottom of it: a page somebody edits
+    // weekly should not end with a checklist they walk once.
+    expect(byLabel("myInfo")).toEqual([
+      "profile",
+      "myOnboarding",
+      "adminbotTimeAvailability",
+      "myWork",
+    ]);
     // One tab per request template, named for what it asks and who it asks.
     expect(byLabel("requestsToZhijing")).toEqual([
       "adminbotSignatures",
