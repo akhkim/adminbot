@@ -33,10 +33,10 @@ URGENCY_DEFAULT = "🟢"
 #
 # Whether submitting somewhere burns the paper. An archival venue publishes it in
 # proceedings, so the work cannot then be submitted to a second archival venue; a
-# non-archival one (a workshop, IASEAI) does not, so the same paper can go on to a
-# real conference afterwards. That distinction decides whether a deadline is a
-# commitment or an opportunity, which is why the board separates them rather than
-# listing 100+ dates in one column.
+# confirmed non-archival one such as IASEAI does not. Workshops vary, so they stay
+# unknown unless their own CFP establishes the answer. That distinction decides
+# whether a deadline is a commitment or an opportunity, which is why the board
+# separates them rather than listing 100+ dates in one column.
 #
 # This is the single place the policy is written. The collector stamps `archival`
 # onto every venue from here, so the Control UI, the served board, the calendar
@@ -54,9 +54,9 @@ SECONDARY_ARCHIVAL_FAMILIES = ("EACL", "AACL")
 WORKSHOP_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL", "NeurIPS", "ICML", "ICLR", "COLM")
 NON_ARCHIVAL_FAMILIES = ("IASEAI",)
 
-# Tracks that count as the archival part of an archival venue. Anything else
-# under the same family -- a workshop, a findings-style companion, a rebuttal --
-# is not a submission that burns the paper.
+# Tracks known to be the archival part of an archival venue. Anything else under
+# the same family -- a workshop, a findings-style companion, a rebuttal -- is not
+# classified from family membership alone.
 ARCHIVAL_TRACKS = ("main", "demo")
 
 ALL_FAMILIES = tuple(dict.fromkeys(

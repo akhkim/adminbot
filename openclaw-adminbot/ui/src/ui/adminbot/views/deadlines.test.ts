@@ -58,7 +58,7 @@ describe("deadline board model", () => {
     const entries = buildDeadlineBoardEntries();
     const group = filterDeadlineBoardEntries(entries, "ICLR 2027", "");
     expect(group.length).toBeGreaterThan(1);
-    expect(group.every((entry) => entry.venue.group_label === "ICLR 2027")).toBe(true);
+    expect(group.every((entry) => entry.venue.venue_group === "ICLR 2027")).toBe(true);
 
     const searched = filterDeadlineBoardEntries(entries, "", "impact-speech");
     expect(searched).toHaveLength(1);
@@ -71,7 +71,7 @@ describe("deadline board model", () => {
 
     expect(groups[0].instant).toBe(groups[0].entries[0].instant);
     expect(groups.map((group) => group.label).toSorted()).toEqual(
-      [...new Set(entries.map((entry) => entry.venue.group_label))].toSorted(),
+      [...new Set(entries.map((entry) => entry.venue.venue_group))].toSorted(),
     );
     expect(groups.flatMap((group) => group.entries)).toHaveLength(entries.length);
     expect(
@@ -81,15 +81,15 @@ describe("deadline board model", () => {
         .toSorted(),
     ).toEqual(entries.map((entry) => entry.venue.id).toSorted());
     const neurips = entries.filter(
-      (entry) => entry.venue.venue_group.replace(/\s+workshops$/iu, "") === "NeurIPS 2026",
+      (entry) => entry.venue.venue_group === "NeurIPS 2026 Workshops",
     );
-    const neuripsGroup = groups.find((group) => group.label === "NeurIPS 2026");
+    const neuripsGroup = groups.find((group) => group.label === "NeurIPS 2026 Workshops");
     expect(neurips.length).toBeGreaterThan(100);
     expect(neuripsGroup?.entries.length).toBe(neurips.length);
     expect(neuripsGroup?.sections.unknown.length).toBeGreaterThan(100);
-    const emnlpGroup = groups.find((group) => group.label === "EMNLP 2026");
-    expect(emnlpGroup?.sections.archival.length).toBeGreaterThan(0);
+    const emnlpGroup = groups.find((group) => group.label === "EMNLP 2026 Workshops");
     expect(emnlpGroup?.sections.unknown.length).toBeGreaterThan(0);
+    expect(groups.find((group) => group.label === "EMNLP 2026")?.sections.archival.length).toBe(1);
   });
 });
 
@@ -140,6 +140,29 @@ describe("renderDeadlines", () => {
     expect(groups.length).toBeGreaterThan(1);
     expect(groups.every((label) => label.startsWith("ICLR 2027"))).toBe(true);
     expect(button.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("uses the explicit workshop labels in cards and grouped headings", async () => {
+    const container = await renderView();
+    const labels = [...container.querySelectorAll(".deadline-board__groups button")].map((button) =>
+      button.textContent?.trim().replace(/\s+\d+$/u, ""),
+    );
+
+    expect(labels).toContain("EMNLP 2026 Workshops");
+    expect(labels).toContain("NeurIPS 2026 Workshops");
+    expect(labels).toContain("ICLR 2027");
+    expect(labels).toContain("EACL 2027");
+    expect(labels).toContain("ARR October 2026");
+
+    buttonNamed(container, "Groups").click();
+    await settle(container);
+    const headings = [...container.querySelectorAll(".deadline-group__heading strong")].map(
+      (heading) => heading.textContent?.trim(),
+    );
+    expect(headings).toContain("EMNLP 2026 Workshops");
+    expect(headings).toContain("NeurIPS 2026 Workshops");
+    expect(headings).toContain("ICLR 2027");
+    expect(headings).toContain("EACL 2027");
   });
 
   it("searches the visible board in place", async () => {
@@ -227,7 +250,7 @@ describe("renderDeadlines", () => {
       (entry) => entry.venue.name === workshop.querySelector(".deadline-card__name")?.textContent,
     )!.venue;
     expect(workshop.querySelector(".deadline-card__group-name")?.textContent).toBe(
-      venue.group_label,
+      venue.venue_group,
     );
     const source = workshop.querySelector<HTMLAnchorElement>(".deadline-card__source")!;
     expect(source.target).toBe("_blank");

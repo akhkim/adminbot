@@ -19,7 +19,6 @@
       "archival_status": "archival",
       "venue_priority": "primary",
       "archival": true,
-      "group_label": "EMNLP 2026",
       "milestone": "commitment"
     },
     {
@@ -38,7 +37,6 @@
       "archival_status": "unknown",
       "venue_priority": "standard",
       "archival": false,
-      "group_label": "ARR August 2026",
       "milestone": "direct_submission"
     },
     {
@@ -46,7 +44,6 @@
       "name": "NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
       "venue_type": "workshop",
       "venue_group": "EMNLP 2026 Workshops",
-      "group_label": "EMNLP 2026",
       "track": "workshop",
       "submission_type": "commitment",
       "deadline_label": "ARR commitment",
@@ -76,7 +73,6 @@
       "archival_status": "unknown",
       "venue_priority": "standard",
       "archival": false,
-      "group_label": "NeurIPS 2026",
       "milestone": "rebuttal"
     },
     {
@@ -95,8 +91,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_MathNLP_ARR_Commitment",
@@ -114,8 +109,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_LUHME_ARR_Commitment",
@@ -133,8 +127,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_UncertaiNLP_ARR_Commitment",
@@ -152,8 +145,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_ORACLE_ARR_Commitment",
@@ -171,8 +163,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_WNUT_ARR_Commitment",
@@ -190,8 +181,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_IMPACT-SPEECH_ARR_Commitment",
@@ -209,8 +199,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_WSLP",
@@ -228,8 +217,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_MINT_ARR_Commitment",
@@ -247,8 +235,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_BlackboxNLP_ARR_Commitment",
@@ -266,8 +253,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_WiNLP_ARR_Commitment",
@@ -285,8 +271,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_AKBC_ARR_Commitment",
@@ -304,8 +289,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_SALMA_ARR_Commitment",
@@ -323,8 +307,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_FinNLP_ARR_Commitment",
@@ -342,8 +325,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_NLLP_ARR_Commitment",
@@ -361,8 +343,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_PANDORA_ARR_Commitment",
@@ -380,8 +361,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_InfPriv_Fast_Track",
@@ -399,8 +379,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AgenticWeb",
@@ -418,8 +397,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_HAIC",
@@ -437,8 +415,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AABA4ET",
@@ -456,8 +433,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AutoMLR",
@@ -475,8 +451,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_WRL",
@@ -494,8 +469,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AISciK",
@@ -513,8 +487,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AIM",
@@ -532,8 +505,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4PowerGrids",
@@ -551,8 +523,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI_and_the_Self",
@@ -570,8 +541,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ASCI",
@@ -589,8 +559,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4Mat",
@@ -608,8 +577,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4ChipDesign",
@@ -627,8 +595,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AIDaR",
@@ -646,8 +613,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AXIOM",
@@ -665,8 +631,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Africa_in_AI",
@@ -684,8 +649,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_BabyVLM",
@@ -703,8 +667,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_BeNTo",
@@ -722,8 +685,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_InfPriv",
@@ -741,8 +703,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_DevAI",
@@ -760,8 +721,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_DiffuLM",
@@ -779,8 +739,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_DynaFront",
@@ -798,8 +757,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Meta-Agents",
@@ -817,8 +775,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_JUDGe",
@@ -836,8 +793,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_FAST",
@@ -855,8 +811,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_FLMSec",
@@ -874,8 +829,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_VLM4RWD",
@@ -893,8 +847,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ICBINB-BIO",
@@ -912,8 +865,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_InterpScience",
@@ -931,8 +883,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_LXAI",
@@ -950,8 +901,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_MLForSys",
@@ -969,8 +919,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4Science",
@@ -988,8 +937,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AgenticLS",
@@ -1007,8 +955,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AgenticOS",
@@ -1026,8 +973,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GlobalSouthAI",
@@ -1045,8 +991,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_MLxOR",
@@ -1064,8 +1009,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_TAE",
@@ -1083,8 +1027,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_EvoRobust",
@@ -1102,8 +1045,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RTCA",
@@ -1121,8 +1063,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Verify-Agents",
@@ -1140,8 +1081,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4DD",
@@ -1159,8 +1099,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4MetaScience",
@@ -1178,8 +1117,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_STODY",
@@ -1197,8 +1135,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_VERICODEGEN",
@@ -1216,8 +1153,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_VERICODEGEN_Competition",
@@ -1235,8 +1171,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI-Native_Academia",
@@ -1254,8 +1189,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ML4Molecules",
@@ -1273,8 +1207,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Child_Safety_in_AI",
@@ -1292,8 +1225,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_CLEA",
@@ -1311,8 +1243,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_CL4FMAgents",
@@ -1330,8 +1261,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_CWM",
@@ -1349,8 +1279,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_BiAlign",
@@ -1368,8 +1297,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_E-values",
@@ -1387,8 +1315,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_BrainBodyFM",
@@ -1406,8 +1333,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_FLLMPT",
@@ -1425,8 +1351,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_UserSim",
@@ -1444,8 +1369,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Interp4Discovery",
@@ -1463,8 +1387,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_LP4FM",
@@ -1482,8 +1405,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Med-Reasoner",
@@ -1501,8 +1423,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_PhysUnderstand",
@@ -1520,8 +1441,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_PriGM",
@@ -1539,8 +1459,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ReMuCAI",
@@ -1558,8 +1477,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_SaTQuML",
@@ -1577,8 +1495,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NeurReps_Extended_Abstracts",
@@ -1596,8 +1513,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NeurReps_Findings",
@@ -1615,8 +1531,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NeurReps_Proceedings",
@@ -1634,8 +1549,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_TTCL",
@@ -1653,8 +1567,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GDDL",
@@ -1672,8 +1585,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_EIML",
@@ -1691,8 +1603,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_FMTS",
@@ -1710,8 +1621,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_PALM",
@@ -1729,8 +1639,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Pre-to-Post",
@@ -1748,8 +1657,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_CODEC-FM",
@@ -1767,8 +1675,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GEM_Bio",
@@ -1786,8 +1693,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ML4SpatialBio",
@@ -1805,8 +1711,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NeuralArtifacts",
@@ -1824,8 +1729,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_LIGHT",
@@ -1843,8 +1747,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_LCFM",
@@ -1862,8 +1765,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NEmo",
@@ -1881,8 +1783,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_NewInML",
@@ -1900,8 +1801,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_OPT",
@@ -1919,8 +1819,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ODI",
@@ -1938,8 +1837,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_PTA",
@@ -1957,8 +1855,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_MPLR-FM",
@@ -1976,8 +1873,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_QueerInAI",
@@ -1995,8 +1891,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RL4XS",
@@ -2014,8 +1909,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RPS",
@@ -2033,8 +1927,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RCMLR",
@@ -2052,8 +1945,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RoCo-Spring",
@@ -2071,8 +1963,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RoboPAD",
@@ -2090,8 +1981,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Robotics_World_Modeling",
@@ -2109,8 +1999,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_SLM-Agents",
@@ -2128,8 +2017,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_SocialAgent",
@@ -2147,8 +2035,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Sim2Sci",
@@ -2166,8 +2053,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_TCCML",
@@ -2185,8 +2071,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_IAB",
@@ -2204,8 +2089,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_IAB_Competition_Paper_Track",
@@ -2223,8 +2107,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_PhysWorldAI",
@@ -2242,8 +2125,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_Simbiochem",
@@ -2261,8 +2143,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_MusIML",
@@ -2280,8 +2161,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_MATH-AI",
@@ -2299,8 +2179,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GenAI4Health",
@@ -2318,8 +2197,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GenAI4Health_Demonstration_Paper_Track",
@@ -2337,8 +2215,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_GenAI4Health_Position_Paper_Track",
@@ -2356,8 +2233,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_ATTRIB",
@@ -2375,8 +2251,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AIWILD",
@@ -2394,8 +2269,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_AI4GOOD",
@@ -2413,8 +2287,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_WiML",
@@ -2432,8 +2305,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_TS-LIMITS",
@@ -2451,8 +2323,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_EconML",
@@ -2470,8 +2341,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_IAEval",
@@ -2489,8 +2359,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_RAAAI",
@@ -2508,8 +2377,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_WMHS",
@@ -2527,8 +2395,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_WM_PAI",
@@ -2546,8 +2413,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_XAI4Science",
@@ -2565,8 +2431,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "neurips2026_ws_TCCML_Tutorials_Track",
@@ -2584,8 +2449,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "NeurIPS 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_DocInsights_ARR_Commitment",
@@ -2603,8 +2467,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_REALM_ARR_Commitment",
@@ -2622,8 +2485,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_WaC-13_ARR_Commitment",
@@ -2641,8 +2503,7 @@
       "milestone": "commitment",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "emnlp2026_ws_MRL",
@@ -2660,8 +2521,7 @@
       "milestone": "direct_submission",
       "entry_type": "workshop",
       "archival_status": "unknown",
-      "venue_priority": "standard",
-      "group_label": "EMNLP 2026"
+      "venue_priority": "standard"
     },
     {
       "id": "iclr2027_abstract",
@@ -2679,7 +2539,6 @@
       "archival_status": "archival",
       "venue_priority": "primary",
       "archival": true,
-      "group_label": "ICLR 2027",
       "milestone": "abstract"
     },
     {
@@ -2698,7 +2557,6 @@
       "archival_status": "archival",
       "venue_priority": "secondary",
       "archival": true,
-      "group_label": "EACL 2027",
       "milestone": "demo"
     },
     {
@@ -2717,7 +2575,6 @@
       "archival_status": "archival",
       "venue_priority": "primary",
       "archival": true,
-      "group_label": "ICLR 2027",
       "milestone": "full_paper"
     },
     {
@@ -2736,7 +2593,6 @@
       "archival_status": "archival",
       "venue_priority": "secondary",
       "archival": true,
-      "group_label": "EACL 2027",
       "milestone": "commitment"
     },
     {
@@ -2755,7 +2611,6 @@
       "archival_status": "unknown",
       "venue_priority": "standard",
       "archival": false,
-      "group_label": "ARR October 2026",
       "milestone": "direct_submission"
     },
     {
@@ -2774,7 +2629,6 @@
       "archival_status": "archival",
       "venue_priority": "primary",
       "archival": true,
-      "group_label": "NAACL 2027",
       "milestone": "direct_submission"
     },
     {
@@ -2793,7 +2647,6 @@
       "archival_status": "archival",
       "venue_priority": "primary",
       "archival": true,
-      "group_label": "NAACL 2027",
       "milestone": "commitment"
     }
   ]
