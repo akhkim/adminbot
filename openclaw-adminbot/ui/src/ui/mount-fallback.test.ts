@@ -78,7 +78,7 @@ describe("Control UI mount fallback", () => {
     );
     expect(fallback.hidden).toBe(false);
     expect([...frameWindow.document.body.classList]).toEqual(["openclaw-mount-fallback-active"]);
-    expect(fallback.querySelector("h1")?.textContent?.trim()).toBe("Control UI did not start");
+    expect(fallback.querySelector("h1")?.textContent?.trim()).toBe("The portal did not start");
     expect(fallback.querySelector("a")?.textContent?.trim()).toBe("Control UI troubleshooting");
     expect(frameWindow.document.activeElement).toBeInstanceOf(frameWindow.HTMLElement);
     expect([...(frameWindow.document.activeElement as HTMLElement).classList]).toEqual([

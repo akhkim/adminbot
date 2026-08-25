@@ -1,7 +1,7 @@
 {
-  "name": "OpenClaw Control",
-  "short_name": "OpenClaw",
-  "description": "Multi-channel AI gateway control panel",
+  "name": "Jinesis Portal",
+  "short_name": "Jinesis",
+  "description": "The Jinesis lab's portal: papers, deadlines, requests and your own record.",
   "start_url": "./",
   "display": "standalone",
   "theme_color": "#0a0a0a",

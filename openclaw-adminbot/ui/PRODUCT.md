@@ -42,7 +42,7 @@ The Control UI's access table (`ui/src/ui/adminbot/access.ts`) is a **visibility
 
 - Product/lab name: **Jinesis Lab**, wordmark rendered as "Jinesis" + "Lab" (two-weight lockup) on the signed-out landing page.
 - Existing visual system: dark theme (`#0a0a0a` background/theme color per the PWA manifest), inherited largely from the OpenClaw Control shell it forks.
-- App manifest currently still reads "OpenClaw Control" / "Multi-channel AI gateway control panel" — a legacy artifact from the fork, not a deliberate brand choice for AdminBot/Jinesis Lab.
+- App manifest reads "Jinesis Portal" / "Jinesis" — the name members see in a browser tab and on a home screen. It used to read "OpenClaw Control" / "Multi-channel AI gateway control panel", a legacy artifact of the fork rather than a brand choice.
 
 ## Evidence on Hand
 

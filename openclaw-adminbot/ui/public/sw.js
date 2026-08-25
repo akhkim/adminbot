@@ -1,4 +1,4 @@
-// OpenClaw Control – Service Worker
+// Jinesis Portal – Service Worker
 // Handles offline caching and push notifications.
 
 const CACHE_PREFIX = "openclaw-control-";
