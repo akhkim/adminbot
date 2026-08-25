@@ -234,3 +234,66 @@ describe("buildNudgeEscalationMessage", () => {
     expect(message).toContain("say so here");
   });
 });
+
+describe("which nudges are important enough to escalate", () => {
+  // The lab's answer, not a default: paper evidence, profile/timeline gaps and pre-registration
+  // are the three where nobody finding out costs something that cannot be recovered later.
+  const IMPORTANT = ["paper_slot", "profile"] as const;
+
+  it("marks the three that escalate, and only those", async () => {
+    const service = new AdminBotService(undefined, {
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    unwrap(
+      service.upsertLabMember({
+        id: "mei",
+        name: "Mei Chen",
+        privilege_level: "member",
+        slack_user_id: "U-MEI",
+      } as never),
+    );
+
+    // Stand-ins for each sender, calling the funnel exactly as the service does.
+    const cases: Array<{ title: string; kind: string; important?: boolean }> = [
+      { title: "Evidence still missing on your paper", kind: "paper_slot", important: true },
+      { title: "Your profile is missing required fields", kind: "profile", important: true },
+      { title: "Register your paper's target venue", kind: "paper_slot", important: true },
+      { title: "This week's paper update", kind: "nudge" },
+      { title: "Please join the next Monday meeting", kind: "meeting_attendance" },
+      { title: "Your profile photo needs replacing", kind: "profile" },
+      { title: "Workshops that may fit your papers", kind: "workshop" },
+    ];
+    for (const entry of cases) {
+      unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["mei"],
+            message: entry.title,
+            title: entry.title,
+            kind: entry.kind as never,
+            ...(entry.important ? { important: true } : {}),
+          },
+          "test",
+        ),
+      );
+    }
+
+    const filed = unwrap(service.listMemberNotifications("mei")).notifications;
+    const important = filed.filter((entry) => entry.important).map((entry) => entry.title);
+    expect(important.toSorted()).toEqual(
+      [
+        "Evidence still missing on your paper",
+        "Register your paper's target venue",
+        "Your profile is missing required fields",
+      ].toSorted(),
+    );
+    // The photo reminder is a profile-kind notification that is deliberately not important: the
+    // kind says where it came from, the flag says whether it escalates, and they are not the same
+    // question.
+    expect(filed.find((entry) => entry.title.includes("photo"))?.important).toBeUndefined();
+    expect(IMPORTANT).toContain(
+      filed.find((entry) => entry.title.includes("Evidence"))?.kind as never,
+    );
+  });
+});

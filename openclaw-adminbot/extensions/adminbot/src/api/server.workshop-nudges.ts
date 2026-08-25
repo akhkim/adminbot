@@ -95,6 +95,11 @@ export async function sendWorkshopNudges(params: {
         channel: "slack",
         recipient_member_ids: [memberId],
         message: recipient.draft.text,
+        kind: "workshop",
+        title: "Workshops that may fit your papers",
+        tab: "myWork",
+        // Not important: this is a suggestion an administrator chose to pass on, not something the
+        // lab is owed. Escalating an unread suggestion would be the lab chasing its own idea.
       },
       params.actor,
     );

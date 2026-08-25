@@ -404,6 +404,43 @@ authenticates with `ADMINBOT_SERVICE_TOKEN` out of the mode-600 env file, the
 same way the OpenReview and mandatory-fields passes do, and its stdout becomes
 the Cron tab's run summary. It is registered by the cron sync below, like every other recurring pass.
 
+## Nudges, and which of them escalate
+
+Every nudge goes three ways: a Slack DM, a notification in the portal, and a warning across the top
+of the member's dashboard. The notification is filed before the send and kept whatever the send
+does, so a Slack outage -- or a member with no linked Slack account -- cannot be what decides
+whether somebody was ever told.
+
+| Nudge                          | Runs                | Channel        | Escalates |
+| ------------------------------ | ------------------- | -------------- | --------- |
+| Paper evidence slots           | weekdays 09:10      | Slack          | **yes**   |
+| Profile fields / term timeline | weekdays 09:20      | Slack          | **yes**   |
+| Pre-registration               | Thursdays 14:00     | Slack          | **yes**   |
+| PaperFlow venue stage          | weekdays 09:00      | email          | no        |
+| Weekly paper updates           | Mondays 10:00       | Slack          | no        |
+| Meeting attendance             | Mondays 09:30       | Slack          | no        |
+| Profile photo                  | on demand           | Slack          | no        |
+| Onboarding step                | admin-triggered     | Slack or email | no        |
+| Workshop matches               | admin presses Nudge | Slack          | no        |
+| Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
+
+The three that escalate are the three where nobody finding out costs something that cannot be
+recovered later: a missing submission link when the deadline does not move, a blank profile or
+timeline that everything downstream is planned from, and a paper the group meeting cannot plan
+around because nobody registered it. The rest are worth saying and worth reading, and a sweep that
+pulled the head professor into every unanswered one would train everybody to ignore the ones that
+matter.
+
+An important nudge that is still unread after
+`adminBotNudgeEscalateAfterDays` (five) opens a three-way Slack DM -- AdminBot, the head professor
+and the member -- with everything of theirs that is overdue in one message. It escalates once, and
+the member is in the room: the point is the thing getting done, not a report about them.
+
+`POST /nudges/send` -- the one route where the text and the recipients come from a browser --
+deliberately drops `important`. The reason the escalation can auto-execute is that nothing but a
+server-computed sweep can raise the flag, so "AdminBot escalated this" cannot come to mean "an
+admin typed something and waited".
+
 ## Scheduled passes
 
 Every recurring AdminBot job is declared in [`config/adminbot-cron.json`](../../config/adminbot-cron.json)
