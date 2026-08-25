@@ -1,0 +1,122 @@
+{
+  "_doc": {
+    "purpose": "Every recurring AdminBot pass, in one place. scripts/adminbot-cron-sync.sh applies it.",
+    "why": "Registration used to be a `pnpm openclaw cron add` block copied out of whichever doc happened to describe that feature. Three of the fourteen wrappers had one; the rest were registered by hand on the host and existed nowhere in the repo, so 'what does AdminBot run, and when' could only be answered by reading the gateway's cron store on Aurora. A missing job is silent: nobody is nudged and nothing errors.",
+    "schedules": "Cron expressions in the gateway's timezone. Staggered on purpose -- these all hit the same service on the same box, and a 05:00 pile-up makes one slow pass look like an outage.",
+    "adding": "Add an entry here and run the sync. Do not `cron add` by hand: a job that is only on the host is a job the next deploy forgets."
+  },
+  "jobs": [
+    {
+      "name": "adminbot-email",
+      "description": "Hourly inbound email triage pass",
+      "cron": "5 * * * *",
+      "argv": ["bash", "scripts/adminbot-email-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-openreview",
+      "description": "Reviewing-cycle pass, four times a day",
+      "cron": "15 0,6,12,18 * * *",
+      "argv": ["bash", "scripts/adminbot-openreview-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-meeting-artifacts",
+      "description": "Meeting artifact drop-folder pass",
+      "cron": "20 * * * *",
+      "argv": ["bash", "scripts/adminbot-meeting-cron.sh"],
+      "timeoutSeconds": 1800
+    },
+    {
+      "name": "adminbot-member-directory",
+      "description": "Daily Slack timezone/directory sync",
+      "cron": "40 5 * * *",
+      "argv": ["bash", "scripts/adminbot-member-directory-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-slack-directory",
+      "description": "Daily Slack channel directory refresh",
+      "cron": "45 5 * * *",
+      "argv": ["bash", "scripts/adminbot-slack-directory-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-deadline-refresh-venues",
+      "description": "Refresh conference/workshop deadlines from official CFPs",
+      "cron": "50 5 * * *",
+      "argv": ["bash", "scripts/adminbot-deadline-cron.sh", "refresh-venues"],
+      "timeoutSeconds": 1800
+    },
+    {
+      "name": "adminbot-deadline-refresh-matches",
+      "description": "Re-map papers onto the refreshed deadlines",
+      "cron": "20 6 * * *",
+      "argv": ["bash", "scripts/adminbot-deadline-cron.sh", "refresh-matches"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-vector-roster",
+      "description": "Daily Vector sponsor spreadsheet refresh",
+      "cron": "30 6 * * *",
+      "argv": ["bash", "scripts/adminbot-vector-roster-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paperflow-nudges",
+      "description": "PaperFlow venue-stage nudges",
+      "cron": "0 9 * * 1-5",
+      "argv": ["bash", "scripts/adminbot-paperflow-nudge-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paper-slot-nudges",
+      "description": "Chase the evidence each paper still owes",
+      "cron": "10 9 * * 1-5",
+      "argv": ["bash", "scripts/adminbot-paper-slot-nudge-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-mandatory-fields",
+      "description": "Chase profiles and term timelines that are still blank",
+      "cron": "20 9 * * 1-5",
+      "argv": ["bash", "scripts/adminbot-mandatory-fields-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-meeting-attendance",
+      "description": "Chase members who have stopped coming to the group meeting",
+      "cron": "30 9 * * 1",
+      "argv": ["bash", "scripts/adminbot-meeting-attendance-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-weekly-updates",
+      "description": "Ask authors for the week's paper updates",
+      "cron": "0 10 * * 1",
+      "argv": ["bash", "scripts/adminbot-weekly-update-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-prereg-nudges",
+      "description": "Pre-meeting pre-registration sweep",
+      "cron": "0 14 * * 4",
+      "argv": ["bash", "scripts/adminbot-prereg-nudge-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-onboarding-confirm",
+      "description": "Onboarding-step confirmation loop",
+      "cron": "10 */2 * * *",
+      "argv": ["bash", "scripts/adminbot-onboarding-cron.sh", "confirm"],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-nudge-escalation",
+      "description": "Ask the head professor to chase what nobody answered in five days",
+      "cron": "0 11 * * 1-5",
+      "argv": ["bash", "scripts/adminbot-nudge-escalation-cron.sh"],
+      "timeoutSeconds": 900
+    }
+  ]
+}
