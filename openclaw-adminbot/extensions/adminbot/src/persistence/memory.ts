@@ -28,6 +28,7 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -43,6 +44,8 @@ import type { AdminBotServiceStore, AdminBotSlackChannelNamingRecord } from "../
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly proposals = new Map<string, AdminBotStoredProposal>();
+  private readonly deadlineSubmissionActions = new Map<string, string>();
+  private readonly publishedDeadlines = new Map<string, PublishedDeadlineRecord>();
   private readonly executionResults = new Map<string, AdminBotExecutionResult>();
   private readonly executionResultsByIdempotencyKey = new Map<string, AdminBotExecutionResult>();
   private readonly labMembers = new Map<string, AdminBotLabMember>();
@@ -98,6 +101,44 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listPending(limit?: number): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? limit : this.proposals.size;
     return [...this.proposals.values()].filter((entry) => entry.status === "pending").slice(0, max);
+  }
+
+  listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
+    return [...this.proposals.values()].filter((proposal) => proposal.type === type);
+  }
+
+  saveDeadlineProposalSubmission(
+    proposal: AdminBotStoredProposal,
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): { proposal: AdminBotStoredProposal; created: boolean } {
+    const key = `${submitterMemberId}\u0000${idempotencyKey}`;
+    const existingId = this.deadlineSubmissionActions.get(key);
+    const existing = existingId ? this.proposals.get(existingId) : undefined;
+    if (existing) {
+      return { proposal: existing, created: false };
+    }
+    this.proposals.set(proposal.id, proposal);
+    this.deadlineSubmissionActions.set(key, proposal.id);
+    return { proposal, created: true };
+  }
+
+  replaceDeadlineProposalRevision(
+    previous: AdminBotStoredProposal,
+    next: AdminBotStoredProposal,
+  ): void {
+    this.proposals.set(previous.id, previous);
+    this.proposals.set(next.id, next);
+  }
+
+  savePublishedDeadline(record: PublishedDeadlineRecord): void {
+    this.publishedDeadlines.set(record.action_id, record);
+  }
+
+  listPublishedDeadlines(): PublishedDeadlineRecord[] {
+    return [...this.publishedDeadlines.values()].toSorted((left, right) =>
+      left.published_at.localeCompare(right.published_at),
+    );
   }
 
   saveExecutionResult(result: AdminBotExecutionResult): void {

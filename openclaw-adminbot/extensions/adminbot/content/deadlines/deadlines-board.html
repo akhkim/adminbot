@@ -56,6 +56,12 @@
   }
 
   /* header */
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
   h1 {
     font-size: clamp(24px, 4vw, 34px);
     margin: 0;
@@ -67,6 +73,16 @@
     margin: 8px 0 0;
     color: var(--ink-2);
     font-size: 14.5px;
+  }
+  .proposal-link {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
   }
   /* hero + stats grid */
   .top {
@@ -763,6 +779,9 @@
     }
   }
   @media (max-width: 600px) {
+    .page-head {
+      flex-direction: column;
+    }
     .filter {
       flex: 1 1 100%;
       width: 100%;
@@ -819,8 +838,13 @@
 
 <div class="wrap">
   <div class="container">
-    <h1>Deadlines</h1>
-    <p class="sub">Past and upcoming conference &amp; workshop deadlines.</p>
+    <div class="page-head">
+      <div>
+        <h1>Deadlines</h1>
+        <p class="sub">Past and upcoming conference &amp; workshop deadlines.</p>
+      </div>
+      <a class="proposal-link" href="__DEADLINE_PROPOSAL_URL__">Propose a deadline</a>
+    </div>
 
     <div class="modes">
       <div class="toggle" role="group" aria-label="Deadline period">

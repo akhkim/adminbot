@@ -3714,7 +3714,13 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
-          ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
+          ? renderLazyView(lazyDeadlines, (m) =>
+              m.renderDeadlines({
+                role: accessRole,
+                memberId: state.memberId,
+                settings: state.settings,
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

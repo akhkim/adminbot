@@ -2,6 +2,11 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  DeadlineProposal,
+  DeadlineProposalInput,
+  DeadlineProposalStore,
+} from "../data/deadline-proposals.ts";
 import type { DeadlineVenue } from "../data/deadlines.ts";
 import {
   archivalLabelOf,
@@ -26,11 +31,12 @@ afterEach(() => {
 });
 
 async function settle(container: HTMLElement): Promise<void> {
-  await (
-    container.querySelector("adminbot-deadlines-view") as {
-      updateComplete?: Promise<unknown>;
-    }
-  )?.updateComplete;
+  const element = container.querySelector("adminbot-deadlines-view") as {
+    updateComplete?: Promise<unknown>;
+  };
+  await element?.updateComplete;
+  await Promise.resolve();
+  await element?.updateComplete;
 }
 
 async function renderView(view: "cards" | "default" = "cards"): Promise<HTMLElement> {
@@ -49,6 +55,82 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
   return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === name,
   )!;
+}
+
+function proposalInput(): DeadlineProposalInput {
+  return {
+    name: "Example Workshop",
+    parentConference: "EMNLP",
+    parentYear: "2026",
+    entryType: "workshop",
+    deadlineDate: "2026-09-14",
+    deadlineTime: "23:59",
+    timezone: "Etc/GMT+12",
+    homepageUrl: "https://example.org/workshop",
+    cfpUrl: "https://example.org/cfp",
+    openReviewUrl: "https://openreview.net/group?id=example",
+    note: "Verify the archival route.",
+  };
+}
+
+class TestProposalStore implements DeadlineProposalStore {
+  proposals: DeadlineProposal[];
+
+  constructor(proposals: DeadlineProposal[] = []) {
+    this.proposals = proposals;
+  }
+
+  async list() {
+    return this.proposals;
+  }
+
+  async listPublished() {
+    return [];
+  }
+
+  async submit(input: DeadlineProposalInput, _idempotencyKey: string) {
+    const proposal: DeadlineProposal = {
+      id: "proposal-1",
+      deadline_id: "community-1",
+      status: "pending",
+      submitter_member_id: "member-1",
+      submitter_name: "Member One",
+      current_revision: 1,
+      action_id: "action-1",
+      payload_hash: "hash-1",
+      duplicate_deadline_ids: [],
+      deadline: input,
+      revisions: [],
+      created_at: "2026-08-25T08:00:00Z",
+      updated_at: "2026-08-25T08:00:00Z",
+    };
+    this.proposals = [proposal, ...this.proposals];
+    return proposal;
+  }
+
+  async revise(id: string, input: DeadlineProposalInput) {
+    const proposal = this.proposals.find((row) => row.id === id)!;
+    const revised: DeadlineProposal = {
+      ...proposal,
+      current_revision: proposal.current_revision + 1,
+      deadline: input,
+      payload_hash: "hash-2",
+      updated_at: "2026-08-25T09:00:00Z",
+    };
+    this.proposals = this.proposals.map((row) => (row.id === id ? revised : row));
+    return revised;
+  }
+
+  async decide(proposal: DeadlineProposal, status: "published" | "rejected") {
+    const reviewed: DeadlineProposal = {
+      ...proposal,
+      status,
+      updated_at: "2026-08-25T09:00:00Z",
+      ...(status === "published" ? { published_at: "2026-08-25T09:00:00Z" } : {}),
+    };
+    this.proposals = this.proposals.map((row) => (row.id === proposal.id ? reviewed : row));
+    return reviewed;
+  }
 }
 
 describe("deadline board model", () => {
@@ -180,6 +262,191 @@ describe("deadline board model", () => {
 });
 
 describe("renderDeadlines", () => {
+  it("disables anonymous proposals without adding a notice row", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderDeadlines({ role: "anonymous", proposalStore: new TestProposalStore() }),
+      container,
+    );
+    await settle(container);
+
+    const propose = buttonNamed(container, "Propose a new deadline");
+    expect(propose.disabled).toBe(true);
+    expect(propose.closest<HTMLElement>(".deadline-proposal-trigger")?.title).toBe(
+      "Sign in to use deadline proposals.",
+    );
+    expect(propose.getAttribute("aria-describedby")).toBe("deadline-proposal-sign-in-hint");
+    expect(container.querySelector(".deadline-proposal__notice")).toBeNull();
+    expect(container.querySelector('[data-testid="deadline-my-proposals"]')).toBeNull();
+    expect(container.querySelector('[data-testid="deadline-review-proposals"]')).toBeNull();
+    propose.click();
+    expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
+  });
+
+  it("lets a signed-in member submit a pending server-backed proposal", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    render(
+      renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+
+    buttonNamed(container, "Propose a new deadline").click();
+    await settle(container);
+    expect(container.querySelector('[data-testid="deadline-review-proposals"]')).toBeNull();
+    expect(container.textContent).toContain("remain private until an administrator");
+    expect(
+      container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,
+    ).toBe(true);
+
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    const homepage = form.elements.namedItem("homepageUrl") as HTMLInputElement;
+    const cfp = form.elements.namedItem("cfpUrl") as HTMLInputElement;
+    expect(homepage.required).toBe(true);
+    expect(cfp.required).toBe(false);
+    expect(
+      [...form.querySelectorAll<HTMLInputElement>('input[type="url"]')].map((input) => input.name),
+    ).toEqual(["homepageUrl", "cfpUrl", "openReviewUrl"]);
+    const parentConference = form.elements.namedItem("parentConference") as HTMLInputElement;
+    expect(parentConference.getAttribute("role")).toBe("combobox");
+    parentConference.focus();
+    await settle(container);
+    expect(
+      [...container.querySelectorAll('[role="option"]')].map((option) =>
+        option.textContent?.trim(),
+      ),
+    ).toEqual(expect.arrayContaining(["EMNLP", "NeurIPS"]));
+    parentConference.value = "New Conference";
+    parentConference.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(
+      (form.elements.namedItem("timezone") as HTMLSelectElement).selectedOptions[0]?.textContent,
+    ).toContain("AoE — Anywhere on Earth (UTC−12)");
+    const values = proposalInput();
+    for (const [name, value] of Object.entries(values)) {
+      if (name === "parentConference") {
+        continue;
+      }
+      const control = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement;
+      control.value = value;
+    }
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+
+    expect(store.proposals).toHaveLength(1);
+    expect(store.proposals[0]).toMatchObject({
+      status: "pending",
+      submitter_member_id: "member-1",
+      deadline: { name: "Example Workshop", parentConference: "New Conference" },
+    });
+    expect(container.textContent).toContain("It is not public until approved.");
+    expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,
+    ).toBe(false);
+
+    container.querySelector<HTMLButtonElement>('[data-testid="deadline-my-proposals"]')!.click();
+    await settle(container);
+    const ownProposals = container.querySelector('[data-testid="deadline-proposal-review-panel"]')!;
+    expect(ownProposals.textContent).toContain("My deadline proposals");
+    expect(ownProposals.textContent).toContain("Submitted by you");
+    expect(ownProposals.textContent).not.toContain("member-1");
+    expect(ownProposals.querySelector(".deadline-proposal-row__actions")).toBeNull();
+  });
+
+  it("lets administrators publish the payload shown in the review queue", async () => {
+    const input = proposalInput();
+    const memberProposal: DeadlineProposal = {
+      id: "proposal-1",
+      deadline_id: "community-1",
+      status: "pending",
+      submitter_member_id: "member-1",
+      submitter_name: "Ada Member",
+      current_revision: 1,
+      action_id: "action-1",
+      payload_hash: "hash-1",
+      duplicate_deadline_ids: [],
+      deadline: input,
+      revisions: [],
+      created_at: "2026-08-25T08:00:00Z",
+      updated_at: "2026-08-25T08:00:00Z",
+    };
+    const store = new TestProposalStore([
+      memberProposal,
+      {
+        ...memberProposal,
+        id: "proposal-2",
+        deadline_id: "community-2",
+        submitter_member_id: "admin-1",
+        submitter_name: "Admin One",
+        action_id: "action-2",
+        payload_hash: "hash-2",
+        deadline: { ...input, name: "Admin Workshop" },
+      },
+    ]);
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderDeadlines({ role: "admin", memberId: "admin-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+
+    container.querySelector<HTMLButtonElement>('[data-testid="deadline-my-proposals"]')!.click();
+    await settle(container);
+    const own = container.querySelector('[data-testid="deadline-proposal-review-panel"]')!;
+    expect(own.textContent).toContain("Admin Workshop");
+    expect(own.textContent).toContain("Submitted by you");
+    expect(own.textContent).not.toContain("Example Workshop");
+    expect(own.querySelector(".deadline-proposal-row__actions")).toBeNull();
+    buttonNamed(container, "Close").click();
+    await settle(container);
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="deadline-review-proposals"]')!
+      .click();
+    await settle(container);
+    expect(
+      container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,
+    ).toBe(true);
+    const review = container.querySelector('[data-testid="deadline-proposal-review-panel"]')!;
+    expect(review.textContent).toContain("Example Workshop");
+    expect(review.textContent).toContain("Submitted by Ada Member");
+    expect(review.textContent).not.toContain("member-1");
+    expect(review.textContent).toContain("adds it to every deadline board");
+
+    buttonNamed(container, "Revise").click();
+    await settle(container);
+    const revisionForm = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    expect((revisionForm.elements.namedItem("entryType") as HTMLSelectElement).value).toBe(
+      "workshop",
+    );
+    const deadlineDate = revisionForm.elements.namedItem("deadlineDate") as HTMLInputElement;
+    expect(deadlineDate.value).toBe("2026-09-14");
+    deadlineDate.value = "2026-09-21";
+    revisionForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(store.proposals[0]).toMatchObject({
+      current_revision: 2,
+      deadline: { deadlineDate: "2026-09-21" },
+    });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="deadline-review-proposals"]')!
+      .click();
+    await settle(container);
+
+    buttonNamed(container, "Approve and publish").click();
+    await settle(container);
+    expect(store.proposals[0].status).toBe("published");
+    expect(container.querySelectorAll(".deadline-group")).not.toHaveLength(0);
+    expect(container.querySelector(".deadline-board__group-list")?.textContent).not.toContain(
+      "Example Workshop",
+    );
+  });
+
   it("renders the standalone board's native hierarchy without an embedded page", async () => {
     const container = await renderView();
 
@@ -285,9 +552,7 @@ describe("renderDeadlines", () => {
         card.dataset.venuePriority === "primary" &&
         ["main_conference", "demo_track"].includes(card.dataset.entryType ?? ""),
     )!;
-    expect(primary.querySelector('[data-priority="primary"]')?.textContent?.trim()).toBe(
-      "Primary",
-    );
+    expect(primary.querySelector('[data-priority="primary"]')?.textContent?.trim()).toBe("Primary");
     expect(primary.querySelector('[data-archival="archival"]')?.textContent?.trim()).toBe(
       "Archival",
     );

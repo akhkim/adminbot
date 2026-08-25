@@ -30,6 +30,7 @@ export const adminBotActionTypes = [
   "member_nudge.send",
   "openreview.nudge",
   "openreview.warning",
+  "deadline.publish",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -1444,6 +1445,9 @@ export type AdminBotAuditEvent = {
     | "execution.executed"
     | "execution.failed"
     | "execution.idempotent_replay"
+    | "deadline_proposal.submitted"
+    | "deadline_proposal.revised"
+    | "deadline_proposal.published"
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
     // One pass over the back catalogue, linking printed author names to the people they name.

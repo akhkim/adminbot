@@ -26,6 +26,7 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -110,6 +111,25 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_proposals_pending_idx
         ON adminbot_proposals(status, updated_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_deadline_submission_keys (
+        submitter_member_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        action_id TEXT NOT NULL REFERENCES adminbot_proposals(id),
+        PRIMARY KEY (submitter_member_id, idempotency_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS adminbot_published_deadlines (
+        action_id TEXT PRIMARY KEY REFERENCES adminbot_proposals(id),
+        proposal_id TEXT NOT NULL,
+        deadline_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        published_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_published_deadlines_id_idx
+        ON adminbot_published_deadlines(deadline_id, revision);
 
       CREATE TABLE IF NOT EXISTS adminbot_executions (
         action_id TEXT PRIMARY KEY,
@@ -638,6 +658,104 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(max) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotStoredProposal>(row.payload_json));
+  }
+
+  listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_proposals
+          WHERE action_type = ?
+          ORDER BY created_at ASC`,
+      )
+      .all(type) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotStoredProposal>(row.payload_json));
+  }
+
+  saveDeadlineProposalSubmission(
+    proposal: AdminBotStoredProposal,
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): { proposal: AdminBotStoredProposal; created: boolean } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.db
+        .prepare(
+          `SELECT p.payload_json
+            FROM adminbot_deadline_submission_keys k
+            JOIN adminbot_proposals p ON p.id = k.action_id
+            WHERE k.submitter_member_id = ? AND k.idempotency_key = ?`,
+        )
+        .get(submitterMemberId, idempotencyKey) as { payload_json?: string } | undefined;
+      if (existing?.payload_json) {
+        this.db.exec("COMMIT");
+        return {
+          proposal: parseJson<AdminBotStoredProposal>(existing.payload_json),
+          created: false,
+        };
+      }
+      this.saveProposal(proposal);
+      this.db
+        .prepare(
+          `INSERT INTO adminbot_deadline_submission_keys
+            (submitter_member_id, idempotency_key, action_id)
+            VALUES (?, ?, ?)`,
+        )
+        .run(submitterMemberId, idempotencyKey, proposal.id);
+      this.db.exec("COMMIT");
+      return { proposal, created: true };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  replaceDeadlineProposalRevision(
+    previous: AdminBotStoredProposal,
+    next: AdminBotStoredProposal,
+  ): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.updateProposal(previous);
+      this.saveProposal(next);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  savePublishedDeadline(record: PublishedDeadlineRecord): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO adminbot_published_deadlines (
+          action_id,
+          proposal_id,
+          deadline_id,
+          revision,
+          published_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        record.action_id,
+        record.proposal_id,
+        record.deadline_id,
+        record.revision,
+        record.published_at,
+        JSON.stringify(record),
+      );
+  }
+
+  listPublishedDeadlines(): PublishedDeadlineRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_published_deadlines
+          ORDER BY published_at ASC, revision ASC`,
+      )
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<PublishedDeadlineRecord>(row.payload_json));
   }
 
   saveExecutionResult(result: AdminBotExecutionResult): void {

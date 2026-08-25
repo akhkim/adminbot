@@ -33,9 +33,21 @@ def main():
     ts = ("// Generated from extensions/adminbot/content/deadlines/deadlines-board.html by\n"
           "// scripts/adminbot-deadline-web-ui-gen.py. Do not hand-edit; regenerate instead.\n"
           "// Renders the self-contained live deadline countdown board (Output 0).\n\n"
+          'import { DEFAULT_ADMINBOT_CONTROL_UI_URL } from "../../contracts/control-ui.js";\n\n'
           "const TEMPLATE = `" + esc + "`;\n\n"
-          "export function renderDeadlinesWebUi(items: readonly unknown[]): string {\n"
-          '  return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items));\n'
+          "function escapeAttribute(value: string): string {\n"
+          '  return value.replaceAll("&", "&amp;").replaceAll(\'"\', "&quot;").replaceAll("<", "&lt;");\n'
+          "}\n\n"
+          "export function renderDeadlinesWebUi(\n"
+          "  items: readonly unknown[],\n"
+          "  options: { proposalUrl?: string } = {},\n"
+          "): string {\n"
+          "  const proposalUrl = options.proposalUrl ??\n"
+          "    `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/adminbot/deadlines`;\n"
+          '  return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items)).replace(\n'
+          '    "__DEADLINE_PROPOSAL_URL__",\n'
+          "    escapeAttribute(proposalUrl),\n"
+          "  );\n"
           "}\n")
     open(OUT, "w").write(ts)
     print(f"wrote {OUT} ({len(ts)} bytes)")

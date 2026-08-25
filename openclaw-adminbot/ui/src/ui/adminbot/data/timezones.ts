@@ -34,7 +34,7 @@ export type TimezoneOption = { zone: string; label: string };
 // without pretending the label is exact across daylight-saving changes.
 const COMMON_ZONES: readonly TimezoneOption[] = [
   { zone: "UTC", label: "UTC" },
-  { zone: "Etc/GMT+12", label: "Anywhere on Earth (UTC−12)" },
+  { zone: "Etc/GMT+12", label: "AoE — Anywhere on Earth (UTC−12)" },
   { zone: "America/New_York", label: "New York (ET)" },
   { zone: "America/Chicago", label: "Chicago (CT)" },
   { zone: "America/Denver", label: "Denver (MT)" },
@@ -110,7 +110,10 @@ export function timezoneOptions(value: string): readonly TimezoneGroup[] {
   };
   const own = localTimezone();
   push(own, `Local timezone (${friendlyZoneLabel(own)})`);
-  push(value, friendlyZoneLabel(value));
+  push(
+    value,
+    COMMON_ZONES.find((option) => option.zone === value)?.label ?? friendlyZoneLabel(value),
+  );
   for (const option of COMMON_ZONES) {
     push(option.zone, option.label);
   }
