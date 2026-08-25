@@ -1110,12 +1110,29 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-width: 12rem;
+  min-width: 9rem;
 }
 
-/* "3/8" and "done" are both short; the fixed width stops the bar jumping between rows. */
-.paper-overview__stage .profile-overview__percent {
-  min-width: 3rem;
+/* Progress carries the bar and, under it, who the remainder is waiting on. */
+.paper-overview__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 11rem;
+}
+
+/* The three states are read across a table, so they are told apart by colour as well as by words:
+   the authors owe something, the venue owes something, or the paper has to go back out. */
+.paper-overview__progress [data-waiting="evidence"] {
+  color: var(--warn);
+}
+
+.paper-overview__progress [data-waiting="resubmission"] {
+  color: var(--danger, var(--warn));
+}
+
+.paper-overview__progress [data-waiting="nothing"] {
+  color: var(--ok);
 }
 
 .paper-overview__evidence {

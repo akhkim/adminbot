@@ -562,7 +562,7 @@ export type AppViewState = {
   // record of a run is the audit row and the document itself, and this only exists so the button
   // can report what it just did.
   adminBotCvDigestJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
-  // Conference Papers tab. Held whole rather than as a dozen flat fields: every part of it is
+  // Find Interesting Papers tab. Held whole rather than as a dozen flat fields: every part of it is
   // replaced together on each search, and a half-updated search is not a state worth expressing.
   adminBotVenuePapers: import("./adminbot/controllers/admin.ts").AdminBotVenuePapersState;
   // Review-only CSV workshop matcher. Drafts remain browser state until explicitly downloaded.

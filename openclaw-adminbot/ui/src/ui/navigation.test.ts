@@ -127,7 +127,7 @@ describe("titleForTab", () => {
       adminbotReimbursements: "Reimbursement Form Prep",
       adminbotPapers: "Active Papers",
       adminbotWorkshopNudges: "Workshop Matches",
-      adminbotConferencePapers: "Conference Papers",
+      adminbotConferencePapers: "Find Interesting Papers",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
       adminbotDeadlines: "Deadlines",
@@ -176,7 +176,8 @@ describe("subtitleForTab", () => {
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
-      adminbotConferencePapers: "Accepted papers at a conference, ranked against what you work on.",
+      adminbotConferencePapers:
+        "Search a conference's accepted papers, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
       adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
       adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",

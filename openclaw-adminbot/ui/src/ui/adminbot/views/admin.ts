@@ -564,9 +564,9 @@ function renderSettings(
       <article class="adminbot-editor-card">
         <div class="card-title">Searchable conferences</div>
         <div class="card-sub">
-          The conferences members can search on Conference Papers, in the order they appear. One per
-          line as <code>OpenReview venue id | label</code>. After changing this, rebuild the index
-          from the Cron tab — a conference added here has no papers until then.
+          The conferences members can search on Find Interesting Papers, in the order they appear.
+          One per line as <code>OpenReview venue id | label</code>. After changing this, rebuild the
+          index from the Cron tab — a conference added here has no papers until then.
         </div>
         <form
           class="adminbot-form"

@@ -1,4 +1,4 @@
-// The Conference Papers tab: which accepted papers at a conference are worth this member's time.
+// Find Interesting Papers: which accepted papers at a conference are worth this member's time.
 //
 // One question, asked with two controls. Everything else on screen is the answer, because the
 // interesting part of this tool is the ranking and the ranking is invisible -- a member has no way
@@ -29,7 +29,7 @@ export function renderConferencePapers(props: ConferencePapersProps) {
   return html`
     <section class="adminbot-shell conference-papers" data-testid="adminbot-conference-papers">
       <div class="card adminbot-card adminbot-card--wide">
-        <div class="card-title">Conference papers for you</div>
+        <div class="card-title">Papers worth your time</div>
         <div class="card-sub">
           Ranks everything accepted at a conference against what you work on, and shows the closest
           matches. Nothing here is filtered by keyword — a paper can match because it is about the

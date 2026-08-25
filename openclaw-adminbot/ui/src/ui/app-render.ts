@@ -3938,7 +3938,7 @@ export function renderApp(state: AppViewState) {
                     id: "venue-index",
                     name: "Conference paper index",
                     description:
-                      "Fetch every accepted paper from the configured conferences and index them, so members can search them on Conference Papers. Takes a couple of minutes per conference.",
+                      "Fetch every accepted paper from the configured conferences and index them, so members can search them on Find Interesting Papers. Takes a couple of minutes per conference.",
                     status: state.adminBotVenueIndexJob.status,
                     ...(state.adminBotVenueIndexJob.detail
                       ? { detail: state.adminBotVenueIndexJob.detail }
