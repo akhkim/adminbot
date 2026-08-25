@@ -1,6 +1,7 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
+import { visibleTabsForRole, type AccessRole } from "./adminbot/access.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -35,7 +36,10 @@ import {
   iconForTab,
   isSettingsTab,
   isTabImplemented,
+  pageTabsFor,
   pathForTab,
+  pageTitleForTab,
+  sidebarTabFor,
   titleForTab,
   type Tab,
 } from "./navigation.ts";
@@ -231,9 +235,54 @@ const NEW_CHAT_SESSIONS_LOADING_MESSAGE =
 const NEW_CHAT_CREATE_FAILED_MESSAGE =
   "New Chat could not create a new session. Try again in a moment.";
 
+/**
+ * The tab bar for a page that holds several tabs, or nothing when the tab stands alone.
+ *
+ * Real links, not buttons: each sub-tab is a tab with its own path, so middle-clicking one opens it
+ * in a new window and the back button steps between them the way it does anywhere else in the app.
+ * Filtered by role, and drawn only when more than one survives -- a bar with a single tab in it is
+ * a label pretending to be a control.
+ */
+export function renderPageTabs(state: AppViewState, role: AccessRole) {
+  const siblings = visibleTabsForRole(pageTabsFor(state.tab), role);
+  if (siblings.length < 2) {
+    return nothing;
+  }
+  return html`
+    <nav class="page-tabs" role="tablist" aria-label=${pageTitleForTab(sidebarTabFor(state.tab))}>
+      ${siblings.map((tab) => {
+        const active = state.tab === tab;
+        return html`<a
+          href=${pathForTab(tab, state.basePath)}
+          role="tab"
+          aria-selected=${active ? "true" : "false"}
+          data-active=${active ? "true" : "false"}
+          @click=${(event: MouseEvent) => {
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            state.setTab(tab);
+          }}
+          >${titleForTab(tab)}</a
+        >`;
+      })}
+    </nav>
+  `;
+}
+
 export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: boolean }) {
   const href = pathForTab(tab, state.basePath);
-  const isActive = tab === "config" ? isSettingsTab(state.tab) : state.tab === tab;
+  // A tab that shares a page with others lights up its page's sidebar entry, not one of its own.
+  const isActive = tab === "config" ? isSettingsTab(state.tab) : sidebarTabFor(state.tab) === tab;
+  const label = pageTitleForTab(tab);
   const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
   // A tab whose tool nobody has built yet holds its place without pretending to work: no href, no
   // click handler, so neither a click nor a middle-click routes at a view that does not exist.
@@ -242,12 +291,12 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
       <span
         class="nav-item nav-item--unimplemented"
         aria-disabled="true"
-        title=${`${titleForTab(tab)} — ${t("common.comingSoon")}`}
+        title=${`${label} — ${t("common.comingSoon")}`}
       >
         <span class="nav-item__icon" aria-hidden="true">${icons[iconForTab(tab)]}</span>
         ${!collapsed
           ? html`
-              <span class="nav-item__text">${titleForTab(tab)}</span>
+              <span class="nav-item__text">${label}</span>
               <span class="nav-item__badge">${t("common.comingSoon")}</span>
             `
           : nothing}
@@ -281,10 +330,10 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
         }
         state.setTab(tab);
       }}
-      title=${titleForTab(tab)}
+      title=${label}
     >
       <span class="nav-item__icon" aria-hidden="true">${icons[iconForTab(tab)]}</span>
-      ${!collapsed ? html`<span class="nav-item__text">${titleForTab(tab)}</span>` : nothing}
+      ${!collapsed ? html`<span class="nav-item__text">${label}</span>` : nothing}
     </a>
   `;
 }

@@ -153,6 +153,7 @@ import {
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
+  renderPageTabs,
   renderTab,
   resolveAdminBotMode,
   resolveAssistantAttachmentAuthToken,
@@ -279,6 +280,8 @@ import {
   pathForTab,
   SETTINGS_TABS,
   TAB_GROUPS,
+  pageTitleForTab,
+  sidebarTabFor,
   subtitleForTab,
   titleForTab,
   type Tab,
@@ -3160,7 +3163,7 @@ export function renderApp(state: AppViewState) {
               aria-hidden=${chatHeaderHidden ? "true" : nothing}
             >
               <div>
-                <div class="page-title">${titleForTab(state.tab)}</div>
+                <div class="page-title">${pageTitleForTab(sidebarTabFor(state.tab))}</div>
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
@@ -3171,6 +3174,7 @@ export function renderApp(state: AppViewState) {
                   : nothing}
               </div>
             </section>`}
+        ${renderPageTabs(state, accessRole)}
         ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
         ${state.tab === "profile"
           ? renderLocationPrompt({

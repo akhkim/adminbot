@@ -35,17 +35,17 @@ export const TAB_GROUPS = [
     label: "generalTools",
     tabs: ["adminbotReimbursements", "adminbotDeadlines", "adminbotConferencePapers"],
   },
+  // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
+  // job -- Nudges, Membership -- and the page names the surfaces inside it. Ten entries here read
+  // as ten unrelated tools; seven read as what an administrator actually does.
   {
     label: "admin",
     tabs: [
       "adminbot",
       "adminbotPapers",
-      "adminbotWorkshopNudges",
-      "adminbotRegistrations",
-      "adminbotOnboarding",
-      "adminbotProfileOverview",
-      "adminbotCalendar",
       "adminbotAnnouncements",
+      "adminbotRegistrations",
+      "adminbotCalendar",
       // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
       // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
       // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
@@ -69,6 +69,59 @@ export const TAB_GROUPS = [
     tabs: ["overview", "activity", "sessions", "usage", "agents", "skills", "nodes", "config"],
   },
 ] as const;
+
+/**
+ * Tabs that share one page, shown as a tab bar inside it rather than as sidebar siblings.
+ *
+ * Each remains a real tab with its own path, so every existing link keeps working and the sub-tab
+ * is simply where you are -- no extra view state, and the browser's back button still steps between
+ * them. The first entry is where the sidebar lands, and it is the only one the sidebar lists.
+ *
+ * The two groups are the two jobs that were spread across the widest: everything AdminBot sends to
+ * members, and everything about who is in the lab. Announcements and workshop nudges were the same
+ * decision -- "which members should hear from us, and about what" -- reached from two sidebar
+ * entries; requests, onboarding and profile completeness are three views of one person's arrival.
+ */
+export const TAB_PAGES = [
+  { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
+  {
+    page: "membership",
+    tabs: ["adminbotRegistrations", "adminbotOnboarding", "adminbotProfileOverview"],
+  },
+] as const satisfies ReadonlyArray<{ page: string; tabs: readonly Tab[] }>;
+
+type TabPage = (typeof TAB_PAGES)[number];
+
+/** The page a tab belongs to, or undefined when it is a page of its own. */
+export function pageForTab(tab: Tab): TabPage | undefined {
+  return TAB_PAGES.find((page) => (page.tabs as readonly Tab[]).includes(tab));
+}
+
+/**
+ * The sibling tabs to draw as a tab bar on this tab's page, or an empty list when it stands alone.
+ *
+ * Unfiltered by role on purpose: the caller holds the viewer's role and filters, because a bar that
+ * silently dropped a tab here would also drop it from the type that says the page has siblings.
+ */
+export function pageTabsFor(tab: Tab): readonly Tab[] {
+  return pageForTab(tab)?.tabs ?? [];
+}
+
+/** The tab the sidebar lists for this one: the page's landing tab, or the tab itself. */
+export function sidebarTabFor(tab: Tab): Tab {
+  return pageForTab(tab)?.tabs[0] ?? tab;
+}
+
+/**
+ * What the sidebar entry and the page heading say.
+ *
+ * A page's landing tab keeps its own `tabs.*` label for the bar inside the page -- "Announcements"
+ * is still what that surface is -- while the sidebar and heading name the page as a whole.
+ */
+export function pageTitleForTab(tab: Tab) {
+  const page = pageForTab(tab);
+  return page && page.tabs[0] === tab ? t(`pages.${page.page}`) : titleForTab(tab);
+}
 
 // Tabs that hold a place in the sidebar for a tool nobody has built yet. They render greyed out
 // and refuse clicks, so the slot is visible without routing anyone at a view that does not exist.
@@ -272,7 +325,9 @@ export function isSettingsTab(tab: Tab): boolean {
 }
 
 export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): boolean {
-  if ((group.tabs as readonly Tab[]).includes(tab)) {
+  // A tab inside a multi-tab page counts as its page's landing tab, so opening Workshop Nudges
+  // keeps the Nudges entry lit rather than lighting nothing.
+  if ((group.tabs as readonly Tab[]).includes(sidebarTabFor(tab))) {
     return true;
   }
   // Nested settings slices (channels/appearance/...) render inside the settings page, so they keep
@@ -345,8 +400,9 @@ export function iconForTab(tab: Tab): IconName {
       return "activity";
     case "adminbot":
       return "brain";
+    // The landing tab of the Membership page: who is in the lab, not just who is waiting.
     case "adminbotRegistrations":
-      return "check";
+      return "user";
     case "adminbotOnboarding":
       return "send";
     case "adminbotReimbursements":
@@ -371,8 +427,9 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotWorkshopNudges":
       return "send";
+    // The landing tab of the Nudges page, so this is the whole page's icon: what AdminBot sends.
     case "adminbotAnnouncements":
-      return "activity";
+      return "send";
     case "adminbotConferencePapers":
       return "fileText";
     case "adminbotCalendar":
