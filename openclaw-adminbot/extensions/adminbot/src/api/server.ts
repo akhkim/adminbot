@@ -2899,6 +2899,15 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/graduations/run") {
+    // Reads finishing months off the roster and the admin list; nothing about who is messaged or
+    // what is said comes from the caller. It never changes a status -- it asks an admin to.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sweepGraduations(principalActor(principal)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/thesis-milestones/run") {
     // Reads the members' own timelines and the head-professor setting; nothing about who is
     // messaged or what is said comes from the caller.
