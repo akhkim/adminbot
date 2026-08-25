@@ -1,7 +1,7 @@
 // The admin's profile sweep: what a row says, and what the page lets an admin do about it.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { MemberProfileOverviewRow } from "../auth/session.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
 import { renderAdminBotProfileOverview, type ProfileOverviewFilter } from "./profile-overview.ts";
 
 type DrawOptions = {
@@ -12,6 +12,7 @@ type DrawOptions = {
   notice?: string | null;
   reminding?: boolean;
   filter?: Partial<ProfileOverviewFilter>;
+  adoption?: MemberAdoptionSummary | null;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -24,6 +25,7 @@ function draw(options: DrawOptions = {}) {
     renderAdminBotProfileOverview({
       members: options.members ?? [],
       mandatoryFieldCount: options.mandatoryFieldCount ?? 12,
+      adoption: options.adoption ?? null,
       loading: options.loading ?? false,
       error: options.error ?? null,
       notice: options.notice ?? null,
@@ -46,6 +48,10 @@ function member(fields: Partial<MemberProfileOverviewRow> = {}): MemberProfileOv
     privilege_level: "member",
     missing_fields: [],
     filled_field_count: 12,
+    // Bulk-imported by default, which is the state most of the roster is actually in: complete on
+    // paper, adopted by nobody.
+    self_filled_field_count: 0,
+    projects: { total: 0, self_updated: 0 },
     timeline: { availability: 2, time_off: 1, milestones: 0, trips: 0, total: 3 },
     ...fields,
   };
@@ -60,7 +66,16 @@ describe("profile overview", () => {
     const { container } = draw({ members: [member()] });
     expect(
       [...container.querySelectorAll(".profile-overview__head")].map((h) => h.textContent?.trim()),
-    ).toEqual(["Member", "Profile", "Still missing", "Timeline entries", "Last reminded"]);
+    ).toEqual([
+      "Member",
+      "Profile",
+      // Adoption sits next to completeness rather than replacing it: the two disagreeing is the
+      // finding this page exists to surface.
+      "Filled in by them",
+      "Still missing",
+      "Timeline entries",
+      "Last reminded",
+    ]);
   });
 
   it("shows completion against the count the service supplied, not a hardcoded one", () => {
@@ -228,5 +243,47 @@ describe("profile overview", () => {
     expect(container.querySelector(".logistics-requests__empty")?.textContent).toContain(
       "Everyone is caught up",
     );
+  });
+});
+
+describe("adoption", () => {
+  it("shows a bulk-imported row as complete and adopted by nobody", () => {
+    const { container } = draw({
+      members: [member({ filled_field_count: 12, self_filled_field_count: 0 })],
+    });
+    const cell = container.querySelector<HTMLElement>(".profile-overview__adoption");
+    expect(cell?.textContent).toContain("0%");
+    // The strongest version of the same finding, called out in words so it reads across the table.
+    expect(
+      container.querySelector("[data-testid='profile-overview-never-signed-in']"),
+    ).not.toBeNull();
+  });
+
+  it("drops the never-signed-in flag once the member has been here", () => {
+    const { container } = draw({
+      members: [member({ self_filled_field_count: 6, last_login_at: "2026-08-20T09:00:00.000Z" })],
+    });
+    expect(
+      container.querySelector<HTMLElement>(".profile-overview__adoption")?.textContent,
+    ).toContain("50%");
+    expect(container.querySelector("[data-testid='profile-overview-never-signed-in']")).toBeNull();
+  });
+
+  it("leads with the lab-wide roll-up when there is one", () => {
+    const { container } = draw({
+      members: [member()],
+      adoption: { members: 4, profile_rate: 0.25, project_rate: 0.5, signed_in_ever: 1 },
+    });
+    const summary = container.querySelector<HTMLElement>(
+      "[data-testid='profile-overview-adoption']",
+    );
+    expect(summary?.textContent).toContain("25%");
+    expect(summary?.textContent).toContain("50%");
+    expect(summary?.textContent).toContain("1/4");
+  });
+
+  it("renders nothing extra before the first read answers", () => {
+    const { container } = draw({ members: [member()], adoption: null });
+    expect(container.querySelector("[data-testid='profile-overview-adoption']")).toBeNull();
   });
 });

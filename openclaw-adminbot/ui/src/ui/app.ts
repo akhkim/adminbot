@@ -15,12 +15,16 @@ import {
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot/auth/flow.ts";
 import type {
+  MemberAdoptionSummary,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
   CalendarEvent,
   LocationDrift,
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
   MeetingRecord,
+  MemberNotification,
   CalendarEventDraft,
   LabCalendar,
 } from "./adminbot/auth/session.ts";
@@ -56,9 +60,16 @@ import {
 } from "./adminbot/controllers/location-prompt.ts";
 import {
   fileAdminBotMeeting,
+  loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
+  sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
+import {
+  loadAdminBotNotifications,
+  markAdminBotNotificationsRead,
+  resetNotificationPopups,
+} from "./adminbot/controllers/notifications.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -70,7 +81,7 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
-import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
+import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import type { ProfileOverviewFilter } from "./adminbot/views/profile-overview.ts";
@@ -174,11 +185,12 @@ import {
   restoreNativeTitleTooltip,
 } from "./dom-tooltips.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
-import type { Tab } from "./navigation.ts";
+import { isKnownTab, type Tab } from "./navigation.ts";
 import { resolveAgentIdFromSessionKey } from "./session-key.ts";
 import type { SidebarContent } from "./sidebar-content.ts";
 import { loadLocalUserIdentity, loadSettings, type UiSettings } from "./storage.ts";
 import { VALID_THEME_NAMES, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
+import { dismissAllToasts } from "./toast.ts";
 import type {
   AgentsListResult,
   AgentsFilesListResult,
@@ -300,6 +312,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
   @state() adminBotMeetings?: MeetingRecord[];
+  // Attendance nudge, admin-only. Null rather than undefined once read, so "opened the panel and
+  // nobody qualified" is distinguishable from "never opened it".
+  @state() adminBotMeetingNudgePreview: MeetingAttendanceNudgePreview | null = null;
+  @state() adminBotMeetingNudgeResult: MeetingAttendanceNudgeResult | null = null;
+  @state() adminBotMeetingNudgeBusy = false;
+  @state() adminBotMeetingNudgeError: string | null = null;
+  // What the lab has told this member. Undefined until the first read.
+  @state() adminBotNotifications?: MemberNotification[];
+  @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
@@ -566,9 +587,6 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSaving = false;
   @state() adminBotLogisticsSavedAt: number | null = null;
   @state() adminBotLogisticsSaveError: string | null = null;
-  // Document Signature is the template the tab opens on: it is the request members make most, and
-  // landing on the picker alone would leave the page with nothing to do.
-  @state() adminBotLogisticsTemplate: LogisticsTemplate = "documentSignature";
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
@@ -594,6 +612,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotProfileOverviewFieldCount = 0;
+  // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
+  // "not loaded" and "nothing adopted" are distinguishable.
+  @state() adminBotProfileAdoption: MemberAdoptionSummary | null = null;
   @state() adminBotProfileOverviewLoading = false;
   @state() adminBotProfileOverviewError: string | null = null;
   @state() adminBotProfileOverviewLoadedAt: number | null = null;
@@ -1111,6 +1132,12 @@ export class OpenClawApp extends LitElement {
 
   async signOutMember() {
     await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
+    // Everything in the corner and everything in the list belonged to the session that just ended.
+    // The popped-ids set has to go too, or the next member to sign in on this browser gets a
+    // dashboard card with no popup because somebody else's session already "saw" it.
+    dismissAllToasts();
+    resetNotificationPopups();
+    this.adminBotNotifications = undefined;
   }
 
   openChangePassword() {
@@ -1553,6 +1580,42 @@ export class OpenClawApp extends LitElement {
 
   loadMeetings(): Promise<void> {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  loadMeetingNudges(): Promise<void> {
+    return loadAdminBotMeetingNudges(
+      this as unknown as Parameters<typeof loadAdminBotMeetingNudges>[0],
+    );
+  }
+
+  sendMeetingNudges(): Promise<void> {
+    return sendAdminBotMeetingNudges(
+      this as unknown as Parameters<typeof sendAdminBotMeetingNudges>[0],
+    );
+  }
+
+  loadNotifications(): Promise<void> {
+    return loadAdminBotNotifications(
+      this as unknown as Parameters<typeof loadAdminBotNotifications>[0],
+      // A notification names the tab it is about; opening it from the popup is what takes the
+      // member there. setTab is on the host, so the routing decision stays with the component that
+      // owns the URL rather than with the controller that fetched the row. Checked rather than
+      // cast: the value came from the service, which has no reason to know the UI's tab list.
+      {
+        onOpen: (tab) => {
+          if (isKnownTab(tab)) {
+            this.setTab(tab);
+          }
+        },
+      },
+    );
+  }
+
+  markNotificationsRead(notificationIds?: readonly string[]): Promise<void> {
+    return markAdminBotNotificationsRead(
+      this as unknown as Parameters<typeof markAdminBotNotificationsRead>[0],
+      notificationIds,
+    );
   }
 
   toggleMeetingAttendance(

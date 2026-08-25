@@ -1,6 +1,13 @@
 // Control UI module implements app view state behavior.
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
-import type { LocationDrift, MeetingAttendee, MeetingRecord } from "./adminbot/auth/session.ts";
+import type {
+  LocationDrift,
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingAttendee,
+  MeetingRecord,
+  MemberNotification,
+} from "./adminbot/auth/session.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberNudgeState,
@@ -14,7 +21,7 @@ import type {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
-import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
+import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
@@ -149,6 +156,11 @@ export type AppViewState = {
     share_url: string;
     passcode?: string;
   }) => Promise<void>;
+  loadMeetingNudges?: () => Promise<void>;
+  sendMeetingNudges?: () => Promise<void>;
+  /** Reads the member's own notifications, and pops the unseen ones in the corner. */
+  loadNotifications?: () => Promise<void>;
+  markNotificationsRead?: (notificationIds?: readonly string[]) => Promise<void>;
   requestCalendarDraft?: () => Promise<void>;
   saveCalendarEvent?: () => Promise<void>;
   sendCalendarInvites?: () => Promise<void>;
@@ -414,6 +426,16 @@ export type AppViewState = {
   // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
   // that genuinely finds nothing sets [], so an empty lab cannot loop.
   adminBotMeetings?: MeetingRecord[];
+  // The attendance nudge, admin-only, on the Meeting Recordings tab. Null until the panel is
+  // opened: resolving the audience reads the lab calendar, which is not something to do on a tab
+  // most people open only to watch a recording.
+  adminBotMeetingNudgePreview?: MeetingAttendanceNudgePreview | null;
+  adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
+  adminBotMeetingNudgeBusy?: boolean;
+  adminBotMeetingNudgeError?: string | null;
+  // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
+  adminBotNotifications?: MemberNotification[];
+  adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
@@ -436,10 +458,9 @@ export type AppViewState = {
   adminBotLogisticsSaving: boolean;
   adminBotLogisticsSavedAt: number | null;
   adminBotLogisticsSaveError: string | null;
-  // Which request template is on screen, and the Recommendation Letters form behind it. Its rows
-  // and save state are separate from the signature form's: only one is visible at a time, and a
-  // shared "Saved at" would follow the member across and describe the wrong draft.
-  adminBotLogisticsTemplate: LogisticsTemplate;
+  // The Recommendation Letters form's rows and save state are separate from the signature form's:
+  // only one is on screen at a time (the sidebar decides which), and a shared "Saved at" would
+  // follow the member across and describe the wrong draft.
   // Make a request, or read the ones already made. Both modes are open to everyone: the service
   // scopes the list to the caller, so a member's is their own requests and an admin's is the lab's.
   adminBotLogisticsMode: LogisticsMode;
@@ -482,6 +503,7 @@ export type AppViewState = {
   // it" signal, the same sentinel the logistics queue uses.
   adminBotProfileOverview: import("./adminbot/auth/session.ts").MemberProfileOverviewRow[];
   adminBotProfileOverviewFieldCount: number;
+  adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;
   adminBotProfileOverviewError: string | null;
   adminBotProfileOverviewLoadedAt: number | null;

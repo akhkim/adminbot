@@ -290,3 +290,60 @@ describe("renderDashboard", () => {
     expect(attentionIds(container)).not.toContain("mandatoryFields");
   });
 });
+
+describe("notifications on the dashboard", () => {
+  const NOTIFICATION = {
+    id: "notif-1",
+    member_id: "ada",
+    kind: "meeting_attendance" as const,
+    title: "Please join the next Monday meeting",
+    body: "You have missed the last 2 Monday meetings.",
+    tab: "adminbotMeetings",
+    created_at: "2026-08-25T09:00:00.000Z",
+  };
+
+  it("puts what the lab has told this member above their own housekeeping", () => {
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [NOTIFICATION],
+        adminBotData: { proposals: [{ status: "pending" }] },
+      } as never),
+      "admin",
+    );
+    // A notification is the lab having decided to say something to this person, which outranks a
+    // queue that is merely waiting.
+    expect(attentionIds(container)[0]).toBe(`notification-${NOTIFICATION.id}`);
+    expect(container.textContent).toContain("missed the last 2 Monday meetings");
+  });
+
+  it("keeps showing one that has already been read", () => {
+    // Read is "you have seen this", not "you have done it": the reminder stays until they turn up.
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
+      } as never),
+    );
+    expect(attentionIds(container)).toContain(`notification-${NOTIFICATION.id}`);
+  });
+
+  it("marks it read and opens the tab it names", () => {
+    const tabs: string[] = [];
+    const read: unknown[] = [];
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [NOTIFICATION],
+        setTab: (tab: string) => tabs.push(tab),
+        markNotificationsRead: async (ids: string[]) => {
+          read.push(ids);
+        },
+      } as never),
+    );
+    container
+      .querySelector<HTMLButtonElement>(
+        `[data-testid="dashboard-attention-notification-${NOTIFICATION.id}"] button`,
+      )
+      ?.click();
+    expect(read).toEqual([[NOTIFICATION.id]]);
+    expect(tabs).toEqual(["adminbotMeetings"]);
+  });
+});

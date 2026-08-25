@@ -39,6 +39,7 @@ import type {
   AdminBotMeetingAttendee,
   AdminBotMeetingRecord,
   AdminBotMeetingRecordInput,
+  AdminBotMemberNotification,
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperArtifactLinks,
@@ -141,6 +142,15 @@ import {
   storedRequestBytes,
   validateSignedDocuments,
 } from "../workflows/logistics/signed-documents.js";
+import {
+  absenceStreakKey,
+  adminBotMeetingAbsenceStreak,
+  buildMeetingAttendanceMessage,
+  consecutiveAbsences,
+  meetingAudience,
+  streakMeetings,
+  type AdminBotMeetingAbsence,
+} from "../workflows/meetings/attendance-nudge.js";
 import { mergeAttendance } from "../workflows/meetings/attendance.js";
 import {
   byMostRecent,
@@ -149,6 +159,14 @@ import {
   redactMeetingForMember,
   validateMeeting,
 } from "../workflows/meetings/records.js";
+import {
+  adoptionSummary,
+  lastSelfEditAt,
+  projectAdoption,
+  selfFilledFieldCount,
+  stampFieldProvenance,
+  type AdminBotWriteOrigin,
+} from "../workflows/members/adoption.js";
 import {
   detectLocationDrift,
   isNewObservation,
@@ -288,6 +306,14 @@ export type AdminBotServiceStore = {
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  /**
+   * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
+   * replaces its own row rather than stacking a second copy of the same sentence.
+   */
+  saveMemberNotification(notification: AdminBotMemberNotification): void;
+  /** Newest first, one member's own. There is no all-members read: nothing needs one. */
+  listMemberNotifications(memberId: string): AdminBotMemberNotification[];
+  deleteMemberNotification(notificationId: string): boolean;
   saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
   getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
   /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
@@ -977,7 +1003,19 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: next };
   }
 
-  upsertLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
+  /**
+   * The one funnel every profile write goes through -- the member's own form, an admin, the
+   * spreadsheet importer, the CV scan.
+   *
+   * `origin` is how the record learns which of those it was. It defaults to `import`, deliberately:
+   * every caller that has not been taught to say is a script or a sweep, and the conservative
+   * failure is to under-count adoption rather than to credit a member with a field a machine wrote.
+   * Only the two routes that authenticate a human pass anything else.
+   */
+  upsertLabMember(
+    member: AdminBotLabMemberInput,
+    origin: AdminBotWriteOrigin = {},
+  ): AdminBotServiceResponse<AdminBotLabMember> {
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
@@ -1014,6 +1052,16 @@ export class AdminBotService {
       created_at: existing?.created_at ?? now,
       updated_at: now,
       ...availabilityStamp(existing, member, now),
+      // Stamped from `member` (the patch) rather than from `stored`: a patch carries only what this
+      // request is changing, so spreading the whole merged record here would re-attribute every
+      // field on the profile to whoever last saved any part of it.
+      field_provenance: stampFieldProvenance({
+        existing,
+        next: member as Record<string, unknown>,
+        source: origin.source ?? "import",
+        at: now,
+        ...(origin.actor ? { actor: origin.actor } : {}),
+      }),
     };
     // Promoting someone out of external_collaborator drops the subgroup instead of letting a stale
     // one ride along on ...existing: the access matrix only means anything for external
@@ -1356,8 +1404,14 @@ export class AdminBotService {
     };
   }
 
-  /** The meeting the pre-meeting reminders are aimed at, from settings or the lab's default. */
-  private groupMeetingSchedule(): GroupMeetingSchedule {
+  /**
+   * The meeting every group-meeting sweep is aimed at, from settings or the lab's default.
+   *
+   * Public because the API layer needs it too: resolving the Monday invite means asking the
+   * calendar which events land on the scheduled weekday, and a route that guessed "Monday" for
+   * itself would drift the moment an admin moved the meeting in settings.
+   */
+  groupMeetingSchedule(): GroupMeetingSchedule {
     const settings = this.resolveSettings();
     return {
       weekday:
@@ -1645,6 +1699,13 @@ export class AdminBotService {
   // Self-service profile edit for a member principal. Only the whitelisted profile fields are
   // writable here; privilege_level/access_overrides/status/email are governance-owned and never
   // accepted from the member's own request so a member cannot escalate their own access.
+  /**
+   * A member editing their own record.
+   *
+   * Every field this writes is stamped `member`, which is what the adoption rate counts. The stamp
+   * comes from the route's authentication, not from the body -- a client cannot claim authorship of
+   * a field by asking to.
+   */
   updateOwnProfile(
     memberId: string,
     input: Record<string, unknown>,
@@ -1673,7 +1734,7 @@ export class AdminBotService {
       id: memberId,
       privilege_level: existing.privilege_level,
     };
-    return this.upsertLabMember(merged);
+    return this.upsertLabMember(merged, { source: "member", actor: memberId });
   }
 
   // Creates or edits a paper on behalf of the member themselves, so authors can file and maintain
@@ -3376,6 +3437,210 @@ export class AdminBotService {
   }
 
   /**
+   * Who has missed the last two group meetings, without telling anybody yet.
+   *
+   * Separate from the send for the same reason every other sweep here is: an admin gets to read
+   * the list before the lab does. It is also what the Meeting Recordings tab renders, so the
+   * preview and the message are computed once and cannot disagree.
+   *
+   * `inviteEmails` is passed in rather than fetched: reading the calendar means shelling out to
+   * gog, which is the API layer's job and can fail. When it does, the audience falls back to the
+   * roster's own full members and `invite_resolved` says so, so a failed calendar read narrows the
+   * nudge rather than stopping it.
+   */
+  collectMeetingAttendanceNudges(
+    params: { inviteEmails?: readonly string[] } = {},
+  ): AdminBotServiceResponse<{
+    streak: number;
+    meeting_label: string;
+    /** The meetings the streak was measured over, newest first. Fewer than `streak` means nobody can qualify yet. */
+    meetings: Array<{ id: string; topic: string; started_at: string }>;
+    absent: AdminBotMeetingAbsence[];
+    invite_resolved: boolean;
+    audience_size: number;
+  }> {
+    const inviteEmails = params.inviteEmails ?? [];
+    const members = this.store.listLabMembers();
+    const meetings = this.listedMeetings(false);
+    const counted = streakMeetings(meetings, adminBotMeetingAbsenceStreak);
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        streak: adminBotMeetingAbsenceStreak,
+        meeting_label: this.groupMeetingLabel(),
+        meetings: counted.map((meeting) => ({
+          id: meeting.id,
+          topic: meeting.topic,
+          started_at: meeting.started_at,
+        })),
+        absent: consecutiveAbsences({ meetings, members, inviteEmails }),
+        invite_resolved: inviteEmails.length > 0,
+        audience_size: meetingAudience(members, inviteEmails).length,
+      },
+    };
+  }
+
+  /**
+   * Tell everyone who has missed the last two, on every channel at once.
+   *
+   * Three deliveries per person and they are not interchangeable. The Slack DM is the one that
+   * reaches somebody who is not looking at the Control UI. The stored notification is what the
+   * dashboard card and the top-right popup both read, so the message survives the DM scrolling
+   * away and reaches a member who never linked Slack at all. And the audit row is what stops the
+   * lab saying it twice: the ledger is keyed on the *pair of meetings*, so an hourly cron, a retry
+   * and an admin pressing the button collapse into one message, while the next meeting makes a new
+   * pair and so a third absence in a row is worth saying something about again.
+   *
+   * A Slack failure is not a failure of the send. Somebody with no linked Slack account still gets
+   * the notification, and reporting that as "skipped" would hide the fact that they were told.
+   */
+  async sendMeetingAttendanceNudges(
+    actor: string,
+    params: { inviteEmails?: readonly string[]; nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      notified: string[];
+      /** Already told about this same pair of meetings, so left alone. */
+      already_told: string[];
+      slack_skipped: AdminBotMemberNudgeSkip[];
+      invite_resolved: boolean;
+    }>
+  > {
+    const collected = this.collectMeetingAttendanceNudges(params);
+    if (!collected.ok) {
+      return collected;
+    }
+    const { absent, meeting_label: meetingLabel } = collected.payload;
+    const now = params.nowIso ? new Date(params.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const notified: string[] = [];
+    const alreadyTold: string[] = [];
+    const slackSkipped: AdminBotMemberNudgeSkip[] = [];
+    for (const row of absent) {
+      const streakKey = absenceStreakKey(row.missed_meeting_ids);
+      if (this.meetingAttendanceAskedFor(streakKey).has(row.member_id)) {
+        alreadyTold.push(row.member_id);
+        continue;
+      }
+      const message = buildMeetingAttendanceMessage({
+        missedTopics: row.missed_topics,
+        meetingLabel,
+      });
+      // Filed first. A Slack outage must not be what decides whether the member is ever told, and
+      // the notification is the copy the lab can still point at afterwards.
+      this.store.saveMemberNotification({
+        id: `notif_${randomUUID()}`,
+        member_id: row.member_id,
+        kind: "meeting_attendance",
+        title: `Please join the next ${meetingLabel}`,
+        body: message,
+        tab: "adminbotMeetings",
+        created_at: nowIso,
+      });
+      const sent = await this.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: [row.member_id], message },
+        actor,
+      );
+      if (!sent.ok) {
+        slackSkipped.push({ member_id: row.member_id, reason: sent.error.message });
+      } else {
+        slackSkipped.push(...sent.payload.skipped);
+      }
+      notified.push(row.member_id);
+      this.recordAudit({
+        type: "meeting_attendance.nudged",
+        actor,
+        details: { streak: streakKey, member_ids: [row.member_id] },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        notified,
+        already_told: alreadyTold,
+        slack_skipped: slackSkipped,
+        invite_resolved: collected.payload.invite_resolved,
+      },
+    };
+  }
+
+  /** Everyone already told about this exact pair of meetings. */
+  private meetingAttendanceAskedFor(streakKey: string): Set<string> {
+    const asked = new Set<string>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "meeting_attendance.nudged") {
+        continue;
+      }
+      const details = event.details as { streak?: unknown; member_ids?: unknown } | undefined;
+      if (details?.streak !== streakKey || !Array.isArray(details.member_ids)) {
+        continue;
+      }
+      for (const id of details.member_ids) {
+        if (typeof id === "string") {
+          asked.add(id);
+        }
+      }
+    }
+    return asked;
+  }
+
+  /** "Monday meeting", from the configured schedule, so the message names the real day. */
+  private groupMeetingLabel(): string {
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const { weekday } = this.groupMeetingSchedule();
+    return `${weekdays[weekday] ?? "group"} meeting`;
+  }
+
+  /**
+   * One member's own notifications, newest first.
+   *
+   * Scoped by the caller's session, never by a body field: a notification is something the lab
+   * said to one person, and the route hands this the member id it authenticated.
+   */
+  listMemberNotifications(
+    memberId: string,
+  ): AdminBotServiceResponse<{ notifications: AdminBotMemberNotification[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { notifications: this.store.listMemberNotifications(memberId) },
+    };
+  }
+
+  /**
+   * Mark notifications read. All of the member's own, or the ids given.
+   *
+   * Read rather than deleted: the popup fires on unread, so acknowledging one has to stop the
+   * popup without taking the sentence off the dashboard, where somebody may still want to act on
+   * it. Ids that are not this member's are ignored rather than refused -- the list is scoped on
+   * read, so an id from somewhere else simply matches nothing.
+   */
+  markMemberNotificationsRead(
+    memberId: string,
+    notificationIds?: readonly string[],
+  ): AdminBotServiceResponse<{ read: number }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const wanted = notificationIds?.length ? new Set(notificationIds) : undefined;
+    const readAt = new Date().toISOString();
+    let read = 0;
+    for (const notification of this.store.listMemberNotifications(memberId)) {
+      if (notification.read_at || (wanted && !wanted.has(notification.id))) {
+        continue;
+      }
+      this.store.saveMemberNotification({ ...notification, read_at: readAt });
+      read += 1;
+    }
+    return { ok: true, status: 200, payload: { read } };
+  }
+
+  /**
    * A member asking the lab for something.
    *
    * The requester is taken from the authenticated session the route resolved, never from the body:
@@ -4275,11 +4540,24 @@ export class AdminBotService {
    * Alumni and external collaborators are left out for the same reason the reminder pass leaves
    * them out: the fields are asked of people currently working here.
    */
+  /**
+   * Everybody's profile, completeness *and* adoption.
+   *
+   * The two are different questions and the page needs both. Completeness ("12 of 12 fields") says
+   * whether the lab has the data; adoption ("3 of 12, and they have never signed in") says whether
+   * the member has ever been here. The roster was bulk-imported, so most rows score full marks on
+   * the first and nothing on the second -- which is the list to chase.
+   */
   listMemberProfileOverview(): AdminBotServiceResponse<{
     members: AdminBotMemberProfileOverviewRow[];
     mandatory_field_count: number;
+    adoption: ReturnType<typeof adoptionSummary>;
   }> {
     const remindedAt = this.lastMandatoryFieldsReminderByMember();
+    // Read once for the whole page rather than per member: both are full-table reads, and doing
+    // them inside the map turns a 77-member roster into 154 queries.
+    const papers = this.store.listPapers();
+    const weeklyUpdates = this.store.listPaperWeeklyUpdates();
     const members = this.store
       .listLabMembers()
       .filter((member) => member.status !== "alumni" && member.status !== "external")
@@ -4287,6 +4565,7 @@ export class AdminBotService {
         const missing = missingMandatoryProfileFields(member);
         const timeline = countTimelineEntries(member);
         const reminded = remindedAt.get(member.id);
+        const selfEdited = lastSelfEditAt(member);
         return {
           id: member.id,
           name: member.name,
@@ -4294,7 +4573,20 @@ export class AdminBotService {
           privilege_level: member.privilege_level,
           missing_fields: missing,
           filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
+          // The adoption half of the same row: filled is "is there a value", this is "did the
+          // person it is about put it there".
+          self_filled_field_count: selfFilledFieldCount(member, MANDATORY_PROFILE_FIELDS),
+          projects: projectAdoption({
+            memberId: member.id,
+            paperIds: papers
+              .filter((paper) => this.memberOwnsPaper(member, paper))
+              .map((paper) => paper.id),
+            updates: weeklyUpdates,
+          }),
           timeline,
+          ...(member.last_login_at ? { last_login_at: member.last_login_at } : {}),
+          updated_at: member.updated_at,
+          ...(selfEdited ? { last_self_edit_at: selfEdited } : {}),
           ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
         };
       })
@@ -4302,7 +4594,11 @@ export class AdminBotService {
     return {
       ok: true,
       status: 200,
-      payload: { members, mandatory_field_count: MANDATORY_PROFILE_FIELDS.length },
+      payload: {
+        members,
+        mandatory_field_count: MANDATORY_PROFILE_FIELDS.length,
+        adoption: adoptionSummary(members, MANDATORY_PROFILE_FIELDS.length),
+      },
     };
   }
 

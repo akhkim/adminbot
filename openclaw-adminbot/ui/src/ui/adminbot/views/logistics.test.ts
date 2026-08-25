@@ -77,7 +77,6 @@ type Drawn = {
   signatureChanges: File[][];
   attachmentChanges: File[][];
   descriptionChanges: string[];
-  templateChanges: LogisticsTemplate[];
   schoolChanges: RecommendationSchool[][];
   factChanges: LetterFact[][];
   meetingChanges: MeetingRequestRow[][];
@@ -120,7 +119,6 @@ function draw(options: DrawOptions = {}): Drawn {
   const signatureChanges: File[][] = [];
   const attachmentChanges: File[][] = [];
   const descriptionChanges: string[] = [];
-  const templateChanges: LogisticsTemplate[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
   const factChanges: LetterFact[][] = [];
   const meetingChanges: MeetingRequestRow[][] = [];
@@ -185,7 +183,6 @@ function draw(options: DrawOptions = {}): Drawn {
         onStatusNoteChange: (next) => noteChanges.push(next),
       },
       template: options.template ?? "documentSignature",
-      onTemplateChange: (next) => templateChanges.push(next),
       signature: {
         files: options.signatureFiles ?? [],
         onFilesChange: (next) => signatureChanges.push(next),
@@ -262,7 +259,6 @@ function draw(options: DrawOptions = {}): Drawn {
     signatureChanges,
     attachmentChanges,
     descriptionChanges,
-    templateChanges,
     schoolChanges,
     factChanges,
     meetingChanges,
@@ -293,17 +289,6 @@ function draw(options: DrawOptions = {}): Drawn {
       return meetingSaves;
     },
   };
-}
-
-/**
- * The three template buttons alone.
- *
- * Scoped to the templates card because the mode switch above it reuses the same class: both are
- * rows of peer buttons, and sharing the class is what keeps them looking like peers.
- */
-function templateButtons(container: HTMLElement): HTMLButtonElement[] {
-  const card = container.querySelector<HTMLElement>("[data-testid='logistics-templates']");
-  return [...(card?.querySelectorAll<HTMLButtonElement>(".logistics__template") ?? [])];
 }
 
 function modeButtons(container: HTMLElement): HTMLButtonElement[] {
@@ -356,10 +341,12 @@ function describedTextarea(container: HTMLElement): HTMLTextAreaElement {
 }
 
 describe("renderAdminBotLogistics", () => {
-  it("offers the three request templates", () => {
+  it("draws only the form the tab asked for, with no picker above it", () => {
+    // Choosing between the three is the sidebar's job now (LOGISTICS_TAB_TEMPLATES), so arriving
+    // here already means having chosen and a picker would be a second place to choose.
     const { container } = draw();
-    const labels = templateButtons(container).map((button) => button.textContent?.trim());
-    expect(labels).toEqual(["Document Signature", "Recommendation Letters", "Book Meeting"]);
+    expect(container.querySelector("[data-testid='logistics-templates']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
   });
 
   it("puts a file input inside the label so clicking the zone opens the picker", () => {
@@ -655,27 +642,7 @@ describe("request actions", () => {
   });
 });
 
-describe("template picker", () => {
-  it("marks the template whose container is on screen", () => {
-    const { container } = draw({ template: "recommendationLetters" });
-    expect(templateButtons(container).map((button) => button.getAttribute("aria-pressed"))).toEqual(
-      // All three select a container now, so all three carry a pressed state.
-      ["false", "true", "false"],
-    );
-  });
-
-  it("asks for the letters container when Recommendation Letters is pressed", () => {
-    const drawn = draw();
-    templateButtons(drawn.container)[1].click();
-    expect(drawn.templateChanges).toEqual(["recommendationLetters"]);
-  });
-
-  it("asks for the meeting container when Book Meeting is pressed", () => {
-    const drawn = draw();
-    templateButtons(drawn.container)[2].click();
-    expect(drawn.templateChanges).toEqual(["bookMeeting"]);
-  });
-
+describe("template selection", () => {
   it("shows one request container at a time", () => {
     const signature = draw();
     expect(signature.container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
@@ -1055,7 +1022,7 @@ describe("request modes", () => {
     expect(drawn.modeChanges).toEqual(["view"]);
   });
 
-  it("swaps the templates and the form for the queue in view mode", () => {
+  it("swaps the form for the queue in view mode", () => {
     const { container } = draw({
       role: "admin",
       mode: "view",
@@ -1064,7 +1031,6 @@ describe("request modes", () => {
     // An admin gets the spreadsheet; the member's own list is the other shape of the same data.
     expect(container.querySelector("[data-testid='logistics-queue']")).not.toBeNull();
     // Reading the lab's requests is not the moment to be offered a new one.
-    expect(container.querySelector("[data-testid='logistics-templates']")).toBeNull();
     expect(container.querySelector("[data-testid='logistics-request']")).toBeNull();
     expect(container.querySelector("[data-testid='logistics-letters']")).toBeNull();
   });

@@ -7,6 +7,9 @@ import {
   type LabCalendar,
   type LocationDrift,
   type MeetingRecord,
+  type MeetingAttendanceNudgePreview,
+  type MeetingAttendanceNudgeResult,
+  type MemberNotification,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -671,6 +674,14 @@ export type AdminBotHost = {
   adminBotMeetingsLoading: boolean;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
+  // The attendance nudge an admin previews and sends from the Meeting Recordings tab.
+  adminBotMeetingNudgePreview?: MeetingAttendanceNudgePreview | null;
+  adminBotMeetingNudgeBusy?: boolean;
+  adminBotMeetingNudgeError?: string | null;
+  adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
+  // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
+  adminBotNotifications?: MemberNotification[];
+  adminBotNotificationsError?: string | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -1846,9 +1857,7 @@ export async function saveAdminBotPaper(
       : { is_archival: paper.isArchival === "true" }),
     // Sent even when empty, so clearing the choice actually clears it. Dropping falsy values
     // here made Reset look like it worked and then quietly leave the old track on file.
-    ...(paper.presentationType === undefined
-      ? {}
-      : { presentation_type: paper.presentationType }),
+    ...(paper.presentationType === undefined ? {} : { presentation_type: paper.presentationType }),
   };
   // Prefer the member's own session: the service scopes the write to what that member may change
   // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback

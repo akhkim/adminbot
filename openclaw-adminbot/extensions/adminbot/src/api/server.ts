@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
 import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
+import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
   redactConfidentialMemberFields,
@@ -23,6 +24,7 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
   buildNewsletterDraft,
@@ -63,7 +65,7 @@ import {
 } from "../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
@@ -1884,8 +1886,7 @@ async function handleAuthenticatedRoute(
       if (!ctx.readDrivePdfBase64) {
         sendJson(res, 503, {
           error: {
-            message:
-              "this deployment cannot read Drive files; attach the PDF here instead",
+            message: "this deployment cannot read Drive files; attach the PDF here instead",
           },
         });
         return;
@@ -1976,6 +1977,36 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (url.pathname === "/notifications") {
+    // Strictly the caller's own. A notification is something the lab said to one person, and the
+    // member id comes from the authenticated session rather than from a query parameter -- there is
+    // deliberately no way to ask for somebody else's, admin included.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    if (req.method === "GET") {
+      sendServiceResult(res, service.listMemberNotifications(principal.member.id));
+      return;
+    }
+    sendJson(res, 405, { error: { message: "method not allowed" } });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/notifications/read") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const readBody = readRecord(await readJsonOrEmpty(req));
+    const ids = Array.isArray(readBody.notification_ids)
+      ? readBody.notification_ids.filter((id): id is string => typeof id === "string")
+      : undefined;
+    sendServiceResult(
+      res,
+      service.markMemberNotificationsRead(principal.member.id, ids?.length ? ids : undefined),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/meetings") {
     // Two audiences, one route. A member gets their own attendance and a headcount; the roster is
     // personal data about everyone else and stays with the admins. The service principal reads as
@@ -2018,6 +2049,30 @@ async function handleAuthenticatedRoute(
         attendees,
         principal.kind === "member" ? principal.member.id : "service",
       ),
+    );
+    return;
+  }
+  if (url.pathname === "/meetings/attendance-nudges") {
+    // Reading who has stopped coming names people, so both verbs are governance surfaces. The GET
+    // is the preview an admin reads before the lab hears anything; the POST is what actually sends,
+    // and takes requirePrivileged (which the service principal satisfies) rather than
+    // requireMemberPrivileged for the same reason the other cron-driven sweeps do: the message is
+    // computed entirely from attendance records, so there is no caller-composed text to protect.
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(res, 405, { error: { message: "method not allowed" } });
+      return;
+    }
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const inviteEmails = await readGroupMeetingInvite(ctx, service.groupMeetingSchedule());
+    if (req.method === "GET") {
+      sendServiceResult(res, service.collectMeetingAttendanceNudges({ inviteEmails }));
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.sendMeetingAttendanceNudges(principalActor(principal), { inviteEmails }),
     );
     return;
   }
@@ -2066,7 +2121,13 @@ async function handleAuthenticatedRoute(
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
       sendServiceResult(
         res,
-        service.upsertLabMember({ ...(body as AdminBotLabMemberInput), id: memberId }),
+        service.upsertLabMember(
+          { ...(body as AdminBotLabMemberInput), id: memberId },
+          // An admin correcting somebody's record is not that member adopting the tool, so this is
+          // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
+          // "who typed this" has an answer either way.
+          { source: "admin", actor: principal.member.id },
+        ),
       );
       return;
     }
@@ -2189,7 +2250,10 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(res, service.collectWeeklyUpdateGaps(url.searchParams.get("now") ?? undefined));
+    sendServiceResult(
+      res,
+      service.collectWeeklyUpdateGaps(url.searchParams.get("now") ?? undefined),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/pre-registration/pending") {
@@ -2201,7 +2265,9 @@ async function handleAuthenticatedRoute(
     sendServiceResult(
       res,
       service.collectPreRegistrationNudges({
-        ...(url.searchParams.get("venue") ? { venue: url.searchParams.get("venue") as string } : {}),
+        ...(url.searchParams.get("venue")
+          ? { venue: url.searchParams.get("venue") as string }
+          : {}),
         ...(url.searchParams.get("now") ? { nowIso: url.searchParams.get("now") as string } : {}),
       }),
     );
@@ -2860,6 +2926,38 @@ function readStringList(value: unknown): string[] {
  * the same execution failure it would anywhere else, and the proposal stays in the queue rather
  * than being reported as done.
  */
+/**
+ * The addresses on the lab's group-meeting invite, or an empty list when the calendar cannot say.
+ *
+ * Deliberately swallows every failure. The calendar read shells out to gog, which is missing on
+ * some boxes, unauthenticated on others and occasionally just slow -- and the attendance nudge has
+ * a working audience without it (the roster's own full members). Turning a locked keyring into a
+ * 502 would mean nobody is ever reminded to come to the meeting.
+ */
+async function readGroupMeetingInvite(
+  ctx: AdminBotRouteContext,
+  schedule: GroupMeetingSchedule,
+): Promise<string[]> {
+  if (!ctx.readCalendarEvents) {
+    return [];
+  }
+  try {
+    // A fortnight forward: long enough to catch the next occurrence of a weekly series even when
+    // one week is cancelled, short enough that a recurring event does not expand into hundreds.
+    const from = new Date();
+    const to = new Date(from.getTime() + 14 * 86_400_000);
+    const events = await ctx.readCalendarEvents({
+      calendarId: ctx.labCalendar.id,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      max: 50,
+    });
+    return groupMeetingInviteEmails(events, schedule);
+  } catch {
+    return [];
+  }
+}
+
 async function runCalendarAction(
   res: ServerResponse,
   service: AdminBotService,

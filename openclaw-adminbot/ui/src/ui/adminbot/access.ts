@@ -62,9 +62,12 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // attendance roster inside it is not, and the service hands a member only their own line and a
   // headcount (listMeetingsForMember). Reading who else was there is an admin act.
   adminbotMeetings: "member",
-  // Each template starts a request made in the viewer's own name, so it needs an account behind
-  // it -- a visitor has no identity for AdminBot to route the signature or the letter back to.
-  adminbotLogistics: "member",
+  // Each of the three request forms starts a request made in the viewer's own name, so each needs
+  // an account behind it -- a visitor has no identity for AdminBot to route the signature, the
+  // letter or the meeting back to.
+  adminbotSignatures: "member",
+  adminbotRecLetters: "member",
+  adminbotMeetingRequests: "member",
   chat: "member",
   // Nothing behind it yet; member-level so the placeholder sits with the tools it will join.
   // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page

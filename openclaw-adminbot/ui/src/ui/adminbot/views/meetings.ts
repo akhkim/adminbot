@@ -14,7 +14,12 @@
 // fields of an admin's recovery form.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { MeetingAttendee, MeetingRecord } from "../auth/session.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingAttendee,
+  MeetingRecord,
+} from "../auth/session.ts";
 
 export type MeetingsRosterMember = { id: string; name: string };
 
@@ -34,6 +39,19 @@ export type AdminBotMeetingsProps = {
     share_url: string;
     passcode?: string;
   }) => void;
+  /**
+   * The attendance nudge, admin-only. Undefined until the panel has been opened once: working out
+   * who has been missing meetings reads the calendar, so it is not something to do on every load
+   * of a tab most people open to watch a recording.
+   */
+  nudge?: {
+    preview: MeetingAttendanceNudgePreview | null;
+    result: MeetingAttendanceNudgeResult | null;
+    busy: boolean;
+    error: string | null;
+    onPreview: () => void;
+    onSend: () => void;
+  };
 };
 
 function formatStart(startedAt: string): string {
@@ -229,9 +247,7 @@ function renderMeeting(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
       ${renderRecordingLinks(meeting)} ${renderSummary(meeting)}
       <details class="meetings__attendance">
         <summary>${t("adminbotMeetings.attendance")}</summary>
-        ${props.viewerIsAdmin
-          ? renderRosterEditor(props, meeting)
-          : renderOwnAttendance(meeting)}
+        ${props.viewerIsAdmin ? renderRosterEditor(props, meeting) : renderOwnAttendance(meeting)}
       </details>
       ${meeting.notes ? html`<p class="muted">${meeting.notes}</p>` : nothing}
     </article>
@@ -296,10 +312,100 @@ function renderFileForm(props: AdminBotMeetingsProps) {
   `;
 }
 
+/**
+ * "Who has stopped coming", and the button that tells them.
+ *
+ * Preview first, always. What this sends is a message naming somebody's absence, delivered to their
+ * Slack DM and to their dashboard -- so the list is on screen before anything goes out, and the
+ * send button says how many people it is about rather than just "Send".
+ *
+ * The panel is a <details> and loads nothing until it is opened: resolving the audience reads the
+ * lab calendar, which shells out to gog, and most visits to this tab are somebody catching up on a
+ * recording.
+ */
+function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
+  const preview = nudge.preview;
+  const absent = preview?.absent ?? [];
+  const notEnoughMeetings =
+    Boolean(preview) && (preview?.meetings.length ?? 0) < (preview?.streak ?? 2);
+  return html`
+    <details
+      class="card adminbot-card adminbot-card--wide meetings__nudge"
+      data-testid="meetings-nudge"
+      @toggle=${(event: Event) => {
+        // Loaded on first open only. Re-reading on every toggle would re-shell to the calendar
+        // each time somebody folded the panel away and opened it again.
+        if ((event.currentTarget as HTMLDetailsElement).open && !nudge.preview && !nudge.busy) {
+          nudge.onPreview();
+        }
+      }}
+    >
+      <summary>${t("adminbotMeetings.nudge.title")}</summary>
+      <p class="card-sub">${t("adminbotMeetings.nudge.sub")}</p>
+      ${nudge.error ? html`<p class="notice notice--error">${nudge.error}</p>` : nothing}
+      ${nudge.busy && !preview
+        ? html`<p class="muted">${t("adminbotMeetings.nudge.loading")}</p>`
+        : nothing}
+      ${preview && !preview.invite_resolved
+        ? html`<p class="notice notice--warn" data-testid="meetings-nudge-no-invite">
+            ${t("adminbotMeetings.nudge.noInvite")}
+          </p>`
+        : nothing}
+      ${notEnoughMeetings
+        ? html`<p class="muted">
+            ${t("adminbotMeetings.nudge.notEnough", { streak: String(preview?.streak ?? 2) })}
+          </p>`
+        : nothing}
+      ${preview && !notEnoughMeetings && absent.length === 0
+        ? html`<p class="muted">${t("adminbotMeetings.nudge.nobody")}</p>`
+        : nothing}
+      ${absent.length
+        ? html`
+            <ul class="meetings__nudge-list" data-testid="meetings-nudge-list">
+              ${absent.map(
+                (row) => html`
+                  <li>
+                    <strong>${row.name}</strong>
+                    <span class="muted">
+                      ${t(
+                        row.reason === "invite"
+                          ? "adminbotMeetings.nudge.viaInvite"
+                          : "adminbotMeetings.nudge.viaFullMember",
+                      )}
+                      · ${row.missed_topics.join("; ")}
+                    </span>
+                  </li>
+                `,
+              )}
+            </ul>
+            <button
+              class="btn btn--sm primary"
+              type="button"
+              data-testid="meetings-nudge-send"
+              ?disabled=${nudge.busy}
+              @click=${() => nudge.onSend()}
+            >
+              ${t("adminbotMeetings.nudge.send", { count: String(absent.length) })}
+            </button>
+          `
+        : nothing}
+      ${nudge.result
+        ? html`<p class="muted" data-testid="meetings-nudge-result">
+            ${t("adminbotMeetings.nudge.sent", {
+              count: String(nudge.result.notified.length),
+              skipped: String(nudge.result.slack_skipped.length),
+            })}
+          </p>`
+        : nothing}
+    </details>
+  `;
+}
+
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
+      ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`

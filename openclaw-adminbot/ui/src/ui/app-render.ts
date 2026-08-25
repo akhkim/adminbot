@@ -267,7 +267,9 @@ import { icons } from "./icons.ts";
 import { createLazyView, renderLazyView } from "./lazy-view.ts";
 import {
   iconForTab,
+  isLogisticsTab,
   isSettingsTab,
+  LOGISTICS_TAB_TEMPLATES,
   normalizeBasePath,
   pathForTab,
   SETTINGS_TABS,
@@ -1766,6 +1768,13 @@ export function renderApp(state: AppViewState) {
       : undefined;
   pendingUpdate = requestHostUpdate;
 
+  // Which request form the sidebar asked for. The three tabs are one view with the picker taken
+  // out, so the tab *is* the template -- read once here rather than at each of the three use sites,
+  // because the callbacks below assign to `state.tab` and would defeat narrowing inside them.
+  const logisticsTemplate = isLogisticsTab(state.tab)
+    ? LOGISTICS_TAB_TEMPLATES[state.tab]
+    : "documentSignature";
+
   const accessRole = resolveAccessRole({
     // Truthiness, not `!== null`: these fields are absent (undefined) before a session is ever
     // loaded, and treating "absent" as signed-in demoted a connected operator to a member — which
@@ -2580,7 +2589,7 @@ export function renderApp(state: AppViewState) {
   const logisticsScope = adminBotLogisticsScope(state);
   // Gated on the tab so a member who never opens Logistics never pays for an IndexedDB read. The
   // scope comparison is what re-runs it when the signed-in member changes underneath an open tab.
-  if (state.tab === "adminbotLogistics" && state.adminBotLogisticsDraftScope !== logisticsScope) {
+  if (isLogisticsTab(state.tab) && state.adminBotLogisticsDraftScope !== logisticsScope) {
     state.adminBotLogisticsDraftScope = logisticsScope;
     // A correction belongs to the member who opened it. Left set across a scope change it would
     // point the next person's Submit at a request they do not own.
@@ -2629,7 +2638,7 @@ export function renderApp(state: AppViewState) {
   // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
   // the sentinel: a lab with no requests would re-ask on every render.
   if (
-    state.tab === "adminbotLogistics" &&
+    isLogisticsTab(state.tab) &&
     state.adminBotLogisticsMode === "view" &&
     hasMemberSession &&
     !state.adminBotLogisticsRequestsLoading &&
@@ -2638,6 +2647,15 @@ export function renderApp(state: AppViewState) {
   ) {
     state.adminBotLogisticsRequestsLoadedAt = Date.now();
     void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
+  }
+  // Notifications are read once per session, on whichever tab the member lands on, rather than
+  // when they open a particular one -- the whole point is that the popup reaches somebody who is
+  // looking at something else. Undefined is the "never asked" sentinel; a member with none sets []
+  // so an empty list cannot loop.
+  if (hasMemberSession && state.adminBotNotifications === undefined && state.loadNotifications) {
+    // Stamped before the await so a second render during the fetch does not start a second one.
+    state.adminBotNotifications = [];
+    void state.loadNotifications().finally(() => requestHostUpdate?.());
   }
   // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
   // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
@@ -3176,6 +3194,7 @@ export function renderApp(state: AppViewState) {
           ? renderAdminBotProfileOverview({
               members: state.adminBotProfileOverview,
               mandatoryFieldCount: state.adminBotProfileOverviewFieldCount,
+              adoption: state.adminBotProfileAdoption ?? null,
               loading: state.adminBotProfileOverviewLoading,
               error: state.adminBotProfileOverviewError,
               notice: state.adminBotProfileOverviewNotice,
@@ -3197,7 +3216,7 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${state.tab === "adminbotLogistics"
+        ${isLogisticsTab(state.tab)
           ? renderAdminBotLogistics({
               role: accessRole,
               mode: state.adminBotLogisticsMode,
@@ -3234,18 +3253,18 @@ export function renderApp(state: AppViewState) {
                   // it rather than having to be picked off the member's disk again.
                   const form = requestToFormState(request);
                   if (form.signature) {
-                    state.adminBotLogisticsTemplate = "documentSignature";
+                    state.setTab("adminbotSignatures");
                     state.adminBotLogisticsSignatureFiles = form.signature.files;
                     state.adminBotLogisticsDescription = form.signature.description;
                     state.adminBotLogisticsAttachments = form.signature.attachments;
                   } else if (form.letters) {
-                    state.adminBotLogisticsTemplate = "recommendationLetters";
+                    state.setTab("adminbotRecLetters");
                     state.adminBotLettersSchools = [...form.letters.schools];
                     state.adminBotLettersFacts = [...form.letters.facts];
                     state.adminBotLettersCvOverleafUrl = form.letters.cvOverleafUrl;
                     state.adminBotLettersDriveFolderUrl = form.letters.driveFolderUrl;
                   } else if (form.meeting) {
-                    state.adminBotLogisticsTemplate = "bookMeeting";
+                    state.setTab("adminbotMeetingRequests");
                     state.adminBotMeetingRows = [...form.meeting.rows];
                   }
                   state.adminBotLogisticsEditingId = requestId;
@@ -3321,14 +3340,7 @@ export function renderApp(state: AppViewState) {
                   );
                 },
               },
-              template: state.adminBotLogisticsTemplate,
-              onTemplateChange: (template) => {
-                state.adminBotLogisticsTemplate = template;
-                // Each template owns its own outcome line, so a submit reported on one form must
-                // not still be on screen when the member opens another.
-                state.adminBotLogisticsSubmittedId = null;
-                state.adminBotLogisticsSubmitError = null;
-              },
+              template: logisticsTemplate,
               signature: {
                 files: state.adminBotLogisticsSignatureFiles,
                 onFilesChange: (files) => {
@@ -3417,6 +3429,24 @@ export function renderApp(state: AppViewState) {
               onFileMeeting: (draft) => {
                 void state.fileMeeting?.(draft);
               },
+              // Admin-only, and only offered when the host can actually run it: under break-glass
+              // gateway access there is no member session to authenticate the send with.
+              ...(accessRole === "admin" && state.loadMeetingNudges
+                ? {
+                    nudge: {
+                      preview: state.adminBotMeetingNudgePreview ?? null,
+                      result: state.adminBotMeetingNudgeResult ?? null,
+                      busy: state.adminBotMeetingNudgeBusy ?? false,
+                      error: state.adminBotMeetingNudgeError ?? null,
+                      onPreview: () => {
+                        void state.loadMeetingNudges?.().finally(() => requestHostUpdate?.());
+                      },
+                      onSend: () => {
+                        void state.sendMeetingNudges?.().finally(() => requestHostUpdate?.());
+                      },
+                    },
+                  }
+                : {}),
             })
           : nothing}
         ${state.tab === "adminbotTimeAvailability"

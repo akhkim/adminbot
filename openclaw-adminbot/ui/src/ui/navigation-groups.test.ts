@@ -34,10 +34,10 @@ describe("TAB_GROUPS", () => {
   it("orders the sidebar member-first, with the two privileged groups last", () => {
     expect(TAB_GROUPS.map((group) => group.label)).toEqual([
       "home",
-      "myProfile",
-      "myProjects",
-      "generalTools",
+      "myInfo",
       "labSharing",
+      "requestsToZhijing",
+      "generalTools",
       "admin",
       "openclaw",
     ]);
@@ -47,14 +47,17 @@ describe("TAB_GROUPS", () => {
     const byLabel = (label: string) => TAB_GROUPS.find((group) => group.label === label)?.tabs;
 
     expect(byLabel("home")).toEqual(["dashboard"]);
-    // Your own schedule is a thing you edit about yourself, so it sits with your profile rather
-    // than among the shared tools.
-    expect(byLabel("myProfile")).toEqual(["profile", "adminbotTimeAvailability"]);
-    // Active Papers is the lab-wide pipeline, so it lives under Admin now, not "my" work.
-    expect(byLabel("myProjects")).toEqual(["myWork"]);
+    // Your own schedule is a thing you edit about yourself, and Active Papers is the lab-wide
+    // pipeline (under Admin), so "My Info" is the record, the schedule kept on it and your work.
+    expect(byLabel("myInfo")).toEqual(["profile", "adminbotTimeAvailability", "myWork"]);
+    // One tab per request template, named for what it asks and who it asks.
+    expect(byLabel("requestsToZhijing")).toEqual([
+      "adminbotSignatures",
+      "adminbotRecLetters",
+      "adminbotMeetingRequests",
+    ]);
     // Ordered by how often a member reaches for them, not alphabetically.
     expect(byLabel("generalTools")).toEqual([
-      "adminbotLogistics",
       "adminbotReimbursements",
       "adminbotDeadlines",
       "adminbotConferencePapers",

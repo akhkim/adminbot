@@ -10,6 +10,7 @@ import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
+  type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
 } from "../auth/session.ts";
 
@@ -18,6 +19,8 @@ export type AdminBotProfileOverviewHost = {
   adminBotProfileOverview: MemberProfileOverviewRow[];
   /** How many fields count as complete. Zero until the first read answers. */
   adminBotProfileOverviewFieldCount: number;
+  /** The lab-wide adoption roll-up. Null until the first read answers. */
+  adminBotProfileAdoption?: MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;
   adminBotProfileOverviewError: string | null;
   adminBotProfileOverviewLoadedAt: number | null;
@@ -61,6 +64,7 @@ export async function loadAdminBotProfileOverview(
     }
     host.adminBotProfileOverview = result.value.members;
     host.adminBotProfileOverviewFieldCount = result.value.mandatoryFieldCount;
+    host.adminBotProfileAdoption = result.value.adoption;
   } finally {
     host.adminBotProfileOverviewLoading = false;
   }
