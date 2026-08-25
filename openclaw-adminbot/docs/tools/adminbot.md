@@ -402,31 +402,62 @@ the button. Slack is the only zone source that updates itself when somebody
 travels or moves, and a stale zone mis-schedules meetings silently. The wrapper
 authenticates with `ADMINBOT_SERVICE_TOKEN` out of the mode-600 env file, the
 same way the OpenReview and mandatory-fields passes do, and its stdout becomes
-the Cron tab's run summary. Register it the same way as the OpenReview job (see
-[adminbot-openreview.md](adminbot-openreview.md)):
+the Cron tab's run summary. It is registered by the cron sync below, like every other recurring pass.
+
+## Scheduled passes
+
+Every recurring AdminBot job is declared in [`config/adminbot-cron.json`](../../config/adminbot-cron.json)
+and applied with:
 
 ```bash
-pnpm openclaw cron add \
-  --name adminbot-member-directory \
-  --description "Daily Slack timezone/directory sync" \
-  --cron "40 5 * * *" \
-  --command-argv '["bash","<repo>/scripts/adminbot-member-directory-cron.sh"]' \
-  --timeout-seconds 900 \
-  --no-deliver
+scripts/adminbot-cron-sync.sh            # apply the manifest
+scripts/adminbot-cron-sync.sh --dry-run  # show what it would change
 ```
+
+The sync is idempotent -- a job already in the store is edited to match rather than added again --
+so it is safe on every deploy and is the intended way to change a schedule. It never removes a job
+the manifest does not mention; it names it and leaves it alone.
+
+Registration used to be a `pnpm openclaw cron add` block copied out of whichever doc described that
+feature. Three of the fourteen wrappers had one and the rest were registered by hand on the host, so
+"what does AdminBot run, and when" could only be answered by reading the cron store on Aurora -- and
+a job that was never registered is silent: nobody is nudged and nothing errors.
+
+| Job                                 | Schedule             | What it does                                                      |
+| ----------------------------------- | -------------------- | ----------------------------------------------------------------- |
+| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                  |
+| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                            |
+| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                 |
+| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                               |
+| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                             |
+| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs          |
+| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                        |
+| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                          |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                      |
+| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                          |
+| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank            |
+| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting        |
+| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                          |
+| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                |
+| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                 |
+| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days |
+
+Times are the gateway's. The nudge passes are staggered through the morning and
+`adminbot-nudge-escalation` runs after them on purpose: it reads what those passes filed, so running
+it first would chase yesterday's list.
 
 The pass stamps `timezone` from Slack's `tz`, backfills `slack_user_id` by email
 for members the roster never linked, and re-tallies 7-day message counts -- one
 route does all three, and the timezone is the reason it runs daily. A member
-Slack answers nothing for has their zone cleared; a member the *lookup failed*
+Slack answers nothing for has their zone cleared; a member the _lookup failed_
 for keeps what they had, so one bad night on the Slack API cannot blank the
 roster's mandatory timezone field.
 
 The endpoint is public, but its response shape depends on who's asking:
 
 - Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:
-  [{ member_id, name, source, avatar_url?, last_login_at? }] } ], unplaced,
-  counts }` -- names included, plus each member's Slack avatar and last login
+[{ member_id, name, source, avatar_url?, last_login_at? }] } ], unplaced,
+counts }` -- names included, plus each member's Slack avatar and last login
   time where known, for the recently-active faces shown per city.
 - Anyone else (anonymous, or a signed-in non-admin member):
   `{ mode: "summary", places: [...{ ...place, count }], counts }` -- a
@@ -800,11 +831,11 @@ months in Berlin and keeps being invited to a 10am Toronto meeting.
 
 `adminbot_member_locations` is an append-only timeline fed by three sources:
 
-| Source           | Written by                                        |
-| ---------------- | ------------------------------------------------- |
-| `self_reported`  | any profile edit that changes `location` / `current_city` |
-| `login_ip`       | the country of a successful sign-in (IPinfo Lite, country-level only) |
-| `slack_profile`  | the member-map Slack sweep                        |
+| Source          | Written by                                                            |
+| --------------- | --------------------------------------------------------------------- |
+| `self_reported` | any profile edit that changes `location` / `current_city`             |
+| `login_ip`      | the country of a successful sign-in (IPinfo Lite, country-level only) |
+| `slack_profile` | the member-map Slack sweep                                            |
 
 An observation is appended only when it **differs** from the last one from the same source, so a
 member who signs in twice a day adds no rows and the timeline stays a change log.
