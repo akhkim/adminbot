@@ -4025,8 +4025,6 @@ adminbot-deadlines-view {
 
 .deadline-board {
   width: 100%;
-  max-width: 75rem;
-  margin: 0 auto;
   color: var(--text);
 }
 
