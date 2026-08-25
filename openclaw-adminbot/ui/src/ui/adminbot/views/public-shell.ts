@@ -62,6 +62,11 @@ function renderPublicNavItem(state: AppViewState, tab: Tab) {
         }
         event.preventDefault();
         state.tab = tab;
+        window.history.pushState(
+          {},
+          "",
+          `${normalizeBasePath(state.basePath ?? "")}${pathForTab(tab)}`,
+        );
       }}
     >
       <span class="nav-item__icon" aria-hidden="true">${icons[iconForTab(tab)]}</span>
@@ -158,11 +163,17 @@ export function renderPublicShell(state: AppViewState) {
             </div>
           </div>
         </aside>
-        <main class="content content--public">
-          <div class="card adminbot-card adminbot-card--wide">
-            <div class="card-title">${titleForTab(state.tab)}</div>
-            ${renderPublicPanel(state)}
-          </div>
+        <main
+          class="content content--public ${state.tab === "adminbotDeadlines"
+            ? "content--public-deadlines"
+            : ""}"
+        >
+          ${state.tab === "adminbotDeadlines"
+            ? renderPublicPanel(state)
+            : html`<div class="card adminbot-card adminbot-card--wide">
+                <div class="card-title">${titleForTab(state.tab)}</div>
+                ${renderPublicPanel(state)}
+              </div>`}
         </main>
       </div>
     </div>

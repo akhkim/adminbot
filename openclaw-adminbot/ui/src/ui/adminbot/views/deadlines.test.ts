@@ -2,28 +2,22 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderDeadlines } from "./deadlines.ts";
+import {
+  buildDeadlineBoardEntries,
+  filterDeadlineBoardEntries,
+  groupDeadlineBoardEntries,
+  renderDeadlines,
+} from "./deadlines.ts";
 
-// The countdown element owns a 1-second interval; drive it with fake timers so
-// the test asserts the tick behavior instead of sleeping.
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-08-04T12:00:00Z"));
+  vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
 });
 
 afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
 });
-
-async function renderView(): Promise<HTMLElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  render(renderDeadlines(), container);
-  // The view is a custom element; its first render is scheduled asynchronously.
-  await settle(container);
-  return container;
-}
 
 async function settle(container: HTMLElement): Promise<void> {
   await (
@@ -33,264 +27,234 @@ async function settle(container: HTMLElement): Promise<void> {
   )?.updateComplete;
 }
 
-// Inside the last day the "Nd " prefix is dropped, so it is optional here.
-const COUNTDOWN = /^(?:\d+d )?\d{2}:\d{2}:\d{2}$/u;
+async function renderView(view: "cards" | "default" = "cards"): Promise<HTMLElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines(), container);
+  await settle(container);
+  if (view === "cards") {
+    buttonNamed(container, "Cards").click();
+    await settle(container);
+  }
+  return container;
+}
 
-function conferenceNamed(container: HTMLElement, needle: string): HTMLElement {
-  return [...container.querySelectorAll<HTMLElement>(".conference")].find((node) =>
-    node.querySelector(".conference__name")?.textContent?.includes(needle),
+function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === name,
   )!;
 }
 
+describe("deadline board model", () => {
+  it("keeps all valid generated rows in chronological order", () => {
+    const entries = buildDeadlineBoardEntries();
+    expect(entries.length).toBeGreaterThan(100);
+    for (let index = 1; index < entries.length; index += 1) {
+      expect(entries[index].instant).toBeGreaterThanOrEqual(entries[index - 1].instant);
+    }
+  });
+
+  it("filters against a concrete venue group and venue name", () => {
+    const entries = buildDeadlineBoardEntries();
+    const group = filterDeadlineBoardEntries(entries, "ICLR 2027", "");
+    expect(group.length).toBeGreaterThan(1);
+    expect(group.every((entry) => entry.venue.group_label === "ICLR 2027")).toBe(true);
+
+    const searched = filterDeadlineBoardEntries(entries, "", "impact-speech");
+    expect(searched).toHaveLength(1);
+    expect(searched[0].venue.name).toContain("IMPACT-SPEECH");
+  });
+
+  it("groups the filtered chronology without duplicating deadlines", () => {
+    const entries = buildDeadlineBoardEntries();
+    const groups = groupDeadlineBoardEntries(entries);
+
+    expect(groups[0].instant).toBe(groups[0].entries[0].instant);
+    expect(groups.map((group) => group.label).toSorted()).toEqual(
+      [...new Set(entries.map((entry) => entry.venue.group_label))].toSorted(),
+    );
+    expect(groups.flatMap((group) => group.entries)).toHaveLength(entries.length);
+    expect(
+      groups
+        .flatMap((group) => group.entries)
+        .map((entry) => entry.venue.id)
+        .toSorted(),
+    ).toEqual(entries.map((entry) => entry.venue.id).toSorted());
+    const neurips = entries.filter(
+      (entry) => entry.venue.venue_group.replace(/\s+workshops$/iu, "") === "NeurIPS 2026",
+    );
+    const neuripsGroup = groups.find((group) => group.label === "NeurIPS 2026");
+    expect(neurips.length).toBeGreaterThan(100);
+    expect(neuripsGroup?.entries.length).toBe(neurips.length);
+    expect(neuripsGroup?.sections.unknown.length).toBeGreaterThan(100);
+    const emnlpGroup = groups.find((group) => group.label === "EMNLP 2026");
+    expect(emnlpGroup?.sections.archival.length).toBeGreaterThan(0);
+    expect(emnlpGroup?.sections.unknown.length).toBeGreaterThan(0);
+  });
+});
+
 describe("renderDeadlines", () => {
-  it("lists one row per conference, soonest first, with a live countdown", async () => {
+  it("renders the standalone board's native hierarchy without an embedded page", async () => {
     const container = await renderView();
 
-    const rows = [...container.querySelectorAll(".conference")];
-    expect(rows.length).toBeGreaterThan(0);
-    // The snapshot carries a handful of conferences behind a hundred-odd venues; the point of the
-    // view is that the board is the size of the former, not the latter.
-    expect(rows.length).toBeLessThan(20);
-
-    const countdowns = rows.map(
-      (row) => row.querySelector(".conference__countdown")?.textContent?.trim() ?? "",
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.querySelector(".deadline-board__header")?.textContent).toContain(
+      "Upcoming conference & workshop deadlines.",
     );
-    for (const label of countdowns) {
-      expect(label).toMatch(COUNTDOWN);
-    }
-    // Sorted ascending by the soonest deadline under each conference.
-    const daysOf = (label: string) => (label.includes("d ") ? Number(label.split("d")[0]) : 0);
-    expect(daysOf(countdowns[0] ?? "")).toBeLessThanOrEqual(daysOf(countdowns.at(-1) ?? ""));
-  });
-
-  it("keeps every conference collapsed until it is opened", async () => {
-    const container = await renderView();
-
-    const toggles = [...container.querySelectorAll('[data-testid="conference-toggle"]')];
-    expect(toggles.length).toBeGreaterThan(0);
-    for (const toggle of toggles) {
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    }
-    for (const panel of container.querySelectorAll(".conference__panel")) {
-      expect(panel.hasAttribute("hidden")).toBe(true);
-    }
-  });
-
-  it("opens a conference to its workshops and closes it again", async () => {
-    const container = await renderView();
-
-    // NeurIPS is the conference carrying a full workshop track in the bundled snapshot.
-    conferenceNamed(container, "NeurIPS")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
-    await settle(container);
-
-    const opened = conferenceNamed(container, "NeurIPS");
-    const toggle = opened.querySelector('[data-testid="conference-toggle"]')!;
-    const panel = opened.querySelector(".conference__panel")!;
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(panel.hasAttribute("hidden")).toBe(false);
-    // aria-controls points at the panel it actually reveals.
-    expect(toggle.getAttribute("aria-controls")).toBe(panel.id);
-
-    const workshopRows = panel.querySelectorAll(".deadline-row");
-    expect(workshopRows.length).toBeGreaterThan(1);
-    for (const row of workshopRows) {
-      expect(row.querySelector(".deadline-row__countdown")?.textContent?.trim()).toMatch(COUNTDOWN);
-      expect(row.querySelector(".deadline-row__name")?.textContent?.trim()).not.toBe("");
-    }
-
-    toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await settle(container);
+    expect(container.querySelector(".deadline-board__hero")).not.toBeNull();
+    expect(container.querySelectorAll(".deadline-board__stats > div")).toHaveLength(4);
+    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain("Due today");
     expect(
-      conferenceNamed(container, "NeurIPS")
-        .querySelector('[data-testid="conference-toggle"]')!
-        .getAttribute("aria-expanded"),
-    ).toBe("false");
+      container.querySelector<HTMLInputElement>('.deadline-board__search input[type="search"]')
+        ?.placeholder,
+    ).toBe("Search conferences & workshops…");
+    expect(container.querySelectorAll(".deadline-card").length).toBeGreaterThan(100);
+    const boardChildren = [...container.querySelector(".deadline-board")!.children];
+    expect(boardChildren.indexOf(container.querySelector(".deadline-board__modes")!)).toBeLessThan(
+      boardChildren.indexOf(container.querySelector(".deadline-board__controls")!),
+    );
+    expect(
+      boardChildren.indexOf(container.querySelector(".deadline-board__controls")!),
+    ).toBeLessThan(boardChildren.indexOf(container.querySelector(".deadline-board__overview")!));
+    expect(
+      container.querySelector(".deadline-board__guide")?.textContent?.replace(/\s+/gu, " "),
+    ).toContain(
+      "Non-archival does not count as publishing; you can still submit the paper elsewhere.",
+    );
+    expect(container.textContent).not.toContain("Jinesis Lab · Submission Deadlines");
+    expect(container.textContent).not.toContain("countdowns update live");
   });
 
-  it("hoists the date a whole workshop track shares instead of repeating it per row", async () => {
+  it("filters directly to one venue group", async () => {
     const container = await renderView();
+    const button = [
+      ...container.querySelectorAll<HTMLButtonElement>(".deadline-board__groups button"),
+    ].find((candidate) => candidate.textContent?.includes("ICLR 2027"))!;
 
-    conferenceNamed(container, "NeurIPS")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
+    button.click();
     await settle(container);
 
-    // Scoped to the conference this test opened. Every conference renders its panel (hidden when
-    // collapsed), so a container-wide search finds whichever conference sorts first -- EMNLP, whose
-    // workshops each carry their own CFP date and so have nothing to hoist.
-    const workshops = [
-      ...conferenceNamed(container, "NeurIPS").querySelectorAll(".deadline-section"),
-    ].find((section) =>
-      section.querySelector(".deadline-section__title")?.textContent?.includes("Non-archival"),
+    const groups = [...container.querySelectorAll(".deadline-card__group")].map(
+      (node) => node.textContent?.trim() ?? "",
+    );
+    expect(groups.length).toBeGreaterThan(1);
+    expect(groups.every((label) => label.startsWith("ICLR 2027"))).toBe(true);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("searches the visible board in place", async () => {
+    const container = await renderView();
+    const input = container.querySelector<HTMLInputElement>(".deadline-board__search input")!;
+    input.value = "IMPACT-SPEECH";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await settle(container);
+
+    const cards = [...container.querySelectorAll(".deadline-card")];
+    expect(cards).toHaveLength(1);
+    expect(cards[0].querySelector(".deadline-card__name")?.textContent).toContain("IMPACT-SPEECH");
+    expect(buttonNamed(container, "All 1")).toBeDefined();
+    const stats = [...container.querySelectorAll(".deadline-board__stats > div")];
+    expect(stats[0]?.querySelector("dt")?.textContent).toBe("Matching deadlines");
+    expect(stats[0]?.querySelector("dd")?.textContent).toBe("1");
+    expect(stats[1]?.querySelector("dt")?.textContent).toBe("Due today");
+    expect(stats[1]?.querySelector("dd")?.textContent).toBe("1");
+  });
+
+  it("switches among cards, grouped disclosures, and a complete table", async () => {
+    const container = await renderView("default");
+    const count = Number(container.querySelector(".deadline-board__stats dd")?.textContent);
+    expect(count).toBeGreaterThan(100);
+    expect(
+      [...container.querySelectorAll(".deadline-board__view button")].map((button) =>
+        button.textContent?.trim(),
+      ),
+    ).toEqual(["Groups", "Cards", "Table"]);
+    expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
+
+    expect(container.querySelector(".deadline-board__grid")).toBeNull();
+    const groups = [...container.querySelectorAll<HTMLElement>(".deadline-group")];
+    expect(groups.length).toBeGreaterThan(1);
+    expect(groups.reduce((total, group) => total + Number(group.dataset.count), 0)).toBe(count);
+    groups[0].querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    await settle(container);
+    const openGroup = container.querySelector<HTMLElement>(".deadline-group")!;
+    expect(openGroup.querySelector(".deadline-group__panel")?.hasAttribute("hidden")).toBe(false);
+    expect(openGroup.querySelector(".deadline-group__row-date")?.textContent).toMatch(
+      /\d{2}:\d{2} AoE/u,
+    );
+    expect(
+      [...openGroup.querySelector(".deadline-group__row")!.children]
+        .slice(0, 3)
+        .map((element) => element.className),
+    ).toEqual([
+      "deadline-group__row-countdown",
+      "deadline-group__row-date",
+      "deadline-group__row-main",
+    ]);
+    expect(
+      [...openGroup.querySelector(".deadline-group__row-note")!.children].map(
+        (element) => element.className,
+      ),
+    ).toEqual(["deadline-group__row-detail", "deadline-card__labels"]);
+    expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
+
+    buttonNamed(container, "Cards").click();
+    await settle(container);
+    expect(container.querySelectorAll(".deadline-card")).toHaveLength(count);
+
+    buttonNamed(container, "Table").click();
+    await settle(container);
+
+    expect(container.querySelector(".deadline-board__grid")).toBeNull();
+    expect(container.querySelectorAll(".deadline-table tbody tr")).toHaveLength(count);
+    expect(container.querySelector(".deadline-table__date")?.textContent).toMatch(
+      /\d{2}:\d{2} AoE/u,
+    );
+    expect(container.querySelector(".deadline-table__venue")).not.toBeNull();
+    expect(container.querySelector(".deadline-table tbody .deadline-card__type")).not.toBeNull();
+    expect(buttonNamed(container, "Table").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("shows entry type and safe source links on cards", async () => {
+    const container = await renderView();
+    const workshop = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
+      (card) => card.dataset.entryType === "workshop",
     )!;
-    expect(workshops).toBeDefined();
-    expect(workshops.querySelector(".deadline-section__shared")?.textContent).toMatch(/all due/u);
-    // The shared date is stated once in the head, so the rows carry no date column of their own.
-    expect(workshops.querySelectorAll(".deadline-row__date").length).toBe(0);
-  });
 
-  // The split the board exists to make: an archival venue publishes the paper, so it cannot then go
-  // to a second one, while a workshop leaves it free. The classification is stamped on the data by
-  // scripts/adminbot_deadlines.py -- these assert the board reads it rather than re-deriving it.
-  it("separates archival dates from non-archival ones inside a conference", async () => {
-    const container = await renderView();
-
-    conferenceNamed(container, "NeurIPS")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
-    await settle(container);
-
-    const titles = [...container.querySelectorAll(".deadline-section__title")].map(
-      (node) => node.textContent ?? "",
+    expect(workshop.querySelector(".deadline-card__type")?.textContent).toBe("Workshop");
+    expect(workshop.querySelector(".deadline-card__date")?.textContent).toMatch(/\d{2}:\d{2} AoE/u);
+    const venue = buildDeadlineBoardEntries().find(
+      (entry) => entry.venue.name === workshop.querySelector(".deadline-card__name")?.textContent,
+    )!.venue;
+    expect(workshop.querySelector(".deadline-card__group-name")?.textContent).toBe(
+      venue.group_label,
     );
-    // NeurIPS workshops are non-archival; the conference's own dates are not workshops.
-    expect(titles.some((title) => title.includes("Non-archival"))).toBe(true);
+    const source = workshop.querySelector<HTMLAnchorElement>(".deadline-card__source")!;
+    expect(source.target).toBe("_blank");
+    expect(source.rel.split(" ")).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
   });
 
-  it("filters the board to one column and keeps the counts off the whole board", async () => {
+  it("ticks the lead and card countdowns every second", async () => {
     const container = await renderView();
-
-    const countOf = (id: string) =>
-      Number(
-        container
-          .querySelector(`[data-testid="deadline-filter-${id}"] .deadlines__filter-count`)
-          ?.textContent?.trim(),
-      );
-    const all = countOf("all");
-    const archival = countOf("archival");
-    const nonArchival = countOf("nonArchival");
-    expect(all).toBeGreaterThan(0);
-    // Rebuttals are neither, so the two columns need not sum to the whole board -- but neither
-    // may exceed it, and both must be real subsets.
-    expect(archival).toBeLessThanOrEqual(all);
-    expect(nonArchival).toBeLessThanOrEqual(all);
-    expect(archival + nonArchival).toBeLessThanOrEqual(all);
-
-    container.querySelector<HTMLButtonElement>('[data-testid="deadline-filter-archival"]')!.click();
-    await settle(container);
-
-    // The counts still describe the whole board, not the filtered view.
-    expect(countOf("all")).toBe(all);
-    expect(countOf("nonArchival")).toBe(nonArchival);
-    // And the selected column is the one that is pressed.
-    expect(
+    const read = () =>
       container
-        .querySelector('[data-testid="deadline-filter-archival"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
+        .querySelector('.deadline-card:not([data-urgency="passed"]) .deadline-card__countdown')
+        ?.textContent?.trim();
+    const before = read();
 
-  // A venue is not one date. Sub-deadlines are separate rows sharing a venue_group, so opening a
-  // conference shows each one counting down separately, in the order a paper meets them.
-  it("lists a conference's sub-deadlines under it, named by stage", async () => {
-    const container = await renderView();
-
-    conferenceNamed(container, "ICLR")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
-    await settle(container);
-
-    const names = [
-      ...conferenceNamed(container, "ICLR").querySelectorAll(".deadline-row__name"),
-    ].map((node) => node.textContent?.trim() ?? "");
-    // Two rows: the abstract and the full paper, five days apart. They are named by the stage
-    // rather than repeating "ICLR 2027" twice, which is the only part that differs.
-    expect(names).toContain("Abstract");
-    expect(names).toContain("Full paper");
-    // Stage order, which is also date order here.
-    expect(names.indexOf("Abstract")).toBeLessThan(names.indexOf("Full paper"));
-  });
-
-  // Ninety-nine workshops under one conference share a stage ("ARR commitment") and differ only in
-  // name. Naming the rows by the stage made the panel ninety-nine identical lines; the name leads.
-  it("names a workshop row by the workshop, with its stage alongside", async () => {
-    const container = await renderView();
-
-    conferenceNamed(container, "EMNLP")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
-    await settle(container);
-
-    const rows = [
-      ...conferenceNamed(container, "EMNLP").querySelectorAll<HTMLElement>(".deadline-row"),
-    ];
-    const commitments = rows.filter(
-      (row) => row.querySelector(".deadline-row__stage")?.textContent?.trim() === "ARR commitment",
-    );
-    // Several workshops share that stage, which is exactly why the stage cannot be the name.
-    expect(commitments.length).toBeGreaterThan(1);
-    const names = commitments.map(
-      (row) => row.querySelector(".deadline-row__name")?.textContent?.trim() ?? "",
-    );
-    for (const name of names) {
-      expect(name).not.toBe("ARR commitment");
-      expect(name).not.toBe("");
-      // The conference is the heading above, so it is not repeated on the row.
-      expect(name).not.toContain("(EMNLP 2026)");
-    }
-    expect(new Set(names).size).toBe(names.length);
-    // OpenReview suffixes commitment venues with the route; the stage beside the name says it
-    // already, and on the name it pushes out the part that identifies the workshop.
-    for (const name of names) {
-      expect(name.toLowerCase()).not.toMatch(/arr[\s_-]*commitment\)?$/u);
-    }
-    // And the route chip does not repeat the word the stage already says.
-    expect(
-      commitments[0].querySelector('.deadline-row__route[data-route="commitment"]'),
-    ).toBeNull();
-  });
-
-  it("keeps the full venue name on a conference with a single date", async () => {
-    const container = await renderView();
-
-    conferenceNamed(container, "NAACL")
-      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
-      .click();
-    await settle(container);
-
-    const names = [
-      ...conferenceNamed(container, "NAACL").querySelectorAll(".deadline-row__name"),
-    ].map((node) => node.textContent?.trim() ?? "");
-    // One row, so the name is the information rather than the stage.
-    expect(names.some((name) => name.includes("NAACL 2027"))).toBe(true);
-  });
-
-  it("leads with the single most urgent deadline anywhere", async () => {
-    const container = await renderView();
-
-    const lead = container.querySelector(".deadline-lead");
-    expect(lead).not.toBeNull();
-    expect(lead?.querySelector(".deadline-lead__countdown")?.textContent?.trim()).toMatch(
-      COUNTDOWN,
-    );
-    expect(lead?.querySelector(".deadline-lead__name")?.textContent?.trim()).not.toBe("");
-  });
-
-  it("ticks the countdown in place every second", async () => {
-    const container = await renderView();
-    const readFirst = () => container.querySelector(".conference__countdown")?.textContent ?? "";
-
-    const before = readFirst();
     await vi.advanceTimersByTimeAsync(2_000);
-    const after = readFirst();
 
-    expect(before).toMatch(/^(?:\d+d )?\d{2}:/u);
-    expect(after).not.toBe(before);
+    expect(read()).not.toBe(before);
   });
 
-  it("stops its timer when the element leaves the DOM", async () => {
+  it("stops its timer when removed", async () => {
     const container = await renderView();
-    const element = container.querySelector("adminbot-deadlines-view");
-    expect(element).not.toBeNull();
+    const element = container.querySelector("adminbot-deadlines-view")!;
+    element.remove();
+    const detached = element.querySelector(".deadline-card__countdown")?.textContent;
 
-    element?.remove();
-    const detachedLabel = element?.querySelector(".conference__countdown")?.textContent;
     await vi.advanceTimersByTimeAsync(5_000);
 
-    // disconnectedCallback cleared the interval, so the detached node stops updating —
-    // a leaked timer would keep re-rendering it every second forever.
-    expect(element?.querySelector(".conference__countdown")?.textContent).toBe(detachedLabel);
+    expect(element.querySelector(".deadline-card__countdown")?.textContent).toBe(detached);
   });
 });

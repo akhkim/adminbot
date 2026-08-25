@@ -26,6 +26,14 @@ export function aoeDateLabel(aoe: string): string {
   return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : "";
 }
 
+// Keep the wall-clock part attached to its zone. A date by itself is ambiguous on the day it
+// passes, because an AoE deadline remains open twelve hours after the same UTC calendar date.
+export function aoeDateTimeLabel(aoe: string): string {
+  const date = aoeDateLabel(aoe);
+  const time = /[ T](\d{2}):(\d{2})/u.exec(aoe);
+  return date && time ? `${date} · ${time[1]}:${time[2]} AoE` : date;
+}
+
 // Four bands rather than a gradient: a countdown is read as "can I still start this", and that
 // question has a small number of distinct answers. Named for the token each one resolves to, so
 // urgency is a design-system color and not a hex chosen per component.
@@ -47,9 +55,8 @@ export function urgencyOf(instant: number, now: number): Urgency {
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
-// Remaining time as "Nd HH:MM:SS" (AoE deadlines can be same-day, so we always show
-// hours:minutes:seconds instead of collapsing a due-today item to "0d"). Inside the last day the
-// leading "0d" is dropped: it reads as a zero quantity when what it actually means is "today".
+// Remaining time as "Nd HH:MM:SS", including 0d on the final day so every board keeps one stable
+// shape as the deadline approaches.
 export function countdownLabel(ms: number): string {
   const left = Math.max(ms, 0);
   const d = Math.floor(left / MS_DAY);
@@ -57,18 +64,22 @@ export function countdownLabel(ms: number): string {
   const m = Math.floor(left / 60_000) % 60;
   const s = Math.floor(left / 1000) % 60;
   const clock = `${pad(h)}:${pad(m)}:${pad(s)}`;
-  return d > 0 ? `${d}d ${clock}` : clock;
+  return `${d}d ${clock}`;
 }
 
 export type DeadlineEntry = { venue: DeadlineVenue; instant: number };
 
-// "Major" is the conference's own submission deadline: `venue_type === "conference"`. The snapshot
+// "Major" is a conference/track submission deadline, read from the generated entry type. The snapshot
 // is 107 entries and 101 of them are workshops sharing a handful of instants, so including those
 // would make a two-row summary permanently read "NeurIPS workshops, NeurIPS workshops". Rebuttals
 // are excluded for the same reason they are not submissions -- they are work on a paper already in,
 // not a deadline to aim a new one at. The full board still lists every one of them.
 function isMajorConference(venue: DeadlineVenue): boolean {
-  return venue.venue_type === "conference";
+  return (
+    venue.entry_type !== "workshop" &&
+    venue.entry_type !== "rebuttal" &&
+    venue.entry_type !== "other"
+  );
 }
 
 /**
@@ -123,7 +134,7 @@ export function allUpcomingConferences(
   options: { archivalOnly?: boolean } = {},
 ): DeadlineEntry[] {
   return DEADLINE_VENUES.filter(isMajorConference)
-    .filter((venue) => !options.archivalOnly || venue.archival === true)
+    .filter((venue) => !options.archivalOnly || venue.archival_status === "archival")
     .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);

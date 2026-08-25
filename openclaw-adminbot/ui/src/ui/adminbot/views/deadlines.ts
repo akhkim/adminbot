@@ -1,293 +1,192 @@
-// Control UI view renders the AdminBot deadline tracker (Output 0 tab).
-// Self-contained: reads the bundled DEADLINE_VENUES snapshot and lists upcoming
-// conference/workshop deadlines with AoE-correct dates and a LIVE per-second
-// countdown (days + HH:MM:SS) that ticks in place. The standalone board served
-// at GET /deadlines uses the same data (see docs/tools/adminbot-deadlines.md).
+// Native Control UI rendering of Deadline Tracker Output 0.
 //
-// One row per conference, expandable to the workshops running under it.
-//
-// The dataset is 105 entries and 99 of them are NeurIPS 2026 workshops sharing a single instant,
-// so any flat rendering is really one obligation wearing ninety-nine rows. Collapsing to the
-// conference makes the board its actual size -- five things -- and puts the workshop list behind
-// one click by someone who has decided they care about that conference.
-//
-// Workshops are tied to their conference through venue_group, which the generator emits as
-// "<conference> Workshops"; stripping that suffix is the whole join.
-//
-// Styling lives in styles/layout.css with the rest of the app. It used to be an inline <style>
-// block naming --surface, --text-muted and a set of hardcoded hexes, none of which exist in this
-// design system -- so every rule fell through to its fallback and the tab rendered in a different
-// blue-grey theme than the product around it.
+// The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
+// generated deadline dataset and present the same board: next deadline, aggregate counts, venue
+// filters, search, and card/table views. This renderer stays in the app's document flow so the
+// containing Control UI pane owns one ordinary vertical scroll; there is no iframe or nested page.
+
 import { html, nothing, LitElement } from "lit";
-import { icons } from "../../icons.ts";
-// AoE parsing, the countdown format and the urgency bands are shared with the profile-page
-// summary; see data/deadline-time.ts for why they live outside this view.
+import { t } from "../../../i18n/index.ts";
 import {
   aoeDateLabel,
+  aoeDateTimeLabel,
   aoeInstantMs,
   countdownLabel,
+  MS_DAY,
   urgencyOf,
-  type DeadlineEntry as Entry,
+  type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
 
-/**
- * Whether submitting somewhere consumes the paper.
- *
- * The split the board is organised around, because it is the question a member is
- * actually asking when they scan these dates: an archival venue publishes the work
- * in proceedings, so it cannot then go to a second archival venue, while a workshop
- * leaves it free to be submitted onward. One date is a commitment and the other is
- * an opportunity, and a flat list of 120 entries says nothing about which is which.
- *
- * `rebuttal` is neither: it is work on a paper already submitted, not somewhere to
- * send a new one, so it is kept out of both columns rather than filed under the one
- * it least resembles.
- */
-type Kind = "archival" | "nonArchival" | "other";
+export type DeadlineBoardEntry = { venue: DeadlineVenue; instant: number };
+type DeadlineGroupKind = "archival" | "nonArchival" | "unknown" | "other";
+export type DeadlineBoardGroup = {
+  id: string;
+  label: string;
+  entries: DeadlineBoardEntry[];
+  instant: number;
+  sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]>;
+};
+export type DeadlineBoardView = "cards" | "groups" | "table";
+type DeadlineUrgency = Urgency | "passed";
 
-// Read off the field the collector stamps rather than re-derived here. The policy
-// lives once, in scripts/adminbot_deadlines.py; a copy of the rule in the view is
-// how the mandatory-profile-field lists drifted.
-function kindOf(venue: DeadlineVenue): Kind {
-  if (venue.venue_type === "rebuttal") {
-    return "other";
-  }
-  return venue.archival ? "archival" : "nonArchival";
+export function buildDeadlineBoardEntries(): DeadlineBoardEntry[] {
+  return DEADLINE_VENUES.map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+    .filter((entry) => Number.isFinite(entry.instant))
+    .toSorted(
+      (left, right) =>
+        left.instant - right.instant || left.venue.name.localeCompare(right.venue.name),
+    );
 }
 
-type Conference = {
-  key: string;
-  archival: Entry[];
-  nonArchival: Entry[];
-  other: Entry[];
-  // Soonest instant anywhere under this conference, which is what the collapsed row counts down to.
-  nextInstant: number;
-  nextEntry: Entry;
+export function filterDeadlineBoardEntries(
+  entries: readonly DeadlineBoardEntry[],
+  group: string,
+  query: string,
+): DeadlineBoardEntry[] {
+  const needle = query.trim().toLocaleLowerCase();
+  return entries.filter(({ venue }) => {
+    if (group && venue.venue_group !== group) {
+      return false;
+    }
+    if (!needle) {
+      return true;
+    }
+    return [venue.name, venue.group_label, venue.entry_type, venue.deadline_label]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(needle);
+  });
+}
+
+export function groupDeadlineBoardEntries(
+  entries: readonly DeadlineBoardEntry[],
+): DeadlineBoardGroup[] {
+  const groups = new Map<string, DeadlineBoardGroup>();
+  for (const entry of entries) {
+    const id = entry.venue.group_label.trim() || entry.venue.venue_group.trim();
+    const kind: DeadlineGroupKind =
+      entry.venue.entry_type === "rebuttal"
+        ? "other"
+        : entry.venue.archival_status === "archival"
+          ? "archival"
+          : entry.venue.archival_status === "non_archival"
+            ? "nonArchival"
+            : "unknown";
+    const current = groups.get(id);
+    if (current) {
+      current.entries.push(entry);
+      current.sections[kind].push(entry);
+    } else {
+      const sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]> = {
+        archival: [],
+        nonArchival: [],
+        unknown: [],
+        other: [],
+      };
+      sections[kind].push(entry);
+      groups.set(id, {
+        id,
+        label: id,
+        entries: [entry],
+        instant: entry.instant,
+        sections,
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
+function groupOptions(entries: readonly DeadlineBoardEntry[]) {
+  const groups = new Map<string, { id: string; label: string; count: number }>();
+  for (const entry of entries) {
+    const current = groups.get(entry.venue.venue_group);
+    if (current) {
+      current.count += 1;
+    } else {
+      groups.set(entry.venue.venue_group, {
+        id: entry.venue.venue_group,
+        label: entry.venue.group_label,
+        count: 1,
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
+const ENTRY_TYPE_LABELS: Record<DeadlineVenue["entry_type"], string> = {
+  main_conference: "Main conference",
+  demo_track: "Demo track",
+  workshop: "Workshop",
+  arr_direct_submission: "ARR direct submission",
+  arr_commitment: "ARR commitment",
+  rebuttal: "Rebuttal",
+  other: "Other",
 };
 
-export type DeadlineFilter = "all" | "archival" | "nonArchival";
-
-// "NeurIPS 2026 Workshops" and "NeurIPS 2026" are the same conference. The generator emits no
-// explicit parent id, so the suffix is the join; a group without it is already the conference.
-function conferenceKeyOf(venue: DeadlineVenue): string {
-  const group = (venue.venue_group ?? "").trim();
-  return group.replace(/\s+workshops$/iu, "") || venue.name;
+function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
+  return entry.instant <= now ? "passed" : urgencyOf(entry.instant, now);
 }
 
-const byInstant = (a: Entry, b: Entry) => a.instant - b.instant;
-
-export function buildConferences(now: number, filter: DeadlineFilter = "all"): Conference[] {
-  const byKey = new Map<string, Record<Kind, Entry[]>>();
-  for (const venue of DEADLINE_VENUES) {
-    const instant = aoeInstantMs(venue.deadline_aoe);
-    if (!Number.isFinite(instant) || instant <= now) {
-      continue;
-    }
-    const kind = kindOf(venue);
-    // A rebuttal is not a submission either way, so it stays visible under its
-    // conference whichever column the reader has asked for -- filtering it out
-    // would hide a date nobody chose to exclude.
-    if (filter !== "all" && kind !== "other" && kind !== filter) {
-      continue;
-    }
-    const key = conferenceKeyOf(venue);
-    let bucket = byKey.get(key);
-    if (!bucket) {
-      bucket = { archival: [], nonArchival: [], other: [] };
-      byKey.set(key, bucket);
-    }
-    bucket[kind].push({ venue, instant });
+function urgencyLabel(entry: DeadlineBoardEntry, now: number): string {
+  const diff = entry.instant - now;
+  if (diff <= 0) {
+    return "passed";
   }
-
-  return [...byKey]
-    .map(([key, bucket]) => {
-      const archival = bucket.archival.toSorted(byInstant);
-      const nonArchival = bucket.nonArchival.toSorted(byInstant);
-      const other = bucket.other.toSorted(byInstant);
-      // Each list is sorted, so the soonest overall is whichever head comes first.
-      const nextEntry = [archival[0], nonArchival[0], other[0]]
-        .filter(Boolean)
-        .toSorted(byInstant)[0];
-      return { key, archival, nonArchival, other, nextInstant: nextEntry.instant, nextEntry };
-    })
-    // A conference left with nothing after filtering is not a conference to show.
-    .filter((conference) => conference.nextEntry !== undefined)
-    .toSorted((a, b) => a.nextInstant - b.nextInstant);
+  const days = Math.floor(diff / MS_DAY);
+  return days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} left`;
 }
 
-// Facts every entry in a list happens to agree on. Ninety-nine workshops sharing one date and one
-// notification date print those ninety-nine times unless they are hoisted, which buries the only
-// part that varies: the workshop's name.
-type SharedFacts = { date?: string; notification?: string };
-
-function sharedOf(entries: Entry[], pick: (venue: DeadlineVenue) => string | undefined) {
-  if (entries.length < 2) {
-    return undefined;
-  }
-  const first = pick(entries[0].venue)?.trim();
-  if (!first) {
-    return undefined;
-  }
-  return entries.every((entry) => pick(entry.venue)?.trim() === first) ? first : undefined;
+function capitalize(value: string): string {
+  return value ? `${value[0].toLocaleUpperCase()}${value.slice(1)}` : "Deadline";
 }
 
-// The external link needs a name a screen reader can announce; the bare arrow it used to be
-// announced as "link" and nothing else, a hundred times down the page.
-function renderVenueLink(venue: DeadlineVenue) {
-  if (!venue.link) {
-    return nothing;
-  }
-  return html`
-    <a
-      class="deadline-row__link"
-      href=${venue.link}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label=${`${venue.name} — official site`}
-      title="Official site"
-      >↗</a
-    >
-  `;
-}
-
-function renderLabel(venue: DeadlineVenue) {
-  return venue.deadline_label
-    ? html`<span class="deadline-row__label">${venue.deadline_label}</span>`
-    : nothing;
-}
-
-// A venue is not one date. A conference runs an abstract deadline, then the full paper, then
-// rebuttal, then camera-ready; an ARR venue runs a direct submission and a commitment. Each is its
-// own row sharing a venue_group, so opening a conference lists them in the order a paper meets
-// them. Stamped by the collector -- see MILESTONES in scripts/adminbot_deadlines.py.
-const MILESTONE_ORDER = [
-  "abstract",
-  "direct_submission",
-  "full_paper",
-  "demo",
-  "commitment",
-  "rebuttal",
-  "notification",
-  "camera_ready",
-] as const;
-
-const MILESTONE_LABELS: Record<string, string> = {
-  abstract: "Abstract",
-  direct_submission: "Direct submission",
-  full_paper: "Full paper",
-  demo: "Demo submission",
-  commitment: "ARR commitment",
-  rebuttal: "Rebuttal ends",
-  notification: "Notification",
-  camera_ready: "Camera-ready",
-};
-
-function milestoneRank(venue: DeadlineVenue): number {
-  const index = MILESTONE_ORDER.indexOf(venue.milestone as (typeof MILESTONE_ORDER)[number]);
-  return index < 0 ? MILESTONE_ORDER.length : index;
-}
-
-/**
- * What a row is called once its conference is already the heading above it.
- *
- * Two shapes of row end up in the same list. A workshop is its own venue and its name is the
- * whole information -- ninety-nine of them share one date and one stage, so naming them by the
- * stage prints "ARR commitment" ninety-nine times and hides the only part that differs. A
- * conference's own sub-deadlines are the opposite: they all carry the conference's name, so
- * repeating "ICLR 2027" down the panel says nothing and the stage is what differs.
- *
- * So the name leads whenever the row has a name of its own, with the stage kept alongside it in
- * smaller type; a row whose name is just the conference falls back to being named by its stage.
- */
-function rowTitle(venue: DeadlineVenue, conferenceKey: string): { name: string; stage: string } {
-  const stage = MILESTONE_LABELS[venue.milestone ?? ""] ?? venue.deadline_label ?? "";
-  const own = ownName(stripRoute(venue.name, stage), conferenceKey);
-  if (!own) {
-    return { name: stage || venue.name, stage: "" };
-  }
-  return { name: own, stage };
-}
-
-/**
- * The part of a venue name that is not the conference already named above it.
- *
- * "NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)" under the EMNLP 2026 heading is
- * that trailing parenthesis repeated on every row. Returns "" when nothing is left, which is how
- * a conference's own row ("ICLR 2027" under ICLR 2027) says it has no name of its own.
- */
-function ownName(name: string, conferenceKey: string): string {
-  const key = conferenceKey.trim();
-  let out = name.trim();
-  if (key) {
-    // Only an exact naming of the conference is stripped: "(main, ARR submission)" is a track,
-    // not a repeat of the heading, and dropping it would lose which submission this is.
-    out = out.replace(new RegExp(`\\s*[([]\\s*${escapeRegex(key)}\\s*[)\\]]$`, "iu"), "");
-    out = out.replace(new RegExp(`^${escapeRegex(key)}\\s*[-—:–]\\s*`, "iu"), "");
-    if (out.trim().toLowerCase() === key.toLowerCase()) {
-      return "";
+function groupRowTitle(venue: DeadlineVenue, conference: string) {
+  const stage = capitalize(venue.deadline_label);
+  const titleContext = venue.venue_group.trim().replace(/\s+workshops$/iu, "") || conference;
+  let name = venue.name.trim();
+  for (const affix of [` (${titleContext})`, ` [${titleContext}]`]) {
+    if (name.endsWith(affix)) {
+      name = name.slice(0, -affix.length).trim();
     }
   }
-  return out.trim();
-}
-
-// OpenReview names a commitment venue by suffixing its title, so half a workshop track arrives
-// as "... (ARR Commitment)" or "... -- ARR Commitment". The stage beside the name already says
-// that, and it is the tail of the name, where it pushes the part that identifies the workshop
-// out of the visible line.
-const ROUTE_SUFFIX =
-  /\s*(?:[([]\s*ARR[\s_-]*commitment\s*[)\]]|[-—–:]{0,2}\s*ARR[\s_-]*commitment)$/iu;
-
-function stripRoute(name: string, stage: string): string {
-  if (stage.toLowerCase() !== "arr commitment") {
-    return name;
+  for (const separator of [" — ", " – ", " - ", ": "]) {
+    if (name.startsWith(`${titleContext}${separator}`)) {
+      name = name.slice(titleContext.length + separator.length).trim();
+    }
   }
-  return name.replace(ROUTE_SUFFIX, "").trim() || name;
-}
-
-function escapeRegex(value: string): string {
-  return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-}
-
-// Which ARR route a date is, spelled out. The *ACL venues take papers two ways and
-// only one of them is open to any given paper: `direct` starts a fresh review cycle,
-// `commitment` attaches reviews the paper already has. Reading that off a
-// deadline_label like "commitment" meant knowing the convention; the chip says it.
-function renderRoute(venue: DeadlineVenue, stage = "") {
-  if (venue.submission_type !== "direct" && venue.submission_type !== "commitment") {
-    return nothing;
+  if (name.toLocaleLowerCase() === titleContext.toLocaleLowerCase()) {
+    return { name: stage, stage: "" };
   }
-  // The stage next to it may already be the route spelled out ("ARR commitment"), and a chip
-  // repeating the word beside it is the noise the stage was added to remove.
-  if (stage.toLowerCase().includes(venue.submission_type)) {
-    return nothing;
+  if (stage.toLocaleLowerCase() === "arr commitment") {
+    name = name.replace(/\s*(?:\(ARR commitment\)|[-—–:]?\s*ARR commitment)$/iu, "").trim();
   }
-  const direct = venue.submission_type === "direct";
-  return html`<span
-    class="deadline-row__route"
-    data-route=${venue.submission_type}
-    title=${direct
-      ? "Submit a new paper into this ARR cycle"
-      : "Commit a paper that already has ARR reviews"}
-    >${direct ? "direct" : "commitment"}</span
-  >`;
+  return { name: name || venue.name, stage };
 }
 
-// Custom element so the countdown owns a 1s timer and re-renders itself; a plain
-// render function cannot manage the tick lifecycle. Light DOM (createRenderRoot
-// returns this) lets the app's theme CSS variables cascade into the rows.
+function countdownParts(diff: number) {
+  const left = Math.max(diff, 0);
+  return {
+    days: Math.floor(left / MS_DAY),
+    hours: Math.floor(left / 3_600_000) % 24,
+    minutes: Math.floor(left / 60_000) % 60,
+    seconds: Math.floor(left / 1000) % 60,
+  };
+}
+
+const pad = (value: number): string => String(value).padStart(2, "0");
+
+function aoeDayKey(now: number): string {
+  return new Date(now - 12 * 3_600_000).toISOString().slice(0, 10);
+}
+
 class AdminbotDeadlinesView extends LitElement {
   private timer: number | undefined;
-
-  // Which conferences are open. Instance state rather than module-level, so a remount does not
-  // inherit the previous board's disclosures. It survives the 1s re-render because the element
-  // itself is not recreated.
-  private readonly expanded = new Set<string>();
-
-  // Which column the reader has asked for. Instance state for the same reason the
-  // disclosures are: a remount should open on the whole board, not on whatever the
-  // last visit narrowed it to.
-  private filter: DeadlineFilter = "all";
+  private readonly expandedGroups = new Set<string>();
+  private now = Date.now();
+  private activeGroup = "";
+  private query = "";
+  private view: DeadlineBoardView = "groups";
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -295,7 +194,10 @@ class AdminbotDeadlinesView extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this.timer = window.setInterval(() => this.requestUpdate(), 1000);
+    this.timer = window.setInterval(() => {
+      this.now = Date.now();
+      this.requestUpdate();
+    }, 1000);
   }
 
   override disconnectedCallback(): void {
@@ -306,230 +208,421 @@ class AdminbotDeadlinesView extends LitElement {
     super.disconnectedCallback();
   }
 
-  private setFilter(filter: DeadlineFilter): void {
-    this.filter = filter;
+  private selectGroup(group: string): void {
+    this.activeGroup = group;
     this.requestUpdate();
   }
 
-  private renderFilter(counts: Record<DeadlineFilter, number>) {
-    const options: Array<{ id: DeadlineFilter; label: string }> = [
-      { id: "all", label: "All" },
-      { id: "archival", label: "Archival" },
-      { id: "nonArchival", label: "Non-archival" },
-    ];
-    return html`
-      <div class="deadlines__filter" role="group" aria-label="Filter deadlines">
-        ${options.map(
-          (option) => html`
-            <button
-              type="button"
-              class="btn btn--sm"
-              data-testid=${`deadline-filter-${option.id}`}
-              aria-pressed=${this.filter === option.id}
-              ?disabled=${this.filter === option.id}
-              @click=${() => this.setFilter(option.id)}
-            >
-              ${option.label}
-              <span class="deadlines__filter-count">${counts[option.id]}</span>
-            </button>
-          `,
-        )}
-      </div>
-    `;
+  private setQuery(event: Event): void {
+    this.query = (event.currentTarget as HTMLInputElement).value;
+    this.requestUpdate();
   }
 
-  private toggle(key: string): void {
-    if (this.expanded.has(key)) {
-      this.expanded.delete(key);
+  private setView(view: DeadlineBoardView): void {
+    this.view = view;
+    this.requestUpdate();
+  }
+
+  private toggleGroup(group: string): void {
+    if (this.expandedGroups.has(group)) {
+      this.expandedGroups.delete(group);
     } else {
-      this.expanded.add(key);
+      this.expandedGroups.add(group);
     }
     this.requestUpdate();
   }
 
-  // One deadline inside an opened conference. The date column disappears whenever the whole list
-  // shares one date, which for a workshop track is the normal case.
-  private renderEntry(entry: Entry, shared: SharedFacts, now: number, conferenceKey: string) {
-    const { venue, instant } = entry;
-    const { name, stage } = rowTitle(venue, conferenceKey);
-    return html`
-      <li class="deadline-row" data-urgency=${urgencyOf(instant, now)}>
-        <span class="deadline-row__countdown">${countdownLabel(instant - now)}</span>
-        ${shared.date
-          ? nothing
-          : html`<span class="deadline-row__date">${aoeDateLabel(venue.deadline_aoe)}</span>`}
-        <span class="deadline-row__body">
-          <span class="deadline-row__title">
-            <span class="deadline-row__name">${name}</span>
-            ${stage
-              ? html`<span class="deadline-row__stage">${stage}</span>`
-              : nothing}${renderRoute(venue, stage)}
-          </span>
-          ${venue.notification_aoe && !shared.notification
-            ? html`<span class="deadline-row__note"
-                >notified ${aoeDateLabel(venue.notification_aoe)}</span
-              >`
-            : nothing}
-        </span>
-        ${renderVenueLink(venue)}
-      </li>
-    `;
-  }
-
-  private renderSection(
-    title: string,
-    entries: Entry[],
-    now: number,
-    hoist: boolean,
-    conferenceKey: string,
-  ) {
-    if (!entries.length) {
-      return nothing;
+  private renderHero(entry: DeadlineBoardEntry | undefined) {
+    if (!entry) {
+      return html`
+        <section class="deadline-board__hero">
+          <p class="deadline-board__eyebrow">Next deadline</p>
+          <h2 class="deadline-board__hero-name">Nothing matches this filter</h2>
+        </section>
+      `;
     }
-    const shared: SharedFacts = hoist
-      ? {
-          date: sharedOf(entries, (venue) => venue.deadline_aoe),
-          notification: sharedOf(entries, (venue) => venue.notification_aoe),
-        }
-      : {};
-    const sharedNote = [
-      shared.date ? `all due ${aoeDateLabel(shared.date)} AoE` : "",
-      shared.notification ? `notified ${aoeDateLabel(shared.notification)}` : "",
-    ].filter(Boolean);
-    // Sub-deadlines of one venue read in the order a paper meets them (abstract before full paper
-    // before camera-ready), which is not always date order when two share a day. Across venues,
-    // date wins.
-    const ordered = entries.toSorted((left, right) => {
-      const leftKey = (left.venue.venue_group ?? "").trim() || left.venue.name;
-      const rightKey = (right.venue.venue_group ?? "").trim() || right.venue.name;
-      if (leftKey === rightKey && left.instant === right.instant) {
-        return milestoneRank(left.venue) - milestoneRank(right.venue);
-      }
-      return left.instant - right.instant;
-    });
+    const parts = countdownParts(entry.instant - this.now);
     return html`
-      <div class="deadline-section">
-        <p class="deadline-section__head">
-          <span class="deadline-section__title">${title}</span>
-          <span class="deadline-section__count">${entries.length}</span>
-          ${sharedNote.length
-            ? html`<span class="deadline-section__shared">${sharedNote.join(" · ")}</span>`
-            : nothing}
+      <section class="deadline-board__hero" data-urgency=${urgency(entry, this.now)}>
+        <p class="deadline-board__eyebrow">Next deadline · ${entry.venue.group_label}</p>
+        <h2 class="deadline-board__hero-name">${entry.venue.name}</h2>
+        <p class="deadline-board__hero-meta">
+          ${capitalize(entry.venue.deadline_label)} · ${aoeDateTimeLabel(entry.venue.deadline_aoe)}
+          ·
+          <span>${urgencyLabel(entry, this.now)}</span>
         </p>
-        <ul class="deadline-section__list">
-          ${ordered.map((entry) => this.renderEntry(entry, shared, now, conferenceKey))}
-        </ul>
-      </div>
-    `;
-  }
-
-  private renderConference(conference: Conference, now: number) {
-    const { key, archival, nonArchival, other, nextInstant } = conference;
-    const open = this.expanded.has(key);
-    const panelId = `deadlines-panel-${key.replaceAll(/\W+/gu, "-").toLowerCase()}`;
-    const counts = [
-      archival.length ? `${archival.length} archival` : "",
-      nonArchival.length ? `${nonArchival.length} non-archival` : "",
-      other.length ? `${other.length} other` : "",
-    ].filter(Boolean);
-    return html`
-      <li class="conference" data-urgency=${urgencyOf(nextInstant, now)} ?data-open=${open}>
-        <button
-          type="button"
-          class="conference__summary"
-          aria-expanded=${open ? "true" : "false"}
-          aria-controls=${panelId}
-          data-testid="conference-toggle"
-          @click=${() => this.toggle(key)}
+        <div
+          class="deadline-board__hero-countdown"
+          aria-label=${countdownLabel(entry.instant - this.now)}
         >
-          <span class="conference__chevron" aria-hidden="true">${icons.chevronRight}</span>
-          <span class="conference__countdown">${countdownLabel(nextInstant - now)}</span>
-          <span class="conference__name">${key}</span>
-          <span class="conference__counts">${counts.join(" · ")}</span>
-        </button>
-        <div class="conference__panel" id=${panelId} ?hidden=${!open}>
-          ${this.renderSection(
-            "Archival — counts as publishing; the paper cannot be submitted elsewhere afterwards",
-            archival,
-            now,
-            false,
-            key,
-          )}
-          ${this.renderSection(
-            "Non-archival — does not count as publishing; you can still submit the paper elsewhere",
-            nonArchival,
-            now,
-            true,
-            key,
-          )}
-          ${this.renderSection("Other dates", other, now, false, key)}
+          ${this.renderCountdownUnit(parts.days, "days")}
+          <span aria-hidden="true">:</span>
+          ${this.renderCountdownUnit(pad(parts.hours), "hrs")}
+          <span aria-hidden="true">:</span>
+          ${this.renderCountdownUnit(pad(parts.minutes), "min")}
+          <span aria-hidden="true">:</span>
+          ${this.renderCountdownUnit(pad(parts.seconds), "sec")}
         </div>
-      </li>
-    `;
-  }
-
-  // The single most urgent thing anywhere, stated once at full size. It is a shortcut, not an
-  // index: the conference list below stays complete, so this deadline is still reachable inside
-  // its own conference rather than removed from it.
-  private renderLead(entry: Entry, now: number) {
-    const { venue, instant } = entry;
-    return html`
-      <section class="deadline-lead" data-urgency=${urgencyOf(instant, now)}>
-        <p class="deadline-lead__eyebrow">Next deadline</p>
-        <p class="deadline-lead__countdown">${countdownLabel(instant - now)}</p>
-        <p class="deadline-lead__name">${venue.name}${renderLabel(venue)}${renderRoute(venue)}</p>
-        <p class="deadline-lead__date">
-          ${aoeDateLabel(venue.deadline_aoe)}
-          AoE${venue.notification_aoe ? ` · notified ${aoeDateLabel(venue.notification_aoe)}` : ""}
-        </p>
-        ${renderVenueLink(venue)}
       </section>
     `;
   }
 
-  override render() {
-    const now = Date.now();
-    const conferences = buildConferences(now, this.filter);
-    // Counted off the unfiltered board so the chips keep saying how much each column
-    // holds while one of them is selected -- a count that changed with the filter
-    // would only ever report the filter back to itself.
-    const all = buildConferences(now, "all");
-    const tally = (pick: (conference: Conference) => Entry[]) =>
-      all.reduce((sum, conference) => sum + pick(conference).length, 0);
-    const counts: Record<DeadlineFilter, number> = {
-      all: tally((c) => [...c.archival, ...c.nonArchival, ...c.other]),
-      archival: tally((c) => c.archival),
-      nonArchival: tally((c) => c.nonArchival),
-    };
+  private renderCountdownUnit(value: string | number, label: string) {
+    return html`<span class="deadline-board__countdown-unit">
+      <strong>${value}</strong><small>${label}</small>
+    </span>`;
+  }
 
-    if (!all.length) {
-      return html`
-        <section class="deadlines">
-          <p class="deadlines__empty">
-            No upcoming deadlines in the bundled dataset. It is a point-in-time snapshot, so this
-            most likely means it needs regenerating rather than that the field has gone quiet.
-          </p>
-        </section>
-      `;
-    }
-
-    const total = counts[this.filter];
+  private renderStats(entries: readonly DeadlineBoardEntry[]) {
+    const upcoming = entries.filter((entry) => entry.instant > this.now);
+    const within = (days: number) =>
+      upcoming.filter((entry) => entry.instant - this.now <= days * MS_DAY).length;
+    const today = upcoming.filter(
+      (entry) => entry.venue.deadline_aoe.slice(0, 10) === aoeDayKey(this.now),
+    ).length;
     return html`
-      <section class="deadlines">
-        ${conferences.length ? this.renderLead(conferences[0].nextEntry, now) : nothing}
-        ${this.renderFilter(counts)}
-        <p class="deadlines__intro">
-          Times are AoE (UTC&#8209;12) and countdowns tick live. ${conferences.length}
-          ${conferences.length === 1 ? "conference" : "conferences"}, ${total} deadlines. Archival
-          venues publish the paper, so it cannot then be submitted anywhere else; non-archival
-          venues do not, so the same paper can still go to a conference afterwards. Open a
-          conference for its dates.
+      <dl class="deadline-board__stats">
+        <div>
+          <dt>Matching deadlines</dt>
+          <dd>${entries.length}</dd>
+        </div>
+        <div>
+          <dt>Due today</dt>
+          <dd data-urgency="critical">${today}</dd>
+        </div>
+        <div>
+          <dt>Due within 7 days</dt>
+          <dd data-urgency="soon">${within(7)}</dd>
+        </div>
+        <div>
+          <dt>Due within 30 days</dt>
+          <dd data-urgency="planned">${within(30)}</dd>
+        </div>
+      </dl>
+    `;
+  }
+
+  private renderModes() {
+    return html`
+      <div class="deadline-board__modes">
+        <div class="deadline-board__view" role="group" aria-label="View">
+          <button
+            type="button"
+            aria-pressed=${String(this.view === "groups")}
+            @click=${() => this.setView("groups")}
+          >
+            Groups
+          </button>
+          <button
+            type="button"
+            aria-pressed=${String(this.view === "cards")}
+            @click=${() => this.setView("cards")}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            aria-pressed=${String(this.view === "table")}
+            @click=${() => this.setView("table")}
+          >
+            Table
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderControls(entries: readonly DeadlineBoardEntry[]) {
+    return html`
+      <div class="deadline-board__controls">
+        <label class="deadline-board__search">
+          <span class="sr-only">Search deadlines</span>
+          <input
+            type="search"
+            placeholder="Search conferences & workshops…"
+            .value=${this.query}
+            @input=${this.setQuery}
+          />
+        </label>
+        <div class="deadline-board__groups" role="group" aria-label="Filter by venue">
+          <button
+            type="button"
+            aria-pressed=${String(!this.activeGroup)}
+            data-testid="deadline-group-all"
+            @click=${() => this.selectGroup("")}
+          >
+            All <span>${entries.length}</span>
+          </button>
+          ${groupOptions(entries).map(
+            (group) => html`
+              <button
+                type="button"
+                aria-pressed=${String(this.activeGroup === group.id)}
+                data-testid=${`deadline-group-${group.id}`}
+                @click=${() => this.selectGroup(group.id)}
+              >
+                ${group.label} <span>${group.count}</span>
+              </button>
+            `,
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderArchivalGuide() {
+    return html`
+      <details class="deadline-board__guide">
+        <summary>What archival status means</summary>
+        <dl>
+          <div>
+            <dt>Archival</dt>
+            <dd>counts as publishing; the same paper cannot generally be submitted elsewhere.</dd>
+          </div>
+          <div>
+            <dt>Non-archival</dt>
+            <dd>does not count as publishing; you can still submit the paper elsewhere.</dd>
+          </div>
+          <div>
+            <dt>Unknown</dt>
+            <dd>check the call for papers before assuming another submission is allowed.</dd>
+          </div>
+        </dl>
+      </details>
+    `;
+  }
+
+  private renderCard(entry: DeadlineBoardEntry) {
+    const { venue, instant } = entry;
+    return html`
+      <article
+        class="deadline-card"
+        data-entry-type=${venue.entry_type}
+        data-urgency=${urgency(entry, this.now)}
+      >
+        <div class="deadline-card__topline">
+          <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
+          <span class="deadline-card__urgency">${urgencyLabel(entry, this.now)}</span>
+        </div>
+        <h2 class="deadline-card__name">${venue.name}</h2>
+        <p
+          class="deadline-card__group"
+          title=${`${venue.group_label} · ${capitalize(venue.deadline_label)}`}
+        >
+          <span class="deadline-card__group-name">${venue.group_label}</span>
+          <span aria-hidden="true">·</span>
+          <span class="deadline-card__stage">${capitalize(venue.deadline_label)}</span>
         </p>
-        ${conferences.length
-          ? html`<ul class="conferences">
-              ${conferences.map((conference) => this.renderConference(conference, now))}
-            </ul>`
-          : html`<p class="deadlines__empty">Nothing upcoming in this column.</p>`}
+        <time class="deadline-card__date" datetime=${venue.deadline_aoe}>
+          ${aoeDateTimeLabel(venue.deadline_aoe)}
+        </time>
+        <p class="deadline-card__countdown">${countdownLabel(instant - this.now)}</p>
+        ${venue.notification_aoe
+          ? html`<p class="deadline-card__note">
+              Accept/reject: ${aoeDateLabel(venue.notification_aoe)} AoE
+            </p>`
+          : nothing}
+        ${this.renderSourceLink(venue, "Open call ↗")}
+      </article>
+    `;
+  }
+
+  private renderSourceLink(venue: DeadlineVenue, label: string) {
+    const accessibleLabel = label === "↗" ? "Open call" : label.replace(" ↗", "");
+    return venue.link
+      ? html`<a
+          class="deadline-card__source"
+          href=${venue.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label=${`${accessibleLabel} for ${venue.name}`}
+          >${label}</a
+        >`
+      : nothing;
+  }
+
+  private renderTable(entries: readonly DeadlineBoardEntry[]) {
+    return html`
+      <div class="deadline-table-wrap">
+        <table class="deadline-table">
+          <thead>
+            <tr>
+              <th>Deadline (AoE)</th>
+              <th>Countdown</th>
+              <th>Item</th>
+              <th>Type</th>
+              <th>Venue</th>
+              <th><span class="sr-only">Source</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries.map(
+              (entry) => html`
+                <tr
+                  data-entry-type=${entry.venue.entry_type}
+                  data-urgency=${urgency(entry, this.now)}
+                >
+                  <td class="deadline-table__date">
+                    ${aoeDateTimeLabel(entry.venue.deadline_aoe)}
+                  </td>
+                  <td class="deadline-table__countdown">
+                    ${countdownLabel(entry.instant - this.now)}
+                  </td>
+                  <td class="deadline-table__name">${entry.venue.name}</td>
+                  <td>
+                    <span class="deadline-card__type"
+                      >${ENTRY_TYPE_LABELS[entry.venue.entry_type]}</span
+                    >
+                  </td>
+                  <td class="deadline-table__venue">${entry.venue.group_label}</td>
+                  <td>${this.renderSourceLink(entry.venue, "↗")}</td>
+                </tr>
+              `,
+            )}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private renderGroupRow(entry: DeadlineBoardEntry, conference: string) {
+    const { venue, instant } = entry;
+    const title = groupRowTitle(venue, conference);
+    const detail = venue.notification_aoe
+      ? `Accept/reject ${aoeDateLabel(venue.notification_aoe)} AoE`
+      : "";
+    const note = [title.stage, detail].filter(Boolean).join(" · ");
+    return html`
+      <div
+        class="deadline-group__row"
+        data-entry-type=${venue.entry_type}
+        data-urgency=${urgency(entry, this.now)}
+      >
+        <span class="deadline-group__row-countdown">${countdownLabel(instant - this.now)}</span>
+        <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>
+          ${aoeDateTimeLabel(venue.deadline_aoe)}
+        </time>
+        <div class="deadline-group__row-main">
+          <h3 class="deadline-group__row-name">${title.name}</h3>
+          <p class="deadline-group__row-note">
+            ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
+            <span class="deadline-card__labels"
+              ><span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span></span
+            >
+          </p>
+        </div>
+        ${this.renderSourceLink(venue, "↗")}
+      </div>
+    `;
+  }
+
+  private renderGroupSection(
+    label: string,
+    entries: readonly DeadlineBoardEntry[],
+    conference: string,
+  ) {
+    if (!entries.length) {
+      return nothing;
+    }
+    return html`
+      <section class="deadline-group__section">
+        <p class="deadline-group__section-head">
+          <strong>${label}</strong><span>${entries.length}</span>
+        </p>
+        ${entries.map((entry) => this.renderGroupRow(entry, conference))}
+      </section>
+    `;
+  }
+
+  private renderGroups(entries: readonly DeadlineBoardEntry[]) {
+    return html`<div class="deadline-board__group-list">
+      ${groupDeadlineBoardEntries(entries).map((group, index) => {
+        const open = this.expandedGroups.has(group.id);
+        const panelId = `deadline-group-panel-${index}`;
+        const counts = [
+          group.sections.archival.length ? `${group.sections.archival.length} archival` : "",
+          group.sections.nonArchival.length
+            ? `${group.sections.nonArchival.length} non-archival`
+            : "",
+          group.sections.unknown.length ? `${group.sections.unknown.length} unknown` : "",
+          group.sections.other.length ? `${group.sections.other.length} other` : "",
+        ].filter(Boolean);
+        return html`
+          <section
+            class="deadline-group"
+            data-count=${group.entries.length}
+            data-urgency=${urgency(group.entries[0], this.now)}
+            ?data-open=${open}
+          >
+            <button
+              type="button"
+              class="deadline-group__summary"
+              aria-expanded=${String(open)}
+              aria-controls=${panelId}
+              @click=${() => this.toggleGroup(group.id)}
+            >
+              <span class="deadline-group__chevron" aria-hidden="true">›</span>
+              <span class="deadline-group__summary-countdown"
+                >${countdownLabel(group.instant - this.now)}</span
+              >
+              <span class="deadline-group__heading">
+                <strong>${group.label}</strong>
+                <small>${aoeDateTimeLabel(group.entries[0].venue.deadline_aoe)}</small>
+              </span>
+              <span class="deadline-group__count">${counts.join(" · ")}</span>
+            </button>
+            <div class="deadline-group__panel" id=${panelId} ?hidden=${!open}>
+              ${this.renderGroupSection("Archival", group.sections.archival, group.label)}
+              ${this.renderGroupSection("Non-archival", group.sections.nonArchival, group.label)}
+              ${this.renderGroupSection(
+                "Archival status unknown",
+                group.sections.unknown,
+                group.label,
+              )}
+              ${this.renderGroupSection("Other dates", group.sections.other, group.label)}
+            </div>
+          </section>
+        `;
+      })}
+    </div>`;
+  }
+
+  protected override render() {
+    // Output 0 is the Upcoming tracker. D adds an explicit Past view; until then, expired rows stay
+    // out of this surface exactly as they do on the standalone page.
+    const entries = buildDeadlineBoardEntries().filter((entry) => entry.instant > this.now);
+    const matching = filterDeadlineBoardEntries(entries, "", this.query);
+    if (
+      this.activeGroup &&
+      !matching.some((entry) => entry.venue.venue_group === this.activeGroup)
+    ) {
+      this.activeGroup = "";
+    }
+    const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "");
+    const next = filtered[0];
+    return html`
+      <section class="deadline-board">
+        <header class="deadline-board__header">
+          <h1>${t("tabs.adminbotDeadlines")}</h1>
+          <p>${t("subtitles.adminbotDeadlines")}</p>
+        </header>
+        ${this.renderModes()} ${this.renderControls(matching)} ${this.renderArchivalGuide()}
+        <div class="deadline-board__overview">
+          ${this.renderHero(next)} ${this.renderStats(filtered)}
+        </div>
+        ${filtered.length
+          ? this.view === "cards"
+            ? html`<div class="deadline-board__grid">
+                ${filtered.map((entry) => this.renderCard(entry))}
+              </div>`
+            : this.view === "groups"
+              ? this.renderGroups(filtered)
+              : this.renderTable(filtered)
+          : html`<p class="deadline-board__empty">No deadlines match your filter.</p>`}
+        <p class="deadline-board__foot">
+          Showing ${filtered.length} of ${entries.length} deadlines · official venue and OpenReview
+          sources
+        </p>
       </section>
     `;
   }

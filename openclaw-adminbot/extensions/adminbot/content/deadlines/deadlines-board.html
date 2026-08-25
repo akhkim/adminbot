@@ -1,4 +1,4 @@
-<title>Jinesis Deadlines — Countdown</title>
+<title>Jinesis Deadlines</title>
 <style>
   :root {
     --bg: #0b0f1a;
@@ -54,14 +54,6 @@
   }
 
   /* header */
-  .eyebrow {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 0 0 8px;
-  }
   h1 {
     font-size: clamp(24px, 4vw, 34px);
     margin: 0;
@@ -70,16 +62,10 @@
     font-weight: 650;
   }
   .sub {
-    color: var(--ink-2);
     margin: 8px 0 0;
-    max-width: 62ch;
+    color: var(--ink-2);
     font-size: 14.5px;
   }
-  .sub b {
-    color: var(--ink);
-    font-weight: 600;
-  }
-
   /* hero + stats grid */
   .top {
     display: grid;
@@ -109,7 +95,7 @@
   }
   .hero .lbl {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--muted);
@@ -123,7 +109,7 @@
   }
   .hero .hmeta {
     color: var(--ink-2);
-    font-size: 13px;
+    font-size: 14px;
     margin-bottom: 16px;
   }
   .cd {
@@ -143,7 +129,7 @@
     font-size: clamp(26px, 5vw, 40px);
     font-weight: 600;
     line-height: 1;
-    color: var(--ink);
+    color: var(--h-color, var(--accent));
   }
   .cd .cap {
     font-size: 10px;
@@ -160,7 +146,8 @@
 
   .stats {
     display: grid;
-    grid-template-rows: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, 1fr);
     gap: var(--gap);
   }
   .stat {
@@ -169,13 +156,14 @@
     border-radius: var(--radius);
     padding: 14px 18px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-direction: column;
     justify-content: space-between;
     gap: 12px;
   }
   .stat .k {
     color: var(--ink-2);
-    font-size: 13px;
+    font-size: 14px;
   }
   .stat .v {
     font-family: var(--mono);
@@ -192,6 +180,11 @@
     align-items: center;
     margin: 8px 0 18px;
   }
+  .modes {
+    display: flex;
+    justify-content: flex-end;
+    margin: 18px 0 10px;
+  }
   .search {
     flex: 1 1 220px;
     min-width: 180px;
@@ -200,7 +193,7 @@
     color: var(--ink);
     border-radius: 10px;
     padding: 10px 13px;
-    font-size: 14px;
+    font-size: 15px;
     font-family: var(--sans);
   }
   .search::placeholder {
@@ -217,7 +210,7 @@
     color: var(--ink-2);
     padding: 8px 13px;
     border-radius: 999px;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     font-family: var(--sans);
     display: inline-flex;
@@ -238,7 +231,7 @@
   }
   .chip .ct {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
   }
   .chip[aria-pressed="true"] .ct {
@@ -255,7 +248,7 @@
     border: 0;
     color: var(--ink-2);
     padding: 8px 14px;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     font-family: var(--sans);
   }
@@ -263,11 +256,41 @@
     background: var(--raised);
     color: var(--ink);
   }
+  .archival-guide {
+    margin: -8px 0 18px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .archival-guide summary {
+    width: max-content;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .archival-guide dl {
+    display: grid;
+    gap: 7px;
+    max-width: 720px;
+    margin: 10px 0 0;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+  }
+  .archival-guide dl > div {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .archival-guide dt {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .archival-guide dd {
+    margin: 0;
+  }
 
   /* cards */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(304px, 100%), 1fr));
     gap: var(--gap);
   }
   .card {
@@ -296,7 +319,7 @@
   }
   .badge {
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--ink-2);
@@ -304,6 +327,12 @@
     border-radius: 6px;
     padding: 3px 7px;
     white-space: nowrap;
+  }
+  .labels {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
   }
   .pill {
     font-size: 11.5px;
@@ -315,19 +344,32 @@
     color: var(--u);
   }
   .cname {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.3;
     letter-spacing: -0.01em;
     margin: 1px 0;
   }
   .cgroup {
-    font-size: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+    white-space: nowrap;
+    font-size: 13px;
     color: var(--muted);
+  }
+  .cgroup-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cgroup-stage {
+    flex: 0 0 auto;
   }
   .cdl {
     font-family: var(--mono);
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--ink-2);
     font-variant-numeric: tabular-nums;
   }
@@ -337,19 +379,165 @@
   .ccd {
     font-family: var(--mono);
     font-variant-numeric: tabular-nums;
-    font-size: 19px;
+    font-size: 20px;
     font-weight: 600;
-    color: var(--ink);
+    color: var(--u);
     letter-spacing: 0.01em;
   }
   .cnote {
-    font-size: 11.5px;
+    font-size: 12.5px;
     color: var(--muted);
   }
   .clink {
     margin-top: auto;
-    font-size: 12.5px;
+    font-size: 13.5px;
     font-family: var(--mono);
+    white-space: nowrap;
+  }
+
+  .deadline-board__group-list {
+    display: grid;
+    gap: 12px;
+  }
+  .deadline-group {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: inset 4px 0 var(--u);
+  }
+  .deadline-group__summary {
+    display: grid;
+    grid-template-columns: 16px 150px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 18px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    font-family: var(--sans);
+    text-align: left;
+  }
+  .deadline-group__summary:hover,
+  .deadline-group__summary:focus-visible {
+    background: var(--surface-2);
+  }
+  .deadline-group__chevron {
+    color: var(--muted);
+    font-size: 20px;
+    line-height: 1;
+    transition: transform 0.15s;
+  }
+  .deadline-group[data-open] .deadline-group__chevron {
+    transform: rotate(90deg);
+  }
+  .deadline-group__summary-countdown,
+  .deadline-group__row-countdown {
+    color: var(--u);
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .deadline-group__heading {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .deadline-group__heading strong {
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .deadline-group__heading small,
+  .deadline-group__count {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+  .deadline-group__count {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .deadline-group__panel {
+    border-top: 1px solid var(--border);
+  }
+  .deadline-group__section + .deadline-group__section {
+    border-top: 1px solid var(--border);
+  }
+  .deadline-group__section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 18px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .deadline-group__section-head strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .deadline-group__row {
+    display: grid;
+    grid-template-columns: 124px 208px minmax(0, 1fr) auto;
+    grid-template-areas: "countdown date main source";
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .deadline-group__row:last-child {
+    border-bottom: 0;
+  }
+  .deadline-group__row:hover {
+    background: var(--surface-2);
+  }
+  .deadline-group__row-main {
+    grid-area: main;
+    min-width: 0;
+  }
+  .deadline-group__row-countdown {
+    grid-area: countdown;
+  }
+  .deadline-group__row-name {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .deadline-group__row-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .deadline-group__row-note:empty {
+    display: none;
+  }
+  .deadline-group__row-date {
+    grid-area: date;
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .deadline-group__row .clink {
+    grid-area: source;
+    margin: 0;
   }
 
   /* table */
@@ -362,7 +550,7 @@
   table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 13px;
+    font-size: 14px;
     min-width: 640px;
   }
   th,
@@ -374,7 +562,7 @@
   }
   th {
     font-family: var(--mono);
-    font-size: 10.5px;
+    font-size: 11.5px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
@@ -400,6 +588,12 @@
     font-variant-numeric: tabular-nums;
     color: var(--ink);
   }
+  .tcd.countdown {
+    color: var(--u);
+  }
+  td.meta {
+    color: var(--ink-2);
+  }
   tr:last-child td {
     border-bottom: 0;
   }
@@ -415,8 +609,43 @@
   .foot {
     margin-top: 26px;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 12.5px;
     font-family: var(--mono);
+  }
+  @media (max-width: 600px) {
+    .deadline-group__summary {
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+    }
+    .deadline-group__summary-countdown {
+      grid-row: 2;
+      grid-column: 2;
+    }
+    .deadline-group__heading {
+      grid-row: 1;
+      grid-column: 2;
+    }
+    .deadline-group__count {
+      grid-row: 1 / span 2;
+      grid-column: 3;
+    }
+    .deadline-group__row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "countdown date"
+        "main main"
+        "source source";
+      gap: 8px 16px;
+    }
+    .deadline-group__row-main {
+      grid-column: auto;
+    }
+    .deadline-group__row .clink {
+      justify-self: start;
+    }
+    .archival-guide dl > div {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     * {
@@ -427,19 +656,55 @@
 
 <div class="wrap">
   <div class="container">
-    <p class="eyebrow">Jinesis Lab · Submission Deadlines</p>
-    <h1>Deadline Countdown</h1>
-    <p class="sub">
-      Upcoming conference &amp; workshop deadlines. Times are <b>AoE (UTC‑12)</b>; countdowns update
-      live. NeurIPS 2026 workshops use the official unified deadline (submission <b>Aug 29</b>, hard
-      accept/reject <b>Sep 29</b>).
-    </p>
+    <h1>Deadlines</h1>
+    <p class="sub">Upcoming conference &amp; workshop deadlines.</p>
+
+    <div class="modes">
+      <div class="toggle" role="group" aria-label="View">
+        <button id="v-groups" aria-pressed="true">Groups</button>
+        <button id="v-cards" aria-pressed="false">Cards</button>
+        <button id="v-table" aria-pressed="false">Table</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <input
+        class="search"
+        id="search"
+        type="search"
+        placeholder="Search conferences & workshops…"
+        aria-label="Search deadlines"
+      />
+      <div class="chips" id="chips" role="group" aria-label="Filter by venue"></div>
+    </div>
+
+    <details class="archival-guide">
+      <summary>What archival status means</summary>
+      <dl>
+        <div>
+          <dt>Archival</dt>
+          <dd>counts as publishing; the same paper cannot generally be submitted elsewhere.</dd>
+        </div>
+        <div>
+          <dt>Non-archival</dt>
+          <dd>does not count as publishing; you can still submit the paper elsewhere.</dd>
+        </div>
+        <div>
+          <dt>Unknown</dt>
+          <dd>check the call for papers before assuming another submission is allowed.</dd>
+        </div>
+      </dl>
+    </details>
 
     <div class="top">
       <div class="hero" id="hero"></div>
       <div class="stats">
         <div class="stat">
-          <span class="k">Tracked deadlines</span><span class="v" id="s-total">–</span>
+          <span class="k">Matching deadlines</span><span class="v" id="s-total">–</span>
+        </div>
+        <div class="stat">
+          <span class="k">Due today</span
+          ><span class="v" id="s-today" style="color: var(--crit)">–</span>
         </div>
         <div class="stat">
           <span class="k">Due within 7 days</span
@@ -452,22 +717,8 @@
       </div>
     </div>
 
-    <div class="controls">
-      <input
-        class="search"
-        id="search"
-        type="search"
-        placeholder="Search workshops & venues…"
-        aria-label="Search deadlines"
-      />
-      <div class="chips" id="chips" role="group" aria-label="Filter by venue"></div>
-      <div class="toggle" role="group" aria-label="View">
-        <button id="v-cards" aria-pressed="true">Cards</button>
-        <button id="v-table" aria-pressed="false">Table</button>
-      </div>
-    </div>
-
     <div class="grid" id="grid"></div>
+    <div class="deadline-board__group-list hidden" id="group-list"></div>
     <div class="tablewrap hidden" id="tablewrap">
       <table>
         <thead>
@@ -1694,6 +1945,14 @@
     if (!m) return "";
     return `${MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}`;
   }
+  function fmtAoeDateTime(x) {
+    const time = (x || "").match(/[ T](\d{2}):(\d{2})/);
+    const date = fmtAoe(x);
+    return date && time ? `${date} · ${time[1]}:${time[2]} AoE` : date;
+  }
+  function aoeDayKey(now) {
+    return new Date(now - 12 * 3600000).toISOString().slice(0, 10);
+  }
   function urgencyVar(days) {
     return days <= 3
       ? "var(--crit)"
@@ -1721,13 +1980,11 @@
   }
   const pad = (n) => String(n).padStart(2, "0");
 
-  // groups / chips
-  const groups = [...new Set(DATA.map((x) => x.venue_group))];
-  const groupOrder = (g) => DATA.filter((x) => x.venue_group === g)[0]._sub;
-  groups.sort((a, b) => groupOrder(a) - groupOrder(b));
   let activeGroup = "All",
-    view = "cards",
-    query = "";
+    view = "groups",
+    query = "",
+    renderedAoeDay = "";
+  const expandedGroups = new Set();
   const chips = document.getElementById("chips");
   function chip(label, val, count) {
     const b = document.createElement("button");
@@ -1742,8 +1999,22 @@
     };
     chips.appendChild(b);
   }
-  chip("All", "All", DATA.length);
-  groups.forEach((g) => chip(g, g, DATA.filter((x) => x.venue_group === g).length));
+
+  function rebuildChips(entries) {
+    if (activeGroup !== "All" && !entries.some((x) => x.venue_group === activeGroup)) {
+      activeGroup = "All";
+    }
+    const groups = [
+      ...new Map(
+        entries.map((x) => [x.venue_group, { id: x.venue_group, label: x.group_label }]),
+      ).values(),
+    ];
+    chips.replaceChildren();
+    chip("All", "All", entries.length);
+    groups.forEach((group) =>
+      chip(group.label, group.id, entries.filter((x) => x.venue_group === group.id).length),
+    );
+  }
 
   document.getElementById("search").addEventListener("input", (e) => {
     query = e.target.value.toLowerCase().trim();
@@ -1752,49 +2023,58 @@
   function setView(v) {
     view = v;
     document.getElementById("v-cards").setAttribute("aria-pressed", v === "cards");
+    document.getElementById("v-groups").setAttribute("aria-pressed", v === "groups");
     document.getElementById("v-table").setAttribute("aria-pressed", v === "table");
     document.getElementById("grid").classList.toggle("hidden", v !== "cards");
+    document.getElementById("group-list").classList.toggle("hidden", v !== "groups");
     document.getElementById("tablewrap").classList.toggle("hidden", v !== "table");
     render();
   }
   document.getElementById("v-cards").onclick = () => setView("cards");
+  document.getElementById("v-groups").onclick = () => setView("groups");
   document.getElementById("v-table").onclick = () => setView("table");
 
-  function filtered() {
+  function matching(now) {
     return DATA.filter(
       (x) =>
-        (activeGroup === "All" || x.venue_group === activeGroup) &&
-        (!query || (x.name + " " + x.venue_group + " " + x.track).toLowerCase().includes(query)),
+        x._sub > now &&
+        (!query ||
+          (x.name + " " + x.group_label + " " + x.entry_type).toLowerCase().includes(query)),
     );
   }
   const grid = document.getElementById("grid"),
+    groupList = document.getElementById("group-list"),
     tbody = document.getElementById("tbody"),
     empty = document.getElementById("empty"),
     hero = document.getElementById("hero");
 
   function render() {
     const now = Date.now();
-    const list = filtered();
+    renderedAoeDay = aoeDayKey(now);
+    const matches = matching(now);
+    rebuildChips(matches);
+    const list = matches.filter((x) => activeGroup === "All" || x.venue_group === activeGroup);
     empty.classList.toggle("hidden", list.length > 0);
-    // stats (over full dataset, not filtered)
-    const up = DATA.filter((x) => x._sub > now);
-    document.getElementById("s-total").textContent = up.length;
-    document.getElementById("s-7").textContent = up.filter(
+    document.getElementById("s-total").textContent = list.length;
+    document.getElementById("s-today").textContent = list.filter(
+      (x) => x.deadline_aoe.slice(0, 10) === aoeDayKey(now),
+    ).length;
+    document.getElementById("s-7").textContent = list.filter(
       (x) => x._sub - now <= 7 * 86400000,
     ).length;
-    document.getElementById("s-30").textContent = up.filter(
+    document.getElementById("s-30").textContent = list.filter(
       (x) => x._sub - now <= 30 * 86400000,
     ).length;
 
     // hero = soonest upcoming (respect current filter)
-    const next = list.find((x) => x._sub > now) || list[0];
+    const next = list[0];
     if (next) {
       const u = urgencyLabel(next._sub, now);
       hero.style.setProperty("--h-color", u.cvar);
       const p = parts(next._sub - now);
-      hero.innerHTML = `<div class="lbl">Next deadline · ${next.venue_group}</div>
+      hero.innerHTML = `<div class="lbl">Next deadline · ${esc(next.group_label)}</div>
       <div class="hname">${esc(next.name)}</div>
-      <div class="hmeta">${cap(next.deadline_label)} · ${fmtAoe(next.deadline_aoe)} — 23:59 AoE · <span style="color:${u.cvar}">${u.txt}</span></div>
+      <div class="hmeta">${cap(next.deadline_label)} · ${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:${u.cvar}">${u.txt}</span></div>
       <div class="cd" data-t="${next._sub}">
         ${unit(p.d, "days")}<span class="sep">:</span>${unit(pad(p.h), "hrs")}<span class="sep">:</span>${unit(pad(p.m), "min")}<span class="sep">:</span>${unit(pad(p.s), "sec")}
       </div>`;
@@ -1803,7 +2083,10 @@
         '<div class="lbl">Next deadline</div><div class="hname">Nothing upcoming</div>';
 
     if (view === "cards") renderCards(list, now);
+    else if (view === "groups") renderGroups(list, now);
     else renderTable(list, now);
+    document.getElementById("foot").textContent =
+      `Showing ${list.length} of ${matches.length} upcoming deadlines · source: aideadlines.org + OpenReview (NeurIPS.cc/2026/Workshop) · generated 2026-07-25`;
   }
   function unit(v, c) {
     return `<div class="unit"><span class="num">${v}</span><span class="cap">${c}</span></div>`;
@@ -1818,17 +2101,25 @@
     );
   }
 
+  const ENTRY_TYPE_LABELS = {
+    main_conference: "Main conference",
+    demo_track: "Demo track",
+    workshop: "Workshop",
+    arr_direct_submission: "ARR direct submission",
+    arr_commitment: "ARR commitment",
+    rebuttal: "Rebuttal",
+    other: "Other",
+  };
+  function entryTypeLabel(x) {
+    return ENTRY_TYPE_LABELS[x.entry_type] || ENTRY_TYPE_LABELS.other;
+  }
+
   function renderCards(list, now) {
     grid.innerHTML = list
       .map((x) => {
         const u = urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
-        const type =
-          x.venue_type === "workshop"
-            ? "Workshop"
-            : x.venue_type === "rebuttal"
-              ? "Rebuttal"
-              : "Conference";
+        const type = entryTypeLabel(x);
         const link = x.link
           ? `<a class="clink" href="${esc(x.link)}" target="_blank" rel="noopener">Open call ↗</a>`
           : "";
@@ -1838,8 +2129,8 @@
         return `<div class="card" style="--u:${u.cvar}">
       <div class="row1"><span class="badge">${type}</span><span class="pill">${u.txt}</span></div>
       <div class="cname">${esc(x.name)}</div>
-      <div class="cgroup">${esc(x.venue_group)} · ${esc(cap(x.deadline_label))}</div>
-      <div class="cdl">${fmtAoe(x.deadline_aoe)} <span class="aoe">· 23:59 AoE</span></div>
+      <div class="cgroup" title="${esc(x.group_label)} · ${esc(cap(x.deadline_label))}"><span class="cgroup-name">${esc(x.group_label)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">${esc(cap(x.deadline_label))}</span></div>
+      <div class="cdl">${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd" data-t="${x._sub}">${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}</div>
       ${notif}${link}
     </div>`;
@@ -1851,23 +2142,135 @@
       .map((x) => {
         const u = urgencyLabel(x._sub, now);
         const p = parts(x._sub - now);
-        const type =
-          x.venue_type === "workshop"
-            ? "Workshop"
-            : x.venue_type === "rebuttal"
-              ? "Rebuttal"
-              : "Conf";
+        const type = entryTypeLabel(x);
         const link = x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">↗</a>` : "";
-        return `<tr><td class="tcd">${fmtAoe(x.deadline_aoe)}</td>
-      <td class="tcd" data-t="${x._sub}">${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}</td>
+        return `<tr style="--u:${u.cvar}"><td class="tcd">${fmtAoeDateTime(x.deadline_aoe)}</td>
+      <td class="tcd countdown" data-t="${x._sub}">${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}</td>
       <td class="name"><span class="dot" style="--u:${u.cvar}"></span>${esc(x.name)}</td>
-      <td>${type}</td><td>${esc(x.venue_group)}</td><td>${link}</td></tr>`;
+      <td class="meta"><span class="badge">${type}</span></td><td class="meta">${esc(x.group_label)}</td><td>${link}</td></tr>`;
       })
       .join("");
+  }
+  function groupEntries(list) {
+    const groups = new Map();
+    list.forEach((entry) => {
+      const id = entry.group_label.trim() || entry.venue_group.trim();
+      const kind =
+        entry.entry_type === "rebuttal"
+          ? "other"
+          : entry.archival_status === "archival"
+            ? "archival"
+            : entry.archival_status === "non_archival"
+              ? "nonArchival"
+              : "unknown";
+      const current = groups.get(id);
+      if (current) {
+        current.entries.push(entry);
+        current.sections[kind].push(entry);
+      } else {
+        const sections = { archival: [], nonArchival: [], unknown: [], other: [] };
+        sections[kind].push(entry);
+        groups.set(id, {
+          id,
+          label: id,
+          entries: [entry],
+          sections,
+        });
+      }
+    });
+    return [...groups.values()];
+  }
+  function groupRowTitle(entry, conference) {
+    const stage = cap(entry.deadline_label);
+    const titleContext = entry.venue_group.trim().replace(/\s+workshops$/iu, "") || conference;
+    let name = entry.name.trim();
+    [` (${titleContext})`, ` [${titleContext}]`].forEach((affix) => {
+      if (name.endsWith(affix)) name = name.slice(0, -affix.length).trim();
+    });
+    [" — ", " – ", " - ", ": "].forEach((separator) => {
+      if (name.startsWith(`${titleContext}${separator}`))
+        name = name.slice(titleContext.length + separator.length).trim();
+    });
+    if (name.toLocaleLowerCase() === titleContext.toLocaleLowerCase())
+      return { name: stage, stage: "" };
+    if (stage.toLocaleLowerCase() === "arr commitment")
+      name = name.replace(/\s*(?:\(ARR commitment\)|[-—–:]?\s*ARR commitment)$/iu, "").trim();
+    return { name: name || entry.name, stage };
+  }
+  function renderGroupSection(label, entries, group, now) {
+    if (!entries.length) return "";
+    const rows = entries
+      .map((x) => {
+        const rowUrgency = urgencyLabel(x._sub, now);
+        const p = parts(x._sub - now);
+        const link = x.link
+          ? `<a class="clink" href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" aria-label="Open call for ${esc(x.name)}">↗</a>`
+          : "";
+        const title = groupRowTitle(x, group.label);
+        const detail = [x._notif ? `Accept/reject ${fmtAoe(x.notification_aoe)} AoE` : ""]
+          .filter(Boolean)
+          .join(" · ");
+        const note = [title.stage, detail].filter(Boolean).join(" · ");
+        return `<div class="deadline-group__row" style="--u:${rowUrgency.cvar}">
+          <span class="deadline-group__row-countdown" data-t="${x._sub}">${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}</span>
+          <time class="deadline-group__row-date">${fmtAoeDateTime(x.deadline_aoe)}</time>
+          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">${esc(title.name)}</h3><p class="deadline-group__row-note">${note ? `<span class="deadline-group__row-detail">${esc(note)}</span>` : ""}<span class="labels"><span class="badge">${entryTypeLabel(x)}</span></span></p></div>${link}
+        </div>`;
+      })
+      .join("");
+    return `<section class="deadline-group__section"><p class="deadline-group__section-head"><strong>${label}</strong><span>${entries.length}</span></p>${rows}</section>`;
+  }
+  function renderGroups(list, now) {
+    groupList.innerHTML = groupEntries(list)
+      .map((group, index) => {
+        const first = group.entries[0];
+        const firstUrgency = urgencyLabel(first._sub, now);
+        const firstParts = parts(first._sub - now);
+        const open = expandedGroups.has(group.id);
+        const panelId = `deadline-group-panel-${index}`;
+        const counts = [
+          group.sections.archival.length ? `${group.sections.archival.length} archival` : "",
+          group.sections.nonArchival.length
+            ? `${group.sections.nonArchival.length} non-archival`
+            : "",
+          group.sections.unknown.length ? `${group.sections.unknown.length} unknown` : "",
+          group.sections.other.length ? `${group.sections.other.length} other` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const panel = [
+          renderGroupSection("Archival", group.sections.archival, group, now),
+          renderGroupSection("Non-archival", group.sections.nonArchival, group, now),
+          renderGroupSection("Archival status unknown", group.sections.unknown, group, now),
+          renderGroupSection("Other dates", group.sections.other, group, now),
+        ].join("");
+        return `<section class="deadline-group" data-count="${group.entries.length}" style="--u:${firstUrgency.cvar}"${open ? " data-open" : ""}>
+          <button class="deadline-group__summary" data-group="${esc(group.id)}" aria-expanded="${open}" aria-controls="${panelId}">
+            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown" data-t="${first._sub}">${firstParts.d}d ${pad(firstParts.h)}:${pad(firstParts.m)}:${pad(firstParts.s)}</span>
+            <span class="deadline-group__heading"><strong>${esc(group.label)}</strong><small>${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">${counts}</span>
+          </button><div class="deadline-group__panel${open ? "" : " hidden"}" id="${panelId}">${panel}</div>
+        </section>`;
+      })
+      .join("");
+    groupList.querySelectorAll("[data-group]").forEach((button) => {
+      button.onclick = () => {
+        const group = button.dataset.group;
+        if (expandedGroups.has(group)) expandedGroups.delete(group);
+        else expandedGroups.add(group);
+        renderGroups(list, Date.now());
+      };
+    });
   }
   // live tick: update only the countdown numbers, cheaply
   function tick() {
     const now = Date.now();
+    if (
+      aoeDayKey(now) !== renderedAoeDay ||
+      [...document.querySelectorAll("[data-t]")].some((el) => Number(el.dataset.t) <= now)
+    ) {
+      render();
+      return;
+    }
     document.querySelectorAll("[data-t]").forEach((el) => {
       const p = parts(Number(el.dataset.t) - now);
       if (el.classList.contains("cd")) {
@@ -1883,8 +2286,6 @@
       }
     });
   }
-  document.getElementById("foot").textContent =
-    `${DATA.length} deadlines · source: aideadlines.org + OpenReview (NeurIPS.cc/2026/Workshop) · generated 2026-07-25`;
-  render();
+  setView(view);
   setInterval(tick, 1000);
 </script>

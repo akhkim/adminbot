@@ -1190,7 +1190,7 @@ function upcomingVenues(now = new Date()) {
   })
     // Archival conferences only. Sorting purely by date buries ICLR and ARR under fifty workshop
     // commitment deadlines, so the default ends up a venue nobody was aiming for.
-    .filter((venue) => venue.venue_type === "conference" && venue.archival)
+    .filter((venue) => venue.archival_status === "archival")
     .toSorted((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
 
   // One row per venue, not one per milestone: ICLR appears twice (abstract, then full paper) and

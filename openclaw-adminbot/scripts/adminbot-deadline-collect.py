@@ -23,13 +23,16 @@ sys.path.insert(0, HERE)
 
 from adminbot_deadlines import (  # noqa: E402
     ARR_FAMILIES,
+    archival_status_of,
     DEADLINES_DIR,
+    entry_type_of,
     milestone_of,
     SUBMISSION_COMMITMENT,
     SUBMISSION_DIRECT,
     WORKSHOP_FAMILIES,
     family_of,
     is_archival,
+    venue_priority_of,
 )
 OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 
@@ -40,8 +43,9 @@ OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 #
 #   archival      main and demo tracks of ACL / EMNLP / NAACL / EACL, and
 #                 NeurIPS / ICML / ICLR / COLM / CLeaR
-#   non-archival  IASEAI, plus the workshops of every family above except CLeaR
-#                 (swept live from OpenReview, not listed here)
+#   non-archival  IASEAI
+#   workshops     swept independently for the requested parent families; their
+#                 archival status remains unknown unless a source classifies it
 #   ARR           both routes into an *ACL venue -- direct submission into a cycle
 #                 and commitment of an existing review -- plus the cycle itself
 #
@@ -144,7 +148,8 @@ PENDING = [
 EMNLP_WORKSHOPS = [
     dict(id="emnlp2026_ws_nlp4pi",
          name="NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
-         venue_type="workshop", venue_group="EMNLP 2026 Workshops", track="workshop",
+         venue_type="workshop", venue_group="EMNLP 2026 Workshops",
+         group_label="EMNLP 2026", track="workshop",
          submission_type="commitment",
          deadline_label="ARR commitment",   # direct channel (Jul 14) already closed
          deadline_aoe="2026-08-03 23:59:59", notification_aoe="2026-08-15 23:59:59",
@@ -198,6 +203,7 @@ def workshop_sources(today=None):
             out.append(dict(
                 family=family, year=year,
                 group=f"{family} {year} Workshops",
+                group_label=f"{family} {year}",
                 id_prefix=f"{family.lower()}{year}_ws_",
                 parent=pattern.format(year=year),
                 deadline_aoe=submission, notification_aoe=notification))
@@ -217,7 +223,14 @@ def _openreview_get(url, timeout=30):
     delay = 1.0
     for attempt in range(OPENREVIEW_RETRIES):
         time.sleep(OPENREVIEW_GAP_SECONDS)
-        req = urllib.request.Request(url, headers={"User-Agent": "jinesis-adminbot/1.0"})
+        req = urllib.request.Request(url, headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0 Safari/537.36"
+            ),
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.load(r)
@@ -261,7 +274,8 @@ def fetch_workshop_source(source):
         out[rest] = dict(
             id=source["id_prefix"] + rest,
             name=_group_value(c, "title") or _group_value(c, "name") or rest,
-            venue_type="workshop", venue_group=source["group"], track="workshop",
+            venue_type="workshop", venue_group=source["group"],
+            group_label=source["group_label"], track="workshop",
             venue_family=source["family"], submission_type=route,
             deadline_label=("ARR commitment" if route == SUBMISSION_COMMITMENT else "submission"),
             deadline_aoe=deadline,
@@ -341,7 +355,7 @@ def fetch_workshops():
 
 
 def classify(item):
-    """Stamp venue_family / archival onto one entry.
+    """Stamp the independent venue classifications onto one entry.
 
     Derived rather than hand-written per venue: 100+ workshops arrive from
     OpenReview with no human in the loop, and a field somebody has to remember to
@@ -350,8 +364,22 @@ def classify(item):
     """
     family = item.get("venue_family") or family_of(item.get("venue_group", ""), item.get("name", ""))
     item["venue_family"] = family
-    item["archival"] = is_archival(family, item.get("track", ""))
     item.setdefault("submission_type", "")
+    item["entry_type"] = entry_type_of(
+        item.get("venue_type", ""), item.get("track", ""), item["submission_type"]
+    )
+    item["archival_status"] = archival_status_of(family, item.get("track", ""))
+    item["venue_priority"] = venue_priority_of(family, item.get("track", ""))
+    # Kept while older calendar/matcher consumers migrate. New surfaces use the
+    # tri-state field above so an unknown venue is never presented as safe.
+    item["archival"] = is_archival(family, item.get("track", ""))
+    if not item.get("group_label"):
+        group = item.get("venue_group", "")
+        item["group_label"] = (
+            group[:-len(" Workshops")]
+            if item["entry_type"] == "workshop" and group.endswith(" Workshops")
+            else group or item.get("name", "")
+        )
     item["milestone"] = milestone_of(item.get("deadline_label", ""), item["submission_type"])
     return item
 
@@ -405,8 +433,9 @@ def main():
     print(f"wrote {ds}")
 
     # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
-    keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
-            "archival", "submission_type", "milestone",
+    keys = ["id", "name", "venue_type", "venue_group", "group_label", "track", "venue_family",
+            "entry_type", "archival_status", "venue_priority", "archival",
+            "submission_type", "milestone",
             "deadline_label", "deadline_aoe", "notification_aoe", "link"]
     slim = [{k: it.get(k, "") for k in keys} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
@@ -415,11 +444,16 @@ def main():
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export type DeadlineVenue = {\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
+                "  /** Display heading supplied by the dataset; views must not infer it from the name. */\n"
+                "  group_label: string;\n"
                 "  track?: string;\n"
                 "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
                 "  venue_family?: string;\n"
-                "  /** True when publishing here consumes the paper. See is_archival in\n"
-                "   *  scripts/adminbot_deadlines.py, which is where the policy is written. */\n"
+                "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
+                "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
+                "  archival_status: \"archival\" | \"non_archival\" | \"unknown\";\n"
+                "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
+                "  /** Compatibility boolean. New consumers use archival_status. */\n"
                 "  archival?: boolean;\n"
                 "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
                 "  submission_type?: string;\n"

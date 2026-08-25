@@ -49,10 +49,18 @@ Absent → cadence runs fully; authors can reply **"done"** to stop; unsubmitted
 papers escalate to Zhijing at the deadline. Also set
 `ADMINBOT_HEAD_PROFESSOR_SLACK` to Zhijing's Slack id for escalations.
 
-## 3. Board (Output 0) as a Control-UI surface
+## 3. Board (Output 0) surfaces
 
-**Served page — IMPLEMENTED (mirrors the existing `/adminbot` console).**
-The AdminBot service now serves the board:
+The Deadline Tracker has two delivery contexts and one generated dataset and interaction model:
+
+- the AdminBot service's zero-setup page at `GET /deadlines`; and
+- the public and signed-in Control UI route at `/adminbot/deadlines`.
+
+Both show the next deadline, aggregate counts, venue filters, search, and card, grouped, and table
+views. The Control UI renders the board natively in its normal document flow; it does not embed the served
+page, so desktop and mobile retain one vertical scrolling surface.
+
+The served page is implemented by:
 
 - `extensions/adminbot/src/workflows/deadlines/board.ts` — `renderDeadlinesWebUi(items)`
   returns the self-contained board (generated from `content/deadlines/deadlines-board.html`).
@@ -61,31 +69,12 @@ The AdminBot service now serves the board:
 - `extensions/adminbot/src/api/server.ts` — `GET /deadlines` (HTML board) and
   `GET /deadlines/venues.json` (JSON), next to `GET /adminbot`.
 
-Reachable the same way as the `/adminbot` console (loopback / SSH-forward on the
-service host). Verified by inspection only — run `pnpm build` on the host to
-certify TypeScript compilation.
+It is reachable the same way as the `/adminbot` console (loopback or SSH forwarding on the service
+host). The first-class Lit view lives in `ui/src/ui/adminbot/views/deadlines.ts`; anonymous visitors
+receive the same view inside the public Control UI shell. `adminbot-deadline-collect.py` regenerates
+the server and UI dataset projections together so their labels and classifications stay aligned.
 
-\*\*First-class Lit tab in `jinesis-admin.vercel.app` — TODO (needs `pnpm ui:build`
-
-- `pnpm ui:i18n:sync`; not applied here because those gates cannot run in the
-  authoring environment).\*\* Exact edits, mirroring the `adminbot` tab:
-
-1. `ui/src/ui/navigation.ts` — add `"adminbotDeadlines"` to the `adminbot` group
-   in `TAB_GROUPS`, to the `Tab` union, and to `TAB_PATHS`
-   (`adminbotDeadlines: "/adminbot/deadlines"`); add an `iconForTab` case
-   (e.g. `case "adminbotDeadlines": return "loader";`).
-2. `ui/src/i18n/locales/en.ts` — add `tabs.adminbotDeadlines` and
-   `subtitles.adminbotDeadlines`; then `pnpm ui:i18n:sync`.
-3. `ui/src/ui/views/deadlines.ts` — a Lit view that renders the board. Simplest:
-   fetch `/deadlines/venues.json` from the service and render the same cards, or
-   host the board page and embed it. (Do not `innerHTML` the served page —
-   its `<script>` will not execute.)
-4. `ui/src/ui/controllers/deadlines.ts` — a `loadDeadlines(host)` loader.
-5. `ui/src/ui/app-settings.ts` — add an `adminbotDeadlines` case to the
-   `refreshActiveTab` switch.
-6. `ui/src/ui/app-render.ts` — register the lazy view for `adminbotDeadlines`.
-
-Then `pnpm ui:build` to compile and `pnpm ui:i18n:check`.
+Run `pnpm ui:build` and `pnpm ui:i18n:check` after changing the Control UI surface.
 
 ## 4. Output 1 (channel digest) — not yet wired
 

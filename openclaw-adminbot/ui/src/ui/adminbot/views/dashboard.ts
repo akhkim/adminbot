@@ -12,15 +12,16 @@
 //
 // Each item is built from state the app already loads, and each is gated on the viewer's own role,
 // so this never shows a person work they cannot do. `access.ts` is still what enforces that; this
-// is presentation.
+// is presentation. The deadline board itself is the same public renderer used by the dedicated
+// route: signed-in members should not get a smaller or stale copy of a public tool.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import { nextStepFor } from "../next-step.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
-import { renderDeadlineSummary } from "./deadlines-summary.ts";
+import { nextStepFor } from "../next-step.ts";
+import { renderDeadlines } from "./deadlines.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
@@ -102,7 +103,6 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     `,
   };
 }
-
 
 function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
   if (role !== "admin") {
@@ -329,8 +329,8 @@ function renderWorkSummary(state: AppViewState) {
 }
 
 /**
- * The dashboard: what is waiting on the viewer, the two closest conference deadlines, and a
- * summary of their projects and papers.
+ * The dashboard: what is waiting on the viewer, a summary of their projects and papers, and the
+ * complete public deadline board.
  */
 export function renderDashboard(state: AppViewState, role: AccessRole) {
   return html`
@@ -338,10 +338,10 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
       ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
-          ${renderDeadlineSummary(state)} ${renderWorkSummary(state)}
-          ${renderMemberMap(state.adminBotMemberMap ?? null)}
+          ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
+      <div class="dashboard__deadlines" data-testid="dashboard-deadlines">${renderDeadlines()}</div>
     </div>
   `;
 }
