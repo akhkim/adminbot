@@ -1,7 +1,7 @@
-import type { Embedder } from "../connectors/embeddings.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotService } from "../kernel/service.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
+import type { WorkshopMatcher } from "../workflows/papers/workshop-nudges.js";
 import {
   matchWorkshopNudges,
   workshopNudgeInputsFromAdminBot,
@@ -28,7 +28,7 @@ export type WorkshopNudgeSendResult = {
 
 export async function previewWorkshopNudges(params: {
   service: AdminBotService;
-  embed: Embedder;
+  match: WorkshopMatcher;
   now: Date;
 }): Promise<WorkshopNudgePreview> {
   const papers = servicePayload(params.service.listPapers()).papers;
@@ -43,7 +43,7 @@ export async function previewWorkshopNudges(params: {
     papers: source.papers,
     workshops,
     attendance: source.attendance,
-    embed: params.embed,
+    match: params.match,
     now: params.now,
   });
   const membersById = new Map(members.map((member) => [member.id, member]));
@@ -53,7 +53,7 @@ export async function previewWorkshopNudges(params: {
     recipients: matched.recipients.map((recipient) => {
       const member = membersById.get(recipient.recipient_member_id);
       const blocked = !recipient.draft
-        ? "No source-confirmed allowed recommendation is available."
+        ? "No workshop recommendation is available."
         : !member?.slack_user_id
           ? "No Slack identity is linked."
           : undefined;
@@ -69,7 +69,7 @@ export async function previewWorkshopNudges(params: {
 
 export async function sendWorkshopNudges(params: {
   service: AdminBotService;
-  embed: Embedder;
+  match: WorkshopMatcher;
   now: Date;
   actor: string;
   recipientMemberIds: readonly string[];
@@ -86,8 +86,7 @@ export async function sendWorkshopNudges(params: {
       skipped.push({
         member_id: memberId,
         reason:
-          recipient?.delivery_blocked_reason ??
-          "No current source-confirmed workshop recommendation is available.",
+          recipient?.delivery_blocked_reason ?? "No current workshop recommendation is available.",
       });
       continue;
     }

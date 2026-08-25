@@ -3,22 +3,20 @@
 // Matching stays pure: the native AdminBot adapter below normalizes current records in memory,
 // while the API owns the administrator gate and delivery. A recommendation can therefore never
 // become a Slack message merely because matching succeeded.
+//
+// The judgement itself is a `WorkshopMatcher` the caller supplies -- in production a language
+// model reading each workshop's call for papers (see `workshop-match-llm.ts`). Embedding cosine
+// preceded it and could not tell "we welcome work on evaluation" apart from a paper that merely
+// says "evaluation": the call is prose about scope, not a bag of topic words, and reading it as
+// prose is what a model does and a vector distance does not.
 
-import type { Embedder } from "../../connectors/embeddings.js";
 import {
   isAdminBotFullMember,
   type AdminBotLabMember,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
 import type { AdminBotConferenceAttendeeRecord } from "../../contracts/paper-cycle.js";
-import {
-  ABSOLUTE_FLOOR,
-  RELATIVE_MARGIN,
-  cosineSimilarity,
-  interestsEmbeddingText,
-  interestTerms,
-  overlappingKeywords,
-} from "./venue-relevance.js";
+import { interestTerms, overlappingKeywords } from "./venue-relevance.js";
 
 export type CrossSubmissionStatus = "allowed" | "prohibited" | "unclear";
 export type WorkshopArchivalStatus = "archival" | "non_archival" | "mixed" | "unknown";
@@ -81,13 +79,14 @@ export type WorkshopRecommendation = {
   pair_id: string;
   paper: WorkshopRecommendationPaper;
   workshop: WorkshopProfile;
-  semantic_score: number;
+  /** The model's own fit, 0 to 1, for this paper against this workshop's call. */
   topic_relevance: number;
+  /** The one line the model gave for why the paper fits. */
+  match_rationale: string;
   topic_evidence: string[];
   attendance?: WorkshopAttendance;
   rank_explanation: string;
   final_rank?: number;
-  draftable: boolean;
   draft_fragment?: string;
 };
 
@@ -115,8 +114,37 @@ export type WorkshopNudgeResult = {
     paper: WorkshopRecommendationPaper;
     recommendations: WorkshopRecommendation[];
   }>;
-  excluded_by_submission_rules: WorkshopRecommendation[];
 };
+
+/** One paper the matcher judged to belong at one workshop. Unmatched pairs are simply absent. */
+export type WorkshopPaperMatch = {
+  workshop_id: string;
+  paper_id: string;
+  /** How well the paper fits the call, 0 to 1. */
+  relevance: number;
+  /** One line saying why, shown to the administrator and folded into the ranking explanation. */
+  reason: string;
+};
+
+/**
+ * Judges every paper against every workshop call.
+ *
+ * One call with both sets rather than a per-pair predicate: the production implementation batches
+ * and parallelizes across the model, and only it knows how many requests that should be.
+ */
+export type WorkshopMatcher = (request: {
+  papers: readonly WorkshopNudgePaper[];
+  workshops: readonly WorkshopProfile[];
+}) => Promise<WorkshopPaperMatch[]>;
+
+/**
+ * The fit below which a pair is not shown at all.
+ *
+ * Half: the model is asked for the share of the workshop's call the paper actually speaks to, and
+ * a paper that misses more of the call than it meets is not a recommendation, it is noise on a
+ * page an administrator has to read line by line.
+ */
+export const MATCH_RELEVANCE_FLOOR = 0.5;
 
 export type WorkshopNudgeCoverage = {
   members_without_usable_papers: Array<{ member_id: string; name: string }>;
@@ -298,20 +326,28 @@ export async function matchWorkshopNudges(params: {
   papers: readonly WorkshopNudgePaper[];
   workshops: readonly WorkshopProfile[];
   attendance?: readonly WorkshopAttendance[];
-  embed: Embedder;
+  match: WorkshopMatcher;
   now?: Date;
 }): Promise<WorkshopNudgeResult> {
   const papers = [...params.papers].toSorted((left, right) =>
     left.paper_id.localeCompare(right.paper_id),
   );
   const workshops = [...params.workshops];
-  const texts = [...papers.map(paperEmbeddingText), ...workshops.map(workshopEmbeddingText)];
-  const vectors = texts.length ? await params.embed(texts) : [];
-  if (vectors.length !== texts.length) {
-    throw new Error(`embedded ${vectors.length} records for ${texts.length} paper/workshop texts`);
+  const workshopsById = new Map(workshops.map((workshop) => [workshop.workshop_id, workshop]));
+  // One entry per (paper, recipient), so a co-authored paper appears once per author. The matcher
+  // judges the paper, not the authorship, so it sees each id once and its answer fans back out
+  // across every entry that carries it -- one model call for a paper five people wrote, not five.
+  const entriesByPaperId = new Map<string, WorkshopNudgePaper[]>();
+  for (const paper of papers) {
+    entriesByPaperId.set(paper.paper_id, [...(entriesByPaperId.get(paper.paper_id) ?? []), paper]);
   }
-  const paperVectors = vectors.slice(0, papers.length);
-  const workshopVectors = vectors.slice(papers.length);
+  const distinctPapers = [...entriesByPaperId.values()].flatMap((entries) =>
+    entries.length ? [entries[0]] : [],
+  );
+  const matches =
+    distinctPapers.length && workshops.length
+      ? await params.match({ papers: distinctPapers, workshops })
+      : [];
   const attendance = new Map(
     (params.attendance ?? []).map((entry) => [
       attendanceKey(entry.member_id, entry.parent_conference_key),
@@ -319,64 +355,51 @@ export async function matchWorkshopNudges(params: {
     ]),
   );
   const supported: WorkshopRecommendation[] = [];
-  for (const [paperIndex, paper] of papers.entries()) {
-    const scored = workshops
-      .map((workshop, workshopIndex) => ({
-        workshop,
-        score: cosineSimilarity(
-          paperVectors[paperIndex] ?? [],
-          workshopVectors[workshopIndex] ?? [],
-        ),
-      }))
-      .toSorted(
-        (left, right) =>
-          right.score - left.score ||
-          left.workshop.workshop_id.localeCompare(right.workshop.workshop_id),
+  const seenPairs = new Set<string>();
+  for (const match of matches) {
+    const workshop = workshopsById.get(match.workshop_id);
+    const entries = entriesByPaperId.get(match.paper_id);
+    // An id the matcher invented would attach someone else's paper to a workshop and read as a
+    // real recommendation. Refusing the whole run is the only honest response.
+    if (!workshop || !entries) {
+      throw new Error(
+        `the matcher returned an unknown pair ${match.paper_id}::${match.workshop_id}`,
       );
-    const best = scored[0]?.score ?? 0;
-    if (best < ABSOLUTE_FLOOR) {
+    }
+    const relevance = clamp(match.relevance);
+    if (relevance < MATCH_RELEVANCE_FLOOR) {
       continue;
     }
-    const median = scored[Math.floor(scored.length / 2)]?.score ?? 0;
-    const spread = best - median;
-    const cutoff = median + RELATIVE_MARGIN * spread;
-    const terms = interestTerms(`${paper.title}, ${paper.topic_summary ?? ""}`);
-    for (const entry of scored.filter((candidate) => candidate.score >= cutoff)) {
-      const relevance = spread > 0 ? clamp((entry.score - median) / spread) : 1;
+    const pairId = `${match.paper_id}::${workshop.workshop_id}`;
+    // The production matcher batches, and a retried batch can repeat a pair. First judgement wins.
+    if (seenPairs.has(pairId)) {
+      continue;
+    }
+    seenPairs.add(pairId);
+    const reason = match.reason.trim();
+    for (const paper of entries) {
       const travel = paper.recipient_member_id
-        ? attendance.get(
-            attendanceKey(paper.recipient_member_id, entry.workshop.parent_conference_key),
-          )
+        ? attendance.get(attendanceKey(paper.recipient_member_id, workshop.parent_conference_key))
         : undefined;
-      const evidence = recommendationTopicEvidence(entry.workshop.topics, terms);
-      const pairId = `${paper.paper_id}::${entry.workshop.workshop_id}`;
+      const terms = interestTerms(`${paper.title}, ${paper.topic_summary ?? ""}`);
       const recommendation: WorkshopRecommendation = {
         pair_id: pairId,
         paper: recommendationPaper(paper),
-        workshop: entry.workshop,
-        semantic_score: entry.score,
+        workshop,
         topic_relevance: relevance,
-        topic_evidence: evidence,
+        match_rationale: reason,
+        topic_evidence: recommendationTopicEvidence(workshop.topics, terms),
         ...(travel ? { attendance: travel } : {}),
-        rank_explanation: rankExplanation(relevance, travel, entry.workshop.parent_conference),
-        draftable: entry.workshop.cross_submission_status === "allowed",
+        rank_explanation: rankExplanation(relevance, reason, travel, workshop.parent_conference),
       };
-      if (recommendation.draftable) {
-        recommendation.draft_fragment = draftFragment(recommendation);
-      }
+      recommendation.draft_fragment = draftFragment(recommendation);
       supported.push(recommendation);
     }
   }
 
-  const excluded = supported
-    .filter((entry) => entry.workshop.cross_submission_status === "prohibited")
-    .toSorted(recommendationOrder);
-  const eligible = supported.filter(
-    (entry) => entry.workshop.cross_submission_status !== "prohibited",
-  );
   const resolved = new Map<string, WorkshopRecommendation[]>();
   const unresolved = new Map<string, WorkshopRecommendation[]>();
-  for (const recommendation of eligible) {
+  for (const recommendation of supported) {
     const memberId = recommendation.paper.recipient_member_id;
     const target = memberId ? resolved : unresolved;
     const key = memberId || recommendation.paper.paper_id;
@@ -388,12 +411,11 @@ export async function matchWorkshopNudges(params: {
       const ranked = rankUpToThreeWorkshops(recommendations);
       const displayName = ranked.find((entry) => entry.paper.recipient_display_name)?.paper
         .recipient_display_name;
-      const draftable = ranked.filter((entry) => entry.draftable);
       return {
         recipient_member_id: memberId,
         ...(displayName ? { recipient_display_name: displayName } : {}),
         recommendations: ranked,
-        draft: draftable.length ? buildWorkshopNudgeDraft(memberId, displayName, draftable) : null,
+        draft: ranked.length ? buildWorkshopNudgeDraft(memberId, displayName, ranked) : null,
       } satisfies WorkshopRecipientRecommendations;
     })
     .toSorted((left, right) => left.recipient_member_id.localeCompare(right.recipient_member_id));
@@ -411,7 +433,6 @@ export async function matchWorkshopNudges(params: {
         recommendations: rankUpToThreeWorkshops(recommendations),
       }))
       .toSorted((left, right) => left.paper.paper_id.localeCompare(right.paper.paper_id)),
-    excluded_by_submission_rules: excluded,
   };
 }
 
@@ -420,9 +441,9 @@ export function buildWorkshopNudgeDraft(
   displayName: string | undefined,
   recommendations: readonly WorkshopRecommendation[],
 ): WorkshopNudgeDraft {
-  const allowed = recommendations.filter((entry) => entry.draftable && entry.draft_fragment);
+  const allowed = recommendations.filter((entry) => entry.draft_fragment);
   if (!allowed.length) {
-    throw new Error("a workshop nudge draft needs at least one allowed recommendation");
+    throw new Error("a workshop nudge draft needs at least one recommendation");
   }
   const greeting = displayName?.trim() ? `Hi ${displayName.trim()} —` : "Hi —";
   const byWorkshop = new Map<string, WorkshopRecommendation[]>();
@@ -603,7 +624,7 @@ function recommendationOrder(left: WorkshopRecommendation, right: WorkshopRecomm
   return (
     rightPercent - leftPercent ||
     attendanceBenefit(right.attendance) - attendanceBenefit(left.attendance) ||
-    right.semantic_score - left.semantic_score ||
+    right.topic_relevance - left.topic_relevance ||
     left.workshop.routes[0]!.deadline_aoe.localeCompare(right.workshop.routes[0]!.deadline_aoe) ||
     left.paper.paper_id.localeCompare(right.paper.paper_id) ||
     left.workshop.workshop_id.localeCompare(right.workshop.workshop_id)
@@ -612,10 +633,13 @@ function recommendationOrder(left: WorkshopRecommendation, right: WorkshopRecomm
 
 function rankExplanation(
   relevance: number,
+  reason: string,
   attendance: WorkshopAttendance | undefined,
   parent: string,
 ): string {
-  const topic = `${Math.round(relevance * 100)}% relative semantic match among the workshop profiles`;
+  const topic = `${Math.round(relevance * 100)}% fit to the workshop's call for papers${
+    reason ? `: ${reason}` : ""
+  }`;
   if (attendance?.attendance_likelihood !== undefined) {
     return `${topic}. Recorded attendance likelihood for ${parent}: ${attendance.attendance_likelihood}%. Attendance only orders equally strong topic matches.`;
   }
@@ -633,11 +657,6 @@ function draftWorkshopFragment(recommendations: readonly WorkshopRecommendation[
   const papers = recommendations.map((entry) => `“${entry.paper.title}”`).join("; ");
   const evidence = unique(recommendations.flatMap((entry) => entry.topic_evidence)).slice(0, 3);
   return `• ${first.workshop.name}\n  ${recommendations.length === 1 ? "Paper" : "Papers"}: ${papers}\n  ${sentenceLabel(route.label)}: ${formatAoeDateTime(route.deadline_aoe)} · ${evidence.join(", ")}`;
-}
-
-function paperEmbeddingText(paper: WorkshopNudgePaper): string {
-  const summary = paper.topic_summary?.trim();
-  return interestsEmbeddingText(`${paper.title}${summary ? `. ${summary}` : ""}`);
 }
 
 function recommendationPaper(paper: WorkshopNudgePaper): WorkshopRecommendationPaper {
@@ -667,10 +686,6 @@ function recommendationTopicEvidence(
     .toSorted((left, right) => left.length - right.length || left.localeCompare(right))
     .slice(0, 3)
     .map((value) => (value.length <= 140 ? value : `${value.slice(0, 139).trimEnd()}…`));
-}
-
-function workshopEmbeddingText(workshop: WorkshopProfile): string {
-  return `title: ${workshop.name} | text: Topics: ${workshop.topics.join("; ")}. ${workshop.topic_evidence}`;
 }
 
 function attendanceKey(memberId: string, parentKeyValue: string): string {

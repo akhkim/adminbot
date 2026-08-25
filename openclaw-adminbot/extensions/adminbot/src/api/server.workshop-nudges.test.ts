@@ -33,10 +33,16 @@ async function startService(executed: AdminBotStoredProposal[] = []) {
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
     sensitiveInfoPath,
-    embedder: vi.fn(async (texts: string[]) =>
-      texts.map((text) => (/meta agents/iu.test(text) ? [1, 0] : [0, 1])),
+    // Stands in for the model: the first collected workshop takes every seeded paper, which is
+    // all these tests need -- what is under test is the HTTP gate and the recompute, not matching.
+    workshopMatcher: vi.fn(async ({ papers, workshops }) =>
+      papers.map((paper) => ({
+        workshop_id: (workshops[0] as { workshop_id: string }).workshop_id,
+        paper_id: paper.paper_id,
+        relevance: 0.9,
+        reason: "The call covers this paper's topic.",
+      })),
     ),
-    embeddingModel: "test-model",
     workshopNudgeNow: () => new Date("2026-08-25T00:00:00Z"),
     executor: {
       execute: async (proposal) => {

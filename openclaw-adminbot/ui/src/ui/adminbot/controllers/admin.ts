@@ -207,11 +207,10 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
 export type WorkshopNudgeRecommendation = {
   pair_id: string;
   final_rank?: number;
-  semantic_score: number;
+  match_rationale: string;
   topic_relevance: number;
   topic_evidence: string[];
   rank_explanation: string;
-  draftable: boolean;
   draft_fragment?: string;
   paper: {
     paper_id: string;
@@ -228,6 +227,7 @@ export type WorkshopNudgeRecommendation = {
     parent_conference: string;
     conference_location: string;
     topics: string[];
+    archival_status: "archival" | "non_archival" | "mixed" | "unknown";
     cross_submission_status: "allowed" | "prohibited" | "unclear";
     cross_submission_evidence: string;
     cross_submission_source_url: string;
@@ -267,7 +267,6 @@ export type WorkshopNudgeResult = {
     paper: WorkshopNudgeRecommendation["paper"];
     recommendations: WorkshopNudgeRecommendation[];
   }>;
-  excluded_by_submission_rules: WorkshopNudgeRecommendation[];
   coverage: {
     members_without_usable_papers: Array<{ member_id: string; name: string }>;
     papers_with_unresolved_authors: Array<{
@@ -289,9 +288,9 @@ export type WorkshopNudgeReviewState = {
 };
 
 export type WorkshopNudgeViewState = {
-  tab: "recipients" | "unresolved" | "excluded";
+  tab: "recipients" | "unresolved";
   query: string;
-  recipientFilter: "all" | "ready" | "missing_slack" | "no_allowed";
+  recipientFilter: "all" | "ready" | "missing_slack" | "no_match";
   page: number;
   detailKey: string | null;
 };

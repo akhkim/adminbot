@@ -19,14 +19,12 @@ function recommendation(
   return {
     pair_id: `paper-1::${status}`,
     final_rank: 1,
-    semantic_score: 0.8,
     topic_relevance: 0.9,
+    match_rationale: "The call asks for work on reliable agents.",
     topic_evidence: ["AI safety", "reliable agents", "Trace)"],
-    rank_explanation: "90% relative semantic match. Attendance was unknown.",
-    draftable: status === "allowed",
-    ...(status === "allowed"
-      ? { draft_fragment: "• “A safe paper” → Safety Workshop\n  Submission: 2035-09-01 AoE" }
-      : {}),
+    rank_explanation:
+      "90% fit to the workshop's call for papers: The call asks for work on reliable agents. Attendance was unknown.",
+    draft_fragment: "• “A safe paper” → Safety Workshop\n  Submission: 2035-09-01 AoE",
     paper: {
       paper_id: "paper-1",
       title: "A safe paper",
@@ -72,7 +70,7 @@ function state(overrides: Partial<WorkshopNudgeReviewState> = {}): WorkshopNudge
           recipient_member_id: "member-1",
           recipient_display_name: "Ada",
           delivery_ready: true,
-          recommendations: [allowed, recommendation("unclear")],
+          recommendations: [allowed, recommendation("unclear"), recommendation("prohibited")],
           draft: {
             text: "Hi Ada —\n\nExact server message",
             pair_ids: [allowed.pair_id],
@@ -81,7 +79,6 @@ function state(overrides: Partial<WorkshopNudgeReviewState> = {}): WorkshopNudge
         },
       ],
       unresolved_recipients: [],
-      excluded_by_submission_rules: [recommendation("prohibited")],
       coverage: {
         members_without_usable_papers: [],
         papers_with_unresolved_authors: [],
@@ -118,8 +115,8 @@ describe("renderWorkshopNudges", () => {
     value.view.detailKey = "recipient:member-1";
     const { container } = draw(value);
     expect(container.textContent).toContain("A safe paper");
-    expect(container.textContent).toContain("90% relative match");
-    expect(container.textContent).not.toContain("90% semantic");
+    expect(container.textContent).toContain("90% call fit");
+    expect(container.textContent).toContain("The call asks for work on reliable agents.");
     expect(container.textContent).toContain("AI safety, reliable agents, Trace");
     expect(container.textContent).not.toContain("Trace)");
     expect(container.textContent).toContain("AdminBot paper store");
@@ -233,8 +230,9 @@ describe("renderWorkshopNudges", () => {
     const onSetRecipients = vi.fn();
     const { container } = draw(state(), { onViewChange, onSetRecipients });
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    tabs[2]?.click();
-    expect(onViewChange).toHaveBeenCalledWith({ tab: "excluded", page: 0, detailKey: null });
+    expect(tabs).toHaveLength(2);
+    tabs[1]?.click();
+    expect(onViewChange).toHaveBeenCalledWith({ tab: "unresolved", page: 0, detailKey: null });
 
     const selectAll = container.querySelector<HTMLInputElement>(
       'input[aria-label="Select all ready recipients on this page"]',

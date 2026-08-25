@@ -81,6 +81,7 @@ import {
 } from "../workflows/papers/openreview-workflow.js";
 import { resolvePaperPdfSource } from "../workflows/papers/paper-pdf-source.js";
 import { buildVenueIndex, searchVenue } from "../workflows/papers/venue-index.js";
+import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
@@ -158,6 +159,7 @@ export type AdminBotMockServiceOptions = {
   venuePapersReader?: import("../connectors/openreview-notes.js").OpenReviewNotesReader;
   embedder?: import("../connectors/embeddings.js").Embedder;
   embeddingModel?: string;
+  workshopMatcher?: import("../workflows/papers/workshop-nudges.js").WorkshopMatcher;
   workshopNudgeNow?: () => Date;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
@@ -350,6 +352,7 @@ type AdminBotRouteContext = {
   // make every search path optional-chained for a case that cannot happen.
   embedder: import("../connectors/embeddings.js").Embedder;
   embeddingModel: string;
+  workshopMatcher: import("../workflows/papers/workshop-nudges.js").WorkshopMatcher;
   workshopNudgeNow: () => Date;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Counts each member's messages in the activity window, by reading the channels the lab tracks.
@@ -523,6 +526,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,
+    workshopMatcher: options.workshopMatcher ?? createLocalWorkshopMatcher(),
     workshopNudgeNow: options.workshopNudgeNow ?? (() => new Date()),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
@@ -1151,7 +1155,7 @@ async function handleAuthenticatedRoute(
         200,
         await previewWorkshopNudges({
           service,
-          embed: ctx.embedder,
+          match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
         }),
       );
@@ -1187,7 +1191,7 @@ async function handleAuthenticatedRoute(
         200,
         await sendWorkshopNudges({
           service,
-          embed: ctx.embedder,
+          match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
           actor: principalActor(principal),
           recipientMemberIds,

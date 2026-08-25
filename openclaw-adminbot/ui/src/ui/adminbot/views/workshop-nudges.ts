@@ -110,11 +110,6 @@ function renderQueue(
     <div class="workshop-nudges__tabs" role="tablist" aria-label="Workshop nudge review queues">
       ${queueTab(props, "recipients", `Recipients (${result.recipients.length})`)}
       ${queueTab(props, "unresolved", `Unresolved papers (${result.unresolved_recipients.length})`)}
-      ${queueTab(
-        props,
-        "excluded",
-        `Excluded pairs (${result.excluded_by_submission_rules.length})`,
-      )}
     </div>
     <div class="workshop-nudges__filters">
       <input
@@ -148,15 +143,13 @@ function renderQueue(
             <option value="all">All statuses</option>
             <option value="ready">Ready to nudge</option>
             <option value="missing_slack">Missing Slack</option>
-            <option value="no_allowed">No allowed match</option>
+            <option value="no_match">No recommendation</option>
           </select>`
         : nothing}
     </div>
     ${tab === "recipients"
       ? renderRecipientQueue(props, result)
-      : tab === "unresolved"
-        ? renderUnresolvedQueue(props, result)
-        : renderExcludedQueue(props, result)}
+      : renderUnresolvedQueue(props, result)}
     <div class="workshop-nudges__selection-bar">
       <span>
         <strong>${selectedCount ? countLabel(selectedCount, "recipient") : "No recipients"}</strong>
@@ -336,53 +329,6 @@ function renderUnresolvedQueue(props: WorkshopNudgesProps, result: WorkshopNudge
     </div>`;
 }
 
-function renderExcludedQueue(props: WorkshopNudgesProps, result: WorkshopNudgeResult) {
-  const query = normalizedQuery(props.state.view.query);
-  const filtered = result.excluded_by_submission_rules.filter((entry) =>
-    searchableRecommendation(entry).includes(query),
-  );
-  const page = pageSlice(filtered, props.state.view.page);
-  const detail = detailExcluded(result, props.state.view.detailKey);
-  return html`<div class="workshop-nudges__master-detail" data-detail=${detail ? "open" : "closed"}>
-    <div>
-      <div class="workshop-nudges__table-wrap">
-        <table class="data-table workshop-nudges__table">
-          <thead>
-            <tr>
-              <th>Paper</th>
-              <th>Workshop</th>
-              <th>Deadline</th>
-              <th>Rule</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${page.items.map(
-              (entry) => html`<tr>
-                <td>
-                  <button
-                    class="workshop-nudges__row-link"
-                    type="button"
-                    @click=${() => props.onViewChange({ detailKey: `excluded:${entry.pair_id}` })}
-                  >
-                    <strong>${entry.paper.title}</strong><small>Review excluded pair</small>
-                  </button>
-                </td>
-                <td>${entry.workshop.name}</td>
-                <td>${nextDeadlineLabel([entry])}</td>
-                <td><span class="chip" data-status="prohibited">Prohibited</span></td>
-              </tr>`,
-            )}
-          </tbody>
-        </table>
-      </div>
-      ${page.items.length
-        ? pagination(props, page)
-        : emptyQueue("No excluded pairs match this search.")}
-    </div>
-    ${detail ? renderExcludedDetail(props, detail) : nothing}
-  </div>`;
-}
-
 function renderRecipientDetail(
   props: WorkshopNudgesProps,
   recipient: WorkshopNudgeRecipient,
@@ -409,8 +355,7 @@ function renderRecipientDetail(
             <pre>${recipient.draft.text}</pre>
           </div>`
         : html`<p class="adminbot-form__notice">
-            None of these workshop calls explicitly permits cross-submission, so AdminBot will not
-            send this recipient a nudge.
+            No workshop matched this recipient's papers, so AdminBot has nothing to send them.
           </p>`}
       <ol class="workshop-nudges__recommendations">
         ${recipient.recommendations.map((entry) => renderRecommendation(entry))}
@@ -427,20 +372,6 @@ function renderUnresolvedDetail(props: WorkshopNudgesProps, entry: WorkshopNudge
       ${entry.recommendations.map((recommendation) =>
         renderRecommendation(recommendation, "Blocked until the paper recipient is linked"),
       )}
-    </ol>`,
-  );
-}
-
-function renderExcludedDetail(
-  props: WorkshopNudgesProps,
-  recommendation: WorkshopNudgeRecommendation,
-) {
-  return detailPanel(
-    props,
-    recommendation.paper.title,
-    html`<span class="chip" data-status="prohibited">Excluded by submission rule</span>`,
-    html`<ol class="workshop-nudges__recommendations">
-      ${renderRecommendation(recommendation, "Excluded by source-confirmed submission rule")}
     </ol>`,
   );
 }
@@ -486,12 +417,6 @@ function searchableUnresolved(entry: WorkshopNudgeUnresolved): string {
   );
 }
 
-function searchableRecommendation(entry: WorkshopNudgeRecommendation): string {
-  return normalizedQuery(
-    [entry.paper.title, entry.workshop.name, entry.workshop.cross_submission_evidence].join(" "),
-  );
-}
-
 function recipientFilterValue(
   recipient: WorkshopNudgeRecipient,
 ): WorkshopNudgeReviewState["view"]["recipientFilter"] {
@@ -500,7 +425,7 @@ function recipientFilterValue(
   }
   return recipient.delivery_blocked_reason?.toLocaleLowerCase().includes("slack")
     ? "missing_slack"
-    : "no_allowed";
+    : "no_match";
 }
 
 function recipientMatchesFilter(
@@ -598,17 +523,6 @@ function detailUnresolved(
   return result.unresolved_recipients.find((entry) => entry.paper.paper_id === id);
 }
 
-function detailExcluded(
-  result: WorkshopNudgeResult,
-  key: string | null,
-): WorkshopNudgeRecommendation | undefined {
-  if (!key?.startsWith("excluded:")) {
-    return undefined;
-  }
-  const id = key.slice("excluded:".length);
-  return result.excluded_by_submission_rules.find((entry) => entry.pair_id === id);
-}
-
 function renderRecommendation(recommendation: WorkshopNudgeRecommendation, blockedLabel?: string) {
   const route = recommendation.workshop.routes[0];
   const status = recommendation.workshop.cross_submission_status;
@@ -621,9 +535,7 @@ function renderRecommendation(recommendation: WorkshopNudgeRecommendation, block
           ><strong>${recommendation.workshop.name}</strong>
         </div>
         <div class="workshop-nudges__chips">
-          <span class="chip"
-            >${Math.round(recommendation.topic_relevance * 100)}% relative match</span
-          >
+          <span class="chip">${Math.round(recommendation.topic_relevance * 100)}% call fit</span>
           <span class="chip" data-status=${status}>${displayLabel(status)}</span>
           ${recommendation.paper.current_submission_state
             ? html`<span class="chip"
@@ -706,11 +618,7 @@ function renderRecommendation(recommendation: WorkshopNudgeRecommendation, block
           </div>
         </dl>
         <div class="workshop-nudges__include">
-          ${blockedLabel
-            ? blockedLabel
-            : recommendation.draftable
-              ? "Included in the server-generated message"
-              : "Blocked until the cross-submission rule is source-confirmed as allowed"}
+          ${blockedLabel ? blockedLabel : "Included in the server-generated message"}
         </div>
       </div>
     </li>
@@ -823,9 +731,9 @@ function crossSubmissionDescription(
     return "The CFP explicitly permits submission elsewhere.";
   }
   if (status === "prohibited") {
-    return "The CFP explicitly prohibits submission elsewhere during review.";
+    return "The CFP explicitly prohibits submission elsewhere during review; check before submitting.";
   }
-  return "No explicit rule was found; this match cannot be included in a nudge.";
+  return "No explicit rule was found; check the call before submitting.";
 }
 
 function displayLabel(value: string): string {

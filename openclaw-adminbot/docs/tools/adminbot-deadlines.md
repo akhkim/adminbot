@@ -92,7 +92,7 @@ activated by this repository change; an operator must add that schedule.
 
 ## 5. Review workshop nudges (F)
 
-F is a separate, embedding-based recommendation flow. It does not change the legacy matcher,
+F is a separate, model-based recommendation flow. It does not change the legacy matcher,
 `matches.json`, reminders, or cron jobs described above.
 
 An administrator opens `/adminbot/workshop-nudges`. The authenticated backend reads current native
@@ -104,12 +104,22 @@ the exact server-generated Slack message. It also reports members without usable
 records and papers with unresolved authors; absent AdminBot data is not treated as proof that no
 relevant paper exists.
 
-Recipients with a linked Slack identity and at least one source-confirmed allowed recommendation
-are selected by default. An administrator may omit recipients and press **Nudge**. The backend then
-reads current state and recomputes the selected recipients and exact messages before creating and
-executing one `member_nudge.send` proposal per recipient. The browser cannot provide or edit the
-message text. Prohibited pairs appear separately and do not count toward the three-workshop cap;
-unclear rules remain visible but cannot enter a message.
+Matching is the local model reading each workshop's call for papers against a handful of paper
+titles and topic summaries, and answering with a fit and a one-line reason per pair. Requests are
+one workshop against at most eight papers and run concurrently, so a full sweep is seconds rather
+than minutes; each distinct paper is judged once and its answer is shown to every author. Pairs
+below a 50% fit are not shown at all. The endpoint is asserted to be loopback before anything is
+sent, which on this deployment is the tunnel to Aurora's vLLM.
+
+The cross-submission rule is evidence on the page, not a gate: a workshop whose call prohibits
+submitting elsewhere is still recommended and still enters the message, with its rule and source
+link shown, and the administrator decides. The message itself closes by telling the recipient to
+check the calls and submission rules before submitting.
+
+Recipients with a linked Slack identity and at least one recommendation are selected by default. An
+administrator may omit recipients and press **Nudge**. The backend then reads current state and
+recomputes the selected recipients and exact messages before creating and executing one
+`member_nudge.send` proposal per recipient. The browser cannot provide or edit the message text.
 
 ### Offline CSV matcher
 
@@ -138,12 +148,13 @@ member_id,parent_conference_key,attendance_likelihood,source,last_confirmed_at
 
 List-valued paper fields use `|`. A blank recipient ID keeps supported recommendations in the
 unresolved section, and a blank attendance likelihood means unknown. The command accepts historical
-and title-only papers. It requires the configured local embedding service.
+and title-only papers. It requires the configured local model
+(`ADMINBOT_WORKSHOP_MATCH_URL`, `ADMINBOT_WORKSHOP_MATCH_MODEL`), which must be a loopback URL.
 
 ## Notes / limitations
 
 - The legacy `matches.json` ready→workshop path remains a confirmation-gated keyword heuristic.
-  F uses embeddings over native AdminBot papers; its offline CSV command does not replace that
-  automation.
+  F asks the local model to read calls for papers against native AdminBot papers; its offline CSV
+  command does not replace that automation.
 - The scripts are validated in **dry-run**; live sending needs the AdminBot
   service + Slack/`gog`/OpenReview credentials on the host.

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Embedder } from "../../connectors/embeddings.js";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
   buildWorkshopNudgeDraft,
   matchWorkshopNudges,
   workshopNudgeInputsFromAdminBot,
   workshopProfilesFromDeadlines,
+  type WorkshopMatcher,
   type WorkshopNudgePaper,
   type WorkshopProfile,
 } from "./workshop-nudges.js";
@@ -51,8 +51,31 @@ function paper(id: string, memberId?: string): WorkshopNudgePaper {
   };
 }
 
-const semanticEmbedder: Embedder = async (texts) =>
-  texts.map((text) => (text.includes("off-topic") ? [0, 1] : [1, 0]));
+/**
+ * Stands in for the model: everything fits except a paper or workshop labelled off-topic.
+ *
+ * `scores` lets a test set an exact fit per workshop id where the ordering is what is under test.
+ */
+function stubMatcher(scores: Record<string, number> = {}): WorkshopMatcher {
+  return async ({ papers, workshops }) =>
+    papers.flatMap((paper) =>
+      workshops.flatMap((workshop) => {
+        const offTopic =
+          paper.paper_id.includes("off-topic") ||
+          workshop.workshop_id.includes("off-topic") ||
+          workshop.topics.includes("off-topic");
+        const relevance = offTopic ? 0.1 : (scores[workshop.workshop_id] ?? 0.9);
+        return [
+          {
+            workshop_id: workshop.workshop_id,
+            paper_id: paper.paper_id,
+            relevance,
+            reason: `${workshop.name} covers ${paper.title}`,
+          },
+        ];
+      }),
+    );
+}
 
 describe("workshop nudge matching", () => {
   it("ranks across every paper per recipient and caps at three distinct workshops", async () => {
@@ -82,7 +105,7 @@ describe("workshop nudge matching", () => {
           last_confirmed_at: "2035-01-01",
         },
       ],
-      embed: semanticEmbedder,
+      match: stubMatcher(),
       now: new Date("2035-01-01T00:00:00Z"),
     });
 
@@ -106,12 +129,14 @@ describe("workshop nudge matching", () => {
     expect(
       result.recipients[0]?.recommendations.some((entry) => entry.paper.paper_id === "p-2"),
     ).toBe(true);
-    expect(result.excluded_by_submission_rules).toHaveLength(2);
+    // The cross-submission rule is evidence on the page, not a gate: a workshop whose call
+    // prohibits cross-submission is still recommended, and the administrator decides.
     expect(
-      result.excluded_by_submission_rules.every(
+      result.recipients[0]?.recommendations.some(
         (entry) => entry.workshop.workshop_id === "blocked",
       ),
     ).toBe(true);
+    expect(result.recipients[0]?.draft?.text).toContain("Workshop blocked");
     expect(result.recipients[0]?.draft?.text).toContain("these workshops may fit your papers");
     expect(result.recipients[0]?.draft?.text).toContain("Submission: Sep 1, 2035 · 23:59 AoE");
     expect(result.recipients[0]?.draft?.text).not.toContain("2035-09-01 23:59:59");
@@ -139,7 +164,7 @@ describe("workshop nudge matching", () => {
         profile("third", "iclr-2027"),
         profile("fourth", "colm-2027"),
       ],
-      embed: semanticEmbedder,
+      match: stubMatcher(),
       now: new Date("2035-01-01T00:00:00Z"),
     });
     expect(result.recipients).toEqual([]);
@@ -167,26 +192,15 @@ describe("workshop nudge matching", () => {
           last_confirmed_at: "2035-01-01",
         },
       ],
-      embed: semanticEmbedder,
+      match: stubMatcher(),
     });
     expect(result.recipients).toEqual([]);
   });
 
-  it("is stable and never lets attendance overtake a stronger semantic match", async () => {
-    const vectors: Record<string, number[]> = {
-      strong: [1, 0],
-      attended: [0.99, 0.141_067],
-      baseline1: [0.4, 0.916_515],
-      baseline2: [0.3, 0.953_939],
-    };
-    const embed: Embedder = async (texts) =>
-      texts.map((text) => {
-        if (text.startsWith("task:")) {
-          return [1, 0];
-        }
-        const id = Object.keys(vectors).find((candidate) => text.includes(`Workshop ${candidate}`));
-        return vectors[id ?? "baseline2"] as number[];
-      });
+  it("is stable and never lets attendance overtake a stronger match", async () => {
+    // The two baselines sit under the floor, so what is left is the pair whose order attendance
+    // would flip if it were allowed to outrank fit.
+    const match = stubMatcher({ strong: 0.9, attended: 0.8, baseline1: 0.3, baseline2: 0.2 });
     const params = {
       papers: [paper("p-1", "member-1")],
       workshops: [
@@ -211,7 +225,7 @@ describe("workshop nudge matching", () => {
           last_confirmed_at: "2035-01-01",
         },
       ],
-      embed,
+      match,
       now: new Date("2035-01-01T00:00:00Z"),
     };
     const first = await matchWorkshopNudges(params);
@@ -352,19 +366,49 @@ describe("workshop nudge matching", () => {
     });
   });
 
-  it("refuses to serialize a draft from unclear or prohibited pairs", () => {
-    const base = {
-      pair_id: "p::w",
-      paper: paper("p", "member-1"),
-      workshop: profile("w", "neurips-2026", "unclear"),
-      semantic_score: 1,
-      topic_relevance: 1,
-      topic_evidence: ["safety"],
-      rank_explanation: "semantic",
-      draftable: false,
-    };
-    expect(() => buildWorkshopNudgeDraft("member-1", "Ada", [base])).toThrow(
-      /at least one allowed recommendation/u,
+  it("judges a co-authored paper once and recommends it to every author", async () => {
+    const seen: string[][] = [];
+    const result = await matchWorkshopNudges({
+      papers: [
+        { ...paper("shared", "member-1") },
+        { ...paper("shared", "member-2"), recipient_display_name: "Ben" },
+      ],
+      workshops: [profile("fit", "neurips-2026")],
+      match: async (request) => {
+        seen.push(request.papers.map((entry) => entry.paper_id));
+        return request.papers.flatMap((entry) =>
+          request.workshops.map((workshop) => ({
+            workshop_id: workshop.workshop_id,
+            paper_id: entry.paper_id,
+            relevance: 0.9,
+            reason: "fits",
+          })),
+        );
+      },
+    });
+    expect(seen).toEqual([["shared"]]);
+    expect(result.recipients.map((entry) => entry.recipient_member_id)).toEqual([
+      "member-1",
+      "member-2",
+    ]);
+    expect(result.recipients.every((entry) => entry.draft !== null)).toBe(true);
+  });
+
+  it("refuses to serialize a draft with nothing to say", () => {
+    expect(() => buildWorkshopNudgeDraft("member-1", "Ada", [])).toThrow(
+      /at least one recommendation/u,
     );
+  });
+
+  it("refuses a matcher answer naming a paper or workshop it was not given", async () => {
+    await expect(
+      matchWorkshopNudges({
+        papers: [paper("p-1", "member-1")],
+        workshops: [profile("fit", "neurips-2026")],
+        match: async () => [
+          { workshop_id: "fit", paper_id: "someone-elses-paper", relevance: 0.9, reason: "no" },
+        ],
+      }),
+    ).rejects.toThrow(/unknown pair/u);
   });
 });

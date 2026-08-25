@@ -3,8 +3,8 @@
 
 import fs from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { createOllamaEmbedder } from "../extensions/adminbot/src/connectors/embeddings.js";
 import { DEADLINE_VENUES } from "../extensions/adminbot/src/workflows/deadlines/generated/dataset.js";
+import { createLocalWorkshopMatcher } from "../extensions/adminbot/src/workflows/papers/workshop-match-llm.js";
 import {
   parseWorkshopAttendance,
   parseWorkshopNudgePapers,
@@ -41,7 +41,7 @@ const result = await matchWorkshopNudges({
   papers,
   workshops,
   attendance,
-  embed: createOllamaEmbedder(),
+  match: createLocalWorkshopMatcher(),
   now,
 });
 const output = `${JSON.stringify(result, null, 2)}\n`;
