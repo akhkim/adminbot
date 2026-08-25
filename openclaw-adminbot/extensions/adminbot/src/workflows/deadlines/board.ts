@@ -219,10 +219,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     width: 170px;
   }
   #archival-status {
-    width: 180px;
+    width: 220px;
   }
   #priority {
-    width: 150px;
+    width: 170px;
   }
   .search::placeholder {
     color: var(--muted);
@@ -357,30 +357,26 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     gap: 6px;
     white-space: nowrap;
   }
-  .badge {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 7px;
-    white-space: nowrap;
-  }
+  .badge,
   .priority,
   .archival {
     display: inline-flex;
-    padding: 3px 7px;
+    align-items: center;
+    padding: 2px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 4px;
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.2;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+  .badge {
+    border-color: color-mix(in srgb, var(--ink) 55%, var(--border));
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    color: var(--ink);
   }
   .priority[data-priority="primary"] {
     border-color: var(--classification-primary);
@@ -405,8 +401,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     color: var(--ink-2);
   }
   [data-entry-type="workshop"] .badge {
-    border-color: color-mix(in srgb, var(--ink-2) 45%, var(--border));
-    background: color-mix(in srgb, var(--ink-2) 10%, transparent);
+    border-color: color-mix(in srgb, var(--ink-2) 55%, var(--border));
+    background: color-mix(in srgb, var(--ink-2) 12%, transparent);
     color: var(--ink-2);
   }
   .pill {
