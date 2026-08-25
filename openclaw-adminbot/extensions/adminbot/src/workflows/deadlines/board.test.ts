@@ -48,6 +48,12 @@ describe("standalone deadline board", () => {
       const linked = cards.find((card) => card.textContent?.includes("Linked Workshop"))!;
       const homepage = cards.find((card) => card.textContent?.includes("Homepage-only Workshop"))!;
 
+      expect(linked.dataset.entryType).toBe("workshop");
+      expect(linked.dataset.archivalStatus).toBe("unknown");
+      expect(linked.querySelector(".priority")).toBeNull();
+      expect(linked.querySelector(".archival")?.textContent).toBe(
+        "Archival status not established",
+      );
       expect(document.querySelector<HTMLAnchorElement>(".hero .hname a")?.href).toBe(
         "https://workshop.example/",
       );
@@ -128,7 +134,13 @@ describe("standalone deadline board", () => {
 
       expect(document.querySelector(".hero .lbl")?.textContent).toContain("Most recent deadline");
       expect(document.querySelectorAll(".card")).toHaveLength(1);
-      expect(document.querySelector(".card")?.textContent).toContain("Past Main Conference");
+      const card = document.querySelector<HTMLElement>(".card")!;
+      expect(card.textContent).toContain("Past Main Conference");
+      expect(card.dataset.entryType).toBe("main_conference");
+      expect(card.dataset.archivalStatus).toBe("archival");
+      expect(card.dataset.venuePriority).toBe("primary");
+      expect(card.querySelector(".priority")?.textContent).toBe("Primary");
+      expect(card.querySelector(".archival")?.textContent).toBe("Archival");
       expect(document.querySelector("#foot")?.textContent).toContain(
         "Showing 1 of 1 matching past deadlines",
       );
@@ -138,16 +150,19 @@ describe("standalone deadline board", () => {
       document.querySelector<HTMLButtonElement>("#v-groups")!.click();
       expect(document.querySelectorAll(".deadline-group")).toHaveLength(1);
       expect(document.querySelector(".deadline-group__summary-countdown")?.textContent).toBe(
-        "Passed",
+        "passed",
       );
       document.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
-      expect(document.querySelector(".deadline-group__row-countdown")?.textContent).toBe("Passed");
+      expect(document.querySelector(".deadline-group__row-countdown")?.textContent).toBe("passed");
       expect(document.querySelector(".deadline-group__row-date")?.textContent).toContain(
         "23:59 AoE",
       );
       document.querySelector<HTMLButtonElement>("#v-cards")!.click();
 
       const entryType = document.querySelector<HTMLSelectElement>("#entry-type")!;
+      expect([...entryType.options].every((option) => / \(\d+\)$/u.test(option.textContent))).toBe(
+        true,
+      );
       entryType.value = "workshop";
       entryType.dispatchEvent(new dom.window.Event("change"));
       expect(document.querySelectorAll(".card")).toHaveLength(0);

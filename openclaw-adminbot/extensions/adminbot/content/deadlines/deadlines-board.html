@@ -16,6 +16,8 @@
     --warn: #eab54a;
     --serious: #f5883e;
     --crit: #f2606a;
+    --classification-primary: #c084fc;
+    --classification-secondary: #d6b46b;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
     --radius: 14px;
@@ -92,6 +94,13 @@
     inset: 0 auto 0 0;
     width: 4px;
     background: var(--h-color, var(--accent));
+  }
+  .hero[data-entry-type="workshop"] {
+    background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+  }
+  .hero[data-entry-type="workshop"] .hname {
+    color: var(--ink-2);
+    font-weight: 500;
   }
   .hero .lbl {
     font-family: var(--mono);
@@ -206,10 +215,10 @@
     width: 170px;
   }
   #archival-status {
-    width: 180px;
+    width: 220px;
   }
   #priority {
-    width: 150px;
+    width: 170px;
   }
   .search::placeholder {
     color: var(--muted);
@@ -306,7 +315,7 @@
   /* cards */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(304px, 100%), 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--gap);
   }
   .card {
@@ -333,25 +342,67 @@
     align-items: center;
     gap: 8px;
   }
-  .badge {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 7px;
-    white-space: nowrap;
-  }
   .labels {
-    display: inline-flex;
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
   }
+  .classification {
+    display: inline-flex;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .badge,
+  .priority,
+  .archival {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .badge {
+    border-color: color-mix(in srgb, var(--ink) 55%, var(--border));
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    color: var(--ink);
+  }
+  .priority[data-priority="primary"] {
+    border-color: var(--classification-primary);
+    background: color-mix(in srgb, var(--classification-primary) 14%, transparent);
+    color: var(--classification-primary);
+  }
+  .priority[data-priority="secondary"] {
+    border-color: var(--classification-secondary);
+    background: color-mix(in srgb, var(--classification-secondary) 10%, transparent);
+    color: var(--classification-secondary);
+  }
+  .archival {
+    background: var(--surface-2);
+    color: var(--ink-2);
+  }
+  .card[data-entry-type="workshop"] {
+    background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+    border-color: var(--border-soft);
+  }
+  .card[data-entry-type="workshop"] .cname,
+  .deadline-group__row[data-entry-type="workshop"] .deadline-group__row-name {
+    color: var(--ink-2);
+  }
+  [data-entry-type="workshop"] .badge {
+    border-color: color-mix(in srgb, var(--ink-2) 55%, var(--border));
+    background: color-mix(in srgb, var(--ink-2) 12%, transparent);
+    color: var(--ink-2);
+  }
   .pill {
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     padding: 3px 9px;
     border-radius: 999px;
@@ -360,11 +411,15 @@
     color: var(--u);
   }
   .cname {
+    display: -webkit-box;
+    overflow: hidden;
     font-size: 16px;
     font-weight: 600;
     line-height: 1.3;
     letter-spacing: -0.01em;
     margin: 1px 0;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
   .hname a,
   .cname a,
@@ -405,7 +460,7 @@
     color: var(--ink-2);
     font-variant-numeric: tabular-nums;
   }
-  .cdl .aoe {
+  .aoe {
     color: var(--muted);
   }
   .ccd {
@@ -551,6 +606,9 @@
   .deadline-group__row:hover {
     background: var(--surface-2);
   }
+  .deadline-group__row[data-entry-type="workshop"] {
+    background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+  }
   .deadline-group__row-main {
     grid-area: main;
     min-width: 0;
@@ -617,8 +675,10 @@
   th,
   td {
     text-align: left;
-    padding: 11px 14px;
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border-soft);
+    line-height: 1.25;
+    vertical-align: middle;
     white-space: nowrap;
   }
   th {
@@ -632,11 +692,23 @@
     background: var(--surface-2);
   }
   td.name {
-    white-space: normal;
+    max-width: 420px;
     min-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  td.name a {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   td .clink {
     margin-top: 0;
+    padding: 4px 6px;
+  }
+  td .labels {
+    flex-wrap: nowrap;
   }
   td .dot {
     display: inline-block;
@@ -646,6 +718,10 @@
     background: var(--u);
     margin-right: 8px;
     vertical-align: middle;
+  }
+  tr[data-entry-type="workshop"] {
+    background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+    color: var(--ink-2);
   }
   .tcd {
     font-family: var(--mono);
@@ -675,6 +751,16 @@
     color: var(--muted);
     font-size: 12.5px;
     font-family: var(--mono);
+  }
+  @media (max-width: 1000px) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 760px) {
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   @media (max-width: 600px) {
     .filter {
@@ -717,6 +803,11 @@
     .deadline-group__row-actions {
       grid-column: 1 / -1;
       justify-content: flex-start;
+    }
+  }
+  @media (max-width: 480px) {
+    .grid {
+      grid-template-columns: 1fr;
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -778,7 +869,8 @@
     </div>
 
     <details class="archival-guide">
-      <summary>What archival status means</summary>
+      <summary>What priority and archival status mean</summary>
+      <p>Primary and Secondary are the lab's venue priorities. Archival status is a separate publication-policy classification.</p>
       <p>Workshop status follows its own CFP or an official parent policy. A workshop can offer archival, non-archival, or separate archival and non-archival routes.</p>
       <dl>
         <div>
@@ -6850,10 +6942,17 @@
     if (!m) return "";
     return `${MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}`;
   }
-  function fmtAoeDateTime(x) {
+  function fmtAoeDateTimeText(x) {
     const time = (x || "").match(/[ T](\d{2}):(\d{2})/);
     const date = fmtAoe(x);
     return date && time ? `${date} · ${time[1]}:${time[2]} AoE` : date;
+  }
+  function fmtAoeDateTime(x) {
+    const text = fmtAoeDateTimeText(x);
+    const separator = text.indexOf(" · ");
+    return separator < 0
+      ? text
+      : `${text.slice(0, separator)} <span class="aoe">${text.slice(separator)}</span>`;
   }
   function aoeDayKey(now) {
     return new Date(now - 12 * 3600000).toISOString().slice(0, 10);
@@ -6962,13 +7061,16 @@
   document.getElementById("p-upcoming").onclick = () => setPeriod("upcoming");
   document.getElementById("p-past").onclick = () => setPeriod("past");
 
-  function matching(now) {
+  function matching(now, overrides = {}) {
+    const selectedEntryType = overrides.entryType ?? entryType;
+    const selectedArchivalStatus = overrides.archivalStatus ?? archivalStatus;
+    const selectedPriority = overrides.priority ?? priority;
     return DATA.filter(
       (x) =>
         (period === "upcoming" ? x._sub > now : x._sub <= now) &&
-        (entryType === "all" || x.entry_type === entryType) &&
-        (archivalStatus === "all" || x.archival_status === archivalStatus) &&
-        (priority === "all" || x.venue_priority === priority) &&
+        (selectedEntryType === "all" || x.entry_type === selectedEntryType) &&
+        (selectedArchivalStatus === "all" || x.archival_status === selectedArchivalStatus) &&
+        (selectedPriority === "all" || x.venue_priority === selectedPriority) &&
         (!query ||
           (
             x.name +
@@ -6987,6 +7089,19 @@
             .includes(query)),
     ).toSorted((a, b) => (period === "upcoming" ? a._sub - b._sub : b._sub - a._sub));
   }
+  function updateFacetCounts(now) {
+    [
+      ["entry-type", "entryType"],
+      ["archival-status", "archivalStatus"],
+      ["priority", "priority"],
+    ].forEach(([id, key]) => {
+      const select = document.getElementById(id);
+      [...select.options].forEach((option) => {
+        option.dataset.label ||= option.textContent;
+        option.textContent = `${option.dataset.label} (${matching(now, { [key]: option.value }).length})`;
+      });
+    });
+  }
   const grid = document.getElementById("grid"),
     groupList = document.getElementById("group-list"),
     tbody = document.getElementById("tbody"),
@@ -6996,6 +7111,7 @@
   function render() {
     const now = Date.now();
     renderedAoeDay = aoeDayKey(now);
+    updateFacetCounts(now);
     const matches = matching(now);
     rebuildChips(matches);
     const list = matches.filter((x) => activeGroup === "All" || x.venue_group === activeGroup);
@@ -7019,6 +7135,9 @@
     const next = list[0];
     if (next) {
       const u = urgencyLabel(next._sub, now);
+      hero.dataset.entryType = next.entry_type;
+      hero.dataset.archivalStatus = next.archival_status;
+      hero.dataset.venuePriority = next.venue_priority;
       hero.style.setProperty("--h-color", u.cvar);
       const p = parts(next._sub - now);
       const call = titleUrl(next);
@@ -7027,7 +7146,7 @@
         : esc(next.name);
       hero.innerHTML = `<div class="lbl">${period === "upcoming" ? "Next" : "Most recent"} deadline · ${esc(next.venue_group)}</div>
       <div class="hname">${title}</div>
-      <div class="hmeta">${cap(next.deadline_label)} · ${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:${u.cvar}">${u.txt}</span></div>
+      <div class="hmeta">${cap(next.deadline_label)} · ${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:${u.cvar}">${u.txt}</span> ${classificationLabels(next)}</div>
       ${
         period === "upcoming"
           ? `<div class="cd" data-t="${next._sub}">
@@ -7036,6 +7155,9 @@
           : ""
       }<div class="hlinks">${staleNote(next)}${historyNote(next)}${sourceLinks(next)}</div>`;
     } else {
+      delete hero.dataset.entryType;
+      delete hero.dataset.archivalStatus;
+      delete hero.dataset.venuePriority;
       hero.innerHTML = `<div class="lbl">${period === "upcoming" ? "Next" : "Most recent"} deadline</div><div class="hname">Nothing matches this filter</div>`;
     }
 
@@ -7070,6 +7192,28 @@
   };
   function entryTypeLabel(x) {
     return ENTRY_TYPE_LABELS[x.entry_type] || ENTRY_TYPE_LABELS.other;
+  }
+  function priorityLabel(x) {
+    if (x.venue_priority === "primary") {
+      return '<span class="priority" data-priority="primary">Primary</span>';
+    }
+    return x.venue_priority === "secondary"
+      ? '<span class="priority" data-priority="secondary">Secondary</span>'
+      : "";
+  }
+  function archivalLabel(x) {
+    if (x.archival_status === "unknown") {
+      return '<span class="archival" data-archival="unknown">Archival status not established</span>';
+    }
+    if (x.archival_status === "mixed") {
+      return '<span class="archival" data-archival="mixed">Archival + non-archival</span>';
+    }
+    const label = x.archival_status === "non_archival" ? "Non-archival" : "Archival";
+    return `<span class="archival" data-archival="${esc(x.archival_status)}">${label}</span>`;
+  }
+  function classificationLabels(x) {
+    const labels = priorityLabel(x) + archivalLabel(x);
+    return labels ? `<span class="classification">${labels}</span>` : "";
   }
   function titleUrl(x) {
     return x.entry_type === "workshop" ? x.homepage_url || "" : x.link || "";
@@ -7119,12 +7263,13 @@
         const notif = x._notif
           ? `<div class="cnote">Accept/reject: ${fmtAoe(x.notification_aoe)} AoE</div>`
           : "";
-        return `<div class="card" style="--u:${u.cvar}">
+        return `<div class="card" data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${u.cvar}">
       <div class="row1"><span class="badge">${type}</span><span class="pill">${u.txt}</span></div>
       <div class="cname">${title}</div>
       <div class="cgroup" title="${esc(x.venue_group)} · ${esc(cap(x.deadline_label))}"><span class="cgroup-name">${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">${esc(cap(x.deadline_label))}</span></div>
+      ${classificationLabels(x)}
       <div class="cdl">${fmtAoeDateTime(x.deadline_aoe)}</div>
-      <div class="ccd"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "Passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</div>
+      <div class="ccd"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</div>
       ${notif}${staleNote(x)}${historyNote(x)}${sourceLinks(x)}
     </div>`;
       })
@@ -7142,10 +7287,10 @@
           ? `<a href="${esc(call)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>`
           : esc(x.name);
         const actions = sourceLinks(x);
-        return `<tr style="--u:${u.cvar}"><td class="tcd">${fmtAoeDateTime(x.deadline_aoe)}</td>
-      <td class="tcd countdown"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "Passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</td>
+        return `<tr data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${u.cvar}"><td class="tcd">${fmtAoeDateTime(x.deadline_aoe)}</td>
+      <td class="tcd countdown"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</td>
       <td class="name"><span class="dot" style="--u:${u.cvar}"></span>${title}</td>
-      <td class="meta"><span class="badge">${type}</span></td><td class="meta">${esc(x.venue_group)}</td><td>${staleNote(x)}${historyNote(x)}${actions}</td></tr>`;
+      <td class="meta"><span class="labels"><span class="badge">${type}</span>${classificationLabels(x)}</span></td><td class="meta">${esc(x.venue_group)}</td><td>${x.stale ? `<span class="cnote" title="Source not observed in the latest sweep.">stale</span>` : ""}${historyNote(x)}${actions}</td></tr>`;
       })
       .join("");
   }
@@ -7214,17 +7359,17 @@
         const detail = [
           x._notif ? `Accept/reject ${fmtAoe(x.notification_aoe)} AoE` : "",
           earlier.length
-            ? `Previously ${earlier.map((revision) => `${fmtAoeDateTime(revision.deadline_aoe)} (${cap(revision.deadline_label || "deadline")})`).join(", ")}`
+            ? `Previously ${earlier.map((revision) => `${fmtAoeDateTimeText(revision.deadline_aoe)} (${cap(revision.deadline_label || "deadline")})`).join(", ")}`
             : "",
           x.stale ? "Source not observed in the latest sweep" : "",
         ]
           .filter(Boolean)
           .join(" · ");
         const note = [title.stage, detail].filter(Boolean).join(" · ");
-        return `<div class="deadline-group__row" style="--u:${rowUrgency.cvar}">
-          <span class="deadline-group__row-countdown"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "Passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</span>
+        return `<div class="deadline-group__row" data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${rowUrgency.cvar}">
+          <span class="deadline-group__row-countdown"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</span>
           <time class="deadline-group__row-date">${fmtAoeDateTime(x.deadline_aoe)}</time>
-          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">${linkedTitle}</h3><p class="deadline-group__row-note">${note ? `<span class="deadline-group__row-detail">${esc(note)}</span>` : ""}<span class="labels"><span class="badge">${entryTypeLabel(x)}</span></span></p></div>${actions ? `<span class="deadline-group__row-actions">${actions}</span>` : ""}
+          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">${linkedTitle}</h3><p class="deadline-group__row-note">${note ? `<span class="deadline-group__row-detail">${esc(note)}</span>` : ""}<span class="labels"><span class="badge">${entryTypeLabel(x)}</span>${classificationLabels(x)}</span></p></div>${actions ? `<span class="deadline-group__row-actions">${actions}</span>` : ""}
         </div>`;
       })
       .join("");
@@ -7263,7 +7408,7 @@
         ].join("");
         return `<section class="deadline-group" data-count="${group.entries.length}" style="--u:${firstUrgency.cvar}"${open ? " data-open" : ""}>
           <button class="deadline-group__summary" data-group="${esc(group.id)}" aria-expanded="${open}" aria-controls="${panelId}">
-            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"${period === "upcoming" ? ` data-t="${first._sub}"` : ""}>${period === "past" ? "Passed" : `${firstParts.d}d ${pad(firstParts.h)}:${pad(firstParts.m)}:${pad(firstParts.s)}`}</span>
+            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"${period === "upcoming" ? ` data-t="${first._sub}"` : ""}>${period === "past" ? "passed" : `${firstParts.d}d ${pad(firstParts.h)}:${pad(firstParts.m)}:${pad(firstParts.s)}`}</span>
             <span class="deadline-group__heading"><strong>${esc(group.label)}</strong><small>${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">${counts}</span>
           </button><div class="deadline-group__panel${open ? "" : " hidden"}" id="${panelId}">${panel}</div>
         </section>`;
