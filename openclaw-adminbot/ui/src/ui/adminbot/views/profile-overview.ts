@@ -30,9 +30,28 @@ export type ProfileOverviewGap = "any" | "profile" | "timeline" | "all";
 /** Who the page is looking at. See isAdminBotFullMember for why the distinction matters. */
 export type ProfileOverviewMembership = "everyone" | "full";
 
+/**
+ * Whether they have ever been here.
+ *
+ * Its own filter rather than a column to squint at, because "never signed in" is a different
+ * conversation from "signed in and has not finished": one is an account nobody has opened, the
+ * other is a person who needs reminding. Chasing them with the same message wastes both.
+ */
+export type ProfileOverviewActivity = "any" | "never" | "signedIn";
+
 export type ProfileOverviewFilter = {
   gap: ProfileOverviewGap;
   membership: ProfileOverviewMembership;
+  /** Matches on name. Blank shows everyone the other filters left. */
+  search: string;
+  activity: ProfileOverviewActivity;
+};
+
+export const EMPTY_PROFILE_OVERVIEW_FILTER: ProfileOverviewFilter = {
+  gap: "any",
+  membership: "everyone",
+  search: "",
+  activity: "any",
 };
 
 export type AdminBotProfileOverviewProps = {
@@ -68,11 +87,21 @@ export function filterOverviewRows(
   members: MemberProfileOverviewRow[],
   filter: ProfileOverviewFilter,
 ): MemberProfileOverviewRow[] {
+  const search = filter.search.trim().toLocaleLowerCase();
   return members.filter((row) => {
     if (
       filter.membership === "full" &&
       !isAdminBotFullMember({ privilege_level: row.privilege_level })
     ) {
+      return false;
+    }
+    if (search && !row.name.toLocaleLowerCase().includes(search)) {
+      return false;
+    }
+    if (filter.activity === "never" && row.last_login_at) {
+      return false;
+    }
+    if (filter.activity === "signedIn" && !row.last_login_at) {
       return false;
     }
     switch (filter.gap) {
@@ -108,6 +137,16 @@ export function remindScopeFor(
     )
     .map((row) => row.id);
   return { include, memberIds };
+}
+
+/**
+ * Whether the filter is narrowing to a subset rather than asking about the whole roster.
+ *
+ * It decides what an empty table says. "Everyone is caught up" is a claim about the lab, and saying
+ * it because somebody typed a name that matches nobody is simply false.
+ */
+function narrowedBySearch(filter: ProfileOverviewFilter): boolean {
+  return Boolean(filter.search.trim()) || filter.activity !== "any";
 }
 
 function completionPercent(row: MemberProfileOverviewRow, total: number): number {
@@ -314,6 +353,12 @@ const MEMBERSHIP_OPTIONS: Array<{ value: ProfileOverviewMembership; labelKey: st
   { value: "full", labelKey: "profileOverview.filters.fullMembers" },
 ];
 
+const ACTIVITY_OPTIONS: Array<{ value: ProfileOverviewActivity; labelKey: string }> = [
+  { value: "any", labelKey: "profileOverview.filters.anyActivity" },
+  { value: "never", labelKey: "profileOverview.filters.neverSignedIn" },
+  { value: "signedIn", labelKey: "profileOverview.filters.hasSignedIn" },
+];
+
 export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProps) {
   const rows = filterOverviewRows(props.members, props.filter);
   const scope = remindScopeFor(props.members, props.filter);
@@ -333,6 +378,21 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                  "full members who have not planned their term" a view rather than a squint. The
                  Remind button follows the filter, so the page and the message can never disagree
                  about who is being chased for what. -->
+            <label class="profile-overview__filter">
+              <span class="sr-only">${t("profileOverview.filters.searchLabel")}</span>
+              <input
+                class="input"
+                type="search"
+                data-testid="profile-overview-search"
+                placeholder=${t("profileOverview.filters.searchPlaceholder")}
+                .value=${props.filter.search}
+                @input=${(event: Event) =>
+                  props.onFilterChange({
+                    ...props.filter,
+                    search: (event.target as HTMLInputElement).value,
+                  })}
+              />
+            </label>
             <label class="profile-overview__filter">
               <span class="sr-only">${t("profileOverview.filters.gapLabel")}</span>
               <select
@@ -370,6 +430,29 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                     <option
                       value=${option.value}
                       ?selected=${option.value === props.filter.membership}
+                    >
+                      ${t(option.labelKey)}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
+            <label class="profile-overview__filter">
+              <span class="sr-only">${t("profileOverview.filters.activityLabel")}</span>
+              <select
+                class="target__select"
+                data-testid="profile-overview-filter-activity"
+                @change=${(event: Event) =>
+                  props.onFilterChange({
+                    ...props.filter,
+                    activity: (event.target as HTMLSelectElement).value as ProfileOverviewActivity,
+                  })}
+              >
+                ${ACTIVITY_OPTIONS.map(
+                  (option) => html`
+                    <option
+                      value=${option.value}
+                      ?selected=${option.value === props.filter.activity}
                     >
                       ${t(option.labelKey)}
                     </option>
@@ -436,9 +519,11 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                 </div>
               `
             : html`<p class="logistics-requests__empty">
-                ${props.filter.gap === "all"
-                  ? t("profileOverview.empty")
-                  : t("profileOverview.allCaughtUp")}
+                ${narrowedBySearch(props.filter)
+                  ? t("profileOverview.noMatches")
+                  : props.filter.gap === "all"
+                    ? t("profileOverview.empty")
+                    : t("profileOverview.allCaughtUp")}
               </p>`}
       </div>
     </section>

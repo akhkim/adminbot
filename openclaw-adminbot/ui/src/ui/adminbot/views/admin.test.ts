@@ -8,8 +8,8 @@ import {
   type AdminBotPaperRecord,
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
-import { renderAdminBot, type AdminBotProps } from "./admin.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
+import { renderAdminBot, type AdminBotProps } from "./admin.ts";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return { ...members[0]!, ...overrides };
@@ -231,9 +231,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     );
     globalThis.confirm = () => false;
     container
-      .querySelector<HTMLButtonElement>(
-        '[data-testid="member-merge-miu-takagi-miu-nicole-takagi"]',
-      )
+      .querySelector<HTMLButtonElement>('[data-testid="member-merge-miu-takagi-miu-nicole-takagi"]')
       ?.click();
     expect(saved).toEqual([]);
   });
@@ -1024,60 +1022,20 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(container.querySelector(".adminbot-paper-gantt__actions .btn.danger")).toBeNull();
   });
 
-  it("stacks concurrent branches into separate lanes so bars never overlap", () => {
-    // Slides branch off the submission and overlap the arXiv/announcement chain in time.
-    const timeline = {
-      progress_percent: 40,
-      current_step_index: 2,
-      total_estimated_business_days: 12,
-      items: [
-        item("brainstorming_docs", 0, 2, []),
-        item("overleaf_writing", 2, 7, ["brainstorming_docs"]),
-        item("submission", 7, 8, ["overleaf_writing"]),
-        item("google_drive_pdf", 8, 9, ["submission"]),
-        item("slide_making", 8, 10, ["submission"]),
-      ],
-    };
-    const container = renderToDiv(papersProps({}, [paper({ timeline })]));
-
-    const tracks = container.querySelectorAll(".adminbot-paper-timeline__track");
-    expect(tracks).toHaveLength(2);
-    // The overlapping pair must land on different tracks.
-    const laneOf = (label: string) =>
-      [...tracks].findIndex((track) => track.textContent?.includes(label));
-    expect(laneOf("Drive PDF")).not.toBe(laneOf("Slides"));
-    // ...and the linear head of the chain stays on one track.
-    expect(laneOf("Brainstorming docs")).toBe(laneOf("Submission"));
-  });
-
-  it("keeps a purely linear timeline in a single lane", () => {
-    const timeline = {
-      progress_percent: 20,
-      current_step_index: 1,
-      total_estimated_business_days: 8,
-      items: [
-        item("brainstorming_docs", 0, 2, []),
-        item("overleaf_writing", 2, 7, ["brainstorming_docs"]),
-        item("submission", 7, 8, ["overleaf_writing"]),
-      ],
-    };
-    const container = renderToDiv(papersProps({}, [paper({ timeline })]));
-
-    expect(container.querySelectorAll(".adminbot-paper-timeline__track")).toHaveLength(1);
-  });
-
-  it("anchors the edit control to the paper's own timeline row", () => {
+  it("puts the paper on one scannable row, with its record behind the title", () => {
     const container = renderToDiv(papersProps({}, [paper()]));
 
-    const row = container.querySelector(".adminbot-paper-gantt__row");
+    // The Gantt is gone: a chart of every step of every paper answered "how long is this paper"
+    // and never "which papers need me today". The per-paper timeline still exists, on that paper's
+    // own card in My Projects & Papers, which is where somebody reading one paper already is.
+    expect(container.querySelector(".adminbot-paper-timeline__track")).toBeNull();
+    expect(container.querySelector('[data-testid="adminbot-paper-overview"]')).not.toBeNull();
+
+    const row = container.querySelector(".paper-overview__row");
     expect(row).not.toBeNull();
-    // The row owns both the trigger and the popover it opens, so a paper is read and edited in
-    // one place instead of a second list underneath.
-    const trigger = row?.querySelector<HTMLButtonElement>(
-      'button[popovertarget^="adminbot-edit-paper-"]',
-    );
-    expect(trigger).not.toBeNull();
-    expect(row?.querySelector(`#${trigger?.getAttribute("popovertarget")}`)).not.toBeNull();
+    // The title opens the record, so a paper is still read and edited in one place.
+    expect(row?.querySelector("button.logistics-requests__open")).not.toBeNull();
+    expect(container.querySelector('[id^="adminbot-edit-paper-"]')).not.toBeNull();
   });
 
   it("offers no add-paper form when nobody is signed in", () => {
@@ -1238,9 +1196,7 @@ describe("pre-registration venue table", () => {
 
   it("filtering re-ranks by that venue's odds, not the paper's best", () => {
     // Unfiltered, "Aimed at both" leads on its 99% ARR. Filtered to ICLR its 50% puts it second.
-    const rows = draw("iclr2027_paper").querySelectorAll(
-      '[data-testid="prereg-board"] tbody tr',
-    );
+    const rows = draw("iclr2027_paper").querySelectorAll('[data-testid="prereg-board"] tbody tr');
     expect(rows[0]?.textContent).toContain("ICLR only");
     expect(rows[1]?.textContent).toContain("Aimed at both");
   });

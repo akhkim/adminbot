@@ -2,25 +2,15 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
-import { t } from "../../../i18n/index.ts";
 import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
-import {
-  isOptionalMemberField,
-  PROFILE_FIELDS,
-  type ProfileField,
-} from "../member-fields.ts";
 import {
   adminBotPaperSlotRegistry,
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
-import {
-  PRE_REGISTRATION_VENUES,
-  daysUntil,
-  readVenueTargets,
-} from "../venue-targets.ts";
+import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
+import type { PaperSlotOverviewRow } from "../auth/session.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
 import {
   type BlockerRow,
@@ -50,9 +40,17 @@ import type {
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { isOptionalMemberField, PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
+import { PRE_REGISTRATION_VENUES, daysUntil, readVenueTargets } from "../venue-targets.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
+import {
+  EMPTY_PAPER_OVERVIEW_FILTER,
+  paperOverviewRows,
+  renderPaperOverviewTable,
+  type PaperOverviewFilter,
+} from "./paper-overview.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -66,6 +64,9 @@ export type AdminBotProps = {
   paperSlotOverview?: PaperSlotOverviewRow[];
   /** Venue id the pre-registration table is filtered to; empty shows every upcoming venue. */
   venueFilter?: string;
+  /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
+  paperFilter?: PaperOverviewFilter;
+  onPaperFilter?: (filter: PaperOverviewFilter) => void;
   onVenueFilter?: (venueId: string) => void;
   mode?: "admin" | "general";
   /** Which column the reported-blocker list is sorted by. */
@@ -213,276 +214,6 @@ function paperTopic(paper: AdminBotPaperRecord): string {
   const artifacts = paper.artifacts ?? {};
   const topic = artifacts.topic ?? artifacts.research_topic ?? noteField(paper.notes, "Topic");
   return topic?.trim() || "Unspecified";
-}
-
-function paperProgressBucket(progress: number): string {
-  if (progress >= 100) return "complete";
-  if (progress >= 67) return "late";
-  if (progress >= 34) return "middle";
-  if (progress > 0) return "early";
-  return "not-started";
-}
-type PaperTimelineItem = NonNullable<AdminBotPaperRecord["timeline"]>["items"][number];
-
-/**
- * Pack the schedule into as few rows as possible without two bars overlapping in time.
- *
- * The flow is a graph, not a line - slides branch off the submission and run alongside the
- * arXiv/announcement chain - so items no longer tile left to right, and drawing them in one track
- * would overlap them. Greedy first-fit gives the main chain one row and each concurrent branch its
- * own, which is what makes the branch legible.
- */
-function packPaperTimelineLanes(items: readonly PaperTimelineItem[]): PaperTimelineItem[][] {
-  const lanes: PaperTimelineItem[][] = [];
-  const ordered = items.toSorted(
-    (left, right) => left.offset_start_business_day - right.offset_start_business_day,
-  );
-  for (const item of ordered) {
-    const lane = lanes.find(
-      (candidate) =>
-        (candidate.at(-1)?.offset_end_business_day ?? 0) <= item.offset_start_business_day,
-    );
-    if (lane) {
-      lane.push(item);
-    } else {
-      lanes.push([item]);
-    }
-  }
-  return lanes;
-}
-
-function paperTimelineBarStyle(
-  item: NonNullable<AdminBotPaperRecord["timeline"]>["items"][number],
-  total: number,
-): string {
-  const start = Math.max(0, item.offset_start_business_day);
-  const duration = Math.max(1, item.duration_business_days);
-  const left = Math.round((start / total) * 1000) / 10;
-  const width = Math.max(5, Math.round((duration / total) * 1000) / 10);
-  // Position only. `item.color` is deliberately not emitted: a per-step hue made the row a
-  // rainbow that encoded nothing, and hid the one thing worth seeing -- which step is current.
-  // The status class carries the meaning instead.
-  return `left: ${left}%; width: ${width}%;`;
-}
-
-function filterPaperOverview(event: Event): void {
-  const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) return;
-  const overview = form.closest<HTMLElement>(".adminbot-paper-overview");
-  if (!overview) return;
-  const data = new FormData(form);
-  const search = getFormValue(data, "search").toLocaleLowerCase();
-  const conference = getFormValue(data, "conference");
-  const progress = getFormValue(data, "progress");
-  const step = getFormValue(data, "step");
-  const topic = getFormValue(data, "topic");
-  let visible = 0;
-  for (const row of overview.querySelectorAll<HTMLElement>(".adminbot-paper-gantt__row")) {
-    const matches =
-      (!search || (row.dataset.search ?? "").includes(search)) &&
-      (!conference || row.dataset.conference === conference) &&
-      (!progress || row.dataset.progress === progress) &&
-      (!step || row.dataset.step === step) &&
-      (!topic || row.dataset.topic === topic);
-    row.hidden = !matches;
-    if (matches) visible += 1;
-  }
-  const count = overview.querySelector<HTMLElement>("[data-paper-result-count]");
-  if (count) count.textContent = `${visible} ${visible === 1 ? "paper" : "papers"}`;
-  const empty = overview.querySelector<HTMLElement>(".adminbot-paper-gantt__empty");
-  if (empty) empty.hidden = visible !== 0;
-}
-
-function renderPaperOverview(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
-  const viewer = signedInMember(props);
-  const timelinePapers = papers.filter((paper) => paper.timeline?.items.length);
-  const conferences = [...new Set(papers.map(paperConference))].sort((a, b) => a.localeCompare(b));
-  const topics = [...new Set(papers.map(paperTopic))].sort((a, b) => a.localeCompare(b));
-  const maxTotal = Math.max(
-    1,
-    ...timelinePapers.map((paper) => paper.timeline?.total_estimated_business_days ?? 1),
-  );
-  const renderRow = (paper: AdminBotPaperRecord, index: number) => {
-    const timeline = paper.timeline;
-    const conference = paperConference(paper);
-    const topic = paperTopic(paper);
-    const progress = timeline?.progress_percent ?? 0;
-    const currentItem = timeline?.items.find((item) => item.status === "current");
-    const nextItem = timeline?.items.find((item) => item.status === "upcoming");
-    // Admins edit the whole board; an author edits their own paper. Deleting stays admin-only
-    // either way, so an author cannot remove a record other people's work depends on.
-    const canEdit = props.mode !== "general" || memberOwnsPaper(paper, viewer, props.data.members);
-    return html`
-      <div
-        class="adminbot-paper-gantt__row"
-        data-search=${`${paper.title} ${paper.authors.join(" ")} ${conference} ${topic}`.toLocaleLowerCase()}
-        data-conference=${conference}
-        data-topic=${topic}
-        data-progress=${paperProgressBucket(progress)}
-        data-step=${paper.current_step}
-      >
-        <div class="adminbot-paper-gantt__label">
-          <strong title=${paper.title}>${paper.title}</strong>
-          <span class="adminbot-paper-gantt__authors" title=${paper.authors.join(", ")}
-            >${paper.authors.join(", ") || "No authors"}</span
-          >
-          <span class="adminbot-paper-gantt__facets">
-            <span class="adminbot-tag">${conference}</span>
-            <span class="adminbot-tag">${topic}</span>
-          </span>
-          <span class="adminbot-paper-gantt__status">
-            <span
-              class="adminbot-paper-gantt__meter adminbot-paper-gantt__meter--${paperProgressBucket(
-                progress,
-              )}"
-              role="img"
-              aria-label=${`${progress}% complete`}
-            >
-              <span style=${`width: ${progress}%`}></span>
-            </span>
-            <small
-              >${progress}% ·
-              ${currentItem
-                ? `now: ${currentItem.label}`
-                : nextItem
-                  ? `next: ${nextItem.label}`
-                  : "complete"}</small
-            >
-          </span>
-          <span class="adminbot-paper-gantt__actions">
-            ${canEdit
-              ? html`<button
-                  class="btn btn--sm"
-                  type="button"
-                  popovertarget=${`adminbot-edit-paper-${index}`}
-                >
-                  Edit
-                </button>`
-              : nothing}
-            ${props.mode === "general"
-              ? nothing
-              : html`<button
-                  class="btn btn--sm btn--ghost danger"
-                  type="button"
-                  ?disabled=${props.busyActionId === paper.id}
-                  @click=${() => {
-                    if (globalThis.confirm(`Delete active paper "${paper.title}"?`)) {
-                      props.onDeletePaper(paper);
-                    }
-                  }}
-                >
-                  ${props.busyActionId === paper.id ? "Deleting..." : "Delete"}
-                </button>`}
-          </span>
-          ${canEdit ? renderPaperEditPopover(paper, index, props) : nothing}
-        </div>
-        ${timeline?.items.length
-          ? html`<div
-              class="adminbot-paper-timeline"
-              aria-label=${`${paper.title}, ${progress}% complete`}
-            >
-              ${packPaperTimelineLanes(timeline.items).map(
-                (lane) =>
-                  html`<div class="adminbot-paper-timeline__track">
-                    ${lane.map(
-                      (item) =>
-                        html`<div
-                          class="adminbot-paper-timeline__bar adminbot-paper-timeline__bar--${item.status}"
-                          style=${paperTimelineBarStyle(item, maxTotal)}
-                          title=${`${item.label}: ${item.duration_business_days} business day estimate${
-                            item.depends_on.length
-                              ? `, after ${item.depends_on
-                                  .map((step) => stepLabels[step] ?? friendly(step))
-                                  .join(" and ")}`
-                              : ", starts the flow"
-                          }`}
-                        >
-                          <span>${item.label}</span>
-                        </div>`,
-                    )}
-                  </div>`,
-              )}
-            </div>`
-          : html`<div class="adminbot-paper-gantt__missing">Timeline unavailable</div>`}
-      </div>
-    `;
-  };
-  return html`
-    <section class="adminbot-paper-overview" aria-labelledby="adminbot-paper-overview-title">
-      <div class="adminbot-paper-overview__header">
-        <div>
-          <div class="card-title" id="adminbot-paper-overview-title">Paper timeline overview</div>
-          <div class="card-sub">
-            Shared scale in estimated business days from each paper's start.
-          </div>
-        </div>
-        <span class="pill" data-paper-result-count>${papers.length} papers</span>
-      </div>
-      <form
-        class="adminbot-paper-filters"
-        @input=${filterPaperOverview}
-        @change=${filterPaperOverview}
-      >
-        <label
-          ><span>Search</span><input name="search" type="search" placeholder="Title or author"
-        /></label>
-        <label
-          ><span>Conference</span
-          ><select name="conference">
-            <option value="">All conferences</option>
-            ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Topic</span
-          ><select name="topic">
-            <option value="">All topics</option>
-            ${topics.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Progress</span
-          ><select name="progress">
-            <option value="">All progress</option>
-            <option value="not-started">Not started</option>
-            <option value="early">1-33%</option>
-            <option value="middle">34-66%</option>
-            <option value="late">67-99%</option>
-            <option value="complete">Complete</option>
-          </select></label
-        >
-        <label
-          ><span>Current step</span
-          ><select name="step">
-            <option value="">All steps</option>
-            ${paperSteps.map(
-              (value) =>
-                html`<option value=${value}>${stepLabels[value] ?? friendly(value)}</option>`,
-            )}
-          </select></label
-        >
-      </form>
-      <div class="adminbot-paper-gantt__legend" aria-hidden="true">
-        ${(["complete", "current", "upcoming", "blocked"] as const).map(
-          (status) =>
-            html`<span class="adminbot-paper-gantt__legend-item"
-              ><i class="adminbot-paper-timeline__bar--${status}"></i>${friendly(status)}</span
-            >`,
-        )}
-      </div>
-      <div class="adminbot-paper-gantt">
-        <div class="adminbot-paper-gantt__axis" aria-hidden="true">
-          <span>Paper</span>
-          <div>
-            <span>Day 0</span><span>Day ${Math.round(maxTotal / 2)}</span
-            ><span>Day ${maxTotal}</span>
-          </div>
-        </div>
-        ${papers.map((paper, index) => renderRow(paper, index))}
-        <div class="adminbot-paper-gantt__empty" hidden>No papers match these filters.</div>
-      </div>
-    </section>
-  `;
 }
 
 function renderMetric(label: string, value: string | number, detail?: string) {
@@ -951,7 +682,6 @@ function renderPendingActions(props: AdminBotProps) {
   `;
 }
 
-
 function papersForMember(
   member: AdminBotLabMember,
   papers: AdminBotPaperRecord[],
@@ -1066,7 +796,11 @@ function filterMemberSpreadsheet(event: Event): void {
  * picker, no photo upload and no per-field account check. The `name` is the field key, which is
  * also the wire name, so `submitMemberForm` reads the form back without a translation table.
  */
-function renderRegistryField(field: ProfileField, member: AdminBotLabMember | undefined, fallback: string) {
+function renderRegistryField(
+  field: ProfileField,
+  member: AdminBotLabMember | undefined,
+  fallback: string,
+) {
   const raw = member ? (member as unknown as Record<string, unknown>)[field.key] : undefined;
   const value = Array.isArray(raw)
     ? raw.join(", ")
@@ -1080,7 +814,8 @@ function renderRegistryField(field: ProfileField, member: AdminBotLabMember | un
         return html`<select name=${field.key}>
           <option value="" ?selected=${!value}>Not set</option>
           ${(field.options ?? []).map(
-            (option) => html`<option value=${option} ?selected=${option === value}>${option}</option>`,
+            (option) =>
+              html`<option value=${option} ?selected=${option === value}>${option}</option>`,
           )}
         </select>`;
       case "paragraph":
@@ -1096,7 +831,12 @@ function renderRegistryField(field: ProfileField, member: AdminBotLabMember | un
       case "date":
         return html`<input name=${field.key} type="date" .value=${value} />`;
       case "link":
-        return html`<input name=${field.key} type="url" placeholder=${field.example} .value=${value} />`;
+        return html`<input
+          name=${field.key}
+          type="url"
+          placeholder=${field.example}
+          .value=${value}
+        />`;
       // `list` is stored as an array and edited here as one comma-separated line, the same way the
       // old hand-written researchTopics/projects inputs did it. `phone` and `image` are single
       // stored strings, so a plain box is the honest control for both.
@@ -1619,10 +1359,7 @@ const DUPLICATE_REASONS: Record<string, string> = {
 };
 
 /** The fields this record has that the other one does not -- the half it would contribute. */
-function contributedFields(
-  candidate: AdminBotLabMember,
-  other: AdminBotLabMember,
-): string[] {
+function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMember): string[] {
   const record = candidate as unknown as Record<string, unknown>;
   const compare = other as unknown as Record<string, unknown>;
   const filled = (value: unknown) =>
@@ -1687,8 +1424,8 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
       <div class="card-title">Possible duplicate records</div>
       <div class="card-sub">
         ${pairs.length === 1 ? "One pair looks" : `${pairs.length} pairs look`} like the same person
-        recorded twice. Choose which record survives — it keeps its own answers and gains
-        everything only the other one knows.
+        recorded twice. Choose which record survives — it keeps its own answers and gains everything
+        only the other one knows.
       </div>
       <ul class="adminbot-duplicates__list">
         ${pairs.map(
@@ -1903,29 +1640,78 @@ function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean
   `;
 }
 
+/**
+ * Active Papers.
+ *
+ * The table is the page. Everything under it is a board that answers a narrower question than "how
+ * is the lab doing" -- who is travelling, what is blocked, what the nudge sweep will send -- and
+ * each is a question somebody arrives with already knowing they want it. Collapsed, they cost a
+ * heading; open, they are exactly what they were. What they must not do is sit between an
+ * administrator and the list they came to read, which is what six stacked cards used to do.
+ */
 function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
+  const rows = paperOverviewRows({
+    papers,
+    slots: props.paperSlotOverview ?? [],
+    blockerCounts: openBlockerCounts(papers),
+    stepLabel: (step) => stepLabels[step] ?? friendly(step),
+  });
+  const canAdd = props.mode !== "general" || Boolean(props.signedInMemberId);
+  const table = renderPaperOverviewTable({
+    rows,
+    filter: props.paperFilter ?? EMPTY_PAPER_OVERVIEW_FILTER,
+    onFilterChange: (filter) => props.onPaperFilter?.(filter),
+    // The row is a summary. Editing a paper is the edit popover this page already carries, which
+    // the title opens by the index it was rendered at.
+    onOpenPaper: (paperId) => {
+      const index = papers.findIndex((paper) => paper.id === paperId);
+      const popover = document.querySelector<HTMLElement>(`#adminbot-edit-paper-${index}`);
+      popover?.showPopover?.();
+    },
+    stages: paperSteps.map((step) => ({ value: step, label: stepLabels[step] ?? friendly(step) })),
+  });
+  const editPopovers = papers.map((paper, index) =>
+    props.mode !== "general" || memberOwnsPaper(paper, signedInMember(props), props.data.members)
+      ? renderPaperEditPopover(paper, index, props)
+      : nothing,
+  );
   if (props.mode === "general") {
     // Members file their own submissions here. The popover carries no reminder-status field: that
     // is paper-flow governance the service rejects from a member write.
-    return html`${renderPaperOverview(props, papers)}
-    ${props.signedInMemberId ? renderAddPaperCard(props, { governance: false }) : nothing}`;
+    return html`${table} ${editPopovers}
+    ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${renderPaperOverview(props, papers)} ${renderPreRegistrationBoard(papers, props)}
-    ${renderTravelBoard(props, papers)}
-    ${renderPaperStats(papers)}
-    ${renderBlockers(props, papers)}
-    <article class="adminbot-editor-card">
-      <div class="card-title">Next step per paper</div>
-      ${renderNextSteps(props, papers)}
-    </article>
-    <article class="adminbot-editor-card">
-      <div class="card-title">Paper nudges</div>
-      <div class="card-sub">Due reminders and head professor escalations.</div>
-      ${renderNudges(props.data.nudges)}
-    </article>
-    ${renderAddPaperCard(props, { governance: true })}
+    ${table} ${editPopovers}
+    ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
+    ${board(t("paperOverview.details.travel"), renderTravelBoard(props, papers))}
+    ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
+    ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
+    ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
+    ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
   `;
+}
+
+/** One collapsed board under the table. Closed on arrival; a board that renders nothing is absent. */
+function board(label: string, content: unknown) {
+  if (content === nothing) {
+    return nothing;
+  }
+  return html`
+    <details class="paper-overview__board">
+      <summary class="paper-overview__board-summary">${label}</summary>
+      <div class="paper-overview__board-body">${content}</div>
+    </details>
+  `;
+}
+
+/** Open blockers per paper, which the table's Outstanding column counts. */
+function openBlockerCounts(papers: readonly AdminBotPaperRecord[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of openBlockers(papers)) {
+    counts.set(row.paperId, (counts.get(row.paperId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
@@ -2037,8 +1823,7 @@ function renderTravelBoard(props: AdminBotProps, papers: AdminBotPaperRecord[]) 
             <div class="travel-board__head">
               <strong>${venue}</strong>
               <span class="travel-board__count">
-                ${entry.going.size} going · ${entry.papers}
-                paper${entry.papers === 1 ? "" : "s"}
+                ${entry.going.size} going · ${entry.papers} paper${entry.papers === 1 ? "" : "s"}
                 ${entry.unknown > 0
                   ? html`· <span class="travel-board__open">${entry.unknown} not answered</span>`
                   : nothing}
@@ -2070,16 +1855,16 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   // and papers not aimed at it drop out entirely rather than sorting to the bottom. That is the
   // question an admin has three weeks out -- "what is going to ICLR" -- not "rank everything".
   const filter = props.venueFilter ?? "";
-  const open = new Set(
-    filter ? [filter] : venues.map((venue) => venue.venue_id),
-  );
+  const open = new Set(filter ? [filter] : venues.map((venue) => venue.venue_id));
   const rows = papers
     .map((paper) => ({
       paper,
       targets: readVenueTargets(paper).filter((target) => open.has(target.venue_id)),
     }))
     .filter((row) => row.targets.length > 0)
-    .sort((left, right) => (right.targets[0]?.confidence ?? 0) - (left.targets[0]?.confidence ?? 0));
+    .sort(
+      (left, right) => (right.targets[0]?.confidence ?? 0) - (left.targets[0]?.confidence ?? 0),
+    );
 
   return html`
     <article class="adminbot-editor-card venue-table-card" data-testid="prereg-board">
@@ -2107,9 +1892,7 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
         </div>
       </div>
       ${rows.length === 0
-        ? html`<p class="venue-table__empty">
-            Nobody has pre-registered for these yet.
-          </p>`
+        ? html`<p class="venue-table__empty">Nobody has pre-registered for these yet.</p>`
         : html`
             <div class="venue-table__scroll">
               <table class="venue-table">
@@ -2148,94 +1931,6 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
               </table>
             </div>
           `}
-    </article>
-  `;
-}
-
-function renderPaperStats(papers: AdminBotPaperRecord[]) {
-  const withVenue = papers.filter((paper) => paper.artifacts?.conference?.trim());
-  const confident = papers.filter((paper) => {
-    const value = Number.parseInt(paper.artifacts?.confidence ?? "", 10);
-    return Number.isFinite(value) && value >= 80;
-  });
-  const submitted = papers.filter((paper) =>
-    [
-      "submission",
-      "google_drive_pdf",
-      "arxiv_polish",
-      "social_posts",
-      "slide_making",
-      "poster_making",
-    ].includes(paper.current_step),
-  );
-
-  // A count answers "how much", but the follow-up is always "which ones" -- and for the papers
-  // *missing* a venue that follow-up is the whole point, since those are the ones nobody can
-  // plan around. Each tile expands rather than linking away, so the answer stays on the page.
-  const tile = (
-    value: number,
-    label: string,
-    sub: string,
-    listed: AdminBotPaperRecord[],
-    describe: (paper: AdminBotPaperRecord) => string,
-  ) => html`
-    <details class="pstat" ?open=${false}>
-      <summary class="pstat__summary">
-        <span class="pstat__value">${value}</span>
-        <span class="pstat__label">${label}</span>
-        <span class="pstat__sub">${sub}</span>
-      </summary>
-      ${listed.length === 0
-        ? html`<p class="pstat__empty">None.</p>`
-        : html`<ul class="pstat__list">
-            ${listed.map(
-              (paper) => html`<li>
-                <span class="pstat__paper">${paper.title}</span>
-                <span class="pstat__meta">${describe(paper)}</span>
-              </li>`,
-            )}
-          </ul>`}
-    </details>
-  `;
-
-  const missingVenue = papers.filter((paper) => !paper.artifacts?.conference?.trim());
-
-  return html`
-    <article class="adminbot-editor-card">
-      <div class="card-title">Registered papers</div>
-      <div class="pstats">
-        ${tile(
-          papers.length,
-          "Registered",
-          "in the pipeline",
-          papers,
-          (paper) => paper.artifacts?.conference?.trim() || "no venue yet",
-        )}
-        ${tile(
-          withVenue.length,
-          "With a venue",
-          missingVenue.length ? `${missingVenue.length} without` : "all set",
-          withVenue,
-          (paper) =>
-            `${paper.artifacts?.conference ?? ""}${
-              paper.artifacts?.confidence ? ` · ${paper.artifacts.confidence}%` : ""
-            }`,
-        )}
-        ${tile(
-          confident.length,
-          "80%+ likely",
-          "authors' own call",
-          confident,
-          (paper) => `${paper.artifacts?.confidence ?? ""}% · ${paper.artifacts?.conference ?? ""}`,
-        )}
-        ${tile(
-          submitted.length,
-          "Past submission",
-          "submitted or later",
-          submitted,
-          (paper) => stepLabels[paper.current_step] ?? paper.current_step,
-        )}
-      </div>
     </article>
   `;
 }
@@ -2497,9 +2192,7 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
         // The PI's yes is the one approval in the graph, so it reads differently from work.
         const isApproval = definition.owner === "pi";
         const waitingOn = NEXT_STEP_OWNER_LABELS[definition.owner] ?? definition.owner;
-        const alsoOpen = open
-          .slice(1, 4)
-          .map((slot) => slotDefinition(slot)?.label ?? slot);
+        const alsoOpen = open.slice(1, 4).map((slot) => slotDefinition(slot)?.label ?? slot);
         const message = nextStepNudgeMessage(paper, row, definition.label, waitingOn);
         return html`
           <article class="adminbot-next ${isApproval ? "adminbot-next--approval" : ""}">

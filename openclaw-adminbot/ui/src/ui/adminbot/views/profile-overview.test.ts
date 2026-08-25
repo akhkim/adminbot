@@ -2,7 +2,11 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
-import { renderAdminBotProfileOverview, type ProfileOverviewFilter } from "./profile-overview.ts";
+import {
+  EMPTY_PROFILE_OVERVIEW_FILTER,
+  renderAdminBotProfileOverview,
+  type ProfileOverviewFilter,
+} from "./profile-overview.ts";
 
 type DrawOptions = {
   members?: MemberProfileOverviewRow[];
@@ -30,7 +34,7 @@ function draw(options: DrawOptions = {}) {
       error: options.error ?? null,
       notice: options.notice ?? null,
       reminding: options.reminding ?? false,
-      filter: { gap: "all", membership: "everyone", ...options.filter },
+      filter: { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", ...options.filter },
       onFilterChange: (next) => filters.push(next),
       onRemind: (scope) => reminds.push(scope),
       onOpenMember: (id) => opened.push(id),
@@ -152,7 +156,7 @@ describe("profile overview", () => {
     );
     select!.value = "timeline";
     select?.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(drawn.filters).toEqual([{ gap: "timeline", membership: "everyone" }]);
+    expect(drawn.filters).toEqual([{ ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "timeline" }]);
   });
 
   // The whole point of the pair of filters: full members who never planned their term are a
@@ -285,5 +289,57 @@ describe("adoption", () => {
   it("renders nothing extra before the first read answers", () => {
     const { container } = draw({ members: [member()], adoption: null });
     expect(container.querySelector("[data-testid='profile-overview-adoption']")).toBeNull();
+  });
+});
+
+describe("profile overview filters", () => {
+  const people = [
+    member({ id: "ada", name: "Ada Lovelace", last_login_at: "2026-08-01T00:00:00Z" }),
+    member({ id: "ben", name: "Ben Nevis" }),
+    member({ id: "cleo", name: "Cleo Ada" }),
+  ];
+
+  it("narrows to a name, matching anywhere in it", () => {
+    const drawn = draw({ members: people, filter: { gap: "all", search: "ada" } });
+    const names = rows(drawn.container).map((row) =>
+      row.querySelector("button")?.textContent?.trim(),
+    );
+    // Both, because the match is anywhere in the name -- "Cleo Ada" is a person somebody
+    // searching "ada" is entitled to find.
+    expect(names).toEqual(["Ada Lovelace", "Cleo Ada"]);
+  });
+
+  it("separates the people who have never been here from the ones who have", () => {
+    const never = draw({ members: people, filter: { gap: "all", activity: "never" } });
+    expect(rows(never.container)).toHaveLength(2);
+    expect(never.container.textContent).not.toContain("Ada Lovelace");
+
+    const seen = draw({ members: people, filter: { gap: "all", activity: "signedIn" } });
+    expect(rows(seen.container).map((row) => row.textContent?.includes("Ada Lovelace"))).toEqual([
+      true,
+    ]);
+  });
+
+  it("does not claim the lab is caught up when a search simply matched nobody", () => {
+    const drawn = draw({ members: people, filter: { gap: "any", search: "nobody" } });
+    expect(drawn.container.textContent).toContain("No members match these filters");
+    expect(drawn.container.textContent).not.toContain("caught up");
+  });
+
+  it("reports a truly caught-up lab as caught up", () => {
+    const drawn = draw({ members: [member()], filter: { gap: "any" } });
+    expect(drawn.container.textContent).toContain("caught up");
+  });
+
+  it("sends the search through the filter rather than mutating the table", () => {
+    const drawn = draw({ members: people, filter: { gap: "all" } });
+    const search = drawn.container.querySelector<HTMLInputElement>(
+      '[data-testid="profile-overview-search"]',
+    );
+    search!.value = "ben";
+    search?.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(drawn.filters).toEqual([
+      { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", search: "ben" },
+    ]);
   });
 });

@@ -3677,6 +3677,11 @@ export function renderApp(state: AppViewState) {
               onVenueFilter: (venueId) => {
                 state.adminBotVenueFilter = venueId;
               },
+              paperFilter: state.adminBotPaperFilter,
+              onPaperFilter: (filter) => {
+                state.adminBotPaperFilter = filter;
+                requestHostUpdate?.();
+              },
               onNudgeChannelChange: (channel) => setAdminBotNudgeChannel(state, channel),
               onNudgeMessageChange: (message) => setAdminBotNudgeMessage(state, message),
               onNudgeSubjectChange: (subject) => setAdminBotNudgeSubject(state, subject),
