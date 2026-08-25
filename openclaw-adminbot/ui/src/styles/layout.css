@@ -4173,7 +4173,8 @@ adminbot-deadlines-view {
 
 .deadline-board__controls {
   display: grid;
-  grid-template-columns: minmax(17rem, 1fr) 9.25rem 10rem 8.5rem;
+  grid-template-columns:
+    minmax(17rem, 1fr) minmax(0, 9.25rem) minmax(0, 14rem) minmax(0, 10.5rem);
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
@@ -4516,7 +4517,6 @@ adminbot-deadlines-view {
   gap: var(--space-3);
 }
 
-.deadline-card__type,
 .deadline-card__urgency {
   padding: 2px var(--space-2);
   font-family: var(--mono);
@@ -4524,12 +4524,27 @@ adminbot-deadlines-view {
   white-space: nowrap;
 }
 
-.deadline-card__type {
+.deadline-card__type,
+.deadline-priority,
+.deadline-archival {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  color: var(--muted);
-  letter-spacing: 0.08em;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deadline-card__type {
+  border-color: color-mix(in srgb, var(--text-strong) 55%, var(--border-strong));
+  background: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  color: var(--text-strong);
 }
 
 .deadline-card__labels {
@@ -4542,21 +4557,6 @@ adminbot-deadlines-view {
 .deadline-classification {
   display: inline-flex;
   gap: var(--space-2);
-  white-space: nowrap;
-}
-
-.deadline-priority,
-.deadline-archival {
-  display: inline-flex;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -4577,8 +4577,7 @@ adminbot-deadlines-view {
   color: var(--muted-strong);
 }
 
-.deadline-board__hero-meta .deadline-priority,
-.deadline-board__hero-meta .deadline-archival {
+.deadline-board__hero-meta .deadline-classification {
   margin-left: var(--space-1);
 }
 
