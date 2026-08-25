@@ -2,8 +2,8 @@
 // Post-build patch for the Vercel deploy of the Control UI.
 //
 // `pnpm ui:build` emits a generic dist/control-ui/index.html that knows nothing
-// about where it will be hosted. The Vercel deploy needs two things injected that
-// a plain build always loses:
+// about where it will be hosted. The Vercel deploy needs three things that a plain
+// build always loses:
 //
 //   1. <base href="/" />  — Vite emits relative ./assets/... tags (base: './'), so
 //      once vercel.json's SPA rewrite serves index.html for a deep path like
@@ -17,6 +17,9 @@
 //      first visit dialled a dead default, failed, and then demanded a click. As a
 //      declared default it is simply what this deployment connects to. The legacy
 //      hosts are still rewritten out of any param a stale bookmark carries.
+//   3. A route-specific /adminbot/deadlines document. It keeps the same application
+//      bundle and native Control UI, but its source also carries sanitized deadline
+//      names and dates so crawlers do not receive only an empty custom-element shell.
 //
 // The tailnet is named by the environment, not by this file: ADMINBOT_TAILNET_DOMAIN
 // is the MagicDNS domain and ADMINBOT_TAILNET_NODES is a comma list whose first entry
@@ -28,18 +31,205 @@
 // This script is invoked from vercel.json's buildCommand after ui:build. It is
 // idempotent: running it on already-injected HTML is a no-op.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const indexPath = path.join(repoRoot, "dist", "control-ui", "index.html");
+const outputRoot = path.dirname(indexPath);
+const deadlineDataPath = path.join(
+  repoRoot,
+  "extensions",
+  "adminbot",
+  "content",
+  "deadlines",
+  "venues.json",
+);
 
 const BASE_TAG = '    <base href="/" />';
+const DEADLINES_ROUTE = "/adminbot/deadlines";
+export const DEADLINES_PUBLIC_URL = `https://jinesis-admin.vercel.app${DEADLINES_ROUTE}`;
+export const DEADLINES_ROBOTS_TEXT = `User-agent: *
+Disallow: /
+Allow: ${DEADLINES_ROUTE}
+Allow: /assets/
+Allow: /favicon.svg
+Allow: /favicon-32.png
+Allow: /apple-touch-icon.png
+Sitemap: https://jinesis-admin.vercel.app/sitemap.xml
+`;
+export const DEADLINES_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${DEADLINES_PUBLIC_URL}</loc></url>
+</urlset>
+`;
+
+const DEADLINES_META = `    <meta
+      name="description"
+      content="Past and upcoming conference &amp; workshop deadlines."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="${DEADLINES_PUBLIC_URL}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Deadlines | Jinesis Lab" />
+    <meta
+      property="og:description"
+      content="Past and upcoming conference &amp; workshop deadlines."
+    />
+    <meta property="og:url" content="${DEADLINES_PUBLIC_URL}" />`;
+
+const DEADLINES_FALLBACK_STYLE = `    <style id="deadline-index-fallback-style">
+      #deadline-index-fallback {
+        padding: var(--space-8) var(--space-6);
+      }
+      #deadline-index-fallback .deadline-index-card {
+        padding: var(--space-5);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-xl);
+        background: var(--card);
+      }
+      #deadline-index-fallback .deadline-index-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+        gap: var(--space-4) var(--space-6);
+        margin: var(--space-5) 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      #deadline-index-fallback .deadline-index-list h3 {
+        margin: 0;
+        color: var(--text-strong);
+        font-size: var(--control-ui-text-sm);
+      }
+      #deadline-index-fallback .deadline-index-list p {
+        margin: var(--space-1) 0 0;
+        color: var(--muted);
+        font-size: var(--control-ui-text-xs);
+      }
+    </style>`;
+
+const DEADLINES_FALLBACK_CLEANUP = `    <script id="deadline-index-fallback-cleanup">
+      (() => {
+        const fallback = document.getElementById("deadline-index-fallback");
+        const host = fallback?.parentElement;
+        if (!fallback || !host) return;
+        const observer = new MutationObserver(() => {
+          if (Array.from(host.children).some((child) => child !== fallback)) {
+            fallback.remove();
+            document.getElementById("deadline-index-fallback-style")?.remove();
+            observer.disconnect();
+          }
+        });
+        observer.observe(host, { childList: true });
+        document.currentScript?.remove();
+      })();
+    </script>`;
 
 const ADMINBOT_TLS_PORT = 8443;
 
 const stripTrailingSlashes = (value) => value.replace(/\/+$/, "");
+
+const staticText = (item, key) => {
+  const value = item[key];
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const escapeHtml = (value) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+function staticLink(item) {
+  for (const key of ["cfp_url", "homepage_url", "link", "openreview_url"]) {
+    const candidate = staticText(item, key);
+    if (!candidate) {
+      continue;
+    }
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.href;
+      }
+    } catch {
+      // Invalid and non-web source values remain unlinked text in the public projection.
+    }
+  }
+  return undefined;
+}
+
+function staticDeadline(item) {
+  const value = staticText(item, "deadline_aoe");
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(value)) {
+    return "";
+  }
+  return `<time datetime="${value.replace(" ", "T")}-12:00">${escapeHtml(value.slice(0, 16))} AoE</time>`;
+}
+
+export function renderDeadlineIndexFallback(items) {
+  const rows = items.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return [];
+    }
+    const name = staticText(candidate, "name");
+    if (!name) {
+      return [];
+    }
+    const link = staticLink(candidate);
+    const title = link
+      ? `<a href="${escapeHtml(link)}" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+      : escapeHtml(name);
+    const details = [
+      escapeHtml(staticText(candidate, "venue_group")),
+      escapeHtml(staticText(candidate, "deadline_label")),
+      staticDeadline(candidate),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return [`<li><article><h3>${title}</h3>${details ? `<p>${details}</p>` : ""}</article></li>`];
+  });
+  const content = rows.length
+    ? `<ul class="deadline-index-list">${rows.join("")}</ul>`
+    : "<p>No deadlines are currently published.</p>";
+  return `<main id="deadline-index-fallback" class="deadline-board">
+      <header class="deadline-board__header">
+        <h1>Deadlines</h1>
+        <p>Past and upcoming conference &amp; workshop deadlines.</p>
+      </header>
+      <section class="deadline-index-card" aria-labelledby="deadline-index-list-title">
+        <h2 id="deadline-index-list-title">Tracked deadlines</h2>
+        <p>Submission times are shown in Anywhere on Earth (UTC−12).</p>
+        ${content}
+      </section>
+    </main>`;
+}
+
+export function renderDeadlineRouteHtml(appHtml, items) {
+  const titlePattern = /<title>[^<]*<\/title>/i;
+  const headPattern = /<\/head>/i;
+  const appPattern = /<openclaw-app(?:\s[^>]*)?>\s*<\/openclaw-app>/i;
+  if (!titlePattern.test(appHtml)) {
+    throw new Error("Control UI index has no <title> anchor for deadline metadata");
+  }
+  if (!appPattern.test(appHtml)) {
+    throw new Error("Control UI index has no empty <openclaw-app> shell for deadline content");
+  }
+  if (!headPattern.test(appHtml)) {
+    throw new Error("Control UI index has no </head> anchor for deadline metadata");
+  }
+  const withTitle = appHtml.replace(titlePattern, "<title>Deadlines | Jinesis Lab</title>");
+  const withHead = withTitle.replace(
+    /(\n?)([ \t]*<\/head>)/i,
+    `\n${DEADLINES_META}\n${DEADLINES_FALLBACK_STYLE}\n$2`,
+  );
+  return withHead.replace(
+    appPattern,
+    `<openclaw-app>\n${renderDeadlineIndexFallback(items)}\n    </openclaw-app>\n${DEADLINES_FALLBACK_CLEANUP}`,
+  );
+}
 
 /**
  * The default gateway/AdminBot URLs this build declares, or undefined when none is configured.
@@ -58,7 +248,8 @@ function resolveDefaults() {
     .split(",")
     .map((node) => node.trim())
     .filter(Boolean);
-  const tailnet = domain && nodes.length > 0 ? { domain, primary: nodes[0], legacy: nodes.slice(1) } : undefined;
+  const tailnet =
+    domain && nodes.length > 0 ? { domain, primary: nodes[0], legacy: nodes.slice(1) } : undefined;
 
   const publicAdminBot = process.env.ADMINBOT_PUBLIC_URL?.trim();
   const publicGateway = process.env.ADMINBOT_PUBLIC_GATEWAY_URL?.trim();
@@ -166,9 +357,30 @@ async function main() {
   } else {
     console.log("[vercel-postbuild] nothing to do");
   }
+
+  const deadlineData = JSON.parse(await readFile(deadlineDataPath, "utf8"));
+  if (!Array.isArray(deadlineData.items)) {
+    throw new Error(`${deadlineDataPath} has no deadline item array`);
+  }
+  const deadlinesDir = path.join(outputRoot, "adminbot", "deadlines");
+  await mkdir(deadlinesDir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(deadlinesDir, "index.html"),
+      renderDeadlineRouteHtml(html, deadlineData.items),
+      "utf8",
+    ),
+    writeFile(path.join(outputRoot, "robots.txt"), DEADLINES_ROBOTS_TEXT, "utf8"),
+    writeFile(path.join(outputRoot, "sitemap.xml"), DEADLINES_SITEMAP_XML, "utf8"),
+  ]);
+  console.log(
+    "[vercel-postbuild] wrote crawlable /adminbot/deadlines, /robots.txt, and /sitemap.xml",
+  );
 }
 
-main().catch((err) => {
-  console.error(`[vercel-postbuild] ${err.stack || err}`);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`[vercel-postbuild] ${err.stack || err}`);
+    process.exit(1);
+  });
+}

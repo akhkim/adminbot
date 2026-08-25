@@ -70,6 +70,13 @@ The Deadline Tracker has two delivery contexts and one generated dataset and int
 - the AdminBot service's zero-setup page at `GET /deadlines`; and
 - the public and signed-in Control UI route at `/adminbot/deadlines`.
 
+The Vercel build pre-renders the existing Control UI route at the canonical public URL
+`https://jinesis-admin.vercel.app/adminbot/deadlines`. Its response contains sanitized deadline
+names, dates, and source links before JavaScript runs; the normal Control UI replaces that fallback
+when the application mounts. `robots.txt` allows that exact route, and `sitemap.xml` lists it.
+Private paper matches, proposal queues, member timelines, and nudge proposals are not rendered into
+the public response.
+
 Both show the next deadline, aggregate counts, venue filters, search, and card, grouped, and table
 views. The Control UI renders the board natively in its normal document flow; it does not embed the served
 page, so desktop and mobile retain one vertical scrolling surface.
