@@ -17,17 +17,11 @@ import {
   adminBotSlackActivityThreshold,
   adminBotSlackActivityWindowDays,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { adminBotMemberFieldVisibility } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
-import {
-  isOptionalMemberField,
-  PROFILE_FIELD_GROUPS,
-  PROFILE_FIELDS,
-  type ProfileField,
-  type ProfileFieldGroup,
-} from "../member-fields.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
 import {
   joinPhoneNumber,
@@ -35,6 +29,13 @@ import {
   splitPhoneNumber,
 } from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
+import {
+  isOptionalMemberField,
+  PROFILE_FIELD_GROUPS,
+  PROFILE_FIELDS,
+  type ProfileField,
+  type ProfileFieldGroup,
+} from "../member-fields.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
@@ -315,8 +316,6 @@ function renderFieldHelp(field: EditableField) {
   `;
 }
 
-
-
 // The member cannot type this one in, so the only thing they need from it is whether it is on
 // file yet -- and, while it is not, the collector link that produces it (renderFieldAction).
 function renderUrnStatus(member: LabMember, field: EditableField) {
@@ -381,7 +380,29 @@ function renderFieldHint(field: EditableField) {
   }
   return html`<span class="profile__field-hint" data-testid=${`profile-hint-${field.key}`}
     >${t(field.hintKey)}</span
-  >`;}
+  >`;
+}
+
+/**
+ * Who reads this answer.
+ *
+ * Only drawn on the private ones. A badge on all twenty-eight would be noise nobody reads and would
+ * make the four that matter harder to find, and "the lab can see this" is already what a member
+ * assumes about a roster -- the surprise worth printing is the exception.
+ *
+ * The list comes from the same contract the service redacts on, so the label cannot promise
+ * something the boundary does not do.
+ */
+function renderFieldVisibility(field: EditableField) {
+  if (adminBotMemberFieldVisibility(field.key) !== "self") {
+    return nothing;
+  }
+  return html`<span
+    class="profile__field-visibility"
+    data-testid=${`profile-visibility-${field.key}`}
+    >${icons.lock}${t("profile.visibility.self")}</span
+  >`;
+}
 
 function renderPrefillHint(member: LabMember, field: EditableField) {
   if (field.key !== "timezone") {
@@ -795,9 +816,9 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
                       ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
-                      ${renderFieldHint(field)}
-                      ${renderPrefillHint(member, field)}
-                      ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
+                      ${renderFieldHint(field)} ${renderFieldVisibility(field)}
+                      ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
+                      ${renderAccountCheckStatus(state, field)}
                     </label>
                   `,
                 )}
@@ -969,7 +990,10 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
       <p>
         How-To: use portrait mode with a high-quality back camera and have someone take the photo.
         You can blur/change the background in phone editors, or use
-        <a href="https://www.remove.bg/" target=${EXTERNAL_LINK_TARGET} rel=${buildExternalLinkRel()}
+        <a
+          href="https://www.remove.bg/"
+          target=${EXTERNAL_LINK_TARGET}
+          rel=${buildExternalLinkRel()}
           >remove.bg</a
         >. Chest-up framing with shoulders usually works best.
       </p>
@@ -992,7 +1016,9 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
           ?disabled=${state.adminBotPhotoPolishBusy}
           @click=${() => props.onPolishPhoto()}
         >
-          ${state.adminBotPhotoPolishBusy ? "Polishing..." : "Polish my current Slack photo with AI"}
+          ${state.adminBotPhotoPolishBusy
+            ? "Polishing..."
+            : "Polish my current Slack photo with AI"}
         </button>
       </div>
       ${variants.length
@@ -1010,7 +1036,11 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
                           ${variant.id === selectedId ? "Selected for Slack" : "Candidate"}
                         </dt>
                         <dd class="profile-field__value">
-                          <img class="profile__upload-preview" src=${variant.image_data_url} alt="" />
+                          <img
+                            class="profile__upload-preview"
+                            src=${variant.image_data_url}
+                            alt=""
+                          />
                           <div class="profile__form-actions">
                             <button
                               type="button"
@@ -1158,9 +1188,7 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
               <h3 class="profile__suggestions-group-title">
                 ${t("profile.suggestions.fromOnboarding")}
               </h3>
-              <div class="profile__suggestions">
-                ${onboardingSuggestions.map(renderCard)}
-              </div>
+              <div class="profile__suggestions">${onboardingSuggestions.map(renderCard)}</div>
             </div>
           `
         : nothing}
@@ -1171,7 +1199,6 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     </section>
   `;
 }
-
 
 // A picture when there is one, initials when there is not -- never an empty circle.
 // The picture is its own edit control: hovering (or tabbing to) it reveals a pencil, and the whole

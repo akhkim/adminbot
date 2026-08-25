@@ -1263,3 +1263,18 @@
   flex-wrap: wrap;
   margin-bottom: var(--space-3);
 }
+
+/* "Only you and the admins", on the four fields where it is not what a member would assume. Quiet:
+   it is a reassurance, not a warning, and a loud badge on a phone number reads as a problem. */
+.profile__field-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.profile__field-visibility svg {
+  width: 0.85em;
+  height: 0.85em;
+}
