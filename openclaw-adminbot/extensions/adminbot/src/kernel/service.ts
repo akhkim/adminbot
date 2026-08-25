@@ -526,9 +526,14 @@ export type AdminBotSlackChannelNamingRecord = {
   reminder_action_id?: string;
 };
 
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 // The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
 // re-exported so callers that import it from the service keep working.
-import { AdminBotMemoryStore } from "../persistence/memory.js";
+import {
+  adminBotCityChannelMinimumMembers,
+  buildCityChannelMessage,
+  cityChannelPlan,
+} from "../workflows/members/city-channels.js";
 
 // Re-exported so callers that imported the store from the service keep working.
 export { AdminBotMemoryStore };
@@ -603,6 +608,10 @@ const DEFAULT_ACTION_POLICIES = {
   // safe is that nothing can create one of these except the sweep -- see escalateStaleNudges --
   // and an escalation that waited on an admin's approval would be a reminder nobody sent.
   "member_nudge.escalate": autoPolicy("T1"),
+  // Auto-approved on the same reasoning: the member and the channel are computed here from the
+  // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
+  // mechanical reason -- resolvePolicy only honors auto_allowed below T2.
+  "slack.invite_to_channel": autoPolicy("T1"),
   // Routine cycle reminders auto-send for the same reason member_nudge.send does: the
   // run route is admin-gated, the recipients are the venue's own committee groups, and
   // the cadence fires each milestone at most once.
@@ -5666,6 +5675,114 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * Puts people in their city's Slack channel, once.
+   *
+   * A city gets a channel at four members, which is the point where "the Zurich people" is a group
+   * rather than two colleagues who already talk. Below it, creating a room is how a workspace ends
+   * up with a directory of dead ones.
+   *
+   * Added, not asked -- the lab's call -- but added *once*. `city_channel_invited_at` is the whole
+   * opt-out: a member who is put in a channel and leaves stays left, because without a stamp the
+   * next sweep would put them back every few days, which is an argument with a person that a cron
+   * job always wins. Reading channel membership instead would be the same bug in better clothes:
+   * "not in the channel" is exactly what having left looks like.
+   *
+   * The stamp goes on whether or not Slack accepted the invite, for the same reason: a workspace
+   * that refuses (no such channel, the bot is not in it) must not turn into a nightly retry against
+   * every member of that city.
+   *
+   * The member is told afterwards, with the city's guidebook section and how to leave.
+   */
+  async syncCityChannels(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      groups: Array<{ channel: string; place: string; members: number }>;
+      invited: Array<{ member_id: string; channel: string }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const plan = cityChannelPlan(this.store.listLabMembers());
+    const invited: Array<{ member_id: string; channel: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [...plan.skipped];
+
+    for (const invite of plan.invites) {
+      const member = this.store.getLabMember(invite.member_id);
+      if (!member) {
+        continue;
+      }
+      const proposed = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${invite.member_name} to #${invite.channel} (${invite.place_label})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: invite.channel,
+          recipientMemberId: invite.member_id,
+        },
+        proposed_payload: {
+          channel: invite.channel,
+          user_id: invite.slack_user_id,
+        },
+        undo_plan: "Leave the channel, or have an admin remove the member from it.",
+      });
+      // Stamped before the send, and left stamped either way. See the header.
+      this.store.saveLabMember({
+        ...member,
+        city_channel_invited_at: nowIso,
+        updated_at: nowIso,
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: invite.member_id, reason: proposed.error.message });
+        continue;
+      }
+      const executed = await this.execute(proposed.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        skipped.push({ member_id: invite.member_id, reason: executed.error.message });
+        continue;
+      }
+      invited.push({ member_id: invite.member_id, channel: invite.channel });
+      await this.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: [invite.member_id],
+          message: buildCityChannelMessage(invite),
+          kind: "nudge",
+          title: `Added to #${invite.channel}`,
+          tab: "adminbotMembers",
+        },
+        actor,
+      );
+    }
+
+    this.recordAudit({
+      type: "city_channels.synced",
+      actor,
+      details: {
+        minimum_members: adminBotCityChannelMinimumMembers,
+        groups: plan.groups.length,
+        invited: invited.length,
+        skipped: skipped.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        groups: plan.groups.map((group) => ({
+          channel: group.channel,
+          place: group.place.label,
+          members: group.members.length,
+        })),
+        invited,
+        skipped,
+      },
+    };
   }
 
   /**

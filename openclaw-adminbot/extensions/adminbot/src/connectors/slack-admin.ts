@@ -20,6 +20,11 @@ type SlackRenameResponse = {
   error?: string;
 };
 
+type SlackConversationsListResponse = SlackRenameResponse & {
+  channels?: Array<{ id?: string; name?: string }>;
+  response_metadata?: { next_cursor?: string };
+};
+
 type SlackConversationsOpenResponse = SlackRenameResponse & {
   channel?: { id?: string };
 };
@@ -46,6 +51,12 @@ export function createAdminBotSlackAdminExecutor(
       // The escalation DM runs here rather than through the OpenClaw message CLI because it is a
       // group conversation: `conversations.open` takes a list of users and hands back one channel
       // for all of them, and there is no "send to these two people at once" in a per-target send.
+      if (proposal.type === "slack.invite_to_channel") {
+        const payload = readInvitePayload(proposal);
+        const token = resolveSlackBotToken(env);
+        await inviteToSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
+        return { handled: true };
+      }
       if (proposal.type === "member_nudge.escalate") {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
@@ -64,6 +75,82 @@ export function createAdminBotSlackAdminExecutor(
  * quietly became a private message to the professor is the failure mode this whole shape exists to
  * avoid -- the member has to be in the room.
  */
+function readInvitePayload(proposal: AdminBotStoredProposal): {
+  channel: string;
+  user_id: string;
+} {
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("slack.invite_to_channel requires an object proposed_payload");
+  }
+  const record = payload as Record<string, unknown>;
+  return {
+    channel: requireString(record, "channel"),
+    user_id: requireString(record, "user_id"),
+  };
+}
+
+/**
+ * Adds one person to one public channel, by channel name.
+ *
+ * The name is resolved here rather than stored on the proposal because a channel id means nothing
+ * to the administrator reading the audit log, and "#group-toronto" is the thing that was actually
+ * decided. `exclude_archived` keeps a renamed-and-archived channel from swallowing the invite.
+ *
+ * Already-in-channel is not an error. The sweep is idempotent by design and a member who joined on
+ * their own before AdminBot got to them is the success case, not a failure to report.
+ */
+async function inviteToSlackChannel(
+  token: string,
+  channelName: string,
+  userId: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const wanted = channelName.replace(/^#/u, "");
+  let cursor: string | undefined;
+  let channelId: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      types: "public_channel",
+      exclude_archived: "true",
+      limit: "1000",
+      ...(cursor ? { cursor } : {}),
+    });
+    const response = await fetchImpl(`https://slack.com/api/conversations.list?${params}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = parseSlackJson<SlackConversationsListResponse>(await response.text());
+    if (!response.ok || !payload?.ok) {
+      const detail = payload?.error?.trim() || response.statusText || "unknown error";
+      throw new Error(`Slack channel lookup failed ${response.status}: ${detail}`);
+    }
+    channelId = payload.channels?.find((channel) => channel.name === wanted)?.id;
+    cursor = payload.response_metadata?.next_cursor?.trim() || undefined;
+  } while (!channelId && cursor);
+  if (!channelId) {
+    // Refused rather than created. Opening a channel is a decision about the workspace's shape, and
+    // a sweep that quietly makes rooms is how a directory fills with them.
+    throw new Error(`Slack has no open channel named #${wanted}`);
+  }
+  const invite = await fetchImpl("https://slack.com/api/conversations.invite", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ channel: channelId, users: userId }),
+  });
+  const invitePayload = parseSlackJson<SlackRenameResponse>(await invite.text());
+  if (invitePayload?.error === "already_in_channel") {
+    return;
+  }
+  if (!invite.ok || !invitePayload?.ok) {
+    const detail = invitePayload?.error?.trim() || invite.statusText || "unknown error";
+    throw new Error(`Slack channel invite failed ${invite.status}: ${detail}`);
+  }
+}
+
 function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   user_ids: string[];
   message: string;

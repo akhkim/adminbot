@@ -2899,6 +2899,15 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/city-channels/sync") {
+    // Who goes in which channel is computed here from the roster and the four-member threshold, so
+    // this takes requirePrivileged like the other cron-triggered sweeps.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.syncCityChannels(principalActor(principal)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/onboarding/chase/run") {
     // Recipients and text are computed entirely from each member's own checklist and its cycle
     // clock, so this takes requirePrivileged like the other cron-triggered sweeps.
