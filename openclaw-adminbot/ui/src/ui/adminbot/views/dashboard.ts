@@ -364,10 +364,66 @@ function renderWorkSummary(state: AppViewState) {
  * The dashboard: what is waiting on the viewer, a summary of their projects and papers, and the
  * complete public deadline board.
  */
+/**
+ * The warning across the top of the page: what has been asked of this member and not answered.
+ *
+ * The cards below already list every notification. This is not a second copy of them -- it is the
+ * one thing the cards cannot do, which is be impossible to scroll past. A nudge that reached Slack
+ * and the notification list and was still missed is a nudge that needed to be in the way, and this
+ * is the last place the lab gets to say so before it asks the head professor to.
+ *
+ * Escalated items are called out separately and first. Once the professor is in a group DM about
+ * something, "you have three unread reminders" is no longer the news.
+ */
+function renderNudgeWarning(state: AppViewState, role: AccessRole) {
+  if (role === "anonymous") {
+    return nothing;
+  }
+  const unread = (state.adminBotNotifications ?? []).filter(
+    (notification) => !notification.read_at,
+  );
+  if (!unread.length) {
+    return nothing;
+  }
+  const escalated = unread.filter((notification) => notification.escalated_at);
+  const important = unread.filter(
+    (notification) => notification.important && !notification.escalated_at,
+  );
+  const tone = escalated.length ? "danger" : important.length ? "warn" : "info";
+  const headline = escalated.length
+    ? t("dashboard.nudgeWarning.escalated", { count: String(escalated.length) })
+    : important.length
+      ? t("dashboard.nudgeWarning.important", { count: String(important.length) })
+      : t("dashboard.nudgeWarning.unread", { count: String(unread.length) });
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone=${tone}
+      data-testid="dashboard-nudge-warning"
+      role="status"
+    >
+      <strong>${headline}</strong>
+      <ul>
+        ${(escalated.length ? escalated : important.length ? important : unread)
+          .slice(0, 3)
+          .map((notification) => html`<li>${notification.title}</li>`)}
+      </ul>
+      <button
+        class="btn btn--sm"
+        type="button"
+        data-testid="dashboard-nudge-warning-ack"
+        @click=${() => void state.markNotificationsRead?.(unread.map((entry) => entry.id))}
+      >
+        ${t("dashboard.nudgeWarning.acknowledge")}
+      </button>
+    </section>
+  `;
+}
+
 export function renderDashboard(state: AppViewState, role: AccessRole) {
   return html`
     <div class="dashboard">
-      ${renderAttention(state, role)}
+      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}

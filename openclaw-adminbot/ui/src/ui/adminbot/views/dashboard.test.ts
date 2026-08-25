@@ -316,6 +316,72 @@ describe("notifications on the dashboard", () => {
     expect(container.textContent).toContain("missed the last 2 Monday meetings");
   });
 
+  it("warns across the top, in the way, about what is still unanswered", () => {
+    // The cards below already list every notification. The banner exists for the ones that were
+    // already missed on Slack and in that list, so it must not be scrollable past.
+    const container = renderPage(createState({ adminBotNotifications: [NOTIFICATION] } as never));
+    const warning = container.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]');
+    expect(warning?.dataset.tone).toBe("info");
+    expect(warning?.textContent).toContain("Please join the next Monday meeting");
+  });
+
+  it("says louder that something important is outstanding, and louder still once escalated", () => {
+    const important = renderPage(
+      createState({
+        adminBotNotifications: [{ ...NOTIFICATION, important: true }],
+      } as never),
+    );
+    expect(
+      important.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]')?.dataset.tone,
+    ).toBe("warn");
+
+    const escalated = renderPage(
+      createState({
+        adminBotNotifications: [
+          { ...NOTIFICATION, important: true },
+          {
+            ...NOTIFICATION,
+            id: "notif-2",
+            title: "Submission ID missing",
+            important: true,
+            escalated_at: "2026-08-25T09:00:00.000Z",
+          },
+        ],
+      } as never),
+    );
+    const warning = escalated.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]');
+    expect(warning?.dataset.tone).toBe("danger");
+    // Once the professor is in a group DM about something, "you have unread reminders" is no
+    // longer the news, so the escalated item is what the banner lists.
+    expect(warning?.textContent).toContain("Submission ID missing");
+    expect(warning?.textContent).not.toContain("Please join the next Monday meeting");
+  });
+
+  it("does not warn about what has already been acknowledged", () => {
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
+      } as never),
+    );
+    expect(container.querySelector('[data-testid="dashboard-nudge-warning"]')).toBeNull();
+  });
+
+  it("acknowledges every unread one at once from the banner", () => {
+    const read: unknown[] = [];
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [NOTIFICATION, { ...NOTIFICATION, id: "notif-2" }],
+        markNotificationsRead: async (ids: string[]) => {
+          read.push(ids);
+        },
+      } as never),
+    );
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="dashboard-nudge-warning-ack"]')
+      ?.click();
+    expect(read).toEqual([["notif-1", "notif-2"]]);
+  });
+
   it("keeps showing one that has already been read", () => {
     // Read is "you have seen this", not "you have done it": the reminder stays until they turn up.
     const container = renderPage(

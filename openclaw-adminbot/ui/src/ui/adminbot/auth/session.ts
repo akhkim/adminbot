@@ -2051,13 +2051,18 @@ export async function sendMeetingAttendanceNudges(
 export type MemberNotification = {
   id: string;
   member_id: string;
-  kind: "meeting_attendance";
+  /** Open, not a closed union: a service newer than this page can name a sender it does not know. */
+  kind: string;
   title: string;
   body: string;
   /** A Control UI tab id. Validated against the Tab union where it is used, never trusted as one here. */
   tab?: string;
   created_at: string;
   read_at?: string;
+  /** One of the things the lab actually chases. Absent from a service older than the flag. */
+  important?: boolean;
+  /** When the head professor was brought in. Absent means they have not been. */
+  escalated_at?: string;
 };
 
 export async function fetchNotifications(

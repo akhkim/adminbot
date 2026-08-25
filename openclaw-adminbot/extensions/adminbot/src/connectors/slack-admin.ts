@@ -43,8 +43,45 @@ export function createAdminBotSlackAdminExecutor(
         await notifySlackOwner(token, payload.owner_user_id, payload.message, fetchImpl);
         return { handled: true };
       }
+      // The escalation DM runs here rather than through the OpenClaw message CLI because it is a
+      // group conversation: `conversations.open` takes a list of users and hands back one channel
+      // for all of them, and there is no "send to these two people at once" in a per-target send.
+      if (proposal.type === "member_nudge.escalate") {
+        const payload = readGroupDmPayload(proposal);
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
+        return { handled: true };
+      }
       return { handled: false };
     },
+  };
+}
+
+/**
+ * The two people the escalation opens a conversation with.
+ *
+ * Two, not one: a group DM with a single other user is an ordinary DM, and an escalation that
+ * quietly became a private message to the professor is the failure mode this whole shape exists to
+ * avoid -- the member has to be in the room.
+ */
+function readGroupDmPayload(proposal: AdminBotStoredProposal): {
+  user_ids: string[];
+  message: string;
+} {
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("member_nudge.escalate requires an object proposed_payload");
+  }
+  const raw = (payload as Record<string, unknown>).user_ids;
+  const userIds = Array.isArray(raw)
+    ? [...new Set(raw.filter((id): id is string => typeof id === "string" && Boolean(id.trim())))]
+    : [];
+  if (userIds.length < 2) {
+    throw new Error("member_nudge.escalate requires at least two Slack user ids");
+  }
+  return {
+    user_ids: userIds,
+    message: requireString(payload as Record<string, unknown>, "message"),
   };
 }
 

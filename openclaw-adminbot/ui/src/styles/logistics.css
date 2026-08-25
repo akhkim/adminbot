@@ -1221,3 +1221,45 @@
   overflow-y: auto;
   padding: var(--space-4);
 }
+
+/* The nudge warning across the top of the dashboard. Loud on purpose and in the way on purpose:
+   the cards below already list the same notifications, and this exists for the ones that were
+   already missed on Slack and in that list. Three tones, because "you have unread reminders" and
+   "your supervisor has been brought in" are not the same news. */
+.dashboard__nudge-warning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.dashboard__nudge-warning[data-tone="warn"] {
+  border-left-color: var(--warn);
+}
+
+.dashboard__nudge-warning[data-tone="danger"] {
+  border-left-color: var(--danger, var(--warn));
+}
+
+.dashboard__nudge-warning ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* What is left of the AdminBot toolbar: the page's own actions, right-aligned, with no strapline
+   over them. The copy that used to sit here described the product rather than the page. */
+.adminbot-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}

@@ -604,8 +604,10 @@
   display: grid;
   /* The heading is its own separator now that it is sentence case at --control-ui-text-lg, so the
      gap above it only has to keep the previous group's last row from touching it. */
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 2px;
+  /* The gap between groups stays larger than the gap between rows inside one -- that difference is
+     the only thing that makes them read as groups, so it is the last spacing to give up. */
+  margin-bottom: 8px;
 }
 
 .nav-section:last-child {
@@ -619,7 +621,7 @@
      the group past the 258px sidebar, and .sidebar-nav's overflow-x: hidden sheared the right
      edge off the active row's highlight. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: 1px;
 }
 
 .nav-section--collapsed .nav-section__items {
@@ -691,9 +693,12 @@
   min-width: 0;
   gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
-     desktop sidebar the extra height only spreads a group out. */
-  min-height: 34px;
+     desktop sidebar the extra height only spreads a group out. Tightened again now that the admin
+     group is seven entries instead of ten: the sidebar's job is to be read in one glance, and the
+     whole tree fits without scrolling at 30px where it did not at 34. */
+  min-height: 30px;
   padding: 0 11px;
+  line-height: 1.3;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
@@ -4438,8 +4443,7 @@ adminbot-deadlines-view {
 
 .deadline-board__controls {
   display: grid;
-  grid-template-columns:
-    minmax(17rem, 1fr) minmax(0, 9.25rem) minmax(0, 14rem) minmax(0, 10.5rem);
+  grid-template-columns: minmax(17rem, 1fr) minmax(0, 9.25rem) minmax(0, 14rem) minmax(0, 10.5rem);
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
@@ -5527,7 +5531,6 @@ adminbot-deadlines-view {
 .adminbot-next__actions {
   margin-top: var(--space-1);
 }
-
 
 /* The pipeline pointer, now a plain control in the card's button row rather than the picture. */
 .my-work-item__step {

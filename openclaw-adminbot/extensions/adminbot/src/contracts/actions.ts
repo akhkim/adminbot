@@ -28,6 +28,11 @@ export const adminBotActionTypes = [
   // an attachment), so it is a typed action rather than a call out of the service.
   "logistics.send_signed_document",
   "member_nudge.send",
+  // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
+  // type rather than a member_nudge.send with two targets: the audit trail should be able to
+  // answer "when did we last pull the professor in", and a shape that opens a group conversation
+  // is a different external effect from one that DMs a person.
+  "member_nudge.escalate",
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
@@ -1286,6 +1291,24 @@ export type AdminBotMemberNudgeRequest = {
   message: string;
   // Email subject line. Required for channel "email"; ignored for "slack".
   subject?: string;
+  /**
+   * The heading on the notification every nudge also files. Defaults to a generic one, because a
+   * caller that has not been taught to say still leaves the member something to read; a caller
+   * that has should say what this is about in five words.
+   */
+  title?: string;
+  /** Which sender this is, so a resend can find and replace its own row. */
+  kind?: AdminBotMemberNotificationKind;
+  /** Where in the Control UI to go about it, by tab id. */
+  tab?: string;
+  /**
+   * One of the things the lab actually chases.
+   *
+   * Only an important nudge escalates. Everything the lab says is worth saying, but a sweep that
+   * pulls the head professor into every unanswered reminder trains everyone to ignore the ones
+   * that matter, which is the failure this flag exists to avoid.
+   */
+  important?: boolean;
 };
 
 export type AdminBotMemberNudgeSkip = {
@@ -1499,6 +1522,7 @@ export type AdminBotAuditEvent = {
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
+    | "member_nudge.escalated"
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "reimbursement.anonymous_use"
@@ -1775,7 +1799,12 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
 // ---------------------------------------------------------------------------
 
 /** What produced a notification. One per sender, so a resend can find and replace its own row. */
-export type AdminBotMemberNotificationKind = "meeting_attendance";
+export type AdminBotMemberNotificationKind =
+  | "meeting_attendance"
+  | "nudge"
+  | "paper_slot"
+  | "profile"
+  | "workshop";
 
 export type AdminBotMemberNotification = {
   id: string;
@@ -1794,7 +1823,30 @@ export type AdminBotMemberNotification = {
   created_at: string;
   /** When the member acknowledged it. Absent is unread, which is what the popup fires on. */
   read_at?: string;
+  /**
+   * One of the things the lab actually chases, and so a candidate for escalation.
+   *
+   * Set by whoever sent the nudge. Absent means no: a sender that has not decided is not one whose
+   * reminders should be pulling the head professor into a group DM.
+   */
+  important?: boolean;
+  /**
+   * When the head professor was brought in, so it happens once.
+   *
+   * Stamped whether or not the DM reached Slack. A second escalation is far worse than a missed
+   * one: the first is the lab appearing to nag through its professor, the second is a reminder the
+   * member already has.
+   */
+  escalated_at?: string;
 };
+
+/**
+ * How long an important, unanswered nudge waits before the head professor is asked to chase it.
+ *
+ * Five days, in calendar days rather than business ones: it is a limit on how long somebody can be
+ * unaware of something, and being away for a week is exactly the case worth catching.
+ */
+export const adminBotNudgeEscalateAfterDays = 5;
 
 // ---------------------------------------------------------------------------
 // Logistics requests

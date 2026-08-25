@@ -1010,6 +1010,12 @@ export const en: TranslationMap = {
   },
   dashboard: {
     more: "+{count} more",
+    nudgeWarning: {
+      unread: "{count} thing(s) the lab has asked you for",
+      important: "{count} important thing(s) still outstanding",
+      escalated: "{count} thing(s) have been escalated to your supervisor",
+      acknowledge: "Mark as read",
+    },
     notifications: {
       open: "Open",
     },
