@@ -3732,22 +3732,66 @@
 
 /* Conference Papers: one question at the top, a ranked list under it. */
 
-.conference-papers__controls {
-  margin-top: 12px;
-  align-items: start;
+.conference-papers .card-sub {
+  max-width: none !important;
+  width: 100%;
+  font-size: var(--control-ui-text-md);
+  line-height: 1.5;
 }
 
-.conference-papers__interests textarea {
-  resize: vertical;
+.conference-papers__controls {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
+}
+
+.conference-papers__controls .adminbot-form__field {
+  display: flex;
+  flex-direction: column;
+}
+
+.conference-papers__controls .adminbot-form__field:first-child {
+  flex: 0 0 16rem;
+}
+
+.conference-papers__controls .adminbot-form__field.conference-papers__interests {
+  flex: 1 1 20rem;
+  max-width: 28rem;
+}
+
+.conference-papers__controls .adminbot-form__field span {
+  font-size: var(--control-ui-text-md);
+}
+
+.conference-papers__controls .adminbot-form__field select {
+  height: var(--control-h-md);
+}
+
+.conference-papers__controls .adminbot-form__field textarea {
+  flex: 1;
   min-height: 3.2em;
+  resize: vertical;
+  font-size: var(--control-ui-text-md);
 }
 
 .conference-papers__actions {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: var(--space-6);
+}
+
+.conference-papers__actions .btn.primary {
+  background: color-mix(in srgb, var(--accent) 85%, white);
+  border-color: var(--accent);
+  color: #fff;
+  font-size: var(--control-ui-text-md);
+  padding: 0 var(--space-5);
 }
 
 .conference-papers__list {
@@ -10145,6 +10189,111 @@ details[open] > .ov-expandable-toggle::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+/* ── Add commitment button + picker ────────────────────────────────────────── */
+
+.adminbot-time-availability__add-commitment {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 90%, var(--bg-accent));
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.adminbot-time-availability__add-commitment:hover {
+  background: color-mix(in srgb, var(--bg) 80%, var(--bg-accent));
+  border-style: solid;
+}
+
+.adminbot-time-availability__commitment-picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+  overflow: hidden;
+}
+
+.adminbot-time-availability__commitment-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 92%, var(--bg-accent));
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  justify-content: center;
+}
+
+.adminbot-time-availability__commitment-tab {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.adminbot-time-availability__commitment-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-accent) 50%, transparent);
+}
+
+.adminbot-time-availability__commitment-tab--active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Each tab gets its own subtle accent when active. */
+.adminbot-time-availability__commitment-tab:nth-child(1).adminbot-time-availability__commitment-tab--active {
+  border-bottom-color: #a49dfa;
+}
+.adminbot-time-availability__commitment-tab:nth-child(2).adminbot-time-availability__commitment-tab--active {
+  border-bottom-color: #8bb89a;
+}
+.adminbot-time-availability__commitment-tab:nth-child(3).adminbot-time-availability__commitment-tab--active {
+  border-bottom-color: #c9a0b0;
+}
+.adminbot-time-availability__commitment-tab:nth-child(4).adminbot-time-availability__commitment-tab--active {
+  border-bottom-color: #c4b5a0;
+}
+
+.adminbot-time-availability__commitment-form {
+  padding: var(--space-4);
+  width: 100%;
+}
+
+.adminbot-time-availability__commitment-form .adminbot-time-availability__editor {
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: 100%;
+}
+
+.adminbot-time-availability__commitment-form .adminbot-time-availability__form {
+  width: 100%;
+}
+
+.adminbot-time-availability__commitment-form .adminbot-time-availability__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.adminbot-time-availability__commitment-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-4) var(--space-4);
+  width: 100%;
 }
 
 .adminbot-time-availability__deadline-add {

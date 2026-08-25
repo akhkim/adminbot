@@ -15,6 +15,7 @@ type Calls = {
   consents: Array<[string, string, string | undefined]>;
   attendees: Array<[string, string | undefined, string]>;
   reimbursements: Array<[string, string]>;
+  generated: Array<[string, string]>;
 };
 
 function draw(overrides: Partial<PaperCycleProps> = {}) {
@@ -24,6 +25,7 @@ function draw(overrides: Partial<PaperCycleProps> = {}) {
     consents: [],
     attendees: [],
     reimbursements: [],
+    generated: [],
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -41,6 +43,7 @@ function draw(overrides: Partial<PaperCycleProps> = {}) {
       memberName: (id) => id,
       onSaveDraft: (platform, body) => calls.drafts.push([platform, body]),
       onCirculateDraft: (id) => calls.circulated.push(id),
+      onGenerateLinkedInDraft: (venue, note) => calls.generated.push([venue, note]),
       onConsent: (id, decision, comment) => calls.consents.push([id, decision, comment]),
       onSetAttendee: (name, memberId, attending) =>
         calls.attendees.push([name, memberId, attending]),
@@ -155,6 +158,45 @@ describe("social drafts", () => {
   it("says so when there is nobody on the roster to ask", () => {
     const { container } = draw({ drafts: [draft({ status: "circulated" })], consents: [] });
     expect(container.textContent).toContain("No coauthors on the roster to ask");
+  });
+});
+
+describe("the linkedin panel's absorbed generator", () => {
+  it("asks for venue and context on linkedin only, ahead of the draft box", () => {
+    const { container } = draw();
+    const li = container.querySelector('[data-testid="paper-draft-p1-linkedin"]');
+    const x = container.querySelector('[data-testid="paper-draft-p1-x"]');
+    expect(li?.querySelector('[data-el="venue"]')).not.toBeNull();
+    expect(li?.querySelector('[data-el="note"]')).not.toBeNull();
+    expect(x?.querySelector('[data-el="venue"]')).toBeNull();
+    // The generate button exists even with no stored draft: it is how the first one is made.
+    expect(li?.querySelector('[data-testid="paper-draft-generate-p1-linkedin"]')).not.toBeNull();
+    expect(x?.querySelector('[data-testid="paper-draft-generate-p1-x"]')).toBeNull();
+  });
+
+  it("hands the typed venue and context to the generator", () => {
+    const { container, calls } = draw();
+    const li = container.querySelector('[data-testid="paper-draft-p1-linkedin"]');
+    if (!li) throw new Error("no linkedin panel");
+    const venue = li.querySelector<HTMLInputElement>('[data-el="venue"]');
+    const note = li.querySelector<HTMLInputElement>('[data-el="note"]');
+    if (!venue || !note) throw new Error("no context inputs");
+    venue.value = "ICML 2026, poster Wed Jul 8 Hall A #3015";
+    note.value = "Best paper award";
+    li.querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-linkedin"]')?.click();
+    expect(calls.generated).toEqual([
+      ["ICML 2026, poster Wed Jul 8 Hall A #3015", "Best paper award"],
+    ]);
+  });
+
+  it("keeps circulation beside generation once a linkedin draft exists", () => {
+    const { container, calls } = draw({ drafts: [draft({ platform: "linkedin" })] });
+    const actions = container.querySelector(".paper-cycle__draft-actions");
+    expect(actions?.querySelector('[data-testid="paper-draft-circulate-p1-linkedin"]')).not.toBeNull();
+    actions
+      ?.querySelector<HTMLButtonElement>('[data-testid="paper-draft-circulate-p1-linkedin"]')
+      ?.click();
+    expect(calls.circulated).toEqual(["d1"]);
   });
 });
 

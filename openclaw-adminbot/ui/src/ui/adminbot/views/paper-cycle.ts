@@ -28,6 +28,8 @@ export type PaperCycleProps = {
   memberName: (memberId: string) => string;
   onSaveDraft: (platform: string, body: string) => void;
   onCirculateDraft: (draftId: string) => void;
+  /** LinkedIn only: run the model draft with the panel's venue/context inputs and store the text. */
+  onGenerateLinkedInDraft?: (venue: string, note: string) => void;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
   onSetReimbursement: (memberId: string, status: string) => void;
@@ -133,6 +135,25 @@ function renderDraft(props: PaperCycleProps, platform: string) {
             </span>`
           : html`<span class="paper-slot__pill">No draft</span>`}
       </div>
+      ${platform === "linkedin"
+        ? html`
+            <!-- Absorbed from the old "Draft LinkedIn post" dialog: same two optional inputs, but
+                 inline where the post actually lives, so generating and circulating are one row. -->
+            <label class="paper-cycle__field">
+              <span>Venue / session <em>(optional)</em></span>
+              <input
+                class="input"
+                type="text"
+                data-el="venue"
+                placeholder="ICML 2026, poster Wed Jul 8 Hall A #3015"
+              />
+            </label>
+            <label class="paper-cycle__field">
+              <span>Extra context <em>(optional)</em></span>
+              <input class="input" type="text" data-el="note" placeholder="anything the abstract does not say" />
+            </label>
+          `
+        : nothing}
       <textarea
         class="input paper-cycle__draft-body"
         rows="3"
@@ -146,7 +167,40 @@ function renderDraft(props: PaperCycleProps, platform: string) {
           }
         }}
       ></textarea>
-      ${draft?.status === "draft"
+      ${platform === "linkedin" && props.onGenerateLinkedInDraft
+        ? html`
+            <div class="paper-cycle__draft-actions">
+              <button
+                type="button"
+                class="btn btn--sm primary"
+                data-testid=${`paper-draft-generate-${props.paperId}-linkedin`}
+                @click=${(event: Event) => {
+                  const root = (event.currentTarget as HTMLElement).closest(".paper-cycle__draft");
+                  const venue =
+                    root?.querySelector<HTMLInputElement>('[data-el="venue"]')?.value.trim() ?? "";
+                  const note =
+                    root?.querySelector<HTMLInputElement>('[data-el="note"]')?.value.trim() ?? "";
+                  props.onGenerateLinkedInDraft(venue, note);
+                }}
+              >
+                Generate draft
+              </button>
+              ${draft?.status === "draft"
+                ? html`
+                    <button
+                      type="button"
+                      class="btn btn--sm paper-cycle__circulate"
+                      data-testid=${`paper-draft-circulate-${props.paperId}-${platform}`}
+                      @click=${() => props.onCirculateDraft(draft.id)}
+                    >
+                      Send to coauthors for sign-off
+                    </button>
+                  `
+                : nothing}
+            </div>
+          `
+        : nothing}
+      ${platform !== "linkedin" && draft?.status === "draft"
         ? html`
             <button
               type="button"
