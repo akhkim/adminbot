@@ -1701,6 +1701,10 @@ export class AdminBotService {
           channel: "slack",
           recipient_member_ids: [memberId],
           message: buildWeeklyUpdateMessage({ titles, weekStart }),
+          kind: "nudge",
+          title: "This week's paper update",
+          tab: "myWork",
+          // Not important: a skipped week is a gap in a log, and next Monday asks again.
         },
         actor,
       );
@@ -1921,7 +1925,17 @@ export class AdminBotService {
         return;
       }
       const result = await this.sendMemberNudge(
-        { channel: "slack", recipient_member_ids: [memberId], message },
+        {
+          channel: "slack",
+          recipient_member_ids: [memberId],
+          message,
+          kind: "paper_slot",
+          title: "Register your paper's target venue",
+          tab: "myWork",
+          // Important: the sweep runs before the group meeting, and a paper nobody registered is a
+          // paper the meeting cannot plan around -- which is only discovered in the meeting.
+          important: true,
+        },
         actor,
       );
       if (!result.ok) {
@@ -3166,6 +3180,12 @@ export class AdminBotService {
           channel: "slack",
           recipient_member_ids: [memberId],
           message: this.composeNudgeMessage(groups, now),
+          kind: "paper_slot",
+          title: "Evidence still missing on your paper",
+          tab: "myWork",
+          // Important: a missing submission link or camera-ready is the kind of gap that costs a
+          // paper its venue, and the deadline does not move because nobody read the DM.
+          important: true,
         },
         actor,
       );
@@ -5128,6 +5148,14 @@ export class AdminBotService {
             profile: key.includes("p"),
             timeline: key.includes("t"),
           }),
+          kind: "profile",
+          title: key.includes("p")
+            ? "Your profile is missing required fields"
+            : "Your term timeline is empty",
+          tab: key.includes("p") ? "profile" : "adminbotTimeAvailability",
+          // Important: both halves are things only the member can do, and everything downstream --
+          // scheduling, travel, the calendar's timezones -- is planned from them.
+          important: true,
         },
         actor,
       );
@@ -5252,6 +5280,11 @@ export class AdminBotService {
             channel: "slack",
             recipient_member_ids: nonCompliantMemberIds,
             message: buildProfilePhotoGuidelineMessage(),
+            kind: "profile",
+            title: "Your profile photo needs replacing",
+            tab: "profile",
+            // Not important: nothing downstream is blocked on it, and a group DM about somebody's
+            // headshot is the escalation that would make every other one easy to ignore.
           },
           actor,
         )

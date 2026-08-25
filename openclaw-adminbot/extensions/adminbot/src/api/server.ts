@@ -2817,7 +2817,13 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotMemberNudgeRequest;
-    sendServiceResult(res, await service.sendMemberNudge(body, principalActor(principal)));
+    // `important` is dropped rather than honored. It is the flag that puts the head professor in a
+    // group DM five days later, and the reason that escalation can auto-execute is that nothing
+    // but a server-computed sweep can raise it -- see escalateStaleNudges. This is the one nudge
+    // route whose text and recipients come from a browser, so letting it set the flag would make
+    // "AdminBot escalated this" mean "an admin typed something and waited".
+    const { important: _ignored, ...request } = body;
+    sendServiceResult(res, await service.sendMemberNudge(request, principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/papers/author-links/backfill") {
