@@ -89,6 +89,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-graduations",
+      "description": "Confirm finishing months, chase alumni transitions, and arrange the ceremony",
+      "cron": "0 8 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-graduations-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-city-channels",
       "description": "Add members to their city Slack channel once a city reaches four",
       "cron": "0 7 * * 1,4",

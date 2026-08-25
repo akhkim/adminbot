@@ -145,6 +145,10 @@ export const adminBotNudgeDomains = [
   // cadence belongs to the person, and a thesis week is exactly when nobody needs a fourth Slack
   // message about a poster.
   "thesis_milestone",
+  // Leaving: the member confirming their finishing month, the admins being asked to make the
+  // transition, and the yearly ceremony. Same ledger for the same reason -- somebody wrapping up
+  // is already hearing from AdminBot about handovers.
+  "graduation",
   "profile_field",
 ] as const;
 

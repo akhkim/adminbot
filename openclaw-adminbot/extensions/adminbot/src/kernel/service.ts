@@ -535,6 +535,14 @@ import {
 // The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
 // re-exported so callers that import it from the service keep working.
 import {
+  adminBotGraduationConfirmLeadMonths,
+  buildGraduationCeremonyMessage,
+  buildGraduationConfirmMessage,
+  buildGraduationTransitionMessage,
+  graduationActions,
+  graduationCeremony,
+} from "../workflows/members/graduation.js";
+import {
   adminBotThesisGradingDelayDays,
   adminBotThesisGuidanceLeadDays,
   buildThesisGradingMessage,
@@ -5684,6 +5692,194 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * Leaving: the date the member keeps, the status only an admin can set, and the ceremony.
+   *
+   * Three messages with three audiences, because they are three different asks. The member is asked
+   * whether their finishing month is still right, since they are the only one who knows and the
+   * field is theirs. The admins are asked to make the transition once it has passed, because
+   * `status` is privileged -- nobody declares themselves alumni -- and because flipping it has
+   * access consequences a sweep should not perform on its own. And somebody is asked to book the
+   * ceremony while the year's graduates are still reachable.
+   *
+   * Each is said once per month value, so a member who moves their date is asked again about the
+   * new one and not about the old.
+   */
+  async sweepGraduations(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      confirmed: Array<{ member_id: string; month: string }>;
+      transitions: Array<{ member_id: string; month: string }>;
+      ceremony?: { year: number; graduates: number };
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const members = this.store.listLabMembers();
+    const ledger = this.nudgeLedgerIndex();
+    const confirmed: Array<{ member_id: string; month: string }> = [];
+    const transitions: Array<{ member_id: string; month: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    const alreadySaid = (subject: string) =>
+      Boolean(ledger.get(`graduation|${subject}`)?.last_nudged_at);
+    const remember = (subject: string, memberId: string) => {
+      this.store.saveNudgeLedgerEntry({
+        domain: "graduation",
+        subject_id: subject,
+        member_id: memberId,
+        last_nudged_at: nowIso,
+        nudge_count: 1,
+      });
+    };
+
+    const actions = graduationActions(members, now);
+    const dueTransitions: Array<{ member_name: string; month: string; months_since: number }> = [];
+    for (const action of actions) {
+      const subject = `${action.kind}|${action.member_id}|${action.month}`;
+      if (alreadySaid(subject)) {
+        continue;
+      }
+      if (action.kind === "confirm") {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [action.member_id],
+            message: buildGraduationConfirmMessage(action),
+            kind: "nudge",
+            title: "Is your finishing month still right?",
+            tab: "profile",
+          },
+          actor,
+        );
+        remember(subject, action.member_id);
+        if (!sent.ok) {
+          skipped.push({ member_id: action.member_id, reason: sent.error.message });
+          continue;
+        }
+        skipped.push(...sent.payload.skipped);
+        confirmed.push({ member_id: action.member_id, month: action.month });
+        continue;
+      }
+      dueTransitions.push({
+        member_name: action.member_name,
+        month: action.month,
+        months_since: action.months_since,
+      });
+      transitions.push({ member_id: action.member_id, month: action.month });
+      remember(subject, action.member_id);
+    }
+
+    // The transition list and the ceremony both go to the admins. Resolved once: an installation
+    // with no head professor set still has admins on the roster, and silently saying nothing about
+    // people who have left is the worse failure.
+    const recipients = this.graduationAdminRecipients();
+    if (dueTransitions.length) {
+      if (!recipients.length) {
+        skipped.push({ member_id: "admins", reason: "no admin has a linked Slack account" });
+      } else {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: recipients,
+            message: buildGraduationTransitionMessage(dueTransitions),
+            kind: "nudge",
+            title:
+              dueTransitions.length === 1
+                ? "A member's finishing month has passed"
+                : "Finishing months have passed",
+            tab: "adminbotMembers",
+          },
+          actor,
+        );
+        if (!sent.ok) {
+          skipped.push({ member_id: "admins", reason: sent.error.message });
+        } else {
+          skipped.push(...sent.payload.skipped);
+        }
+      }
+    }
+
+    const ceremony = graduationCeremony(members, now);
+    // Reported only when it was actually raised this run. Reporting the upcoming ceremony every
+    // time would print it in the cron summary every week for three months, which reads as the
+    // reminder having fired again.
+    let ceremonyRaised: typeof ceremony;
+    if (ceremony && !alreadySaid(`ceremony|${ceremony.year}`)) {
+      if (!recipients.length) {
+        skipped.push({ member_id: "admins", reason: "no admin has a linked Slack account" });
+      } else {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: recipients,
+            message: buildGraduationCeremonyMessage(ceremony),
+            kind: "nudge",
+            title: `${ceremony.year} graduation ceremony`,
+            tab: "adminbotCalendar",
+          },
+          actor,
+        );
+        for (const recipient of recipients) {
+          remember(`ceremony|${ceremony.year}`, recipient);
+        }
+        ceremonyRaised = ceremony;
+        if (!sent.ok) {
+          skipped.push({ member_id: "admins", reason: sent.error.message });
+        } else {
+          skipped.push(...sent.payload.skipped);
+        }
+      }
+    }
+
+    this.recordAudit({
+      type: "graduation.swept",
+      actor,
+      details: {
+        confirm_lead_months: adminBotGraduationConfirmLeadMonths,
+        confirmed: confirmed.length,
+        transitions: transitions.length,
+        ceremony: ceremonyRaised?.year,
+        skipped: skipped.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        confirmed,
+        transitions,
+        ...(ceremonyRaised
+          ? { ceremony: { year: ceremonyRaised.year, graduates: ceremonyRaised.graduates.length } }
+          : {}),
+        skipped,
+      },
+    };
+  }
+
+  /**
+   * Who hears about people leaving.
+   *
+   * The head professor when one is configured, and every Slack-linked admin otherwise. Not both:
+   * a lab whose professor is also its only admin would otherwise get each message twice.
+   */
+  private graduationAdminRecipients(): string[] {
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (headProfessorId && this.store.getLabMember(headProfessorId)?.slack_user_id) {
+      return [headProfessorId];
+    }
+    return this.store
+      .listLabMembers()
+      .filter(
+        (member) =>
+          member.privilege_level === "admin" && member.slack_user_id && member.status !== "alumni",
+      )
+      .map((member) => member.id);
   }
 
   /**
