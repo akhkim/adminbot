@@ -513,6 +513,7 @@ export type AppViewState = {
   myWorkCoauthorDraft: Record<string, { email: string; name: string }>;
   adminBotProfileOverviewFilter: import("./adminbot/views/profile-overview.ts").ProfileOverviewFilter;
   adminBotPaperFilter: import("./adminbot/views/paper-overview.ts").PaperOverviewFilter;
+  adminBotPaperCardId: string | null;
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];

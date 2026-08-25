@@ -50,6 +50,7 @@ function build(params: {
     slots: params.slots ?? [],
     blockerCounts: new Map(Object.entries(params.blockers ?? {})),
     stepLabel: (step) => step,
+    stepCount: 8,
   });
 }
 
@@ -173,17 +174,46 @@ describe("renderPaperOverviewTable", () => {
   it("puts the lab on one scannable line per paper", () => {
     const { container } = draw({
       rows: build({
-        papers: [paper({ timeline: { progress_percent: 40, items: [] } as never })],
+        papers: [paper({ timeline: { current_step_index: 2, items: [] } as never })],
         slots: [slots({ provided_count: 1, missing_slots: ["camera_ready", "slides"] })],
       }),
       filter: { state: "all" },
     });
+    // Stage and Progress were the same fact twice: both were derived from `current_step` and
+    // nothing else, so one of them had to go.
     expect(
       [...container.querySelectorAll(".profile-overview__head")].map((h) => h.textContent?.trim()),
-    ).toEqual(["Paper", "Progress", "Stage", "Evidence", "Venue", "Outstanding"]);
-    expect(container.querySelector(".profile-overview__percent")?.textContent).toBe("40%");
+    ).toEqual(["Paper", "Stage", "Evidence", "Venue", "Outstanding"]);
+    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("3/8");
     expect(container.textContent).toContain("1/3");
     expect(container.textContent).toContain("camera ready");
+  });
+
+  it("says a finished paper is finished, which a step percentage never could", () => {
+    // The service's own progress_percent tops out at 88% on the last step: it is the position of
+    // `current_step` in a fixed plan, so nothing a paper actually does can carry it to the end.
+    const { container } = draw({
+      rows: build({
+        papers: [paper({ reminder: { status: "complete" } })],
+        slots: [slots()],
+      }),
+      filter: { state: "all" },
+    });
+    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("done");
+    expect(container.querySelector(".profile-overview__bar.is-complete")).not.toBeNull();
+  });
+
+  it("reads the step from the paper, not from a percentage that is the same for every paper on it", () => {
+    const [early, late] = build({
+      papers: [
+        paper({ id: "early", timeline: { current_step_index: 1, items: [] } as never }),
+        paper({ id: "late", timeline: { current_step_index: 6, items: [] } as never }),
+      ],
+      slots: [slots({ paper_id: "early" }), slots({ paper_id: "late" })],
+    });
+    expect(early?.stepIndex).toBe(1);
+    expect(late?.stepIndex).toBe(6);
+    expect(early?.stepCount).toBe(8);
   });
 
   it("lets the roll-up figure be the filter, so a count is read and acted on once", () => {
@@ -208,7 +238,7 @@ describe("renderPaperOverviewTable", () => {
     expect(empty.container.textContent).toContain("No papers are registered yet");
   });
 
-  it("opens the paper from its title", () => {
+  it("opens the paper's own card from its title", () => {
     const { container, opened } = draw({
       rows: build({ papers: [paper()] }),
       filter: { state: "all" },

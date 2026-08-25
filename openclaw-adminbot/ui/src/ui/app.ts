@@ -636,6 +636,9 @@ export class OpenClawApp extends LitElement {
   };
   // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
   // moving, and "every paper" is one click away for the times it is not.
+  // Which paper's card is open over Active Papers, or null. An id and not the record: the papers
+  // list is re-read on every load, and a held record would edit a copy nothing else can see.
+  @state() adminBotPaperCardId: string | null = null;
   @state() adminBotPaperFilter: PaperOverviewFilter = {
     ...EMPTY_PAPER_OVERVIEW_FILTER,
     state: "attention",

@@ -1265,7 +1265,6 @@ export const en: TranslationMap = {
     sub: "Every paper in the lab, most outstanding first. The row is the summary; open a paper for its timeline.",
     columns: {
       paper: "Paper",
-      progress: "Progress",
       stage: "Stage",
       evidence: "Evidence",
       venue: "Venue",
@@ -1291,7 +1290,9 @@ export const en: TranslationMap = {
       allStages: "Every stage",
       allVenues: "Every venue",
     },
-    progressLabel: "{percent}% of the flow complete",
+    stageLabel: "step {index} of {total}",
+    stageComplete: "Complete",
+    stageDone: "done",
     next: "next: {step}",
     noAuthors: "No authors recorded",
     noVenue: "no venue",

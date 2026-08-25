@@ -132,7 +132,12 @@ import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics, type LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
-import { ownPapers, renderMyWork, type MyWorkProps } from "./adminbot/views/my-work.ts";
+import {
+  ownPapers,
+  renderMyWork,
+  renderPaperCardDialog,
+  type MyWorkProps,
+} from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -1833,6 +1838,11 @@ export function renderApp(state: AppViewState) {
   const isChat = state.tab === "chat";
   const adminBotMode: AdminBotLoadMode = resolveAdminBotMode(state.memberPrivilegeLevel);
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
+  // Resolved from the id rather than held as an object: the papers list is re-read on every load,
+  // and a card holding a stale record would edit fields that no longer exist on it.
+  const activePaperCard = state.adminBotPaperCardId
+    ? (state.adminBotData?.papers ?? []).find((paper) => paper.id === state.adminBotPaperCardId)
+    : undefined;
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -3552,16 +3562,22 @@ export function renderApp(state: AppViewState) {
               personal: true,
             })
           : nothing}
-        <!-- Active Papers: the same cards, the same fields and the same writes as a member's own
-             page, over every paper in the lab, plus the nudge run that chases them. Sits above the
-             admin-only sections below it (stats, the pre-registration board, reminder escalations
-             and Add paper), which answer questions about the set rather than about one paper. -->
-        ${state.tab === "adminbotPapers" && adminBotMode === "admin"
-          ? renderMyWork(state, {
-              ...paperWorkspaceProps(state, requestHostUpdate),
-              papers: state.adminBotData?.papers ?? [],
-              title: "All papers",
-              canNudge: true,
+        <!-- Active Papers opens one card, from the row that names it. It used to render the whole
+             deck -- a member's own card for every paper in the lab -- above the boards, which meant
+             an administrator scrolled past seventy expanded papers to reach anything. The card is
+             unchanged; what changed is that it arrives when somebody asks for a specific paper. The
+             author-facing summaries that came with the deck (the "Blocked" roll-up, the
+             pre-registration and decision banners) are the reader's own view of their own work, and
+             the admin equivalents are the table and the Reported blockers board. -->
+        ${state.tab === "adminbotPapers" && adminBotMode === "admin" && activePaperCard
+          ? renderPaperCardDialog({
+              state,
+              props: { ...paperWorkspaceProps(state, requestHostUpdate), canNudge: true },
+              paper: activePaperCard,
+              onClose: () => {
+                state.adminBotPaperCardId = null;
+                requestHostUpdate?.();
+              },
             })
           : nothing}
         ${state.tab === "overview"
@@ -3676,6 +3692,15 @@ export function renderApp(state: AppViewState) {
               venueFilter: state.adminBotVenueFilter,
               onVenueFilter: (venueId) => {
                 state.adminBotVenueFilter = venueId;
+              },
+              onOpenPaperCard: (paperId) => {
+                state.adminBotPaperCardId = paperId;
+                // The card reads the paper's evidence cycle, which is fetched the first time a
+                // card is opened. Toggling it open here is what triggers that read.
+                if (!state.adminBotPaperSlotsOpen.includes(paperId)) {
+                  void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
+                }
+                requestHostUpdate?.();
               },
               paperFilter: state.adminBotPaperFilter,
               onPaperFilter: (filter) => {

@@ -42,8 +42,21 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
 /** One paper with the evidence the service counted for it folded in. */
 export type PaperOverviewRow = {
   paper: AdminBotPaperRecord;
-  /** Progress through the flow, 0 to 100. Zero when no timeline has been computed yet. */
-  progress: number;
+  /**
+   * How many steps of the flow are behind this paper, and how many there are.
+   *
+   * Deliberately a step count and not the service's `progress_percent`. That field is a lookup:
+   * `current_step` against a fixed eight-step plan weighted by hardcoded day estimates, so every
+   * paper on the same step reports the same number forever -- a draft nobody has started and a
+   * draft about to be submitted both read 12% -- it jumps 12% to 44% for one step, and a paper on
+   * the last step reads 88% and can never reach 100% unless somebody sets `reminder.status`. It
+   * measures which step the paper is on, which is what the Stage column says in words anyway. A
+   * step count says the same true thing without implying it knows how much of the work is done.
+   */
+  stepIndex: number;
+  stepCount: number;
+  /** The cycle is finished: the reminder says so, or the service closed it. */
+  complete: boolean;
   currentLabel: string;
   nextLabel: string;
   venue: string;
@@ -95,6 +108,8 @@ export function paperOverviewRows(params: {
   slots: readonly PaperSlotOverviewRow[];
   blockerCounts: ReadonlyMap<string, number>;
   stepLabel: (step: string) => string;
+  /** How many steps the flow has, for a paper the service has not computed a timeline for. */
+  stepCount: number;
 }): PaperOverviewRow[] {
   const slotsById = new Map(params.slots.map((row) => [row.paper_id, row]));
   return params.papers.map((paper) => {
@@ -105,9 +120,14 @@ export function paperOverviewRows(params: {
     const openBlockers = params.blockerCounts.get(paper.id) ?? 0;
     const dormant = Boolean(paper.dormant_override || slots?.closed || slots?.cycle_closed);
     const missingEvidence = slots ? slots.required_count - slots.provided_count : 0;
+    const stepCount = timeline?.items.length || params.stepCount;
+    const complete =
+      paper.reminder?.status === "complete" || Boolean(slots?.closed || slots?.cycle_closed);
     return {
       paper,
-      progress: timeline?.progress_percent ?? 0,
+      stepIndex: complete ? stepCount : (timeline?.current_step_index ?? 0),
+      stepCount,
+      complete,
       currentLabel: current?.label ?? params.stepLabel(paper.current_step),
       nextLabel: next?.label ?? "",
       venue: paperVenue(paper),
@@ -260,9 +280,6 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
                         ${t("paperOverview.columns.paper")}
                       </th>
                       <th scope="col" class="profile-overview__head">
-                        ${t("paperOverview.columns.progress")}
-                      </th>
-                      <th scope="col" class="profile-overview__head">
                         ${t("paperOverview.columns.stage")}
                       </th>
                       <th scope="col" class="profile-overview__head">
@@ -363,18 +380,41 @@ function renderSelect(params: {
   `;
 }
 
-function renderProgressCell(row: PaperOverviewRow) {
-  const complete = row.progress >= 100;
+/**
+ * The stage cell: how far along the flow this paper is, in steps.
+ *
+ * The bar is the scannable part and the words underneath are for the row you stop on -- the same
+ * bargain Profile Completeness strikes with its field count. "Step 3 of 8" rather than a
+ * percentage, because a step is a thing that either has happened or has not, and a percentage
+ * derived from one implies a precision nothing here has.
+ */
+function renderStageCell(row: PaperOverviewRow) {
+  const filled = row.stepCount > 0 ? Math.round((row.stepIndex / row.stepCount) * 100) : 0;
   return html`
-    <div class="profile-overview__progress">
-      <div
-        class="profile-overview__bar ${complete ? "is-complete" : ""}"
-        role="img"
-        aria-label=${t("paperOverview.progressLabel", { percent: String(row.progress) })}
-      >
-        <span class="profile-overview__bar-fill" style="width: ${row.progress}%"></span>
+    <div class="paper-overview__stage">
+      <div class="profile-overview__progress">
+        <div
+          class="profile-overview__bar ${row.complete ? "is-complete" : ""}"
+          role="img"
+          aria-label=${row.complete
+            ? t("paperOverview.stageComplete")
+            : t("paperOverview.stageLabel", {
+                index: String(row.stepIndex + 1),
+                total: String(row.stepCount),
+              })}
+        >
+          <span class="profile-overview__bar-fill" style="width: ${filled}%"></span>
+        </div>
+        <span class="profile-overview__percent">
+          ${row.complete ? t("paperOverview.stageDone") : `${row.stepIndex + 1}/${row.stepCount}`}
+        </span>
       </div>
-      <span class="profile-overview__percent ab-num">${row.progress}%</span>
+      <strong>${row.complete ? t("paperOverview.stageComplete") : row.currentLabel}</strong>
+      ${!row.complete && row.nextLabel
+        ? html`<span class="profile-overview__status"
+            >${t("paperOverview.next", { step: row.nextLabel })}</span
+          >`
+        : nothing}
     </div>
   `;
 }
@@ -453,15 +493,7 @@ function renderRow(props: PaperOverviewProps, row: PaperOverviewRow) {
           >${row.paper.authors.join(", ") || t("paperOverview.noAuthors")}</span
         >
       </td>
-      <td class="profile-overview__cell">${renderProgressCell(row)}</td>
-      <td class="profile-overview__cell">
-        <strong>${row.currentLabel}</strong>
-        ${row.nextLabel
-          ? html`<span class="profile-overview__status"
-              >${t("paperOverview.next", { step: row.nextLabel })}</span
-            >`
-          : nothing}
-      </td>
+      <td class="profile-overview__cell">${renderStageCell(row)}</td>
       <td class="profile-overview__cell profile-overview__cell--missing">
         ${renderEvidenceCell(row)}
       </td>

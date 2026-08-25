@@ -1106,6 +1106,18 @@
   color: var(--warn);
 }
 
+.paper-overview__stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 12rem;
+}
+
+/* "3/8" and "done" are both short; the fixed width stops the bar jumping between rows. */
+.paper-overview__stage .profile-overview__percent {
+  min-width: 3rem;
+}
+
 .paper-overview__evidence {
   display: flex;
   flex-direction: column;
@@ -1153,4 +1165,42 @@
 
 .paper-overview__board-body {
   padding: 0 var(--space-4) var(--space-4);
+}
+
+/* One paper's card, opened from the row that names it. Wide, because it is the same card My
+   Projects & Papers renders full-width, and tall-but-capped so a long paper scrolls inside the
+   dialog rather than pushing its own close button off the screen. */
+.paper-card-dialog {
+  width: min(72rem, 94vw);
+  max-height: 88vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  padding: 0;
+  overflow: hidden;
+}
+
+.paper-card-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.paper-card-dialog__panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+}
+
+.paper-card-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+}
+
+.paper-card-dialog__body {
+  overflow-y: auto;
+  padding: var(--space-4);
 }
