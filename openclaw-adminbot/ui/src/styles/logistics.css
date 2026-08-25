@@ -896,7 +896,8 @@
 /* Profile Overview — the admin's sweep of who has filled their own record in.
    Shares the queue's density decisions: a row is scanned, not read. */
 
-.profile-overview__heading {
+.profile-overview__heading,
+.paper-overview__heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -925,12 +926,14 @@
   font-size: var(--control-ui-text-sm);
 }
 
-.profile-overview__scroll {
+.profile-overview__scroll,
+.paper-overview__scroll {
   overflow-x: auto;
   margin-top: var(--space-4);
 }
 
-.profile-overview__table {
+.profile-overview__table,
+.paper-overview__table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--control-ui-text-sm);
@@ -1039,4 +1042,115 @@
 .profile-overview__flag {
   font-size: var(--control-ui-text-xs);
   text-transform: lowercase;
+}
+
+/* Active Papers — the other half of Lab Overview. It borrows Profile Completeness's table wholesale
+   (see the shared selectors above): the two tabs answer the same kind of question about different
+   subjects, and reading the second should cost nothing once you have read the first. */
+
+.paper-overview__table {
+  min-width: 56rem;
+}
+
+/* Both Lab Overview tabs now carry four controls. Without a cap the search box takes the row and
+   pushes the selects onto a second line at widths where they would all have fitted. */
+.profile-overview__filter {
+  display: inline-flex;
+  align-items: center;
+}
+
+.profile-overview__filter input[type="search"] {
+  min-width: 10rem;
+  max-width: 14rem;
+}
+
+/* The roll-up doubles as the filter, so each figure is a button and has to look pressable without
+   turning the line into a row of controls. Bare until hovered or chosen. */
+.paper-overview__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.paper-overview__figure:hover {
+  border-color: var(--border);
+}
+
+.paper-overview__figure.is-active {
+  border-color: var(--accent);
+  background: var(--bg-muted);
+}
+
+.paper-overview__figure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Not every figure filters to something — "with no venue recorded" cuts across the four states. */
+.paper-overview__figure--static {
+  cursor: default;
+}
+
+.profile-overview__adoption-figure.is-attention,
+.paper-overview__evidence .ab-num.is-attention {
+  color: var(--warn);
+}
+
+.paper-overview__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.paper-overview__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.paper-overview__chip {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* A dormant row stays readable but stops competing with the ones somebody is waiting on. */
+.paper-overview__row[data-dormant="true"] {
+  color: var(--muted);
+}
+
+/* The boards under the table. Closed on arrival, so the page opens as the list it is. */
+.paper-overview__board {
+  margin-top: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.paper-overview__board-summary {
+  padding: var(--space-3) var(--space-4);
+  color: var(--muted-strong);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.paper-overview__board-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+
+.paper-overview__board-body {
+  padding: 0 var(--space-4) var(--space-4);
 }

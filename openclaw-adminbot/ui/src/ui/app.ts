@@ -85,6 +85,10 @@ import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
+import {
+  EMPTY_PAPER_OVERVIEW_FILTER,
+  type PaperOverviewFilter,
+} from "./adminbot/views/paper-overview.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import type { ProfileOverviewFilter } from "./adminbot/views/profile-overview.ts";
 import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
@@ -627,6 +631,14 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
     gap: "any",
     membership: "everyone",
+    search: "",
+    activity: "any",
+  };
+  // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
+  // moving, and "every paper" is one click away for the times it is not.
+  @state() adminBotPaperFilter: PaperOverviewFilter = {
+    ...EMPTY_PAPER_OVERVIEW_FILTER,
+    state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};

@@ -6,7 +6,10 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import { fetchMemberProfileOverview } from "./auth/session.ts";
-import { renderAdminBotProfileOverview } from "./views/profile-overview.ts";
+import {
+  EMPTY_PROFILE_OVERVIEW_FILTER,
+  renderAdminBotProfileOverview,
+} from "./views/profile-overview.ts";
 
 function respond(body: unknown) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
@@ -70,7 +73,7 @@ describe("fetchMemberProfileOverview", () => {
         error: null,
         notice: null,
         reminding: false,
-        filter: { gap: "any", membership: "everyone" },
+        filter: EMPTY_PROFILE_OVERVIEW_FILTER,
         onFilterChange: vi.fn(),
         onRemind: vi.fn(),
         onOpenMember: vi.fn(),
