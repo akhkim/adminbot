@@ -33,6 +33,10 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // Adds one member to one public channel. Its own type rather than a generic Slack call because
+  // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
+  // question somebody asks after finding themselves in a room they did not join.
+  "slack.invite_to_channel",
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
@@ -906,6 +910,15 @@ export type AdminBotLabMemberInput = {
   // abroad, an internship. Self-editable and stored, but it was never declared here, so every
   // reader had to reach for it untyped. Audience filters on the Calendar tab read both.
   current_city?: string;
+  /**
+   * When AdminBot added this member to their city Slack channel.
+   *
+   * Set means never again, which is the entire opt-out. A member added to #group-toronto who leaves
+   * has to stay left; without a stamp the next sweep would put them back every few days, which is
+   * an argument with a person that a cron job always wins. Reading channel membership instead would
+   * be the same bug in better clothes -- "not in the channel" is exactly what leaving looks like.
+   */
+  city_channel_invited_at?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
@@ -1593,6 +1606,7 @@ export type AdminBotAuditEvent = {
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "onboarding.chased"
+    | "city_channels.synced"
     | "reimbursement.anonymous_use"
     // A member asking the lab for something, and the lab answering. The submit line is what makes
     // "nobody told me" checkable; the status line is who answered and when.

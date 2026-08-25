@@ -404,6 +404,37 @@ authenticates with `ADMINBOT_SERVICE_TOKEN` out of the mode-600 env file, the
 same way the OpenReview and mandatory-fields passes do, and its stdout becomes
 the Cron tab's run summary. It is registered by the cron sync below, like every other recurring pass.
 
+## City channels
+
+A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,
+`#group-tuebingen`. More than three, so four: below that a city channel is two people who already
+talk, and creating one is how a workspace ends up with a directory of dead rooms, which makes the
+live ones harder to find.
+
+Members are **added rather than asked**, and added **once**. `city_channel_invited_at` on the record
+is the entire opt-out: somebody put in a channel who leaves stays left, because without a stamp the
+next pass would put them back every few days -- an argument with a person that a cron job always
+wins. Reading channel membership instead would be the same bug in better clothes, since "not in the
+channel" is exactly what having left looks like. The stamp goes on whether or not Slack accepted, so
+a workspace that refuses does not become a nightly retry against everyone in that city.
+
+The field is not on the self-editable whitelist, so a member cannot clear it to be re-added.
+
+The city comes from `resolvePlace` -- the same resolver the member map uses -- so "Zürich",
+"zurich", "currently Zurich" and the IANA zone `Europe/Zurich` all land on one channel. A second
+normalizer would eventually disagree with the map, and the failure would be somebody who appears in
+Zürich on the map and is invited to nothing. Channel names come from the gazetteer key rather than
+the label, because `#group-zürich` is not a channel anyone can have.
+
+After the invite the member is told where they were put, the guidebook section about working from
+there (Toronto, Zürich and Tübingen have one; other cities simply get no link), and how to leave --
+in that order, with the leaving part not buried. They did not ask for this, so the message that
+announces it is also the one that has to make undoing it obvious.
+
+AdminBot **does not create channels**. A missing `#group-<city>` fails the invite and is reported;
+opening a channel is a decision about the workspace's shape, and a sweep that quietly makes rooms is
+how a directory fills with them.
+
 ## Onboarding cycles
 
 A member's setup checklist is a **cycle**, not a one-off. It opens at registration and re-opens
@@ -493,6 +524,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                |
 | `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                              |
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                |
+| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four        |
 | `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                            |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                |
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                  |

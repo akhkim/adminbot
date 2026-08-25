@@ -89,6 +89,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-city-channels",
+      "description": "Add members to their city Slack channel once a city reaches four",
+      "cron": "0 7 * * 1,4",
+      "argv": [
+        "bash",
+        "scripts/adminbot-city-channels-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-paperflow-nudges",
       "description": "PaperFlow venue-stage nudges",
       "cron": "0 9 * * 1-5",
