@@ -341,7 +341,34 @@ export function adminBotSlackActivityOf(member: {
  * So these are stripped on the way out unless the caller is the member themselves or an admin.
  * The service keeps the full record for its own work; this is a boundary rule, not storage.
  */
-export const adminBotConfidentialMemberFields = ["personal_circumstances"] as const;
+export const adminBotConfidentialMemberFields = [
+  "personal_circumstances",
+  // A personal phone number. It is on the record because the admins need to reach somebody on a
+  // conference day, not so that the roster publishes it to everyone who opens devtools.
+  "whatsapp",
+  // Their application. It is the most one-reader document on the record -- written for the people
+  // deciding, and nobody else's to reread afterwards.
+  "intake_form_url",
+] as const;
+
+/**
+ * Whether an answer is written for the lab or for the member and the admins.
+ *
+ * Public-to-lab is the default and the reason the roster is useful: names, topics, GitHub,
+ * OpenReview and the rest are how the lab finds each other. This names the exceptions, and it is
+ * the same list `redactConfidentialMemberFields` enforces -- one fact, so the label a member reads
+ * on the form cannot promise something the boundary does not do.
+ *
+ * `correspondence_email` is deliberately not private. It is the address the lab writes to, and a
+ * member composing a coauthor email from their own paper reads it off the roster; making it
+ * self-only would silently downgrade those to the directory address instead.
+ */
+export function adminBotMemberFieldVisibility(key: string): "lab" | "self" {
+  return (adminBotConfidentialMemberFields as readonly string[]).includes(key) ||
+    (adminBotScheduleMemberFields as readonly string[]).includes(key)
+    ? "self"
+    : "lab";
+}
 
 /**
  * The schedule half of the record: readable by the member it belongs to and by admins, nobody else.

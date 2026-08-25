@@ -1667,6 +1667,9 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    visibility: {
+      self: "Only you and the admins",
+    },
     basics: {
       title: "Basic info",
       empty: "Not set",
