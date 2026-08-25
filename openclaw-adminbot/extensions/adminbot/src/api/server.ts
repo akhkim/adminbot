@@ -2899,6 +2899,15 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/thesis-milestones/run") {
+    // Reads the members' own timelines and the head-professor setting; nothing about who is
+    // messaged or what is said comes from the caller.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sweepThesisMilestones(principalActor(principal)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/city-channels/sync") {
     // Who goes in which channel is computed here from the roster and the four-member threshold, so
     // this takes requirePrivileged like the other cron-triggered sweeps.

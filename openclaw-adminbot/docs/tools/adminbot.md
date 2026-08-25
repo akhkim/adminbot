@@ -404,6 +404,34 @@ authenticates with `ADMINBOT_SERVICE_TOKEN` out of the mode-600 env file, the
 same way the OpenReview and mandatory-fields passes do, and its stdout becomes
 the Cron tab's run summary. It is registered by the cron sync below, like every other recurring pass.
 
+## Thesis milestones
+
+The date is the member's own -- a milestone on their Time Availability timeline whose label reads
+as a thesis -- rather than a field the lab keeps about them. That is the right source and it is also
+the fragile one, so `workflows/members/thesis-milestones.ts` is the whole of "what counts as a
+thesis" and it is deliberately narrow: `thesis`, `theses`, `dissertation`, as whole words, in any
+casing.
+
+A **defence** deliberately does not match. Nobody grades a thesis five days after the viva -- they
+grade it before -- so treating one as a submission would remind the head professor about work she
+has already done.
+
+Two things happen:
+
+- **Fourteen days before**, the member is pointed at the guidebook's "Submitting your thesis"
+  section, while reading it can still change what they do, and told that moving the date on Time
+  Availability is enough for AdminBot to follow it.
+- **Five days after**, the head professor is asked to grade what was due -- one message however many
+  theses are ready, addressed to her about them. Unlike the escalation DM the member is not in it:
+  this is a task of hers, and a student who has just submitted does not need to watch their
+  supervisor being reminded to mark it.
+
+Each is said once, tracked in the nudge ledger under `thesis_milestone`. The subject carries the
+date, so **moving a thesis re-arms both messages** while re-saving the same timeline does not. Both
+windows are open-ended on the late side, because a sweep that fired only on exactly day 14 or
+exactly day 5 would miss every date the cron ran late for -- the ledger is what stops the open end
+becoming a daily repeat.
+
 ## City channels
 
 A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,
@@ -467,6 +495,8 @@ whether somebody was ever told.
 | Nudge                          | Runs                | Channel        | Escalates |
 | ------------------------------ | ------------------- | -------------- | --------- |
 | Setup checklist still open     | 10 days, then 60    | Slack          | no        |
+| Thesis deadline approaching    | 14 days before      | Slack          | no        |
+| Thesis ready to grade          | 5 days after        | Slack          | no        |
 | Paper evidence slots           | weekdays 09:10      | Slack          | **yes**   |
 | Profile fields / term timeline | weekdays 09:20      | Slack          | **yes**   |
 | Pre-registration               | Thursdays 14:00     | Slack          | **yes**   |
@@ -514,26 +544,27 @@ feature. Three of the fourteen wrappers had one and the rest were registered by 
 "what does AdminBot run, and when" could only be answered by reading the cron store on Aurora -- and
 a job that was never registered is silent: nobody is nudged and nothing errors.
 
-| Job                                 | Schedule             | What it does                                                            |
-| ----------------------------------- | -------------------- | ----------------------------------------------------------------------- |
-| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                        |
-| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                  |
-| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                       |
-| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                     |
-| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                   |
-| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                |
-| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                              |
-| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                |
-| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four        |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                            |
-| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                |
-| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                  |
-| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months |
-| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting              |
-| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                |
-| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                      |
-| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                       |
-| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days       |
+| Job                                 | Schedule             | What it does                                                               |
+| ----------------------------------- | -------------------- | -------------------------------------------------------------------------- |
+| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                           |
+| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                     |
+| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                          |
+| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                        |
+| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                      |
+| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                   |
+| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                 |
+| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                   |
+| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four           |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                               |
+| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                   |
+| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                     |
+| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months    |
+| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after |
+| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                 |
+| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                   |
+| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                         |
+| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                          |
+| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days          |
 
 Times are the gateway's. The nudge passes are staggered through the morning and
 `adminbot-nudge-escalation` runs after them on purpose: it reads what those passes filed, so running

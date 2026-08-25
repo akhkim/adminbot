@@ -1607,6 +1607,7 @@ export type AdminBotAuditEvent = {
     | "onboarding.step_updated"
     | "onboarding.chased"
     | "city_channels.synced"
+    | "thesis_milestones.swept"
     | "reimbursement.anonymous_use"
     // A member asking the lab for something, and the lab answering. The submit line is what makes
     // "nobody told me" checkable; the status line is who answered and when.

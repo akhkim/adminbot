@@ -139,6 +139,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-thesis-milestones",
+      "description": "Guidebook nudge before a thesis deadline, grading reminder five days after",
+      "cron": "50 9 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-thesis-milestones-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-meeting-attendance",
       "description": "Chase members who have stopped coming to the group meeting",
       "cron": "30 9 * * 1",
