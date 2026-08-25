@@ -59,6 +59,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     viewerIsAdmin: false,
     notesDraft: null,
     onNotesDraftChange: () => {},
+    activeCommitmentType: null,
+    onActiveCommitmentChange: () => {},
     onSaveSchedule: () => {},
     saving: false,
     ...overrides,
@@ -185,11 +187,11 @@ describe("draftError", () => {
 describe("renderAdminBotTimeAvailability", () => {
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
-  it("shows the editor on your own schedule and hides it on someone else's", () => {
-    expect(renderView().querySelector('[data-testid="time-availability-editor"]')).not.toBeNull();
+  it("shows the add-commitment button on your own schedule and hides it on someone else's", () => {
+    expect(renderView().querySelector(".adminbot-time-availability__add-commitment")).not.toBeNull();
     expect(
       renderView({ viewerMemberId: "someone-else" }).querySelector(
-        '[data-testid="time-availability-editor"]',
+        ".adminbot-time-availability__add-commitment",
       ),
     ).toBeNull();
   });
@@ -198,6 +200,7 @@ describe("renderAdminBotTimeAvailability", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({
       onSaveSchedule,
+      activeCommitmentType: "jinesis",
       draft: {
         ...EMPTY_TIME_AVAILABILITY_DRAFT,
         project: "Writing",
@@ -227,6 +230,7 @@ describe("renderAdminBotTimeAvailability", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({
       onSaveSchedule,
+      activeCommitmentType: "jinesis",
       draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, start: "2026-04-30", end: "2026-04-01" },
     });
     container.querySelector<HTMLFormElement>(".adminbot-time-availability__form")?.requestSubmit();
@@ -480,6 +484,7 @@ describe("the chart", () => {
 describe("the whole-day toggle", () => {
   it("offers it for a time-away category, ticked by default", () => {
     const container = renderView({
+      activeCommitmentType: "away",
       awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
     });
     const box = container.querySelector<HTMLInputElement>(
@@ -494,11 +499,13 @@ describe("the whole-day toggle", () => {
   // whole-day answer stops being enough.
   it("asks for hours as soon as the away row stops being a whole day", () => {
     const whole = renderView({
+      activeCommitmentType: "away",
       awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
     });
     expect(whole.querySelector('[data-testid="time-away-hours"]')).toBeNull();
 
     const partial = renderView({
+      activeCommitmentType: "away",
       awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "course_load", wholeDay: false },
     });
     expect(partial.querySelector('[data-testid="time-away-hours"]')).not.toBeNull();
@@ -533,11 +540,13 @@ describe("the whole-day toggle", () => {
   // The toggle lives in the time-away form only. The Jinesis form asks for hours instead, and
   // now that they are two forms neither ever shows the other's field.
   it("keeps the toggle out of the Jinesis form, which asks for hours instead", () => {
-    const container = renderView();
+    const container = renderView({ activeCommitmentType: "jinesis" });
     const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
-    const away = container.querySelector('[data-testid="time-away-editor"]')!;
     expect(jinesis.querySelector('[data-testid="time-availability-whole-day"]')).toBeNull();
     expect(jinesis.querySelector('[data-testid="time-availability-hours"]')).not.toBeNull();
+
+    const awayContainer = renderView({ activeCommitmentType: "away" });
+    const away = awayContainer.querySelector('[data-testid="time-away-editor"]')!;
     expect(away.querySelector('[data-testid="time-availability-whole-day"]')).not.toBeNull();
     expect(away.querySelector('[data-testid="time-availability-hours"]')).toBeNull();
   });
@@ -874,7 +883,7 @@ describe("the split tables and the deadline panel", () => {
   });
 
   it("reminds the member on the add form that thesis deadlines belong here too", () => {
-    const editor = renderView({ members: [scheduled()] }).querySelector(
+    const editor = renderView({ members: [scheduled()], activeCommitmentType: "milestone" }).querySelector(
       '[data-testid="time-availability-milestone-editor"]',
     );
     expect(editor?.querySelector(".card-title")?.textContent).toContain("Add a big deadline");
@@ -899,7 +908,7 @@ describe("the split tables and the deadline panel", () => {
 
   // The banner reads; the form that writes lives with the other editors.
   it("keeps the add-a-deadline form out of the banner", () => {
-    const container = renderView({ members: [scheduled()] });
+    const container = renderView({ members: [scheduled()], activeCommitmentType: "milestone" });
     const panel = container.querySelector('[data-testid="time-availability-deadlines"]')!;
     const form = container.querySelector('[data-testid="time-availability-milestone-form"]')!;
     expect(form).not.toBeNull();
@@ -924,7 +933,7 @@ describe("the split tables and the deadline panel", () => {
 
   it("offers the milestone form only on your own schedule", () => {
     expect(
-      renderView({ members: [scheduled()] }).querySelector(
+      renderView({ members: [scheduled()], activeCommitmentType: "milestone" }).querySelector(
         '[data-testid="time-availability-milestone-form"]',
       ),
     ).not.toBeNull();
@@ -940,6 +949,7 @@ describe("the split tables and the deadline panel", () => {
     const container = renderView({
       members: [scheduled()],
       onSaveSchedule,
+      activeCommitmentType: "milestone",
       milestoneDraft: { ...EMPTY_MILESTONE_DRAFT, date: "2026-11-03", label: "Thesis draft" },
     });
     container
@@ -955,23 +965,24 @@ describe("the split tables and the deadline panel", () => {
   // Two chunks of adding, not one form with a mode switch: a Jinesis commitment costs weekly
   // hours and lands on `availability`, time away carries none and lands on `time_off`.
   it("offers both add forms, each with only the fields it stores", () => {
-    const container = renderView();
-    const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
-    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    const jinesisContainer = renderView({ activeCommitmentType: "jinesis" });
+    const jinesis = jinesisContainer.querySelector('[data-testid="time-availability-editor"]')!;
     expect(jinesis).not.toBeNull();
-    expect(away).not.toBeNull();
     // The Jinesis form has no category picker at all -- its category is pinned.
     expect(jinesis.querySelector('[data-testid="time-away-category"]')).toBeNull();
-    expect(away.querySelector('[data-testid="time-away-category"]')).not.toBeNull();
-    // Each keeps its own submit, so neither can clear the other's half-typed input.
     expect(jinesis.querySelector('[data-testid="time-availability-editor-submit"]')).not.toBeNull();
+
+    const awayContainer = renderView({ activeCommitmentType: "away" });
+    const away = awayContainer.querySelector('[data-testid="time-away-editor"]')!;
+    expect(away).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-away-category"]')).not.toBeNull();
     expect(away.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
   });
 
   // The away form's hint explains the action the submit button performs, so it sits in the same
   // actions row, left of the button, rather than under the fields.
   it("puts the time-away hint on the same row as its submit button", () => {
-    const container = renderView();
+    const container = renderView({ activeCommitmentType: "away" });
     const away = container.querySelector('[data-testid="time-away-editor"]')!;
     const actions = away.querySelector(".adminbot-time-availability__form-actions")!;
     const hint = actions.querySelector(".adminbot-time-availability__form-hint");
@@ -982,7 +993,7 @@ describe("the split tables and the deadline panel", () => {
 
   it("never offers Jinesis as a time-away category", () => {
     const options = [
-      ...renderView()
+      ...renderView({ activeCommitmentType: "away" })
         .querySelector('[data-testid="time-away-category"]')!
         .querySelectorAll("option"),
     ].map((option) => option.getAttribute("value"));
@@ -1098,9 +1109,12 @@ describe("the split tables and the deadline panel", () => {
   });
 
   it("asks for a custom name only for the 'other' category", () => {
-    expect(renderView().querySelector('[data-testid="time-availability-custom-label"]')).toBeNull();
+    expect(
+      renderView({ activeCommitmentType: "away" }).querySelector('[data-testid="time-availability-custom-label"]'),
+    ).toBeNull();
     expect(
       renderView({
+        activeCommitmentType: "away",
         awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
       }).querySelector('[data-testid="time-availability-custom-label"]'),
     ).not.toBeNull();
@@ -1110,17 +1124,13 @@ describe("the split tables and the deadline panel", () => {
 describe("the trips editor's place on the tab", () => {
   // Asked for by position, not just presence: "add a trip" is a sibling of "add a commitment" and
   // reads as one only if it sits in the same stack, after the deadline editor.
-  it("is the last editor in the stack, below the big-deadline one", () => {
+  it("shows the add-commitment button and the trips editor in the stack", () => {
     const view = renderView();
-    const editors = [
-      ...view.querySelectorAll<HTMLElement>(".adminbot-time-availability__editor"),
-    ].map((section) => section.dataset.testid);
-    expect(editors).toEqual([
-      "time-availability-editor",
-      "time-away-editor",
-      "time-availability-milestone-editor",
-      "time-availability-trip-editor",
-    ]);
+    // The add-commitment button should be visible when no type is selected
+    expect(view.querySelector(".adminbot-time-availability__add-commitment")).not.toBeNull();
+    // When a type is selected, the corresponding form should appear
+    const jinesisView = renderView({ activeCommitmentType: "jinesis" });
+    expect(jinesisView.querySelector('[data-testid="time-availability-editor"]')).not.toBeNull();
   });
 
   // Where somebody will be is the part of their schedule an admin opens this page for, so the
@@ -1133,7 +1143,8 @@ describe("the trips editor's place on the tab", () => {
     });
     expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
     expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
-    expect(view.querySelector('[data-testid="time-availability-editor"]')).toBeNull();
+    // Admin viewing someone else cannot add commitments (not editable)
+    expect(view.querySelector(".adminbot-time-availability__add-commitment")).toBeNull();
     expect(view.textContent).toContain("Berlin");
   });
 

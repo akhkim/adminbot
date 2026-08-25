@@ -495,6 +495,118 @@ function renderNameList(params: {
 }
 
 /**
+ * Target conference, as an ordered wish list.
+ *
+ * Enter adds a chip, dragging reorders priority, × removes. Stored comma-joined in the single
+ * `venue` field the service already quotes in stage emails and matches against the deadline
+ * board -- the first item is the aim and the rest are fallbacks, so nothing downstream learns a
+ * new shape.
+ */
+function renderVenueList(paperId: string, stored: string, commit: (patch: { venue: string }) => void) {
+  const venues = stored
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  // Closure-scoped because a drag never outlives the render that started it: nothing between
+  // dragstart and drop writes state, so the handlers below stay the same instances.
+  let dragging = -1;
+  const write = (next: string[]) => commit({ venue: next.join(", ") });
+  const chipFrom = (event: DragEvent | MouseEvent) =>
+    (event.target as HTMLElement).closest<HTMLElement>("[data-index]");
+  return html`
+    <div class="paper-detail">
+      <span class="paper-detail__label">Target conference</span>
+      <div
+        class="venue-chips"
+        data-testid=${`paper-venue-${paperId}`}
+        @dragstart=${(event: DragEvent) => {
+          const chip = chipFrom(event);
+          if (!chip) {
+            return;
+          }
+          dragging = Number(chip.dataset.index);
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", String(dragging));
+          }
+        }}
+        @dragover=${(event: DragEvent) => {
+          if (dragging < 0) {
+            return;
+          }
+          event.preventDefault();
+          if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "move";
+          }
+        }}
+        @drop=${(event: DragEvent) => {
+          event.preventDefault();
+          const chip = chipFrom(event);
+          if (!chip || dragging < 0) {
+            dragging = -1;
+            return;
+          }
+          const to = Number(chip.dataset.index);
+          if (Number.isInteger(to) && to !== dragging && venues[dragging] !== undefined) {
+            const next = [...venues];
+            const [moved] = next.splice(dragging, 1);
+            if (moved !== undefined) {
+              next.splice(to, 0, moved);
+              write(next);
+            }
+          }
+          dragging = -1;
+        }}
+        @dragend=${() => {
+          dragging = -1;
+        }}
+      >
+        ${venues.map(
+          (venue, index) => html`
+            <span class="venue-chip" draggable="true" data-index=${index}>
+              <span class="venue-chip__name">${venue}</span>
+              <button
+                type="button"
+                class="venue-chip__remove"
+                title="Remove ${venue}"
+                data-testid=${`paper-venue-remove-${paperId}-${index}`}
+                @click=${() => write(venues.filter((_, at) => at !== index))}
+              >
+                ${icons.x}
+              </button>
+            </span>
+          `,
+        )}
+        <input
+          class="input venue-chips__add"
+          type="text"
+          placeholder=${venues.length ? "Add another…" : "ICLR 2027"}
+          autocomplete="off"
+          data-testid=${`paper-venue-add-${paperId}`}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.key !== "Enter") {
+              return;
+            }
+            event.preventDefault();
+            const input = event.target as HTMLInputElement;
+            const value = input.value.trim();
+            if (!value || venues.includes(value)) {
+              return;
+            }
+            write([...venues, value]);
+            input.value = "";
+          }}
+        />
+      </div>
+      <span class="paper-detail__hint">
+        Where this is going next, best odds first — Enter adds, drag to reprioritize. The first one
+        is quoted in the venue-stage emails and matched against the deadline board.
+      </span>
+    </div>
+  `;
+}
+
+/**
  * Who is on the paper, who read it, and where it is aimed.
  *
  * Above the checklist rather than inside it, because none of the three is evidence of a step --
@@ -525,10 +637,19 @@ function renderDetails(props: PaperSlotsProps) {
       ...patch,
     });
   return html`
-    <section class="paper-slots__details" data-testid=${`paper-details-${props.paperId}`}>
-      <!-- The picker when the caller can supply the roster, the old text box otherwise (the admin
-           grid and any surface that has not been given a member list yet). Both write the same
-           record; only the picker records *who* each name is. -->
+    <details class="paper-slots__group paper-slots__group--branch paper-slots__details-group" open
+      data-testid=${`paper-details-${props.paperId}`}>
+      <summary class="paper-slots__group-head">
+        <h4 class="paper-slots__group-title">
+          <span class="paper-slots__group-icon" aria-hidden="true">${icons.user}</span>
+          People Involved
+        </h4>
+        <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+      </summary>
+      <div class="paper-slots__details-body">
+        <!-- The picker when the caller can supply the roster, the old text box otherwise (the admin
+             grid and any surface that has not been given a member list yet). Both write the same
+             record; only the picker records *who* each name is. -->
       ${details.authorLinks && details.members
         ? renderPaperCoauthors({
             paperId: props.paperId,
@@ -587,32 +708,15 @@ function renderDetails(props: PaperSlotsProps) {
             </div>
           `}
       ${save
-        ? html`
-            <label class="paper-detail">
-              <span class="paper-detail__label">Target conference</span>
-              <input
-                class="input"
-                type="text"
-                .value=${details.venue}
-                placeholder="ICLR 2027"
-                autocomplete="off"
-                data-testid=${`paper-venue-${props.paperId}`}
-                @change=${(event: Event) =>
-                  commit({ venue: (event.target as HTMLInputElement).value.trim() })}
-              />
-              <span class="paper-detail__hint">
-                Where this is going next. Quoted in the venue-stage emails and matched against the
-                deadline board.
-              </span>
-            </label>
-          `
+        ? renderVenueList(props.paperId, details.venue, commit)
         : html`
             <div class="paper-detail">
               <span class="paper-detail__label">Target conference</span>
               <p class="paper-detail__readonly">${details.venue || "—"}</p>
             </div>
           `}
-    </section>
+      </div>
+    </details>
   `;
 }
 

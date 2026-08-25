@@ -193,16 +193,64 @@ describe("renderPaperSlots", () => {
       expect(givers?.value).toBe("Bernhard Schölkopf");
     });
 
-    it("takes the aimed conference, which the stage emails quote", async () => {
+    it("stores the aimed conference as an orderable wish list", async () => {
       const saves: Array<{ venue: string }> = [];
       const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
-      const venue = container.querySelector<HTMLInputElement>('[data-testid="paper-venue-p1"]');
-      expect(venue?.value).toBe("ICLR 2027");
-      venue!.value = "NeurIPS 2027";
-      venue!.dispatchEvent(new Event("change"));
-      expect(saves[0]?.venue).toBe("NeurIPS 2027");
+      const chips = [...container.querySelectorAll(".venue-chip__name")].map(
+        (chip) => chip.textContent ?? "",
+      );
+      expect(chips).toEqual(["ICLR 2027"]);
+      const add = container.querySelector<HTMLInputElement>('[data-testid="paper-venue-add-p1"]');
+      add!.value = "NeurIPS 2027";
+      add!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(saves[0]?.venue).toBe("ICLR 2027, NeurIPS 2027");
+      // The box clears so the next venue is one type away.
+      expect(add!.value).toBe("");
+    });
+
+    it("removes a venue from the wish list", async () => {
+      const saves: Array<{ venue: string }> = [];
+      const { container } = await draw([], false, {
+        details: details((next) => saves.push(next)),
+      });
+      container.querySelector<HTMLButtonElement>('[data-testid="paper-venue-remove-p1-0"]')?.click();
+      expect(saves[0]?.venue).toBe("");
+    });
+
+    it("reorders the wish list by drag, because the first item is the aim", async () => {
+      const saves: Array<{ venue: string }> = [];
+      const { container } = await draw([], false, {
+        details: {
+          ...details((next) => saves.push(next)),
+          venue: "ICLR 2027, NeurIPS 2027",
+        },
+      });
+      // jsdom ships no DragEvent, so the transfer object rides along manually -- only
+      // preventDefault and the move effect matter to these handlers.
+      const transfer = {
+        effectAllowed: "",
+        dropEffect: "",
+        setData: () => {},
+        getData: () => "",
+      };
+      const fire = (type: string, target: Element) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        (event as unknown as { dataTransfer: unknown }).dataTransfer = transfer;
+        target.dispatchEvent(event);
+      };
+      const chips = () => [...container.querySelectorAll(".venue-chip")];
+      fire("dragstart", chips()[1]!);
+      fire("drop", chips()[0]!);
+      fire("dragend", chips()[0]!);
+      expect(saves[0]?.venue).toBe("NeurIPS 2027, ICLR 2027");
+    });
+
+    it("shows the wish list read-only to somebody who may not edit", async () => {
+      const { container } = await draw([], false, { details: details() });
+      expect(container.querySelector('[data-testid="paper-venue-add-p1"]')).toBeNull();
+      expect(container.textContent).toContain("ICLR 2027");
     });
 
     it("takes what each author does as a paragraph, and sends it with the save", async () => {

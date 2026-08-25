@@ -63,12 +63,15 @@ export function renderPaperWeeklyUpdates(props: PaperWeeklyUpdatesProps) {
   ).slice(0, VISIBLE_WEEKS);
 
   return html`
-    <section class="weekly-updates" data-testid=${`paper-weekly-updates-${props.paperId}`}>
-      <h4 class="weekly-updates__title">
-        <span class="weekly-updates__icon" aria-hidden="true">${icons.activity}</span>
-        Weekly updates
+    <details class="weekly-updates" open data-testid=${`paper-weekly-updates-${props.paperId}`}>
+      <summary class="paper-slots__group-head">
+        <h4 class="weekly-updates__title">
+          <span class="weekly-updates__icon" aria-hidden="true">${icons.activity}</span>
+          Weekly updates
+        </h4>
         <span class="weekly-updates__week">${adminBotFormatWeek(thisWeek)}</span>
-      </h4>
+        <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+      </summary>
       ${props.onSave
         ? html`
             <label class="weekly-updates__own">
@@ -129,6 +132,6 @@ export function renderPaperWeeklyUpdates(props: PaperWeeklyUpdatesProps) {
               )}
             </ol>
           `}
-    </section>
+    </details>
   `;
 }

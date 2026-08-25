@@ -94,6 +94,7 @@ function renderControls(props: ConferencePapersProps, canSearch: boolean) {
     </div>
 
     <div class="conference-papers__actions">
+      ${renderIndexNote(state, chosen)}
       <button
         class="btn primary"
         type="button"
@@ -103,7 +104,6 @@ function renderControls(props: ConferencePapersProps, canSearch: boolean) {
       >
         ${state.searching ? "Searching…" : "Find papers"}
       </button>
-      ${renderIndexNote(state, chosen)}
     </div>
   `;
 }

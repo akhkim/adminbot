@@ -1,4 +1,4 @@
-/* My Projects & Papers: the card that opens, and the evidence checklist inside it.
+﻿/* My Projects & Papers: the card that opens, and the evidence checklist inside it.
 
    Split out of layout.css rather than appended to it: the card head, the slot grid and the
    status pills are one feature, and layout.css is already the file everything lands in by
@@ -241,9 +241,6 @@
    would read as the paper acquiring new requirements rather than revealing them. */
 .paper-slot--blocked {
   opacity: 0.72;
-}
-
-.paper-slot--invalid {
 }
 
 .paper-slot__head {
@@ -682,7 +679,10 @@
   color: var(--text-strong);
 }
 
-.paper-detail__hint,
+.paper-detail__hint {
+  line-height: 1.5;
+}
+
 /* The contributions paragraph. Tall enough to hold three sentences without scrolling, which is
    about the length of an honest answer, and it grows rather than scrolling past that. */
 .paper-detail__paragraph {
@@ -715,9 +715,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.paper-slot__child--invalid .paper-slot__child-label {
 }
 
 .paper-slot__child-head {
@@ -805,13 +802,25 @@
    their line, not read last month's. The log below is deliberately quiet -- it is context, and it
    is read on a Monday by somebody scanning for what moved. */
 .weekly-updates {
+  /* Local, dimmed accent: inheriting the global --accent (#4d8dff) made this card shout next
+     to the dimmed branch palettes. Tune this one value to retune the whole section. */
+  --wu: #4273c4;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  margin-top: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--border);
+  border-top: 3px solid var(--wu);
   border-radius: var(--radius-md);
-  background: var(--bg-raised, var(--bg));
+  /* A whisper of the accent over transparency, not a fill: a solid mix darkens the card. */
+  background: color-mix(in srgb, var(--wu) 1%, transparent);
+}
+
+/* Closed, it is just the header bar -- don't keep the open-state padding. */
+.weekly-updates:not([open]) {
+  padding-block: var(--space-2);
+  gap: 0;
 }
 
 .weekly-updates__title {
@@ -819,20 +828,30 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0;
-  font-size: var(--control-ui-text-sm);
-  font-weight: 650;
-  color: var(--text-strong);
+  font-size: 1em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--wu);
 }
 
 .weekly-updates__icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 1.6em;
+  padding: 0.25em;
+  border-radius: 50%;
+  background: var(--wu);
+  color: #fff;
 }
 
 .weekly-updates__icon svg {
-  width: 15px;
-  height: 15px;
+  width: 1em;
+  height: 1em;
+  fill: #fff;
+  stroke: #fff;
 }
 
 .weekly-updates__week {
@@ -845,12 +864,12 @@
 .weekly-updates__own {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .weekly-updates__own-label {
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
+  font-size: var(--control-ui-text-md);
+  font-weight: 650;
   color: var(--text-strong);
 }
 
@@ -858,6 +877,15 @@
   min-height: 4.5rem;
   resize: vertical;
   line-height: 1.5;
+}
+
+/* Sits a step below the box, not glued to it. */
+.weekly-updates__hint {
+  margin-top: calc(-1 * var(--space-1));
+}
+
+.weekly-updates__empty {
+  margin: 0;
 }
 
 .weekly-updates__hint,
@@ -1032,4 +1060,163 @@
   .coauthors__add-external {
     grid-template-columns: 1fr;
   }
+}
+
+/* --- Where this paper is: the evidence-read timeline above the checklist ---
+   One row per chart lane, each in its branch's hue so the strip reads as a miniature of the
+   sections below it. The dot carries the state: filled = done, ringed halo = ready now,
+   exclamation = needs attention, dimmed = waiting. Imported after layout.css: these rules
+   replace its neutral rails/dot semantics with the (dimmed) branch palette, and switch the
+   track from connected dots to self-contained pills. */
+.ptl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ptl__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ptl__head-title {
+  font-size: var(--control-ui-text-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-strong);
+}
+
+.ptl__head-hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-muted);
+}
+
+.ptl__lane--core { --lane: #6d66c2; }
+.ptl__lane--venue { --lane: #4e86ba; }
+.ptl__lane--archive { --lane: #93826a; }
+.ptl__lane--social { --lane: #5f8c6c; }
+.ptl__lane--talk { --lane: #b56f67; }
+
+.ptl__lane {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--lane, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--lane, #808088) 6%, transparent);
+}
+
+.ptl__lane.is-shut {
+  opacity: 0.55;
+}
+
+.ptl__lane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  flex-shrink: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 700;
+  color: var(--lane, var(--text));
+}
+
+.ptl__lane-icon svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.ptl__lane-gate {
+  font-size: var(--control-ui-text-xs);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.ptl__lane-gate--done {
+  font-style: normal;
+  color: var(--ok, #7fbf8e);
+}
+
+.ptl__track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ptl__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.1rem 0.6rem 0.1rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The committed baseline draws connector lines between steps; pills carry their own border
+   instead, so drop the pseudo-element plumbing entirely. */
+.ptl__step::before,
+.ptl__step--done::before {
+  content: none;
+}
+
+.ptl__dot {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.8em;
+  line-height: 1;
+}
+
+.ptl__label {
+  color: inherit;
+}
+
+.ptl__step--done {
+  color: var(--lane, var(--text-strong));
+  border-color: color-mix(in srgb, var(--lane, currentColor) 45%, var(--border));
+}
+
+.ptl__step--done .ptl__dot {
+  background: var(--lane, var(--text-strong));
+  border-color: var(--lane, var(--text-strong));
+  color: #fff;
+}
+
+.ptl__step--ready {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--lane, currentColor) 55%, transparent);
+}
+
+.ptl__step--ready .ptl__dot {
+  color: var(--lane, var(--text-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lane, currentColor) 18%, transparent);
+}
+
+.ptl__step--attention {
+  color: var(--warn, #d98aa0);
+  border-color: var(--warn, #d98aa0);
+}
+
+.ptl__step--attention .ptl__dot {
+  background: var(--warn, #d98aa0);
+  border-color: var(--warn, #d98aa0);
+  color: #fff;
+}
+
+.ptl__step--waiting {
+  opacity: 0.6;
 }

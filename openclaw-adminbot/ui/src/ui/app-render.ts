@@ -3506,6 +3506,10 @@ export function renderApp(state: AppViewState) {
               onNotesDraftChange: (draft) => {
                 state.adminBotAvailabilityNotesDraft = draft;
               },
+              activeCommitmentType: state.adminBotActiveCommitmentType,
+              onActiveCommitmentChange: (type) => {
+                state.adminBotActiveCommitmentType = type;
+              },
               saving: state.adminBotTimeAvailabilitySaving,
               onSaveSchedule: (memberId, patch) => {
                 state.adminBotTimeAvailabilitySaving = true;

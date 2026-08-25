@@ -51,7 +51,11 @@ import {
   venueYears,
 } from "../data/venue-catalog.ts";
 import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
-import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
+import {
+  draftLinkedInPost,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+} from "../auth/session.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
   completedOnLabel,
@@ -246,14 +250,6 @@ function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, pro
         @click=${() => openPaperFlowMap(paper)}
       >
         View PaperFlow
-      </button>
-      <button
-        type="button"
-        class="btn btn--sm"
-        data-testid=${`my-work-linkedin-${paper.id}`}
-        @click=${() => openLinkedInDraftDialog(paper, { settings: state.settings })}
-      >
-        Draft LinkedIn post
       </button>
       ${next
         ? html`
@@ -771,7 +767,7 @@ function renderWeeklyUpdates(paper: AdminBotPaperRecord, props: MyWorkProps) {
 }
 
 /** The lists that hang off a paper: drafts and their sign-offs, who travelled, who is square. */
-function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
+function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
   const cycle = props.slots[paper.id];
   if (!cycle) {
     return nothing;
@@ -790,6 +786,35 @@ function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
     memberName: props.memberName,
     onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
+    // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
+    // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
+    // sign-off row takes over from there.
+    onGenerateLinkedInDraft: async (venue: string, note: string) => {
+      const stored = loadStoredMemberSession();
+      if (!stored) {
+        globalThis.alert?.("Sign in first — drafting runs against your own session.");
+        return;
+      }
+      try {
+        const result = await draftLinkedInPost(
+          {
+            paperId: paper.id,
+            ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
+            ...(venue ? { venue } : {}),
+            ...(note ? { note } : {}),
+          },
+          stored.sessionToken ?? "",
+          resolveAdminBotBaseUrl(state.settings),
+        );
+        if (!result.ok) {
+          globalThis.alert?.(result.message ?? "Could not generate the draft.");
+          return;
+        }
+        props.onSaveDraft(paper.id, "linkedin", result.value.text);
+      } catch (error) {
+        globalThis.alert?.((error as Error).message);
+      }
+    },
     onConsent: (draftId: string, decision: string, comment?: string) =>
       props.onConsent(paper.id, draftId, decision, comment),
     onSetAttendee: (name: string, memberId: string | undefined, attending: string) =>
@@ -936,7 +961,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   }
                 },
               })}
-              ${renderWeeklyUpdates(paper, props)} ${renderCycle(paper, props)}
+              ${renderWeeklyUpdates(paper, props)} ${renderCycle(state, paper, props)}
               ${renderStepControls(state, paper, props)}
             `
           : nothing}

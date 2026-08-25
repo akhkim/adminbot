@@ -144,13 +144,15 @@
 }
 
 /* .card-title and .card-sub are worn by an h3 and a p here, which arrive with UA margins. */
-.logistics-request__section > .card-title,
-.logistics-request__section > .card-sub {
+.logistics-request__section > .card-title {
   margin: 0;
+  font-size: var(--control-ui-text-lg);
 }
 
 .logistics-request__section > .card-sub {
+  margin: 0;
   margin-top: var(--space-1);
+  font-size: var(--control-ui-text-sm);
 }
 
 .logistics-request__actions {
@@ -249,12 +251,13 @@
   margin-top: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 95%, white);
 }
 
 .logistics-schools__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--control-ui-text-sm);
+  font-size: var(--control-ui-text-md);
 }
 
 .logistics-schools__head,
@@ -268,7 +271,7 @@
 .logistics-schools__head {
   border-bottom: 1px solid var(--border-strong);
   color: var(--muted);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
@@ -305,7 +308,7 @@
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
-  font-size: var(--control-ui-input-text-size);
+  font-size: var(--control-ui-text-md);
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
@@ -352,11 +355,23 @@
   padding: var(--space-8) var(--space-4);
   color: var(--muted);
   text-align: center;
+  font-size: var(--control-ui-text-md);
 }
 
 .logistics-schools__actions {
   display: flex;
+  justify-content: flex-end;
   margin-top: var(--space-4);
+}
+
+.logistics-schools__actions .btn {
+  font-size: var(--control-ui-text-md);
+}
+
+.logistics-schools__actions .btn svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
 }
 
 /* The two link fields under the table. A URL is one line however wide the card is, so the box stops
@@ -364,7 +379,8 @@
 .logistics-link__input {
   max-width: 44rem;
   margin-top: var(--space-4);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--control-ui-text-md);
 }
 
 /* The way out to the lab's template folder, sitting at the end of the sentence that sends you
@@ -578,6 +594,7 @@
   color: var(--accent);
   cursor: pointer;
   font: inherit;
+  font-size: var(--control-ui-text-md);
   text-decoration: underline;
 }
 

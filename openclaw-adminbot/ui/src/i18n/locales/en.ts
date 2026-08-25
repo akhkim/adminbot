@@ -1233,6 +1233,8 @@ export const en: TranslationMap = {
       partialHint:
         "Recorded as reduced availability. The hours you give here are stacked on your chart alongside your Jinesis work, so the two are read against the same week.",
       submit: "Add commitment",
+      addCommitment: "Add commitment",
+      hide: "Hide",
       saving: "Saving\u2026",
       remove: "Remove",
       errorDates: "Pick a start and an end date.",

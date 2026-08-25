@@ -324,7 +324,7 @@ export function renderPaperTimeline(props: PaperTimelineProps) {
       <p class="ptl__head">
         <span class="ptl__head-title">Where this paper is</span>
         <span class="ptl__head-hint">
-          ${ready > 1 ? `${ready} things can move in parallel` : "read off the evidence below"}
+          ${ready > 1 ? `${ready} things can move in parallel` : "Read off the evidence below"}
         </span>
       </p>
       ${lanes.map((lane) => renderLane(props.paperId, lane))}
