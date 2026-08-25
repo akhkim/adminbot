@@ -399,6 +399,13 @@ export const en: TranslationMap = {
     collapse: "Collapse sidebar",
     resize: "Resize sidebar",
   },
+  // What the sidebar and the page heading call a page that holds several tabs. The tabs keep their
+  // own `tabs.*` labels for the bar inside the page.
+  pages: {
+    nudges: "Nudges",
+    membership: "Membership",
+  },
+
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
@@ -406,19 +413,19 @@ export const en: TranslationMap = {
     labSharing: "Lab Sharing",
     agents: "Agents",
     adminbot: "Pending Actions",
-    adminbotRegistrations: "Member Requests",
+    adminbotRegistrations: "Requests",
     adminbotOnboarding: "Onboarding",
     adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
-    adminbotProfileOverview: "Profile Overview",
+    adminbotProfileOverview: "Profile Completeness",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
     adminbotRecLetters: "Rec Letter Request",
     adminbotMeetingRequests: "Meeting Request",
     adminbotPapers: "Active Papers",
-    adminbotWorkshopNudges: "Workshop Nudges",
+    adminbotWorkshopNudges: "Workshop Matches",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Conference Papers",
     adminbotCalendar: "Calendar",

@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   SETTINGS_TABS,
   TAB_GROUPS,
+  TAB_PAGES,
   isSettingsTab,
   isTabInGroup,
+  pageTabsFor,
+  sidebarTabFor,
   tabFromPath,
 } from "./navigation.ts";
 
@@ -67,20 +70,51 @@ describe("TAB_GROUPS", () => {
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
     expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
+    // Seven entries, not ten: the nudge surfaces and the membership surfaces are each one page
+    // with a tab bar inside it (TAB_PAGES), and only the landing tab is listed here.
     expect(byLabel("admin")).toEqual([
       "adminbot",
       "adminbotPapers",
-      "adminbotWorkshopNudges",
-      "adminbotRegistrations",
-      "adminbotOnboarding",
-      "adminbotProfileOverview",
-      "adminbotCalendar",
       "adminbotAnnouncements",
+      "adminbotRegistrations",
+      "adminbotCalendar",
       // Tasks & Tools: the jobs listed there are the lab's own scheduled passes, so it is
       // governance rather than an upstream operator surface.
       "cron",
       "adminbotSettings",
     ]);
+  });
+
+  it("keeps every page sub-tab out of the sidebar but reachable through its page", () => {
+    const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);
+    for (const page of TAB_PAGES) {
+      const [landing, ...rest] = page.tabs;
+      expect(sidebarTabs).toContain(landing);
+      for (const tab of rest) {
+        // Not a sidebar entry of its own, but still routed and still reachable from the bar.
+        expect(sidebarTabs).not.toContain(tab);
+        expect(sidebarTabFor(tab)).toBe(landing);
+        expect(pageTabsFor(tab)).toEqual(page.tabs);
+      }
+    }
+  });
+
+  it("lights the page's sidebar entry when a sub-tab is open", () => {
+    const admin = TAB_GROUPS.find((group) => group.label === "admin");
+    if (!admin) {
+      throw new Error("Expected admin group");
+    }
+    expect(isTabInGroup(admin, "adminbotWorkshopNudges")).toBe(true);
+    expect(isTabInGroup(admin, "adminbotOnboarding")).toBe(true);
+    expect(isTabInGroup(admin, "adminbotProfileOverview")).toBe(true);
+  });
+
+  it("keeps every sub-tab path routable so existing links still land", () => {
+    expect(tabFromPath("/adminbot/workshop-nudges")).toBe("adminbotWorkshopNudges");
+    expect(tabFromPath("/adminbot/onboarding")).toBe("adminbotOnboarding");
+    expect(tabFromPath("/adminbot/profile-overview")).toBe("adminbotProfileOverview");
+    expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
+    expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
   });
 
   it("keeps the OpenClaw group active for nested settings routes", () => {

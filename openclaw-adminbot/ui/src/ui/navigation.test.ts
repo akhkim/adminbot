@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TAB_GROUPS,
+  TAB_PAGES,
   SETTINGS_TABS,
   iconForTab,
   inferBasePathFromPathname,
@@ -19,10 +20,16 @@ import {
 // the external docs link used to occupy.
 const UNGROUPED_TABS: Tab[] = ["chat"];
 
-/** All valid tab identifiers derived from visible groups plus routed settings slices. */
+/**
+ * All valid tab identifiers derived from visible groups plus routed settings slices.
+ *
+ * Sub-tabs of a multi-tab page are included explicitly: the sidebar lists only their page's landing
+ * tab, but each is still a routed surface with an icon, a title and a subtitle of its own.
+ */
 const ALL_TABS: Tab[] = Array.from(
   new Set<Tab>([
     ...(TAB_GROUPS.flatMap((group) => group.tabs) as Tab[]),
+    ...(TAB_PAGES.flatMap((page) => page.tabs) as Tab[]),
     ...UNGROUPED_TABS,
     ...SETTINGS_TABS,
   ]),
@@ -53,7 +60,7 @@ describe("iconForTab", () => {
       chat: "messageSquare",
       overview: "barChart",
       adminbot: "brain",
-      adminbotRegistrations: "check",
+      adminbotRegistrations: "user",
       adminbotOnboarding: "send",
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
@@ -67,7 +74,7 @@ describe("iconForTab", () => {
       adminbotPapers: "fileText",
       adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
-      adminbotAnnouncements: "activity",
+      adminbotAnnouncements: "send",
       adminbotCalendar: "clock",
       adminbotDeadlines: "loader",
       activity: "activity",
@@ -107,11 +114,11 @@ describe("titleForTab", () => {
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
-      adminbotRegistrations: "Member Requests",
+      adminbotRegistrations: "Requests",
       adminbotOnboarding: "Onboarding",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
-      adminbotProfileOverview: "Profile Overview",
+      adminbotProfileOverview: "Profile Completeness",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -119,7 +126,7 @@ describe("titleForTab", () => {
       adminbotMeetingRequests: "Meeting Request",
       adminbotReimbursements: "Reimbursement Form Prep",
       adminbotPapers: "Active Papers",
-      adminbotWorkshopNudges: "Workshop Nudges",
+      adminbotWorkshopNudges: "Workshop Matches",
       adminbotConferencePapers: "Conference Papers",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
