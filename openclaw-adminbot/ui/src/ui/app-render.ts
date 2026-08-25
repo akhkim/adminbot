@@ -23,9 +23,14 @@ import {
   runAdminBotCvDigestJob,
   runAdminBotVenueIndexJob,
   searchAdminBotVenuePapers,
+  loadWorkshopNudgePreview,
+  setWorkshopNudgeRecipients,
   setAdminBotVenue,
   setAdminBotVenueInterests,
   toggleAdminBotVenueAbstract,
+  sendWorkshopNudgeSelection,
+  toggleWorkshopNudgeRecipient,
+  updateWorkshopNudgeView,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
@@ -771,6 +776,10 @@ const lazyDeadlines = createLazyView(
 );
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
+  notifyLazyViewChanged,
+);
+const lazyWorkshopNudges = createLazyView(
+  () => import("./adminbot/views/workshop-nudges.ts"),
   notifyLazyViewChanged,
 );
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
@@ -3715,6 +3724,19 @@ export function renderApp(state: AppViewState) {
                 onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
                 onSearch: () => void searchAdminBotVenuePapers(state),
                 onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+              }),
+            )
+          : nothing}
+        ${state.tab === "adminbotWorkshopNudges"
+          ? renderLazyView(lazyWorkshopNudges, (m) =>
+              m.renderWorkshopNudges({
+                state: state.adminBotWorkshopNudges,
+                onRefresh: () => void loadWorkshopNudgePreview(state),
+                onToggleRecipient: (memberId) => toggleWorkshopNudgeRecipient(state, memberId),
+                onSetRecipients: (memberIds, selected) =>
+                  setWorkshopNudgeRecipients(state, memberIds, selected),
+                onViewChange: (patch) => updateWorkshopNudgeView(state, patch),
+                onSend: () => void sendWorkshopNudgeSelection(state),
               }),
             )
           : nothing}

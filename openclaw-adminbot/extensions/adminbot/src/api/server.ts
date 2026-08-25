@@ -81,6 +81,7 @@ import {
 } from "../workflows/papers/openreview-workflow.js";
 import { resolvePaperPdfSource } from "../workflows/papers/paper-pdf-source.js";
 import { buildVenueIndex, searchVenue } from "../workflows/papers/venue-index.js";
+import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
@@ -96,6 +97,7 @@ import {
   sendServiceResult,
 } from "./server.http.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
+import { previewWorkshopNudges, sendWorkshopNudges } from "./server.workshop-nudges.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -157,6 +159,8 @@ export type AdminBotMockServiceOptions = {
   venuePapersReader?: import("../connectors/openreview-notes.js").OpenReviewNotesReader;
   embedder?: import("../connectors/embeddings.js").Embedder;
   embeddingModel?: string;
+  workshopMatcher?: import("../workflows/papers/workshop-nudges.js").WorkshopMatcher;
+  workshopNudgeNow?: () => Date;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
@@ -348,6 +352,8 @@ type AdminBotRouteContext = {
   // make every search path optional-chained for a case that cannot happen.
   embedder: import("../connectors/embeddings.js").Embedder;
   embeddingModel: string;
+  workshopMatcher: import("../workflows/papers/workshop-nudges.js").WorkshopMatcher;
+  workshopNudgeNow: () => Date;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Counts each member's messages in the activity window, by reading the channels the lab tracks.
   fetchSlackMessageCounts?: (
@@ -520,6 +526,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,
+    workshopMatcher: options.workshopMatcher ?? createLocalWorkshopMatcher(),
+    workshopNudgeNow: options.workshopNudgeNow ?? (() => new Date()),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
       ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
@@ -1130,6 +1138,69 @@ async function handleAuthenticatedRoute(
     } catch (error) {
       sendJson(res, 502, {
         error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/workshop-nudges/preview") {
+    // Paper titles, author links and exact outgoing text are lab-internal. A service token is
+    // deliberately insufficient: only a signed-in administrator may put them in the browser.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    try {
+      sendJson(
+        res,
+        200,
+        await previewWorkshopNudges({
+          service,
+          match: ctx.workshopMatcher,
+          now: ctx.workshopNudgeNow(),
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, message === "no upcoming workshop profiles are available" ? 409 : 502, {
+        error: { message },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/workshop-nudges/send") {
+    // Pressing Nudge is the approval. The request carries only a narrowing recipient list; current
+    // papers, recommendations and exact messages are recomputed here before any proposal exists.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const recipientMemberIds = Array.isArray(body.recipient_member_ids)
+      ? body.recipient_member_ids
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : [];
+    if (!recipientMemberIds.length) {
+      sendJson(res, 400, { error: { message: "recipient_member_ids must not be empty" } });
+      return;
+    }
+    try {
+      sendJson(
+        res,
+        200,
+        await sendWorkshopNudges({
+          service,
+          match: ctx.workshopMatcher,
+          now: ctx.workshopNudgeNow(),
+          actor: principalActor(principal),
+          recipientMemberIds,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, message === "no upcoming workshop profiles are available" ? 409 : 502, {
+        error: { message },
       });
     }
     return;

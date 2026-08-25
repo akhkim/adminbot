@@ -125,6 +125,35 @@ describe("AdminBot deadline dataset generation", () => {
     }
   });
 
+  it("carries inspectable workshop recommendation profiles", () => {
+    const workshops = venuesDoc.items.filter((venue) => venue.entry_type === "workshop") as Array<
+      DeadlineVenue & {
+        topic_profile: string[];
+        topic_evidence: string;
+        cross_submission_status: string;
+        cross_submission_evidence: string;
+        cross_submission_source_url: string;
+        profile_extracted_at: string;
+        parent_conference_key: string;
+        conference_location: string;
+      }
+    >;
+    for (const workshop of workshops) {
+      expect(workshop.topic_profile.length).toBeGreaterThan(0);
+      expect(workshop.topic_evidence).toBeTruthy();
+      expect(["allowed", "prohibited", "unclear"]).toContain(workshop.cross_submission_status);
+      expect(workshop.cross_submission_evidence).toBeTruthy();
+      expect(workshop.cross_submission_source_url).toMatch(/^https?:\/\//u);
+      if (workshop.profile_extracted_at) {
+        expect(workshop.profile_extracted_at).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00Z$/u);
+      } else {
+        expect(workshop.stale).toBe(true);
+      }
+      expect(workshop.parent_conference_key).toMatch(/^[a-z]+-20\d{2}$/u);
+      expect(workshop.conference_location).toBeTruthy();
+    }
+  });
+
   it("uses sortable AoE timestamps and keeps the list ordered by deadline", () => {
     const deadlines = venuesDoc.items.map((item) => item.deadline_aoe!);
     for (const deadline of deadlines) {
