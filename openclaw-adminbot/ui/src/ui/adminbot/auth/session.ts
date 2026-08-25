@@ -2480,23 +2480,55 @@ export async function fetchMemberProfileOverview(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as {
-    members?: MemberProfileOverviewRow[];
+    members?: Array<Partial<MemberProfileOverviewRow>>;
     mandatory_field_count?: number;
     adoption?: MemberAdoptionSummary;
   } | null;
+  const members = (body?.members ?? []).map(profileOverviewRow);
   return {
     ok: true,
     value: {
-      members: body?.members ?? [],
+      members,
       mandatoryFieldCount: body?.mandatory_field_count ?? 0,
       // Zeroed rather than optional: the page renders a percentage either way, and an older service
       // that does not send this should read as "nothing adopted yet" rather than blank the card.
       adoption: body?.adoption ?? {
-        members: body?.members?.length ?? 0,
+        members: members.length,
         profile_rate: 0,
         project_rate: 0,
         signed_in_ever: 0,
       },
+    },
+  };
+}
+
+/**
+ * One row with every counted field present.
+ *
+ * The service and the Control UI deploy separately here -- the UI ships from Vercel on merge, the
+ * service needs a run on the host -- so the browser regularly holds a page newer than the service
+ * answering it. `projects` and `timeline` are read unguarded while rendering a row and while
+ * filtering, so a service that predates either does not degrade the column: it throws inside the
+ * render and the whole page comes up blank. Zeroed here instead, in the same place and for the same
+ * reason `adoption` already is, because an absent count means "this service cannot tell us", which
+ * on this page reads the same as none.
+ */
+function profileOverviewRow(row: Partial<MemberProfileOverviewRow>): MemberProfileOverviewRow {
+  return {
+    ...row,
+    id: row.id ?? "",
+    name: row.name ?? "",
+    privilege_level: row.privilege_level ?? "member",
+    missing_fields: row.missing_fields ?? [],
+    filled_field_count: row.filled_field_count ?? 0,
+    self_filled_field_count: row.self_filled_field_count ?? 0,
+    projects: row.projects ?? { total: 0, self_updated: 0 },
+    timeline: row.timeline ?? {
+      availability: 0,
+      time_off: 0,
+      milestones: 0,
+      trips: 0,
+      total: 0,
     },
   };
 }

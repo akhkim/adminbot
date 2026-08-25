@@ -54,6 +54,19 @@ describe("renderPageTabs", () => {
     expect(setTab).toHaveBeenCalledWith("adminbotOnboarding");
   });
 
+  it("puts the two halves of where the lab stands on one page", () => {
+    const container = draw(renderPageTabs(createState("adminbotProfileOverview"), "admin"));
+    const tabs = [...container.querySelectorAll<HTMLAnchorElement>('[role="tab"]')];
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
+      "Active Papers",
+      "Profile Completeness",
+    ]);
+    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
+      "/adminbot/papers",
+      "/adminbot/profile-overview",
+    ]);
+  });
+
   it("draws nothing for a tab that stands alone", () => {
     expect(draw(renderPageTabs(createState("adminbotCalendar"), "admin")).textContent).toBe("");
     expect(draw(renderPageTabs(createState("dashboard"), "member")).textContent).toBe("");
@@ -81,5 +94,12 @@ describe("the sidebar entry for a page", () => {
   it("keeps its own name when it is the only tab on its page", () => {
     const container = draw(renderTab(createState("adminbotCalendar"), "adminbotCalendar"));
     expect(container.querySelector("a")?.textContent?.trim()).toBe("Calendar");
+  });
+
+  it("names the Lab Overview page rather than the papers tab it lands on", () => {
+    const container = draw(renderTab(createState("adminbotProfileOverview"), "adminbotPapers"));
+    const link = container.querySelector("a");
+    expect(link?.textContent?.trim()).toBe("Lab Overview");
+    expect(link?.className).toContain("nav-item--active");
   });
 });

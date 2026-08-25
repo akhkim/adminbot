@@ -71,7 +71,7 @@ describe("iconForTab", () => {
       adminbotSignatures: "penLine",
       adminbotRecLetters: "fileText",
       adminbotMeetingRequests: "clock",
-      adminbotPapers: "fileText",
+      adminbotPapers: "barChart",
       adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
       adminbotAnnouncements: "send",
