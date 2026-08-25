@@ -108,6 +108,15 @@ describe("AoEClock", () => {
       ),
     ).toEqual(["2026-08-04", "2026-01-01"]);
   });
+
+  it("uses an explicit instant at the AoE boundary", () => {
+    expect(
+      runPython(
+        "print(json.dumps([AoEClock.resolve('2026-08-30T11:00:00Z').has_passed('2026-08-29 23:59:59'), " +
+          "AoEClock.resolve('2026-08-30T12:00:00Z').has_passed('2026-08-29 23:59:59')]))",
+      ),
+    ).toEqual([false, true]);
+  });
 });
 
 describe("urgency_marker", () => {
@@ -149,6 +158,71 @@ describe("venue classification", () => {
       "ICLR",
       "COLM",
     ]);
+  });
+});
+
+describe("workshop source URLs", () => {
+  it("classifies workshop publication policy only from explicit CFP language", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "print(json.dumps([m.archival_status_from_html('<p>Accepted papers will be published in the proceedings.</p>'), " +
+          "m.archival_status_from_html('<p>This is a non-archival workshop.</p>'), " +
+          "m.archival_status_from_html('<p>Accepted papers will be published in the proceedings. We also accept non-archival papers.</p>'), " +
+          "m.archival_status_from_html('<p>We invite submissions.</p>')]))",
+      ),
+    ).toEqual(["archival", "non_archival", "mixed", "unknown"]);
+  });
+
+  it("normalizes published links and rejects unsafe schemes", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "print(json.dumps([m.normalize_url('workshop.example/cfp'), m.normalize_url('http://old.example; https://workshop.example/cfp'), m.normalize_url('javascript:alert(1)'), m.openreview_url('EMNLP/2026/Workshop/Example')]))",
+      ),
+    ).toEqual([
+      "https://workshop.example/cfp",
+      "https://workshop.example/cfp",
+      "",
+      "https://openreview.net/group?id=EMNLP/2026/Workshop/Example",
+    ]);
+  });
+
+  it("keeps a dedicated CFP separate from the workshop homepage", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "pages = {" +
+          "'https://workshop.example/': ('https://workshop.example/', '<a href=\"call/\">Call for Papers</a>'), " +
+          "'https://workshop.example/call/': ('https://workshop.example/call/', '<h1>CFP</h1>')}\n" +
+          "m._fetch_html = lambda url, timeout=15: pages[url]\n" +
+          "print(json.dumps([m.discover_cfp_url('https://workshop.example/'), m.discover_cfp_url('https://workshop.example/', 'https://workshop.example/')]))",
+      ),
+    ).toEqual(["https://workshop.example/call/", "https://workshop.example/call/"]);
+  });
+
+  it("does not mislabel a parent conference CFP as a workshop CFP", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "pages = {'https://neurips.cc/Conferences/2035': ('https://neurips.cc/Conferences/2035', '<a href=\"/Conferences/2035/CallForPapers\">Call for Papers</a>'), 'https://neurips.cc/Conferences/2035/CallForPapers': ('https://neurips.cc/Conferences/2035/CallForPapers', '<h1>Main conference</h1>')}\n" +
+          "m._fetch_html = lambda url, timeout=15: pages[url]\n" +
+          "print(json.dumps(m.discover_cfp_url('https://neurips.cc/Conferences/2035')))",
+      ),
+    ).toBe("");
+  });
+
+  it("refreshes a workshop deadline before falling back to the previous value", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}}}]}\n" +
+          "m._openreview_submission_deadline = lambda group_id: '2035-01-03 23:59:59'\n" +
+          "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'group': 'TEST 2035 Workshops'}\n" +
+          "previous = {'test2035_ws_Example': {'deadline_aoe': '2035-01-02 23:59:59'}}\n" +
+          "print(json.dumps(m.fetch_workshop_source(source, previous)[0]['deadline_aoe']))",
+      ),
+    ).toBe("2035-01-03 23:59:59");
   });
 });
 
@@ -240,6 +314,11 @@ describe("deadline digest message", () => {
         venue_group: "Other 2026 Workshops",
         name: "Lone Workshop",
       }),
+      venue("ws4", "2026-08-29 12:00:00", {
+        venue_type: "workshop",
+        venue_group: "NeurIPS 2026 Workshops",
+        name: "Different-time Workshop",
+      }),
     ]);
 
     const message = runPython(
@@ -254,6 +333,7 @@ describe("deadline digest message", () => {
     // the date and a series of one still shows under its own name.
     expect(message).toContain("*2 NeurIPS 2026 Workshops* (unified deadline)");
     expect(message).not.toContain("WS Two");
+    expect(message).toContain("Different-time Workshop");
     expect(message).toContain("— Lone Workshop");
   });
 

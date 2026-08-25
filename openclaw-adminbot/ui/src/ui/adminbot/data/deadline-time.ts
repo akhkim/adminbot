@@ -69,9 +69,9 @@ export function countdownLabel(ms: number): string {
 
 export type DeadlineEntry = { venue: DeadlineVenue; instant: number };
 
-// "Major" is a conference/track submission deadline, read from the generated entry type. The snapshot
-// is 107 entries and 101 of them are workshops sharing a handful of instants, so including those
-// would make a two-row summary permanently read "NeurIPS workshops, NeurIPS workshops". Rebuttals
+// "Major" is a conference/track submission deadline, read from the generated entry type. Workshops
+// dominate the snapshot and often share a handful of instants, so including them would make a
+// two-row summary repeat one workshop group. Rebuttals
 // are excluded for the same reason they are not submissions -- they are work on a paper already in,
 // not a deadline to aim a new one at. The full board still lists every one of them.
 function isMajorConference(venue: DeadlineVenue): boolean {

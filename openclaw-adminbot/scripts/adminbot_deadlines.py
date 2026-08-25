@@ -238,17 +238,24 @@ class AoEClock:
     which is why it lives here rather than in each script.
     """
 
-    def __init__(self, today: datetime.date) -> None:
-        self.today = today
-        # Anchor "now" at noon UTC so a whole-day comparison never lands on a
-        # boundary that makes days-remaining flicker by one.
-        self.now = datetime.datetime(today.year, today.month, today.day, 12, tzinfo=datetime.timezone.utc)
+    def __init__(self, now: datetime.date | datetime.datetime) -> None:
+        if isinstance(now, datetime.datetime):
+            self.now = now.astimezone(datetime.timezone.utc)
+            self.today = self.now.date()
+        else:
+            self.today = now
+            # A date-only override remains deterministic for cron tests and replays.
+            self.now = datetime.datetime(now.year, now.month, now.day, 12, tzinfo=datetime.timezone.utc)
 
     @classmethod
     def resolve(cls, explicit: str | None = None) -> "AoEClock":
-        """Honour --now, then ADMINBOT_DEADLINE_NOW, then the real date."""
-        stamp = explicit or os.environ.get("ADMINBOT_DEADLINE_NOW") or datetime.date.today().isoformat()
-        return cls(datetime.date.fromisoformat(stamp))
+        """Honour --now, then ADMINBOT_DEADLINE_NOW, then the real UTC instant."""
+        stamp = explicit or os.environ.get("ADMINBOT_DEADLINE_NOW")
+        if not stamp:
+            return cls(datetime.datetime.now(datetime.timezone.utc))
+        if "T" not in stamp:
+            return cls(datetime.date.fromisoformat(stamp))
+        return cls(datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")))
 
     @staticmethod
     def instant(deadline_aoe: str) -> datetime.datetime:
@@ -275,7 +282,7 @@ class AoEClock:
         return (self.instant(deadline_aoe) - self.now).days
 
     def has_passed(self, deadline_aoe: str) -> bool:
-        return self.now > self.instant(deadline_aoe)
+        return self.now >= self.instant(deadline_aoe)
 
     def is_cadence_day(self, deadline_aoe: str, days_before: int) -> bool:
         """True when today is exactly `days_before` days ahead of the deadline."""

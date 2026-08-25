@@ -76,10 +76,12 @@ the server and UI dataset projections together so their labels and classificatio
 
 Run `pnpm ui:build` and `pnpm ui:i18n:check` after changing the Control UI surface.
 
-## 4. Output 1 (channel digest) — not yet wired
+## 4. Output 1 (channel digest)
 
-Post a short "upcoming this week" summary of `venues.json` to `#jinesis-active`
-on a weekly cron. Reuses the same dataset + `adminbot_propose_slack_message`.
+`scripts/adminbot-deadline-channel-digest.py` renders a short upcoming-deadline
+summary from `venues.json`. It is dry-run by default; `--send` posts to
+`ADMINBOT_ACTIVE_CHANNEL` (default `#jinesis-active`). No weekly task is
+activated by this repository change; an operator must add that schedule.
 
 ## Notes / limitations
 
