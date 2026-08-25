@@ -2893,6 +2893,16 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/nudges/escalate/run") {
+    // Recipients and message content are fully server-computed from the notification log and the
+    // head-professor setting, so this takes requirePrivileged like the other cron-triggered sweeps
+    // rather than requireMemberPrivileged: there is no caller-supplied text to protect.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.escalateStaleNudges(principalActor(principal)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/profile-photo/review/run") {
     // Recipients and message content are fully server-computed, same safety model as
     // /members/mandatory-fields-reminder/run.

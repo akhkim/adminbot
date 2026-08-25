@@ -2660,40 +2660,37 @@ function renderPanel(props: AdminBotProps) {
 export function renderAdminBot(props: AdminBotProps) {
   const loadedAt = props.data.loadedAt ? formatRelativeTimestamp(props.data.loadedAt) : "not yet";
   const general = props.mode === "general";
+  // The lab-wide roll-up belongs to the page that is about the lab. On Reimbursement Form Prep or
+  // Announcements it was four numbers about something else entirely, sitting above the thing you
+  // came for -- and the strapline over it described the whole product rather than the page, which
+  // is a thing you read once and then scroll past forever.
+  const isLabOverview = props.panel === "papers";
+  const addMember = !general && props.panel === "members";
+  const addPaper = props.panel === "papers" && (!general || props.signedInMemberId);
   return html`
     <section class="adminbot-shell">
-      <div class="adminbot-toolbar">
-        <div class="adminbot-toolbar__copy">
-          <strong>${general ? "Lab publication view" : "Proposal-first lab operations"}</strong>
-          <span
-            >${general
-              ? "Read paper timelines and lab roster details."
-              : "Review AdminBot state and edit roster, policy, and privacy settings without leaving Control UI."}</span
-          >
-        </div>
-        <div class="adminbot-toolbar__actions">
-          ${!general && props.panel === "members"
-            ? html`<button
-                class="btn btn--sm primary"
-                type="button"
-                popovertarget="adminbot-add-member"
-              >
-                Add member
-              </button>`
-            : nothing}
-          ${props.panel === "papers" && (!general || props.signedInMemberId)
-            ? html`<button
-                class="btn btn--sm primary"
-                type="button"
-                popovertarget="adminbot-add-paper"
-              >
-                Add paper
-              </button>`
-            : nothing}
-          <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-            ${props.loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
+      <div class="adminbot-actions">
+        ${addMember
+          ? html`<button
+              class="btn btn--sm primary"
+              type="button"
+              popovertarget="adminbot-add-member"
+            >
+              Add member
+            </button>`
+          : nothing}
+        ${addPaper
+          ? html`<button
+              class="btn btn--sm primary"
+              type="button"
+              popovertarget="adminbot-add-paper"
+            >
+              Add paper
+            </button>`
+          : nothing}
+        <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
+          ${props.loading ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
       ${props.notice
@@ -2702,21 +2699,22 @@ export function renderAdminBot(props: AdminBotProps) {
           </div>`
         : nothing}
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
-
-      <div class="adminbot-metrics">
-        ${general
-          ? nothing
-          : renderMetric("Pending", props.data.proposals.length, "approval queue")}
-        ${renderMetric(
-          "Members",
-          props.data.members.length,
-          general ? "read-only roster" : "editable roster",
-        )}
-        ${renderMetric("Papers", props.data.papers.length, "publication pipeline")}
-        ${general
-          ? renderMetric("Updated", loadedAt, "read-only view")
-          : renderMetric("Nudges", props.data.nudges.length, `loaded ${loadedAt}`)}
-      </div>
+      ${isLabOverview
+        ? html`<div class="adminbot-metrics">
+            ${general
+              ? nothing
+              : renderMetric("Pending", props.data.proposals.length, "approval queue")}
+            ${renderMetric(
+              "Members",
+              props.data.members.length,
+              general ? "read-only roster" : "editable roster",
+            )}
+            ${renderMetric("Papers", props.data.papers.length, "publication pipeline")}
+            ${general
+              ? renderMetric("Updated", loadedAt, "read-only view")
+              : renderMetric("Nudges", props.data.nudges.length, `loaded ${loadedAt}`)}
+          </div>`
+        : nothing}
 
       <section class="grid grid-cols-2 adminbot-grid">${renderPanel(props)}</section>
     </section>

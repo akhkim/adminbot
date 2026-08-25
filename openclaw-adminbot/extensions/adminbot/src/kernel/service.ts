@@ -62,6 +62,7 @@ import type {
   AdminBotPrivilegeLevel,
 } from "../contracts/actions.js";
 import {
+  adminBotNudgeEscalateAfterDays,
   adminBotExternalCollaboratorSubgroups,
   adminBotMandatoryProfileFieldLabels,
   adminBotMandatoryProfileFields,
@@ -591,6 +592,13 @@ const DEFAULT_ACTION_POLICIES = {
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
   "member_nudge.send": autoPolicy("T1"),
+  // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
+  // reason: resolvePolicy only honors auto_allowed below T2. The recipients and the entire text are
+  // computed here from the notification log and the head-professor setting, so there is no
+  // caller-supplied content or targeting for an approval gate to protect against. What makes it
+  // safe is that nothing can create one of these except the sweep -- see escalateStaleNudges --
+  // and an escalation that waited on an admin's approval would be a reminder nobody sent.
+  "member_nudge.escalate": autoPolicy("T1"),
   // Routine cycle reminders auto-send for the same reason member_nudge.send does: the
   // run route is admin-gated, the recipients are the venue's own committee groups, and
   // the cadence fires each milestone at most once.
@@ -664,6 +672,31 @@ const SLACK_CHANNEL_NAMING_RENAME_AFTER_MS = 48 * 60 * 60 * 1000;
 
 // Least-privilege baseline for a member created without an explicit tier.
 const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
+
+/**
+ * What the three-way DM says.
+ *
+ * Addressed to the member, in front of the professor, rather than about them. It names what is
+ * outstanding and how long it has been, because the professor has to be able to act on it without
+ * asking AdminBot a follow-up question, and it says plainly that a reply here closes it -- the
+ * point is the thing getting done, not a record of having asked.
+ */
+export function buildNudgeEscalationMessage(params: {
+  memberName: string;
+  professorName: string;
+  outstanding: readonly string[];
+  days: number;
+}): string {
+  const first = params.memberName.trim().split(/\s+/u)[0] || params.memberName;
+  const list = params.outstanding.map((title) => `• ${title}`).join("\n");
+  return [
+    `Hi ${first} — these have been outstanding for ${params.days} days, so I have added ${params.professorName} here:`,
+    "",
+    list,
+    "",
+    "If any of them are already done or no longer apply, say so here and I will close them out.",
+  ].join("\n");
+}
 
 export class AdminBotService {
   constructor(
@@ -3931,8 +3964,6 @@ export class AdminBotService {
       return collected;
     }
     const { absent, meeting_label: meetingLabel } = collected.payload;
-    const now = params.nowIso ? new Date(params.nowIso) : new Date();
-    const nowIso = now.toISOString();
     const notified: string[] = [];
     const alreadyTold: string[] = [];
     const slackSkipped: AdminBotMemberNudgeSkip[] = [];
@@ -3946,19 +3977,17 @@ export class AdminBotService {
         missedTopics: row.missed_topics,
         meetingLabel,
       });
-      // Filed first. A Slack outage must not be what decides whether the member is ever told, and
-      // the notification is the copy the lab can still point at afterwards.
-      this.store.saveMemberNotification({
-        id: `notif_${randomUUID()}`,
-        member_id: row.member_id,
-        kind: "meeting_attendance",
-        title: `Please join the next ${meetingLabel}`,
-        body: message,
-        tab: "adminbotMeetings",
-        created_at: nowIso,
-      });
+      // The notification is filed by sendMemberNudge itself, which is what every nudge in the
+      // service now does; this call only says what to put on it.
       const sent = await this.sendMemberNudge(
-        { channel: "slack", recipient_member_ids: [row.member_id], message },
+        {
+          channel: "slack",
+          recipient_member_ids: [row.member_id],
+          message,
+          kind: "meeting_attendance",
+          title: `Please join the next ${meetingLabel}`,
+          tab: "adminbotMeetings",
+        },
         actor,
       );
       if (!sent.ok) {
@@ -5452,12 +5481,28 @@ export class AdminBotService {
     }
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const nowIso = new Date().toISOString();
     for (const memberId of request.recipient_member_ids) {
       const member = this.store.getLabMember(memberId);
       if (!member) {
         skipped.push({ member_id: memberId, reason: "member not found" });
         continue;
       }
+      // Filed before the send, and kept whatever the send does. Slack is where the lab talks, but
+      // it is also where a message scrolls away, a DM goes to a muted app, or an outage eats the
+      // whole batch -- and a member with no linked Slack account is skipped below and would
+      // otherwise never be told at all. The notification is the copy the lab can still point at,
+      // and it is what the portal and the dashboard warning both read.
+      this.store.saveMemberNotification({
+        id: `notif_${randomUUID()}`,
+        member_id: member.id,
+        kind: request.kind ?? "nudge",
+        title: request.title?.trim() || request.subject?.trim() || "AdminBot needs something",
+        body: message,
+        ...(request.tab ? { tab: request.tab } : {}),
+        ...(request.important ? { important: true } : {}),
+        created_at: nowIso,
+      });
       const proposalInput =
         request.channel === "slack"
           ? member.slack_user_id
@@ -5525,9 +5570,140 @@ export class AdminBotService {
         requested: request.recipient_member_ids.length,
         created: created.length,
         skipped: skipped.length,
+        // Every recipient that resolved to a member was notified in the portal, whether or not the
+        // channel send worked, so the audit distinguishes "told" from "delivered".
+        notified:
+          request.recipient_member_ids.length -
+          skipped.filter((entry) => entry.reason === "member not found").length,
+        important: Boolean(request.important),
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * Asks the head professor to chase what AdminBot could not.
+   *
+   * The escalation is a three-way Slack DM -- AdminBot, the head professor and the member -- rather
+   * than a message about the member sent to the professor. The member is in the room because the
+   * point is to get the thing done, not to report them: a private complaint is how somebody finds
+   * out weeks later that they were being discussed, and the group DM is the version of this that
+   * nobody has to be told about afterwards.
+   *
+   * Only important, unread nudges older than the window escalate, and each escalates once. The
+   * stamp goes on whether or not Slack accepted the message: a second escalation is far worse than
+   * a missed one -- the first is the lab appearing to nag through its professor.
+   *
+   * Server-computed, like the mandatory-fields sweep: the caller chooses nothing about who is
+   * chased or what is said, so cron can run it under the service principal.
+   */
+  async escalateStaleNudges(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      escalated: Array<{ member_id: string; notification_id: string; title: string }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const settings = this.resolveSettings();
+    const headProfessorId = settings.head_professor_member_id?.trim();
+    if (!headProfessorId) {
+      return serviceError(409, "no head professor is configured to escalate to");
+    }
+    const headProfessor = this.store.getLabMember(headProfessorId);
+    if (!headProfessor?.slack_user_id) {
+      return serviceError(409, "the configured head professor has no linked Slack account");
+    }
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const cutoff = now.getTime() - adminBotNudgeEscalateAfterDays * 24 * 60 * 60 * 1000;
+    const escalated: Array<{ member_id: string; notification_id: string; title: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    for (const member of this.store.listLabMembers()) {
+      // The head professor does not chase themselves, and alumni are no longer the lab's to chase.
+      if (member.id === headProfessorId || member.status === "alumni") {
+        continue;
+      }
+      const due = this.store
+        .listMemberNotifications(member.id)
+        .filter(
+          (notification) =>
+            notification.important &&
+            !notification.read_at &&
+            !notification.escalated_at &&
+            Date.parse(notification.created_at) <= cutoff,
+        )
+        .toSorted((left, right) => left.created_at.localeCompare(right.created_at));
+      if (!due.length) {
+        continue;
+      }
+      // One DM per member, however many things are overdue. Three separate group DMs about three
+      // reminders is the professor being nagged, which is the thing this must not become.
+      const stampFirst = () => {
+        for (const notification of due) {
+          this.store.saveMemberNotification({ ...notification, escalated_at: nowIso });
+        }
+      };
+      if (!member.slack_user_id) {
+        stampFirst();
+        skipped.push({ member_id: member.id, reason: "member has no slack_user_id" });
+        continue;
+      }
+      const message = buildNudgeEscalationMessage({
+        memberName: member.name,
+        professorName: headProfessor.name,
+        outstanding: due.map((notification) => notification.title),
+        days: adminBotNudgeEscalateAfterDays,
+      });
+      const proposed = this.createProposal({
+        type: "member_nudge.escalate",
+        summary: `Ask ${headProfessor.name} to chase ${member.name}: ${truncateForSummary(message)}`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: `${member.slack_user_id},${headProfessor.slack_user_id}`,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: {
+          channel: "slack",
+          user_ids: [member.slack_user_id, headProfessor.slack_user_id],
+          message,
+        },
+        undo_plan: "Send a follow-up in the same group DM saying it is handled.",
+      });
+      // Stamped before the send, and left stamped either way. See the header.
+      stampFirst();
+      if (!proposed.ok) {
+        skipped.push({ member_id: member.id, reason: proposed.error.message });
+        continue;
+      }
+      const executed = await this.execute(proposed.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        skipped.push({ member_id: member.id, reason: executed.error.message });
+        continue;
+      }
+      for (const notification of due) {
+        escalated.push({
+          member_id: member.id,
+          notification_id: notification.id,
+          title: notification.title,
+        });
+      }
+    }
+
+    this.recordAudit({
+      type: "member_nudge.escalated",
+      actor,
+      details: {
+        after_days: adminBotNudgeEscalateAfterDays,
+        head_professor_member_id: headProfessorId,
+        escalated: escalated.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { escalated, skipped } };
   }
 
   private async assessMemberProfilePhoto(
