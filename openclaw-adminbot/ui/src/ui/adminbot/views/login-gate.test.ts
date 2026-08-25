@@ -568,6 +568,47 @@ describe("login screen surfaces", () => {
 // A reset step must not show the field it does not use. These were `?hidden` attributes once,
 // which `.field { display: grid }` overrode, so the reset-request step still rendered a password
 // box the member could type into and submit.
+describe("the already-a-member hint", () => {
+  beforeEach(async () => {
+    await i18n.setLocale("en");
+  });
+
+  const hintOf = (state: AppViewState) => {
+    const container = document.createElement("div");
+    render(renderLoginGate(state), container);
+    return container.querySelector<HTMLElement>('[data-testid="login-full-member-hint"]');
+  };
+
+  it("tells a full member who has never signed in that they already have an account", () => {
+    // The roster is seeded with this password, so somebody already on it has an account and does
+    // not know it. Both halves have to be there or the line does not answer anything.
+    const hint = hintOf(createState({ loginMode: "signin" }))?.textContent?.trim();
+    expect(hint).toContain("already a full member of Jinesis");
+    expect(hint).toContain("@cs.toronto.edu");
+    expect(hint).toContain("password jinesis");
+  });
+
+  it("sits above the fields, where it is read before the wrong thing is typed", () => {
+    const container = document.createElement("div");
+    render(renderLoginGate(createState({ loginMode: "signin" })), container);
+    const form = container.querySelector(".login-gate__form");
+    const hint = form?.querySelector('[data-testid="login-full-member-hint"]');
+    const email = form?.querySelector('input[name="email"]');
+    expect(hint).not.toBeNull();
+    expect(email).not.toBeNull();
+    expect(hint?.compareDocumentPosition(email as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("stays out of the flows it does not answer", () => {
+    // Claim, sign-up and both reset steps are past the question "do I already have an account".
+    for (const loginMode of ["claim", "signup", "reset-request", "reset-confirm"] as const) {
+      expect(hintOf(createState({ loginMode }))).toBeNull();
+    }
+  });
+});
+
 describe("password reset steps", () => {
   it("asks only for an email in the request step", () => {
     const state = createState({ loginMode: "reset-request" });

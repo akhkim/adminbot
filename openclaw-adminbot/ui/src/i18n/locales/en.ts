@@ -1917,6 +1917,12 @@ export const en: TranslationMap = {
       signupSubmit: "Request access",
       working: "Signing in…",
       submitting: "Submitting…",
+      // The roster is seeded with this password for everyone already on it (see
+      // scripts/adminbot-seed-member-passwords.ts), so a full member who has never signed in has an
+      // account and does not know it. Without this line their first move is Claim profile, which
+      // files a registration an admin then has to approve for somebody who was already approved.
+      fullMemberHint:
+        "If you believe you are already a full member of Jinesis, try signing in with your @cs.toronto.edu email and password jinesis",
       toggleToClaim: "First time here? Claim your profile",
       toggleToSignIn: "Already have an account? Sign in",
       toggleToSignup: "I'm not in the list — sign up manually",

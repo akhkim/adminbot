@@ -72,6 +72,21 @@
   gap: var(--space-5);
 }
 
+/* The "you may already have an account" line. Reads as a note rather than as an error: nothing has
+   gone wrong yet, and styling it like a warning would make every arrival look like a failed one.
+   The tinted panel is what stops it being read as the form's own subtitle and skipped. */
+.login-gate__hint {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  padding: var(--space-3);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  margin: 0;
+}
+
 .login-gate .field {
   gap: var(--space-2);
 }
