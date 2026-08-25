@@ -525,14 +525,54 @@ export type AdminBotMemberOnboardingStep = {
   // Set when the member clicks "I've read this". Acknowledgement is what completes a step: the
   // checklist is reading material, so nothing else can tell us they have actually read it.
   acknowledged_at?: string;
+  /**
+   * Whether this step is asked again when the member's standing changes.
+   *
+   * Most of the checklist is one-time fact -- follow the lab on LinkedIn, put a photo on your
+   * profile, set your Drive folder up the agreed way -- and re-asking it on a promotion would train
+   * people to click through the whole list without reading, which is the one thing a checklist of
+   * reading material cannot survive.
+   *
+   * The exceptions are the steps whose content is *about* standing: what compute a person may
+   * request, and what the lab expects of them week to week. Those genuinely say something different
+   * to a full member than to a trial, so a change of standing is exactly when they are worth
+   * reading again.
+   */
+  reaffirm_on_standing_change?: true;
 };
+
+/** Why the member's current checklist is open. */
+export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
   current_step?: AdminBotMemberOnboardingStep;
   completed: AdminBotMemberOnboardingStep[];
   remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
+  /**
+   * When the current cycle opened: at registration, or when the member's standing last changed.
+   *
+   * This is the clock the follow-up runs on, and it is why a cycle is a thing rather than the
+   * checklist simply existing. Without it, "still not done after ten days" could only be measured
+   * from the account's creation, so somebody promoted two years in would be chased on day one for a
+   * checklist that opened that morning.
+   */
+  opened_at?: string;
+  reason?: AdminBotOnboardingCycleReason;
+  /** When the follow-up last chased this cycle, so the every-two-months cadence has a memory. */
+  last_nudged_at?: string;
 };
+
+/**
+ * How long a checklist may sit open before the member hears about it, and how often after that.
+ *
+ * Ten days rather than a week: a checklist that opens with a promotion lands in the middle of
+ * whatever the promotion was for, and being asked about it two days later reads as the lab watching
+ * a box rather than caring whether the reading happened. Two months after that, because at that
+ * point what is left is the part they have decided not to do, and monthly would be nagging.
+ */
+export const adminBotOnboardingFirstChaseDays = 10;
+export const adminBotOnboardingRepeatChaseDays = 60;
 
 export type AdminBotProfilePhotoAssessment = {
   compliant: boolean;
@@ -1552,6 +1592,7 @@ export type AdminBotAuditEvent = {
     | "member_nudge.escalated"
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
+    | "onboarding.chased"
     | "reimbursement.anonymous_use"
     // A member asking the lab for something, and the lab answering. The submit line is what makes
     // "nobody told me" checkable; the status line is who answered and when.

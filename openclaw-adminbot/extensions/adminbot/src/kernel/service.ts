@@ -29,6 +29,7 @@ import type {
   AdminBotMemberProfileOverviewRow,
   AdminBotMemberTimelineCounts,
   AdminBotMemberNudgeChannel,
+  AdminBotOnboardingCycleReason,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
@@ -63,6 +64,8 @@ import type {
 } from "../contracts/actions.js";
 import {
   adminBotNudgeEscalateAfterDays,
+  adminBotOnboardingFirstChaseDays,
+  adminBotOnboardingRepeatChaseDays,
   adminBotExternalCollaboratorSubgroups,
   adminBotMandatoryProfileFieldLabels,
   adminBotMandatoryProfileFields,
@@ -195,6 +198,7 @@ import {
   findOnboardingStep,
   isOnboardingStepComplete,
   onboardingStepIds,
+  onboardingReopenReason,
   resolveMemberOnboarding,
   setOnboardingStepStatus,
 } from "../workflows/onboarding/onboarding.js";
@@ -681,6 +685,41 @@ const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collabo
  * asking AdminBot a follow-up question, and it says plainly that a reply here closes it -- the
  * point is the thing getting done, not a record of having asked.
  */
+/** Whole days between an instant and now. Floored: nine and a half days is not yet ten. */
+function daysBetween(fromIso: string, now: Date): number {
+  const from = Date.parse(fromIso);
+  if (!Number.isFinite(from)) {
+    return 0;
+  }
+  return Math.floor((now.getTime() - from) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * What the follow-up says.
+ *
+ * Names the steps rather than counting them: "two steps outstanding" is a number somebody has to go
+ * look up, and the whole point of chasing is to make the next action obvious from the message. It
+ * also says why the checklist is open, because a member who finished onboarding two years ago and
+ * has just been promoted will otherwise read this as a bug.
+ */
+export function buildOnboardingChaseMessage(params: {
+  openLabels: readonly string[];
+  days: number;
+  reason: AdminBotOnboardingCycleReason;
+}): string {
+  const opening =
+    params.reason === "registration"
+      ? `Your setup checklist has been open for ${params.days} days.`
+      : `Your standing in the lab changed ${params.days} days ago, so a couple of setup steps are worth reading again.`;
+  return [
+    opening,
+    "",
+    ...params.openLabels.map((label) => `• ${label}`),
+    "",
+    "They are on Getting Set Up in the Control UI.",
+  ].join("\n");
+}
+
 export function buildNudgeEscalationMessage(params: {
   memberName: string;
   professorName: string;
@@ -1486,6 +1525,13 @@ export class AdminBotService {
       return serviceError(400, validation);
     }
     const now = new Date().toISOString();
+    // The merged value, not the patch. A profile save carries only what it is changing, so
+    // comparing the patch would read every save that omits `status` as a status change and re-open
+    // the checklist on somebody editing their own timezone.
+    const reopenReason = onboardingReopenReason(existing, {
+      status: member.status ?? existing?.status,
+      privilege_level: privilegeLevel,
+    });
     const accessOverrides = member.access_overrides ?? existing?.access_overrides;
     const collaboratorSubgroup =
       privilegeLevel === "external_collaborator"
@@ -1500,7 +1546,15 @@ export class AdminBotService {
       // Step text always comes from the current definitions; only the member's acknowledgements
       // survive, so editing a profile never resets their progress and never leaves them reading a
       // checklist frozen at the shape it had when they signed up.
-      onboarding: resolveMemberOnboarding(existing?.onboarding),
+      //
+      // A change of standing is the exception. Somebody promoted from trial to full member has
+      // already ticked a checklist that said something different to them at the time, and the two
+      // steps that are *about* standing -- what compute they may request, what the lab expects of
+      // them -- are re-asked. The clock restarts with them, so the follow-up chases the new cycle
+      // rather than an account creation date years old.
+      onboarding: resolveMemberOnboarding(existing?.onboarding, {
+        ...(reopenReason ? { reopen: { reason: reopenReason, at: now } } : {}),
+      }),
       created_at: existing?.created_at ?? now,
       updated_at: now,
       ...availabilityStamp(existing, member, now),
@@ -5612,6 +5666,103 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * Chases the members whose checklist is still open, on its own clock.
+   *
+   * The cycle is what makes this measurable. A checklist opens at registration or when somebody's
+   * standing changes, and this asks about it ten days later and every two months after that --
+   * from when *that* cycle opened, so a member promoted in their third year is chased about the
+   * promotion rather than about an account created in their first.
+   *
+   * Deliberately not marked important, so it does not reach the head professor. Onboarding reading
+   * is worth asking about repeatedly and is not worth a three-way DM: the escalating nudges are the
+   * three the lab chose, and quietly adding a fourth would be the fastest way to make all of them
+   * ignorable.
+   *
+   * Server-computed, like the other sweeps: nothing about who is chased or what is said comes from
+   * the caller.
+   */
+  async chaseOpenOnboarding(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      nudged: Array<{ member_id: string; open_steps: number; days_open: number }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const nudged: Array<{ member_id: string; open_steps: number; days_open: number }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    for (const member of this.store.listLabMembers()) {
+      // The checklist is for people currently working in the lab. Chasing somebody who has left is
+      // worse than not chasing at all.
+      if (member.status === "alumni" || member.status === "external") {
+        continue;
+      }
+      const onboarding = member.onboarding;
+      const open = (onboarding?.steps ?? []).filter(
+        (step) => step.required && step.status !== "complete",
+      );
+      if (!open.length) {
+        continue;
+      }
+      // A cycle with no stamp predates this feature. Treated as opened now rather than at the epoch,
+      // so the change does not chase the whole lab on the day it ships.
+      const openedAt = onboarding?.opened_at ?? member.created_at ?? nowIso;
+      const daysOpen = daysBetween(openedAt, now);
+      if (daysOpen < adminBotOnboardingFirstChaseDays) {
+        continue;
+      }
+      const lastNudged = onboarding?.last_nudged_at;
+      if (lastNudged && daysBetween(lastNudged, now) < adminBotOnboardingRepeatChaseDays) {
+        continue;
+      }
+      const sent = await this.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: [member.id],
+          message: buildOnboardingChaseMessage({
+            openLabels: open.map((step) => step.label),
+            days: daysOpen,
+            reason: onboarding?.reason ?? "registration",
+          }),
+          kind: "nudge",
+          title: "Your setup checklist is still open",
+          tab: "myOnboarding",
+        },
+        actor,
+      );
+      if (!sent.ok) {
+        skipped.push({ member_id: member.id, reason: sent.error.message });
+        continue;
+      }
+      skipped.push(...sent.payload.skipped);
+      // Stamped whether or not Slack took it: the notification was filed either way, and a member
+      // whose Slack is unlinked must not be re-chased every night because the DM never landed.
+      this.store.saveLabMember({
+        ...member,
+        onboarding: { ...(onboarding as AdminBotMemberOnboarding), last_nudged_at: nowIso },
+        updated_at: nowIso,
+      });
+      nudged.push({ member_id: member.id, open_steps: open.length, days_open: daysOpen });
+    }
+
+    this.recordAudit({
+      type: "onboarding.chased",
+      actor,
+      details: {
+        first_chase_days: adminBotOnboardingFirstChaseDays,
+        repeat_days: adminBotOnboardingRepeatChaseDays,
+        nudged: nudged.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { nudged, skipped } };
   }
 
   /**

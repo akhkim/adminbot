@@ -1,4 +1,5 @@
 import type {
+  AdminBotOnboardingCycleReason,
   AdminBotMemberOnboarding,
   AdminBotMemberOnboardingStep,
 } from "../../contracts/actions.js";
@@ -143,6 +144,9 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Apply for a Compute Canada (Alliance) account",
       category: "Compute access",
       required: true,
+      // What a person may request depends on their standing, so a change of standing is exactly
+      // when this is worth reading again.
+      reaffirm_on_standing_change: true,
       detail: "Set up compute access for research, sponsored by Zhijing's CCID hqw-052-01.",
       bullets: [
         {
@@ -207,6 +211,9 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Review our meeting and communication norms",
       category: "Working with us",
       required: true,
+      // What the lab expects week to week says something different to a full member than to a
+      // trial, which is the whole reason a promotion re-opens the checklist.
+      reaffirm_on_standing_change: true,
       bullets: [
         {
           text: "Prefer docs > Slack > a 30-minute Zoom, in that order.",
@@ -268,28 +275,64 @@ export function buildOnboardingSteps(): AdminBotMemberOnboardingStep[] {
  */
 export function resolveMemberOnboarding(
   existing?: AdminBotMemberOnboarding,
+  options: {
+    /** A change of standing: re-open the steps that are about standing, and restart the clock. */
+    reopen?: { reason: AdminBotOnboardingCycleReason; at: string };
+  } = {},
 ): AdminBotMemberOnboarding {
+  // Re-opened steps lose their acknowledgement, and only those. Clearing the whole list on every
+  // promotion would teach people to click through reading material without reading it, which is
+  // the one failure a checklist of reading material cannot survive.
+  const reopened = options.reopen
+    ? new Set(
+        buildOnboardingStepDefinitions()
+          .filter((definition) => definition.reaffirm_on_standing_change)
+          .map((definition) => definition.id),
+      )
+    : new Set<string>();
   const acknowledgedAt = new Map(
     (existing?.steps ?? [])
-      .filter((step) => step.acknowledged_at)
+      .filter((step) => step.acknowledged_at && !reopened.has(step.id))
       .map((step) => [step.id, step.acknowledged_at as string]),
   );
   const completed = new Set(
-    (existing?.steps ?? []).filter((step) => step.status === "complete").map((step) => step.id),
+    (existing?.steps ?? [])
+      .filter((step) => step.status === "complete" && !reopened.has(step.id))
+      .map((step) => step.id),
   );
-  return projectOnboarding(
-    promoteCurrentStep(
-      buildOnboardingSteps().map((step) => {
-        const at = acknowledgedAt.get(step.id);
-        const complete = at !== undefined || completed.has(step.id);
-        return {
-          ...step,
-          ...(complete ? { status: "complete" as const } : {}),
-          ...(at ? { acknowledged_at: at } : {}),
-        };
-      }),
+  const cycle = options.reopen
+    ? { opened_at: options.reopen.at, reason: options.reopen.reason }
+    : {
+        ...(existing?.opened_at ? { opened_at: existing.opened_at } : {}),
+        ...(existing?.reason ? { reason: existing.reason } : {}),
+        // The follow-up stamp belongs to the cycle, so re-opening drops it and the new cycle gets
+        // its own ten days rather than inheriting a clock that already expired.
+        ...(existing?.last_nudged_at ? { last_nudged_at: existing.last_nudged_at } : {}),
+      };
+  return withCycle(
+    projectOnboarding(
+      promoteCurrentStep(
+        buildOnboardingSteps().map((step) => {
+          const at = acknowledgedAt.get(step.id);
+          const complete = at !== undefined || completed.has(step.id);
+          return {
+            ...step,
+            ...(complete ? { status: "complete" as const } : {}),
+            ...(at ? { acknowledged_at: at } : {}),
+          };
+        }),
+      ),
     ),
+    cycle,
   );
+}
+
+/** Carries the cycle fields through the derived views, which rebuild the step lists each time. */
+function withCycle(
+  onboarding: AdminBotMemberOnboarding,
+  cycle: Partial<AdminBotMemberOnboarding>,
+): AdminBotMemberOnboarding {
+  return { ...onboarding, ...cycle };
 }
 
 /**
@@ -314,8 +357,33 @@ export function acknowledgeOnboardingStep(
   return projectOnboarding(promoteCurrentStep(steps));
 }
 
-export function buildInitialOnboarding(): AdminBotMemberOnboarding {
-  return projectOnboarding(buildOnboardingSteps());
+export function buildInitialOnboarding(openedAt?: string): AdminBotMemberOnboarding {
+  return withCycle(
+    projectOnboarding(buildOnboardingSteps()),
+    openedAt ? { opened_at: openedAt, reason: "registration" as const } : {},
+  );
+}
+
+/**
+ * Whether a standing change should re-open the checklist.
+ *
+ * Status and privilege level only. Every other field on the record is a fact about the person --
+ * their city, their topics, their links -- and none of them changes what the lab is asking of them.
+ */
+export function onboardingReopenReason(
+  before: { status?: string; privilege_level?: string } | undefined,
+  after: { status?: string; privilege_level?: string },
+): AdminBotOnboardingCycleReason | undefined {
+  if (!before) {
+    return undefined;
+  }
+  if ((before.privilege_level ?? "") !== (after.privilege_level ?? "")) {
+    return "privilege_change";
+  }
+  if ((before.status ?? "") !== (after.status ?? "")) {
+    return "status_change";
+  }
+  return undefined;
 }
 
 export function onboardingStepIds(): string[] {
