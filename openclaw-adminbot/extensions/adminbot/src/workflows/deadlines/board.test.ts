@@ -36,6 +36,21 @@ const workshops = [
 ];
 
 describe("standalone deadline board", () => {
+  it("routes deadline proposals to the configured signed-in Control UI", () => {
+    const dom = new JSDOM(
+      renderDeadlinesWebUi(workshops, {
+        proposalUrl: "https://portal.example/adminbot/deadlines",
+      }),
+    );
+    try {
+      expect(dom.window.document.querySelector<HTMLAnchorElement>(".proposal-link")?.href).toBe(
+        "https://portal.example/adminbot/deadlines",
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
+
   it("uses the same safe workshop title and OpenReview links as the Control UI", () => {
     const dom = new JSDOM(renderDeadlinesWebUi(workshops), {
       runScripts: "dangerously",

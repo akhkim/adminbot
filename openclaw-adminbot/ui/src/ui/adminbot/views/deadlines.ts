@@ -7,6 +7,16 @@
 
 import { html, nothing, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
+import type { UiSettings } from "../../storage.ts";
+import type { AccessRole } from "../access.ts";
+import {
+  AdminBotDeadlineProposalStore,
+  deadlineProposalStoreFor,
+  type DeadlineProposal,
+  type DeadlineProposalInput,
+  type DeadlineProposalStore,
+  validateDeadlineProposal,
+} from "../data/deadline-proposals.ts";
 import {
   aoeDateLabel,
   aoeDateTimeLabel,
@@ -17,6 +27,10 @@ import {
   type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
+import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
+import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
+
+const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
 
 export type DeadlineBoardEntry = { venue: DeadlineVenue; instant: number };
 type DeadlineGroupKind = "archival" | "nonArchival" | "mixed" | "unknown" | "other";
@@ -45,8 +59,21 @@ export const DEFAULT_DEADLINE_BOARD_FILTERS: DeadlineBoardFilters = {
   priority: "all",
 };
 
-export function buildDeadlineBoardEntries(): DeadlineBoardEntry[] {
-  return DEADLINE_VENUES.map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+export function parentConferenceOptions(venues: readonly DeadlineVenue[]): string[] {
+  return [
+    ...new Set(
+      venues
+        .map((venue) => venue.venue_family?.trim())
+        .filter((family): family is string => Boolean(family)),
+    ),
+  ].toSorted((left, right) => left.localeCompare(right));
+}
+
+export function buildDeadlineBoardEntries(
+  venues: readonly DeadlineVenue[] = DEADLINE_VENUES,
+): DeadlineBoardEntry[] {
+  return venues
+    .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
     .filter((entry) => Number.isFinite(entry.instant))
     .toSorted(
       (left, right) =>
@@ -343,6 +370,16 @@ function aoeDayKey(now: number): string {
 }
 
 class AdminbotDeadlinesView extends LitElement {
+  static override properties = {
+    accessRole: { type: String, attribute: "access-role" },
+    memberId: { type: String, attribute: "member-id" },
+    proposalStore: { attribute: false },
+  };
+
+  accessRole: AccessRole = "anonymous";
+  memberId = "";
+  proposalStore: DeadlineProposalStore = DEFAULT_DEADLINE_PROPOSAL_STORE;
+
   private timer: number | undefined;
   private readonly expandedGroups = new Set<string>();
   private now = Date.now();
@@ -353,6 +390,17 @@ class AdminbotDeadlinesView extends LitElement {
   private priority: DeadlineBoardPriority = "all";
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
+  private venues: DeadlineVenue[] = DEADLINE_VENUES;
+  private proposals: DeadlineProposal[] = [];
+  private proposalFormOpen = false;
+  private proposalReviewOpen = false;
+  private proposalListScope: "mine" | "review" = "mine";
+  private editingProposalId = "";
+  private proposalSubmissionKey = "";
+  private proposalBusy = false;
+  private proposalErrors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  private proposalNotice = "";
+  private proposalFailure = "";
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -364,6 +412,10 @@ class AdminbotDeadlinesView extends LitElement {
       this.now = Date.now();
       this.requestUpdate();
     }, 1000);
+    void this.loadPublishedDeadlines();
+    if (this.accessRole !== "anonymous" && this.memberId) {
+      void this.loadProposals();
+    }
   }
 
   override disconnectedCallback(): void {
@@ -372,6 +424,56 @@ class AdminbotDeadlinesView extends LitElement {
       this.timer = undefined;
     }
     super.disconnectedCallback();
+  }
+
+  protected override updated(changed: Map<PropertyKey, unknown>): void {
+    if (changed.has("proposalStore")) {
+      void this.loadPublishedDeadlines();
+      if (this.accessRole !== "anonymous" && this.memberId) {
+        void this.loadProposals();
+      }
+    }
+    if (
+      (changed.has("accessRole") || changed.has("memberId")) &&
+      this.accessRole !== "anonymous" &&
+      this.memberId
+    ) {
+      void this.loadProposals();
+    }
+    const drawer = this.proposalDrawer();
+    const shouldOpenDrawer = this.proposalFormOpen || this.proposalReviewOpen;
+    if (shouldOpenDrawer && drawer && !drawer.open) {
+      if (typeof drawer.showModal === "function") {
+        drawer.showModal();
+      } else {
+        drawer.open = true;
+      }
+    } else if (!shouldOpenDrawer && drawer?.open) {
+      if (typeof drawer.close === "function") {
+        drawer.close();
+      } else {
+        drawer.open = false;
+      }
+    }
+  }
+
+  private proposalDrawer(): HTMLDialogElement | null {
+    return this.querySelector<HTMLDialogElement>("[data-testid='deadline-proposal-drawer']");
+  }
+
+  private closeProposalDrawer(): void {
+    const drawer = this.proposalDrawer();
+    if (drawer?.open) {
+      if (typeof drawer.close === "function") {
+        drawer.close();
+      } else {
+        drawer.open = false;
+      }
+    }
+    this.proposalFormOpen = false;
+    this.proposalReviewOpen = false;
+    this.editingProposalId = "";
+    this.requestUpdate();
   }
 
   private selectGroup(group: string): void {
@@ -417,6 +519,464 @@ class AdminbotDeadlinesView extends LitElement {
       this.expandedGroups.add(group);
     }
     this.requestUpdate();
+  }
+
+  private async loadProposals(): Promise<void> {
+    try {
+      this.proposals = await this.proposalStore.list();
+      this.proposalFailure = "";
+    } catch (error) {
+      this.proposalFailure = error instanceof Error ? error.message : String(error);
+    }
+    this.requestUpdate();
+  }
+
+  private async loadPublishedDeadlines(): Promise<void> {
+    try {
+      const venues = await this.proposalStore.listPublished();
+      if (venues.length) {
+        this.venues = venues;
+      }
+    } catch {
+      // The bundled generated dataset remains a valid read-only fallback while the service
+      // reconnects. Proposal writes still fail visibly instead of pretending they were saved.
+      this.venues = DEADLINE_VENUES;
+    }
+    this.requestUpdate();
+  }
+
+  private openProposalForm(): void {
+    if (!this.memberId) {
+      return;
+    }
+    this.proposalFormOpen = true;
+    this.proposalReviewOpen = false;
+    this.editingProposalId = "";
+    this.proposalNotice = "";
+    this.proposalFailure = "";
+    this.requestUpdate();
+  }
+
+  private async submitProposal(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (!this.memberId || this.proposalBusy) {
+      return;
+    }
+    const form = event.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    const input: DeadlineProposalInput = {
+      name: String(data.get("name") ?? ""),
+      parentConference: String(data.get("parentConference") ?? ""),
+      parentYear: String(data.get("parentYear") ?? ""),
+      entryType: String(data.get("entryType") ?? "other") as DeadlineProposalInput["entryType"],
+      deadlineDate: String(data.get("deadlineDate") ?? ""),
+      deadlineTime: String(data.get("deadlineTime") ?? ""),
+      timezone: String(data.get("timezone") ?? ""),
+      homepageUrl: String(data.get("homepageUrl") ?? ""),
+      cfpUrl: String(data.get("cfpUrl") ?? ""),
+      openReviewUrl: String(data.get("openReviewUrl") ?? ""),
+      note: String(data.get("note") ?? ""),
+    };
+    const validation = validateDeadlineProposal(input);
+    if (!validation.ok) {
+      this.proposalErrors = validation.errors;
+      this.proposalFailure = "Check the highlighted fields.";
+      this.requestUpdate();
+      return;
+    }
+    this.proposalBusy = true;
+    this.proposalErrors = {};
+    this.proposalFailure = "";
+    this.requestUpdate();
+    try {
+      if (this.editingProposalId) {
+        await this.proposalStore.revise(this.editingProposalId, validation.value);
+      } else {
+        this.proposalSubmissionKey ||= crypto.randomUUID();
+        await this.proposalStore.submit(validation.value, this.proposalSubmissionKey);
+      }
+      form.reset();
+      this.proposalFormOpen = false;
+      this.proposalNotice = this.editingProposalId
+        ? "A revised deadline is ready for administrator approval."
+        : "Proposal submitted for administrator review. It is not public until approved.";
+      this.editingProposalId = "";
+      this.proposalSubmissionKey = "";
+      await this.loadProposals();
+    } catch (error) {
+      this.proposalFailure = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.proposalBusy = false;
+      this.requestUpdate();
+    }
+  }
+
+  private async decideProposal(
+    proposal: DeadlineProposal,
+    decision: "published" | "rejected",
+  ): Promise<void> {
+    if (this.accessRole !== "admin" || this.proposalBusy) {
+      return;
+    }
+    this.proposalBusy = true;
+    this.proposalFailure = "";
+    try {
+      await this.proposalStore.decide(proposal, decision);
+      this.proposalNotice =
+        decision === "published"
+          ? "Deadline approved and published."
+          : "Deadline proposal rejected.";
+      await this.loadProposals();
+      if (decision === "published") {
+        await this.loadPublishedDeadlines();
+      }
+    } catch (error) {
+      this.proposalFailure = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.proposalBusy = false;
+      this.requestUpdate();
+    }
+  }
+
+  private editProposal(proposal: DeadlineProposal): void {
+    this.editingProposalId = proposal.id;
+    this.proposalFormOpen = true;
+    this.proposalReviewOpen = false;
+    this.proposalNotice = "";
+    this.proposalFailure = "";
+    this.requestUpdate();
+  }
+
+  private openProposalList(scope: "mine" | "review"): void {
+    this.proposalListScope = scope;
+    this.proposalReviewOpen = true;
+    this.proposalFormOpen = false;
+    this.requestUpdate();
+  }
+
+  private renderProposalFieldError(field: keyof DeadlineProposalInput) {
+    const error = this.proposalErrors[field];
+    return error ? html`<small class="deadline-proposal__error">${error}</small>` : nothing;
+  }
+
+  private renderProposalForm() {
+    if (!this.proposalFormOpen || !this.memberId) {
+      return nothing;
+    }
+    const editing = this.proposals.find((proposal) => proposal.id === this.editingProposalId);
+    const value = editing?.deadline;
+    const parentConferences = parentConferenceOptions(this.venues);
+    const parentConference = value?.parentConference ?? "";
+    return html`
+      <section
+        class="deadline-proposal deadline-proposal--drawer"
+        data-testid="deadline-proposal-form-panel"
+      >
+        <div class="deadline-proposal__heading">
+          <div>
+            <h2 id="deadline-proposal-drawer-title">
+              ${editing ? "Revise deadline proposal" : "Propose a new deadline"}
+            </h2>
+          </div>
+          <button class="btn btn--sm" type="button" @click=${this.closeProposalDrawer}>
+            Cancel
+          </button>
+        </div>
+        <p class="deadline-proposal__helper">
+          Proposals remain private until an administrator approves and publishes them.
+        </p>
+        <form class="deadline-proposal__form" @submit=${this.submitProposal}>
+          <label>
+            <span>Conference or workshop name</span>
+            <input
+              name="name"
+              required
+              autofocus
+              .value=${value?.name ?? ""}
+              aria-invalid=${String(Boolean(this.proposalErrors.name))}
+            />
+            ${this.renderProposalFieldError("name")}
+          </label>
+          <label>
+            <span>Entry type</span>
+            <select name="entryType" required>
+              ${ENTRY_TYPE_OPTIONS.filter((option) => option.value !== "all").map(
+                (option) => html`<option
+                  value=${option.value}
+                  ?selected=${option.value === (value?.entryType ?? "main_conference")}
+                >
+                  ${option.label}
+                </option>`,
+              )}
+            </select>
+          </label>
+          <label>
+            <span>Parent conference <small>optional</small></span>
+            ${renderDeadlineParentConferenceSelect({
+              options: parentConferences,
+              value: parentConference,
+            })}
+          </label>
+          <label>
+            <span>Parent year <small>optional</small></span>
+            <input
+              name="parentYear"
+              inputmode="numeric"
+              maxlength="4"
+              placeholder="2026"
+              .value=${value?.parentYear ?? ""}
+              aria-invalid=${String(Boolean(this.proposalErrors.parentYear))}
+            />
+            ${this.renderProposalFieldError("parentYear")}
+          </label>
+          <div class="deadline-proposal__datetime deadline-proposal__wide">
+            <label>
+              <span>Deadline date</span>
+              <input
+                name="deadlineDate"
+                type="date"
+                required
+                .value=${value?.deadlineDate ?? ""}
+                aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
+              />
+              ${this.renderProposalFieldError("deadlineDate")}
+            </label>
+            <label>
+              <span>Deadline time</span>
+              <input
+                name="deadlineTime"
+                type="time"
+                .value=${value?.deadlineTime ?? "23:59"}
+                required
+                aria-invalid=${String(Boolean(this.proposalErrors.deadlineTime))}
+              />
+              ${this.renderProposalFieldError("deadlineTime")}
+            </label>
+            <label>
+              <span>Time zone</span>
+              <select
+                name="timezone"
+                required
+                aria-invalid=${String(Boolean(this.proposalErrors.timezone))}
+              >
+                ${timezoneOptions(AOE_TIMEZONE).map(
+                  (group) => html`<optgroup label=${group.label}>
+                    ${group.options.map(
+                      (option) => html`<option
+                        value=${option.zone}
+                        ?selected=${option.zone === (value?.timezone ?? AOE_TIMEZONE)}
+                      >
+                        ${option.label}
+                      </option>`,
+                    )}
+                  </optgroup>`,
+                )}
+              </select>
+              ${this.renderProposalFieldError("timezone")}
+            </label>
+          </div>
+          <label class="deadline-proposal__wide">
+            <span>Homepage URL</span>
+            <input
+              name="homepageUrl"
+              type="url"
+              required
+              placeholder="https://…"
+              .value=${value?.homepageUrl ?? ""}
+              aria-invalid=${String(Boolean(this.proposalErrors.homepageUrl))}
+            />
+            ${this.renderProposalFieldError("homepageUrl")}
+          </label>
+          <label class="deadline-proposal__wide">
+            <span>Call for papers URL <small>optional</small></span>
+            <input
+              name="cfpUrl"
+              type="url"
+              placeholder="https://…"
+              .value=${value?.cfpUrl ?? ""}
+              aria-invalid=${String(Boolean(this.proposalErrors.cfpUrl))}
+            />
+            ${this.renderProposalFieldError("cfpUrl")}
+          </label>
+          <label class="deadline-proposal__wide">
+            <span>OpenReview URL <small>optional</small></span>
+            <input
+              name="openReviewUrl"
+              type="url"
+              placeholder="https://openreview.net/…"
+              .value=${value?.openReviewUrl ?? ""}
+              aria-invalid=${String(Boolean(this.proposalErrors.openReviewUrl))}
+            />
+            ${this.renderProposalFieldError("openReviewUrl")}
+          </label>
+          <label class="deadline-proposal__wide">
+            <span>Note for the administrator <small>optional</small></span>
+            <textarea name="note" rows="3" .value=${value?.note ?? ""}></textarea>
+          </label>
+          <div class="deadline-proposal__actions deadline-proposal__wide">
+            <button class="btn primary" type="submit" ?disabled=${this.proposalBusy}>
+              ${this.proposalBusy
+                ? editing
+                  ? "Saving revision…"
+                  : "Submitting…"
+                : editing
+                  ? "Save revision for review"
+                  : "Submit for review"}
+            </button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  private renderProposalReview() {
+    if (!this.proposalReviewOpen || !this.memberId || this.accessRole === "anonymous") {
+      return nothing;
+    }
+    const canReview = this.proposalListScope === "review" && this.accessRole === "admin";
+    const visibleProposals = canReview
+      ? this.proposals
+      : this.proposals.filter((proposal) => proposal.submitter_member_id === this.memberId);
+    const actionable = visibleProposals.filter(
+      (proposal) => proposal.status === "pending" || proposal.status === "approved",
+    );
+    const reviewed = visibleProposals.filter(
+      (proposal) => proposal.status !== "pending" && proposal.status !== "approved",
+    );
+    const renderRow = (proposal: DeadlineProposal) => {
+      const deadline = proposal.deadline;
+      const submitterLabel =
+        proposal.submitter_member_id === this.memberId
+          ? "Submitted by you"
+          : `Submitted by ${proposal.submitter_name || "a lab member"}`;
+      return html`
+        <article class="deadline-proposal-row" data-status=${proposal.status}>
+          <div class="deadline-proposal-row__heading">
+            <div>
+              <span class="deadline-proposal-row__status">${capitalize(proposal.status)}</span>
+              <h3>${deadline.name}</h3>
+            </div>
+            <span>${deadline.deadlineDate} · ${deadline.deadlineTime} · ${deadline.timezone}</span>
+          </div>
+          <p>
+            ${ENTRY_TYPE_LABELS[deadline.entryType]}
+            ${deadline.parentConference
+              ? ` · ${deadline.parentConference}${deadline.parentYear ? ` ${deadline.parentYear}` : ""}`
+              : ""}
+            · ${submitterLabel} · Revision ${proposal.current_revision}
+          </p>
+          ${deadline.note ? html`<p>${deadline.note}</p>` : nothing}
+          ${proposal.duplicate_deadline_ids.length
+            ? html`<p class="deadline-proposal-row__duplicate">
+                Possible duplicate of ${proposal.duplicate_deadline_ids.join(", ")}
+              </p>`
+            : nothing}
+          <div class="deadline-proposal-row__links">
+            <a href=${deadline.homepageUrl} target="_blank" rel="noopener noreferrer">Homepage</a>
+            ${deadline.cfpUrl
+              ? html`<a href=${deadline.cfpUrl} target="_blank" rel="noopener noreferrer"
+                  >Call for papers</a
+                >`
+              : nothing}
+            ${deadline.openReviewUrl
+              ? html`<a href=${deadline.openReviewUrl} target="_blank" rel="noopener noreferrer"
+                  >OpenReview</a
+                >`
+              : nothing}
+          </div>
+          ${canReview && (proposal.status === "pending" || proposal.status === "approved")
+            ? html`<div class="deadline-proposal-row__actions">
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  ?disabled=${this.proposalBusy}
+                  @click=${() => this.editProposal(proposal)}
+                >
+                  Revise
+                </button>
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  ?disabled=${this.proposalBusy}
+                  @click=${() => void this.decideProposal(proposal, "rejected")}
+                >
+                  Reject
+                </button>
+                <button
+                  class="btn btn--sm primary"
+                  type="button"
+                  ?disabled=${this.proposalBusy}
+                  @click=${() => void this.decideProposal(proposal, "published")}
+                >
+                  Approve and publish
+                </button>
+              </div>`
+            : nothing}
+        </article>
+      `;
+    };
+    return html`
+      <section
+        class="deadline-proposal deadline-proposal--drawer"
+        data-testid="deadline-proposal-review-panel"
+      >
+        <div class="deadline-proposal__heading">
+          <div>
+            <h2 id="deadline-proposal-drawer-title">
+              ${canReview ? "Deadline proposals" : "My deadline proposals"}
+            </h2>
+          </div>
+          <button class="btn btn--sm" type="button" @click=${this.closeProposalDrawer}>
+            Close
+          </button>
+        </div>
+        <p class="deadline-proposal__helper">
+          ${canReview
+            ? "Publishing records the approved payload and adds it to every deadline board."
+            : "Track the review status of deadlines you have submitted."}
+        </p>
+        ${actionable.length
+          ? html`<div class="deadline-proposal__queue">${actionable.map(renderRow)}</div>`
+          : html`<p class="deadline-proposal__empty">
+              ${canReview
+                ? "No pending deadline proposals."
+                : visibleProposals.length
+                  ? "No proposals awaiting review."
+                  : "You have not submitted any deadline proposals."}
+            </p>`}
+        ${reviewed.length
+          ? html`<details class="deadline-proposal__reviewed">
+              <summary>Reviewed proposals (${reviewed.length})</summary>
+              <div class="deadline-proposal__queue">${reviewed.map(renderRow)}</div>
+            </details>`
+          : nothing}
+      </section>
+    `;
+  }
+
+  private renderProposalDrawer() {
+    return html`
+      <dialog
+        class="deadline-proposal-drawer"
+        data-testid="deadline-proposal-drawer"
+        aria-labelledby="deadline-proposal-drawer-title"
+        @close=${() => {
+          this.proposalFormOpen = false;
+          this.proposalReviewOpen = false;
+          this.editingProposalId = "";
+          this.requestUpdate();
+        }}
+        @click=${(event: Event) => {
+          if (event.target === event.currentTarget) {
+            this.closeProposalDrawer();
+          }
+        }}
+      >
+        <div class="deadline-proposal-drawer__body">
+          ${this.renderProposalForm()} ${this.renderProposalReview()}
+        </div>
+      </dialog>
+    `;
   }
 
   private renderHero(entry: DeadlineBoardEntry | undefined) {
@@ -980,7 +1540,9 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   protected override render() {
-    const all = buildDeadlineBoardEntries();
+    const canPropose = Boolean(this.memberId) && this.accessRole !== "anonymous";
+    const canReview = canPropose && this.accessRole === "admin";
+    const all = buildDeadlineBoardEntries(this.venues);
     const periodEntries = entriesForDeadlinePeriod(all, this.now, this.period);
     const filters: DeadlineBoardFilters = {
       entryType: this.entryType,
@@ -996,7 +1558,8 @@ class AdminbotDeadlinesView extends LitElement {
     }
     const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "", filters);
     const next = filtered[0];
-    const latestSourceCheck = DEADLINE_VENUES.map((venue) => venue.source_checked_at || "")
+    const latestSourceCheck = this.venues
+      .map((venue) => venue.source_checked_at || "")
       .filter(Boolean)
       .toSorted()
       .at(-1)
@@ -1004,11 +1567,71 @@ class AdminbotDeadlinesView extends LitElement {
     return html`
       <section class="deadline-board">
         <header class="deadline-board__header">
-          <h1>${t("tabs.adminbotDeadlines")}</h1>
-          <p>${t("subtitles.adminbotDeadlines")}</p>
+          <div>
+            <h1>${t("tabs.adminbotDeadlines")}</h1>
+            <p>${t("subtitles.adminbotDeadlines")}</p>
+          </div>
+          <div class="deadline-board__header-actions">
+            ${canPropose
+              ? html`<button
+                  class="btn btn--sm"
+                  type="button"
+                  data-testid="deadline-my-proposals"
+                  @click=${() => this.openProposalList("mine")}
+                >
+                  My proposals
+                  <span
+                    >${this.proposals.filter(
+                      (proposal) => proposal.submitter_member_id === this.memberId,
+                    ).length}</span
+                  >
+                </button>`
+              : nothing}
+            ${canReview
+              ? html`<button
+                  class="btn btn--sm"
+                  type="button"
+                  data-testid="deadline-review-proposals"
+                  @click=${() => this.openProposalList("review")}
+                >
+                  Review proposals
+                  <span
+                    >${this.proposals.filter(
+                      (proposal) => proposal.status === "pending" || proposal.status === "approved",
+                    ).length}</span
+                  >
+                </button>`
+              : nothing}
+            <span
+              class="deadline-proposal-trigger"
+              title=${canPropose ? nothing : "Sign in to use deadline proposals."}
+            >
+              <button
+                class="btn btn--sm primary"
+                type="button"
+                data-testid="deadline-propose"
+                aria-describedby=${canPropose ? nothing : "deadline-proposal-sign-in-hint"}
+                ?disabled=${!canPropose}
+                @click=${this.openProposalForm}
+              >
+                Propose a new deadline
+              </button>
+            </span>
+            ${canPropose
+              ? nothing
+              : html`<span id="deadline-proposal-sign-in-hint" class="sr-only">
+                  Sign in to use deadline proposals.
+                </span>`}
+          </div>
         </header>
-        ${this.renderModes()} ${this.renderControls(matching, periodEntries, filters)}
-        ${this.renderArchivalGuide()}
+        ${this.proposalNotice
+          ? html`<p class="deadline-proposal__notice" role="status">${this.proposalNotice}</p>`
+          : nothing}
+        ${this.proposalFailure
+          ? html`<p class="deadline-proposal__failure" role="alert">${this.proposalFailure}</p>`
+          : nothing}
+        ${this.renderProposalDrawer()} ${this.renderModes()}
+        ${this.renderControls(matching, periodEntries, filters)} ${this.renderArchivalGuide()}
         <div class="deadline-board__overview">
           ${this.renderHero(next)} ${this.renderStats(filtered)}
         </div>
@@ -1035,6 +1658,17 @@ if (!customElements.get("adminbot-deadlines-view")) {
   customElements.define("adminbot-deadlines-view", AdminbotDeadlinesView);
 }
 
-export function renderDeadlines() {
-  return html`<adminbot-deadlines-view></adminbot-deadlines-view>`;
+export type RenderDeadlinesOptions = {
+  role?: AccessRole;
+  memberId?: string | null;
+  proposalStore?: DeadlineProposalStore;
+  settings?: Pick<UiSettings, "adminBotUrl"> | null;
+};
+
+export function renderDeadlines(options: RenderDeadlinesOptions = {}) {
+  return html`<adminbot-deadlines-view
+    access-role=${options.role ?? "anonymous"}
+    member-id=${options.memberId ?? ""}
+    .proposalStore=${options.proposalStore ?? deadlineProposalStoreFor(options.settings)}
+  ></adminbot-deadlines-view>`;
 }

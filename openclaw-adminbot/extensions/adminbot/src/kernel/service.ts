@@ -73,6 +73,15 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  deadlineProposalDuplicateKey,
+  isDeadlinePublicationPayload,
+  validateDeadlineProposalInput,
+  type DeadlineProposalInput,
+  type DeadlineProposalView,
+  type DeadlinePublicationPayload,
+  type PublishedDeadlineRecord,
+} from "../contracts/deadline-proposals.js";
+import {
   adminBotFeedbackCommentMax,
   adminBotFeedbackId,
   adminBotFeedbackMaxRating,
@@ -248,6 +257,18 @@ export type AdminBotServiceStore = {
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
   listPending(limit?: number): AdminBotStoredProposal[];
+  listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
+  saveDeadlineProposalSubmission(
+    proposal: AdminBotStoredProposal,
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): { proposal: AdminBotStoredProposal; created: boolean };
+  replaceDeadlineProposalRevision(
+    previous: AdminBotStoredProposal,
+    next: AdminBotStoredProposal,
+  ): void;
+  savePublishedDeadline(record: PublishedDeadlineRecord): void;
+  listPublishedDeadlines(): PublishedDeadlineRecord[];
   saveExecutionResult(result: AdminBotExecutionResult): void;
   getExecutionResult(actionId: string): AdminBotExecutionResult | undefined;
   getExecutionResultByIdempotencyKey(idempotencyKey: string): AdminBotExecutionResult | undefined;
@@ -578,6 +599,9 @@ const DEFAULT_ACTION_POLICIES = {
   // wait in Pending actions for a human however the run was triggered. Approver roles are
   // privilege levels because that is the only thing the session can be checked against.
   "openreview.warning": approvalPolicy("T2", ["admin"]),
+  // Publishing changes the lab's public deadline catalogue. One authenticated administrator
+  // reviews the exact payload hash before the internal publication executor can project it.
+  "deadline.publish": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -676,16 +700,20 @@ export class AdminBotService {
     if (!proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
+    const stored = this.prepareProposal(proposal);
+    this.store.saveProposal(stored);
+    this.auditProposalCreation(stored);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
     const now = new Date().toISOString();
     const policy = resolvePolicy(proposal);
-    const stored: AdminBotStoredProposal = {
+    return {
       ...proposal,
       id: `act_${randomUUID()}`,
       risk_tier: policy.risk_tier,
-      payload_hash: payloadHash({
-        ...proposal,
-        risk_tier: policy.risk_tier,
-      }),
+      payload_hash: payloadHash({ ...proposal, risk_tier: policy.risk_tier }),
       status: policy.requires_approval ? "pending" : "approved",
       approval_requirement: {
         requires_approval: policy.requires_approval,
@@ -696,24 +724,25 @@ export class AdminBotService {
       created_at: now,
       updated_at: now,
     };
-    this.store.saveProposal(stored);
+  }
+
+  private auditProposalCreation(proposal: AdminBotStoredProposal): void {
     this.recordAudit({
       type: "proposal.created",
-      action_id: stored.id,
+      action_id: proposal.id,
       details: {
-        action_type: stored.type,
-        risk_tier: stored.risk_tier,
-        status: stored.status,
+        action_type: proposal.type,
+        risk_tier: proposal.risk_tier,
+        status: proposal.status,
       },
     });
-    if (!policy.requires_approval) {
+    if (!proposal.approval_requirement.requires_approval) {
       this.recordAudit({
         type: "proposal.auto_approved",
-        action_id: stored.id,
-        details: { risk_tier: stored.risk_tier },
+        action_id: proposal.id,
+        details: { risk_tier: proposal.risk_tier },
       });
     }
-    return { ok: true, status: 200, payload: stored };
   }
 
   listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
@@ -722,6 +751,340 @@ export class AdminBotService {
       status: 200,
       payload: { proposals: this.store.listPending(limit) },
     };
+  }
+
+  submitDeadlineProposal(
+    input: DeadlineProposalInput,
+    submitterMemberId: string,
+    idempotencyKey: string,
+    existingDeadlines: readonly unknown[] = [],
+  ): AdminBotServiceResponse<DeadlineProposalView> {
+    const memberId = submitterMemberId.trim();
+    const key = idempotencyKey.trim();
+    if (!memberId) {
+      return serviceError(401, "member session required");
+    }
+    if (!key || key.length > 200) {
+      return serviceError(400, "a valid idempotency key is required");
+    }
+    const validation = validateDeadlineProposalInput(input);
+    if (!validation.ok) {
+      return serviceError(400, firstDeadlineValidationError(validation.errors));
+    }
+    const proposalId = `dlp_${randomUUID()}`;
+    const deadlineId = `community_${randomUUID()}`;
+    const duplicateIds = this.findDeadlineDuplicates(validation.value, existingDeadlines);
+    const action = this.prepareDeadlinePublication({
+      proposalId,
+      deadlineId,
+      revision: 1,
+      submitterMemberId: memberId,
+      duplicateIds,
+      deadline: validation.value,
+      createdByMemberId: memberId,
+      idempotencyKey: `deadline-submit:${memberId}:${key}`,
+    });
+    const saved = this.store.saveDeadlineProposalSubmission(action, memberId, key);
+    if (saved.created) {
+      this.auditProposalCreation(saved.proposal);
+      this.recordAudit({
+        type: "deadline_proposal.submitted",
+        action_id: saved.proposal.id,
+        actor: memberId,
+        details: { proposal_id: proposalId, duplicate_deadline_ids: duplicateIds },
+      });
+    }
+    const view = this.deadlineProposalViewForAction(saved.proposal);
+    return view
+      ? { ok: true, status: saved.created ? 201 : 200, payload: view }
+      : serviceError(500, "could not read deadline proposal");
+  }
+
+  listDeadlineProposals(
+    submitterMemberId?: string,
+  ): AdminBotServiceResponse<{ proposals: DeadlineProposalView[] }> {
+    const proposals = this.deadlineProposalViews().filter(
+      (proposal) =>
+        submitterMemberId === undefined || proposal.submitter_member_id === submitterMemberId,
+    );
+    return { ok: true, status: 200, payload: { proposals } };
+  }
+
+  reviseDeadlineProposal(
+    proposalId: string,
+    input: DeadlineProposalInput,
+    actorMemberId: string,
+    existingDeadlines: readonly unknown[] = [],
+  ): AdminBotServiceResponse<DeadlineProposalView> {
+    const current = this.currentDeadlineProposalAction(proposalId);
+    if (!current) {
+      return serviceError(404, "deadline proposal not found");
+    }
+    const currentPayload = deadlinePayload(current);
+    if (!currentPayload) {
+      return serviceError(500, "deadline proposal payload is invalid");
+    }
+    const validation = validateDeadlineProposalInput(input);
+    if (!validation.ok) {
+      return serviceError(400, firstDeadlineValidationError(validation.errors));
+    }
+    const duplicateIds = this.findDeadlineDuplicates(
+      validation.value,
+      existingDeadlines,
+      currentPayload.deadline_id,
+    );
+    const next = this.prepareDeadlinePublication({
+      proposalId,
+      deadlineId: currentPayload.deadline_id,
+      revision: currentPayload.revision + 1,
+      submitterMemberId: currentPayload.submitter_member_id,
+      duplicateIds,
+      deadline: validation.value,
+      createdByMemberId: actorMemberId,
+    });
+    if (current.status === "pending" || current.status === "approved") {
+      const replaced: AdminBotStoredProposal = {
+        ...current,
+        status: "rejected",
+        updated_at: new Date().toISOString(),
+      };
+      this.store.replaceDeadlineProposalRevision(replaced, next);
+    } else {
+      this.store.saveProposal(next);
+    }
+    this.auditProposalCreation(next);
+    this.recordAudit({
+      type: "deadline_proposal.revised",
+      action_id: next.id,
+      actor: actorMemberId,
+      details: {
+        proposal_id: proposalId,
+        revision: currentPayload.revision + 1,
+        previous_action_id: current.id,
+        duplicate_deadline_ids: duplicateIds,
+      },
+    });
+    return { ok: true, status: 200, payload: this.deadlineProposalViewForAction(next)! };
+  }
+
+  rejectDeadlineProposal(
+    proposalId: string,
+    actorMemberId: string,
+    note?: string,
+  ): AdminBotServiceResponse<DeadlineProposalView> {
+    const current = this.currentDeadlineProposalAction(proposalId);
+    if (!current) {
+      return serviceError(404, "deadline proposal not found");
+    }
+    const rejected = this.removePending(current.id, {
+      actor: actorMemberId,
+      ...(note ? { note } : {}),
+    });
+    if (!rejected.ok) {
+      return rejected;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: this.deadlineProposalViewForAction(rejected.payload)!,
+    };
+  }
+
+  async publishDeadlineProposal(
+    proposalId: string,
+    payloadHash_: string,
+    approver: AdminBotApprovalRequest,
+  ): Promise<AdminBotServiceResponse<DeadlineProposalView>> {
+    const current = this.currentDeadlineProposalAction(proposalId);
+    if (!current) {
+      return serviceError(404, "deadline proposal not found");
+    }
+    const approved = this.approve(current.id, { ...approver, payload_hash: payloadHash_ });
+    if (!approved.ok) {
+      return approved;
+    }
+    const executed = await this.execute(current.id, {
+      dry_run: false,
+      idempotency_key: `deadline-publication:${current.id}`,
+    });
+    if (!executed.ok) {
+      return executed;
+    }
+    const refreshed = this.store.getProposal(current.id);
+    return refreshed
+      ? { ok: true, status: 200, payload: this.deadlineProposalViewForAction(refreshed)! }
+      : serviceError(500, "published deadline proposal could not be reloaded");
+  }
+
+  deadlineReadModel(generated: readonly unknown[]): unknown[] {
+    const published = this.store.listPublishedDeadlines();
+    const byDeadline = new Map<string, PublishedDeadlineRecord[]>();
+    for (const record of published) {
+      const records = byDeadline.get(record.deadline_id) ?? [];
+      records.push(record);
+      byDeadline.set(record.deadline_id, records);
+    }
+    return [
+      ...generated,
+      ...[...byDeadline.values()].map((records) => publishedDeadlineVenue(records)),
+    ];
+  }
+
+  private prepareDeadlinePublication(params: {
+    proposalId: string;
+    deadlineId: string;
+    revision: number;
+    submitterMemberId: string;
+    duplicateIds: string[];
+    deadline: DeadlineProposalInput;
+    createdByMemberId: string;
+    idempotencyKey?: string;
+  }): AdminBotStoredProposal {
+    const payload: DeadlinePublicationPayload = {
+      proposal_id: params.proposalId,
+      deadline_id: params.deadlineId,
+      revision: params.revision,
+      submitter_member_id: params.submitterMemberId,
+      duplicate_deadline_ids: params.duplicateIds,
+      deadline: params.deadline,
+    };
+    return this.prepareProposal({
+      type: "deadline.publish",
+      summary: `Publish ${params.deadline.name} deadline`,
+      target: {
+        proposal_id: params.proposalId,
+        deadline_id: params.deadlineId,
+        revision: params.revision,
+        created_by_member_id: params.createdByMemberId,
+      },
+      evidence: [
+        { source: "homepage", url: params.deadline.homepageUrl },
+        ...(params.deadline.cfpUrl
+          ? [{ source: "call for papers", url: params.deadline.cfpUrl }]
+          : []),
+        ...(params.deadline.openReviewUrl
+          ? [{ source: "OpenReview", url: params.deadline.openReviewUrl }]
+          : []),
+      ],
+      proposed_payload: payload,
+      rationale: "Publish a member-submitted deadline after administrator review.",
+      undo_plan: "Publish a corrected revision; prior revisions remain in the audit history.",
+      ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
+    });
+  }
+
+  private deadlineProposalViews(): DeadlineProposalView[] {
+    const actions = this.store.listProposalsByType("deadline.publish");
+    const currentById = new Map<string, AdminBotStoredProposal>();
+    for (const action of actions) {
+      const payload = deadlinePayload(action);
+      if (!payload) {
+        continue;
+      }
+      const previous = currentById.get(payload.proposal_id);
+      const previousPayload = previous ? deadlinePayload(previous) : undefined;
+      if (!previousPayload || payload.revision > previousPayload.revision) {
+        currentById.set(payload.proposal_id, action);
+      }
+    }
+    return [...currentById.values()]
+      .map((action) => this.deadlineProposalViewForAction(action))
+      .filter((view): view is DeadlineProposalView => Boolean(view))
+      .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
+  }
+
+  private currentDeadlineProposalAction(proposalId: string): AdminBotStoredProposal | undefined {
+    return this.store
+      .listProposalsByType("deadline.publish")
+      .filter((action) => deadlinePayload(action)?.proposal_id === proposalId)
+      .toSorted(
+        (left, right) =>
+          (deadlinePayload(right)?.revision ?? 0) - (deadlinePayload(left)?.revision ?? 0),
+      )[0];
+  }
+
+  private deadlineProposalViewForAction(
+    current: AdminBotStoredProposal,
+  ): DeadlineProposalView | undefined {
+    const payload = deadlinePayload(current);
+    if (!payload) {
+      return undefined;
+    }
+    const revisions = this.store
+      .listProposalsByType("deadline.publish")
+      .filter((action) => deadlinePayload(action)?.proposal_id === payload.proposal_id)
+      .map((action) => {
+        const revisionPayload = deadlinePayload(action)!;
+        return {
+          revision: revisionPayload.revision,
+          action_id: action.id,
+          payload_hash: action.payload_hash,
+          status: action.status,
+          deadline: revisionPayload.deadline,
+          created_at: action.created_at,
+          created_by_member_id:
+            typeof action.target?.created_by_member_id === "string"
+              ? action.target.created_by_member_id
+              : revisionPayload.submitter_member_id,
+        };
+      })
+      .toSorted((left, right) => left.revision - right.revision);
+    const publication = this.store
+      .listPublishedDeadlines()
+      .filter((record) => record.proposal_id === payload.proposal_id)
+      .toSorted((left, right) => right.revision - left.revision)[0];
+    return {
+      id: payload.proposal_id,
+      deadline_id: payload.deadline_id,
+      submitter_member_id: payload.submitter_member_id,
+      submitter_name:
+        this.store.getLabMember(payload.submitter_member_id)?.name.trim() || "Lab member",
+      status: current.status === "executed" ? "published" : current.status,
+      current_revision: payload.revision,
+      action_id: current.id,
+      payload_hash: current.payload_hash,
+      duplicate_deadline_ids: payload.duplicate_deadline_ids,
+      deadline: payload.deadline,
+      revisions,
+      created_at: revisions[0]?.created_at ?? current.created_at,
+      updated_at: current.updated_at,
+      ...(publication ? { published_at: publication.published_at } : {}),
+    };
+  }
+
+  private findDeadlineDuplicates(
+    input: DeadlineProposalInput,
+    generated: readonly unknown[],
+    excludeDeadlineId?: string,
+  ): string[] {
+    const key = deadlineProposalDuplicateKey(input);
+    if (!key) {
+      return [];
+    }
+    const ids = new Set<string>();
+    for (const row of [...generated, ...this.deadlineReadModel([])]) {
+      const candidate = deadlineInputFromBoardEntry(row);
+      const id = deadlineBoardEntryId(row);
+      if (
+        id &&
+        id !== excludeDeadlineId &&
+        candidate &&
+        deadlineProposalDuplicateKey(candidate) === key
+      ) {
+        ids.add(id);
+      }
+    }
+    for (const action of this.store.listProposalsByType("deadline.publish")) {
+      const payload = deadlinePayload(action);
+      if (
+        payload &&
+        payload.deadline_id !== excludeDeadlineId &&
+        deadlineProposalDuplicateKey(payload.deadline) === key
+      ) {
+        ids.add(payload.deadline_id);
+      }
+    }
+    return [...ids].toSorted();
   }
 
   removePending(
@@ -876,15 +1239,46 @@ export class AdminBotService {
       });
       return { ok: true, status: 200, payload: result };
     }
-    if (!this.options.executor) {
-      return this.executionFailure(proposal, 501, "no live connector is configured");
-    }
     let handled: boolean;
-    try {
-      ({ handled } = await this.options.executor.execute(proposal));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "connector execution failed";
-      return this.executionFailure(proposal, 502, message);
+    if (proposal.type === "deadline.publish") {
+      const publication = deadlinePayload(proposal);
+      if (!publication) {
+        return this.executionFailure(proposal, 400, "deadline publication payload is invalid");
+      }
+      const publishedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!publishedBy) {
+        return this.executionFailure(proposal, 409, "deadline publication has no named approver");
+      }
+      this.store.savePublishedDeadline({
+        action_id: proposal.id,
+        proposal_id: publication.proposal_id,
+        deadline_id: publication.deadline_id,
+        revision: publication.revision,
+        deadline: publication.deadline,
+        published_at: now,
+        published_by_member_id: publishedBy,
+      });
+      this.recordAudit({
+        type: "deadline_proposal.published",
+        action_id: proposal.id,
+        actor: publishedBy,
+        details: {
+          proposal_id: publication.proposal_id,
+          deadline_id: publication.deadline_id,
+          revision: publication.revision,
+        },
+      });
+      handled = true;
+    } else {
+      if (!this.options.executor) {
+        return this.executionFailure(proposal, 501, "no live connector is configured");
+      }
+      try {
+        ({ handled } = await this.options.executor.execute(proposal));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "connector execution failed";
+        return this.executionFailure(proposal, 502, message);
+      }
     }
     if (!handled) {
       return this.executionFailure(
@@ -5444,6 +5838,126 @@ export class AdminBotService {
 
 export function payloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {
+  return proposal.type === "deadline.publish" &&
+    isDeadlinePublicationPayload(proposal.proposed_payload)
+    ? proposal.proposed_payload
+    : undefined;
+}
+
+function firstDeadlineValidationError(
+  errors: Partial<Record<keyof DeadlineProposalInput, string>>,
+): string {
+  return Object.values(errors)[0] ?? "deadline proposal is invalid";
+}
+
+function deadlineBoardEntryId(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const row = value as Record<string, unknown>;
+  const id = row.deadline_id ?? row.id;
+  return typeof id === "string" ? id : undefined;
+}
+
+function deadlineInputFromBoardEntry(value: unknown): DeadlineProposalInput | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const row = value as Record<string, unknown>;
+  const deadline = typeof row.deadline_aoe === "string" ? row.deadline_aoe : "";
+  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/u.exec(deadline);
+  if (!match || typeof row.name !== "string" || typeof row.entry_type !== "string") {
+    return undefined;
+  }
+  return {
+    name: row.name,
+    parentConference: typeof row.venue_family === "string" ? row.venue_family : "",
+    parentYear: "",
+    entryType: row.entry_type as DeadlineProposalInput["entryType"],
+    deadlineDate: match[1],
+    deadlineTime: match[2],
+    timezone: "Etc/GMT+12",
+    homepageUrl:
+      typeof row.homepage_url === "string" && row.homepage_url
+        ? row.homepage_url
+        : typeof row.source_url === "string"
+          ? row.source_url
+          : typeof row.link === "string"
+            ? row.link
+            : "",
+    cfpUrl: typeof row.cfp_url === "string" ? row.cfp_url : "",
+    openReviewUrl: typeof row.openreview_url === "string" ? row.openreview_url : "",
+    note: "",
+  };
+}
+
+function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<string, unknown> {
+  const records = records_.toSorted((left, right) => left.revision - right.revision);
+  const latest = records.at(-1)!;
+  const validated = validateDeadlineProposalInput(latest.deadline);
+  if (!validated.ok) {
+    throw new Error(`published deadline ${latest.deadline_id} is invalid`);
+  }
+  const instant = new Date(validated.instant).getTime();
+  const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
+  const entryType = latest.deadline.entryType;
+  const family = latest.deadline.parentConference;
+  const parentGroup =
+    [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
+  const group =
+    entryType === "workshop" && family && !/\bworkshops?$/iu.test(parentGroup)
+      ? `${parentGroup} Workshops`
+      : parentGroup;
+  const label =
+    entryType === "arr_commitment"
+      ? "ARR commitment"
+      : entryType === "arr_direct_submission"
+        ? "ARR submission"
+        : entryType === "rebuttal"
+          ? "rebuttal ends"
+          : "submission";
+  return {
+    id: latest.deadline_id,
+    deadline_id: latest.deadline_id,
+    venue_id: latest.deadline_id,
+    venue_aliases: [latest.deadline_id],
+    name: latest.deadline.name,
+    venue_type:
+      entryType === "workshop" ? "workshop" : entryType === "rebuttal" ? "rebuttal" : "conference",
+    venue_group: group,
+    ...(family ? { venue_family: family } : {}),
+    entry_type: entryType,
+    archival_status: "unknown",
+    venue_priority: "standard",
+    archival: false,
+    stale: false,
+    deadline_label: label,
+    deadline_aoe: aoe,
+    link: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
+    homepage_url: latest.deadline.homepageUrl,
+    ...(latest.deadline.cfpUrl ? { cfp_url: latest.deadline.cfpUrl } : {}),
+    source_url: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
+    source_checked_at: latest.published_at,
+    ...(latest.deadline.openReviewUrl ? { openreview_url: latest.deadline.openReviewUrl } : {}),
+    revisions: records.map((record) => {
+      const revision = validateDeadlineProposalInput(record.deadline);
+      const revisionInstant = revision.ok ? new Date(revision.instant).getTime() : Number.NaN;
+      return {
+        observed_at: record.published_at,
+        deadline_aoe: Number.isFinite(revisionInstant)
+          ? new Date(revisionInstant - 12 * 60 * 60 * 1000)
+              .toISOString()
+              .replace("T", " ")
+              .slice(0, 19)
+          : aoe,
+        deadline_label: label,
+        link: record.deadline.cfpUrl || record.deadline.homepageUrl,
+      };
+    }),
+  };
 }
 
 const SELF_PROFILE_EDITABLE_FIELDS = [

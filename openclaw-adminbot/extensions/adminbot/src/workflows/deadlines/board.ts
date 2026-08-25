@@ -2,6 +2,8 @@
 // scripts/adminbot-deadline-web-ui-gen.py. Do not hand-edit; regenerate instead.
 // Renders the self-contained live deadline countdown board (Output 0).
 
+import { DEFAULT_ADMINBOT_CONTROL_UI_URL } from "../../contracts/control-ui.js";
+
 const TEMPLATE = `<title>Jinesis Deadlines</title>
 <style>
   :root {
@@ -60,6 +62,12 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   }
 
   /* header */
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
   h1 {
     font-size: clamp(24px, 4vw, 34px);
     margin: 0;
@@ -71,6 +79,16 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     margin: 8px 0 0;
     color: var(--ink-2);
     font-size: 14.5px;
+  }
+  .proposal-link {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
   }
   /* hero + stats grid */
   .top {
@@ -767,6 +785,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     }
   }
   @media (max-width: 600px) {
+    .page-head {
+      flex-direction: column;
+    }
     .filter {
       flex: 1 1 100%;
       width: 100%;
@@ -823,8 +844,13 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
 
 <div class="wrap">
   <div class="container">
-    <h1>Deadlines</h1>
-    <p class="sub">Past and upcoming conference &amp; workshop deadlines.</p>
+    <div class="page-head">
+      <div>
+        <h1>Deadlines</h1>
+        <p class="sub">Past and upcoming conference &amp; workshop deadlines.</p>
+      </div>
+      <a class="proposal-link" href="__DEADLINE_PROPOSAL_URL__">Propose a deadline</a>
+    </div>
 
     <div class="modes">
       <div class="toggle" role="group" aria-label="Deadline period">
@@ -1489,6 +1515,18 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
 </script>
 `;
 
-export function renderDeadlinesWebUi(items: readonly unknown[]): string {
-  return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items));
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+export function renderDeadlinesWebUi(
+  items: readonly unknown[],
+  options: { proposalUrl?: string } = {},
+): string {
+  const proposalUrl =
+    options.proposalUrl ?? `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/adminbot/deadlines`;
+  return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items)).replace(
+    "__DEADLINE_PROPOSAL_URL__",
+    escapeAttribute(proposalUrl),
+  );
 }

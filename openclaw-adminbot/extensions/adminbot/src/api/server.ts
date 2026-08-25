@@ -24,6 +24,8 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
@@ -621,11 +623,17 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
   if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendHtml(res, 200, renderDeadlinesWebUi(DEADLINE_VENUES));
+    sendHtml(
+      res,
+      200,
+      renderDeadlinesWebUi(ctx.service.deadlineReadModel(DEADLINE_VENUES), {
+        proposalUrl: `${resolveAdminBotControlUiUrl()}/adminbot/deadlines`,
+      }),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
-    sendJson(res, 200, { items: DEADLINE_VENUES });
+    sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
@@ -1524,6 +1532,93 @@ async function handleAuthenticatedRoute(
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
     sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/deadline-proposals") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const idempotencyKey = String(req.headers["idempotency-key"] ?? "").trim();
+    sendServiceResult(
+      res,
+      service.submitDeadlineProposal(
+        deadlineProposalInput(body),
+        principal.member.id,
+        idempotencyKey,
+        DEADLINE_VENUES,
+      ),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/deadline-proposals") {
+    if (principal.kind !== "member") {
+      sendJson(res, principal.kind === "anonymous" ? 401 : 403, {
+        error: { message: "member session required" },
+      });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.listDeadlineProposals(
+        principal.member.privilege_level === "admin" ? undefined : principal.member.id,
+      ),
+    );
+    return;
+  }
+  const reviseDeadline = /^\/deadline-proposals\/([^/]+)\/revisions$/u.exec(url.pathname);
+  if (req.method === "POST" && reviseDeadline?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.reviseDeadlineProposal(
+        decodeURIComponent(reviseDeadline[1]),
+        deadlineProposalInput(body),
+        principal.member.id,
+        DEADLINE_VENUES,
+      ),
+    );
+    return;
+  }
+  const rejectDeadline = /^\/deadline-proposals\/([^/]+)\/reject$/u.exec(url.pathname);
+  if (req.method === "POST" && rejectDeadline?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.rejectDeadlineProposal(
+        decodeURIComponent(rejectDeadline[1]),
+        principal.member.id,
+        asString(body.note),
+      ),
+    );
+    return;
+  }
+  const publishDeadline = /^\/deadline-proposals\/([^/]+)\/publish$/u.exec(url.pathname);
+  if (req.method === "POST" && publishDeadline?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const identity = approverIdentityFor(principal);
+    if (!identity) {
+      sendJson(res, 403, { error: { message: "a named administrator session is required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      await service.publishDeadlineProposal(
+        decodeURIComponent(publishDeadline[1]),
+        asString(body.payload_hash),
+        { payload_hash: asString(body.payload_hash), ...identity },
+      ),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/proposals") {
@@ -3090,6 +3185,22 @@ function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincip
   return requirePrivileged(res, principal);
 }
 
+function deadlineProposalInput(body: Record<string, unknown>): DeadlineProposalInput {
+  return {
+    name: asString(body.name),
+    parentConference: asString(body.parentConference),
+    parentYear: asString(body.parentYear),
+    entryType: asString(body.entryType) as DeadlineProposalInput["entryType"],
+    deadlineDate: asString(body.deadlineDate),
+    deadlineTime: asString(body.deadlineTime),
+    timezone: asString(body.timezone),
+    homepageUrl: asString(body.homepageUrl),
+    cfpUrl: asString(body.cfpUrl),
+    openReviewUrl: asString(body.openReviewUrl),
+    note: asString(body.note),
+  };
+}
+
 function resolvePrincipal(
   req: IncomingMessage,
   ctx: AdminBotRouteContext,
@@ -3146,7 +3257,7 @@ function applyCors(
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
 }
 

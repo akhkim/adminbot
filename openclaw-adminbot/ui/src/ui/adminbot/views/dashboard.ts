@@ -373,7 +373,9 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
-      <div class="dashboard__deadlines" data-testid="dashboard-deadlines">${renderDeadlines()}</div>
+      <div class="dashboard__deadlines" data-testid="dashboard-deadlines">
+        ${renderDeadlines({ role, memberId: state.memberId, settings: state.settings })}
+      </div>
     </div>
   `;
 }

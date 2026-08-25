@@ -88,7 +88,10 @@ function renderPublicPanel(state: AppViewState) {
       onReset: () => resetAdminBotReimbursement(host),
     });
   }
-  return renderDeadlines();
+  return renderDeadlines({
+    role: "anonymous",
+    settings: state.settings,
+  });
 }
 
 export function renderPublicShell(state: AppViewState) {

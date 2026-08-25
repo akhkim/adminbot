@@ -88,6 +88,28 @@ host). The first-class Lit view lives in `ui/src/ui/adminbot/views/deadlines.ts`
 receive the same view inside the public Control UI shell. `adminbot-deadline-collect.py` regenerates
 the server and UI dataset projections together so their labels and classifications stay aligned.
 
+### Deadline proposals
+
+The Control UI deadline board includes a member proposal form and an administrator review queue.
+Visitors can read the board, but **Propose a new deadline** sends them to sign-in and never opens the
+form anonymously. A submission starts as Pending and stays out of every public deadline response.
+
+The UI's `DeadlineProposalStore` calls the authenticated AdminBot service. Submissions, revisions,
+approval actions, execution records, and published deadlines persist in the configured SQLite
+ledger. A member-supplied idempotency key makes a retried submission return the original proposal.
+Administrators may revise or reject a pending proposal. Every revision is a new `deadline.publish`
+action with its own payload hash; the prior action is retained and cannot lend its approval to the
+new content.
+
+**Approve and publish** records the authenticated administrator as approver, executes the typed
+internal publication action, and appends the accepted revision to the published deadline read
+model. The public HTML, JSON endpoint, and Control UI merge those records with the generated venue
+dataset at read time. Pending and rejected proposals, submitter identities, and administrator notes
+never enter the public projection.
+
+The standalone service board cannot hold a member session. Its proposal action links to the
+configured Control UI `/adminbot/deadlines` route, where authentication and the proposal form live.
+
 Run `pnpm ui:build` and `pnpm ui:i18n:check` after changing the Control UI surface.
 
 ## 4. Output 1 (channel digest)
