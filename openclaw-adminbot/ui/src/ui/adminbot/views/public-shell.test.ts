@@ -1,3 +1,5 @@
+/* @vitest-environment jsdom */
+
 import { render } from "lit";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -80,7 +82,7 @@ describe("renderPublicShell", () => {
     };
     await view.updateComplete;
     container.remove();
-    expect(container.textContent).toContain("Upcoming conference & workshop deadlines.");
+    expect(container.textContent).toContain("Past and upcoming conference & workshop deadlines.");
     expect(container.querySelector(".content--public-deadlines > .adminbot-card")).toBeNull();
   });
 });

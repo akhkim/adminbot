@@ -446,7 +446,7 @@ export const ja_JP: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "ブラウザー内のツールアクティビティ概要。",
     overview: "ステータス、エントリーポイント、健全性。",
     workboard: "エージェントの作業キューとセッションの引き継ぎ。",

@@ -244,7 +244,6 @@ class AoEClock:
             self.today = self.now.date()
         else:
             self.today = now
-            # A date-only override remains deterministic for cron tests and replays.
             self.now = datetime.datetime(now.year, now.month, now.day, 12, tzinfo=datetime.timezone.utc)
 
     @classmethod
@@ -314,12 +313,18 @@ class DeadlineDataset:
         return self._read("matches.json")
 
     def upcoming(self, clock: AoEClock, window_days: int) -> list[dict]:
-        """Venues whose deadline falls between now and the horizon, soonest first."""
+        """Current projections between now and the horizon, soonest first."""
         horizon = clock.now + datetime.timedelta(days=window_days)
         chosen = [
             venue for venue in self.venues() if clock.now <= clock.instant(venue["deadline_aoe"]) <= horizon
         ]
         chosen.sort(key=lambda venue: (venue["deadline_aoe"], venue["name"]))
+        return chosen
+
+    def past(self, clock: AoEClock) -> list[dict]:
+        """Current projections already expired, most recently expired first."""
+        chosen = [venue for venue in self.venues() if clock.has_passed(venue["deadline_aoe"])]
+        chosen.sort(key=lambda venue: (venue["deadline_aoe"], venue["name"]), reverse=True)
         return chosen
 
 

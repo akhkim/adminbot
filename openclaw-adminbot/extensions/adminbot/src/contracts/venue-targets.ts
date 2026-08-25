@@ -11,6 +11,8 @@
 // field living in a free-form artifacts blob rather than in a column; when `paper_venue_targets`
 // becomes a table, both sides read the table and this file goes away.
 
+import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
+
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
 export type AdminBotVenueTarget = {
   venue_id: string;
@@ -67,20 +69,30 @@ export function readPaperVenueTargets(paper: PaperLike): AdminBotVenueTarget[] {
 /**
  * Is this paper aimed at the named venue?
  *
- * Matched on the id *or* the label, case-insensitively, and by prefix on the label. Two id spaces
- * are already in the wild: the pre-registration dialog writes deadline-board ids ("iclr2027_paper")
- * and the add-project form writes venue-catalog ids ("ICLR"). A sweep that only understood one of
- * them would report half the lab as having no target and nudge people who already answered --
- * which is worse than the gap it is trying to close.
+ * Two id spaces are already in the wild: the pre-registration dialog writes deadline-board ids
+ * ("iclr2027_paper") and the add-project form writes venue-catalog ids ("ICLR"). Resolve both
+ * through the generated explicit aliases; substring matching can silently confuse distinct venues.
  */
 export function paperTargetsVenue(paper: PaperLike, venue: string): boolean {
-  const needle = venue.trim().toLowerCase();
+  const needle = canonicalVenueId(venue);
   if (!needle) {
     return false;
   }
-  return readPaperVenueTargets(paper).some((target) => {
-    const id = target.venue_id.toLowerCase();
-    const label = target.label.toLowerCase();
-    return id.includes(needle) || label.includes(needle);
-  });
+  return readPaperVenueTargets(paper).some(
+    (target) =>
+      canonicalVenueId(target.venue_id) === needle || canonicalVenueId(target.label) === needle,
+  );
+}
+
+function canonicalVenueId(value: string): string {
+  const candidate = value.trim().toLowerCase();
+  if (!candidate) {
+    return "";
+  }
+  for (const deadline of DEADLINE_VENUES) {
+    if (deadline.venue_aliases.some((alias) => alias.toLowerCase() === candidate)) {
+      return deadline.venue_id.toLowerCase();
+    }
+  }
+  return candidate;
 }

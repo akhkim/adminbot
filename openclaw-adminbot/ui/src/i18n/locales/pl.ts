@@ -444,7 +444,7 @@ export const pl: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "Podsumowania aktywności narzędzi lokalne dla przeglądarki.",
     overview: "Status, punkty dostępu, stan.",
     workboard: "Kolejka zadań agenta i przekazywanie sesji.",

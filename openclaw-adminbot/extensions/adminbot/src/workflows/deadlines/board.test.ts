@@ -92,4 +92,120 @@ describe("standalone deadline board", () => {
       dom.window.close();
     }
   });
+
+  it("switches to retained past deadlines with the same filters and summary", () => {
+    const dom = new JSDOM(
+      renderDeadlinesWebUi([
+        ...workshops,
+        {
+          id: "past-main",
+          name: "Past Main Conference",
+          venue_group: "TEST 2020",
+          entry_type: "main_conference",
+          archival_status: "archival",
+          venue_priority: "primary",
+          deadline_label: "paper",
+          deadline_aoe: "2020-01-02 23:59:59",
+          notification_aoe: null,
+          link: "https://conference.example",
+          homepage_url: "https://conference.example",
+          cfp_url: "",
+          openreview_url: "",
+          revisions: [],
+        },
+      ]),
+      { runScripts: "dangerously", url: "http://localhost/deadlines" },
+    );
+    try {
+      const document = dom.window.document;
+      expect(
+        [...document.querySelectorAll('[aria-label="Deadline period"] button')].map((button) =>
+          button.textContent?.trim(),
+        ),
+      ).toEqual(["Past", "Upcoming"]);
+      document.querySelector<HTMLButtonElement>("#p-past")!.click();
+      document.querySelector<HTMLButtonElement>("#v-cards")!.click();
+
+      expect(document.querySelector(".hero .lbl")?.textContent).toContain("Most recent deadline");
+      expect(document.querySelectorAll(".card")).toHaveLength(1);
+      expect(document.querySelector(".card")?.textContent).toContain("Past Main Conference");
+      expect(document.querySelector("#foot")?.textContent).toContain(
+        "Showing 1 of 1 matching past deadlines",
+      );
+      expect(document.querySelector(".hero .hmeta")?.textContent).toContain("23:59 AoE");
+      expect(document.querySelector("#s-today-label")?.textContent).toBe("Passed today");
+
+      document.querySelector<HTMLButtonElement>("#v-groups")!.click();
+      expect(document.querySelectorAll(".deadline-group")).toHaveLength(1);
+      expect(document.querySelector(".deadline-group__summary-countdown")?.textContent).toBe(
+        "Passed",
+      );
+      document.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+      expect(document.querySelector(".deadline-group__row-countdown")?.textContent).toBe("Passed");
+      expect(document.querySelector(".deadline-group__row-date")?.textContent).toContain(
+        "23:59 AoE",
+      );
+      document.querySelector<HTMLButtonElement>("#v-cards")!.click();
+
+      const entryType = document.querySelector<HTMLSelectElement>("#entry-type")!;
+      entryType.value = "workshop";
+      entryType.dispatchEvent(new dom.window.Event("change"));
+      expect(document.querySelectorAll(".card")).toHaveLength(0);
+      expect(document.querySelector(".hero .hname")?.textContent).toBe(
+        "Nothing matches this filter",
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
+
+  it("combines exact classification filters and rebuilds every derived count", () => {
+    const dom = new JSDOM(
+      renderDeadlinesWebUi([
+        ...workshops,
+        {
+          id: "future-main",
+          name: "Future Main Conference",
+          venue_group: "MAIN 2035",
+          entry_type: "main_conference",
+          archival_status: "archival",
+          venue_priority: "primary",
+          deadline_label: "paper",
+          deadline_aoe: "2035-01-04 23:59:59",
+          notification_aoe: null,
+          link: "https://conference.example",
+          homepage_url: "https://conference.example",
+          cfp_url: "",
+          openreview_url: "",
+          revisions: [],
+        },
+      ]),
+      { runScripts: "dangerously", url: "http://localhost/deadlines" },
+    );
+    try {
+      const document = dom.window.document;
+      document.querySelector<HTMLButtonElement>("#v-cards")!.click();
+      const entryType = document.querySelector<HTMLSelectElement>("#entry-type")!;
+      entryType.value = "workshop";
+      entryType.dispatchEvent(new dom.window.Event("change"));
+
+      expect(document.querySelectorAll(".card")).toHaveLength(2);
+      expect(document.querySelector("#s-total")?.textContent).toBe("2");
+      expect(document.querySelector(".chip .ct")?.textContent).toBe("2");
+      expect(document.querySelectorAll(".chip")).toHaveLength(2);
+
+      const priority = document.querySelector<HTMLSelectElement>("#priority")!;
+      priority.value = "primary";
+      priority.dispatchEvent(new dom.window.Event("change"));
+
+      expect(document.querySelectorAll(".card")).toHaveLength(0);
+      expect(document.querySelector("#s-total")?.textContent).toBe("0");
+      expect(document.querySelector(".chip .ct")?.textContent).toBe("0");
+      expect(document.querySelector("#foot")?.textContent).toContain(
+        "Showing 0 of 0 matching upcoming deadlines",
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
 });

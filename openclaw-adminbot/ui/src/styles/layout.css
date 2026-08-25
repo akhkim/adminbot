@@ -4010,6 +4010,11 @@
   --deadline-urgency-subtle: var(--ok-subtle);
 }
 
+[data-period="past"] {
+  --deadline-urgency: var(--muted);
+  --deadline-urgency-subtle: transparent;
+}
+
 [data-urgency="passed"] {
   --deadline-urgency: var(--muted);
   --deadline-urgency-subtle: transparent;
@@ -4168,16 +4173,17 @@ adminbot-deadlines-view {
 
 .deadline-board__controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(17rem, 1fr) 9.25rem 10rem 8.5rem;
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
 
 .deadline-board__search {
-  grid-column: 1 / -1;
+  min-width: 0;
 }
 
-.deadline-board__search input {
+.deadline-board__search input,
+.deadline-board__facet select {
   width: 100%;
   min-height: var(--control-h-md);
   padding: 0 var(--space-3);
@@ -4192,19 +4198,26 @@ adminbot-deadlines-view {
   color: var(--muted);
 }
 
-.deadline-board__search input:focus-visible {
+.deadline-board__search input:focus-visible,
+.deadline-board__facet select:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
+.deadline-board__facet {
+  min-width: 0;
+}
+
 .deadline-board__groups {
   display: flex;
+  grid-column: 1 / -1;
   flex-wrap: wrap;
   gap: var(--space-2);
   min-width: 0;
 }
 
 .deadline-board__groups button,
+.deadline-board__period button,
 .deadline-board__view button {
   min-height: var(--control-h-md);
   padding: 0 var(--space-4);
@@ -4223,6 +4236,8 @@ adminbot-deadlines-view {
 
 .deadline-board__groups button:hover,
 .deadline-board__groups button:focus-visible,
+.deadline-board__period button:hover,
+.deadline-board__period button:focus-visible,
 .deadline-board__view button:hover,
 .deadline-board__view button:focus-visible {
   border-color: var(--text-strong);
@@ -4230,12 +4245,14 @@ adminbot-deadlines-view {
 }
 
 .deadline-board__groups button:focus-visible,
+.deadline-board__period button:focus-visible,
 .deadline-board__view button:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
 .deadline-board__groups button[aria-pressed="true"],
+.deadline-board__period button[aria-pressed="true"],
 .deadline-board__view button[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-subtle);
@@ -4249,6 +4266,7 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
 }
 
+.deadline-board__period,
 .deadline-board__view {
   display: inline-flex;
   align-self: start;
@@ -4256,19 +4274,24 @@ adminbot-deadlines-view {
 
 .deadline-board__modes {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
 
+.deadline-board__period button:first-child,
 .deadline-board__view button:first-child {
   border-radius: var(--radius-md) 0 0 var(--radius-md);
 }
 
+.deadline-board__period button + button,
 .deadline-board__view button + button {
   margin-left: -1px;
   border-radius: 0;
 }
 
+.deadline-board__period button:last-child,
 .deadline-board__view button:last-child {
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
@@ -4698,6 +4721,7 @@ adminbot-deadlines-view {
 
 .deadline-table__venue {
   color: var(--muted) !important;
+  white-space: nowrap;
 }
 
 .deadline-table .deadline-card__actions {
@@ -4768,6 +4792,10 @@ adminbot-deadlines-view {
 
   .deadline-board__groups {
     grid-column: 1;
+  }
+
+  .deadline-board__facet {
+    width: 100%;
   }
 
   .deadline-group__summary {

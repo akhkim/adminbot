@@ -1,3 +1,5 @@
+/* @vitest-environment jsdom */
+
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -172,7 +174,7 @@ describe("renderDashboard", () => {
         0,
       ),
     ).toBeGreaterThan(100);
-    expect(board.textContent).toContain("Upcoming conference & workshop deadlines.");
+    expect(board.textContent).toContain("Past and upcoming conference & workshop deadlines.");
     container.remove();
   });
 
