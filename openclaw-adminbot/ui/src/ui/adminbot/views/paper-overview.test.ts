@@ -8,6 +8,7 @@ import {
   filterPaperRows,
   paperOverviewRows,
   paperOverviewSummary,
+  paperProgress,
   paperVenueOptions,
   renderPaperOverviewTable,
   type PaperOverviewFilter,
@@ -118,6 +119,49 @@ describe("paperOverviewRows", () => {
   });
 });
 
+describe("paperProgress", () => {
+  const of = (
+    slotFields: Partial<PaperSlotOverviewRow>,
+    decision?: "pending" | "accept" | "reject",
+    complete = false,
+  ) => paperProgress({ slots: slots(slotFields), decision, complete });
+
+  it("counts filed artifacts and an acceptance toward the same total", () => {
+    // Five required slots plus the venue decision is six units. Three filed and no acceptance is
+    // 3/6; three filed with an acceptance is 4/6.
+    expect(of({ provided_count: 3, required_count: 5 }).percent).toBe(50);
+    expect(of({ provided_count: 3, required_count: 5 }, "accept").percent).toBe(67);
+  });
+
+  it("gives a rejection no credit, because the paper has to go back out", () => {
+    const rejected = of({ provided_count: 3, required_count: 5 }, "reject");
+    expect(rejected.percent).toBe(50);
+    expect(rejected.waitingOn).toBe("resubmission");
+  });
+
+  it("cannot reach 100 on evidence alone, and does on a closed cycle", () => {
+    // Every artifact in but no verdict is 5/6 -- the one thing left is not the authors' to do.
+    expect(of({ provided_count: 5, required_count: 5 }).percent).toBe(83);
+    expect(of({ provided_count: 5, required_count: 5 }, "accept").percent).toBe(100);
+    expect(of({ provided_count: 2, required_count: 5 }, undefined, true).percent).toBe(100);
+  });
+
+  it("reports nothing rather than zero for a paper the service has not counted", () => {
+    expect(paperProgress({ slots: undefined, decision: "pending", complete: false }).percent).toBe(
+      null,
+    );
+    expect(of({ required_count: 0, provided_count: 0 }).percent).toBe(null);
+  });
+
+  it("names who the remainder is waiting on, which the number cannot", () => {
+    // Actionable slots outstanding is the authors' problem...
+    expect(of({ missing_slots: ["camera_ready"], provided_count: 1 }).waitingOn).toBe("evidence");
+    // ...and nothing actionable with no verdict is the venue's.
+    expect(of({ missing_slots: [], provided_count: 3 }).waitingOn).toBe("decision");
+    expect(of({ missing_slots: [], provided_count: 3 }, "accept").waitingOn).toBe("nothing");
+  });
+});
+
 describe("filterPaperRows", () => {
   const rows = build({
     papers: [
@@ -183,8 +227,10 @@ describe("renderPaperOverviewTable", () => {
     // nothing else, so one of them had to go.
     expect(
       [...container.querySelectorAll(".profile-overview__head")].map((h) => h.textContent?.trim()),
-    ).toEqual(["Paper", "Stage", "Evidence", "Venue", "Outstanding"]);
-    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("3/8");
+    ).toEqual(["Paper", "Progress", "Stage", "Evidence", "Venue", "Outstanding"]);
+    // Progress is measured from what the paper filed; Stage says where it is, in words.
+    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("25%");
+    expect(container.querySelector(".paper-overview__stage")?.textContent).toContain("step 3 of 8");
     expect(container.textContent).toContain("1/3");
     expect(container.textContent).toContain("camera ready");
   });
@@ -199,7 +245,8 @@ describe("renderPaperOverviewTable", () => {
       }),
       filter: { state: "all" },
     });
-    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("done");
+    expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("100%");
+    expect(container.querySelector(".paper-overview__stage")?.textContent).toContain("done");
     expect(container.querySelector(".profile-overview__bar.is-complete")).not.toBeNull();
   });
 
@@ -245,6 +292,19 @@ describe("renderPaperOverviewTable", () => {
     });
     tableRows(container)[0]?.querySelector<HTMLButtonElement>("button")?.click();
     expect(opened).toEqual(["p-1"]);
+  });
+
+  it("says who the remainder is waiting on next to the bar", () => {
+    const { container } = draw({
+      rows: build({
+        papers: [paper({ venue_decision: "reject" })],
+        slots: [slots({ provided_count: 2 })],
+      }),
+      filter: { state: "all" },
+    });
+    expect(container.querySelector('[data-waiting="resubmission"]')?.textContent).toContain(
+      "needs re-aiming",
+    );
   });
 
   it("calls out a paper nobody can plan around", () => {

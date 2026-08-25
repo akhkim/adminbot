@@ -39,6 +39,74 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
   state: "all",
 };
 
+/**
+ * How far a paper actually is.
+ *
+ * Two real facts, and nothing invented. The required evidence slots are the paper's own checklist --
+ * brainstorm doc, Overleaf link, review done, PDF compiles, submission page and ID, Drive copy,
+ * arXiv, the social posts, slides, poster -- and the service already counts how many of them have
+ * settled. The venue decision is the one gate no amount of author work opens, so an acceptance
+ * counts as one more unit alongside them:
+ *
+ *     percent = (settled slots + 1 if accepted) / (required slots + 1)
+ *
+ * No weighting constant, because there is nothing to justify one with: every unit is one thing that
+ * either happened or did not. A rejection is not progress -- the paper goes back out on a new
+ * attempt -- so it earns the unit only on an acceptance.
+ *
+ * This replaced the service's `progress_percent`, which was `current_step` looked up in a fixed
+ * eight-step plan: the same number for every paper on the same step, capped at 88%, and blind to
+ * everything the paper had actually filed.
+ */
+export type PaperProgress = {
+  /** 0 to 100, or null when the service has not counted this paper's evidence at all. */
+  percent: number | null;
+  /** What the remainder is waiting on, which is what the number cannot say by itself. */
+  waitingOn: "evidence" | "decision" | "resubmission" | "nothing";
+  provided: number;
+  required: number;
+  /** Whether the venue-decision unit counted -- true only for an acceptance. */
+  accepted: boolean;
+};
+
+export function paperProgress(params: {
+  slots: PaperSlotOverviewRow | undefined;
+  decision: AdminBotPaperRecord["venue_decision"];
+  complete: boolean;
+}): PaperProgress {
+  const accepted = params.decision === "accept";
+  const provided = params.slots?.provided_count ?? 0;
+  const required = params.slots?.required_count ?? 0;
+  const waitingOn = params.complete
+    ? "nothing"
+    : params.decision === "reject"
+      ? "resubmission"
+      : // `missing_slots` is the service's own actionable list, not everything unfilled: a paper
+        // waiting on a verdict has post-acceptance slots outstanding that nobody can act on, and
+        // calling that "waiting on evidence" would point an administrator at the wrong person.
+        (params.slots?.missing_slots.length ?? 0) > 0
+        ? "evidence"
+        : accepted
+          ? "nothing"
+          : "decision";
+  if (params.complete) {
+    return { percent: 100, waitingOn, provided, required, accepted };
+  }
+  // A paper the service has not counted has no progress to report. Zero would be a claim.
+  if (!params.slots || required <= 0) {
+    return { percent: null, waitingOn, provided, required, accepted };
+  }
+  const units = required + 1;
+  const done = Math.min(provided, required) + (accepted ? 1 : 0);
+  return {
+    percent: Math.round((done / units) * 100),
+    waitingOn,
+    provided,
+    required,
+    accepted,
+  };
+}
+
 /** One paper with the evidence the service counted for it folded in. */
 export type PaperOverviewRow = {
   paper: AdminBotPaperRecord;
@@ -57,6 +125,8 @@ export type PaperOverviewRow = {
   stepCount: number;
   /** The cycle is finished: the reminder says so, or the service closed it. */
   complete: boolean;
+  /** How far the paper actually is, from what it has filed and what the venue said. */
+  progress: PaperProgress;
   currentLabel: string;
   nextLabel: string;
   venue: string;
@@ -128,6 +198,7 @@ export function paperOverviewRows(params: {
       stepIndex: complete ? stepCount : (timeline?.current_step_index ?? 0),
       stepCount,
       complete,
+      progress: paperProgress({ slots, decision: paper.venue_decision, complete }),
       currentLabel: current?.label ?? params.stepLabel(paper.current_step),
       nextLabel: next?.label ?? "",
       venue: paperVenue(paper),
@@ -280,6 +351,9 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
                         ${t("paperOverview.columns.paper")}
                       </th>
                       <th scope="col" class="profile-overview__head">
+                        ${t("paperOverview.columns.progress")}
+                      </th>
+                      <th scope="col" class="profile-overview__head">
                         ${t("paperOverview.columns.stage")}
                       </th>
                       <th scope="col" class="profile-overview__head">
@@ -381,35 +455,67 @@ function renderSelect(params: {
 }
 
 /**
- * The stage cell: how far along the flow this paper is, in steps.
+ * The progress cell: the number, and what the rest of it is waiting on.
  *
- * The bar is the scannable part and the words underneath are for the row you stop on -- the same
- * bargain Profile Completeness strikes with its field count. "Step 3 of 8" rather than a
- * percentage, because a step is a thing that either has happened or has not, and a percentage
- * derived from one implies a precision nothing here has.
+ * The waiting-on line is not decoration. Two papers both at 60% are different problems when one is
+ * short of evidence its author owes and the other has filed everything and is waiting on a
+ * programme committee, and a bar alone cannot tell them apart.
  */
-function renderStageCell(row: PaperOverviewRow) {
-  const filled = row.stepCount > 0 ? Math.round((row.stepIndex / row.stepCount) * 100) : 0;
+function renderProgressCell(row: PaperOverviewRow) {
+  const { percent, waitingOn, provided, required } = row.progress;
+  if (percent === null) {
+    return html`<span class="muted">${t("paperOverview.progressUnknown")}</span>`;
+  }
   return html`
-    <div class="paper-overview__stage">
+    <div class="paper-overview__progress">
       <div class="profile-overview__progress">
         <div
-          class="profile-overview__bar ${row.complete ? "is-complete" : ""}"
+          class="profile-overview__bar ${percent >= 100 ? "is-complete" : ""}"
           role="img"
-          aria-label=${row.complete
-            ? t("paperOverview.stageComplete")
-            : t("paperOverview.stageLabel", {
-                index: String(row.stepIndex + 1),
-                total: String(row.stepCount),
-              })}
+          aria-label=${t("paperOverview.progressLabel", {
+            percent: String(percent),
+            provided: String(provided),
+            required: String(required),
+          })}
+          title=${t("paperOverview.progressBreakdown", {
+            provided: String(provided),
+            required: String(required),
+            decision: row.progress.accepted
+              ? t("paperOverview.progressAccepted")
+              : t("paperOverview.progressUndecided"),
+          })}
         >
-          <span class="profile-overview__bar-fill" style="width: ${filled}%"></span>
+          <span class="profile-overview__bar-fill" style="width: ${percent}%"></span>
         </div>
-        <span class="profile-overview__percent">
-          ${row.complete ? t("paperOverview.stageDone") : `${row.stepIndex + 1}/${row.stepCount}`}
-        </span>
+        <span class="profile-overview__percent ab-num">${percent}%</span>
       </div>
+      <span class="profile-overview__status" data-waiting=${waitingOn}
+        >${t(`paperOverview.waitingOn.${waitingOn}`)}</span
+      >
+    </div>
+  `;
+}
+
+/**
+ * The stage cell: which step of the flow the paper is on.
+ *
+ * Words and a step count, never a percentage. `current_step` is one fact -- where the paper is --
+ * and the eight-step plan behind it carries no information about how much of the work is done;
+ * turning it into a percentage was what made two columns report the same thing and made one of
+ * them look like progress. Progress is next door now, and it is measured.
+ */
+function renderStageCell(row: PaperOverviewRow) {
+  return html`
+    <div class="paper-overview__stage">
       <strong>${row.complete ? t("paperOverview.stageComplete") : row.currentLabel}</strong>
+      <span class="profile-overview__status">
+        ${row.complete
+          ? t("paperOverview.stageDone")
+          : t("paperOverview.stageLabel", {
+              index: String(row.stepIndex + 1),
+              total: String(row.stepCount),
+            })}
+      </span>
       ${!row.complete && row.nextLabel
         ? html`<span class="profile-overview__status"
             >${t("paperOverview.next", { step: row.nextLabel })}</span
@@ -493,6 +599,7 @@ function renderRow(props: PaperOverviewProps, row: PaperOverviewRow) {
           >${row.paper.authors.join(", ") || t("paperOverview.noAuthors")}</span
         >
       </td>
+      <td class="profile-overview__cell">${renderProgressCell(row)}</td>
       <td class="profile-overview__cell">${renderStageCell(row)}</td>
       <td class="profile-overview__cell profile-overview__cell--missing">
         ${renderEvidenceCell(row)}
