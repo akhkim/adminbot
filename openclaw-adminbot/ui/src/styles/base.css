@@ -162,6 +162,106 @@
   color-scheme: dark;
 }
 
+/*
+ * Light palette.
+ *
+ * Only the colour tokens are redeclared. Spacing, radii, type, motion and geometry are the same
+ * design in either theme, and duplicating them here is how the two drift -- somebody tunes a
+ * control height in dark and light quietly keeps the old one.
+ *
+ * Every ink is checked against the surface it sits on: --text is 17.7:1 on --bg, --muted 7.7:1,
+ * --accent 5.2:1, and the three semantic colours 4.8-5.0:1. The dark theme's accent (#4d8dff) is
+ * only 2.9:1 on white, which is why light does not simply reuse it -- an accent that fails on its
+ * own background is a link nobody with ordinary eyesight reads comfortably.
+ *
+ * Shadows stay black and get quieter rather than lighter. A shadow is absence of light, so a pale
+ * shadow on a pale surface reads as a smudge; the fix is less of it, not a different colour.
+ */
+:root[data-theme="light"] {
+  /* Canvas — white, with the near-whites doing the separating */
+  --bg: #ffffff;
+  --bg-accent: #fafafa;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f4f4f5;
+  --bg-muted: #f4f4f5;
+  --bg-content: #fafafa;
+  --bg-landing: none;
+
+  /* Card / surface — separated by border not shadow, same as dark */
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --card-highlight: rgba(0, 0, 0, 0.02);
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+
+  /* Panel / chrome */
+  --panel: #fafafa;
+  --panel-strong: #ffffff;
+  --panel-hover: #f4f4f5;
+  --chrome: rgba(255, 255, 255, 0.88);
+  --chrome-strong: rgba(255, 255, 255, 0.96);
+
+  /* Text — zinc ramp inverted. --muted is 7.7:1 on --bg. */
+  --text: #18181b;
+  --text-strong: #09090b;
+  --chat-text: #18181b;
+  --muted: #52525b;
+  --muted-strong: #3f3f46;
+  --muted-foreground: #52525b;
+
+  /* Border — hairline, and visible: a 2% border on white is a border nobody sees. */
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --border-hover: #a1a1aa;
+  --input: #d4d4d8;
+  --ring: #2563eb;
+
+  /* Accent — the same blue, darkened until it carries on white */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-muted: #2563eb;
+  --accent-subtle: rgba(37, 99, 235, 0.08);
+  --accent-foreground: #ffffff;
+  --accent-glow: rgba(37, 99, 235, 0.12);
+  --selection-bg: rgba(37, 99, 235, 0.2);
+  --selection-fg: #09090b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+
+  /* Secondary */
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --accent-2: #2563eb;
+  --accent-2-muted: rgba(37, 99, 235, 0.7);
+  --accent-2-subtle: rgba(37, 99, 235, 0.06);
+
+  /* Semantic — status only, never decoration */
+  --ok: #15803d;
+  --ok-muted: rgba(21, 128, 61, 0.7);
+  --ok-subtle: rgba(21, 128, 61, 0.08);
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --warn: #b45309;
+  --warn-muted: rgba(180, 83, 9, 0.7);
+  --warn-subtle: rgba(180, 83, 9, 0.08);
+  --danger: #dc2626;
+  --danger-muted: rgba(220, 38, 38, 0.7);
+  --danger-subtle: rgba(220, 38, 38, 0.08);
+  --info: #2563eb;
+
+  --focus: rgba(37, 99, 235, 0.2);
+
+  --grid-line: rgba(0, 0, 0, 0.04);
+
+  /* Quieter, not paler. See the note above. */
+  --shadow-sm: 0 1px 2px rgba(9, 9, 11, 0.06);
+  --shadow-md: 0 4px 12px rgba(9, 9, 11, 0.08);
+  --shadow-lg: 0 12px 32px rgba(9, 9, 11, 0.1);
+  --shadow-xl: 0 24px 56px rgba(9, 9, 11, 0.12);
+
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }

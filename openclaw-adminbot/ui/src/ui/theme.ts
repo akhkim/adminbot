@@ -1,38 +1,55 @@
 // Control UI module implements theme behavior.
-// Dark-only: the "knot"/"dash" theme families and light mode are removed (design spec §2).
-// ThemeMode is kept as a type (callers across the app still pass/store it) but no longer
-// changes the resolved palette — every mode resolves to "dark".
+//
+// Two palettes and a custom escape hatch. The "knot"/"dash" theme families are still gone (design
+// spec §2); what came back is light, because a portal people open in a bright room all day is not
+// a terminal.
+//
+// `theme` is which palette family ("claw", or the tweakcn "custom" override), and `mode` is which
+// variant of it the viewer wants. They are separate because "follow my system" is an answer to the
+// second question and not to the first.
 export type ThemeName = "claw" | "custom";
 export type ThemeMode = "system" | "light" | "dark";
-export type ResolvedTheme = "dark" | "custom";
+export type ResolvedTheme = "dark" | "light" | "custom";
 
 export const VALID_THEME_NAMES = new Set<ThemeName>(["claw", "custom"]);
 const VALID_THEME_MODES = new Set<ThemeMode>(["system", "light", "dark"]);
 
 type ThemeSelection = { theme: ThemeName; mode: ThemeMode };
 
-// Every theme/mode value a user may still have persisted from earlier product names and
-// the removed "knot"/"dash" families. All of them normalize to the single dark theme now —
-// legacy stored settings must resolve, never throw.
+// Every theme/mode value a user may still have persisted from earlier product names and the removed
+// "knot"/"dash" families. Stored settings must resolve, never throw.
+//
+// The three that named a light theme now map to `mode: "light"` rather than being flattened to
+// dark. Somebody who chose light before it was removed gets it back rather than being told once
+// more that their preference does not exist.
 const LEGACY_MAP: Record<string, ThemeSelection> = {
   defaultTheme: { theme: "claw", mode: "dark" },
-  docsTheme: { theme: "claw", mode: "dark" },
-  lightTheme: { theme: "claw", mode: "dark" },
+  docsTheme: { theme: "claw", mode: "light" },
+  lightTheme: { theme: "claw", mode: "light" },
   landingTheme: { theme: "claw", mode: "dark" },
   newTheme: { theme: "claw", mode: "dark" },
   dark: { theme: "claw", mode: "dark" },
-  light: { theme: "claw", mode: "dark" },
+  light: { theme: "claw", mode: "light" },
   openknot: { theme: "claw", mode: "dark" },
   fieldmanual: { theme: "claw", mode: "dark" },
   clawdash: { theme: "claw", mode: "dark" },
-  system: { theme: "claw", mode: "dark" },
+  system: { theme: "claw", mode: "system" },
   knot: { theme: "claw", mode: "dark" },
   dash: { theme: "claw", mode: "dark" },
 };
 
-/** Dark-only: there is no system-preference palette to mirror anymore. */
+/**
+ * What the viewer's operating system is asking for.
+ *
+ * Dark when it cannot be asked. A server render, a test environment and an old browser all land
+ * here, and dark is what this app looked like for everyone until now -- guessing light would change
+ * the appearance of the app for people who never expressed a preference at all.
+ */
 export function resolveSystemTheme(): ResolvedTheme {
-  return "dark";
+  if (typeof globalThis.matchMedia !== "function") {
+    return "dark";
+  }
+  return globalThis.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
 export function parseThemeSelection(
@@ -53,10 +70,21 @@ export function parseThemeSelection(
 }
 
 /**
- * `mode` is retained in the signature only because callers across the app (e.g.
- * app-settings.ts's system-preference listener) still pass it. It no longer affects the
- * result: dark-only means every mode resolves to the same palette.
+ * The palette to actually paint.
+ *
+ * `custom` wins over the mode because the tweakcn override is a whole palette somebody pasted in,
+ * not a variant of ours to take a light version of. It is dark-only, which is why choosing light
+ * while a custom theme is active changes nothing -- and why the mode control says so.
  */
-export function resolveTheme(theme: ThemeName, _mode: ThemeMode): ResolvedTheme {
-  return theme === "custom" ? "custom" : "dark";
+export function resolveTheme(theme: ThemeName, mode: ThemeMode): ResolvedTheme {
+  if (theme === "custom") {
+    return "custom";
+  }
+  if (mode === "light") {
+    return "light";
+  }
+  if (mode === "dark") {
+    return "dark";
+  }
+  return resolveSystemTheme();
 }

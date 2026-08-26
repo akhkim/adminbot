@@ -52,6 +52,7 @@ import {
 } from "./session-key.ts";
 import { normalizeChatAutoScrollMode, type ChatAutoScrollMode } from "./storage.ts";
 import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "./string-coerce.ts";
+import type { ThemeMode } from "./theme.ts";
 import type { SessionsListResult } from "./types.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
@@ -881,11 +882,53 @@ function countHiddenCronSessions(state: AppViewState, sessions: SessionsListResu
   ).length;
 }
 
-// Dark-only (design spec §2): there is no light/dark/system choice left to render. The
-// function stays exported and callable — app-render.ts (off limits, owned by another
-// agent) still calls it from two chrome locations — but it no longer renders a picker.
-export function renderTopbarThemeModeToggle(_state: AppViewState) {
-  return nothing;
+/**
+ * One button in the chrome that cycles System → Light → Dark.
+ *
+ * A cycle rather than three buttons, because this sits in a top bar that already carries search,
+ * the notification bell and the connection status, and a three-way segmented control there would
+ * cost more room than the choice is worth. The three-option version lives in Quick Settings, where
+ * somebody who wants to see all the options at once is already looking.
+ *
+ * It shows the mode that is *set*, not the palette being painted: a viewer on "System" whose
+ * machine is dark needs the button to say System, or pressing it appears to do nothing.
+ *
+ * Hidden entirely while a custom theme is active. That palette is pasted in and dark-only, so the
+ * button would change a stored setting and repaint nothing -- which reads as broken.
+ */
+const THEME_MODE_CYCLE: Record<ThemeMode, ThemeMode> = {
+  system: "light",
+  light: "dark",
+  dark: "system",
+};
+
+const THEME_MODE_ICON: Record<ThemeMode, keyof typeof icons> = {
+  system: "monitor",
+  light: "sun",
+  dark: "moon",
+};
+
+export function renderTopbarThemeModeToggle(state: AppViewState) {
+  if (state.theme === "custom") {
+    return nothing;
+  }
+  const mode = state.themeMode ?? "dark";
+  const next = THEME_MODE_CYCLE[mode] ?? "system";
+  const label = t(`settings.appearance.${mode}`);
+  return html`
+    <button
+      class="topbar-theme-mode__btn"
+      type="button"
+      data-testid="topbar-theme-mode"
+      data-mode=${mode}
+      title=${t("settings.appearance.toggle", { mode: label })}
+      aria-label=${t("settings.appearance.toggle", { mode: label })}
+      @click=${(event: Event) =>
+        state.setThemeMode?.(next, { element: (event.currentTarget as HTMLElement) ?? undefined })}
+    >
+      <span aria-hidden="true">${icons[THEME_MODE_ICON[mode] ?? "monitor"]}</span>
+    </button>
+  `;
 }
 
 export function renderSidebarConnectionStatus(state: AppViewState) {

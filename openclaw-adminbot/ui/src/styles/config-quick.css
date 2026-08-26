@@ -1304,3 +1304,12 @@
     justify-content: center;
   }
 }
+
+/* The note under Appearance when a custom theme is active. Sits with the row it explains rather
+   than in a tooltip: a disabled control with no reason beside it reads as a bug. */
+.qs-row__hint {
+  margin: calc(-1 * var(--space-1)) 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+}

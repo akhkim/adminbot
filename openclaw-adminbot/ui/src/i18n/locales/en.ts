@@ -401,6 +401,16 @@ export const en: TranslationMap = {
   },
   // What the sidebar and the page heading call a page that holds several tabs. The tabs keep their
   // own `tabs.*` labels for the bar inside the page.
+  // The light/dark control, in the chrome and in Quick Settings.
+  settings: {
+    appearance: {
+      system: "System",
+      light: "Light",
+      dark: "Dark",
+      toggle: "Appearance: {mode}. Click to change.",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",

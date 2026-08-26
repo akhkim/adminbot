@@ -217,7 +217,7 @@ describe("setTabFromRoute", () => {
     expect(host.debugPollInterval).toBeNull();
   });
 
-  it("keeps the dark palette when themeMode changes", () => {
+  it("repaints when themeMode changes", () => {
     const host = createHost("chat");
     host.settings.theme = "claw";
     host.settings.themeMode = "dark";
@@ -230,8 +230,9 @@ describe("setTabFromRoute", () => {
       themeMode: "light",
     });
 
+    // The family stays "claw"; what the mode picks is which of its two palettes is painted.
     expect(host.theme).toBe("claw");
-    expect(host.themeResolved).toBe("dark");
+    expect(host.themeResolved).toBe("light");
   });
 
   it("applies normalized browser-local text scale", () => {
@@ -246,17 +247,17 @@ describe("setTabFromRoute", () => {
     expect(document.documentElement.style.getPropertyValue("--control-ui-text-scale")).toBe("1.25");
   });
 
-  it("resolves a retired theme family to the dark palette", () => {
+  it("resolves a retired theme family rather than painting nothing", () => {
     const host = createHost("chat");
     // Retired families ("knot"/"dash") are rewritten to "claw" at the storage boundary by
-    // parseThemeSelection. This seam only has to guarantee the palette still resolves to
-    // dark if an un-normalized value reaches it.
+    // parseThemeSelection. This seam only has to guarantee an un-normalized value still resolves
+    // to a palette that exists -- and now that light exists, to the one the mode asked for.
     host.settings.theme = "dash" as unknown as ThemeName;
     host.settings.themeMode = "light";
 
     syncThemeWithSettings(host);
 
-    expect(host.themeResolved).toBe("dark");
+    expect(host.themeResolved).toBe("light");
   });
 
   it("falls back to claw when custom is selected without a stored custom theme", () => {

@@ -4,16 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Jinesis Portal</title>
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       (function () {
-        // Dark-only (design spec §2): the only theme choice left is the "custom" tweakcn
-        // escape hatch (dark variant only). Every other stored theme/mode value — including
-        // the removed "knot"/"dash" families and light mode — normalizes to plain dark.
+        // Resolved before first paint, from the same stored settings the app reads later. If the
+        // app decided this after hydrating, every light-mode load would flash the dark canvas
+        // first -- which is the one thing a theme preference exists to stop.
+        //
+        // Duplicated logic, deliberately: this has to run inline with no imports, and the
+        // alternative is shipping a module before the first byte of paint. theme.ts is the
+        // authority; ui/src/ui/theme.test.ts asserts the two agree.
         try {
           var keys = Object.keys(localStorage);
           var raw;
@@ -23,14 +27,28 @@
               if (raw) break;
             }
           }
-          var resolved = "dark";
+          var theme = "claw";
+          var mode = "dark";
           if (raw) {
             var s = JSON.parse(raw);
-            var t = s && s.theme;
-            resolved = t === "custom" ? "custom" : "dark";
+            if (s && s.theme === "custom") theme = "custom";
+            if (s && (s.themeMode === "light" || s.themeMode === "system")) mode = s.themeMode;
+            else if (s && s.themeMode === "dark") mode = "dark";
+            // Pre-split settings stored the variant in `theme`.
+            else if (s && (s.theme === "light" || s.theme === "lightTheme")) mode = "light";
           }
+          var systemLight =
+            typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches;
+          var resolved =
+            theme === "custom"
+              ? "custom"
+              : mode === "light" || (mode === "system" && systemLight)
+                ? "light"
+                : "dark";
+          var family = resolved === "light" ? "light" : "dark";
           document.documentElement.setAttribute("data-theme", resolved);
-          document.documentElement.setAttribute("data-theme-mode", "dark");
+          document.documentElement.setAttribute("data-theme-mode", family);
+          document.documentElement.style.colorScheme = family;
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "dark");
           document.documentElement.setAttribute("data-theme-mode", "dark");
@@ -41,7 +59,11 @@
       /*
        * Pre-hydration fallback. Literal colors are intentional: this panel renders before
        * the token stylesheet loads, so it cannot use var(--*). Keep in sync with the
-       * dark palette in ui/src/styles/base.css.
+       * palettes in ui/src/styles/base.css.
+       *
+       * Keyed off the attribute the bootstrap above already set, rather than off a media query:
+       * somebody who chose dark on a light machine has to get the dark panel, and the media query
+       * would give them the other one at the exact moment the app has failed to start.
        */
       body.openclaw-mount-fallback-active {
         margin: 0;
@@ -56,6 +78,11 @@
           BlinkMacSystemFont,
           "Segoe UI",
           sans-serif;
+      }
+
+      :root[data-theme-mode="light"] body.openclaw-mount-fallback-active {
+        color: #18181b;
+        background: #ffffff;
       }
 
       body.openclaw-mount-fallback-active openclaw-app {
@@ -142,6 +169,36 @@
         border-color: #4d8dff;
         color: #06080d;
         background: #4d8dff;
+      }
+
+      /* The light half of the same panel. Same literals-only rule: no tokens exist yet. */
+      :root[data-theme-mode="light"] .mount-fallback__panel {
+        border-color: #e4e4e7;
+        background: #ffffff;
+        box-shadow: 0 24px 56px rgba(9, 9, 11, 0.12);
+      }
+
+      :root[data-theme-mode="light"] .mount-fallback__eyebrow {
+        color: #52525b;
+      }
+
+      :root[data-theme-mode="light"] .mount-fallback__panel p,
+      :root[data-theme-mode="light"] .mount-fallback__panel ul {
+        color: #18181b;
+      }
+
+      :root[data-theme-mode="light"] .mount-fallback__panel a {
+        color: #2563eb;
+      }
+
+      :root[data-theme-mode="light"] .mount-fallback__button {
+        border-color: #d4d4d8;
+      }
+
+      :root[data-theme-mode="light"] .mount-fallback__button--primary {
+        border-color: #2563eb;
+        color: #ffffff;
+        background: #2563eb;
       }
 
       .mount-fallback__panel:focus {

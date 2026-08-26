@@ -178,13 +178,37 @@ describe("chat header controls (browser)", () => {
     expect(container.querySelector('[data-chat-provider-usage="true"]')).toBeNull();
   });
 
-  it("renders no color mode picker (dark-only, design spec §2)", async () => {
+  it("cycles the appearance from one button in the chrome", async () => {
+    const setThemeMode = vi.fn();
     const container = document.createElement("div");
-    render(renderTopbarThemeModeToggle(createState({ themeMode: "system" })), container);
+    render(
+      renderTopbarThemeModeToggle(
+        createState({ themeMode: "system", theme: "claw", setThemeMode } as never),
+      ),
+      container,
+    );
     await Promise.resolve();
 
-    expect(container.querySelectorAll(".topbar-theme-mode__btn")).toHaveLength(0);
-    expect(container.textContent?.trim()).toBe("");
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="topbar-theme-mode"]');
+    // It shows the mode that is set, not the palette being painted: a viewer on "System" whose
+    // machine is dark needs it to say System, or pressing it appears to do nothing.
+    expect(button?.dataset.mode).toBe("system");
+    expect(button?.getAttribute("aria-label")).toContain("System");
+    button?.click();
+    expect(setThemeMode).toHaveBeenCalledWith("light", expect.anything());
+  });
+
+  it("hides the toggle while a custom theme is active", async () => {
+    const container = document.createElement("div");
+    // A pasted palette is dark-only, so the button would change a stored setting and repaint
+    // nothing -- which reads as broken.
+    render(
+      renderTopbarThemeModeToggle(createState({ themeMode: "dark", theme: "custom" } as never)),
+      container,
+    );
+    await Promise.resolve();
+
+    expect(container.querySelector('[data-testid="topbar-theme-mode"]')).toBeNull();
   });
 
   it("renders the cron session filter in the mobile dropdown controls", async () => {

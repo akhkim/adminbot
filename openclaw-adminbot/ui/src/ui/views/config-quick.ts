@@ -130,6 +130,14 @@ export type QuickSettingsProps = {
 type ThemeOption = { id: ThemeName; label: string };
 const BUILTIN_THEME_OPTIONS: ThemeOption[] = [{ id: "claw", label: "Claw" }];
 
+// System first: it is the answer for anyone who has already told their machine which way they
+// like it, which is most people, and it is the only option that keeps being right after sunset.
+const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 const BORDER_RADIUS_STOPS: Array<{ value: BorderRadiusStop; label: string }> = [
   { value: 0, label: "None" },
   { value: 25, label: "Slight" },
@@ -597,6 +605,38 @@ function renderAppearanceCard(props: QuickSettingsProps) {
     <div class="qs-card qs-card--appearance">
       ${renderCardHeader(icons.spark, "Appearance")}
       <div class="qs-card__body">
+        <div class="qs-row">
+          <span class="qs-row__label">Appearance</span>
+          <div class="qs-segmented">
+            ${THEME_MODE_OPTIONS.map(
+              (option) => html`
+                <button
+                  class="qs-segmented__btn ${option.value === props.themeMode
+                    ? "qs-segmented__btn--active"
+                    : ""}"
+                  data-testid=${`quick-theme-mode-${option.value}`}
+                  aria-pressed=${option.value === props.themeMode ? "true" : "false"}
+                  ?disabled=${props.theme === "custom"}
+                  @click=${(event: Event) => {
+                    if (option.value !== props.themeMode) {
+                      props.setThemeMode(option.value, {
+                        element: (event.currentTarget as HTMLElement) ?? undefined,
+                      });
+                    }
+                  }}
+                >
+                  ${option.label}
+                </button>
+              `,
+            )}
+          </div>
+        </div>
+        ${props.theme === "custom"
+          ? html`<p class="qs-row__hint" data-testid="quick-theme-mode-custom-note">
+              A custom theme is one pasted palette, so it has no light variant. Switch back to Claw
+              to choose an appearance.
+            </p>`
+          : nothing}
         <div class="qs-row">
           <span class="qs-row__label">Theme</span>
           <div class="qs-segmented">
