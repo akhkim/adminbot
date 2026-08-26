@@ -212,7 +212,6 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(auth.login({ email: "new@example.com", password: "correcthorse" }).ok).toBe(true);
   });
 
-  
   it("rejected registrations behave as unknown on login", () => {
     const { store, auth } = setup();
     store.saveLabMember(member("rj", "rj@example.com"));
@@ -430,7 +429,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_at).toBeTruthy();
   });
 
-  it("leaves last-login fields alone when no geolocator is configured, or it resolves to nothing", async () => {
+  it("leaves the inferred location alone when no geolocator is configured, or it resolves to nothing", async () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");
 
@@ -445,6 +444,33 @@ describe("AdminBotAuthService claim/login flow", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(store2.getLabMember("bo")?.last_login_country).toBeUndefined();
+  });
+
+  it("stamps when somebody signed in, whether or not geolocation is configured", () => {
+    // This used to be written only inside the geolocation callback, so with no IPinfo token
+    // nobody in the lab ever got one -- and five readers take absent to mean "never signed in".
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    expect(store.getLabMember("ada")?.last_login_at).toBeUndefined();
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+
+    expect(login.ok).toBe(true);
+    // Synchronously, before login returns: it is one local write with nothing to wait on, and it
+    // must not depend on a promise the caller never sees.
+    expect(store.getLabMember("ada")?.last_login_at).toBeTruthy();
+    // ...and it says nothing about where they were.
+    expect(store.getLabMember("ada")?.last_login_country).toBeUndefined();
+  });
+
+  it("does not stamp a failed sign-in", () => {
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    store.saveLabMember({ ...store.getLabMember("ada")!, last_login_at: undefined } as never);
+
+    auth.login({ email: "ada@example.com", password: "wrong-password" });
+
+    expect(store.getLabMember("ada")?.last_login_at).toBeUndefined();
   });
 
   it("rate limits after 10 failures in the window", () => {
@@ -758,7 +784,9 @@ describe("AdminBotAuthService password reset", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(auth.login({ email: "ada@example.com", password: "brand-new-passphrase" }).ok).toBe(true);
+    expect(auth.login({ email: "ada@example.com", password: "brand-new-passphrase" }).ok).toBe(
+      true,
+    );
     expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(false);
   });
 
