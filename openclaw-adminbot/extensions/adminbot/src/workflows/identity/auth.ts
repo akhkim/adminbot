@@ -302,12 +302,39 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
+    this.recordLoginTime(member.id);
     if (this.geolocateIp && request.remoteIp) {
       // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
       // sign-in itself, and must never make login wait on a third-party API.
       void this.recordLoginLocation(member.id, request.remoteIp);
     }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
+  }
+
+  /**
+   * Stamps when somebody signed in.
+   *
+   * Its own writer, on the login itself. This used to happen only inside `recordLoginLocation`,
+   * which meant `last_login_at` -- a field whose name promises exactly one thing -- was written
+   * only when an IPinfo token happened to be configured *and* the lookup returned something. With
+   * no token nobody in the lab ever got one, so Profile Completeness flagged every daily user as
+   * "never signed in", the adoption line read 0/N, and the page whose entire thesis is "complete on
+   * paper, adopted by nobody" could not tell the two apart.
+   *
+   * Synchronous and unconditional, unlike the geolocation below: this is one local write with
+   * nothing to wait on, and a stamp that is sometimes skipped is worse than no stamp at all --
+   * absent means "never signed in" to five different readers.
+   *
+   * Re-reads rather than reusing the `member` from login() for the same reason the location writer
+   * does: logins race, and this must touch one field and never clobber a concurrent profile edit.
+   */
+  private recordLoginTime(memberId: string): void {
+    const current = this.store.getLabMember(memberId);
+    if (!current) {
+      return;
+    }
+    const now = this.now().toISOString();
+    this.store.saveLabMember({ ...current, last_login_at: now, updated_at: now });
   }
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
@@ -330,7 +357,8 @@ export class AdminBotAuthService {
       }
       this.store.saveLabMember({
         ...current,
-        last_login_at: this.now().toISOString(),
+        // `last_login_at` is not written here any more. It is a fact about signing in, not about
+        // geolocation succeeding, and recordLoginTime owns it -- one writer for one fact.
         ...(location.country ? { last_login_country: location.country } : {}),
         ...(location.continent ? { last_login_continent: location.continent } : {}),
         // Written alongside the country and read only with `last_login_at`, which is what keeps a
