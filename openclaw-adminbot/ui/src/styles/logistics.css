@@ -1278,3 +1278,95 @@
   width: 0.85em;
   height: 0.85em;
 }
+
+/* My Desk — the professor's five queues on one screen. A column of sections rather than a grid:
+   they are read top to bottom in priority order, and a grid would put the same five things in an
+   order that changes with the window width. */
+.professor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.professor__section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  padding: var(--space-4);
+}
+
+.professor__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* The count is the whole point of the section, so it is the biggest thing in it -- and it goes
+   quiet at zero, because "nothing waiting" should not compete with the queues that have something
+   in them. */
+.professor__count {
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  color: var(--warn);
+}
+
+.professor__count[data-empty="true"] {
+  color: var(--muted);
+}
+
+.professor__list {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.professor__when {
+  margin-left: auto;
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}
+
+.professor__empty {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-top: var(--space-3);
+}
+
+.professor__figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__figure {
+  font-size: var(--control-ui-text-xl);
+  font-weight: 650;
+}
+
+.professor__open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}

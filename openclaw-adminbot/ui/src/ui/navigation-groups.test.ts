@@ -80,6 +80,8 @@ describe("TAB_GROUPS", () => {
     // Seven entries, not ten: Lab Overview, Nudges and Membership are each one page with a tab bar
     // inside it (TAB_PAGES), and only the landing tab is listed here.
     expect(byLabel("admin")).toEqual([
+      // First in the group: it is the page that says which of the others to open.
+      "adminbotProfessor",
       "adminbot",
       "adminbotPapers",
       "adminbotAnnouncements",
