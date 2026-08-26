@@ -139,6 +139,7 @@ import {
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
+import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
@@ -2631,7 +2632,7 @@ export function renderApp(state: AppViewState) {
   // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
   // opened, and re-read after a reminder run clears the stamp.
   if (
-    state.tab === "adminbotProfileOverview" &&
+    (state.tab === "adminbotProfileOverview" || state.tab === "adminbotProfessor") &&
     hasMemberSession &&
     !state.adminBotProfileOverviewLoading &&
     !state.adminBotProfileOverviewError &&
@@ -2660,8 +2661,10 @@ export function renderApp(state: AppViewState) {
   // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
   // the sentinel: a lab with no requests would re-ask on every render.
   if (
-    isLogisticsTab(state.tab) &&
-    state.adminBotLogisticsMode === "view" &&
+    // My Desk summarises the same queue, so it needs the same read. Without this the letter
+    // section would be empty until somebody happened to open Requests first.
+    (isLogisticsTab(state.tab) || state.tab === "adminbotProfessor") &&
+    (state.adminBotLogisticsMode === "view" || state.tab === "adminbotProfessor") &&
     hasMemberSession &&
     !state.adminBotLogisticsRequestsLoading &&
     !state.adminBotLogisticsRequestsError &&
@@ -3210,6 +3213,19 @@ export function renderApp(state: AppViewState) {
               <!-- The checklist moved to Getting Set Up. It is required reading a member works
                    through once, and it was ending a page they edit every week. -->
             `
+          : nothing}
+        ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
+          ? renderProfessorView({
+              requests: state.adminBotLogisticsRequests ?? [],
+              requestsLoading: state.adminBotLogisticsRequestsLoading,
+              papers: state.adminBotData?.papers ?? [],
+              profiles: state.adminBotProfileOverview ?? [],
+              adoption: state.adminBotProfileAdoption ?? null,
+              pendingProposals: (state.adminBotData?.proposals ?? []).filter(
+                (proposal) => proposal.status === "pending",
+              ).length,
+              onOpen: (tab) => state.setTab(tab),
+            })
           : nothing}
         ${state.tab === "myOnboarding" ? renderOnboardingChecklist(state) : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}

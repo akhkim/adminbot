@@ -92,6 +92,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotRegistrations: "admin",
   // Everybody's completeness at once, which is a governance read; the service re-checks it.
   adminbotProfileOverview: "admin",
+  // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
+  // timelines. It is the same data with the "what is waiting on me" question asked of it.
+  adminbotProfessor: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",

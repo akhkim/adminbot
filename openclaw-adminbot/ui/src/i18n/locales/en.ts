@@ -411,6 +411,47 @@ export const en: TranslationMap = {
     },
   },
 
+  professor: {
+    loading: "Reading…",
+    more: "+{count} more",
+    letters: {
+      title: "Rec letter queue",
+      sub: "Requests still waiting on the lab, soonest deadline first.",
+      schools: "{count} school(s)",
+      noSchools: "No schools listed yet",
+      empty: "Nothing outstanding.",
+      open: "Open the request queue",
+    },
+    drafts: {
+      title: "Overleaf reading queue",
+      sub: "Drafts that are readable and not yet submitted.",
+      empty: "No drafts are waiting to be read.",
+      open: "Open Active Papers",
+    },
+    adoption: {
+      title: "Adoption",
+      sub: "How much of the lab's own record the lab's own members wrote.",
+      profile: "of profile fields self-filled",
+      projects: "of papers with an author's own update",
+      signedIn: "have ever signed in",
+      open: "Open Profile Completeness",
+    },
+    timelines: {
+      title: "Thin timelines",
+      sub: "Members who have not planned their term.",
+      entries: "{count} entries",
+      empty: "Everyone has planned their term.",
+      open: "Open Time Availability",
+    },
+    approvals: {
+      title: "Waiting on your approval",
+      sub: "Proposals no one else can approve.",
+      waiting: "{count} proposal(s) waiting.",
+      empty: "Nothing waiting.",
+      open: "Open Pending Actions",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",
@@ -431,6 +472,7 @@ export const en: TranslationMap = {
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
+    adminbotProfessor: "My Desk",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -479,6 +521,7 @@ export const en: TranslationMap = {
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+    adminbotProfessor: "What is waiting on you, across every queue.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",

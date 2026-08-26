@@ -47,6 +47,8 @@ export const TAB_GROUPS = [
   {
     label: "admin",
     tabs: [
+      // First in the group, because it is the page that says which of the others to open.
+      "adminbotProfessor",
       "adminbot",
       "adminbotPapers",
       "adminbotAnnouncements",
@@ -171,6 +173,7 @@ export type Tab =
   | "adminbotSettings"
   | "adminbotMembers"
   | "adminbotProfileOverview"
+  | "adminbotProfessor"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -253,6 +256,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
   adminbotProfileOverview: "/adminbot/profile-overview",
+  adminbotProfessor: "/adminbot/professor",
   adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotMeetings: "/adminbot/meetings",
   adminbotSignatures: "/adminbot/signatures",
@@ -424,6 +428,8 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotProfileOverview":
       return "check";
+    case "adminbotProfessor":
+      return "lobster";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":
