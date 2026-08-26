@@ -614,10 +614,14 @@ export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) 
     return;
   }
   const root = document.documentElement;
-  // Dark-only: every resolved theme ("dark" and the custom escape hatch) is a dark palette.
   root.dataset.theme = resolved;
-  root.dataset.themeMode = "dark";
-  root.style.colorScheme = "dark";
+  // `data-theme` is the palette and `data-theme-mode` is the light/dark family it belongs to. The
+  // custom escape hatch is a pasted dark palette, so it reports dark: anything keying off the mode
+  // -- a scrollbar, a form control, a third-party embed -- has to be told which way round the
+  // contrast runs, and "custom" tells it nothing.
+  const family = resolved === "light" ? "light" : "dark";
+  root.dataset.themeMode = family;
+  root.style.colorScheme = family;
 }
 
 function syncSystemThemeListener(host: SettingsHost) {
