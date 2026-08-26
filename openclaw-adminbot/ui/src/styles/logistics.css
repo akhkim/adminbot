@@ -1370,3 +1370,9 @@
   gap: var(--space-1);
   margin-top: var(--space-3);
 }
+
+/* The setup checklist, folded into My Profile. Spaced off the card above it so a closed disclosure
+   reads as its own thing rather than as the last line of the suggestions. */
+.onboarding-checklist__section {
+  margin-top: var(--space-5);
+}
