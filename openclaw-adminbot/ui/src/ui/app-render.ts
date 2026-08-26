@@ -138,7 +138,7 @@ import {
   renderPaperCardDialog,
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
-import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
+import { renderOnboardingChecklistSection } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -3210,8 +3210,11 @@ export function renderApp(state: AppViewState) {
                 onApplyPolishedPhoto: (variantId) =>
                   void applyAdminBotOwnProfilePhoto(state, variantId),
               })}
-              <!-- The checklist moved to Getting Set Up. It is required reading a member works
-                   through once, and it was ending a page they edit every week. -->
+              <!-- Back on this page, but folded away. It is required reading somebody walks once,
+                   on a page they edit every week: open, it ended the page in a wall of steps they
+                   had already done; gone entirely, there was nowhere left to tick one off, since
+                   the suggestions above only link out. Closed, it costs a line. -->
+              ${renderOnboardingChecklistSection(state)}
             `
           : nothing}
         ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
@@ -3227,7 +3230,6 @@ export function renderApp(state: AppViewState) {
               onOpen: (tab) => state.setTab(tab),
             })
           : nothing}
-        ${state.tab === "myOnboarding" ? renderOnboardingChecklist(state) : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
         ${state.tab === "adminbotProfileOverview"
           ? renderAdminBotProfileOverview({

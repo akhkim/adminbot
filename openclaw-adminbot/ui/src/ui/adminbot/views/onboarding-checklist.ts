@@ -268,6 +268,40 @@ export function hasUnacknowledgedOnboarding(state: AppViewState): boolean {
   return Boolean(state.adminBotOnboarding) && !state.adminBotOnboardingAcknowledged;
 }
 
+/**
+ * The checklist on My Profile, folded away.
+ *
+ * It had its own tab for a while and that was worse: a page nobody visits twice is a page nobody
+ * visits once. Open on the profile was worse again -- a page somebody edits every week ended in a
+ * wall of steps they had already walked.
+ *
+ * So: a disclosure, closed by default once there is nothing left, and open while there is. It has
+ * to live somewhere, because the onboarding suggestions higher up this page only link out -- there
+ * is no other control anywhere that can mark a step done, and a member who cannot finish the
+ * checklist is a member the follow-up sweep chases every two months forever.
+ */
+export function renderOnboardingChecklistSection(state: AppViewState) {
+  const onboarding = state.adminBotOnboarding;
+  if (!onboarding?.steps?.length) {
+    return nothing;
+  }
+  const outstanding = onboarding.steps.filter((step) => step.status !== "complete").length;
+  return html`
+    <details
+      class="my-work__done onboarding-checklist__section"
+      data-testid="profile-onboarding-checklist"
+      ?open=${outstanding > 0}
+    >
+      <summary class="my-work__done-summary">
+        ${outstanding
+          ? t("profile.onboardingChecklist", { count: String(outstanding) })
+          : t("profile.onboardingChecklistDone")}
+      </summary>
+      ${renderOnboardingChecklist(state)}
+    </details>
+  `;
+}
+
 export function renderOnboardingChecklist(state: AppViewState) {
   const onboarding = state.adminBotOnboarding;
   if (!onboarding || state.adminBotOnboardingAcknowledged) {

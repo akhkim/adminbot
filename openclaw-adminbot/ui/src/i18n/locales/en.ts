@@ -467,7 +467,6 @@ export const en: TranslationMap = {
     adminbot: "Pending Actions",
     adminbotRegistrations: "Requests",
     adminbotOnboarding: "Onboarding",
-    myOnboarding: "Getting Set Up",
     adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
@@ -516,7 +515,6 @@ export const en: TranslationMap = {
     adminbot: "Approval queue and execution controls.",
     adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
     adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
-    myOnboarding: "What is left to do before you are fully set up.",
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
@@ -1720,6 +1718,8 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    onboardingChecklist: "Your setup checklist ({count} left)",
+    onboardingChecklistDone: "Your setup checklist",
     visibility: {
       self: "Only you and the admins",
     },

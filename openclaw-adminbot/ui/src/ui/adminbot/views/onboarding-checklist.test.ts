@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { MemberOnboarding, MemberOnboardingStep } from "../auth/session.ts";
-import { hasUnacknowledgedOnboarding, renderOnboardingChecklist } from "./onboarding-checklist.ts";
+import {
+  hasUnacknowledgedOnboarding,
+  renderOnboardingChecklist,
+  renderOnboardingChecklistSection,
+} from "./onboarding-checklist.ts";
 
 function createState(
   onboarding: MemberOnboarding | null,
@@ -154,8 +158,20 @@ describe("renderOnboardingChecklist", () => {
     const state = createState(
       checklist([
         { id: "twitter", label: "X", status: "current", category: "Social media", required: false },
-        { id: "luma", label: "Luma", status: "remaining", category: "Social media", required: false },
-        { id: "youtube", label: "YouTube", status: "remaining", category: "Social media", required: false },
+        {
+          id: "luma",
+          label: "Luma",
+          status: "remaining",
+          category: "Social media",
+          required: false,
+        },
+        {
+          id: "youtube",
+          label: "YouTube",
+          status: "remaining",
+          category: "Social media",
+          required: false,
+        },
       ]),
     );
     const rerender = () => {
@@ -201,7 +217,13 @@ describe("renderOnboardingChecklist", () => {
         createState(
           checklist([
             PROFILE_PHOTO,
-            { id: "twitter", label: "X", status: "remaining", category: "Social media", required: false },
+            {
+              id: "twitter",
+              label: "X",
+              status: "remaining",
+              category: "Social media",
+              required: false,
+            },
           ]),
         ),
       ),
@@ -267,5 +289,54 @@ describe("onboarding step toggle", () => {
     expect(container.querySelector(".onboarding-step-card__error")?.textContent).toContain(
       "Couldn't update this step",
     );
+  });
+});
+
+describe("renderOnboardingChecklistSection", () => {
+  beforeEach(async () => {
+    await i18n.setLocale("en");
+  });
+
+  const draw = (onboarding: MemberOnboarding | null) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(renderOnboardingChecklistSection(createState(onboarding)), container);
+    return container;
+  };
+
+  it("keeps a way to tick a step off, now that the tab is gone", () => {
+    // The onboarding suggestions higher up My Profile only link out. Without this there is no
+    // control anywhere that can complete a step, and the follow-up sweep chases forever.
+    const container = draw(checklist([LINKEDIN]));
+    const section = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="profile-onboarding-checklist"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section?.querySelector(".onboarding-step-card")).not.toBeNull();
+  });
+
+  it("opens itself while something is outstanding, and folds away once nothing is", () => {
+    expect(
+      draw(checklist([LINKEDIN])).querySelector<HTMLDetailsElement>(
+        '[data-testid="profile-onboarding-checklist"]',
+      )?.open,
+    ).toBe(true);
+
+    const done = draw(checklist([{ ...LINKEDIN, status: "complete" }]));
+    const section = done.querySelector<HTMLDetailsElement>(
+      '[data-testid="profile-onboarding-checklist"]',
+    );
+    expect(section?.open).toBe(false);
+    // Still there: it is the record of what they agreed to, not only a to-do list.
+    expect(section).not.toBeNull();
+  });
+
+  it("counts what is left in the summary, so a closed row still says something", () => {
+    const container = draw(checklist([LINKEDIN, { ...LINKEDIN, id: "twitter" }]));
+    expect(container.querySelector("summary")?.textContent).toContain("2 left");
+  });
+
+  it("renders nothing at all for a member with no checklist", () => {
+    expect(draw(null).textContent?.trim()).toBe("");
   });
 });
