@@ -82,7 +82,13 @@ for name in sorted(known - {job["name"] for job in manifest["jobs"]}):
 PY
 
 status=0
-while IFS=$'\t' read -r verb name args; do
+# The plan is read on fd 3, and every command gets its stdin from /dev/null.
+#
+# Both halves matter. `openclaw cron add` reads stdin -- it prints prompts and notices through a
+# TUI -- so on the first iteration it swallowed the entire remaining plan, and the rest of the jobs
+# were never registered: they were echoed to the terminal as the CLI drained them. One job in
+# eighteen landed, and the run still exited 0.
+while IFS=$'\t' read -r verb name args <&3; do
   case "$verb" in
     unmanaged)
       printf 'adminbot-cron-sync: %s is in the store but not in the manifest — left alone\n' "$name"
@@ -94,13 +100,13 @@ while IFS=$'\t' read -r verb name args; do
       fi
       printf 'adminbot-cron-sync: %s %s\n' "$verb" "$name"
       # shellcheck disable=SC2086
-      if ! eval "$OPENCLAW cron $args"; then
+      if ! eval "$OPENCLAW cron $args" </dev/null; then
         printf 'adminbot-cron-sync: %s failed for %s\n' "$verb" "$name" >&2
         status=1
       fi
       ;;
   esac
-done < /tmp/adminbot-cron-plan.$$
+done 3< /tmp/adminbot-cron-plan.$$
 rm -f /tmp/adminbot-cron-plan.$$
 
 exit "$status"
