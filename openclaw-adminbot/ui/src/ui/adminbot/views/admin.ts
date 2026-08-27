@@ -45,7 +45,7 @@ import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
   PRE_REGISTRATION_VENUES,
   daysUntil,
-  readVenueTargets,
+  effectiveVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
 
@@ -1868,7 +1868,7 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
       // target picker write venue-catalog ids with the year in the label -- so a string test
       // silently dropped every paper registered through the second one. A paper reading
       // "PRE-REGISTERED 50% ICLR 2027" on its own card was absent from the ICLR board.
-      targets: readVenueTargets(paper).filter((target) =>
+      targets: effectiveVenueTargets(paper).filter((target) =>
         [...open].some((venueId) => venueTargetMatches(target, venueId)),
       ),
     }))

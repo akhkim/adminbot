@@ -15,6 +15,7 @@
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import { aoeInstantMs } from "./data/deadline-time.ts";
 import { DEADLINE_VENUES } from "./data/deadlines.ts";
+import { parseVenue } from "./data/venue-catalog.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
 export type VenueTarget = {
@@ -47,6 +48,9 @@ export const CONFIDENCE_CHOICES = [30, 50, 80, 99] as const;
 
 const ARTIFACT_KEY = "venue_targets";
 
+/** Digit lookarounds, not \\b: board ids run the year onto the name (`iclr2027_paper`). */
+const NAMES_A_YEAR = /(?<!\d)20\d{2}(?!\d)/u;
+
 /**
  * Read the targets off a paper.
  *
@@ -77,6 +81,68 @@ export function readVenueTargets(paper: AdminBotPaperRecord): VenueTarget[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Where a paper is going, counting the venue it has simply declared.
+ *
+ * Two fields say this and only one of them was ever read here. `venue_targets` is written by the
+ * pre-registration dialog and, since recently, by the card's target picker. `artifacts.conference`
+ * is the older field the venue selects have always written, and it is what most of the roster
+ * carries: 127 papers name a conference and 23 carry a venue target. Reading only the second meant
+ * a paper whose card plainly said "ICLR 2027" was absent from the pre-registration board, from the
+ * banner's count, and from its own Pre-registered line.
+ *
+ * A declaration counts as a registration. There is no third thing an author does to turn one into
+ * the other -- saying where the paper is going *is* the act -- so the declared venue is folded in
+ * here rather than asked for again.
+ *
+ * Derived only when no explicit target already covers that venue, so an author who set 80% in the
+ * dialog is not overruled by a 50% default inferred from the same conference.
+ *
+ * Read-only. Writers keep using readVenueTargets, because materialising an inference into stored
+ * data on an unrelated save would turn a guess into a fact nobody made.
+ */
+export function effectiveVenueTargets(paper: AdminBotPaperRecord): VenueTarget[] {
+  const explicit = readVenueTargets(paper);
+  const declared = declaredVenueTarget(paper);
+  if (!declared) {
+    return explicit;
+  }
+  if (explicit.some((target) => venueTargetMatches(target, declared.venue_id))) {
+    return explicit;
+  }
+  return [...explicit, declared].sort((left, right) => right.confidence - left.confidence);
+}
+
+/**
+ * The venue named by `artifacts.conference`, as a target, or null when none is usable.
+ *
+ * Only when the declaration names a year. Without one there is no way to tell which cycle is
+ * meant, and venueTargetMatches treats an unknown year as matching any -- so a bare "ARR", or the
+ * twenty papers reading "ARR Acceptance, Committed to EMNLP Findings", would land on the board for
+ * *this* October's ARR deadline. Those are finished commitments from a past cycle, and an upcoming
+ * pre-registration board that lists them is worse than one that misses them.
+ *
+ * With the year required this derives exactly what it should on the current roster: the four
+ * papers declaring "ICLR 2027", and nothing whose cycle is unstated or already over.
+ */
+function declaredVenueTarget(paper: AdminBotPaperRecord): VenueTarget | null {
+  const raw = (paper.artifacts as Record<string, unknown> | undefined)?.conference;
+  const conference = typeof raw === "string" ? raw.trim() : "";
+  if (!conference || !NAMES_A_YEAR.test(conference)) {
+    return null;
+  }
+  const odds = Number((paper.artifacts as Record<string, unknown> | undefined)?.confidence);
+  return {
+    // The catalog id where the string is one the catalog knows, so this target compares equal to
+    // one the picker would have written; the raw text otherwise, which still matches by family.
+    venue_id: parseVenue(conference).id ?? conference,
+    label: conference,
+    // Same default the Add a project form uses. A declared venue with no odds is still a plan,
+    // and zero would render as "certainly not going".
+    confidence: Number.isFinite(odds) && odds > 0 ? odds : 50,
+  };
 }
 
 /** The value to write back into `artifacts.venue_targets`. Empty clears the key. */
@@ -127,7 +193,7 @@ export function papersNeedingRegistration(
   venueId: string,
 ): AdminBotPaperRecord[] {
   return papers.filter(
-    (paper) => !readVenueTargets(paper).some((target) => venueTargetMatches(target, venueId)),
+    (paper) => !effectiveVenueTargets(paper).some((target) => venueTargetMatches(target, venueId)),
   );
 }
 
@@ -146,18 +212,22 @@ export function papersNeedingRegistration(
  * because the alternative is going back to ignoring it.
  */
 export function venueTargetMatches(target: VenueTarget, venueId: string): boolean {
+  const wantedYear = venueYear(venueId);
+  // The catalog id carries no year, so the label is where the target's year actually lives.
+  const targetYear = venueYear(target.venue_id) ?? venueYear(target.label);
+  // Years first, and they are decisive. `canonicalVenueId` resolves both `ICLR` and
+  // `iclr2027_paper` to the same venue, so an id comparison alone returned true for a paper aimed
+  // at ICLR 2026 when the board was asking about ICLR 2027 -- the year check below never ran. A
+  // side that names no year still matches anything, which is what lets a bare venue name work.
+  if (wantedYear !== undefined && targetYear !== undefined && wantedYear !== targetYear) {
+    return false;
+  }
   const wanted = canonicalVenueId(venueId);
   if (canonicalVenueId(target.venue_id) === wanted) {
     return true;
   }
   const wantedFamily = venueFamily(wanted);
-  if (!wantedFamily || venueFamily(canonicalVenueId(target.venue_id)) !== wantedFamily) {
-    return false;
-  }
-  const wantedYear = venueYear(venueId);
-  // The catalog id carries no year, so the label is where the target's year actually lives.
-  const targetYear = venueYear(target.venue_id) ?? venueYear(target.label);
-  return wantedYear === undefined || targetYear === undefined || wantedYear === targetYear;
+  return Boolean(wantedFamily && venueFamily(canonicalVenueId(target.venue_id)) === wantedFamily);
 }
 
 /** The conference behind an id, without its track or year: the one part both spaces agree on. */
