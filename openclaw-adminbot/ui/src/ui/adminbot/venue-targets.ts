@@ -99,9 +99,7 @@ export function daysUntil(deadline: string | undefined, now = new Date()): numbe
     return undefined;
   }
   const remaining = due - now.getTime();
-  return remaining >= 0
-    ? Math.ceil(remaining / 86_400_000)
-    : -Math.ceil(-remaining / 86_400_000);
+  return remaining >= 0 ? Math.ceil(remaining / 86_400_000) : -Math.ceil(-remaining / 86_400_000);
 }
 
 /**
@@ -128,11 +126,55 @@ export function papersNeedingRegistration(
   papers: AdminBotPaperRecord[],
   venueId: string,
 ): AdminBotPaperRecord[] {
-  const canonical = canonicalVenueId(venueId);
   return papers.filter(
-    (paper) =>
-      !readVenueTargets(paper).some((target) => canonicalVenueId(target.venue_id) === canonical),
+    (paper) => !readVenueTargets(paper).some((target) => venueTargetMatches(target, venueId)),
   );
+}
+
+/**
+ * Does this target already cover the venue the banner is asking about?
+ *
+ * Two id spaces write this field and they do not spell anything the same way. The pre-registration
+ * dialog writes deadline-board ids -- `iclr2027_paper`, `arr_2026_october`. The Add a project form
+ * writes venue-catalog ids -- `ICLR-main` -- and puts the year in the label instead. Comparing them
+ * as strings meant only the dialog's own writes ever counted, so a member who picked a target venue
+ * while adding a project was asked to pre-register a paper they had already aimed.
+ *
+ * So: exact id first, then the conference and the year, which is the pair both spaces do carry.
+ * The year matters -- `iclr2027_paper` must not be answered by a paper aimed at ICLR 2026, which is
+ * a different deadline that has already passed. A side that names no year is taken as matching,
+ * because the alternative is going back to ignoring it.
+ */
+export function venueTargetMatches(target: VenueTarget, venueId: string): boolean {
+  const wanted = canonicalVenueId(venueId);
+  if (canonicalVenueId(target.venue_id) === wanted) {
+    return true;
+  }
+  const wantedFamily = venueFamily(wanted);
+  if (!wantedFamily || venueFamily(canonicalVenueId(target.venue_id)) !== wantedFamily) {
+    return false;
+  }
+  const wantedYear = venueYear(venueId);
+  // The catalog id carries no year, so the label is where the target's year actually lives.
+  const targetYear = venueYear(target.venue_id) ?? venueYear(target.label);
+  return wantedYear === undefined || targetYear === undefined || wantedYear === targetYear;
+}
+
+/** The conference behind an id, without its track or year: the one part both spaces agree on. */
+function venueFamily(value: string): string {
+  return /^[a-z]+/u.exec(value.trim().toLowerCase())?.[0] ?? "";
+}
+
+/**
+ * The four-digit year inside an id or label, if it names one.
+ *
+ * Digit lookarounds rather than `\b`: the deadline-board ids run the year straight onto the
+ * conference (`iclr2027_paper`), where there is no word boundary to find, so a `\b` anchor read
+ * every one of them as carrying no year at all -- and "no year" matches anything.
+ */
+function venueYear(value: string): number | undefined {
+  const found = /(?<!\d)(20\d{2})(?!\d)/u.exec(value);
+  return found ? Number(found[1]) : undefined;
 }
 
 export function canonicalVenueId(value: string): string {

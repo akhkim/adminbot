@@ -685,6 +685,10 @@ describe("deleting a paper", () => {
       const { container, deleted } = draw({ openIds: ["p1"], onDeletePaper: true });
       const button = container.querySelector<HTMLButtonElement>('[data-testid="delete-paper-p1"]');
       expect(button).not.toBeNull();
+      // Renders the string, not the key path. A duplicate `myWork` section in en.ts shipped this
+      // button reading "myWork.delete.action" -- t() found nothing and fell back to the key.
+      expect(button?.textContent?.trim()).toBe("Delete this paper");
+      expect(button?.textContent).not.toContain("myWork.delete");
       button?.click();
       expect(deleted).toEqual([]);
     } finally {
