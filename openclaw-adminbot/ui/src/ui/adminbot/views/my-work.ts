@@ -57,6 +57,12 @@ import {
   venueYears,
 } from "../data/venue-catalog.ts";
 import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
+import {
+  clearHiddenPapers,
+  partitionHiddenPapers,
+  readHiddenPapers,
+  toggleHiddenPaper,
+} from "../hidden-papers.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
   completedOnLabel,
@@ -890,6 +896,24 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
           }}
         >
           ${t("myWork.blockers.report")}
+        </button>
+        <!-- One click, no confirm, nothing written to the paper: hiding is a view preference and
+             the worst it can do is take a row off this person's own list, which the line under the
+             list undoes. Delete stays where it is -- inside the opened card, behind a confirm that
+             names the title -- because on a page built for people with thirty papers, a one-click
+             destructive control next to a one-click reversible one is how the wrong paper goes. -->
+        <button
+          type="button"
+          class="btn btn--sm my-work-item__hide"
+          data-testid=${`my-work-hide-${paper.id}`}
+          title=${t("myWork.hidden.hideTitle")}
+          aria-label=${t("myWork.hidden.hideTitle")}
+          @click=${() => {
+            toggleHiddenPaper(props.memberId, paper.id);
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.hidden.hide")}
         </button>
       </div>
       ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
@@ -2002,7 +2026,11 @@ export function renderPaperCardDialog(params: {
 }
 
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
-  const items = props.papers ?? ownPapers(state);
+  const all = props.papers ?? ownPapers(state);
+  // Read once per render rather than per row: this is synchronous storage, and a thirty-paper list
+  // would otherwise parse the same JSON thirty times.
+  const hiddenIds = readHiddenPapers(props.memberId);
+  const { visible: items, hidden: tucked } = partitionHiddenPapers(all, hiddenIds);
   // Two lists, one source: a finished paper is still the member's, it just stops being work.
   const { ongoing, completed } = partitionByCompletion(items);
   // A grid for three papers is worse than three cards; the threshold is where the per-paper
@@ -2105,7 +2133,28 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   </p>`
                 : nothing}
             `
-          : html`<p class="my-work__empty">${t("myWork.items.empty")}</p>`}
+          : html`<p class="my-work__empty">
+              ${tucked.length ? t("myWork.hidden.allHidden") : t("myWork.items.empty")}
+            </p>`}
+        <!-- Says how many are held back and offers them straight back. A list that silently drops
+             rows is indistinguishable from one that lost them, which is the failure this whole
+             control would otherwise introduce. -->
+        ${tucked.length
+          ? html`<p class="my-work__hidden-line" data-testid="my-work-hidden-line">
+              ${t("myWork.hidden.count", { count: String(tucked.length) })}
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="my-work-show-hidden"
+                @click=${() => {
+                  clearHiddenPapers(props.memberId);
+                  props.onRerender?.();
+                }}
+              >
+                ${t("myWork.hidden.showAll")}
+              </button>
+            </p>`
+          : nothing}
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
       </section>

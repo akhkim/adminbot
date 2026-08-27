@@ -7029,6 +7029,27 @@ adminbot-deadlines-view {
    until you touch them -- the card is for scanning, not a form. */
 /* Fenced off rather than sitting flush with the controls above it: everything else on this card
    is reversible and this is not, so it should not read as the next button in a row. */
+/* A quiet control: the row's job is the title and its progress, and hiding is housekeeping. It
+   sits beside Report a blocker rather than inside the card, because the whole point is not having
+   to open thirty cards to prune the list. */
+.my-work-item__hide {
+  opacity: 0.65;
+}
+
+.my-work-item__hide:hover {
+  opacity: 1;
+}
+
+.my-work__hidden-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
 .my-work-item__danger {
   display: flex;
   align-items: center;
