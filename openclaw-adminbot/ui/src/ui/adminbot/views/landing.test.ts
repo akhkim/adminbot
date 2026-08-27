@@ -58,7 +58,7 @@ describe("renderLanding", () => {
       '[data-testid="landing-continue-as-guest"]',
     );
     expect(guest?.textContent?.trim()).toBe("Continue as a guest");
-    expect(guest?.getAttribute("href")).toBe("/adminbot/reimbursements");
+    expect(guest?.getAttribute("href")).toBe("/reimbursements");
   });
 
   it("navigates into the guest surface in place", () => {

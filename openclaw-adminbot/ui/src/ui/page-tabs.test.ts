@@ -36,8 +36,8 @@ describe("renderPageTabs", () => {
     ]);
     // Real links, so middle-click and the back button keep working.
     expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
-      "/adminbot/announcements",
-      "/adminbot/workshop-nudges",
+      "/announcements",
+      "/workshop-nudges",
     ]);
     expect(tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent).toContain(
       "Workshop Matches",
@@ -48,7 +48,7 @@ describe("renderPageTabs", () => {
     const setTab = vi.fn();
     const container = draw(renderPageTabs(createState("adminbotRegistrations", setTab), "admin"));
     const onboarding = [...container.querySelectorAll<HTMLAnchorElement>('[role="tab"]')].find(
-      (tab) => tab.getAttribute("href") === "/adminbot/onboarding",
+      (tab) => tab.getAttribute("href") === "/onboarding",
     );
     onboarding?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(setTab).toHaveBeenCalledWith("adminbotOnboarding");
@@ -61,10 +61,7 @@ describe("renderPageTabs", () => {
       "Active Papers",
       "Profile Completeness",
     ]);
-    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
-      "/adminbot/papers",
-      "/adminbot/profile-overview",
-    ]);
+    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual(["/papers", "/profile-overview"]);
   });
 
   it("draws nothing for a tab that stands alone", () => {

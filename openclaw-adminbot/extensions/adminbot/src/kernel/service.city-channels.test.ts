@@ -116,6 +116,63 @@ describe("syncCityChannels", () => {
     expect(result.invited.filter((entry) => entry.channel === "group-zurich")).toHaveLength(4);
   });
 
+  it("offers the new city's channel after a member moves, and never the old one again", async () => {
+    const { service, sent } = serviceWithTorontoFour();
+    unwrap(await service.syncCityChannels("cron"));
+    expect(memberById(service, "m0")?.city_channels_invited).toEqual(["group-toronto"]);
+
+    // m0 moves to Zürich, and three more people are already there, so the city clears the
+    // four-member threshold.
+    unwrap(service.upsertLabMember({ id: "m0", current_city: "Zurich" } as never));
+    for (let index = 0; index < 3; index += 1) {
+      unwrap(
+        service.upsertLabMember({
+          id: `z${index}`,
+          name: `Zurich ${index}`,
+          privilege_level: "member",
+          status: "active",
+          slack_user_id: `U-Z${index}`,
+          current_city: "Zurich",
+        } as never),
+      );
+    }
+    const moved = unwrap(await service.syncCityChannels("cron"));
+
+    // The move is the whole point: the old global stamp used to suppress this invite entirely.
+    expect(moved.invited).toContainEqual({ member_id: "m0", channel: "group-zurich" });
+    expect(memberById(service, "m0")?.city_channels_invited).toEqual([
+      "group-toronto",
+      "group-zurich",
+    ]);
+
+    // Moving away removes nobody: this sweep only ever adds.
+    expect(sent.some((entry) => entry.type.includes("remove") || entry.type.includes("kick"))).toBe(
+      false,
+    );
+
+    // Back to Toronto later: already offered that channel once, so it is not offered again.
+    unwrap(service.upsertLabMember({ id: "m0", current_city: "Toronto" } as never));
+    const back = unwrap(await service.syncCityChannels("cron"));
+    expect(back.invited.some((entry) => entry.member_id === "m0")).toBe(false);
+  });
+
+  it("reads a legacy stamp as covering the channel the member is in now", async () => {
+    // Members stamped before per-channel tracking carry no list. Re-inviting them to the channel
+    // they are already in (or deliberately left) is the one outcome this must never produce.
+    const { service } = serviceWithTorontoFour();
+    unwrap(await service.syncCityChannels("cron"));
+    const legacy = memberById(service, "m1")!;
+    unwrap(
+      service.upsertLabMember({
+        ...legacy,
+        city_channels_invited: undefined,
+        city_channel_invited_at: "2026-01-01T00:00:00.000Z",
+      } as never),
+    );
+    const again = unwrap(await service.syncCityChannels("cron"));
+    expect(again.invited.some((entry) => entry.member_id === "m1")).toBe(false);
+  });
+
   it("does not let a member clear their own stamp to be re-added", async () => {
     // The stamp is not on the self-editable whitelist, so a profile save cannot touch it.
     const { service } = serviceWithTorontoFour();

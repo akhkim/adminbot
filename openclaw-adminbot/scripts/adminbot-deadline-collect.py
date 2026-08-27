@@ -25,6 +25,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from adminbot_deadlines import AoEClock, is_sweep_due
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
@@ -583,15 +587,34 @@ def discover_cfp_url(homepage, existing=""):
     return discover_workshop_metadata(homepage, existing)[0]
 
 
-def enrich_workshop_sources(items, previous_by_id):
+def enrich_workshop_sources(items, previous_by_id, clock=None):
+    """Re-read workshop CFP sites, on the cadence rather than all of them every run.
+
+    This is the expensive half of the sweep -- one HTTP request per workshop site, 140 of them --
+    and the half that earns a 429. A workshop within three days of its deadline is re-read daily,
+    because a late extension is exactly what the board exists to catch; everything else waits a
+    fortnight. A skipped workshop keeps every value the last sweep established, `profile_extracted_at`
+    included, so its clock measures from the last real read.
+    """
+    skipped = 0
+    due_ids = set()
     jobs = {}
     for item in items:
         if item.get("venue_type") != "workshop":
             continue
+        previous = previous_by_id.get(item.get("id"), {})
+        if clock and not is_sweep_due(
+            clock,
+            "workshop",
+            item.get("deadline_aoe", "") or previous.get("deadline_aoe", ""),
+            previous.get("profile_extracted_at"),
+        ):
+            skipped += 1
+            continue
+        due_ids.add(item.get("id"))
         homepage = normalize_url(item.get("homepage_url", ""))
         if not homepage:
             continue
-        previous = previous_by_id.get(item.get("id"), {})
         existing = normalize_url(item.get("cfp_url", ""))
         if not existing or existing == homepage:
             existing = normalize_url(previous.get("cfp_url", ""))
@@ -619,6 +642,21 @@ def enrich_workshop_sources(items, previous_by_id):
             continue
         homepage = normalize_url(item.get("homepage_url", ""))
         previous = previous_by_id.get(item.get("id"), {})
+        if clock and item.get("id") not in due_ids:
+            # Not due: carry the last sweep's answers forward verbatim. Falling through would
+            # overwrite them with the empty default and read as "this workshop lost its CFP".
+            item["cfp_url"] = previous.get("cfp_url", item.get("cfp_url", ""))
+            item["archival_status"] = previous.get(
+                "archival_status", item.get("archival_status", "unknown")
+            )
+            for key in ("topic_profile", "topic_evidence", "cross_submission_status",
+                        "cross_submission_evidence", "cross_submission_source_url",
+                        "profile_extracted_at"):
+                default = [] if key == "topic_profile" else ""
+                item[key] = previous.get(key, item.get(key, default))
+            item["link"] = (item["cfp_url"] or homepage
+                            or normalize_url(item.get("openreview_url", "")))
+            continue
         cfp_url, archival_status, profile = found.get(
             homepage, ("", item.get("archival_status", "unknown"), {})
         )
@@ -630,6 +668,8 @@ def enrich_workshop_sources(items, previous_by_id):
             default = [] if key == "topic_profile" else ""
             item[key] = profile.get(key, previous.get(key, default))
         item["link"] = item["cfp_url"] or homepage or normalize_url(item.get("openreview_url", ""))
+    if skipped:
+        print(f"CFP discovery: skipped {skipped} workshop(s) still inside their sweep interval")
     print(
         f"CFP discovery: {sum(bool(url) for url, _, _ in found.values())}/{len(found)} workshop sites; "
         f"archival status established for {sum(status != 'unknown' for _, status, _ in found.values())}; "
@@ -757,11 +797,25 @@ def _openreview_submission_deadline(group_id):
     return ""
 
 
-def fetch_openreview_conferences():
-    """Collect tracked standalone venues once their Submission invitation exists."""
+def fetch_openreview_conferences(previous_by_id=None, clock=None):
+    """Collect tracked standalone venues once their Submission invitation exists.
+
+    Re-read on the fortnightly cadence (see is_sweep_due). A conference whose entry is still
+    inside its interval is carried forward from the previous sweep untouched -- including its
+    `source_checked_at`, so the clock measures from the last real read rather than restarting
+    every run.
+    """
+    previous_by_id = previous_by_id or {}
     entries = []
     for source in OPENREVIEW_CONFERENCES:
         group_id = source["group_id"]
+        previous = previous_by_id.get(source["id"])
+        if clock and previous and not is_sweep_due(
+            clock, previous.get("entry_type", ""), previous.get("deadline_aoe", ""),
+            previous.get("source_checked_at"),
+        ):
+            entries.append(dict(previous))
+            continue
         try:
             data = _openreview_get(
                 "https://api2.openreview.net/groups?id="
@@ -977,7 +1031,12 @@ def main():
     previous_items = previous_doc.get("items", [])
     previous_has_history = previous_doc.get("history_version") == 1
     previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}
-    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences()
+    # One clock for the whole run, so every cadence decision agrees about "now" and a sweep that
+    # straddles midnight cannot re-read half the board on one interval and half on another.
+    clock = AoEClock.resolve()
+    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
+        previous_by_id, clock
+    )
     fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
     observed_ids = {
@@ -1002,7 +1061,7 @@ def main():
         except Exception:
             pass
 
-    enrich_workshop_sources(items, previous_by_id)
+    enrich_workshop_sources(items, previous_by_id, clock)
     items = [classify(x) for x in items]
     # Ids must stay unique: a family kept from the previous sweep can collide with
     # one that was also fetched this time.

@@ -13,6 +13,12 @@ export const adminBotActionTypes = [
   // only other way to touch an existing event: that one writes the whole attendee list, so using it
   // to invite two people would uninvite everyone already on the event.
   "calendar.add_attendees",
+  // Takes people off an event that already exists. It writes the whole attendee list, like
+  // `calendar.reschedule`, because `gog calendar update` has no remove-attendee flag — so the
+  // payload carries the exact set that will remain rather than the set to drop. That makes the
+  // approval card show what the event will look like afterwards, which is the thing worth reading
+  // before saying yes to uninviting somebody.
+  "calendar.remove_attendees",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -943,6 +949,8 @@ export type AdminBotLabMemberInput = {
    * be the same bug in better clothes -- "not in the channel" is exactly what leaving looks like.
    */
   city_channel_invited_at?: string;
+  /** City channels already offered, by channel name. See workflows/members/city-channels.ts. */
+  city_channels_invited?: string[];
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
@@ -1631,6 +1639,7 @@ export type AdminBotAuditEvent = {
     | "onboarding.step_updated"
     | "onboarding.chased"
     | "city_channels.synced"
+    | "invite_membership.planned"
     | "thesis_milestones.swept"
     | "graduation.swept"
     | "reimbursement.anonymous_use"

@@ -68,10 +68,10 @@ papers escalate to Zhijing at the deadline. Also set
 The Deadline Tracker has two delivery contexts and one generated dataset and interaction model:
 
 - the AdminBot service's zero-setup page at `GET /deadlines`; and
-- the public and signed-in Control UI route at `/adminbot/deadlines`.
+- the public and signed-in Control UI route at `/deadlines`.
 
 The Vercel build pre-renders the existing Control UI route at the canonical public URL
-`https://jinesis-admin.vercel.app/adminbot/deadlines`. Its response contains sanitized deadline
+`https://jinesis-admin.vercel.app/deadlines`. Its response contains sanitized deadline
 names, dates, and source links before JavaScript runs; the normal Control UI replaces that fallback
 when the application mounts. `robots.txt` allows that exact route, and `sitemap.xml` lists it.
 Private paper matches, proposal queues, member timelines, and nudge proposals are not rendered into
@@ -115,7 +115,7 @@ dataset at read time. Pending and rejected proposals, submitter identities, and 
 never enter the public projection.
 
 The standalone service board cannot hold a member session. Its proposal action links to the
-configured Control UI `/adminbot/deadlines` route, where authentication and the proposal form live.
+configured Control UI `/deadlines` route, where authentication and the proposal form live.
 
 Run `pnpm ui:build` and `pnpm ui:i18n:check` after changing the Control UI surface.
 

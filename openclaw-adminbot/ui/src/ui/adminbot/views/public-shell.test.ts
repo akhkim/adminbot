@@ -34,8 +34,8 @@ describe("renderPublicShell", () => {
     const items = [...container.querySelectorAll(".sidebar-nav .nav-item")];
     expect(items).toHaveLength(2);
     expect(items.map((item) => item.getAttribute("href"))).toEqual([
-      "/adminbot/reimbursements",
-      "/adminbot/deadlines",
+      "/reimbursements",
+      "/deadlines",
     ]);
   });
 
@@ -58,11 +58,11 @@ describe("renderPublicShell", () => {
     const state = createState();
     const host = renderShell(state);
     const reimbursements = host.querySelector<HTMLAnchorElement>(
-      '.nav-item[href="/adminbot/reimbursements"]',
+      '.nav-item[href="/reimbursements"]',
     );
     reimbursements?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(state.tab).toBe("adminbotReimbursements");
-    expect(window.location.pathname).toBe("/adminbot/reimbursements");
+    expect(window.location.pathname).toBe("/reimbursements");
   });
 
   // Leaving the open surface is the same move as opening the root: an anonymous visitor with a

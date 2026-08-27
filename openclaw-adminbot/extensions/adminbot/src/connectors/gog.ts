@@ -284,6 +284,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarUpdateArgs(proposal);
     case "calendar.add_attendees":
       return buildCalendarAddAttendeesArgs(proposal);
+    case "calendar.remove_attendees":
+      return buildCalendarRemoveAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
     default:
@@ -392,6 +394,44 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
     requireString(payload, "event_id"),
     "--add-attendee",
     attendees,
+    "--send-updates",
+    "all",
+  );
+  return args;
+}
+
+/**
+ * Rewrite an event's attendee list to exactly `remaining_attendees`.
+ *
+ * `--attendees` replaces rather than adds, which is what makes removal possible at all — there is
+ * no remove-attendee flag. It is also what makes this the most dangerous arm in this file: the
+ * list is absolute, so anyone missing from it is uninvited, including people added to the event
+ * between the read that produced the plan and the approval that executes it.
+ *
+ * Two guards, both refusing rather than guessing. An empty list is rejected because "remove
+ * everybody" is never what a membership sweep means and is exactly what a failed read looks like;
+ * and the payload has to name the people being dropped, so the stored proposal records the intent
+ * a human approved and not just the end state.
+ */
+function buildCalendarRemoveAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const remaining = recipients(payload.remaining_attendees);
+  if (!remaining) {
+    throw new Error(
+      "calendar.remove_attendees proposed_payload.remaining_attendees is required and must not be empty",
+    );
+  }
+  if (!recipients(payload.removed_attendees)) {
+    throw new Error("calendar.remove_attendees proposed_payload.removed_attendees is required");
+  }
+  const args = rootArgs("calendar.update", optionalString(payload, "account"));
+  args.push(
+    "calendar",
+    "update",
+    optionalString(payload, "calendar_id") ?? "primary",
+    requireString(payload, "event_id"),
+    "--attendees",
+    remaining,
     "--send-updates",
     "all",
   );

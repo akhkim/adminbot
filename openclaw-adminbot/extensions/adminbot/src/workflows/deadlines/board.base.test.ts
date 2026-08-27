@@ -56,7 +56,7 @@ describe("standalone deadline board foundation", () => {
       expect(document.querySelector(".hero .hmeta")?.textContent).toContain("12:30 AoE");
       expect(document.querySelector(".card .cdl")?.textContent).toContain("12:30 AoE");
       expect(document.querySelector(".card .ccd")?.textContent).toBe("0d 00:30:00");
-      expect(document.querySelector(".cgroup-name")?.textContent).toBe("TEST 2035 Workshops");
+      expect(document.querySelector(".cgroup-name")?.textContent).toBe("Workshops of TEST 2035");
       expect(document.querySelector(".cgroup-stage")?.textContent).toBe("Submission");
       const children = [...document.querySelector(".container")!.children];
       expect(children.indexOf(document.querySelector(".modes")!)).toBeLessThan(
@@ -142,17 +142,20 @@ describe("standalone deadline board foundation", () => {
       const cardLabels = [...document.querySelectorAll(".cgroup-name")].map((node) =>
         node.textContent?.trim(),
       );
-      expect(cardLabels).toContain("EMNLP 2026 Workshops");
-      expect(cardLabels).toContain("NeurIPS 2026 Workshops");
+      expect(cardLabels).toContain("Workshops of EMNLP 2026");
+      expect(cardLabels).toContain("Workshops of NeurIPS 2026");
+      expect(cardLabels).not.toContain("EMNLP 2026 Workshops");
 
       document.querySelector<HTMLButtonElement>("#v-groups")!.click();
       const headings = [...document.querySelectorAll(".deadline-group__heading strong")].map(
         (node) => node.textContent?.trim(),
       );
-      expect(headings).toContain("EMNLP 2026 Workshops");
-      expect(headings).toContain("NeurIPS 2026 Workshops");
-      expect(headings).toContain("ICLR 2027");
-      expect(headings).toContain("EACL 2027");
+      expect(headings).toContain("Workshops of EMNLP 2026");
+      expect(headings).toContain("Workshops of NeurIPS 2026");
+      // Conferences are standalone cards now: no collapsible heading of their own.
+      expect(headings).not.toContain("ICLR 2027");
+      expect(headings).not.toContain("EACL 2027");
+      expect(document.querySelectorAll(".deadline-group--standalone").length).toBeGreaterThan(0);
     } finally {
       dom.window.close();
     }

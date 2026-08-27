@@ -862,7 +862,7 @@ function recommend() {
   if (a.arrstate === 'reviews')
     note('Commit before the window closes', 'Reviews carry over, so the remaining decision is which conference to commit to. If the scores are weak, withdrawing and resubmitting to a later cycle is a real option.');
   if (inArea('nlp'))
-    note('Live dates live in the deadline tracker', 'Windows here are typical, not current. ARR cycle and commitment dates are maintained in the lab deadline tracker at jinesis-admin.vercel.app/adminbot/deadlines, which is the authority.');
+    note('Live dates live in the deadline tracker', 'Windows here are typical, not current. ARR cycle and commitment dates are maintained in the lab deadline tracker at jinesis-admin.vercel.app/deadlines, which is the authority.');
   if (a.track === 'position')
     note('Confirm the track exists this cycle', 'Position paper tracks come and go. Check it is running before you plan around it.');
   if (areas.size > 1)

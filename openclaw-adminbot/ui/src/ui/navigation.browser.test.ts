@@ -506,11 +506,7 @@ describe("control UI routing", () => {
     });
     await app.updateComplete;
 
-    const groupLink = expectElement(
-      app,
-      'a.nav-item[href="/adminbot/reimbursements"]',
-      HTMLAnchorElement,
-    );
+    const groupLink = expectElement(app, 'a.nav-item[href="/reimbursements"]', HTMLAnchorElement);
     const section = groupLink.closest(".nav-section");
     expect(section).toBeInstanceOf(HTMLElement);
     if (!(section instanceof HTMLElement)) {
