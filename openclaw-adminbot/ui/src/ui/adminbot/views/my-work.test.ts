@@ -1,6 +1,6 @@
 // My Projects & Papers: the card list, what a closed card says, and the global nudge above it.
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
@@ -780,5 +780,58 @@ describe("declaring a target venue", () => {
     const ids = targetsOf(written).map((target) => target.venue_id);
     expect(ids).toContain("arr_2026_october");
     expect(ids).toContain("ICLR");
+  });
+});
+
+describe("hiding a paper from your own list", () => {
+  // The complaint this answers: somebody with thirty papers cannot navigate the list. Hiding is a
+  // view preference -- it writes nothing to the paper, so a coauthor's page is untouched.
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  function twoPapers() {
+    return [paper(), paper({ id: "p2", title: "Second paper" })];
+  }
+
+  it("takes the row off the list without touching the paper", () => {
+    const first = draw({ papers: twoPapers() });
+    expect(first.container.textContent).toContain("Second paper");
+
+    first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-hide-p2"]')?.click();
+
+    const after = draw({ papers: twoPapers() });
+    expect(after.container.textContent).not.toContain("Second paper");
+    // Still on the record: nothing was saved, so no coauthor's page changed.
+    expect(after.saved).toEqual([]);
+  });
+
+  it("says how many it is holding back", () => {
+    const first = draw({ papers: twoPapers() });
+    first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-hide-p2"]')?.click();
+
+    const after = draw({ papers: twoPapers() });
+    const line = after.container.querySelector('[data-testid="my-work-hidden-line"]');
+    // A list that silently shrinks is indistinguishable from one that lost rows.
+    expect(line?.textContent).toContain("1");
+  });
+
+  it("gives them back in one click", () => {
+    const first = draw({ papers: twoPapers() });
+    first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-hide-p2"]')?.click();
+
+    const hidden = draw({ papers: twoPapers() });
+    hidden.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-show-hidden"]')
+      ?.click();
+
+    const restored = draw({ papers: twoPapers() });
+    expect(restored.container.textContent).toContain("Second paper");
+    expect(restored.container.querySelector('[data-testid="my-work-hidden-line"]')).toBeNull();
+  });
+
+  it("offers no hidden line when nothing is hidden", () => {
+    const { container } = draw({ papers: twoPapers() });
+    expect(container.querySelector('[data-testid="my-work-hidden-line"]')).toBeNull();
   });
 });

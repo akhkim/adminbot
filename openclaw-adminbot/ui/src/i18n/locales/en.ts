@@ -1931,6 +1931,13 @@ export const en: TranslationMap = {
     closed: "Everything on this paper is finished, expenses included.",
   },
   myWork: {
+    hidden: {
+      hide: "Hide",
+      hideTitle: "Hide this from your list. It stays on the paper for everyone else.",
+      count: "{count} hidden from your list.",
+      showAll: "Show them",
+      allHidden: "Everything here is hidden from your list.",
+    },
     delete: {
       action: "Delete this paper",
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
