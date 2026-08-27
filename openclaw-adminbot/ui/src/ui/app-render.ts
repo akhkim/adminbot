@@ -4,7 +4,6 @@ import { html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
-import { getSafeLocalStorage } from "../local-storage.ts";
 import {
   canAccessTab,
   resolveAccessRole,
@@ -1060,7 +1059,6 @@ export function formatDreamNextCycle(nextRunAtMs: number | undefined): string | 
 
 let clawhubSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
-const UPDATE_BANNER_DISMISS_KEY = "openclaw:control-ui:update-banner-dismissed:v1";
 const CRON_THINKING_SUGGESTIONS = ["off", "minimal", "low", "medium", "high"];
 const CRON_TIMEZONE_SUGGESTIONS = [
   "UTC",
@@ -1097,70 +1095,6 @@ function uniquePreserveOrder(values: string[]): string[] {
     output.push(normalized);
   }
   return output;
-}
-
-type DismissedUpdateBanner = {
-  latestVersion: string;
-  channel: string | null;
-  dismissedAtMs: number;
-};
-
-function loadDismissedUpdateBanner(): DismissedUpdateBanner | null {
-  try {
-    const raw = getSafeLocalStorage()?.getItem(UPDATE_BANNER_DISMISS_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<DismissedUpdateBanner>;
-    if (!parsed || typeof parsed.latestVersion !== "string") {
-      return null;
-    }
-    return {
-      latestVersion: parsed.latestVersion,
-      channel: typeof parsed.channel === "string" ? parsed.channel : null,
-      dismissedAtMs: typeof parsed.dismissedAtMs === "number" ? parsed.dismissedAtMs : Date.now(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function isUpdateBannerDismissed(updateAvailable: unknown): boolean {
-  const dismissed = loadDismissedUpdateBanner();
-  if (!dismissed) {
-    return false;
-  }
-  const info = updateAvailable as {
-    latestVersion?: unknown;
-    channel?: unknown;
-  };
-  const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
-  const channel = info && typeof info.channel === "string" ? info.channel : null;
-  return Boolean(
-    latestVersion && dismissed.latestVersion === latestVersion && dismissed.channel === channel,
-  );
-}
-
-function dismissUpdateBanner(updateAvailable: unknown) {
-  const info = updateAvailable as {
-    latestVersion?: unknown;
-    channel?: unknown;
-  };
-  const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
-  if (!latestVersion) {
-    return;
-  }
-  const channel = info && typeof info.channel === "string" ? info.channel : null;
-  const payload: DismissedUpdateBanner = {
-    latestVersion,
-    channel,
-    dismissedAtMs: Date.now(),
-  };
-  try {
-    getSafeLocalStorage()?.setItem(UPDATE_BANNER_DISMISS_KEY, JSON.stringify(payload));
-  } catch {
-    // ignore
-  }
 }
 
 const COMMUNICATION_SECTION_KEYS = [
@@ -3116,22 +3050,12 @@ export function renderApp(state: AppViewState) {
                     ? html`<span class="nav-item__text">${t("login.member.signOut")}</span>`
                     : nothing}
                 </button>
-                ${(() => {
-                  const version = state.hello?.server?.version ?? "";
-                  return version
-                    ? html`
-                        <div class="sidebar-version" title=${`v${version}`}>
-                          ${!navCollapsed
-                            ? html`
-                                <span class="sidebar-version__label">${t("common.version")}</span>
-                                <span class="sidebar-version__text">v${version}</span>
-                                ${renderSidebarConnectionStatus(state)}
-                              `
-                            : html` ${renderSidebarConnectionStatus(state)} `}
-                        </div>
-                      `
-                    : nothing;
-                })()}
+                <!-- The build version used to sit here. It is an operator detail on a page whose
+                     readers are lab members, and it took a whole row at the one place in the
+                     sidebar where space is scarcest. The connection status stays -- that one
+                     answers "is this page live", which anybody looking at a stale queue needs --
+                     and no longer hides when the server reports no version. -->
+                <div class="sidebar-version">${renderSidebarConnectionStatus(state)}</div>
               </div>
             </div>
           </div>
@@ -3147,34 +3071,10 @@ export function renderApp(state: AppViewState) {
               ${state.updateStatusBanner.text}
             </div>`
           : nothing}
-        ${state.updateAvailable &&
-        state.updateAvailable.latestVersion !== state.updateAvailable.currentVersion &&
-        !isUpdateBannerDismissed(state.updateAvailable)
-          ? html`<div class="update-banner callout danger" role="alert">
-              <strong>${t("chat.updateAvailable")}</strong>
-              v${state.updateAvailable.latestVersion}
-              (${t("chat.runningVersion", { version: state.updateAvailable.currentVersion })}).
-              <button
-                class="btn btn--sm update-banner__btn"
-                ?disabled=${state.updateRunning || !state.connected}
-                @click=${() => runUpdate(state)}
-              >
-                ${state.updateRunning ? t("chat.updating") : t("chat.updateNow")}
-              </button>
-              <button
-                class="update-banner__close"
-                type="button"
-                title=${t("common.dismiss")}
-                aria-label=${t("chat.dismissUpdateBanner")}
-                @click=${() => {
-                  dismissUpdateBanner(state.updateAvailable);
-                  state.updateAvailable = null;
-                }}
-              >
-                ${icons.x}
-              </button>
-            </div>`
-          : nothing}
+        <!-- The OpenClaw update banner used to sit here. Upgrading the runtime is done from
+             the deploy script on the host, not by a member clicking a red bar above their own
+             profile -- and it was the loudest element on every page for something none of its
+             readers can act on. The dismissal cache went with it. -->
         ${state.tab === "config" || isChat || state.tab === "adminbotDeadlines"
           ? nothing
           : html`<section
