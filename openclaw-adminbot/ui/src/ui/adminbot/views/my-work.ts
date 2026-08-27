@@ -79,6 +79,7 @@ import {
   serializeVenueTargets,
   nextDeadlineVenue,
   papersNeedingRegistration,
+  effectiveVenueTargets,
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
@@ -1147,7 +1148,7 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
  * 11px text between two dropdowns. This says it once, in words, at the top of the card.
  */
 function renderVenueTargets(paper: AdminBotPaperRecord) {
-  const targets = readVenueTargets(paper);
+  const targets = effectiveVenueTargets(paper);
   if (targets.length === 0) {
     return nothing;
   }

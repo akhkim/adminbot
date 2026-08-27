@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
+  effectiveVenueTargets,
   PRE_REGISTRATION_VENUES,
   daysUntil,
   formatVenueTargets,
@@ -141,5 +142,85 @@ describe("venue targets", () => {
   it("matches an ARR cycle written by either side", () => {
     const papers = [paper("arr", [{ venue_id: "ARR", label: "ARR 2026 October", confidence: 50 }])];
     expect(papersNeedingRegistration(papers, "arr_2026_october")).toEqual([]);
+  });
+});
+
+describe("a declared venue counts as a registration", () => {
+  // `artifacts.conference` is what most of the roster actually carries -- 127 papers name a
+  // conference and 23 carry a venue target -- so reading only venue_targets left a paper whose
+  // card plainly said "ICLR 2027" off the board, out of the banner's count, and without its own
+  // Pre-registered line.
+  const declared = (conference: string, confidence?: string) =>
+    ({
+      artifacts: { conference, ...(confidence ? { confidence } : {}) },
+    }) as unknown as Parameters<typeof effectiveVenueTargets>[0];
+
+  it("counts a paper that only declared where it is going", () => {
+    const targets = effectiveVenueTargets(declared("ICLR 2027"));
+    expect(targets).toHaveLength(1);
+    expect(targets[0]?.label).toBe("ICLR 2027");
+    // The same default Add a project uses. Zero would render as "certainly not going".
+    expect(targets[0]?.confidence).toBe(50);
+  });
+
+  it("puts that paper on the board for the cycle it named", () => {
+    expect(papersNeedingRegistration([declared("ICLR 2027")], "iclr2027_paper")).toEqual([]);
+  });
+
+  it("keeps the odds the author actually set", () => {
+    expect(effectiveVenueTargets(declared("ICLR 2027", "80"))[0]?.confidence).toBe(80);
+  });
+
+  it("does not overrule an explicit target for the same venue", () => {
+    const paper = {
+      artifacts: {
+        conference: "ICLR 2027",
+        venue_targets: JSON.stringify([
+          { venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 99 },
+        ]),
+      },
+    } as unknown as Parameters<typeof effectiveVenueTargets>[0];
+    const targets = effectiveVenueTargets(paper);
+    expect(targets).toHaveLength(1);
+    expect(targets[0]?.confidence).toBe(99);
+  });
+
+  it("carries a declared venue alongside a different explicit one", () => {
+    const paper = {
+      artifacts: {
+        conference: "ICLR 2027",
+        venue_targets: JSON.stringify([
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 80 },
+        ]),
+      },
+    } as unknown as Parameters<typeof effectiveVenueTargets>[0];
+    expect(effectiveVenueTargets(paper).map((target) => target.label)).toEqual([
+      "ARR October",
+      "ICLR 2027",
+    ]);
+  });
+
+  it("ignores a declaration that names no cycle", () => {
+    // Twenty papers read "ARR Acceptance, Committed to EMNLP Findings" -- finished commitments
+    // from a past cycle. An unknown year matches any, so without this guard every one of them
+    // would land on the board for *this* October's ARR deadline.
+    for (const conference of [
+      "ARR",
+      "ARR Acceptance, Committed to EMNLP Findings",
+      "NeurIPS",
+      "Preprint",
+    ]) {
+      expect(effectiveVenueTargets(declared(conference))).toEqual([]);
+    }
+    expect(
+      papersNeedingRegistration(
+        [declared("ARR Acceptance, Committed to EMNLP")],
+        "arr_2026_october",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("does not let one year answer for another", () => {
+    expect(papersNeedingRegistration([declared("ICLR 2026")], "iclr2027_paper")).toHaveLength(1);
   });
 });

@@ -15,7 +15,7 @@ import {
   PRE_REGISTRATION_VENUES,
   daysUntil,
   formatVenueTargets,
-  readVenueTargets,
+  effectiveVenueTargets,
   serializeVenueTargets,
   venueTargetMatches,
   type VenueTarget,
@@ -76,7 +76,7 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
     picked.clear();
     seededLabels.clear();
     overleafDraft = "";
-    for (const target of readVenueTargets(currentPaper() as AdminBotPaperRecord)) {
+    for (const target of effectiveVenueTargets(currentPaper() as AdminBotPaperRecord)) {
       const card = PRE_REGISTRATION_VENUES.find((venue) =>
         venueTargetMatches(target, venue.venue_id),
       );
@@ -129,7 +129,7 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
           <div class="prereg__papers">
             ${deps.papers
               .map((entry) => {
-                const targets = readVenueTargets(entry);
+                const targets = effectiveVenueTargets(entry);
                 const already = targets.length
                   ? `<span class="prereg__already">${escapeHtml(formatVenueTargets(targets))}</span>`
                   : "";
