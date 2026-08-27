@@ -96,6 +96,7 @@ import {
   readJsonOrEmpty,
   readRecord,
   sendHtml,
+  sendRedirect,
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
@@ -623,7 +624,26 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
   }
 
   // Exempt public surfaces: HTML shells and the auth endpoints themselves.
-  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/adminbot")) {
+  //
+  // `/` is the address a person types, so it hands them the Control UI rather than the built-in
+  // console. The console is a thin operator surface with no sign-in and no member flows (see
+  // contracts/control-ui.ts), so landing on it from the bare hostname reads as "this is the
+  // product" when it is really the fallback. It keeps its own address at `/adminbot`, which is
+  // what makes the redirect safe: when the Control UI deployment is down, the operator surface is
+  // still reachable on this origin without touching configuration.
+  if (req.method === "GET" && url.pathname === "/") {
+    const controlUi = resolveAdminBotControlUiUrl();
+    // A Control UI configured to this same origin would redirect to itself forever and leave the
+    // service unopenable in a browser. Serving the console is the strictly better failure: the
+    // operator sees something, and the misconfiguration is visible rather than fatal.
+    if (isForeignOrigin(controlUi, req)) {
+      sendRedirect(res, `${controlUi}/`);
+      return;
+    }
+    sendHtml(res, 200, renderAdminBotWebUi());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/adminbot") {
     sendHtml(res, 200, renderAdminBotWebUi());
     return;
   }
@@ -3323,6 +3343,40 @@ function resolvePrincipal(
     }
   }
   return undefined;
+}
+
+/**
+ * Whether `target` is a different origin from the one this request arrived on.
+ *
+ * Used to keep the `/` redirect from pointing at itself. The comparison is on host and protocol
+ * only: behind the tunnel the request arrives as plain HTTP on 127.0.0.1 with the public host in
+ * `x-forwarded-host`/`x-forwarded-proto`, so the forwarded pair is what a browser actually typed
+ * and the socket is not. An unparseable target counts as foreign — the configured value is then
+ * a URL this code cannot reason about, and refusing to redirect would strand the operator on the
+ * console with no signal about why.
+ */
+function isForeignOrigin(target: string, req: IncomingMessage): boolean {
+  let targetUrl: URL;
+  try {
+    targetUrl = new URL(target);
+  } catch {
+    return true;
+  }
+  const forwardedHost = firstHeaderValue(req.headers["x-forwarded-host"]);
+  const host = forwardedHost ?? req.headers.host;
+  if (!host) {
+    return true;
+  }
+  const forwardedProto = firstHeaderValue(req.headers["x-forwarded-proto"]);
+  const proto = forwardedProto ?? "http";
+  return targetUrl.host !== host || targetUrl.protocol !== `${proto}:`;
+}
+
+/** A header can arrive repeated or comma-joined; the first value is the original client's. */
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const first = raw?.split(",")[0]?.trim();
+  return first || undefined;
 }
 
 function applyCors(

@@ -84,6 +84,21 @@ export function sendHtml(res: ServerResponse, status: number, body: string): voi
   res.end(body);
 }
 
+/**
+ * Send a browser somewhere else.
+ *
+ * 302 rather than 301, and `no-store` alongside it, because the target is configuration
+ * (ADMINBOT_CONTROL_UI_URL) rather than a fact about this route. A 301 is cached by browsers
+ * indefinitely and survives the config being corrected, which turns one wrong value into a
+ * support problem on every machine that ever loaded the page.
+ */
+export function sendRedirect(res: ServerResponse, location: string): void {
+  res.statusCode = 302;
+  res.setHeader("Location", location);
+  res.setHeader("Cache-Control", "no-store");
+  res.end();
+}
+
 export function sendServiceResult<T>(
   res: ServerResponse,
   result: AdminBotServiceResponse<T>,

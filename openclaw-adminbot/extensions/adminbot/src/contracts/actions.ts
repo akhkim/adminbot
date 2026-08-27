@@ -859,7 +859,7 @@ export type AdminBotCvScanMemberResult = {
  */
 export function cvEntryKey(entry: AdminBotCvEntry): string {
   const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/gu, " ");
-  return [entry.kind, normalize(entry.title), normalize(entry.organization)].join(" ");
+  return [entry.kind, normalize(entry.title), normalize(entry.organization)].join("\0");
 }
 
 // A change, as stored. `detected_at` is when the scan noticed it, which is deliberately not the

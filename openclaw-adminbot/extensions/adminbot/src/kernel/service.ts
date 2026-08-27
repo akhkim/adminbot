@@ -3109,6 +3109,95 @@ export class AdminBotService {
   }
 
   /**
+   * Record that a sweep asked somebody about a subject, advancing the count.
+   *
+   * Every counting sweep stamps identically -- and must, because the count is what
+   * `isNudgeDue` reads back to space the next ask and what the escalation pass reads to decide
+   * somebody has been asked enough times. Two sweeps that stamp differently would drift apart
+   * silently: nothing fails, the cadence just stops meaning the same thing on different domains.
+   *
+   * The ledger is re-read here rather than passed in, because a caller that indexed the ledger
+   * before sending would stamp against counts the send itself has already moved.
+   *
+   * `snoozed_until` is carried forward deliberately. A snooze is the member's answer, not the
+   * sweep's state, so asking again must never quietly clear it.
+   */
+  private stampNudgeLedger(
+    stamps: ReadonlyArray<{ domain: AdminBotNudgeDomain; subjectId: string; memberId: string }>,
+    nowIso: string,
+  ): void {
+    if (stamps.length === 0) {
+      return;
+    }
+    const ledger = this.nudgeLedgerIndex();
+    for (const { domain, subjectId, memberId } of stamps) {
+      const entry = ledger.get(`${domain}|${subjectId}|${memberId}`);
+      this.store.saveNudgeLedgerEntry({
+        domain,
+        subject_id: subjectId,
+        member_id: memberId,
+        last_nudged_at: nowIso,
+        nudge_count: (entry?.nudge_count ?? 0) + 1,
+        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
+      });
+    }
+  }
+
+  /**
+   * The say-once ledger: has this subject ever been announced?
+   *
+   * Distinct from the counting sweeps on purpose. A graduation or a thesis milestone is an event
+   * announced once rather than a request repeated until it is answered, so the question is
+   * "did we say it" and not "when did we last ask". Looked up by subject alone, because the
+   * announcement belongs to the event and not to whoever happened to receive it.
+   */
+  private hasNudgeBeenSaid(
+    ledger: Map<string, AdminBotNudgeLedgerRecord>,
+    domain: AdminBotNudgeDomain,
+    subjectId: string,
+  ): boolean {
+    return Boolean(ledger.get(`${domain}|${subjectId}`)?.last_nudged_at);
+  }
+
+  /** The write half of `hasNudgeBeenSaid`. Fixed count: a thing said once cannot be said twice. */
+  private markNudgeSaid(
+    domain: AdminBotNudgeDomain,
+    subjectId: string,
+    memberId: string,
+    nowIso: string,
+  ): void {
+    this.store.saveNudgeLedgerEntry({
+      domain,
+      subject_id: subjectId,
+      member_id: memberId,
+      last_nudged_at: nowIso,
+      nudge_count: 1,
+    });
+  }
+
+  /**
+   * Fold one `sendMemberNudge` outcome into a sweep's running result.
+   *
+   * Returns whether a message actually reached the member, which is the condition every sweep
+   * uses to decide whether to stamp the ledger. Keeping that judgement here is the point: a
+   * member with no address or no Slack id on file has not been asked, and a sweep that stamped
+   * them anyway would count an ask nobody ever received and escalate on it later.
+   */
+  private absorbNudgeSend(
+    result: AdminBotServiceResponse<AdminBotMemberNudgeResult>,
+    memberId: string,
+    into: { created: AdminBotStoredProposal[]; skipped: AdminBotMemberNudgeSkip[] },
+  ): boolean {
+    if (!result.ok) {
+      into.skipped.push({ member_id: memberId, reason: result.error.message });
+      return false;
+    }
+    into.created.push(...result.payload.created);
+    into.skipped.push(...result.payload.skipped);
+    return result.payload.created.length > 0;
+  }
+
+  /**
    * The global nudge: one Slack message per person, naming exactly what they owe, across every
    * paper they are on.
    *
@@ -3193,11 +3282,7 @@ export class AdminBotService {
     stamped: Array<{ item: NudgeItem; memberId: string }>;
     papersConsidered: number;
   } {
-    const ledger = new Map(
-      this.store
-        .listNudgeLedger()
-        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
-    );
+    const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers();
     const byRecipient = new Map<
       string,
@@ -3347,38 +3432,23 @@ export class AdminBotService {
         },
         actor,
       );
-      if (!result.ok) {
-        skipped.push({ member_id: memberId, reason: result.error.message });
-        continue;
-      }
-      created.push(...result.payload.created);
-      skipped.push(...result.payload.skipped);
-      if (result.payload.created.length > 0) {
+      if (this.absorbNudgeSend(result, memberId, { created, skipped })) {
         delivered.add(memberId);
       }
     }
 
     // Only stamp the people a message actually reached. Somebody with no Slack id on file has not
     // been asked, and must not accumulate an escalation nobody ever told them about.
-    const ledger = new Map(
-      this.store
-        .listNudgeLedger()
-        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
+    this.stampNudgeLedger(
+      stamped
+        .filter(({ memberId }) => delivered.has(memberId))
+        .map(({ item, memberId }) => ({
+          domain: item.domain,
+          subjectId: item.subjectId,
+          memberId,
+        })),
+      now.toISOString(),
     );
-    for (const { item, memberId } of stamped) {
-      if (!delivered.has(memberId)) {
-        continue;
-      }
-      const entry = ledger.get(`${item.domain}|${item.subjectId}|${memberId}`);
-      this.store.saveNudgeLedgerEntry({
-        domain: item.domain,
-        subject_id: item.subjectId,
-        member_id: memberId,
-        last_nudged_at: now.toISOString(),
-        nudge_count: (entry?.nudge_count ?? 0) + 1,
-        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
-      });
-    }
     if (delivered.size > 0) {
       this.recordAudit({
         type: "paper_slots.nudged",
@@ -3529,31 +3599,21 @@ export class AdminBotService {
         },
         actor,
       );
-      if (!result.ok) {
-        skipped.push({ member_id: member.id, reason: result.error.message });
-        continue;
-      }
-      created.push(...result.payload.created);
-      skipped.push(...result.payload.skipped);
-      if (result.payload.created.length > 0) {
+      if (this.absorbNudgeSend(result, member.id, { created, skipped })) {
         stamped.push({ subjectId: `${item.paper_id}:${item.stage}`, memberId: member.id });
       }
     }
 
     // Only people a message actually reached. Somebody with no address on file has not been asked
     // and must not accumulate a count nobody ever told them about -- same rule as the slot sweep.
-    const ledger = this.nudgeLedgerIndex();
-    for (const { subjectId, memberId } of stamped) {
-      const entry = ledger.get(`paperflow_stage|${subjectId}|${memberId}`);
-      this.store.saveNudgeLedgerEntry({
-        domain: "paperflow_stage",
-        subject_id: subjectId,
-        member_id: memberId,
-        last_nudged_at: now.toISOString(),
-        nudge_count: (entry?.nudge_count ?? 0) + 1,
-        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
-      });
-    }
+    this.stampNudgeLedger(
+      stamped.map(({ subjectId, memberId }) => ({
+        domain: "paperflow_stage" as const,
+        subjectId,
+        memberId,
+      })),
+      now.toISOString(),
+    );
     if (stamped.length > 0 || unroutable.length > 0) {
       this.recordAudit({
         type: "paperflow_stages.nudged",
@@ -6026,17 +6086,9 @@ export class AdminBotService {
     const transitions: Array<{ member_id: string; month: string }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
 
-    const alreadySaid = (subject: string) =>
-      Boolean(ledger.get(`graduation|${subject}`)?.last_nudged_at);
-    const remember = (subject: string, memberId: string) => {
-      this.store.saveNudgeLedgerEntry({
-        domain: "graduation",
-        subject_id: subject,
-        member_id: memberId,
-        last_nudged_at: nowIso,
-        nudge_count: 1,
-      });
-    };
+    const alreadySaid = (subject: string) => this.hasNudgeBeenSaid(ledger, "graduation", subject);
+    const remember = (subject: string, memberId: string) =>
+      this.markNudgeSaid("graduation", subject, memberId, nowIso);
 
     const actions = graduationActions(members, now);
     const dueTransitions: Array<{ member_name: string; month: string; months_since: number }> = [];
@@ -6223,16 +6275,9 @@ export class AdminBotService {
     const skipped: AdminBotMemberNudgeSkip[] = [];
 
     const alreadySaid = (subject: string) =>
-      Boolean(ledger.get(`thesis_milestone|${subject}`)?.last_nudged_at);
-    const remember = (subject: string, memberId: string) => {
-      this.store.saveNudgeLedgerEntry({
-        domain: "thesis_milestone",
-        subject_id: subject,
-        member_id: memberId,
-        last_nudged_at: nowIso,
-        nudge_count: 1,
-      });
-    };
+      this.hasNudgeBeenSaid(ledger, "thesis_milestone", subject);
+    const remember = (subject: string, memberId: string) =>
+      this.markNudgeSaid("thesis_milestone", subject, memberId, nowIso);
 
     for (const action of actions) {
       const subject = thesisLedgerSubject(action);
