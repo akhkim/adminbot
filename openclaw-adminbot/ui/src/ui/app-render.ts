@@ -3223,10 +3223,6 @@ export function renderApp(state: AppViewState) {
               requestsLoading: state.adminBotLogisticsRequestsLoading,
               papers: state.adminBotData?.papers ?? [],
               profiles: state.adminBotProfileOverview ?? [],
-              adoption: state.adminBotProfileAdoption ?? null,
-              pendingProposals: (state.adminBotData?.proposals ?? []).filter(
-                (proposal) => proposal.status === "pending",
-              ).length,
               onOpen: (tab) => state.setTab(tab),
             })
           : nothing}
