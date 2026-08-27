@@ -188,6 +188,45 @@ describe("listMemberProfileOverview", () => {
   });
 });
 
+describe("who the sweep leaves out", () => {
+  it("drops somebody the spreadsheet calls alumni even when status says nothing", () => {
+    // The live roster's actual shape: 22 people are alumni in member_type and only 2 carry
+    // status "alumni", with no overlap. Reading status alone kept every one of them in the
+    // adoption columns, which is a reminder aimed at somebody who left months ago.
+    const service = serviceWith([
+      { id: "ada", ...COMPLETE, privilege_level: "member" },
+      { id: "grace", ...COMPLETE, privilege_level: "member", member_type: "alumni" },
+      {
+        id: "alan",
+        ...COMPLETE,
+        privilege_level: "member",
+        member_type: "alumni, coauthor-major",
+      },
+    ]);
+    const ids = unwrap(service.listMemberProfileOverview()).members.map((member) => member.id);
+    expect(ids).toEqual(["ada"]);
+  });
+
+  it("keeps a coauthor who has not left", () => {
+    // Only the alumni token retires somebody. A coauthor is still someone the lab asks.
+    const service = serviceWith([
+      { id: "ada", ...COMPLETE, privilege_level: "member", member_type: "full, coauthor-major" },
+      { id: "grace", ...COMPLETE, privilege_level: "member", member_type: "external-prof" },
+    ]);
+    const ids = unwrap(service.listMemberProfileOverview()).members.map((member) => member.id);
+    expect([...ids].sort()).toEqual(["ada", "grace"]);
+  });
+
+  it("still drops somebody flagged alumni by status alone", () => {
+    const service = serviceWith([
+      { id: "ada", ...COMPLETE, privilege_level: "member" },
+      { id: "grace", ...COMPLETE, privilege_level: "member", status: "alumni" },
+    ]);
+    const ids = unwrap(service.listMemberProfileOverview()).members.map((member) => member.id);
+    expect(ids).toEqual(["ada"]);
+  });
+});
+
 describe("the activity counts", () => {
   // Six at a time, because that is how the roster is really written: a sync touches everybody in
   // one second, and the counts have to treat that as one pass rather than six people working.
