@@ -836,6 +836,22 @@ type ToolsInvokeResult = {
 export const ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE =
   "AdminBot tools are not available in this Gateway. Enable the adminbot plugin for the adminbot agent, then restart or reload OpenClaw.";
 
+/**
+ * What a failed request to the AdminBot service actually means.
+ *
+ * Distinct from the message above, which is about the *gateway* missing its tool plugin. Every
+ * loader on this page that talks to the service over HTTP was reporting that one for `unreachable`
+ * -- a fetch that threw -- so a workshop-nudge preview whose request never landed told an admin to
+ * go and enable a plugin, which was never the problem and is not where the fix is.
+ *
+ * `unreachable` on these paths means the browser could not complete the request at all: the
+ * service is down, the configured URL points somewhere else, or the call took long enough to be
+ * cut off -- which the workshop matcher, running LLM calls across every open workshop, is the most
+ * likely thing here to do.
+ */
+export const ADMINBOT_SERVICE_UNREACHABLE_MESSAGE =
+  "Couldn't reach the AdminBot service. Check that it is running, that the AdminBot URL in Settings points at it, and — for a long pass like workshop matching — that the request had time to finish.";
+
 export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
   return {
     proposals: [],
@@ -954,7 +970,7 @@ async function loadAdminBotOverSession(
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     if (!result.ok) {
       throw new Error(
-        result.kind === "unreachable" ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE : result.kind,
+        result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
       );
     }
     return result.value;
@@ -1093,7 +1109,7 @@ export async function loadAdminBot(
 
 function approvalFailureMessage(kind: string): string {
   if (kind === "unreachable") {
-    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+    return ADMINBOT_SERVICE_UNREACHABLE_MESSAGE;
   }
   if (kind === "forbidden") {
     return "Your session no longer has approval rights — sign in again and retry.";
@@ -1185,7 +1201,7 @@ function requirePrivilegedSession(
 // difference between restarting a process and hunting a login problem that does not exist.
 function cvErrorText(kind: string, action: string): string {
   if (kind === "unreachable") {
-    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+    return ADMINBOT_SERVICE_UNREACHABLE_MESSAGE;
   }
   if (kind === "not-found") {
     return `This AdminBot service does not have the ${action} endpoint — it is running older code than the console. Restart it with \`pnpm adminbot:dev\`.`;
@@ -1688,7 +1704,7 @@ export async function saveAdminBotMember(
     if (!result.ok) {
       const message =
         result.kind === "unreachable"
-          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
           : result.kind === "forbidden"
             ? "Your session no longer has admin access — sign in again and retry."
             : result.kind === "rate-limited"
@@ -1763,7 +1779,7 @@ export async function mergeAdminBotMembers(
       kind: "error",
       text:
         result.kind === "unreachable"
-          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
           : result.kind === "forbidden"
             ? "Your session no longer has admin access — sign in again and retry."
             : (result.message ?? "Couldn't merge those records."),
@@ -1810,7 +1826,7 @@ export async function saveAdminBotOwnProfile(
   if (!result.ok) {
     const message =
       result.kind === "unreachable"
-        ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
         : result.kind === "rate-limited"
           ? "Too many attempts. Wait a moment and try again."
           : // A validation refusal names the value it rejected ("LinkedIn link must be a profile
@@ -1846,7 +1862,7 @@ export async function polishAdminBotOwnProfilePhoto(host: AdminBotHost): Promise
     if (!result.ok) {
       const message =
         result.kind === "unreachable"
-          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
           : result.kind === "rate-limited"
             ? "Too many attempts. Wait a moment and try again."
             : "Couldn't generate a polished photo right now.";
@@ -1886,7 +1902,7 @@ export async function applyAdminBotOwnProfilePhoto(
     if (!result.ok) {
       const message =
         result.kind === "unreachable"
-          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
           : result.kind === "rate-limited"
             ? "Too many attempts. Wait a moment and try again."
             : "Couldn't apply that photo to Slack. Try another variant or retry.";
@@ -1938,7 +1954,7 @@ export async function saveAdminBotOwnSchedule(
   if (!result.ok) {
     const message =
       result.kind === "unreachable"
-        ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
         : result.kind === "rate-limited"
           ? "Too many attempts. Wait a moment and try again."
           : // The service rejects an out-of-range date or an hours value outside 0–168 with a 400;
@@ -2027,7 +2043,7 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
     if (!result.ok) {
       const text =
         result.kind === "unreachable"
-          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
           : result.kind === "forbidden"
             ? "Your session no longer has admin access — sign in again and retry."
             : result.kind === "rate-limited"
@@ -2161,7 +2177,7 @@ export async function saveAdminBotPaper(
 function paperSaveErrorText(kind: string): string {
   switch (kind) {
     case "unreachable":
-      return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+      return ADMINBOT_SERVICE_UNREACHABLE_MESSAGE;
     case "forbidden":
       return "You can only add or edit papers you authored.";
     case "rate-limited":

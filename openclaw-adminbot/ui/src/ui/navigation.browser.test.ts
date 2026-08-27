@@ -385,14 +385,10 @@ describe("control UI routing", () => {
     app.requestUpdate();
     await app.updateComplete;
 
-    expectElement(app, ".sidebar-version", HTMLElement);
-    const statusDot = expectElement(app, ".sidebar-version__status", HTMLElement);
-    expect(statusDot.getAttribute("aria-label")).toBe("Gateway status: Online");
-    expect(statusDot.getAttribute("title")).toBe("Gateway status: Online");
-    expect([...statusDot.classList]).toEqual([
-      "sidebar-version__status",
-      "sidebar-connection-status--online",
-    ]);
+    // The sidebar footer ends at sign out. The version readout went first, then the connection
+    // pill it left behind -- a bordered box holding one dot, permanently answering a question
+    // nobody was asking. Gateway connectivity still surfaces on Overview and in the composer.
+    expect(app.querySelector(".sidebar-version")).toBeNull();
 
     app.applySettings({ ...app.settings, navWidth: 360 });
     await app.updateComplete;

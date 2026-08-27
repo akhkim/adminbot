@@ -507,7 +507,10 @@ describe("saveAdminBotOwnProfile", () => {
     await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe" });
 
     expect(host.adminBotNotice?.kind).toBe("error");
-    expect(host.adminBotNotice?.text).toMatch(/not available/i);
+    // The fetch was rejected, so the message has to be about reaching the service. It used to say
+    // the gateway was missing its adminbot plugin, which was never what a dead fetch meant.
+    expect(host.adminBotNotice?.text).toMatch(/reach the AdminBot service/i);
+    expect(host.adminBotNotice?.text).not.toMatch(/plugin/i);
   });
 });
 

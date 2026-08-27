@@ -878,43 +878,6 @@
   min-height: 30px;
 }
 
-.sidebar-version {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-accent);
-  border: 1px solid var(--border);
-}
-
-.sidebar-version__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  opacity: 1;
-  margin: 0 auto;
-}
-
-.sidebar-version__status {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.sidebar-version__status.sidebar-connection-status--online {
-  background: var(--ok);
-}
-
-.sidebar-version__status.sidebar-connection-status--offline {
-  background: var(--danger);
-}
-
 .sidebar--collapsed .sidebar-shell__footer {
   padding: 8px 0 2px;
 }
@@ -922,18 +885,6 @@
 .sidebar--collapsed .sidebar-utility-group {
   justify-items: center;
   gap: 6px;
-}
-
-.sidebar--collapsed .sidebar-version {
-  width: 44px;
-  min-height: 44px;
-  padding: 0;
-  justify-content: center;
-  border-radius: var(--radius-lg);
-}
-
-.sidebar--collapsed .sidebar-version__status {
-  margin-left: 0;
 }
 
 /* Mode switch in sidebar â€” hidden on desktop, shown on mobile */
