@@ -57,6 +57,14 @@ import {
   type PaperOverviewFilter,
 } from "./paper-overview.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
+import {
+  PAPER_GRID_THRESHOLD,
+  diffForHistory,
+  emptyPaperGridState,
+  recordHistory,
+  renderPaperGrid,
+  type PaperGridState,
+} from "../paper-grid.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
@@ -74,6 +82,8 @@ export type AdminBotProps = {
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
   /** Opens one paper's own card over the table. See renderPaperCardDialog. */
   onOpenPaperCard?: (paperId: string) => void;
+  /** Redraw after local-only state changes, such as opening the bulk sheet. */
+  onRerender?: () => void;
   onVenueFilter?: (venueId: string) => void;
   mode?: "admin" | "general";
   /** Which column the reported-blocker list is sorted by. */
@@ -1647,6 +1657,10 @@ function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean
   `;
 }
 
+/** Open sheet, or null for the table. Module-level like my-work's, and reset by onExit. */
+let paperGridState: PaperGridState | null = null;
+
+
 /**
  * Active Papers.
  *
@@ -1665,6 +1679,41 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     stepCount: paperSteps.length,
   });
   const canAdd = props.mode !== "general" || Boolean(props.signedInMemberId);
+  const rerender = () => props.onRerender?.();
+
+  // Active Papers lost this when the deck became a table: the button lived on the renderer that
+  // used to draw every paper's card here, and went with it. Bulk link entry is the one job on
+  // this page that a table of summaries cannot do, so it comes back as a header action.
+  if (paperGridState && papers.length > PAPER_GRID_THRESHOLD) {
+    return html`${renderPaperGrid({
+      state: paperGridState,
+      papers,
+      onChange: rerender,
+      onSaveAll: (inputs) => {
+        if (!paperGridState) {
+          return;
+        }
+        paperGridState.saving = true;
+        // Diffed before the write: afterwards the record holds the new value and the old one is
+        // gone, so "changed X from A to B" would no longer be answerable.
+        const entries = diffForHistory(paperGridState, papers);
+        paperGridState.history = recordHistory(entries);
+        rerender();
+        for (const input of inputs) {
+          props.onSavePaper(input);
+        }
+        paperGridState.saving = false;
+        paperGridState.edits = new Map();
+        paperGridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.`;
+        rerender();
+      },
+      onExit: () => {
+        paperGridState = null;
+        rerender();
+      },
+    })}`;
+  }
+
   const table = renderPaperOverviewTable({
     rows,
     filter: props.paperFilter ?? EMPTY_PAPER_OVERVIEW_FILTER,
@@ -1673,6 +1722,20 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     // form over the record's raw fields, where the card is the paper as everyone else reads it.
     onOpenPaper: (paperId) => props.onOpenPaperCard?.(paperId),
     stages: paperSteps.map((step) => ({ value: step, label: stepLabels[step] ?? friendly(step) })),
+    actions:
+      papers.length > PAPER_GRID_THRESHOLD
+        ? html`<button
+            type="button"
+            class="btn btn--sm"
+            data-testid="papers-open-grid"
+            @click=${() => {
+              paperGridState = emptyPaperGridState();
+              rerender();
+            }}
+          >
+            Fill in as a spreadsheet (${papers.length})
+          </button>`
+        : nothing,
   });
   const editPopovers = papers.map((paper, index) =>
     props.mode !== "general" || memberOwnsPaper(paper, signedInMember(props), props.data.members)

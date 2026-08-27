@@ -1161,6 +1161,46 @@
 }
 
 /* The person cell: the name, then how much they are carrying. */
+/* The name doubles as the fold control, so it has to read as the name and behave as a button:
+   no chrome until the pointer is on it. */
+.paper-overview__person-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.paper-overview__person-toggle:hover strong {
+  text-decoration: underline;
+}
+
+.paper-overview__person-chevron {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* Folded, the cell still offers its own way back -- the row is wide, and reaching for the name
+   again means crossing the table. */
+.paper-overview__papers-folded {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  cursor: pointer;
+}
+
+.paper-overview__papers-folded:hover {
+  text-decoration: underline;
+}
+
 .paper-overview__person {
   display: flex;
   flex-direction: column;

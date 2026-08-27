@@ -10,6 +10,7 @@
 @import "./styles/logistics.css";
 @import "./styles/locations.css";
 @import "./styles/meetings.css";
+@import "./styles/paper-grid.css";
 @import "./styles/paper-slots.css";
 @import "./styles/time-allocation-chart.css";
 @import "./styles/toast.css";
