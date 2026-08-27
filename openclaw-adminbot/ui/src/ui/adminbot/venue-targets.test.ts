@@ -98,4 +98,48 @@ describe("venue targets", () => {
     ];
     expect(papersNeedingRegistration(papers, "ICLR").map((p) => p.id)).toEqual(["p2"]);
   });
+
+  it("counts a target the Add a project form wrote, not just the dialog's", () => {
+    // The two writers use different id spaces: the pre-registration dialog writes deadline-board
+    // ids, Add a project writes venue-catalog ids and puts the year in the label. Comparing them
+    // as strings meant picking a target venue while adding a project left the banner still asking
+    // the author to pre-register a paper they had already aimed.
+    const papers = [
+      paper("added", [{ venue_id: "ICLR-main", label: "ICLR 2027 (main)", confidence: 50 }]),
+      paper("untargeted"),
+    ];
+    expect(papersNeedingRegistration(papers, "iclr2027_paper").map((p) => p.id)).toEqual([
+      "untargeted",
+    ]);
+  });
+
+  it("treats a workshop track at the same conference and year as registered", () => {
+    const papers = [
+      paper("ws", [{ venue_id: "ICLR-workshop", label: "ICLR 2027 (workshop)", confidence: 30 }]),
+    ];
+    expect(papersNeedingRegistration(papers, "iclr2027_paper")).toEqual([]);
+  });
+
+  it("does not let last year's target answer this year's deadline", () => {
+    // iclr2027_paper is a deadline that has not passed. A paper aimed at ICLR 2026 is not
+    // pre-registered for it, and saying so would hide a real prompt.
+    const papers = [
+      paper("old", [{ venue_id: "ICLR-main", label: "ICLR 2026 (main)", confidence: 80 }]),
+    ];
+    expect(papersNeedingRegistration(papers, "iclr2027_paper").map((p) => p.id)).toEqual(["old"]);
+  });
+
+  it("keeps a different conference out of it", () => {
+    const papers = [
+      paper("neurips", [{ venue_id: "NeurIPS-main", label: "NeurIPS 2027", confidence: 80 }]),
+    ];
+    expect(papersNeedingRegistration(papers, "iclr2027_paper").map((p) => p.id)).toEqual([
+      "neurips",
+    ]);
+  });
+
+  it("matches an ARR cycle written by either side", () => {
+    const papers = [paper("arr", [{ venue_id: "ARR", label: "ARR 2026 October", confidence: 50 }])];
+    expect(papersNeedingRegistration(papers, "arr_2026_october")).toEqual([]);
+  });
 });

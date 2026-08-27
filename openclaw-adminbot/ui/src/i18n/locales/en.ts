@@ -1386,15 +1386,6 @@ export const en: TranslationMap = {
     },
   },
 
-  myWork: {
-    delete: {
-      action: "Delete this paper",
-      hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
-      confirm:
-        "Delete \u201c{title}\u201d?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
-    },
-  },
-
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -1938,6 +1929,12 @@ export const en: TranslationMap = {
     closed: "Everything on this paper is finished, expenses included.",
   },
   myWork: {
+    delete: {
+      action: "Delete this paper",
+      hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
+      confirm:
+        "Delete \u201c{title}\u201d?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
     items: {
       title: "Projects & Papers",
       empty: "Nothing on your record yet. Add your first project.",
