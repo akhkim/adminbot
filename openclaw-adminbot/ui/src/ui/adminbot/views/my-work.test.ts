@@ -50,6 +50,8 @@ type DrawOptions = {
   papers?: AdminBotPaperRecord[];
   /** Passed straight through as MyWorkProps.papers -- the Active Papers scoping. */
   scopedPapers?: AdminBotPaperRecord[];
+  /** Omitted by default, so the control's absence is the tested default rather than an accident. */
+  onDeletePaper?: boolean;
   title?: string;
   projectDraft?: string | null;
   overview?: PaperSlotOverviewRow[];
@@ -77,6 +79,7 @@ function draw(options: DrawOptions = {}) {
   const reviews: number[] = [];
   const picked: string[] = [];
   const saved: AdminBotPaperSaveInput[] = [];
+  const deleted: string[] = [];
   const state =
     options.state ??
     ({
@@ -93,6 +96,9 @@ function draw(options: DrawOptions = {}) {
     } as unknown as AppViewState);
   const props: MyWorkProps = {
     onSavePaper: (input: AdminBotPaperSaveInput) => saved.push(input),
+    ...(options.onDeletePaper
+      ? { onDeletePaper: (record: AdminBotPaperRecord) => deleted.push(record.id) }
+      : {}),
     ...(options.scopedPapers ? { papers: options.scopedPapers } : {}),
     ...(options.title ? { title: options.title } : {}),
     overview: options.overview ?? [overviewRow()],
@@ -123,7 +129,7 @@ function draw(options: DrawOptions = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges, reviews, picked, saved, state };
+  return { container, toggled, nudges, reviews, picked, saved, state, deleted };
 }
 
 describe("renderMyWork", () => {
@@ -661,5 +667,50 @@ describe("the banners above the list", () => {
     const { container } = draw({ scopedPapers: [decided] });
     expect(container.querySelector('[data-testid="decision-banner-d1"]')).toBeNull();
     expect(container.querySelector('[data-testid="prereg-open"]')).toBeNull();
+  });
+});
+
+describe("deleting a paper", () => {
+  it("offers nothing when the page passed no handler", () => {
+    // The service decides who may delete; a page that cannot wire the call must not show a button
+    // that always fails.
+    const { container } = draw({ openIds: ["p1"] });
+    expect(container.querySelector('[data-testid="delete-paper-p1"]')).toBeNull();
+  });
+
+  it("asks before deleting, and does nothing when the confirm is declined", () => {
+    const original = globalThis.confirm;
+    globalThis.confirm = () => false;
+    try {
+      const { container, deleted } = draw({ openIds: ["p1"], onDeletePaper: true });
+      const button = container.querySelector<HTMLButtonElement>('[data-testid="delete-paper-p1"]');
+      expect(button).not.toBeNull();
+      button?.click();
+      expect(deleted).toEqual([]);
+    } finally {
+      globalThis.confirm = original;
+    }
+  });
+
+  it("deletes the paper once the confirm is accepted", () => {
+    const original = globalThis.confirm;
+    globalThis.confirm = () => true;
+    try {
+      const { container, deleted } = draw({ openIds: ["p1"], onDeletePaper: true });
+      container.querySelector<HTMLButtonElement>('[data-testid="delete-paper-p1"]')?.click();
+      expect(deleted).toEqual(["p1"]);
+    } finally {
+      globalThis.confirm = original;
+    }
+  });
+
+  it("does not render the control at all until the card is opened", () => {
+    // Stronger than hiding it: a closed card renders no body content, so there is nothing to hit
+    // by accident while scrolling a long list of papers.
+    const closed = draw({ onDeletePaper: true });
+    expect(closed.container.querySelector('[data-testid="delete-paper-p1"]')).toBeNull();
+
+    const open = draw({ openIds: ["p1"], onDeletePaper: true });
+    expect(open.container.querySelector('[data-testid="delete-paper-p1"]')).not.toBeNull();
   });
 });

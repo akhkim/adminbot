@@ -2707,10 +2707,24 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "DELETE" && paper?.[1]) {
-    if (!requirePrivileged(res, principal)) {
+    const paperId = decodeURIComponent(paper[1]);
+    // Same split as the PUT above: an admin removes any paper, a member only one they authored.
+    // Without the member branch the only way to undo a mistyped submission was to ask an admin.
+    if (isPrivileged(principal)) {
+      sendServiceResult(
+        res,
+        service.deletePaper(
+          paperId,
+          principal.kind === "member" ? { source: "admin", actor: principal.member.id } : {},
+        ),
+      );
       return;
     }
-    sendServiceResult(res, service.deletePaper(decodeURIComponent(paper[1])));
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    sendServiceResult(res, service.deleteOwnPaper(principal.member.id, paperId));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/nudges") {

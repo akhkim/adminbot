@@ -30,6 +30,7 @@ import {
   searchVenuePapers,
   sendMemberNudge,
   sendWorkshopNudges,
+  deleteOwnPaper,
   updateOwnProfile,
   updateSettingsAsAdmin,
   updateOwnSchedule,
@@ -2170,6 +2171,15 @@ function paperSaveErrorText(kind: string): string {
   }
 }
 
+/**
+ * Remove a paper.
+ *
+ * Prefers the member's own session, for the same reason saveAdminBotPaper does: the service scopes
+ * the delete to what that member may remove -- any paper for an admin, one they authored for an
+ * author -- and a member's paired device holds read-only gateway scopes, so the tool path below is
+ * not open to them at all. Until this existed an author who filed a paper by mistake had to ask an
+ * admin to undo it.
+ */
 export async function deleteAdminBotPaper(
   host: AdminBotHost,
   paper: Pick<AdminBotPaperRecord, "id" | "title">,
@@ -2177,6 +2187,21 @@ export async function deleteAdminBotPaper(
   host.adminBotBusyActionId = paper.id;
   host.adminBotNotice = null;
   try {
+    const stored = loadStoredMemberSession();
+    if (stored) {
+      const removed = await deleteOwnPaper(
+        paper.id,
+        stored.sessionToken,
+        resolveAdminBotBaseUrl(host.settings),
+      );
+      if (!removed.ok) {
+        host.adminBotNotice = { kind: "error", text: paperDeleteErrorText(removed.kind) };
+        return;
+      }
+      host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
+      await loadAdminBot(host);
+      return;
+    }
     await invokeAdminBotTool(host, "adminbot_delete_paper", { paperId: paper.id });
     host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
     await loadAdminBot(host);
@@ -2187,6 +2212,20 @@ export async function deleteAdminBotPaper(
     };
   } finally {
     host.adminBotBusyActionId = null;
+  }
+}
+
+/** Deleting fails for its own reasons, and "check the details" is not one of them. */
+function paperDeleteErrorText(kind: string): string {
+  switch (kind) {
+    case "unreachable":
+      return "Couldn't reach AdminBot to delete this paper.";
+    case "forbidden":
+      return "You can only delete papers you authored.";
+    case "auth-failed":
+      return "Sign in again to delete this paper.";
+    default:
+      return "Couldn't delete this paper. Try again.";
   }
 }
 

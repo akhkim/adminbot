@@ -1831,9 +1831,17 @@ describe("AdminBotService", () => {
       status: 404,
       error: { message: "paper not found: paper-delete" },
     });
+    // The paper id lives in details now, not in `actor`. `actor` names the person who deleted it,
+    // and this call named nobody -- an unattributed delete stays visibly unattributed rather than
+    // recording the paper as having deleted itself.
     expect(service.listAuditEvents()).toContainEqual(
-      expect.objectContaining({ type: "paper.deleted", actor: "paper-delete" }),
+      expect.objectContaining({
+        type: "paper.deleted",
+        details: expect.objectContaining({ paper_id: "paper-delete" }),
+      }),
     );
+    const deleted = service.listAuditEvents().filter((event) => event.type === "paper.deleted");
+    expect(deleted.at(-1)?.actor).toBeUndefined();
   });
 
   it("uses settings defaults for paper escalation", () => {

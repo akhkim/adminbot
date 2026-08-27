@@ -886,6 +886,11 @@ function paperWorkspaceProps(
     onSaveWeeklyUpdate: (paperId, body) => {
       void saveAdminBotPaperWeeklyUpdate(state, paperId, body).finally(() => requestHostUpdate?.());
     },
+    // Offered on every card the page renders. The service is the gate -- an admin may remove any
+    // paper, an author only one they wrote -- so this does not try to guess which is which.
+    onDeletePaper: (paper) => {
+      void deleteAdminBotPaper(state, paper).finally(() => requestHostUpdate?.());
+    },
   };
 }
 

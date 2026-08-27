@@ -319,6 +319,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       this.conferenceAttendees,
       this.paperReimbursements,
       this.paperflowEvidence,
+      this.paperWeeklyUpdates,
     ] as Array<Map<string, { paper_id: string }>>) {
       for (const [key, record] of [...map.entries()]) {
         if (record.paper_id === paperId) {

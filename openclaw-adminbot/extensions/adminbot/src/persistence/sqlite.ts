@@ -1154,6 +1154,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       "adminbot_paper_conference_attendees",
       "adminbot_paper_reimbursements",
       "adminbot_paperflow_evidence",
+      // Left behind until now, against the comment above. A weekly update is the one row on a
+      // paper that only its author can write, so an orphan of it is somebody's work attributed to
+      // a paper that no longer exists -- and it is counted by the adoption rate.
+      "adminbot_paper_weekly_updates",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE paper_id = ?`).run(paperId);
     }

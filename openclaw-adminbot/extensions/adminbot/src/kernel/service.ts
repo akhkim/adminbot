@@ -4676,7 +4676,18 @@ export class AdminBotService {
     };
   }
 
-  deletePaper(paperId: string): AdminBotServiceResponse<{ deleted: true; paper_id: string }> {
+  /**
+   * Remove a paper and everything hanging off it.
+   *
+   * `origin` names the person, for the same reason upsertPaper takes one: this used to record
+   * `actor: paperId`, so the audit trail said a paper deleted itself. Deletion is the one paper
+   * write that cannot be inspected afterwards -- the record is gone -- which makes the actor on
+   * the audit row the only surviving answer to "who did this".
+   */
+  deletePaper(
+    paperId: string,
+    origin: AdminBotWriteOrigin = {},
+  ): AdminBotServiceResponse<{ deleted: true; paper_id: string }> {
     const paper = this.store.getPaper(paperId);
     if (!paper) {
       return serviceError(404, "paper not found: " + paperId);
@@ -4684,10 +4695,35 @@ export class AdminBotService {
     this.store.deletePaper(paperId);
     this.recordAudit({
       type: "paper.deleted",
-      actor: paperId,
-      details: { title: paper.title },
+      ...(origin.actor ? { actor: origin.actor } : {}),
+      details: { paper_id: paperId, title: paper.title },
     });
     return { ok: true, status: 200, payload: { deleted: true, paper_id: paperId } };
+  }
+
+  /**
+   * A member deleting a paper they own.
+   *
+   * Same ownership rule as upsertOwnPaper, checked against the stored record: a member who can
+   * edit a paper can also remove one they filed by mistake, and a member who cannot edit it must
+   * not be able to erase somebody else's work.
+   */
+  deleteOwnPaper(
+    memberId: string,
+    paperId: string,
+  ): AdminBotServiceResponse<{ deleted: true; paper_id: string }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found: " + paperId);
+    }
+    if (!this.memberOwnsPaper(member, paper)) {
+      return serviceError(403, "members can only delete papers they authored");
+    }
+    return this.deletePaper(paperId, { source: "member", actor: memberId });
   }
 
   listPaperNudges(nowIso = new Date().toISOString()): AdminBotServiceResponse<{
