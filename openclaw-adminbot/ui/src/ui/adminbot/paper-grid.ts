@@ -45,6 +45,14 @@ type Column = {
   /** Not a URL — validated by pattern instead. */
   pattern?: RegExp;
   hint?: string;
+  /**
+   * A real link of the kind this column wants, shown in every empty cell.
+   *
+   * The rules were only ever written down in `hosts` and `path`, which the reader cannot see, and
+   * as a tooltip on the header, which they have to find. Somebody filling thirty rows should be
+   * able to tell what belongs in a column by looking at it.
+   */
+  example: string;
 };
 
 // Columns follow the slot registry in fields_update.md. `arxiv_paper_password` is listed
@@ -53,6 +61,7 @@ type Column = {
 const COLUMNS: Column[] = [
   {
     key: "brainstorming_doc_url",
+    example: "https://docs.google.com/document/d/1AbCdEfGhIjK/edit",
     save: "brainstormingDocUrl",
     label: "Project doc / folder",
     short: "Project",
@@ -61,27 +70,34 @@ const COLUMNS: Column[] = [
   },
   {
     key: "overleaf_view_url",
+    example: "https://www.overleaf.com/read/xzqvbnmklpqr",
     save: "overleafViewUrl",
     label: "Overleaf (view)",
     short: "Overleaf view",
     hosts: ["overleaf.com", "www.overleaf.com"],
+    hint: "The read-only share link",
   },
   {
     key: "overleaf_edit_url",
+    example: "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
     save: "overleafEditUrl",
     label: "Overleaf (edit)",
     short: "Overleaf edit",
     hosts: ["overleaf.com", "www.overleaf.com"],
+    hint: "The project link coauthors can write in",
   },
   {
     key: "google_drive_pdf_url",
+    example: "https://drive.google.com/file/d/1AbCdEfGhIjK/view",
     save: "googleDrivePdfUrl",
     label: "Drive PDF (arXiv version)",
     short: "Drive PDF",
     hosts: ["drive.google.com", "docs.google.com"],
+    hint: "The PDF as posted to arXiv",
   },
   {
     key: "arxiv_url",
+    example: "https://arxiv.org/abs/2508.01234",
     save: "arxivUrl",
     label: "arXiv",
     short: "arXiv",
@@ -91,6 +107,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "arxiv_paper_password",
+    example: "f3k9qz",
     label: "arXiv paper password",
     short: "arXiv pw",
     pattern: /^[A-Za-z0-9]{6}$/u,
@@ -98,13 +115,22 @@ const COLUMNS: Column[] = [
   },
   {
     key: "google_slides_url",
+    example: "https://docs.google.com/presentation/d/1AbCdEfGhIjK/edit",
     save: "googleSlidesUrl",
     label: "Slides",
     short: "Slides",
     hosts: ["docs.google.com"],
     path: /^\/presentation\//u,
+    hint: "A Google Slides deck",
   },
-  { key: "poster_url", save: "posterUrl", label: "Poster", short: "Poster" },
+  {
+    key: "poster_url",
+    example: "https://drive.google.com/file/d/1AbCdEfGhIjK/view",
+    save: "posterUrl",
+    label: "Poster",
+    short: "Poster",
+    hint: "Any https link — Drive, Overleaf, wherever it lives",
+  },
 ];
 
 /**
@@ -114,6 +140,10 @@ const COLUMNS: Column[] = [
  * Submission column silently repointed every one of them at its neighbour and six assertions
  * started testing the wrong field. A name survives the next column being added or dropped.
  */
+export function gridColumns(): readonly Column[] {
+  return COLUMNS;
+}
+
 export function columnIndexOf(key: string): number {
   return COLUMNS.findIndex((column) => String(column.key) === key);
 }
@@ -733,7 +763,10 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
               </th>
               ${COLUMNS.map(
                 (column) => html`
-                  <th scope="col" title=${column.hint ?? column.label}>
+                  <th
+                    scope="col"
+                    title=${`${column.label}${column.hint ? ` — ${column.hint}` : ""}\ne.g. ${column.example}`}
+                  >
                     ${column.short}${column.save
                       ? nothing
                       : html`<span class="paper-grid__pending" title="No backend field yet">
@@ -773,7 +806,8 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                           type="text"
                           .value=${value}
                           ?disabled=${!column.save}
-                          title=${error ?? column.label}
+                          placeholder=${column.example}
+                          title=${error ?? `${column.label} — e.g. ${column.example}`}
                           data-row=${rowIndex}
                           data-col=${columnIndex}
                           @input=${(event: Event) => {

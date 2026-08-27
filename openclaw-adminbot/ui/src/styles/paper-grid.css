@@ -226,6 +226,12 @@
   transition: border-color 120ms ease, background 120ms ease;
 }
 
+/* The example is a hint, not content: quiet enough that a column of them reads as empty at a
+   glance, legible enough to answer "what goes here" without hunting for a tooltip. */
+.paper-grid__cell input::placeholder {
+  color: color-mix(in srgb, var(--text) 32%, transparent);
+}
+
 .paper-grid__cell input:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--sheet-green) 55%, transparent);
   background: color-mix(in srgb, var(--text) 6%, var(--bg));

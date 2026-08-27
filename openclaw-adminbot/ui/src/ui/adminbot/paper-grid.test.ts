@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   applyPaste,
   columnIndexOf,
+  gridColumns,
   clampWidth,
   tableWidth,
   ROWNUM_WIDTH,
@@ -38,6 +39,7 @@ function paper(id: string, artifacts: Record<string, string> = {}): AdminBotPape
 const arxivCol = {
   key: "arxiv_url",
   save: "arxivUrl",
+  example: "https://arxiv.org/abs/2508.01234",
   label: "arXiv",
   short: "arXiv",
   hosts: ["arxiv.org"],
@@ -299,6 +301,26 @@ describe("table width", () => {
     const before = tableWidth(state);
     state.widths.set("arxiv_url", 600);
     expect(tableWidth(state)).toBeGreaterThan(before);
+  });
+});
+
+describe("what a column asks for", () => {
+  // The validation rules live in `hosts` and `path`, which nobody filling the sheet can see. The
+  // example is the only place they are stated in a form a reader can act on, so it has to be a
+  // link the column would actually accept -- an example the grid rejects is worse than none.
+  it("gives every column an example that passes its own validation", () => {
+    for (const column of gridColumns()) {
+      expect(column.example, `${column.label} has no example`).toBeTruthy();
+      expect(
+        cellError(column, column.example),
+        `${column.label}: example "${column.example}" is rejected by its own rule`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("rejects the arXiv PDF, which is the mistake the example exists to prevent", () => {
+    const arxiv = gridColumns().find((column) => column.key === "arxiv_url");
+    expect(cellError(arxiv!, "https://arxiv.org/pdf/2508.01234")).toBeDefined();
   });
 });
 
