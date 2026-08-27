@@ -296,12 +296,13 @@ class AoEClock:
 # silently truncates the board. Almost all of it was wasted: a deadline six months out does not
 # move between Tuesdays.
 #
-# So the cadence follows the thing that actually changes. A workshop inside its final few days is
+# So the cadence follows the thing that actually changes. A workshop inside its final three days is
 # where CFP pages get edited -- an extension announced the day before is the case the board exists
-# to catch -- and everything else, workshops further out and conferences alike, is re-read
-# fortnightly.
+# to catch -- so it is re-read daily. Workshops further out move often enough to be worth a weekly
+# look; conferences, whose dates are announced once and rarely revised, wait a fortnight.
 SWEEP_IMMINENT_DAYS = 3
 SWEEP_IMMINENT_INTERVAL_DAYS = 1
+SWEEP_WORKSHOP_INTERVAL_DAYS = 7
 SWEEP_INTERVAL_DAYS = 14
 
 
@@ -310,20 +311,25 @@ def sweep_interval_days(
 ) -> int:
     """How many days may pass before this venue's source is read again.
 
-    Only a workshop earns the daily cadence, and only while its deadline is both imminent and still
-    ahead: a passed deadline cannot move, so re-reading it daily buys nothing and spends the
-    request budget the imminent ones need.
+    Workshops weekly, or daily once the deadline is three days out or nearer. Conferences
+    fortnightly. Only a workshop earns the daily cadence, and only while its deadline is still
+    ahead.
     """
     if entry_type != "workshop":
         return SWEEP_INTERVAL_DAYS
     try:
         if clock.has_passed(deadline_aoe):
+            # A passed deadline cannot move. It drops to the conference interval rather than the
+            # weekly one: nothing about it is going to change, and the budget is better spent on
+            # the workshops still ahead.
             return SWEEP_INTERVAL_DAYS
         days = clock.days_until(deadline_aoe)
     except (ValueError, TypeError):
         # An unparseable deadline is a data problem, not a reason to hammer the source.
         return SWEEP_INTERVAL_DAYS
-    return SWEEP_IMMINENT_INTERVAL_DAYS if days < SWEEP_IMMINENT_DAYS else SWEEP_INTERVAL_DAYS
+    if days <= SWEEP_IMMINENT_DAYS:
+        return SWEEP_IMMINENT_INTERVAL_DAYS
+    return SWEEP_WORKSHOP_INTERVAL_DAYS
 
 
 def is_sweep_due(

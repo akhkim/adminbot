@@ -508,13 +508,15 @@ describe("sweep cadence", () => {
   const clock = (now: string) =>
     `AoEClock(__import__("datetime").datetime.fromisoformat(${JSON.stringify(now)}))`;
 
-  it("re-reads an imminent workshop daily and everything else fortnightly", () => {
+  it("re-reads a workshop daily inside three days, weekly otherwise, conferences fortnightly", () => {
     const result = runPython(
       [
         `c = ${clock("2026-08-27T12:00:00+00:00")}`,
         "print(json.dumps({",
         "  'workshop_tomorrow': sweep_interval_days(c, 'workshop', '2026-08-28 23:59:59'),",
         "  'workshop_two_days': sweep_interval_days(c, 'workshop', '2026-08-29 23:59:59'),",
+        "  'workshop_exactly_three_days': sweep_interval_days(c, 'workshop', '2026-08-30 23:59:59'),",
+        "  'workshop_four_days': sweep_interval_days(c, 'workshop', '2026-08-31 23:59:59'),",
         "  'workshop_far': sweep_interval_days(c, 'workshop', '2026-12-01 23:59:59'),",
         "  'workshop_passed': sweep_interval_days(c, 'workshop', '2026-08-01 23:59:59'),",
         "  'conference_tomorrow': sweep_interval_days(c, 'main_conference', '2026-08-28 23:59:59'),",
@@ -525,8 +527,11 @@ describe("sweep cadence", () => {
     expect(result).toEqual({
       workshop_tomorrow: 1,
       workshop_two_days: 1,
-      workshop_far: 14,
-      // A passed deadline cannot move, so it drops off the daily cadence.
+      // Three days is inside the window, not the first day outside it.
+      workshop_exactly_three_days: 1,
+      workshop_four_days: 7,
+      workshop_far: 7,
+      // A passed deadline cannot move, so it drops below even the weekly cadence.
       workshop_passed: 14,
       // Conferences are fortnightly however close they are.
       conference_tomorrow: 14,
@@ -541,8 +546,8 @@ describe("sweep cadence", () => {
         "print(json.dumps({",
         "  'imminent_checked_today': is_sweep_due(c, 'workshop', '2026-08-28 23:59:59', '2026-08-27T00:00:00Z'),",
         "  'imminent_checked_yesterday': is_sweep_due(c, 'workshop', '2026-08-28 23:59:59', '2026-08-26T00:00:00Z'),",
+        "  'far_checked_two_days_ago': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2026-08-25T00:00:00Z'),",
         "  'far_checked_a_week_ago': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2026-08-20T00:00:00Z'),",
-        "  'far_checked_a_fortnight_ago': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2026-08-12T00:00:00Z'),",
         "  'conference_checked_a_week_ago': is_sweep_due(c, 'main_conference', '2026-12-01 23:59:59', '2026-08-20T00:00:00Z'),",
         "}))",
       ].join("\n"),
@@ -550,8 +555,9 @@ describe("sweep cadence", () => {
     expect(result).toEqual({
       imminent_checked_today: false,
       imminent_checked_yesterday: true,
-      far_checked_a_week_ago: false,
-      far_checked_a_fortnight_ago: true,
+      far_checked_two_days_ago: false,
+      // A workshop further out is weekly now, so a week-old read is due again.
+      far_checked_a_week_ago: true,
       conference_checked_a_week_ago: false,
     });
   });
