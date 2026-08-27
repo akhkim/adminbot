@@ -3,6 +3,8 @@ import {
   applyPaste,
   columnIndexOf,
   clampWidth,
+  tableWidth,
+  ROWNUM_WIDTH,
   columnWidth,
   fillDown,
   TITLE_COLUMN,
@@ -275,6 +277,28 @@ describe("column widths", () => {
     expect(clampWidth(2)).toBeGreaterThanOrEqual(64);
     expect(clampWidth(99999)).toBeLessThanOrEqual(900);
     expect(clampWidth(250.4)).toBe(250);
+  });
+});
+
+describe("table width", () => {
+  it("is the gutter plus every column, so fixed layout has a definite width to obey", () => {
+    const state = emptyPaperGridState();
+    state.widths = new Map();
+    const before = tableWidth(state);
+    expect(before).toBeGreaterThan(ROWNUM_WIDTH);
+
+    // Shrinking a column must shrink the table. Without this the space is handed to a neighbour
+    // and the Paper column cannot actually be pulled left.
+    state.widths.set(TITLE_COLUMN, 120);
+    expect(tableWidth(state)).toBeLessThan(before);
+  });
+
+  it("grows when a column is widened", () => {
+    const state = emptyPaperGridState();
+    state.widths = new Map();
+    const before = tableWidth(state);
+    state.widths.set("arxiv_url", 600);
+    expect(tableWidth(state)).toBeGreaterThan(before);
   });
 });
 

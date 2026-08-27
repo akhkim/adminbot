@@ -92,8 +92,9 @@
      sizes each column to its longest cell, so `width` is a hint it is free to ignore -- and one
      104-character title took 1,300px and pushed every link column off the right edge. */
   table-layout: fixed;
-  width: max-content;
-  min-width: 100%;
+  /* No width here. The element carries an explicit pixel width, summed from the column widths --
+     under `max-content` a fixed-layout table goes back to measuring its cells, which ignored the
+     <colgroup> entirely and made the drag handles do nothing. */
   font-size: 0.92em;
   font-variant-numeric: tabular-nums;
 }
@@ -129,8 +130,6 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  width: 3ch;
-  min-width: 3ch;
   padding: 0 var(--space-2);
   background: var(--sheet-gutter);
   color: var(--text-muted);
@@ -147,7 +146,10 @@
 
 .paper-grid__sticky {
   position: sticky;
-  left: 3ch;
+  left: 40px;
+  /* Narrow the column and the title is cut off, which is the point: the row is still identifiable
+     from its first few words, and clicking it releases the full title. */
+  overflow: hidden;
   z-index: 2;
   padding: 0 var(--space-2);
   background: var(--sheet-gutter);

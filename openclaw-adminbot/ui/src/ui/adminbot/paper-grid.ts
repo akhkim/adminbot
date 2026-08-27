@@ -139,6 +139,8 @@ const WIDTH_STORAGE_KEY = "adminbot.paper-grid.widths";
 export const TITLE_COLUMN = "__title";
 
 const DEFAULT_WIDTHS: Record<string, number> = { [TITLE_COLUMN]: 320 };
+/** The row-number gutter. Fixed, and counted into the table width like every other column. */
+export const ROWNUM_WIDTH = 40;
 const DEFAULT_LINK_WIDTH = 200;
 /** Narrow enough to be useless, wide enough to hide the rest of the sheet. */
 const MIN_WIDTH = 64;
@@ -146,6 +148,22 @@ const MAX_WIDTH = 900;
 
 export function columnWidth(state: PaperGridState, key: string): number {
   return state.widths.get(key) ?? DEFAULT_WIDTHS[key] ?? DEFAULT_LINK_WIDTH;
+}
+
+/**
+ * The table's own width, in pixels.
+ *
+ * Required, not cosmetic. `table-layout: fixed` only honours the <colgroup> when the table has a
+ * definite width -- under `width: max-content` the browser goes back to measuring cells, which is
+ * why the Paper column sized itself to a 104-character title and why dragging its edge did
+ * nothing at all.
+ */
+export function tableWidth(state: PaperGridState): number {
+  return (
+    ROWNUM_WIDTH +
+    columnWidth(state, TITLE_COLUMN) +
+    COLUMNS.reduce((total, column) => total + columnWidth(state, String(column.key)), 0)
+  );
 }
 
 export function clampWidth(px: number): number {
@@ -532,11 +550,16 @@ function startResize(
   }
   const startX = event.clientX;
   const startWidth = columnWidth(state, key);
+  const startTable = tableWidth(state);
   let latest = startWidth;
 
   const move = (moveEvent: PointerEvent) => {
     latest = clampWidth(startWidth + (moveEvent.clientX - startX));
     col.style.width = `${latest}px`;
+    // The table has to move with the column, or shrinking one just hands the space to another.
+    if (table) {
+      table.style.width = `${startTable + (latest - startWidth)}px`;
+    }
   };
   const done = () => {
     globalThis.removeEventListener("pointermove", move);
@@ -680,11 +703,11 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
         : nothing}
 
       <div class="paper-grid__scroll">
-        <table class="paper-grid__table">
+        <table class="paper-grid__table" style=${`width:${tableWidth(state)}px`}>
           <!-- Fixed layout reads every width from here. Without it the browser sizes columns to
                their content and the longest title takes the window. -->
           <colgroup>
-            <col class="paper-grid__col-rownum" />
+            <col class="paper-grid__col-rownum" style=${`width:${ROWNUM_WIDTH}px`} />
             <col
               data-key=${TITLE_COLUMN}
               style=${`width:${columnWidth(state, TITLE_COLUMN)}px`}
@@ -800,11 +823,6 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
         </table>
       </div>
 
-      <p class="paper-grid__hint">
-        <span class="paper-grid__pending">◦</span> waiting on a backend field — see
-        <code>fields_update.md</code>. Saving sends one request per changed paper today; a
-        <code>PATCH /papers/bulk</code> endpoint would make it one.
-      </p>
     </div>
   `;
 }
