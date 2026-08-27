@@ -89,6 +89,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbot: "admin",
   adminbotRegistrations: "admin",
   // Everybody's completeness at once, which is a governance read; the service re-checks it.
+  // Lab-internal curation rather than a public listing, so it stops at `member`: signed-in
+  // only, and every member sees the same rows. Nothing on it is filtered by who is looking.
+  adminbotOpportunities: "member",
   adminbotProfileOverview: "admin",
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.

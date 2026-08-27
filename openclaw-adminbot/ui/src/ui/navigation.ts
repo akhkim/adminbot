@@ -33,7 +33,12 @@ export const TAB_GROUPS = [
   // sidebar footer offers in place of the old external docs link.
   {
     label: "generalTools",
-    tabs: ["adminbotReimbursements", "adminbotDeadlines", "adminbotConferencePapers"],
+    tabs: [
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
+    ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
   // job -- Nudges, Membership -- and the page names the surfaces inside it. Ten entries here read
@@ -168,6 +173,7 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotProfessor"
   | "adminbotTimeAvailability"
@@ -250,6 +256,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
+  adminbotOpportunities: "/adminbot/opportunities",
   adminbotProfileOverview: "/adminbot/profile-overview",
   adminbotProfessor: "/adminbot/professor",
   adminbotTimeAvailability: "/adminbot/time-availability",
@@ -449,6 +456,8 @@ export function iconForTab(tab: Tab): IconName {
       return "clock";
     case "adminbotDeadlines":
       return "loader";
+    case "adminbotOpportunities":
+      return "zap";
     case "channels":
       return "link";
     case "sessions":

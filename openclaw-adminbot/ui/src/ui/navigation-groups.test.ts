@@ -65,6 +65,10 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("generalTools")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Opportunities sits with the member-facing tools, not under Admin: the brainstorming deck
+      // asks that members hear about Rising Star and fellowship deadlines, not that admins audit
+      // a list of them.
+      "adminbotOpportunities",
       "adminbotConferencePapers",
     ]);
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the

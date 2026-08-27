@@ -57,6 +57,7 @@ describe("iconForTab", () => {
       profile: "user",
       myWork: "book",
       labSharing: "link",
+      adminbotOpportunities: "zap",
       chat: "messageSquare",
       overview: "barChart",
       adminbot: "brain",
@@ -112,6 +113,7 @@ describe("titleForTab", () => {
       profile: "My Profile",
       myWork: "My Projects & Papers",
       labSharing: "Lab Sharing",
+      adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
@@ -160,7 +162,10 @@ describe("subtitleForTab", () => {
       dashboard: "What needs you, and where the lab stands.",
       profile: "Your details, and anything still blank.",
       myWork: "What you are working on, and anything holding it up.",
-      labSharing: "Share resources, ideas, and collaborate.",
+      // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
+      // expectation had not followed, leaving the suite red for a reason unrelated to it.
+      labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",

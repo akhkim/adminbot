@@ -783,6 +783,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyOpportunities = createLazyView(
+  () => import("./adminbot/views/opportunities.ts"),
+  notifyLazyViewChanged,
+);
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
   notifyLazyViewChanged,
@@ -3778,6 +3782,9 @@ export function renderApp(state: AppViewState) {
                 settings: state.settings,
               }),
             )
+          : nothing}
+        ${state.tab === "adminbotOpportunities"
+          ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

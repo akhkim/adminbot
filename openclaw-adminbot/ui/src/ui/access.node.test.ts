@@ -101,6 +101,9 @@ describe("visibleTabsForRole", () => {
       "adminbotMeetingRequests",
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Lab-internal curation, so signed-in only -- but every member sees the same rows, and
+      // nothing on it is filtered by who is looking.
+      "adminbotOpportunities",
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
