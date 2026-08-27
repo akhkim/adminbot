@@ -43,7 +43,6 @@ export const TAB_GROUPS = [
     tabs: [
       // First in the group, because it is the page that says which of the others to open.
       "adminbotProfessor",
-      "adminbot",
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
@@ -54,6 +53,10 @@ export const TAB_GROUPS = [
       // admin looking for "when does the nudge go out" was looking under Admin and finding an
       // operator heading instead.
       "cron",
+      // Pending Actions sits below Tasks & Tools, next to the settings it is really a sibling of:
+      // it is the approval queue, which is something you visit when something is waiting, not a
+      // place a sweep starts. Near the top it read as the first stop in the group.
+      "adminbot",
       "adminbotSettings",
     ],
   },

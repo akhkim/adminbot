@@ -77,7 +77,6 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("admin")).toEqual([
       // First in the group: it is the page that says which of the others to open.
       "adminbotProfessor",
-      "adminbot",
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
@@ -85,6 +84,9 @@ describe("TAB_GROUPS", () => {
       // Tasks & Tools: the jobs listed there are the lab's own scheduled passes, so it is
       // governance rather than an upstream operator surface.
       "cron",
+      // Pending Actions sits below it: an approval queue is somewhere you go when something is
+      // waiting, not where a sweep begins.
+      "adminbot",
       "adminbotSettings",
     ]);
   });
