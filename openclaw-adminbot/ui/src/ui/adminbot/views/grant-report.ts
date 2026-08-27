@@ -395,18 +395,24 @@ class AdminbotGrantReportView extends LitElement {
           gap: 10px;
           margin-bottom: 18px;
         }
+        /* The area's color lives in its heading and its chips, not in a border down the side: six
+           cards each wearing a colored edge reads as decoration, and the selected one then has no
+           stronger state left to move to. Selection is what the border is for here. */
         .gr-area {
           text-align: left;
           padding: 12px 14px;
           border: 1px solid var(--border, #26324a);
-          border-left: 4px solid var(--c);
           border-radius: 10px;
           background: var(--surface, #141b2b);
           color: var(--text, #d7e2f4);
           cursor: pointer;
         }
+        .gr-area:hover {
+          border-color: var(--text-muted, #66799a);
+        }
         .gr-area.is-active {
           border-color: var(--c);
+          box-shadow: inset 0 0 0 1px var(--c);
         }
         .gr-area-head {
           display: flex;
