@@ -9718,6 +9718,28 @@ select.target__select optgroup {
   color: var(--warn);
 }
 
+/* The activity column, laid out like the adoption one beside it so a sweep reads across a row
+   rather than re-learning a shape halfway along it. */
+.profile-overview__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-overview__activity-counts {
+  white-space: nowrap;
+}
+
+.profile-overview__activity-detail {
+  font-size: 11px;
+}
+
+/* Silence here means something different from 0% adoption -- nobody has been here at all -- so it
+   gets the same warning colour rather than a quieter one. */
+.profile-overview__activity-counts.is-zero {
+  color: var(--warn);
+}
+
 .profile-overview__adoption-summary {
   display: flex;
   flex-wrap: wrap;

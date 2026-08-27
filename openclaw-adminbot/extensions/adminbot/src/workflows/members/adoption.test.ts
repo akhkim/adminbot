@@ -192,6 +192,38 @@ describe("adoptionSummary", () => {
       profile_rate: 0,
       project_rate: 0,
       signed_in_ever: 0,
+      active_ever: 0,
     });
+  });
+
+  it("counts somebody active who has no surviving sign-in", () => {
+    // The exact row the audit window creates: their sign-in aged out, but they edited a paper last
+    // week. signed_in_ever cannot see them, which is the reason active_ever exists.
+    const summary = adoptionSummary(
+      [
+        {
+          self_filled_field_count: 0,
+          projects: { total: 0, self_updated: 0 },
+          activity: { logins: 0, profile_edits: 0, paper_updates: 3 },
+        },
+      ],
+      12,
+    );
+    expect(summary.signed_in_ever).toBe(0);
+    expect(summary.active_ever).toBe(1);
+  });
+
+  it("does not count a member with nothing recorded at all", () => {
+    const summary = adoptionSummary(
+      [
+        {
+          self_filled_field_count: 0,
+          projects: { total: 0, self_updated: 0 },
+          activity: { logins: 0, profile_edits: 0, paper_updates: 0 },
+        },
+      ],
+      12,
+    );
+    expect(summary.active_ever).toBe(0);
   });
 });

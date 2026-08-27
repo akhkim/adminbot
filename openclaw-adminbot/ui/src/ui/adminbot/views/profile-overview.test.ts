@@ -65,6 +65,101 @@ function rows(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".profile-overview__row")];
 }
 
+function activityText(container: HTMLElement): string {
+  return (
+    container
+      .querySelector<HTMLElement>('[data-testid="profile-overview-activity"]')
+      ?.textContent?.replace(/\s+/gu, " ")
+      .trim() ?? ""
+  );
+}
+
+describe("the activity column", () => {
+  it("separates somebody the importer wrote over from somebody who has never been here", () => {
+    // Same 0/12 written-by-them on both rows. The activity column is the only thing that tells
+    // these two people apart, and they need opposite conversations.
+    const busy = draw({
+      members: [
+        member({
+          activity: {
+            logins: 20,
+            profile_edits: 4,
+            paper_updates: 3,
+            last_active_at: "2026-08-26T10:00:00.000Z",
+          },
+        }),
+      ],
+    });
+    expect(activityText(busy.container)).toContain("20");
+    expect(
+      busy.container.querySelector(".profile-overview__activity-counts")?.className,
+    ).not.toContain("is-zero");
+
+    const silent = draw({
+      members: [member({ activity: { logins: 0, profile_edits: 0, paper_updates: 0 } })],
+    });
+    // Em dashes, not zeros: "0 sign-ins" reads as a measurement, and this is an absence.
+    expect(activityText(silent.container)).toContain("—");
+    expect(
+      silent.container.querySelector(".profile-overview__activity-counts")?.className,
+    ).toContain("is-zero");
+  });
+
+  it("shows when they were last active, and says nothing when they never were", () => {
+    const seen = draw({
+      members: [
+        member({
+          activity: {
+            logins: 1,
+            profile_edits: 0,
+            paper_updates: 0,
+            last_active_at: "2026-08-26T10:00:00.000Z",
+          },
+        }),
+      ],
+    });
+    expect(seen.container.querySelector(".profile-overview__activity-detail")).not.toBeNull();
+
+    const never = draw({
+      members: [member({ activity: { logins: 0, profile_edits: 0, paper_updates: 0 } })],
+    });
+    expect(never.container.querySelector(".profile-overview__activity-detail")).toBeNull();
+  });
+
+  it("renders a row from a server that predates the counts instead of throwing", () => {
+    // A rolling deploy puts this page in front of an older service. Absent has to render as
+    // "nothing recorded", not as a blank page.
+    const { container } = draw({ members: [member()] });
+    expect(activityText(container)).toContain("—");
+  });
+
+  it("omits the lab-wide figure when the server did not send one", () => {
+    const older = draw({
+      members: [member()],
+      adoption: { members: 10, profile_rate: 0, project_rate: 0, signed_in_ever: 2 },
+    });
+    expect(
+      older.container.querySelector('[data-testid="profile-overview-active-ever"]'),
+    ).toBeNull();
+
+    const current = draw({
+      members: [member()],
+      adoption: {
+        members: 10,
+        profile_rate: 0,
+        project_rate: 0,
+        signed_in_ever: 2,
+        active_ever: 6,
+      },
+    });
+    expect(
+      current.container
+        .querySelector('[data-testid="profile-overview-active-ever"]')
+        ?.textContent?.trim(),
+    ).toBe("6/10");
+  });
+});
+
 describe("profile overview", () => {
   it("puts every column of the sweep on one line", () => {
     const { container } = draw({ members: [member()] });
@@ -76,6 +171,9 @@ describe("profile overview", () => {
       // Adoption sits next to completeness rather than replacing it: the two disagreeing is the
       // finding this page exists to surface.
       "Filled in by them",
+      // And activity sits next to adoption for the same reason. 0% written by them plus twenty
+      // sign-ins is somebody the importer wrote over, not somebody who has never been here.
+      "Actually used it",
       "Still missing",
       "Timeline entries",
       "Last reminded",

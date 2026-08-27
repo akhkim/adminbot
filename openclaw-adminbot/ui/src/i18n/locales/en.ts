@@ -1408,6 +1408,14 @@ export const en: TranslationMap = {
       summaryProjects: "of papers with a weekly update from their own author",
       summarySignedIn: "members have ever signed in",
     },
+    activity: {
+      column: "Actually used it",
+      counts: "{logins} in · {edits} edits · {papers} papers",
+      lastActive: "last active {day}",
+      breakdown:
+        "{logins} sign-in(s), {edits} profile save(s), {papers} paper update(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
+      summaryActive: "members have actually used AdminBot",
+    },
     loading: "Reading profiles…",
     empty: "No active members yet.",
     allCaughtUp: "Everyone is caught up.",

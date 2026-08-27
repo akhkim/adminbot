@@ -2449,6 +2449,25 @@ export type MemberProfileOverviewRow = {
   updated_at?: string;
   /** When this member last changed anything themselves. Absent means they never have. */
   last_self_edit_at?: string;
+  /**
+   * What they have actually done, counted from the audit trail.
+   *
+   * Distinct from `self_filled_field_count`, which measures how much of the record they wrote. A
+   * member can show 0 fields written -- because an importer flattened the provenance -- and still
+   * have signed in twenty times. Bounded by the audit retention window, so these are floors.
+   *
+   * Optional because a server from before this shipped does not send it, and a rolling deploy puts
+   * this page in front of one. Absent is rendered as "no recorded activity", which is also what a
+   * present-but-empty row means.
+   */
+  activity?: MemberActivityCounts;
+};
+
+export type MemberActivityCounts = {
+  logins: number;
+  profile_edits: number;
+  paper_updates: number;
+  last_active_at?: string;
 };
 
 /** The lab-wide roll-up, so the page leads with one number instead of asking an admin to add up 77 rows. */
@@ -2458,6 +2477,11 @@ export type MemberAdoptionSummary = {
   profile_rate: number;
   project_rate: number;
   signed_in_ever: number;
+  /**
+   * Members with any recorded action at all -- signed in, edited themselves, or touched a paper.
+   * Optional for the same rolling-deploy reason as MemberProfileOverviewRow.activity.
+   */
+  active_ever?: number;
 };
 
 export type MemberProfileOverview = {

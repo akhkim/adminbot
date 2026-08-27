@@ -188,6 +188,97 @@ describe("listMemberProfileOverview", () => {
   });
 });
 
+describe("the activity counts", () => {
+  // Six at a time, because that is how the roster is really written: a sync touches everybody in
+  // one second, and the counts have to treat that as one pass rather than six people working.
+  const ROSTER = ["ada", "grace", "alan", "edsger", "barbara", "ken"];
+
+  function serviceWithRoster() {
+    return serviceWith(
+      ROSTER.map((id) => ({ id, ...COMPLETE, name: id, privilege_level: "member" })),
+    );
+  }
+
+  it("counts a member's sign-ins from the audit trail, not from last_login_at", () => {
+    const service = serviceWithRoster();
+    // last_login_at is empty on this roster -- a bulk write erased it -- so a page reading only
+    // that field calls a daily user "never signed in". The audit trail still has the sign-ins.
+    for (const [index, at] of ["2026-08-20T10:00:00.000Z", "2026-08-21T10:00:00.000Z"].entries()) {
+      service.recordAudit({
+        id: `aud_login_${index}`,
+        timestamp: at,
+        type: "auth.login_succeeded",
+        actor: "ada",
+      });
+    }
+    const ada = unwrap(service.listMemberProfileOverview()).members.find(
+      (member) => member.id === "ada",
+    );
+    expect(ada?.activity.logins).toBe(2);
+    expect(ada?.last_login_at).toBe("2026-08-21T10:00:00.000Z");
+  });
+
+  it("counts paper work, and rolls the lab up into active_ever", () => {
+    const service = serviceWithRoster();
+    service.recordAudit({
+      id: "aud_slot",
+      timestamp: "2026-08-22T10:00:00.000Z",
+      type: "paper_slot.updated",
+      actor: "ada",
+    });
+    const overview = unwrap(service.listMemberProfileOverview());
+    const ada = overview.members.find((member) => member.id === "ada");
+    const grace = overview.members.find((member) => member.id === "grace");
+    expect(ada?.activity.paper_updates).toBe(1);
+    expect(grace?.activity.paper_updates).toBe(0);
+    // Ada never signed in, so this is exactly the member signed_in_ever cannot see.
+    expect(overview.adoption.signed_in_ever).toBe(0);
+    expect(overview.adoption.active_ever).toBe(1);
+  });
+
+  it("does not count a roster-wide sync as everybody editing their profile", () => {
+    const service = serviceWithRoster();
+    const at = "2026-08-22T10:00:00.000Z";
+    for (const id of ROSTER) {
+      service.recordAudit({
+        id: `aud_sync_${id}`,
+        timestamp: at,
+        type: "lab_member.upserted",
+        actor: id,
+      });
+    }
+    const overview = unwrap(service.listMemberProfileOverview());
+    const ada = overview.members.find((member) => member.id === "ada");
+    // Both bursts -- the creates and the sync -- are one pass each, so neither counts. Without
+    // this the whole roster reads as active and the column says nothing.
+    expect(ada?.activity.profile_edits).toBe(0);
+    expect(overview.adoption.active_ever).toBe(0);
+  });
+
+  it("counts one member's own save, made on their own", () => {
+    const service = serviceWithRoster();
+    service.recordAudit({
+      id: "aud_self",
+      timestamp: "2026-08-22T11:00:00.000Z",
+      type: "lab_member.upserted",
+      actor: "ada",
+    });
+    const overview = unwrap(service.listMemberProfileOverview());
+    const ada = overview.members.find((member) => member.id === "ada");
+    expect(ada?.activity.profile_edits).toBe(1);
+    expect(ada?.activity.last_active_at).toBe("2026-08-22T11:00:00.000Z");
+    expect(overview.adoption.active_ever).toBe(1);
+  });
+
+  it("gives a member with nothing recorded a zeroed row rather than an absent one", () => {
+    const service = serviceWithRoster();
+    const ada = unwrap(service.listMemberProfileOverview()).members.find(
+      (member) => member.id === "ada",
+    );
+    expect(ada?.activity).toEqual({ logins: 0, profile_edits: 0, paper_updates: 0 });
+  });
+});
+
 describe("adoption", () => {
   it("separates 'the field is filled' from 'the member filled it'", () => {
     // The state most of the roster is actually in: bulk-imported, complete, adopted by nobody.

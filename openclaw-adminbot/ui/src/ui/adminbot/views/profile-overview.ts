@@ -16,7 +16,17 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
+import type {
+  MemberActivityCounts,
+  MemberAdoptionSummary,
+  MemberProfileOverviewRow,
+} from "../auth/session.ts";
+
+/** Zero counts render as an em dash rather than "0", which reads as a measurement. */
+const countOrDash = (value: number) => (value > 0 ? String(value) : "—");
+
+/** What a row from a server that predates the activity counts renders as. */
+const NO_ACTIVITY: MemberActivityCounts = { logins: 0, profile_edits: 0, paper_updates: 0 };
 
 /**
  * Which gap the page is looking at.
@@ -248,6 +258,51 @@ function renderAdoptionCell(row: MemberProfileOverviewRow, total: number) {
 }
 
 /**
+ * The activity cell: what this member has actually done.
+ *
+ * Next to the adoption cell for the same reason adoption sits next to completeness -- the pair
+ * disagreeing is the signal. A member with 0% adoption and twenty sign-ins is somebody the
+ * importer wrote over, not somebody who has never been here, and chasing them to "fill in your
+ * profile" when they already have is how a roster sweep loses trust.
+ *
+ * Counts are floors: the audit trail is pruned on a rolling window, so activity older than that
+ * is gone. The tooltip says so rather than letting a floor read as a total.
+ */
+function renderActivityCell(row: MemberProfileOverviewRow) {
+  const activity = row.activity ?? NO_ACTIVITY;
+  const silent = activity.logins + activity.profile_edits + activity.paper_updates === 0;
+  return html`
+    <div
+      class="profile-overview__activity"
+      data-testid="profile-overview-activity"
+      title=${t("profileOverview.activity.breakdown", {
+        logins: String(activity.logins),
+        edits: String(activity.profile_edits),
+        papers: String(activity.paper_updates),
+        lastActive: activity.last_active_at
+          ? formatDay(activity.last_active_at)
+          : t("profileOverview.adoption.never"),
+      })}
+    >
+      <span class="profile-overview__activity-counts ab-num ${silent ? "is-zero" : ""}">
+        ${t("profileOverview.activity.counts", {
+          logins: countOrDash(activity.logins),
+          edits: countOrDash(activity.profile_edits),
+          papers: countOrDash(activity.paper_updates),
+        })}
+      </span>
+      ${activity.last_active_at
+        ? html`<span class="profile-overview__activity-detail muted"
+            >${t("profileOverview.activity.lastActive", {
+              day: formatDay(activity.last_active_at),
+            })}</span
+          >`
+        : nothing}
+    </div>
+  `;
+}
+
+/**
  * The one line at the top: what fraction of the lab's own record the lab's own members wrote.
  *
  * Over every field of every member rather than an average of per-member percentages, so one
@@ -272,6 +327,16 @@ function renderAdoptionSummary(adoption: MemberAdoptionSummary) {
         >
         <span class="muted">${t("profileOverview.adoption.summarySignedIn")}</span>
       </div>
+      ${adoption.active_ever === undefined
+        ? nothing
+        : html`<div>
+            <span
+              class="profile-overview__adoption-figure ab-num"
+              data-testid="profile-overview-active-ever"
+              >${adoption.active_ever}/${adoption.members}</span
+            >
+            <span class="muted">${t("profileOverview.activity.summaryActive")}</span>
+          </div>`}
     </div>
   `;
 }
@@ -328,6 +393,7 @@ function renderRow(props: AdminBotProfileOverviewProps, row: MemberProfileOvervi
       </td>
       <td class="profile-overview__cell">${renderProgressCell(row, props.mandatoryFieldCount)}</td>
       <td class="profile-overview__cell">${renderAdoptionCell(row, props.mandatoryFieldCount)}</td>
+      <td class="profile-overview__cell">${renderActivityCell(row)}</td>
       <td class="profile-overview__cell profile-overview__cell--missing">
         ${renderMissingCell(row)}
       </td>
@@ -500,6 +566,9 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                         </th>
                         <th scope="col" class="profile-overview__head">
                           ${t("profileOverview.adoption.column")}
+                        </th>
+                        <th scope="col" class="profile-overview__head">
+                          ${t("profileOverview.activity.column")}
                         </th>
                         <th scope="col" class="profile-overview__head">
                           ${t("profileOverview.missing")}

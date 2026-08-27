@@ -192,6 +192,7 @@ export function adoptionSummary(
     self_filled_field_count: number;
     last_login_at?: string;
     projects: { total: number; self_updated: number };
+    activity?: { logins: number; profile_edits: number; paper_updates: number };
   }>,
   fieldsPerMember: number,
 ): {
@@ -200,6 +201,15 @@ export function adoptionSummary(
   profile_rate: number;
   project_rate: number;
   signed_in_ever: number;
+  /**
+   * Members with any recorded action at all -- signed in, edited themselves, or touched a paper.
+   *
+   * Separate from `signed_in_ever` because the two diverge in the direction that matters. Somebody
+   * who signed in once and left is counted by both; somebody whose sign-in has aged out of the
+   * audit window but who edited a paper last week is counted only here. This is the closest thing
+   * the page has to "how many people actually use AdminBot", and it is still a floor.
+   */
+  active_ever: number;
 } {
   const denominator = rows.length * fieldsPerMember;
   const projectTotal = rows.reduce((sum, row) => sum + row.projects.total, 0);
@@ -212,6 +222,16 @@ export function adoptionSummary(
       ? rows.reduce((sum, row) => sum + row.projects.self_updated, 0) / projectTotal
       : 0,
     signed_in_ever: rows.filter((row) => row.last_login_at).length,
+    active_ever: rows.filter(
+      (row) =>
+        Boolean(row.last_login_at) ||
+        Boolean(
+          row.activity &&
+          (row.activity.logins > 0 ||
+            row.activity.profile_edits > 0 ||
+            row.activity.paper_updates > 0),
+        ),
+    ).length,
   };
 }
 

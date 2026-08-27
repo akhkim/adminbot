@@ -26,6 +26,7 @@ import type {
   AdminBotLogisticsRequestStatus,
   AdminBotMemberCredential,
   AdminBotMemberOnboardingStep,
+  AdminBotMemberActivityCounts,
   AdminBotMemberProfileOverviewRow,
   AdminBotMemberTimelineCounts,
   AdminBotMemberNudgeChannel,
@@ -5257,10 +5258,11 @@ export class AdminBotService {
     adoption: ReturnType<typeof adoptionSummary>;
   }> {
     const remindedAt = this.lastMandatoryFieldsReminderByMember();
-    // Read once for the whole page rather than per member: both are full-table reads, and doing
-    // them inside the map turns a 77-member roster into 154 queries.
+    // Read once for the whole page rather than per member: all of these are full-table reads, and
+    // doing them inside the map turns a 77-member roster into hundreds of queries.
     const papers = this.store.listPapers();
     const weeklyUpdates = this.store.listPaperWeeklyUpdates();
+    const activity = this.memberActivityCounts();
     const members = this.store
       .listLabMembers()
       .filter((member) => member.status !== "alumni" && member.status !== "external")
@@ -5287,7 +5289,16 @@ export class AdminBotService {
             updates: weeklyUpdates,
           }),
           timeline,
-          ...(member.last_login_at ? { last_login_at: member.last_login_at } : {}),
+          activity: activity.get(member.id) ?? EMPTY_ACTIVITY,
+          // The audit trail wins when it has something: `last_login_at` is a single field that a
+          // bulk write can erase, and on this roster it has been. Falling back to it keeps rows
+          // correct for anyone whose sign-in predates the retention window.
+          ...((activity.get(member.id)?.last_login_at ?? member.last_login_at)
+            ? {
+                last_login_at: (activity.get(member.id)?.last_login_at ??
+                  member.last_login_at) as string,
+              }
+            : {}),
           updated_at: member.updated_at,
           ...(selfEdited ? { last_self_edit_at: selfEdited } : {}),
           ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
@@ -5303,6 +5314,97 @@ export class AdminBotService {
         adoption: adoptionSummary(members, MANDATORY_PROFILE_FIELDS.length),
       },
     };
+  }
+
+  /**
+   * One pass over the audit trail, bucketed by member.
+   *
+   * The audit log is the only place that records a member *doing* something, and it records the
+   * actor by id, so this is a group-by rather than a per-member query. It is also the only source
+   * that has depth today: the dedicated login and update-event tables are the permanent record
+   * going forward, but they start empty, and a page that showed zeros for a lab that has been
+   * signing in for a month would be worse than one that showed a floor and said so.
+   *
+   * `lab_member.upserted` is deliberately read as the member's *own* edit. The event records the
+   * subject member as the actor, so an admin correcting somebody else's record lands on the
+   * subject's row -- which overcounts self-edits for exactly the rows an admin has touched. It is
+   * the same conflation `field_provenance` exists to resolve, and the self_filled_field_count
+   * column next to this one is the number to trust when the two disagree.
+   */
+  private memberActivityCounts(): Map<
+    string,
+    AdminBotMemberActivityCounts & { last_login_at?: string }
+  > {
+    const counts = new Map<string, AdminBotMemberActivityCounts & { last_login_at?: string }>();
+    const bulkSeconds = this.bulkMemberWriteSeconds();
+    const bucket = (actor: string) => {
+      const existing = counts.get(actor);
+      if (existing) {
+        return existing;
+      }
+      const created = { logins: 0, profile_edits: 0, paper_updates: 0 };
+      counts.set(actor, created);
+      return created;
+    };
+    for (const event of this.store.listAuditEvents()) {
+      const actor = event.actor;
+      if (!actor) {
+        continue;
+      }
+      let row: (AdminBotMemberActivityCounts & { last_login_at?: string }) | undefined;
+      if (event.type === "auth.login_succeeded") {
+        row = bucket(actor);
+        row.logins += 1;
+        if (!row.last_login_at || event.timestamp > row.last_login_at) {
+          row.last_login_at = event.timestamp;
+        }
+      } else if (event.type === "lab_member.upserted") {
+        // An importer writing the whole roster is not 77 people editing their profiles. Without
+        // this every member carries five or six phantom edits from the spreadsheet syncs, which is
+        // precisely the "complete on paper, adopted by nobody" illusion this column exists to
+        // break.
+        if (bulkSeconds.has(event.timestamp.slice(0, 19))) {
+          continue;
+        }
+        row = bucket(actor);
+        row.profile_edits += 1;
+      } else if (event.type === "paper_slot.updated" || event.type === "paper.upserted") {
+        row = bucket(actor);
+        row.paper_updates += 1;
+      }
+      if (row && (!row.last_active_at || event.timestamp > row.last_active_at)) {
+        row.last_active_at = event.timestamp;
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * Seconds in which so many different members were written that it can only have been one pass.
+   *
+   * A threshold rather than a flag on the event, because nothing in the stored audit row says
+   * "this was an import" -- the writer is long gone by the time this reads it. Five distinct
+   * members inside the same second is not five people typing; the largest real burst is one admin
+   * correcting a handful of records, and that stays well under it.
+   */
+  private bulkMemberWriteSeconds(): Set<string> {
+    const actorsBySecond = new Map<string, Set<string>>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "lab_member.upserted" || !event.actor) {
+        continue;
+      }
+      const second = event.timestamp.slice(0, 19);
+      const actors = actorsBySecond.get(second) ?? new Set<string>();
+      actors.add(event.actor);
+      actorsBySecond.set(second, actors);
+    }
+    const bulk = new Set<string>();
+    for (const [second, actors] of actorsBySecond) {
+      if (actors.size >= BULK_MEMBER_WRITE_THRESHOLD) {
+        bulk.add(second);
+      }
+    }
+    return bulk;
   }
 
   /**
@@ -8438,3 +8540,13 @@ function sortForStableJson(value: unknown): unknown {
 function retentionCutoffIso(retentionDays: number): string {
   return new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
 }
+
+/** A member the audit window has nothing for. Shared so every such row is the same object shape. */
+const EMPTY_ACTIVITY: AdminBotMemberActivityCounts = {
+  logins: 0,
+  profile_edits: 0,
+  paper_updates: 0,
+};
+
+/** See bulkMemberWriteSeconds. Distinct members written in one second before it reads as a sync. */
+const BULK_MEMBER_WRITE_THRESHOLD = 5;

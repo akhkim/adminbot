@@ -266,6 +266,30 @@ export type AdminBotMemberProfileOverviewRow = {
   updated_at?: string;
   /** When this member last changed anything themselves. Absent means they never have. */
   last_self_edit_at?: string;
+  /**
+   * What this member has actually *done*, counted from the audit trail rather than inferred from
+   * a latest-stamp on their record.
+   *
+   * The two say different things and the page needs both. `self_filled_field_count` answers "how
+   * much of this record did they write", which a bulk importer can flatten to zero for somebody
+   * who uses AdminBot every day. These counts answer "have they been here at all", which is the
+   * question a blank profile row cannot distinguish from a dormant account.
+   *
+   * Bounded by the audit retention window (see AUDIT_RETENTION_DAYS): activity older than that has
+   * been pruned, so every count here is a floor. `window_days` carries the horizon so the page can
+   * say so rather than presenting a floor as a total.
+   */
+  activity: AdminBotMemberActivityCounts;
+};
+
+export type AdminBotMemberActivityCounts = {
+  logins: number;
+  /** Saves to their own profile. Admin edits of this member are somebody else's activity. */
+  profile_edits: number;
+  /** Evidence slots filled and papers saved, together -- both are "worked on a paper". */
+  paper_updates: number;
+  /** Newest of the above. Absent means nothing of theirs survives in the window. */
+  last_active_at?: string;
 };
 
 /**
