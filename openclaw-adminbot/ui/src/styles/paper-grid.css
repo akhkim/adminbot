@@ -1,0 +1,367 @@
+/* Bulk link entry — the spreadsheet on Active Papers and My Projects & Papers.
+ *
+ * Lives in its own file because the component does: `ui/src/ui/adminbot/paper-grid.ts`. These
+ * rules were lost when layout.css was reorganised, which left the sheet rendering with no scroll
+ * container, no sticky header and no column widths — a table a thousand rows tall running off the
+ * page. Keeping them beside the component they style is what stops that happening twice. */
+
+/* ── Bulk link entry grid ──────────────────────────────────────────────────
+   Styled to read as a spreadsheet, because that is the mental model people
+   arrive with: hairline gridlines on every cell, a shaded header strip, a row
+   number gutter, and an active cell that grows over its neighbours instead of
+   truncating. Not a Google Sheets embed -- the Control UI CSP is
+   `default-src 'self'` with no frame-src, so that iframe is blocked outright. */
+
+.paper-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  /* One place to retune the whole sheet. */
+  --sheet-line: color-mix(in srgb, var(--text) 22%, transparent);
+  /* Sheets green. The header strip and the active-cell ring share it, which is what
+     makes the surface read as a spreadsheet rather than a table with borders. */
+  --sheet-green: #0f9d58;
+  --sheet-head: color-mix(in srgb, var(--sheet-green) 26%, var(--bg));
+  --sheet-head-text: color-mix(in srgb, var(--sheet-green) 92%, var(--text));
+  /* Body row headers (numbers, titles) are neutral: the green marks the label row only,
+     otherwise the whole sheet reads as header and nothing stands out. */
+  --sheet-gutter: color-mix(in srgb, var(--text) 7%, var(--bg));
+  --sheet-cell: var(--bg);
+  --sheet-active: var(--sheet-green);
+  --sheet-row: 2rem;
+}
+
+.paper-grid__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.paper-grid__tools {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.paper-grid__muted {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.paper-grid__warn {
+  color: var(--warning, #a67c00);
+}
+
+.paper-grid__hint,
+.paper-grid__notice {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.paper-grid__notice {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+/* The sheet is wider than any window, so it scrolls in its own box rather than
+   making the page scroll sideways. `overflow` also contains the active cell
+   when it expands at the right-hand edge. */
+
+.paper-grid__scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--sheet-line);
+  border-radius: var(--radius-sm);
+  background: var(--sheet-cell);
+}
+
+.paper-grid__table {
+  border-collapse: separate;
+  border-spacing: 0;
+  /* Fixed, and widths come from the <colgroup>. Under the default `auto` layout the browser
+     sizes each column to its longest cell, so `width` is a hint it is free to ignore -- and one
+     104-character title took 1,300px and pushed every link column off the right edge. */
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hairlines on the right and bottom of every cell; the container supplies the
+   outer edge. Separate borders (not `collapse`) so sticky cells keep theirs. */
+
+.paper-grid__table th,
+.paper-grid__table td {
+  height: var(--sheet-row);
+  padding: 0;
+  border-right: 1px solid var(--sheet-line);
+  border-bottom: 1px solid var(--sheet-line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.paper-grid__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 0 var(--space-2);
+  background: var(--sheet-head);
+  font-weight: 600;
+  text-align: center;
+  color: var(--sheet-head-text);
+  border-bottom: 2px solid var(--sheet-green);
+}
+
+/* Row-number gutter, the way a spreadsheet numbers its rows. */
+
+.paper-grid__rownum {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 3ch;
+  min-width: 3ch;
+  padding: 0 var(--space-2);
+  background: var(--sheet-gutter);
+  color: var(--text-muted);
+  text-align: right;
+  font-size: 0.9em;
+}
+
+.paper-grid__table thead .paper-grid__rownum {
+  z-index: 5;
+}
+
+/* Title column pinned beside the gutter, so a row stays identifiable while the
+   link columns scroll under it. */
+
+.paper-grid__sticky {
+  position: sticky;
+  left: 3ch;
+  z-index: 2;
+  padding: 0 var(--space-2);
+  background: var(--sheet-gutter);
+  font-weight: 700;
+  cursor: default;
+}
+
+/* The title is clipped by an inner span, so the cell itself keeps its box while the
+   span can be released on focus. Clipping the <th> directly would fight `position:
+   sticky`, which needs its own overflow behaviour. */
+
+.paper-grid__title {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Click a title to read the whole thing: the span lifts out and widens over the
+   columns to its right, exactly as a focused cell does. */
+
+.paper-grid__sticky:focus {
+  outline: none;
+}
+
+.paper-grid__sticky:focus .paper-grid__title {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: 60ch;
+  min-height: var(--sheet-row);
+  padding: 0 var(--space-2);
+  display: flex;
+  align-items: center;
+  background: var(--sheet-cell);
+  outline: 2px solid var(--sheet-active);
+  outline-offset: -2px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+  white-space: normal;
+  overflow: visible;
+}
+
+.paper-grid__table thead .paper-grid__sticky {
+  z-index: 5;
+  text-align: left;
+}
+
+/* The wrapper holds the cell's footprint. The input is absolutely positioned
+   inside it, so focusing can widen the input over the columns to its right
+   without collapsing this column or reflowing the table. */
+
+.paper-grid__cell {
+  position: relative;
+  width: 20ch;
+  height: var(--sheet-row);
+}
+
+.paper-grid__cell input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: var(--sheet-cell);
+  color: var(--text);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.paper-grid__cell input:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 4%, var(--bg));
+}
+
+/* The active cell: blue ring, raised, and wide enough to read a whole URL. */
+
+.paper-grid__cell input:focus {
+  z-index: 20;
+  width: max(56ch, 100%);
+  outline: 2px solid var(--sheet-active);
+  outline-offset: -2px;
+  background: var(--sheet-cell);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+  text-overflow: clip;
+}
+
+.paper-grid__cell input:disabled {
+  background: color-mix(in srgb, var(--text) 5%, var(--bg));
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* A cell that fails validation is tinted rather than outlined, so the marking
+   survives the focus ring taking the border. */
+
+.paper-grid__cell--bad input {
+  background: color-mix(in srgb, var(--warning, #a67c00) 22%, var(--bg));
+}
+
+.paper-grid__pending {
+  color: var(--text-muted);
+}
+
+/* Recent-changes panel. A per-browser log, not the audit trail — the service has no
+   history for paper artifacts yet, so this reads from localStorage and says so. */
+
+.paper-grid__history {
+  padding: var(--space-3);
+  border: 1px solid var(--sheet-line);
+  border-left: 3px solid var(--sheet-green);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sheet-green) 6%, var(--bg));
+}
+
+.paper-grid__history-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.paper-grid__history-head .btn {
+  margin-left: auto;
+}
+
+.paper-grid__history-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.85em;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.paper-grid__history-list li {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.paper-grid__history-when {
+  min-width: 6ch;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-grid__history-paper {
+  font-weight: 600;
+}
+
+/* ── resizing and filling ───────────────────────────────────────────────────────────────
+   Both handles are invisible until the pointer is near them: nine columns of always-on grab
+   targets reads as clutter on a surface whose whole job is showing thirty rows at once. */
+
+.paper-grid__table th {
+  position: relative;
+}
+
+.paper-grid__resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 6;
+}
+
+.paper-grid__resize::after {
+  content: "";
+  position: absolute;
+  inset: 15% 3px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.paper-grid__resize:hover::after,
+.paper-grid__resize:active::after {
+  background: var(--sheet-green);
+}
+
+/* The fill handle sits in the corner of a cell, the way a spreadsheet's does. It fills empty
+   cells only -- see `fillDown` -- so dragging it across somebody else's work is safe. */
+
+.paper-grid__cell {
+  position: relative;
+}
+
+.paper-grid__fill {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  background: var(--sheet-green);
+  cursor: crosshair;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.paper-grid__cell:hover .paper-grid__fill,
+.paper-grid__cell:focus-within .paper-grid__fill {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-grid__resize::after,
+  .paper-grid__fill {
+    transition: none;
+  }
+}

@@ -1,6 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   applyPaste,
+  columnIndexOf,
+  clampWidth,
+  columnWidth,
+  fillDown,
+  TITLE_COLUMN,
   cellError,
   cellValue,
   clearHistory,
@@ -26,7 +31,16 @@ function paper(id: string, artifacts: Record<string, string> = {}): AdminBotPape
   } as AdminBotPaperRecord;
 }
 
-const arxivCol = { key: "arxiv_url", label: "arXiv", short: "arXiv", hosts: ["arxiv.org"], path: /^\/abs\//u } as never;
+// `save` matters: fillDown and applyPaste both refuse a column the backend cannot persist, so a
+// stub without it silently tests the refusal path instead of the behaviour.
+const arxivCol = {
+  key: "arxiv_url",
+  save: "arxivUrl",
+  label: "arXiv",
+  short: "arXiv",
+  hosts: ["arxiv.org"],
+  path: /^\/abs\//u,
+} as never;
 const pwCol = { key: "arxiv_paper_password", label: "pw", short: "pw", pattern: /^[A-Za-z0-9]{6}$/u } as never;
 
 describe("cell validation", () => {
@@ -94,7 +108,7 @@ describe("what gets saved", () => {
 
   it("sends only the rows that changed", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, papers, 0, 5, "https://arxiv.org/abs/1234.5678");
+    applyPaste(state, papers, 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/1234.5678");
     const saves = pendingSaves(state, papers);
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({ id: "p1", arxivUrl: "https://arxiv.org/abs/1234.5678" });
@@ -103,8 +117,8 @@ describe("what gets saved", () => {
   it("leaves an invalid cell behind but still saves the valid ones in the same row", () => {
     // One typo in a wide row must not cost the author the other nine columns.
     const state = emptyPaperGridState();
-    applyPaste(state, papers, 0, 5, "junk");
-    applyPaste(state, papers, 0, 8, "https://example.com/poster.pdf");
+    applyPaste(state, papers, 0, columnIndexOf("arxiv_url"), "junk");
+    applyPaste(state, papers, 0, columnIndexOf("poster_url"), "https://example.com/poster.pdf");
     const saves = pendingSaves(state, papers);
     expect(saves).toHaveLength(1);
     expect(saves[0]?.arxivUrl).toBeUndefined();
@@ -115,16 +129,18 @@ describe("what gets saved", () => {
     const stored = paper("p9", { arxiv_url: "https://arxiv.org/abs/9999.1111" });
     const state = emptyPaperGridState();
     expect(cellValue(state, stored, arxivCol)).toBe("https://arxiv.org/abs/9999.1111");
-    applyPaste(state, [stored], 0, 5, "https://arxiv.org/abs/0000.2222");
+    applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/0000.2222");
     expect(cellValue(state, stored, arxivCol)).toBe("https://arxiv.org/abs/0000.2222");
   });
 });
 
 describe("threshold", () => {
-  it("is 10 — the grid is offered above it, not at it", () => {
-    expect(PAPER_GRID_THRESHOLD).toBe(10);
-    expect(10 > PAPER_GRID_THRESHOLD).toBe(false);
-    expect(11 > PAPER_GRID_THRESHOLD).toBe(true);
+  it("is 3 — the grid is offered above it, not at it", () => {
+    expect(PAPER_GRID_THRESHOLD).toBe(3);
+    // Strictly above: three papers read better as cards, four is where pasting a column starts
+    // to beat filling in four separate forms.
+    expect(3 > PAPER_GRID_THRESHOLD).toBe(false);
+    expect(4 > PAPER_GRID_THRESHOLD).toBe(true);
   });
 });
 
@@ -150,7 +166,7 @@ describe("change history", () => {
 
   it("reports a first value as added", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, [paper("p2")], 0, 8, "https://example.com/poster.pdf");
+    applyPaste(state, [paper("p2")], 0, columnIndexOf("poster_url"), "https://example.com/poster.pdf");
     const [entry] = diffForHistory(state, [paper("p2")]);
     expect(entry).toMatchObject({ kind: "added", column: "Poster" });
     expect(describeHistory(entry!)).toBe("You added Poster: https://example.com/poster.pdf");
@@ -158,7 +174,7 @@ describe("change history", () => {
 
   it("reports a replacement as changed, carrying both values", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, [stored], 0, 5, "https://arxiv.org/abs/2222.2222");
+    applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/2222.2222");
     const [entry] = diffForHistory(state, [stored]);
     expect(entry).toMatchObject({
       kind: "changed",
@@ -170,13 +186,13 @@ describe("change history", () => {
 
   it("ignores a cell retyped to the value it already had", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, [stored], 0, 5, "https://arxiv.org/abs/1111.1111");
+    applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/1111.1111");
     expect(diffForHistory(state, [stored])).toEqual([]);
   });
 
   it("does not log a cell that failed validation, since it is not saved either", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, [stored], 0, 5, "junk");
+    applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "junk");
     expect(diffForHistory(state, [stored])).toEqual([]);
   });
 
@@ -201,3 +217,64 @@ describe("change history", () => {
     expect(loadHistory()).toEqual([]);
   });
 });
+
+describe("fill down", () => {
+  const arxiv = (id: string, url?: string) =>
+    paper(id, url ? { arxiv_url: url } : {});
+
+  it("copies the value into the empty cells below", () => {
+    const papers = [
+      arxiv("p1", "https://arxiv.org/abs/1111.1111"),
+      arxiv("p2"),
+      arxiv("p3"),
+    ];
+    const state = emptyPaperGridState();
+    expect(fillDown(state, papers, arxivCol, 0, 2)).toBe(2);
+    expect(cellValue(state, papers[2]!, arxivCol)).toBe("https://arxiv.org/abs/1111.1111");
+  });
+
+  it("never overwrites a cell that already has something", () => {
+    // The whole reason it fills blanks only: one drag covers thirty rows, there is no undo, and
+    // the rows belong to other people.
+    const papers = [
+      arxiv("p1", "https://arxiv.org/abs/1111.1111"),
+      arxiv("p2", "https://arxiv.org/abs/2222.2222"),
+      arxiv("p3"),
+    ];
+    const state = emptyPaperGridState();
+    expect(fillDown(state, papers, arxivCol, 0, 2)).toBe(1);
+    expect(cellValue(state, papers[1]!, arxivCol)).toBe("https://arxiv.org/abs/2222.2222");
+    expect(cellValue(state, papers[2]!, arxivCol)).toBe("https://arxiv.org/abs/1111.1111");
+  });
+
+  it("does nothing from an empty cell", () => {
+    const papers = [arxiv("p1"), arxiv("p2")];
+    expect(fillDown(emptyPaperGridState(), papers, arxivCol, 0, 1)).toBe(0);
+  });
+
+  it("stops at the last row when asked to go further", () => {
+    const papers = [arxiv("p1", "https://arxiv.org/abs/1111.1111"), arxiv("p2")];
+    expect(fillDown(emptyPaperGridState(), papers, arxivCol, 0, 99)).toBe(1);
+  });
+});
+
+describe("column widths", () => {
+  it("falls back to a default until one is set", () => {
+    const state = emptyPaperGridState();
+    state.widths = new Map();
+    expect(columnWidth(state, TITLE_COLUMN)).toBeGreaterThan(columnWidth(state, "arxiv_url"));
+  });
+
+  it("uses the stored width once there is one", () => {
+    const state = emptyPaperGridState();
+    state.widths.set("arxiv_url", 420);
+    expect(columnWidth(state, "arxiv_url")).toBe(420);
+  });
+
+  it("refuses widths that would make a column unusable or hide the sheet", () => {
+    expect(clampWidth(2)).toBeGreaterThanOrEqual(64);
+    expect(clampWidth(99999)).toBeLessThanOrEqual(900);
+    expect(clampWidth(250.4)).toBe(250);
+  });
+});
+

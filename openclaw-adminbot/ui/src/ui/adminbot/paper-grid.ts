@@ -18,8 +18,15 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
 
-/** Above this many papers the grid is offered. Below it, the cards are the better surface. */
-export const PAPER_GRID_THRESHOLD = 10;
+/**
+ * Above this many papers the grid is offered. Below it, the cards are the better surface.
+ *
+ * Three, not ten. Ten made the sheet an admin-only feature by accident: almost nobody in the lab
+ * carries eleven papers, so the one surface built for pasting a column out of Sheets was
+ * unreachable for the people doing the pasting. The paste is worth as much for four papers as for
+ * forty; below four, the cards genuinely are better.
+ */
+export const PAPER_GRID_THRESHOLD = 3;
 
 type ArtifactKey = NonNullable<AdminBotPaperRecord["artifacts"]>;
 
@@ -63,7 +70,6 @@ const COLUMNS: Column[] = [
     short: "Overleaf edit",
     hosts: ["overleaf.com", "www.overleaf.com"],
   },
-  { key: "submission_url", save: "submissionUrl", label: "Submission", short: "Submission" },
   {
     key: "google_drive_pdf_url",
     save: "googleDrivePdfUrl",
@@ -98,7 +104,89 @@ const COLUMNS: Column[] = [
   { key: "poster_url", save: "posterUrl", label: "Poster", short: "Poster" },
 ];
 
+/**
+ * Where a column sits, by name.
+ *
+ * Exported for the tests, which used to address columns by literal index -- so removing the
+ * Submission column silently repointed every one of them at its neighbour and six assertions
+ * started testing the wrong field. A name survives the next column being added or dropped.
+ */
+export function columnIndexOf(key: string): number {
+  return COLUMNS.findIndex((column) => String(column.key) === key);
+}
+
 export type PaperGridEdits = Map<string, Map<string, string>>;
+
+// ── column widths ──────────────────────────────────────────────────────────────────────
+//
+// The sheet was unusable before this existed, and the reason was one missing declaration.
+// Without `table-layout: fixed` a table sizes each column to its longest content, so `width` on
+// a header is a suggestion the browser is free to ignore -- and it did. One 104-character title
+// set the Paper column to about 1,300px, pushed every link column past the right edge, and the
+// ellipsis never fired because the column never had to clip anything. The sheet scrolled, but
+// only a column and a half of it was ever reachable.
+//
+// Fixed layout needs somewhere to read the widths from, which is what the <colgroup> below is
+// for -- and once widths live in state rather than in CSS, making them draggable is the same
+// mechanism rather than a second one.
+
+const WIDTH_STORAGE_KEY = "adminbot.paper-grid.widths";
+
+/** Key for the pinned title column, which is resizable like any other. */
+export const TITLE_COLUMN = "__title";
+
+const DEFAULT_WIDTHS: Record<string, number> = { [TITLE_COLUMN]: 320 };
+const DEFAULT_LINK_WIDTH = 200;
+/** Narrow enough to be useless, wide enough to hide the rest of the sheet. */
+const MIN_WIDTH = 64;
+const MAX_WIDTH = 900;
+
+export function columnWidth(state: PaperGridState, key: string): number {
+  return state.widths.get(key) ?? DEFAULT_WIDTHS[key] ?? DEFAULT_LINK_WIDTH;
+}
+
+export function clampWidth(px: number): number {
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(px)));
+}
+
+/**
+ * Widths are per person and local.
+ *
+ * How wide someone wants the Paper column is a fact about their screen and their eyes, not about
+ * the lab, so it does not belong on the record and does not need the backend. Same store as the
+ * grid's edit history, and the same failure mode: a browser refusing storage costs a preference,
+ * never data.
+ */
+export function loadWidths(): Map<string, number> {
+  try {
+    const raw = globalThis.localStorage?.getItem(WIDTH_STORAGE_KEY);
+    if (!raw) {
+      return new Map();
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return new Map();
+    }
+    return new Map(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
+        .map(([key, value]) => [key, clampWidth(value as number)]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+export function saveWidths(widths: Map<string, number>): void {
+  try {
+    globalThis.localStorage?.setItem(
+      WIDTH_STORAGE_KEY,
+      JSON.stringify(Object.fromEntries(widths)),
+    );
+  } catch {
+    // Storage denied or full. A forgotten column width is not worth interrupting anyone over.
+  }
+}
 
 export type PaperGridState = {
   /** paperId -> column key -> typed value. Only what the user actually changed. */
@@ -107,6 +195,8 @@ export type PaperGridState = {
   notice: string;
   showHistory: boolean;
   history: PaperGridHistoryEntry[];
+  /** Column key -> pixels. Read by the <colgroup>; written by the drag handles. */
+  widths: Map<string, number>;
 };
 
 export function emptyPaperGridState(): PaperGridState {
@@ -116,6 +206,7 @@ export function emptyPaperGridState(): PaperGridState {
     notice: "",
     showHistory: false,
     history: loadHistory(),
+    widths: loadWidths(),
   };
 }
 
@@ -170,6 +261,43 @@ function setEdit(state: PaperGridState, paperId: string, key: string, value: str
   const row = state.edits.get(paperId) ?? new Map<string, string>();
   row.set(key, value);
   state.edits.set(paperId, row);
+}
+
+/**
+ * Copy one cell down the column, into the empty cells only.
+ *
+ * Deliberately not the spreadsheet behaviour, which overwrites whatever it passes over. This runs
+ * across a sheet of links somebody else filled in, one drag can cover thirty rows, and there is no
+ * undo -- so an overwrite here quietly replaces real work with a duplicate. Filling only the
+ * blanks makes the gesture safe to try, which is what makes it usable at all: the worst outcome
+ * is that nothing happens.
+ *
+ * Returns how many cells it actually filled, so the notice can say something true.
+ */
+export function fillDown(
+  state: PaperGridState,
+  papers: AdminBotPaperRecord[],
+  column: Column,
+  fromRow: number,
+  toRow: number,
+): number {
+  const source = cellValue(state, papers[fromRow] as AdminBotPaperRecord, column).trim();
+  if (!source || !column.save) {
+    return 0;
+  }
+  let filled = 0;
+  for (let row = fromRow + 1; row <= Math.min(toRow, papers.length - 1); row += 1) {
+    const paper = papers[row];
+    if (!paper) {
+      continue;
+    }
+    if (cellValue(state, paper, column).trim()) {
+      continue; // already has something; leave it alone
+    }
+    setEdit(state, paper.id, String(column.key), source);
+    filled += 1;
+  }
+  return filled;
 }
 
 /**
@@ -378,6 +506,93 @@ export type PaperGridProps = {
   onExit: () => void;
 };
 
+/**
+ * Drag the right edge of a header to resize that column.
+ *
+ * The <col> element's style is written directly while the pointer moves, rather than going
+ * through state and a re-render. Thirty-three rows of nine inputs is three hundred elements Lit
+ * would rebuild on every pointermove, which turns a drag into a slideshow. State is updated once,
+ * on release, which is also the only moment worth writing to storage.
+ */
+function startResize(
+  event: PointerEvent,
+  state: PaperGridState,
+  key: string,
+  onChange: () => void,
+): void {
+  event.preventDefault();
+  const handle = event.currentTarget as HTMLElement;
+  const table = handle.closest("table");
+  const col = table?.querySelector<HTMLElement>(`col[data-key="${key}"]`);
+  if (!col) {
+    return;
+  }
+  const startX = event.clientX;
+  const startWidth = columnWidth(state, key);
+  let latest = startWidth;
+
+  const move = (moveEvent: PointerEvent) => {
+    latest = clampWidth(startWidth + (moveEvent.clientX - startX));
+    col.style.width = `${latest}px`;
+  };
+  const done = () => {
+    globalThis.removeEventListener("pointermove", move);
+    globalThis.removeEventListener("pointerup", done);
+    state.widths.set(key, latest);
+    saveWidths(state.widths);
+    onChange();
+  };
+  globalThis.addEventListener("pointermove", move);
+  globalThis.addEventListener("pointerup", done);
+}
+
+/**
+ * Drag the fill handle down the column to copy a value into the blank cells it covers.
+ *
+ * The row under the pointer is read off the DOM rather than computed from a row height, because
+ * a row is only a fixed height until someone's browser zooms or a title wraps. Releasing outside
+ * the table keeps the last row the pointer was actually over.
+ */
+function startFill(
+  event: PointerEvent,
+  props: PaperGridProps,
+  column: Column,
+  fromRow: number,
+): void {
+  event.preventDefault();
+  const { state, papers } = props;
+  let toRow = fromRow;
+
+  const rowUnder = (clientX: number, clientY: number): number | undefined => {
+    const row = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLElement>("tr[data-row]");
+    const index = Number(row?.dataset.row);
+    return Number.isInteger(index) ? index : undefined;
+  };
+
+  const move = (moveEvent: PointerEvent) => {
+    const row = rowUnder(moveEvent.clientX, moveEvent.clientY);
+    if (row !== undefined && row > fromRow) {
+      toRow = row;
+    }
+  };
+  const done = () => {
+    globalThis.removeEventListener("pointermove", move);
+    globalThis.removeEventListener("pointerup", done);
+    // A click with no drag means "all the way down", which is what double-clicking a fill handle
+    // does in Sheets. Here a plain click is enough, because there is nothing else it could mean.
+    const target = toRow > fromRow ? toRow : papers.length - 1;
+    const filled = fillDown(state, papers, column, fromRow, target);
+    state.notice = filled
+      ? `Filled ${filled} empty cell(s) in ${column.short}. Nothing is saved until you press Update.`
+      : `Nothing to fill — the cells below already have values.`;
+    props.onChange();
+  };
+  globalThis.addEventListener("pointermove", move);
+  globalThis.addEventListener("pointerup", done);
+}
+
 export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   const { state, papers } = props;
   const changedRows = new Set(
@@ -463,10 +678,33 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
 
       <div class="paper-grid__scroll">
         <table class="paper-grid__table">
+          <!-- Fixed layout reads every width from here. Without it the browser sizes columns to
+               their content and the longest title takes the window. -->
+          <colgroup>
+            <col class="paper-grid__col-rownum" />
+            <col
+              data-key=${TITLE_COLUMN}
+              style=${`width:${columnWidth(state, TITLE_COLUMN)}px`}
+            />
+            ${COLUMNS.map(
+              (column) => html`<col
+                data-key=${String(column.key)}
+                style=${`width:${columnWidth(state, String(column.key))}px`}
+              />`,
+            )}
+          </colgroup>
           <thead>
             <tr>
               <th scope="col" class="paper-grid__rownum"></th>
-              <th scope="col" class="paper-grid__sticky">Paper</th>
+              <th scope="col" class="paper-grid__sticky">
+                Paper
+                <span
+                  class="paper-grid__resize"
+                  title="Drag to resize"
+                  @pointerdown=${(event: PointerEvent) =>
+                    startResize(event, state, TITLE_COLUMN, props.onChange)}
+                ></span>
+              </th>
               ${COLUMNS.map(
                 (column) => html`
                   <th scope="col" title=${column.hint ?? column.label}>
@@ -475,6 +713,12 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                       : html`<span class="paper-grid__pending" title="No backend field yet">
                           ◦
                         </span>`}
+                    <span
+                      class="paper-grid__resize"
+                      title="Drag to resize"
+                      @pointerdown=${(event: PointerEvent) =>
+                        startResize(event, state, String(column.key), props.onChange)}
+                    ></span>
                   </th>
                 `,
               )}
@@ -483,7 +727,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
           <tbody>
             ${papers.map(
               (paper, rowIndex) => html`
-                <tr>
+                <tr data-row=${rowIndex}>
                   <td class="paper-grid__rownum">${rowIndex + 1}</td>
                   <th
                     scope="row"
@@ -534,6 +778,14 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                             props.onChange();
                           }}
                         />
+                        ${column.save
+                          ? html`<span
+                              class="paper-grid__fill"
+                              title="Drag down to copy into the empty cells below — click to fill the whole column"
+                              @pointerdown=${(event: PointerEvent) =>
+                                startFill(event, props, column, rowIndex)}
+                            ></span>`
+                          : nothing}
                         </div>
                       </td>
                     `;
