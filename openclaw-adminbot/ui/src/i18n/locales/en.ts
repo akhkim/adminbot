@@ -1322,12 +1322,14 @@ export const en: TranslationMap = {
   },
   paperOverview: {
     title: "Active papers",
-    sub: "Every paper in the lab, most outstanding first. The row is the summary; open a paper for its timeline.",
+    sub: "Everybody with a paper in flight, whoever is holding the most up first. The row is the person; open a paper for its timeline.",
     columns: {
+      person: "Person",
       paper: "Paper",
       progress: "Progress",
       stage: "Stage",
       evidence: "Evidence",
+      papers: "Papers",
       venue: "Venue",
       outstanding: "Outstanding",
     },
@@ -1336,6 +1338,7 @@ export const en: TranslationMap = {
       inFlight: "in flight",
       dormant: "dormant or closed",
       papers: "papers in the pipeline",
+      people: "people carrying them",
       withoutVenue: "with no venue recorded",
     },
     filters: {
@@ -1364,6 +1367,13 @@ export const en: TranslationMap = {
       nothing: "nothing outstanding",
     },
     stageLabel: "step {index} of {total}",
+    personStage: "{stage} — {step}",
+    person: {
+      papers: "{count} paper(s)",
+      attention: "{count} needing something",
+      waiting: "{count} {reason}",
+      dormant: "{count} dormant or closed",
+    },
     stageComplete: "Complete",
     stageDone: "done",
     next: "next: {step}",
