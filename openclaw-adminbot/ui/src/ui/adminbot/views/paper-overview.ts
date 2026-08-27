@@ -1,4 +1,4 @@
-// Active Papers: where every paper in the lab stands, as a spreadsheet.
+// Active Papers: where everybody's papers stand, as a spreadsheet -- one row per person.
 //
 // This replaced a Gantt chart. The chart drew one timeline bar per step per paper on a shared
 // business-day scale, which answered "how long is this paper" beautifully and "which papers need me
@@ -7,9 +7,15 @@
 // The per-paper timeline did not disappear, it moved to the paper's own card in My Projects &
 // Papers, which is where somebody reading one paper already is.
 //
+// The list is now one row per person rather than one per paper. A lab is staffed, not stacked: the
+// administrator's question is which student is carrying three drafts and owes evidence on all of
+// them, and a per-paper list can only answer it by making somebody read the author column of
+// seventy rows and count. Each person's papers still sit inside their row, carrying the same
+// stage, venue and evidence they carried on their own line, and the title still opens the card.
+//
 // Deliberately the same shape as Profile Completeness next door: a roll-up line, a filter row, then
-// one row per thing with the scannable measure on the left and the detail on the right. The two
-// tabs of Lab Overview answer the same kind of question about different subjects, and reading the
+// one row per person with the scannable measure on the left and the detail on the right. The two
+// tabs of Lab Overview answer the same kind of question about the same people, and reading the
 // second should cost nothing once you have read the first.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
@@ -198,7 +204,11 @@ export function paperOverviewRows(params: {
       stepIndex: complete ? stepCount : (timeline?.current_step_index ?? 0),
       stepCount,
       complete,
-      progress: paperProgress({ slots, decision: paper.venue_decision, complete }),
+      progress: paperProgress({
+        slots,
+        decision: paper.venue_decision,
+        complete,
+      }),
       currentLabel: current?.label ?? params.stepLabel(paper.current_step),
       nextLabel: next?.label ?? "",
       venue: paperVenue(paper),
@@ -266,6 +276,217 @@ export function paperVenueOptions(rows: readonly PaperOverviewRow[]): string[] {
   );
 }
 
+/**
+ * One person, and every paper with their name on it.
+ *
+ * The table used to be one row per paper, which is the right shape for "how is this paper doing"
+ * and the wrong one for the question an administrator actually arrives with -- who is carrying
+ * what, and who is holding something up. Seventy paper rows hide the fact that four of them are
+ * the same overloaded student; four person rows say it on sight.
+ *
+ * The paper detail did not go anywhere: each person's papers are listed inside their row, with the
+ * same stage, venue and evidence they carried as rows of their own, and the title still opens the
+ * paper's card.
+ */
+export type PaperPersonRow = {
+  /** Stable identity: a roster id where the paper links one, otherwise an email or a name. */
+  key: string;
+  /** How the papers spell them. Empty for the bucket of papers naming nobody. */
+  name: string;
+  memberId?: string;
+  /** Their papers, most outstanding first. */
+  papers: PaperOverviewRow[];
+  attention: number;
+  inFlight: number;
+  dormant: number;
+  /** Evidence summed over the papers the service has counted for them. */
+  provided: number;
+  required: number;
+  /** What is missing across their papers, deduped -- the list you read back to them. */
+  missing: string[];
+  /** Mean progress over their counted papers, or null when none of them is counted. */
+  percent: number | null;
+  /** How many of their papers wait on each thing. Only the non-empty entries are drawn. */
+  waiting: Array<{ reason: PaperProgress["waitingOn"]; count: number }>;
+  openBlockers: number;
+  escalating: boolean;
+  needsAttention: boolean;
+};
+
+/** The bucket for papers whose author list names nobody. Sorted last, never silently dropped. */
+const UNASSIGNED_KEY = " unassigned";
+
+function normalized(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+/** A link's identity, which outranks the spelling of the name next to it. */
+function authorLinkKey(link: { member_id?: string; email?: string }): string | undefined {
+  const memberId = link.member_id?.trim();
+  if (memberId) {
+    return `member:${memberId}`;
+  }
+  const email = link.email?.trim();
+  return email ? `email:${normalized(email)}` : undefined;
+}
+
+/**
+ * Names that resolve to one identity across the whole lab.
+ *
+ * A person is linked on one paper and spelled by name on another; without this they would be two
+ * rows. Only unambiguous names resolve -- two members sharing a name is exactly the case where
+ * guessing puts somebody else's paper on somebody's row.
+ */
+function authorIdentityIndex(rows: readonly PaperOverviewRow[]): Map<string, string> {
+  const keysByName = new Map<string, Set<string>>();
+  for (const row of rows) {
+    for (const link of row.paper.author_links ?? []) {
+      const key = authorLinkKey(link);
+      const name = normalized(link.name ?? "");
+      if (!key || !name) {
+        continue;
+      }
+      const keys = keysByName.get(name) ?? new Set<string>();
+      keys.add(key);
+      keysByName.set(name, keys);
+    }
+  }
+  const index = new Map<string, string>();
+  for (const [name, keys] of keysByName) {
+    const [only] = [...keys];
+    if (keys.size === 1 && only) {
+      index.set(name, only);
+    }
+  }
+  return index;
+}
+
+/** Who a paper belongs to, as identity keys with the name to print for each. */
+function paperAuthorEntries(
+  paper: AdminBotPaperRecord,
+  index: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const entries = new Map<string, string>();
+  const linked = new Set<string>();
+  for (const link of paper.author_links ?? []) {
+    const name = link.name?.trim() ?? "";
+    const key = authorLinkKey(link) ?? (name ? `name:${normalized(name)}` : undefined);
+    if (name) {
+      linked.add(normalized(name));
+    }
+    if (key && !entries.has(key)) {
+      entries.set(key, name);
+    }
+  }
+  for (const author of paper.authors) {
+    const name = author.trim();
+    // `authors` is how the paper spells the name; a link for that name on this paper has already
+    // said who it is, and re-adding it by name would file the paper under a second person.
+    if (!name || linked.has(normalized(name))) {
+      continue;
+    }
+    const key = index.get(normalized(name)) ?? `name:${normalized(name)}`;
+    if (!entries.has(key)) {
+      entries.set(key, name);
+    }
+  }
+  if (!entries.size) {
+    entries.set(UNASSIGNED_KEY, "");
+  }
+  return entries;
+}
+
+const WAITING_ORDER: Array<PaperProgress["waitingOn"]> = ["evidence", "resubmission", "decision"];
+
+/**
+ * Folds paper rows into people. A co-authored paper appears on every author's row, because it is
+ * outstanding to each of them -- this is a working list, not an accounting of who owns what.
+ */
+export function paperPersonRows(rows: readonly PaperOverviewRow[]): PaperPersonRow[] {
+  const index = authorIdentityIndex(rows);
+  const people = new Map<string, PaperPersonRow>();
+  for (const row of rows) {
+    for (const [key, name] of paperAuthorEntries(row.paper, index)) {
+      const person = people.get(key) ?? {
+        key,
+        name,
+        memberId: key.startsWith("member:") ? key.slice("member:".length) : undefined,
+        papers: [],
+        attention: 0,
+        inFlight: 0,
+        dormant: 0,
+        provided: 0,
+        required: 0,
+        missing: [],
+        percent: null,
+        waiting: [],
+        openBlockers: 0,
+        escalating: false,
+        needsAttention: false,
+      };
+      if (!person.name && name) {
+        person.name = name;
+      }
+      person.papers.push(row);
+      people.set(key, person);
+    }
+  }
+  for (const person of people.values()) {
+    person.papers = person.papers.toSorted(comparePapers);
+    person.attention = person.papers.filter((row) => row.needsAttention).length;
+    person.inFlight = person.papers.filter((row) => !row.dormant).length;
+    person.dormant = person.papers.filter((row) => row.dormant).length;
+    person.openBlockers = person.papers.reduce((total, row) => total + row.openBlockers, 0);
+    person.escalating = person.papers.some((row) => Boolean(row.slots?.escalating));
+    person.needsAttention = person.attention > 0;
+    for (const row of person.papers) {
+      person.provided += row.slots?.provided_count ?? 0;
+      person.required += row.slots?.required_count ?? 0;
+    }
+    person.missing = [...new Set(person.papers.flatMap((row) => row.slots?.missing_slots ?? []))];
+    const counted = person.papers
+      .map((row) => row.progress.percent)
+      .filter((percent): percent is number => percent !== null);
+    // A mean, not a weighted one: a person is behind on a paper or they are not, and a paper with
+    // more required slots is not more of their week than one with fewer.
+    person.percent = counted.length
+      ? Math.round(counted.reduce((total, percent) => total + percent, 0) / counted.length)
+      : null;
+    person.waiting = WAITING_ORDER.map((reason) => ({
+      reason,
+      count: person.papers.filter((row) => !row.dormant && row.progress.waitingOn === reason)
+        .length,
+    })).filter((entry) => entry.count > 0);
+  }
+  return [...people.values()].toSorted(comparePeople);
+}
+
+/** Outstanding first, dormant last, then by title -- the order somebody works down. */
+function comparePapers(left: PaperOverviewRow, right: PaperOverviewRow): number {
+  if (left.needsAttention !== right.needsAttention) {
+    return left.needsAttention ? -1 : 1;
+  }
+  if (left.dormant !== right.dormant) {
+    return left.dormant ? 1 : -1;
+  }
+  return left.paper.title.localeCompare(right.paper.title);
+}
+
+/** The person somebody is waiting on most, first. The nameless bucket never outranks a person. */
+function comparePeople(left: PaperPersonRow, right: PaperPersonRow): number {
+  const unnamed = Number(left.key === UNASSIGNED_KEY) - Number(right.key === UNASSIGNED_KEY);
+  if (unnamed !== 0) {
+    return unnamed;
+  }
+  if (left.attention !== right.attention) {
+    return right.attention - left.attention;
+  }
+  if (left.papers.length !== right.papers.length) {
+    return right.papers.length - left.papers.length;
+  }
+  return left.name.localeCompare(right.name);
+}
+
 export type PaperOverviewProps = {
   rows: PaperOverviewRow[];
   filter: PaperOverviewFilter;
@@ -280,6 +501,7 @@ export type PaperOverviewProps = {
 export function renderPaperOverviewTable(props: PaperOverviewProps) {
   const summary = paperOverviewSummary(props.rows);
   const shown = filterPaperRows(props.rows, props.filter);
+  const people = paperPersonRows(shown);
   const venues = paperVenueOptions(props.rows);
   return html`
     <section class="adminbot-shell paper-overview" data-testid="adminbot-paper-overview">
@@ -314,7 +536,10 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
                 label: t(option.labelKey),
               })),
               onChange: (value) =>
-                props.onFilterChange({ ...props.filter, state: value as PaperOverviewState }),
+                props.onFilterChange({
+                  ...props.filter,
+                  state: value as PaperOverviewState,
+                }),
             })}
             ${renderSelect({
               testId: "paper-overview-filter-stage",
@@ -340,27 +565,24 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
           </div>
         </div>
 
-        ${renderSummary(summary, props)}
-        ${shown.length
+        ${renderSummary(summary, props, paperPersonRows(props.rows).length)}
+        ${people.length
           ? html`
               <div class="profile-overview__scroll">
                 <table class="profile-overview__table paper-overview__table">
                   <thead>
                     <tr>
                       <th scope="col" class="profile-overview__head">
-                        ${t("paperOverview.columns.paper")}
+                        ${t("paperOverview.columns.person")}
                       </th>
                       <th scope="col" class="profile-overview__head">
                         ${t("paperOverview.columns.progress")}
                       </th>
                       <th scope="col" class="profile-overview__head">
-                        ${t("paperOverview.columns.stage")}
-                      </th>
-                      <th scope="col" class="profile-overview__head">
                         ${t("paperOverview.columns.evidence")}
                       </th>
                       <th scope="col" class="profile-overview__head">
-                        ${t("paperOverview.columns.venue")}
+                        ${t("paperOverview.columns.papers")}
                       </th>
                       <th scope="col" class="profile-overview__head">
                         ${t("paperOverview.columns.outstanding")}
@@ -368,7 +590,7 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    ${shown.map((row) => renderRow(props, row))}
+                    ${people.map((person) => renderPersonRow(props, person))}
                   </tbody>
                 </table>
               </div>
@@ -386,9 +608,11 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
  *
  * Pressing a number is the same gesture as reading it: an administrator who has just been told
  * eleven papers need attention wants those eleven, and making them hunt for the matching option in
- * a select is asking them to say it twice.
+ * a select is asking them to say it twice. The figures still count papers -- the table groups them
+ * by person, but "eleven papers need attention" is the fact, and one person can carry three of
+ * them -- so the head count sits alongside as a plain figure rather than a fifth filter.
  */
-function renderSummary(summary: PaperOverviewSummary, props: PaperOverviewProps) {
+function renderSummary(summary: PaperOverviewSummary, props: PaperOverviewProps, people: number) {
   const figure = (
     value: number,
     labelKey: string,
@@ -417,6 +641,12 @@ function renderSummary(summary: PaperOverviewSummary, props: PaperOverviewProps)
       ${figure(summary.inFlight, "paperOverview.summary.inFlight", "in_flight")}
       ${figure(summary.dormant, "paperOverview.summary.dormant", "dormant")}
       ${figure(summary.papers, "paperOverview.summary.papers", "all")}
+      <div class="paper-overview__figure paper-overview__figure--static">
+        <span class="profile-overview__adoption-figure ab-num" data-testid="paper-overview-people"
+          >${people}</span
+        >
+        <span class="muted">${t("paperOverview.summary.people")}</span>
+      </div>
       ${summary.withoutVenue
         ? html`<div class="paper-overview__figure paper-overview__figure--static">
             <span class="profile-overview__adoption-figure ab-num">${summary.withoutVenue}</span>
@@ -455,14 +685,14 @@ function renderSelect(params: {
 }
 
 /**
- * The progress cell: the number, and what the rest of it is waiting on.
+ * The progress cell: how far this person's papers are between them, and what the rest waits on.
  *
- * The waiting-on line is not decoration. Two papers both at 60% are different problems when one is
- * short of evidence its author owes and the other has filed everything and is waiting on a
- * programme committee, and a bar alone cannot tell them apart.
+ * The waiting-on lines are not decoration. Two people both at 60% are different problems when one
+ * of them owes evidence on three drafts and the other has filed everything and is waiting on
+ * programme committees, and a bar alone cannot tell them apart.
  */
-function renderProgressCell(row: PaperOverviewRow) {
-  const { percent, waitingOn, provided, required } = row.progress;
+function renderPersonProgressCell(person: PaperPersonRow) {
+  const percent = person.percent;
   if (percent === null) {
     return html`<span class="muted">${t("paperOverview.progressUnknown")}</span>`;
   }
@@ -474,84 +704,54 @@ function renderProgressCell(row: PaperOverviewRow) {
           role="img"
           aria-label=${t("paperOverview.progressLabel", {
             percent: String(percent),
-            provided: String(provided),
-            required: String(required),
-          })}
-          title=${t("paperOverview.progressBreakdown", {
-            provided: String(provided),
-            required: String(required),
-            decision: row.progress.accepted
-              ? t("paperOverview.progressAccepted")
-              : t("paperOverview.progressUndecided"),
+            provided: String(person.provided),
+            required: String(person.required),
           })}
         >
           <span class="profile-overview__bar-fill" style="width: ${percent}%"></span>
         </div>
         <span class="profile-overview__percent ab-num">${percent}%</span>
       </div>
-      <span class="profile-overview__status" data-waiting=${waitingOn}
-        >${t(`paperOverview.waitingOn.${waitingOn}`)}</span
-      >
+      ${person.waiting.length
+        ? person.waiting.map(
+            (entry) =>
+              html`<span class="profile-overview__status" data-waiting=${entry.reason}
+                >${t("paperOverview.person.waiting", {
+                  count: String(entry.count),
+                  reason: t(`paperOverview.waitingOn.${entry.reason}`),
+                })}</span
+              >`,
+          )
+        : html`<span class="profile-overview__status" data-waiting="nothing"
+            >${t("paperOverview.waitingOn.nothing")}</span
+          >`}
     </div>
   `;
 }
 
 /**
- * The stage cell: which step of the flow the paper is on.
- *
- * Words and a step count, never a percentage. `current_step` is one fact -- where the paper is --
- * and the eight-step plan behind it carries no information about how much of the work is done;
- * turning it into a percentage was what made two columns report the same thing and made one of
- * them look like progress. Progress is next door now, and it is measured.
- */
-function renderStageCell(row: PaperOverviewRow) {
-  return html`
-    <div class="paper-overview__stage">
-      <strong>${row.complete ? t("paperOverview.stageComplete") : row.currentLabel}</strong>
-      <span class="profile-overview__status">
-        ${row.complete
-          ? t("paperOverview.stageDone")
-          : t("paperOverview.stageLabel", {
-              index: String(row.stepIndex + 1),
-              total: String(row.stepCount),
-            })}
-      </span>
-      ${!row.complete && row.nextLabel
-        ? html`<span class="profile-overview__status"
-            >${t("paperOverview.next", { step: row.nextLabel })}</span
-          >`
-        : nothing}
-    </div>
-  `;
-}
-
-/**
- * The evidence cell: how much of what this paper owes has arrived.
+ * The evidence cell: how much of what this person owes has arrived, across their papers.
  *
  * Named blanks under the count, not just a fraction, for the same reason Profile Completeness names
  * missing fields: the name is the thing an administrator repeats to the author. Capped at three
  * because past that the answer is "most of it" and the row stops being scannable.
  */
-function renderEvidenceCell(row: PaperOverviewRow) {
-  if (!row.slots) {
+function renderPersonEvidenceCell(person: PaperPersonRow) {
+  if (!person.required) {
     return html`<span class="muted">${t("paperOverview.noEvidence")}</span>`;
   }
-  const missing = row.slots.required_count - row.slots.provided_count;
+  const missing = person.required - person.provided;
   return html`
     <div class="paper-overview__evidence">
       <span class="ab-num ${missing > 0 ? "is-attention" : ""}"
-        >${row.slots.provided_count}/${row.slots.required_count}</span
+        >${person.provided}/${person.required}</span
       >
-      ${row.slots.missing_slots.length
+      ${person.missing.length
         ? html`<ul class="profile-overview__missing">
-            ${row.slots.missing_slots
-              .slice(0, 3)
-              .map((slot) => html`<li>${slot.replaceAll("_", " ")}</li>`)}
-            ${row.slots.missing_slots.length > 3
+            ${person.missing.slice(0, 3).map((slot) => html`<li>${slot.replaceAll("_", " ")}</li>`)}
+            ${person.missing.length > 3
               ? html`<li class="muted">
-                  ${t("paperOverview.moreMissing", {
-                    count: String(row.slots.missing_slots.length - 3),
-                  })}
+                  ${t("paperOverview.moreMissing", { count: String(person.missing.length - 3) })}
                 </li>`
               : nothing}
           </ul>`
@@ -560,18 +760,94 @@ function renderEvidenceCell(row: PaperOverviewRow) {
   `;
 }
 
-function renderOutstandingCell(row: PaperOverviewRow) {
+/**
+ * One of the person's papers, inside their row.
+ *
+ * Everything the old per-paper row carried except the bar: the stage in words, the venue and its
+ * deadline, this paper's own evidence fraction, and the title as the way into its card. The bar
+ * moved up to the person, because a bar per paper inside a row is the chart this page replaced.
+ */
+function renderPersonPaper(props: PaperOverviewProps, row: PaperOverviewRow) {
+  return html`
+    <li
+      class="paper-overview__paper"
+      data-attention=${row.needsAttention}
+      data-dormant=${row.dormant}
+    >
+      <button
+        class="logistics-requests__open"
+        type="button"
+        @click=${() => props.onOpenPaper(row.paper.id)}
+      >
+        ${row.paper.title}
+      </button>
+      <div class="paper-overview__stage">
+        <span class="profile-overview__status">
+          ${row.complete
+            ? t("paperOverview.stageComplete")
+            : t("paperOverview.personStage", {
+                stage: row.currentLabel,
+                step: t("paperOverview.stageLabel", {
+                  index: String(row.stepIndex + 1),
+                  total: String(row.stepCount),
+                }),
+              })}
+        </span>
+        ${!row.complete && row.nextLabel
+          ? html`<span class="profile-overview__status"
+              >${t("paperOverview.next", { step: row.nextLabel })}</span
+            >`
+          : nothing}
+      </div>
+      <div class="paper-overview__paper-facts">
+        ${row.venue
+          ? html`<span class="profile-overview__status">${row.venue}</span>`
+          : html`<span class="profile-overview__flag">${t("paperOverview.noVenue")}</span>`}
+        ${row.deadline
+          ? html`<span class="profile-overview__status">${row.deadline}</span>`
+          : nothing}
+        ${row.slots
+          ? html`<span
+              class="ab-num ${row.slots.required_count > row.slots.provided_count
+                ? "is-attention"
+                : ""}"
+              >${row.slots.provided_count}/${row.slots.required_count}</span
+            >`
+          : nothing}
+        <span class="profile-overview__status" data-waiting=${row.progress.waitingOn}
+          >${t(`paperOverview.waitingOn.${row.progress.waitingOn}`)}</span
+        >
+        ${row.openBlockers
+          ? html`<span class="profile-overview__flag" data-testid="paper-overview-blocked"
+              >${t("paperOverview.blocked", { count: String(row.openBlockers) })}</span
+            >`
+          : nothing}
+        ${row.slots?.escalating
+          ? html`<span class="profile-overview__flag">${t("paperOverview.escalating")}</span>`
+          : nothing}
+        ${row.dormant
+          ? html`<span class="paper-overview__chip">${t("paperOverview.dormant")}</span>`
+          : nothing}
+      </div>
+    </li>
+  `;
+}
+
+/** The person-level flags: what somebody has to chase them about, summed over their papers. */
+function renderPersonOutstandingCell(person: PaperPersonRow) {
   const flags = [
-    row.openBlockers
-      ? html`<span class="profile-overview__flag" data-testid="paper-overview-blocked"
-          >${t("paperOverview.blocked", { count: String(row.openBlockers) })}</span
+    person.openBlockers
+      ? html`<span class="profile-overview__flag"
+          >${t("paperOverview.blocked", { count: String(person.openBlockers) })}</span
         >`
       : nothing,
-    row.slots?.escalating
+    person.escalating
       ? html`<span class="profile-overview__flag">${t("paperOverview.escalating")}</span>`
       : nothing,
-    row.dormant
-      ? html`<span class="paper-overview__chip">${t("paperOverview.dormant")}</span>`
+    person.dormant
+      ? html`<span class="paper-overview__chip"
+          >${t("paperOverview.person.dormant", { count: String(person.dormant) })}</span
+        >`
       : nothing,
   ].filter((flag) => flag !== nothing);
   if (!flags.length) {
@@ -580,39 +856,37 @@ function renderOutstandingCell(row: PaperOverviewRow) {
   return html`<div class="paper-overview__flags">${flags}</div>`;
 }
 
-function renderRow(props: PaperOverviewProps, row: PaperOverviewRow) {
+function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
   return html`
     <tr
       class="profile-overview__row paper-overview__row"
-      data-attention=${row.needsAttention}
-      data-dormant=${row.dormant}
+      data-attention=${person.needsAttention}
+      data-dormant=${person.inFlight === 0}
+      data-person=${person.key}
     >
       <td class="profile-overview__cell">
-        <button
-          class="logistics-requests__open"
-          type="button"
-          @click=${() => props.onOpenPaper(row.paper.id)}
-        >
-          ${row.paper.title}
-        </button>
-        <span class="profile-overview__status"
-          >${row.paper.authors.join(", ") || t("paperOverview.noAuthors")}</span
-        >
+        <div class="paper-overview__person">
+          <strong>${person.name || t("paperOverview.noAuthors")}</strong>
+          <span class="profile-overview__status"
+            >${t("paperOverview.person.papers", { count: String(person.papers.length) })}</span
+          >
+          ${person.attention
+            ? html`<span class="profile-overview__flag"
+                >${t("paperOverview.person.attention", { count: String(person.attention) })}</span
+              >`
+            : nothing}
+        </div>
       </td>
-      <td class="profile-overview__cell">${renderProgressCell(row)}</td>
-      <td class="profile-overview__cell">${renderStageCell(row)}</td>
+      <td class="profile-overview__cell">${renderPersonProgressCell(person)}</td>
       <td class="profile-overview__cell profile-overview__cell--missing">
-        ${renderEvidenceCell(row)}
+        ${renderPersonEvidenceCell(person)}
       </td>
       <td class="profile-overview__cell">
-        ${row.venue
-          ? html`<span>${row.venue}</span>`
-          : html`<span class="profile-overview__flag">${t("paperOverview.noVenue")}</span>`}
-        ${row.deadline
-          ? html`<span class="profile-overview__status">${row.deadline}</span>`
-          : nothing}
+        <ul class="paper-overview__papers">
+          ${person.papers.map((row) => renderPersonPaper(props, row))}
+        </ul>
       </td>
-      <td class="profile-overview__cell">${renderOutstandingCell(row)}</td>
+      <td class="profile-overview__cell">${renderPersonOutstandingCell(person)}</td>
     </tr>
   `;
 }

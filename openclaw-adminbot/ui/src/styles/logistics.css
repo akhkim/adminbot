@@ -1160,6 +1160,47 @@
   color: var(--muted);
 }
 
+/* The person cell: the name, then how much they are carrying. */
+.paper-overview__person {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 10rem;
+}
+
+/* A person's papers, inside their row. A list rather than a nested table: the columns of a table
+   inside a cell never line up with the one around it, and these are four short facts, not a grid. */
+.paper-overview__papers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  min-width: 20rem;
+  list-style: none;
+}
+
+.paper-overview__paper + .paper-overview__paper {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+/* The one paper somebody is waiting on has to be findable in a stack of five. */
+.paper-overview__paper[data-attention="true"] .logistics-requests__open {
+  font-weight: 600;
+}
+
+.paper-overview__paper[data-dormant="true"] {
+  color: var(--muted);
+}
+
+.paper-overview__paper-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
 /* The boards under the table. Closed on arrival, so the page opens as the list it is. */
 .paper-overview__board {
   margin-top: var(--space-4);

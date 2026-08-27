@@ -1,4 +1,5 @@
-// Active Papers: what a row says, and what the filters group the lab's papers into.
+// Active Papers: what a person's row says, how papers fold into people, and what the filters
+// group the lab's papers into.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { PaperSlotOverviewRow } from "../auth/session.ts";
@@ -8,6 +9,7 @@ import {
   filterPaperRows,
   paperOverviewRows,
   paperOverviewSummary,
+  paperPersonRows,
   paperProgress,
   paperVenueOptions,
   renderPaperOverviewTable,
@@ -87,7 +89,11 @@ describe("paperOverviewRows", () => {
         paper({ id: "clear" }),
       ],
       slots: [
-        slots({ paper_id: "missing", provided_count: 1, missing_slots: ["camera_ready"] }),
+        slots({
+          paper_id: "missing",
+          provided_count: 1,
+          missing_slots: ["camera_ready"],
+        }),
         slots({ paper_id: "blocked" }),
         slots({ paper_id: "escalating", escalating: true }),
         slots({ paper_id: "clear" }),
@@ -166,11 +172,20 @@ describe("filterPaperRows", () => {
   const rows = build({
     papers: [
       paper({ id: "needs", title: "Needs work", venue: "ACL 2026" }),
-      paper({ id: "fine", title: "All fine", venue: "EMNLP 2026", current_step: "submission" }),
+      paper({
+        id: "fine",
+        title: "All fine",
+        venue: "EMNLP 2026",
+        current_step: "submission",
+      }),
       paper({ id: "old", title: "Shelved", dormant_override: true }),
     ],
     slots: [
-      slots({ paper_id: "needs", provided_count: 0, missing_slots: ["camera_ready"] }),
+      slots({
+        paper_id: "needs",
+        provided_count: 0,
+        missing_slots: ["camera_ready"],
+      }),
       slots({ paper_id: "fine" }),
       slots({ paper_id: "old" }),
     ],
@@ -214,12 +229,130 @@ describe("filterPaperRows", () => {
   });
 });
 
+describe("paperPersonRows", () => {
+  it("puts a co-authored paper on every author, because it is outstanding to each of them", () => {
+    const people = paperPersonRows(
+      build({ papers: [paper({ authors: ["Mira Member", "Ravi Reviewer"] })] }),
+    );
+    expect(people.map((person) => person.name)).toEqual(["Mira Member", "Ravi Reviewer"]);
+    expect(people.every((person) => person.papers.length === 1)).toBe(true);
+  });
+
+  it("folds a linked author and a name-spelled one into a single person", () => {
+    // The same student, linked on one paper and typed by hand on the other.
+    const people = paperPersonRows(
+      build({
+        papers: [
+          paper({
+            id: "linked",
+            authors: ["Mira Member"],
+            author_links: [{ name: "Mira Member", member_id: "m-1" }],
+          }),
+          paper({ id: "typed", authors: ["Mira Member"] }),
+        ],
+      }),
+    );
+    expect(people).toHaveLength(1);
+    expect(people[0]?.memberId).toBe("m-1");
+    expect(people[0]?.papers.map((row) => row.paper.id)).toEqual(["linked", "typed"]);
+  });
+
+  it("keeps two members who share a name apart, rather than guessing", () => {
+    const people = paperPersonRows(
+      build({
+        papers: [
+          paper({
+            id: "one",
+            authors: ["Sam Student"],
+            author_links: [{ name: "Sam Student", member_id: "m-1" }],
+          }),
+          paper({
+            id: "two",
+            authors: ["Sam Student"],
+            author_links: [{ name: "Sam Student", member_id: "m-2" }],
+          }),
+        ],
+      }),
+    );
+    expect(people).toHaveLength(2);
+  });
+
+  it("counts what a person is carrying, and averages progress over their papers", () => {
+    const [person] = paperPersonRows(
+      build({
+        papers: [
+          paper({ id: "a", title: "A", authors: ["Mira Member"] }),
+          paper({ id: "b", title: "B", authors: ["Mira Member"] }),
+        ],
+        slots: [
+          slots({
+            paper_id: "a",
+            provided_count: 1,
+            required_count: 5,
+            missing_slots: ["slides"],
+          }),
+          slots({ paper_id: "b", provided_count: 5, required_count: 5 }),
+        ],
+        blockers: { a: 2 },
+      }),
+    );
+    // 1/6 and 5/6 of the units, so 17% and 83%.
+    expect(person?.percent).toBe(50);
+    expect(person?.provided).toBe(6);
+    expect(person?.required).toBe(10);
+    expect(person?.attention).toBe(1);
+    expect(person?.openBlockers).toBe(2);
+    expect(person?.missing).toEqual(["slides"]);
+  });
+
+  it("lists the person holding the most up first, and their outstanding paper first", () => {
+    const people = paperPersonRows(
+      build({
+        papers: [
+          paper({ id: "clear", title: "Clear", authors: ["Ada Quiet"] }),
+          paper({ id: "late", title: "Late", authors: ["Bo Busy"] }),
+          paper({ id: "fine", title: "Fine", authors: ["Bo Busy"] }),
+        ],
+        slots: [
+          slots({ paper_id: "clear" }),
+          slots({
+            paper_id: "late",
+            provided_count: 0,
+            missing_slots: ["camera_ready"],
+          }),
+          slots({ paper_id: "fine" }),
+        ],
+      }),
+    );
+    expect(people.map((person) => person.name)).toEqual(["Bo Busy", "Ada Quiet"]);
+    expect(people[0]?.papers.map((row) => row.paper.title)).toEqual(["Late", "Fine"]);
+  });
+
+  it("keeps a paper naming nobody, in a bucket that sorts last", () => {
+    const people = paperPersonRows(
+      build({
+        papers: [
+          paper({ id: "orphan", authors: [] }),
+          paper({ id: "owned", authors: ["Mira Member"] }),
+        ],
+      }),
+    );
+    expect(people.map((person) => person.name)).toEqual(["Mira Member", ""]);
+    expect(people[1]?.papers.map((row) => row.paper.id)).toEqual(["orphan"]);
+  });
+});
+
 describe("renderPaperOverviewTable", () => {
-  it("puts the lab on one scannable line per paper", () => {
+  it("puts the lab on one scannable line per person, with their papers inside it", () => {
     const { container } = draw({
       rows: build({
         papers: [paper({ timeline: { current_step_index: 2, items: [] } as never })],
-        slots: [slots({ provided_count: 1, missing_slots: ["camera_ready", "slides"] })],
+        slots: [
+          slots({
+            provided_count: 1,
+            missing_slots: ["camera_ready", "slides"],
+          }),
+        ],
       }),
       filter: { state: "all" },
     });
@@ -227,7 +360,10 @@ describe("renderPaperOverviewTable", () => {
     // nothing else, so one of them had to go.
     expect(
       [...container.querySelectorAll(".profile-overview__head")].map((h) => h.textContent?.trim()),
-    ).toEqual(["Paper", "Progress", "Stage", "Evidence", "Venue", "Outstanding"]);
+    ).toEqual(["Person", "Progress", "Evidence", "Papers", "Outstanding"]);
+    expect(container.querySelector(".paper-overview__person")?.textContent).toContain(
+      "Mira Member",
+    );
     // Progress is measured from what the paper filed; Stage says where it is, in words.
     expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("25%");
     expect(container.querySelector(".paper-overview__stage")?.textContent).toContain("step 3 of 8");
@@ -246,15 +382,21 @@ describe("renderPaperOverviewTable", () => {
       filter: { state: "all" },
     });
     expect(container.querySelector(".profile-overview__percent")?.textContent?.trim()).toBe("100%");
-    expect(container.querySelector(".paper-overview__stage")?.textContent).toContain("done");
+    expect(container.querySelector(".paper-overview__stage")?.textContent).toContain("Complete");
     expect(container.querySelector(".profile-overview__bar.is-complete")).not.toBeNull();
   });
 
   it("reads the step from the paper, not from a percentage that is the same for every paper on it", () => {
     const [early, late] = build({
       papers: [
-        paper({ id: "early", timeline: { current_step_index: 1, items: [] } as never }),
-        paper({ id: "late", timeline: { current_step_index: 6, items: [] } as never }),
+        paper({
+          id: "early",
+          timeline: { current_step_index: 1, items: [] } as never,
+        }),
+        paper({
+          id: "late",
+          timeline: { current_step_index: 6, items: [] } as never,
+        }),
       ],
       slots: [slots({ paper_id: "early" }), slots({ paper_id: "late" })],
     });
@@ -308,7 +450,10 @@ describe("renderPaperOverviewTable", () => {
   });
 
   it("calls out a paper nobody can plan around", () => {
-    const { container } = draw({ rows: build({ papers: [paper()] }), filter: { state: "all" } });
+    const { container } = draw({
+      rows: build({ papers: [paper()] }),
+      filter: { state: "all" },
+    });
     expect(container.textContent).toContain("no venue");
   });
 });
