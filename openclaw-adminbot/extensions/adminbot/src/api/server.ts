@@ -26,6 +26,7 @@ import type {
 } from "../contracts/actions.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
+import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
@@ -2402,6 +2403,61 @@ async function handleAuthenticatedRoute(
       res,
       await service.sendPaperSlotNudges(principalActor(principal), {
         ...(recipients?.length ? { recipientIds: recipients } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/meetings/invite-membership/run") {
+    // requirePrivileged, like the other cron-triggered sweeps: the route takes no recipient list
+    // and no message. It reads the meeting's own attendee list and the roster, and everything it
+    // produces is a proposal an admin still has to approve, so there is no caller-supplied content
+    // for the member-session gate to protect.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarEvents) {
+      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const surface = asString(body.surface) === "lab_calendar" ? "lab_calendar" : "group_meeting";
+    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
+    const seriesId = groupMeetingSeriesId(asString(body.event_id) || resolveGroupMeetingEventId());
+
+    let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
+    try {
+      events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+    } catch (error) {
+      // The plan is computed from this read. A failed read must not become "the meeting has no
+      // attendees", which is a proposal to empty it.
+      sendJson(res, 502, {
+        error: {
+          message: `could not read the calendar: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+      return;
+    }
+
+    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`); any of them
+    // carries the series' attendee list, so the first match is enough.
+    const event = events.find((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
+    if (!event) {
+      sendJson(res, 404, {
+        error: { message: `no event ${seriesId} on calendar ${calendarId} in the read window` },
+      });
+      return;
+    }
+
+    sendServiceResult(
+      res,
+      service.planInviteMembership({
+        surface,
+        eventId: seriesId,
+        calendarId,
+        attendees: event.attendees ?? [],
+        actor: principalActor(principal),
       }),
     );
     return;
