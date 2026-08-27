@@ -80,6 +80,7 @@ import {
   nextDeadlineVenue,
   papersNeedingRegistration,
   readVenueTargets,
+  venueTargetMatches,
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderPaperCycle } from "./paper-cycle.ts";
@@ -1034,7 +1035,40 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const custom = current && !parsed.id ? current : "";
   const year = parsed.year ?? defaultTarget().year;
 
-  const save = (conference: string, odds: string) =>
+  /**
+   * Save the target, and register the paper for it.
+   *
+   * Declaring where a paper is going *is* pre-registering it -- there is no second intention to
+   * collect. Until now these two selects wrote only `artifacts.conference`, while every reader of
+   * "is this paper pre-registered" looks at `artifacts.venue_targets`, so an author who set their
+   * target here was still counted as not having pre-registered and still got asked to.
+   *
+   * The chosen venue is upserted rather than made the whole list: a paper aimed at two venues
+   * through the pre-registration dialog must not lose one because somebody adjusted the year on
+   * this card. Any existing target for the same venue is replaced, the rest are left alone, and
+   * clearing the venue removes just its own entry.
+   */
+  const save = (conference: string, odds: string) => {
+    const existing = readVenueTargets(paper);
+    const parsedNext = parseVenue(conference);
+    const venueId = parsedNext.id ?? conference.trim();
+    // Drop any target this edit supersedes, matching on the venue rather than the id string so a
+    // target written by the dialog's id space is replaced rather than duplicated.
+    const kept = existing.filter((target) => !venueId || !venueTargetMatches(target, venueId));
+    const confidenceValue = Number(odds);
+    const targets = venueId
+      ? [
+          ...kept,
+          {
+            venue_id: venueId,
+            label: conference.trim() || venueId,
+            // The odds select can be empty ("No estimate"); a target still has to carry a number,
+            // and the same 50 the Add a project form defaults to is the honest one.
+            confidence:
+              Number.isFinite(confidenceValue) && confidenceValue > 0 ? confidenceValue : 50,
+          },
+        ]
+      : kept;
     props.onSavePaper({
       id: paper.id,
       title: paper.title,
@@ -1042,7 +1076,9 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
       currentStep: paper.current_step as AdminBotPaperStep,
       conference,
       confidence: odds,
+      venueTargets: serializeVenueTargets(targets),
     });
+  };
 
   // Both selects write the one `conference` field, so whichever one moved has to read the other.
   const retarget = (event: Event) => {

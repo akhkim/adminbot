@@ -8,8 +8,8 @@
 // Built imperatively for the same reason paperflow-map.ts and the draft dialog are: it owns a
 // <dialog> and some selection state that dies with it.
 
-import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
+import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import {
   CONFIDENCE_CHOICES,
   PRE_REGISTRATION_VENUES,
@@ -17,6 +17,7 @@ import {
   formatVenueTargets,
   readVenueTargets,
   serializeVenueTargets,
+  venueTargetMatches,
   type VenueTarget,
 } from "./venue-targets.ts";
 
@@ -34,13 +35,10 @@ export type PreRegistrationDeps = {
   onDone: () => void;
 };
 
-
 /** Whether this paper would appear complete in the admin's venue table. */
 function overleafOf(paper: AdminBotPaperRecord | undefined): string {
   return (
-    paper?.artifacts?.overleaf_edit_url?.trim() ||
-    paper?.artifacts?.overleaf_view_url?.trim() ||
-    ""
+    paper?.artifacts?.overleaf_edit_url?.trim() || paper?.artifacts?.overleaf_view_url?.trim() || ""
   );
 }
 
@@ -51,6 +49,9 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
   // Chosen per paper, so someone can register two papers in one sitting without reopening.
   let paperId = deps.papers[0]?.id ?? "";
   const picked = new Map<string, number>();
+  // The label a target arrived with, kept so saving a venue this dialog does not list writes back
+  // the name it had rather than its raw id.
+  const seededLabels = new Map<string, string>();
   // Typed here rather than on the card, because the spreadsheet the admins read has an Overleaf
   // column and a pre-registration without one is a row they cannot use. Asking at the moment the
   // gap is visible beats sending someone away to find the field.
@@ -58,11 +59,30 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
 
   const currentPaper = () => deps.papers.find((paper) => paper.id === paperId);
 
+  /**
+   * Load the paper's existing targets into the selection.
+   *
+   * Keyed to the board's own ids where they match, which is the whole point. Two id spaces write
+   * this field -- this dialog writes deadline-board ids (`iclr2027_paper`), the Add a project form
+   * writes venue-catalog ids (`ICLR-main`) with the year in the label -- and the venue cards below
+   * test `picked.has(venue.venue_id)` by string. A paper already aimed at ICLR through the other
+   * form therefore seeded a key no card recognised: its card rendered unselected while the footer
+   * counted it, so the button offered to "Pre-register for 2 venues" when one was visibly picked.
+   *
+   * Targets that match no card keep their own id. They have to stay in the map -- saving replaces
+   * the whole list, so dropping them here would silently erase a venue the paper is aimed at.
+   */
   const seedFromPaper = () => {
     picked.clear();
+    seededLabels.clear();
     overleafDraft = "";
     for (const target of readVenueTargets(currentPaper() as AdminBotPaperRecord)) {
-      picked.set(target.venue_id, target.confidence);
+      const card = PRE_REGISTRATION_VENUES.find((venue) =>
+        venueTargetMatches(target, venue.venue_id),
+      );
+      const key = card?.venue_id ?? target.venue_id;
+      picked.set(key, target.confidence);
+      seededLabels.set(key, target.label || target.venue_id);
     }
   };
   if (paperId) {
@@ -190,7 +210,10 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
     }
     const targets: VenueTarget[] = [...picked.entries()].map(([venue_id, confidence]) => ({
       venue_id,
-      label: PRE_REGISTRATION_VENUES.find((v) => v.venue_id === venue_id)?.label ?? venue_id,
+      label:
+        PRE_REGISTRATION_VENUES.find((v) => v.venue_id === venue_id)?.label ??
+        seededLabels.get(venue_id) ??
+        venue_id,
       confidence,
     }));
     const overleaf = overleafDraft.trim();
