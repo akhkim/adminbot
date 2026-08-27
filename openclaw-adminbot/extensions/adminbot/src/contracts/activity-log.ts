@@ -28,7 +28,7 @@ export type AdminBotLoginEvent = {
  * in" -- and answering it per-member across both kinds should be one query, not a union of two
  * shapes that drift apart.
  */
-export type AdminBotUpdateSubject = "profile" | "paper_slot";
+export type AdminBotUpdateSubject = "profile" | "paper" | "paper_slot";
 
 /**
  * One member changing one field of one thing.
@@ -68,4 +68,16 @@ export function profileSlotId(field: string): string {
 
 export function paperSlotId(paperId: string, slot: string): string {
   return `paper_slot:${paperId}:${slot}`;
+}
+
+/**
+ * The paper record itself, as opposed to one of its evidence slots.
+ *
+ * One event per save rather than one per changed field, unlike a profile. A paper's fields are
+ * nested and rebuilt wholesale on every write (`artifacts`, `author_links`, `reminder`), so a
+ * field-level diff would report churn that nobody edited. The question this has to answer is "who
+ * last touched this paper, and when" -- and for that the paper is the right grain.
+ */
+export function paperRecordSlotId(paperId: string): string {
+  return `paper:${paperId}`;
 }

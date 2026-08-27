@@ -2688,7 +2688,14 @@ async function handleAuthenticatedRoute(
     // their own submissions only, and without the governance fields the paper flow owns.
     if (isPrivileged(principal)) {
       const body = (await readJson(req)) as AdminBotPaperRecordInput;
-      sendServiceResult(res, service.upsertPaper({ ...body, id: paperId }));
+      // Automation principals have no member to name; they fall through as an unattributed write.
+      sendServiceResult(
+        res,
+        service.upsertPaper(
+          { ...body, id: paperId },
+          principal.kind === "member" ? { source: "admin", actor: principal.member.id } : {},
+        ),
+      );
       return;
     }
     if (principal.kind !== "member") {

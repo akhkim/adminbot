@@ -77,6 +77,7 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  paperRecordSlotId,
   paperSlotId,
   profileSlotId,
   type AdminBotLoginEvent,
@@ -2340,22 +2341,25 @@ export class AdminBotService {
         patch[field] = input[field];
       }
     }
-    return this.upsertPaper({
-      ...existing,
-      ...(patch as Partial<AdminBotPaperRecordInput>),
-      id: paperId,
-      title: typeof patch.title === "string" ? patch.title : (existing?.title ?? ""),
-      authors: Array.isArray(patch.authors)
-        ? (patch.authors as string[])
-        : (existing?.authors ?? []),
-      current_step: (patch.current_step ??
-        existing?.current_step ??
-        "brainstorming_docs") as AdminBotPaperStep,
-      artifacts: { ...existing?.artifacts, ...(patch.artifacts as AdminBotPaperArtifactLinks) },
-      // Stamped once, on the create. Re-stamping on every edit would let the last member to touch
-      // a shared paper claim it.
-      submitted_by_member_id: existing?.submitted_by_member_id ?? memberId,
-    });
+    return this.upsertPaper(
+      {
+        ...existing,
+        ...(patch as Partial<AdminBotPaperRecordInput>),
+        id: paperId,
+        title: typeof patch.title === "string" ? patch.title : (existing?.title ?? ""),
+        authors: Array.isArray(patch.authors)
+          ? (patch.authors as string[])
+          : (existing?.authors ?? []),
+        current_step: (patch.current_step ??
+          existing?.current_step ??
+          "brainstorming_docs") as AdminBotPaperStep,
+        artifacts: { ...existing?.artifacts, ...(patch.artifacts as AdminBotPaperArtifactLinks) },
+        // Stamped once, on the create. Re-stamping on every edit would let the last member to
+        // touch a shared paper claim it.
+        submitted_by_member_id: existing?.submitted_by_member_id ?? memberId,
+      },
+      { source: "member", actor: memberId },
+    );
   }
 
   // A member owns a paper they filed, or one that names them in `authors`. Author entries are free
@@ -2435,7 +2439,18 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { papers: papers.map(withPaperTimeline) } };
   }
 
-  upsertPaper(paper: AdminBotPaperRecordInput): AdminBotServiceResponse<AdminBotPaperRecord> {
+  /**
+   * `origin` names the person, not the paper.
+   *
+   * This used to record `actor: paper.id` -- the audit row said which paper changed and had no
+   * room left to say who changed it, so "a member updated their paper and I cannot see it on my
+   * side" was unanswerable from the trail. The paper id moves into `details` where it always
+   * belonged, and the actor becomes the member the route authenticated.
+   */
+  upsertPaper(
+    paper: AdminBotPaperRecordInput,
+    origin: AdminBotWriteOrigin = {},
+  ): AdminBotServiceResponse<AdminBotPaperRecord> {
     const validation = validatePaper(paper);
     if (validation) {
       return serviceError(400, validation);
@@ -2494,12 +2509,26 @@ export class AdminBotService {
     this.store.savePaper(stored);
     this.recordAudit({
       type: "paper.upserted",
-      actor: paper.id,
+      // Automation and the importer still write papers with nobody to name; those keep an absent
+      // actor rather than borrowing the paper's id, so "unattributed" stays visibly unattributed.
+      ...(origin.actor ? { actor: origin.actor } : {}),
       details: {
+        paper_id: paper.id,
         current_step: paper.current_step,
         author_count: paper.authors.length,
       },
     });
+    // Only when somebody is named. A row whose member_id is blank answers nothing this table is
+    // for, and it would quietly inflate any count of who has touched a paper.
+    if (origin.actor) {
+      this.recordUpdateEvents({
+        subject: "paper",
+        slotIds: [paperRecordSlotId(paper.id)],
+        memberId: origin.actor,
+        source: origin.source ?? "import",
+        at: now,
+      });
+    }
     return { ok: true, status: 200, payload: stored };
   }
 
@@ -2638,6 +2667,14 @@ export class AdminBotService {
       return serviceError(400, result.error);
     }
     this.store.savePaperSlot(result.record);
+    // Finishing a slot is a change to the paper, so the paper has to say it changed. Without this
+    // the checklist advanced while `paper.updated_at` sat still, and every reader that sorts or
+    // reports on recency -- the admin's paper card, any "what moved this week" digest -- showed a
+    // paper as untouched while its author was working through it.
+    const slotWriteAt = result.record.provided_at ?? new Date().toISOString();
+    if ((context.paper.updated_at ?? "") < slotWriteAt) {
+      this.store.savePaper({ ...context.paper, updated_at: slotWriteAt });
+    }
     // The slot row keeps only the latest writer; this keeps all of them. `privileged` is the same
     // flag the ownership check above ran on, so an admin filling in somebody else's slot is
     // recorded as an admin edit and never counts as that author adopting the checklist.
