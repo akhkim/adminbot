@@ -1320,9 +1320,9 @@
   height: 0.85em;
 }
 
-/* My Desk — the professor's five queues on one screen. A column of sections rather than a grid:
-   they are read top to bottom in priority order, and a grid would put the same five things in an
-   order that changes with the window width. */
+/* My Desk — the professor's queues on one screen. A column of sections rather than a grid: they are
+   read top to bottom, with anything settled sunk to the bottom, and a grid would put the same
+   sections in an order that changes with the window width. */
 .professor {
   display: flex;
   flex-direction: column;
@@ -1386,23 +1386,32 @@
   font-size: var(--control-ui-text-sm);
 }
 
-.professor__figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-5);
+/* The adoption columns. `auto-fit` rather than three fixed tracks: at a narrow width three columns
+   of names wrap into an unreadable stack, and one column per row reads the same as the list each
+   one links out to. */
+.professor__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
   margin-top: var(--space-3);
 }
 
-.professor__figures > div {
+.professor__column-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
   font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
 }
 
-.professor__figure {
-  font-size: var(--control-ui-text-xl);
-  font-weight: 650;
+/* A column with nobody in it has already sunk to the end of the row; dimming it keeps it from
+   competing with the columns that name someone to chase. */
+.professor__column[data-empty="true"] .professor__column-head {
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .professor__open {

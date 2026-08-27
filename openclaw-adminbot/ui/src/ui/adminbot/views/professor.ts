@@ -1,9 +1,9 @@
-// The professor's morning page: the five things that are hers to do, on one screen.
+// The professor's morning page: the things that are hers to do, on one screen.
 //
 // Everything here is already somewhere else -- the rec-letter queue is on Requests, the adoption
-// figure heads Profile Completeness, the timelines are on Time Availability. That is the point.
-// Those pages are each built for working through one kind of thing, and the question this page
-// answers is the one nobody could answer without opening all five: what is waiting on me.
+// columns head Profile Completeness and Time Availability. That is the point. Those pages are each
+// built for working through one kind of thing, and the question this page answers is the one nobody
+// could answer without opening all of them: what is waiting on me.
 //
 // So it aggregates and links; it does not re-implement. Every section is a count, the few rows
 // worth seeing, and the way through to the page that actually does the work. A section that grew
@@ -24,14 +24,6 @@ export type ProfessorViewProps = {
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
   profiles: MemberProfileOverviewRow[];
-  adoption: {
-    members: number;
-    profile_rate: number;
-    project_rate: number;
-    signed_in_ever: number;
-  } | null;
-  /** Proposals waiting on an approver, which are hers alone to give. */
-  pendingProposals: number;
   onOpen: (tab: Tab) => void;
 };
 
@@ -87,20 +79,99 @@ export function overleafReadingQueue(papers: readonly AdminBotPaperRecord[]): Ov
     );
 }
 
+/**
+ * Who is still on the hook for using AdminBot themselves.
+ *
+ * Alumni are out of every adoption column: they have left, so a row of theirs that stays blank is
+ * not a reminder anybody is going to send. Everyone else stays, external collaborators included --
+ * the lab does chase them, and dropping them would quietly shrink the count this section exists to
+ * show.
+ */
+export function adoptionCandidates(
+  profiles: readonly MemberProfileOverviewRow[],
+): MemberProfileOverviewRow[] {
+  return profiles.filter((row) => row.status !== "alumni");
+}
+
+/** Members with mandatory profile fields still blank, emptiest record first. */
+export function incompleteProfiles(
+  profiles: readonly MemberProfileOverviewRow[],
+): MemberProfileOverviewRow[] {
+  return adoptionCandidates(profiles)
+    .filter((row) => row.missing_fields.length > 0)
+    .toSorted((left, right) => right.missing_fields.length - left.missing_fields.length);
+}
+
 /** Members whose timeline is thinner than the lab asks for. The list Time Availability is for. */
 export function thinTimelines(
   profiles: readonly MemberProfileOverviewRow[],
 ): MemberProfileOverviewRow[] {
-  return profiles
+  return adoptionCandidates(profiles)
     .filter((row) => row.timeline.total < adminBotTimelineEntryTarget)
     .toSorted((left, right) => left.timeline.total - right.timeline.total);
+}
+
+/**
+ * Members with a paper carrying no update they wrote themselves.
+ *
+ * Somebody with no papers at all is not behind on anything, so they are not in this column.
+ */
+export function unattendedProjects(
+  profiles: readonly MemberProfileOverviewRow[],
+): MemberProfileOverviewRow[] {
+  const behind = (row: MemberProfileOverviewRow) => row.projects.total - row.projects.self_updated;
+  return adoptionCandidates(profiles)
+    .filter((row) => row.projects.total > 0 && behind(row) > 0)
+    .toSorted((left, right) => behind(right) - behind(left));
+}
+
+type AdoptionColumn = {
+  id: "profile" | "timeline" | "papers";
+  label: string;
+  rows: MemberProfileOverviewRow[];
+  detail: (row: MemberProfileOverviewRow) => string;
+};
+
+/**
+ * The three columns, with the settled ones last.
+ *
+ * A column nobody has to act on is still worth showing -- it is how you see that the answer is
+ * "nobody" rather than "not loaded yet" -- but it should not sit between two columns that do need
+ * work.
+ */
+export function adoptionColumns(profiles: readonly MemberProfileOverviewRow[]): AdoptionColumn[] {
+  const columns: AdoptionColumn[] = [
+    {
+      id: "profile",
+      label: t("professor.adoption.column.profile"),
+      rows: incompleteProfiles(profiles),
+      detail: (row) =>
+        t("professor.adoption.missing", { count: String(row.missing_fields.length) }),
+    },
+    {
+      id: "timeline",
+      label: t("professor.adoption.column.timeline"),
+      rows: thinTimelines(profiles),
+      detail: (row) => t("professor.adoption.entries", { count: String(row.timeline.total) }),
+    },
+    {
+      id: "papers",
+      label: t("professor.adoption.column.papers"),
+      rows: unattendedProjects(profiles),
+      detail: (row) =>
+        t("professor.adoption.papersDetail", {
+          count: String(row.projects.total - row.projects.self_updated),
+          total: String(row.projects.total),
+        }),
+    },
+  ];
+  return columns.toSorted((left, right) => Number(!left.rows.length) - Number(!right.rows.length));
 }
 
 function section(params: {
   id: string;
   title: string;
   count: number;
-  sub: string;
   tab: Tab;
   linkLabel: string;
   onOpen: (tab: Tab) => void;
@@ -109,10 +180,7 @@ function section(params: {
   return html`
     <section class="professor__section" data-testid=${`professor-${params.id}`}>
       <div class="professor__head">
-        <div>
-          <div class="card-title">${params.title}</div>
-          <div class="card-sub">${params.sub}</div>
-        </div>
+        <div class="card-title">${params.title}</div>
         <span class="professor__count ab-num" data-empty=${params.count === 0 ? "true" : "false"}
           >${params.count}</span
         >
@@ -145,18 +213,48 @@ function rows(items: unknown[], empty: string) {
   </ul>`;
 }
 
+function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
+  return html`<div class="professor__columns">
+    ${adoptionColumns(profiles).map(
+      (column) => html`<div
+        class="professor__column"
+        data-testid=${`professor-adoption-${column.id}`}
+        data-empty=${column.rows.length === 0 ? "true" : "false"}
+      >
+        <div class="professor__column-head">
+          <span>${column.label}</span>
+          <span class="ab-num">${column.rows.length}</span>
+        </div>
+        ${rows(
+          column.rows.map(
+            (row) => html`<li>
+              <strong>${row.name}</strong>
+              <span class="muted">${column.detail(row)}</span>
+            </li>`,
+          ),
+          t("professor.adoption.empty"),
+        )}
+      </div>`,
+    )}
+  </div>`;
+}
+
 export function renderProfessorView(props: ProfessorViewProps) {
   const letters = recLetterQueue(props.requests);
   const drafts = overleafReadingQueue(props.papers);
-  const thin = thinTimelines(props.profiles);
-  const percent = (rate: number) => `${Math.round(rate * 100)}%`;
+  // Somebody short on two counts is still one person to remind, so the headline number is people,
+  // not rows.
+  const toRemind = new Set(
+    adoptionColumns(props.profiles).flatMap((column) => column.rows.map((row) => row.id)),
+  );
 
-  return html`
-    <div class="professor">
-      ${section({
+  const sections = [
+    {
+      // A queue still loading is not an empty one, so it holds its place rather than sinking.
+      settled: !props.requestsLoading && letters.length === 0,
+      body: section({
         id: "letters",
         title: t("professor.letters.title"),
-        sub: t("professor.letters.sub"),
         count: letters.length,
         tab: "adminbotRecLetters",
         linkLabel: t("professor.letters.open"),
@@ -179,11 +277,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
               ),
               t("professor.letters.empty"),
             ),
-      })}
-      ${section({
+      }),
+    },
+    {
+      settled: drafts.length === 0,
+      body: section({
         id: "drafts",
         title: t("professor.drafts.title"),
-        sub: t("professor.drafts.sub"),
         count: drafts.length,
         tab: "adminbotPapers",
         linkLabel: t("professor.drafts.open"),
@@ -202,72 +302,29 @@ export function renderProfessorView(props: ProfessorViewProps) {
           ),
           t("professor.drafts.empty"),
         ),
-      })}
-      ${section({
+      }),
+    },
+    {
+      settled: toRemind.size === 0,
+      body: section({
         id: "adoption",
         title: t("professor.adoption.title"),
-        sub: t("professor.adoption.sub"),
-        count: props.adoption ? props.adoption.members - props.adoption.signed_in_ever : 0,
+        count: toRemind.size,
         tab: "adminbotProfileOverview",
         linkLabel: t("professor.adoption.open"),
         onOpen: props.onOpen,
-        body: props.adoption
-          ? html`<div class="professor__figures">
-              <div>
-                <span class="professor__figure ab-num"
-                  >${percent(props.adoption.profile_rate)}</span
-                >
-                <span class="muted">${t("professor.adoption.profile")}</span>
-              </div>
-              <div>
-                <span class="professor__figure ab-num"
-                  >${percent(props.adoption.project_rate)}</span
-                >
-                <span class="muted">${t("professor.adoption.projects")}</span>
-              </div>
-              <div>
-                <span class="professor__figure ab-num"
-                  >${props.adoption.signed_in_ever}/${props.adoption.members}</span
-                >
-                <span class="muted">${t("professor.adoption.signedIn")}</span>
-              </div>
-            </div>`
-          : html`<p class="professor__empty">${t("professor.loading")}</p>`,
-      })}
-      ${section({
-        id: "timelines",
-        title: t("professor.timelines.title"),
-        sub: t("professor.timelines.sub"),
-        count: thin.length,
-        tab: "adminbotTimeAvailability",
-        linkLabel: t("professor.timelines.open"),
-        onOpen: props.onOpen,
-        body: rows(
-          thin.map(
-            (row) => html`<li>
-              <strong>${row.name}</strong>
-              <span class="muted"
-                >${t("professor.timelines.entries", { count: String(row.timeline.total) })}</span
-              >
-            </li>`,
-          ),
-          t("professor.timelines.empty"),
-        ),
-      })}
-      ${section({
-        id: "approvals",
-        title: t("professor.approvals.title"),
-        sub: t("professor.approvals.sub"),
-        count: props.pendingProposals,
-        tab: "adminbot",
-        linkLabel: t("professor.approvals.open"),
-        onOpen: props.onOpen,
-        body: html`<p class="professor__empty">
-          ${props.pendingProposals
-            ? t("professor.approvals.waiting", { count: String(props.pendingProposals) })
-            : t("professor.approvals.empty")}
-        </p>`,
-      })}
+        body: adoptionBody(props.profiles),
+      }),
+    },
+  ];
+
+  // Settled sections keep their relative order but sink below the ones with something in them: the
+  // page is read top down, and nothing outstanding should not cost the first screen.
+  return html`
+    <div class="professor">
+      ${sections
+        .toSorted((left, right) => Number(left.settled) - Number(right.settled))
+        .map((entry) => entry.body)}
     </div>
   `;
 }

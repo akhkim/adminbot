@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { LogisticsRequest, MemberProfileOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
+  incompleteProfiles,
   overleafReadingQueue,
   recLetterQueue,
   renderProfessorView,
   thinTimelines,
+  unattendedProjects,
   type ProfessorViewProps,
 } from "./professor.ts";
 
@@ -62,8 +64,6 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       requestsLoading: false,
       papers: [],
       profiles: [],
-      adoption: null,
-      pendingProposals: 0,
       onOpen: (tab) => opened.push(tab),
       ...overrides,
     }),
@@ -146,12 +146,62 @@ describe("thinTimelines", () => {
   });
 });
 
+describe("the adoption columns", () => {
+  const bare = { availability: 0, time_off: 0, milestones: 0, trips: 0, total: 0 };
+
+  it("leaves alumni out of every column: nobody is reminding someone who has left", () => {
+    const gone = profile({
+      id: "gone",
+      status: "alumni",
+      missing_fields: ["office"],
+      timeline: bare,
+      projects: { total: 2, self_updated: 0 },
+    });
+    const here = profile({
+      id: "here",
+      status: "active",
+      missing_fields: ["office"],
+      timeline: bare,
+      projects: { total: 2, self_updated: 0 },
+    });
+    expect(incompleteProfiles([gone, here]).map((row) => row.id)).toEqual(["here"]);
+    expect(thinTimelines([gone, here]).map((row) => row.id)).toEqual(["here"]);
+    expect(unattendedProjects([gone, here]).map((row) => row.id)).toEqual(["here"]);
+  });
+
+  it("orders each column by how far behind the member is", () => {
+    expect(
+      incompleteProfiles([
+        profile({ id: "one", missing_fields: ["office"] }),
+        profile({ id: "three", missing_fields: ["office", "phone", "advisor"] }),
+      ]).map((row) => row.id),
+    ).toEqual(["three", "one"]);
+    expect(
+      unattendedProjects([
+        // Every paper carries an update of their own, so they are not behind on anything.
+        profile({ id: "current", projects: { total: 3, self_updated: 3 } }),
+        // No papers at all is not a thing to be reminded about.
+        profile({ id: "none", projects: { total: 0, self_updated: 0 } }),
+        profile({ id: "one", projects: { total: 2, self_updated: 1 } }),
+        profile({ id: "two", projects: { total: 2, self_updated: 0 } }),
+      ]).map((row) => row.id),
+    ).toEqual(["two", "one"]);
+  });
+});
+
 describe("renderProfessorView", () => {
-  it("shows all five queues with their counts", () => {
+  it("shows every queue with its count, and no approval section", () => {
     const { container } = draw();
-    for (const id of ["letters", "drafts", "adoption", "timelines", "approvals"]) {
+    for (const id of ["letters", "drafts", "adoption"]) {
       expect(container.querySelector(`[data-testid="professor-${id}"]`), id).not.toBeNull();
     }
+    // Approvals live on Pending Actions, which the sidebar reaches directly.
+    expect(container.querySelector('[data-testid="professor-approvals"]')).toBeNull();
+  });
+
+  it("carries no subtitle under any section heading", () => {
+    const { container } = draw();
+    expect(container.querySelector(".professor .card-sub")).toBeNull();
   });
 
   it("goes quiet at zero, and loud when something is waiting", () => {
@@ -174,8 +224,6 @@ describe("renderProfessorView", () => {
       ["letters", "adminbotRecLetters"],
       ["drafts", "adminbotPapers"],
       ["adoption", "adminbotProfileOverview"],
-      ["timelines", "adminbotTimeAvailability"],
-      ["approvals", "adminbot"],
     ] as const) {
       container.querySelector<HTMLButtonElement>(`[data-testid="professor-open-${id}"]`)?.click();
       expect(opened).toContain(tab);
@@ -213,13 +261,50 @@ describe("renderProfessorView", () => {
     );
   });
 
-  it("counts the people who have never signed in as the adoption number to chase", () => {
+  it("counts people rather than rows: one member short on two counts is one reminder", () => {
     const { container } = draw({
-      adoption: { members: 20, profile_rate: 0.4, project_rate: 0.25, signed_in_ever: 12 },
+      profiles: [
+        profile({
+          id: "both",
+          missing_fields: ["office"],
+          timeline: { availability: 0, time_off: 0, milestones: 0, trips: 0, total: 0 },
+        }),
+        profile({ id: "fine" }),
+      ],
     });
     const section = container.querySelector('[data-testid="professor-adoption"]');
-    expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("8");
-    expect(section?.textContent).toContain("40%");
-    expect(section?.textContent).toContain("12/20");
+    expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("1");
+    expect(section?.querySelector('[data-testid="professor-adoption-profile"]')).not.toBeNull();
+    expect(section?.querySelector('[data-testid="professor-adoption-timeline"]')).not.toBeNull();
+    expect(section?.querySelector('[data-testid="professor-adoption-papers"]')).not.toBeNull();
+  });
+
+  it("sinks a column with nobody in it below the ones with somebody in them", () => {
+    const { container } = draw({
+      profiles: [profile({ id: "papers", projects: { total: 2, self_updated: 0 } })],
+    });
+    const order = [...container.querySelectorAll('[data-testid^="professor-adoption-"]')].map(
+      (node) => node.getAttribute("data-testid"),
+    );
+    expect(order[0]).toBe("professor-adoption-papers");
+  });
+
+  it("sinks a settled section below one that still has work in it", () => {
+    const { container } = draw({ profiles: [profile({ id: "a", missing_fields: ["office"] })] });
+    const order = [...container.querySelectorAll(".professor__section")].map((node) =>
+      node.getAttribute("data-testid"),
+    );
+    expect(order).toEqual(["professor-adoption", "professor-letters", "professor-drafts"]);
+  });
+
+  it("holds a still-loading queue in place rather than sinking it as settled", () => {
+    const { container } = draw({
+      requestsLoading: true,
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+    });
+    const order = [...container.querySelectorAll(".professor__section")].map((node) =>
+      node.getAttribute("data-testid"),
+    );
+    expect(order[0]).toBe("professor-letters");
   });
 });
