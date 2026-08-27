@@ -25,6 +25,35 @@ export const adminBotDefaultGroupMeeting: GroupMeetingSchedule = {
   timezone: "America/Toronto",
 };
 
+/**
+ * The Google Calendar event the Monday meeting lives on.
+ *
+ * Taken from the event's edit link, which encodes "<event id> <calendar id>". The id there names
+ * one *occurrence* of the recurring event -- the link the lab shared pointed at
+ * `..._20260824T133000Z`, the Monday it was copied from -- and writing attendees against that id
+ * changes that Monday alone. A standing invite has to be edited as a series, so the suffix is
+ * stripped; see `groupMeetingSeriesId`.
+ */
+export const ADMINBOT_GROUP_MEETING_EVENT_ID_ENV = "ADMINBOT_GROUP_MEETING_EVENT_ID";
+export const DEFAULT_GROUP_MEETING_EVENT_ID = "1qrj9v886kpnj58fdviqugk4g6";
+
+/**
+ * The series id behind a recurring-event id.
+ *
+ * Google spells one occurrence as `<base>_<YYYYMMDDTHHMMSSZ>`. Only that exact shape is stripped:
+ * a base id is opaque and may legitimately contain an underscore, so anything that is not a
+ * trailing UTC instant is left alone rather than guessed at.
+ */
+export function groupMeetingSeriesId(eventId: string): string {
+  return eventId.trim().replace(/_\d{8}T\d{6}Z$/u, "");
+}
+
+/** The configured event id, reduced to its series. */
+export function resolveGroupMeetingEventId(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env[ADMINBOT_GROUP_MEETING_EVENT_ID_ENV]?.trim();
+  return groupMeetingSeriesId(configured || DEFAULT_GROUP_MEETING_EVENT_ID);
+}
+
 /** How long before the meeting a reminder may go out. */
 export const adminBotGroupMeetingNudgeWindowHours = 20;
 

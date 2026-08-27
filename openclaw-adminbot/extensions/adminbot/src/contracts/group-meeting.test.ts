@@ -4,6 +4,9 @@ import {
   adminBotDefaultGroupMeeting,
   hoursUntilGroupMeeting,
   isGroupMeetingNudgeDue,
+  DEFAULT_GROUP_MEETING_EVENT_ID,
+  groupMeetingSeriesId,
+  resolveGroupMeetingEventId,
 } from "./group-meeting.js";
 
 const schedule = adminBotDefaultGroupMeeting; // Monday 09:30 America/Toronto
@@ -49,5 +52,30 @@ describe("isGroupMeetingNudgeDue", () => {
     // out -- outside the window, where a fixed offset would have called it inside and sent early.
     expect(isGroupMeetingNudgeDue(new Date("2026-11-01T17:00:00Z"), schedule)).toBe(false);
     expect(isGroupMeetingNudgeDue(new Date("2026-11-01T19:00:00Z"), schedule)).toBe(true);
+  });
+});
+
+// The lab's edit link named one Monday, not the series. Editing attendees against that id would
+// have changed a single occurrence and left every other week untouched.
+describe("group meeting event id", () => {
+  it("reduces a recurring occurrence to its series", () => {
+    expect(groupMeetingSeriesId("1qrj9v886kpnj58fdviqugk4g6_20260824T133000Z")).toBe(
+      "1qrj9v886kpnj58fdviqugk4g6",
+    );
+    expect(DEFAULT_GROUP_MEETING_EVENT_ID).toBe("1qrj9v886kpnj58fdviqugk4g6");
+  });
+
+  it("leaves a base id alone, underscores included", () => {
+    expect(groupMeetingSeriesId("abc123")).toBe("abc123");
+    // Not an instance suffix, so not stripped: a base id is opaque.
+    expect(groupMeetingSeriesId("abc_def")).toBe("abc_def");
+    expect(groupMeetingSeriesId("abc_2026")).toBe("abc_2026");
+  });
+
+  it("honours the env override and reduces that too", () => {
+    expect(
+      resolveGroupMeetingEventId({ ADMINBOT_GROUP_MEETING_EVENT_ID: "other_20270101T090000Z" }),
+    ).toBe("other");
+    expect(resolveGroupMeetingEventId({})).toBe(DEFAULT_GROUP_MEETING_EVENT_ID);
   });
 });
