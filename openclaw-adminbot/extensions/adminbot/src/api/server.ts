@@ -652,7 +652,7 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
       res,
       200,
       renderDeadlinesWebUi(ctx.service.deadlineReadModel(DEADLINE_VENUES), {
-        proposalUrl: `${resolveAdminBotControlUiUrl()}/adminbot/deadlines`,
+        proposalUrl: `${resolveAdminBotControlUiUrl()}/deadlines`,
       }),
     );
     return;

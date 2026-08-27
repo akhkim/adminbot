@@ -564,6 +564,11 @@ import {
   graduationCeremony,
 } from "../workflows/members/graduation.js";
 import {
+  surfaceMembershipPlan,
+  type AdminBotInviteSurface,
+  type AdminBotSurfaceRemoval,
+} from "../workflows/members/surface-membership.js";
+import {
   adminBotThesisGradingDelayDays,
   adminBotThesisGuidanceLeadDays,
   buildThesisGradingMessage,
@@ -617,6 +622,9 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
+  // Uninviting somebody is visible to them and reads as a judgement about whether they belong, so
+  // it sits with the other T3 calendar writes behind an admin approval and never runs unattended.
+  "calendar.remove_attendees": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
@@ -6377,17 +6385,22 @@ export class AdminBotService {
   }
 
   /**
-   * Puts people in their city's Slack channel, once.
+   * Puts people in their city's Slack channel, once per channel.
    *
    * A city gets a channel at four members, which is the point where "the Zurich people" is a group
    * rather than two colleagues who already talk. Below it, creating a room is how a workspace ends
    * up with a directory of dead ones.
    *
-   * Added, not asked -- the lab's call -- but added *once*. `city_channel_invited_at` is the whole
-   * opt-out: a member who is put in a channel and leaves stays left, because without a stamp the
-   * next sweep would put them back every few days, which is an argument with a person that a cron
-   * job always wins. Reading channel membership instead would be the same bug in better clothes:
-   * "not in the channel" is exactly what having left looks like.
+   * Added, not asked -- the lab's call -- but added *once per channel*. `city_channels_invited` is
+   * the whole opt-out: a member who is put in a channel and leaves stays left, because without a
+   * stamp the next sweep would put them back every few days, which is an argument with a person
+   * that a cron job always wins. Reading channel membership instead would be the same bug in
+   * better clothes: "not in the channel" is exactly what having left looks like.
+   *
+   * Per channel rather than one global flag, because the flag also suppressed the invite somebody
+   * needs most: a member who moves from Toronto to Zürich was already stamped, so #group-zurich was
+   * never offered. This sweep is additive only -- moving away from a city never removes anybody,
+   * since leaving a room is the member's own call.
    *
    * The stamp goes on whether or not Slack accepted the invite, for the same reason: a workspace
    * that refuses (no such channel, the bot is not in it) must not turn into a nightly retry against
@@ -6395,6 +6408,99 @@ export class AdminBotService {
    *
    * The member is told afterwards, with the city's guidebook section and how to leave.
    */
+  /**
+   * Reconcile one standing invite against the roster, and propose the removals.
+   *
+   * Proposes only. Every other membership sweep in here executes what it decides, and this one
+   * deliberately does not: taking somebody off the lab calendar or the Monday meeting is read by
+   * that person as a statement about whether they still belong, and the roster it is computed from
+   * is a spreadsheet people forget to update. So the cron runs the arithmetic nightly and an admin
+   * reads the names before anyone is uninvited.
+   *
+   * Attendees are passed in rather than read here because the calendar reader lives on the route
+   * context, not the service. That also makes the whole decision testable without a Google account.
+   */
+  planInviteMembership(params: {
+    surface: AdminBotInviteSurface;
+    eventId: string;
+    calendarId?: string;
+    attendees: readonly string[];
+    actor: string;
+  }): AdminBotServiceResponse<{
+    surface: AdminBotInviteSurface;
+    remove: AdminBotSurfaceRemoval[];
+    keep: string[];
+    unrecognized: string[];
+    proposal_id?: string;
+  }> {
+    const eventId = params.eventId.trim();
+    if (!eventId) {
+      return serviceError(400, "event_id is required");
+    }
+    // An empty attendee list is what a failed calendar read looks like, and the resulting proposal
+    // would write an empty attendee set over a real meeting. Refuse rather than compute.
+    if (params.attendees.length === 0) {
+      return serviceError(
+        422,
+        "the event has no attendees to reconcile — refusing to plan a write",
+      );
+    }
+
+    const plan = surfaceMembershipPlan({
+      members: this.store.listLabMembers(),
+      attendees: params.attendees,
+      surface: params.surface,
+    });
+
+    if (plan.remove.length === 0) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { surface: params.surface, ...plan },
+      };
+    }
+
+    const label =
+      params.surface === "group_meeting" ? "the Monday group meeting" : "the lab calendar";
+    const proposed = this.createProposal({
+      type: "calendar.remove_attendees",
+      summary: `Remove ${plan.remove.length} ${
+        plan.remove.length === 1 ? "person" : "people"
+      } from ${label}: ${plan.remove.map((entry) => `${entry.member_name} (${entry.reason})`).join(", ")}`,
+      target: { service: "calendar", channel: "calendar", target: eventId },
+      proposed_payload: {
+        ...(params.calendarId ? { calendar_id: params.calendarId } : {}),
+        event_id: eventId,
+        // Both lists travel: the approver reads who is being dropped, and the connector writes the
+        // set that remains, because the underlying update replaces rather than subtracts.
+        removed_attendees: plan.remove.map((entry) => entry.email),
+        remaining_attendees: plan.keep,
+      },
+      undo_plan: "Re-invite the removed attendees with calendar.add_attendees.",
+    });
+    if (!proposed.ok) {
+      return proposed;
+    }
+
+    this.recordAudit({
+      type: "invite_membership.planned",
+      actor: params.actor,
+      details: {
+        surface: params.surface,
+        event_id: eventId,
+        remove: plan.remove.length,
+        keep: plan.keep.length,
+        unrecognized: plan.unrecognized.length,
+      },
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      payload: { surface: params.surface, ...plan, proposal_id: proposed.payload.id },
+    };
+  }
+
   async syncCityChannels(
     actor: string,
     options: { nowIso?: string } = {},
@@ -6430,10 +6536,16 @@ export class AdminBotService {
         },
         undo_plan: "Leave the channel, or have an admin remove the member from it.",
       });
-      // Stamped before the send, and left stamped either way. See the header.
+      // Stamped before the send, and left stamped either way. See the header. The channel is
+      // recorded alongside the time so a later move to another city is still offered its own
+      // channel, while this one is never offered twice.
+      const offered = member.city_channels_invited ?? [];
       this.store.saveLabMember({
         ...member,
         city_channel_invited_at: nowIso,
+        city_channels_invited: offered.includes(invite.channel)
+          ? offered
+          : [...offered, invite.channel],
         updated_at: nowIso,
       });
       if (!proposed.ok) {

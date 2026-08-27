@@ -38,8 +38,17 @@ export type CityChannelMember = {
   current_city?: string;
   location?: string;
   timezone?: string;
-  /** When AdminBot last added them to their city channel. Set means never again -- see below. */
+  /** When AdminBot last added them to a city channel. Kept for the audit trail and the UI. */
   city_channel_invited_at?: string;
+  /**
+   * The city channels this member has already been offered, by channel name.
+   *
+   * Per channel rather than a single flag, because the flag could not tell "already in Toronto's
+   * channel" from "has ever been added to anything". Somebody who moved from Toronto to Zürich was
+   * therefore never offered #group-zurich -- the move that most needs the channel was the one case
+   * that silently did nothing.
+   */
+  city_channels_invited?: string[];
 };
 
 export type CityChannelGroup = {
@@ -88,13 +97,31 @@ function placeOf(member: CityChannelMember): AdminBotMapPlace | undefined {
 }
 
 /**
+ * Whether this member has already been offered this particular channel.
+ *
+ * The list is authoritative once it exists. A member carrying only the legacy timestamp predates
+ * per-channel tracking, and which channel it referred to was never recorded -- so it is read as
+ * covering the channel they are in now. That is the reading that cannot spam: it suppresses the
+ * invite they have most likely already had, while still letting a later move offer a new city.
+ */
+function alreadyOffered(member: CityChannelMember, channel: string): boolean {
+  if (member.city_channels_invited?.length) {
+    return member.city_channels_invited.includes(channel);
+  }
+  return Boolean(member.city_channel_invited_at);
+}
+
+/**
  * What the sweep would do, given the roster.
  *
- * Invited once, and only once. `city_channel_invited_at` is the whole opt-out: a member who is
- * added and leaves must stay left, and without a stamp the next sweep would put them back every
- * few days -- an argument with a person that a cron job always wins. Reading channel membership
- * instead would be the same bug wearing better clothes: "not in the channel" is exactly what
- * leaving looks like.
+ * Offered once per channel, and only once. That stamp is the whole opt-out: a member who is added
+ * and leaves must stay left, and without it the next sweep would put them back every few days --
+ * an argument with a person that a cron job always wins. Reading channel membership instead would
+ * be the same bug wearing better clothes: "not in the channel" is exactly what leaving looks like.
+ *
+ * Additive only. Nobody is ever removed from a city channel here, including somebody the roster
+ * now places elsewhere: leaving is the member's call, and a lab that moves people between cities
+ * has plenty of reasons to keep the old room. Moving *to* a city is what this reacts to.
  */
 export function cityChannelPlan(members: readonly CityChannelMember[]): CityChannelPlan {
   const byPlace = new Map<string, CityChannelGroup>();
@@ -128,7 +155,7 @@ export function cityChannelPlan(members: readonly CityChannelMember[]): CityChan
   const skipped: CityChannelPlan["skipped"] = [];
   for (const group of groups) {
     for (const member of group.members.toSorted((left, right) => left.id.localeCompare(right.id))) {
-      if (member.city_channel_invited_at) {
+      if (alreadyOffered(member, group.channel)) {
         continue;
       }
       if (!member.slack_user_id) {
