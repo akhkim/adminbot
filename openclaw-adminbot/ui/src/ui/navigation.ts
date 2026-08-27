@@ -250,26 +250,26 @@ const TAB_PATHS: Record<Tab, string> = {
   myWork: "/my-work",
   labSharing: "/lab-sharing",
   activity: "/activity",
-  adminbot: "/adminbot",
-  adminbotRegistrations: "/adminbot/registrations",
-  adminbotOnboarding: "/adminbot/onboarding",
-  adminbotReimbursements: "/adminbot/reimbursements",
-  adminbotSettings: "/adminbot/settings",
-  adminbotMembers: "/adminbot/members",
-  adminbotOpportunities: "/adminbot/opportunities",
-  adminbotProfileOverview: "/adminbot/profile-overview",
-  adminbotProfessor: "/adminbot/professor",
-  adminbotTimeAvailability: "/adminbot/time-availability",
-  adminbotMeetings: "/adminbot/meetings",
-  adminbotSignatures: "/adminbot/signatures",
-  adminbotRecLetters: "/adminbot/rec-letters",
-  adminbotMeetingRequests: "/adminbot/meeting-requests",
-  adminbotPapers: "/adminbot/papers",
-  adminbotWorkshopNudges: "/adminbot/workshop-nudges",
-  adminbotAnnouncements: "/adminbot/announcements",
-  adminbotConferencePapers: "/adminbot/conference-papers",
-  adminbotCalendar: "/adminbot/calendar",
-  adminbotDeadlines: "/adminbot/deadlines",
+  adminbot: "/pending-actions",
+  adminbotRegistrations: "/registrations",
+  adminbotOnboarding: "/onboarding",
+  adminbotReimbursements: "/reimbursements",
+  adminbotSettings: "/settings",
+  adminbotMembers: "/members",
+  adminbotOpportunities: "/opportunities",
+  adminbotProfileOverview: "/profile-overview",
+  adminbotProfessor: "/professor",
+  adminbotTimeAvailability: "/time-availability",
+  adminbotMeetings: "/meetings",
+  adminbotSignatures: "/signatures",
+  adminbotRecLetters: "/rec-letters",
+  adminbotMeetingRequests: "/meeting-requests",
+  adminbotPapers: "/papers",
+  adminbotWorkshopNudges: "/workshop-nudges",
+  adminbotAnnouncements: "/announcements",
+  adminbotConferencePapers: "/conference-papers",
+  adminbotCalendar: "/calendar",
+  adminbotDeadlines: "/deadlines",
   overview: "/overview",
   channels: "/channels",
   sessions: "/sessions",
@@ -289,10 +289,35 @@ const TAB_PATHS: Record<Tab, string> = {
   logs: "/logs",
 };
 
-// The one tab that became three. Links to it are in members' bookmarks, in Slack threads and in
-// onboarding mail, and all three still want the same place: the request forms.
+// Old paths that must keep resolving.
+//
+// The first is the one tab that became three. The rest are the `/adminbot/*` prefix these pages
+// used to carry: the segment said nothing a member needed — every page under it was AdminBot —
+// and it cost a word in every link. Dropping it changes URLs that live in members' bookmarks, in
+// Slack threads, in onboarding mail and in already-sent nudges, so every one of them is aliased
+// here rather than left to 404. These are permanent, not a migration window.
 const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/logistics": "adminbotSignatures",
+  "/adminbot": "adminbot",
+  "/adminbot/announcements": "adminbotAnnouncements",
+  "/adminbot/calendar": "adminbotCalendar",
+  "/adminbot/conference-papers": "adminbotConferencePapers",
+  "/adminbot/deadlines": "adminbotDeadlines",
+  "/adminbot/meeting-requests": "adminbotMeetingRequests",
+  "/adminbot/meetings": "adminbotMeetings",
+  "/adminbot/members": "adminbotMembers",
+  "/adminbot/onboarding": "adminbotOnboarding",
+  "/adminbot/opportunities": "adminbotOpportunities",
+  "/adminbot/papers": "adminbotPapers",
+  "/adminbot/professor": "adminbotProfessor",
+  "/adminbot/profile-overview": "adminbotProfileOverview",
+  "/adminbot/rec-letters": "adminbotRecLetters",
+  "/adminbot/registrations": "adminbotRegistrations",
+  "/adminbot/reimbursements": "adminbotReimbursements",
+  "/adminbot/settings": "adminbotSettings",
+  "/adminbot/signatures": "adminbotSignatures",
+  "/adminbot/time-availability": "adminbotTimeAvailability",
+  "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
 };
 
 const PATH_TO_TAB = new Map<string, Tab>([

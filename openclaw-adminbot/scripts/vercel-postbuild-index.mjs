@@ -17,7 +17,7 @@
 //      first visit dialled a dead default, failed, and then demanded a click. As a
 //      declared default it is simply what this deployment connects to. The legacy
 //      hosts are still rewritten out of any param a stale bookmark carries.
-//   3. A route-specific /adminbot/deadlines document. It keeps the same application
+//   3. A route-specific /deadlines document. It keeps the same application
 //      bundle and native Control UI, but its source also carries sanitized deadline
 //      names and dates so crawlers do not receive only an empty custom-element shell.
 //
@@ -48,7 +48,7 @@ const deadlineDataPath = path.join(
 );
 
 const BASE_TAG = '    <base href="/" />';
-const DEADLINES_ROUTE = "/adminbot/deadlines";
+const DEADLINES_ROUTE = "/deadlines";
 export const DEADLINES_PUBLIC_URL = `https://jinesis-admin.vercel.app${DEADLINES_ROUTE}`;
 export const DEADLINES_ROBOTS_TEXT = `User-agent: *
 Disallow: /
@@ -362,7 +362,9 @@ async function main() {
   if (!Array.isArray(deadlineData.items)) {
     throw new Error(`${deadlineDataPath} has no deadline item array`);
   }
-  const deadlinesDir = path.join(outputRoot, "adminbot", "deadlines");
+  // Derived from the route so the written file and the vercel.json rewrite cannot disagree:
+  // a mismatch here serves the SPA shell to crawlers instead of the prerendered board.
+  const deadlinesDir = path.join(outputRoot, ...DEADLINES_ROUTE.split("/").filter(Boolean));
   await mkdir(deadlinesDir, { recursive: true });
   await Promise.all([
     writeFile(
@@ -373,9 +375,7 @@ async function main() {
     writeFile(path.join(outputRoot, "robots.txt"), DEADLINES_ROBOTS_TEXT, "utf8"),
     writeFile(path.join(outputRoot, "sitemap.xml"), DEADLINES_SITEMAP_XML, "utf8"),
   ]);
-  console.log(
-    "[vercel-postbuild] wrote crawlable /adminbot/deadlines, /robots.txt, and /sitemap.xml",
-  );
+  console.log("[vercel-postbuild] wrote crawlable /deadlines, /robots.txt, and /sitemap.xml");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

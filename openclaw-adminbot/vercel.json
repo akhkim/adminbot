@@ -5,8 +5,8 @@
   "outputDirectory": "dist/control-ui",
   "rewrites": [
     {
-      "source": "/adminbot/deadlines",
-      "destination": "/adminbot/deadlines/index.html"
+      "source": "/deadlines",
+      "destination": "/deadlines/index.html"
     },
     {
       "source": "/assets/:path*",

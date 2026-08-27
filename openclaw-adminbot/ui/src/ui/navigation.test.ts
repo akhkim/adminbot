@@ -264,16 +264,56 @@ describe("tabFromPath", () => {
   it("returns tab for valid path", () => {
     expect(tabFromPath("/chat")).toBe("chat");
     expect(tabFromPath("/overview")).toBe("overview");
-    expect(tabFromPath("/adminbot")).toBe("adminbot");
-    expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
-    expect(tabFromPath("/adminbot/settings")).toBe("adminbotSettings");
-    expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
-    expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
-    expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
-    expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
-    expect(tabFromPath("/adminbot/workshop-nudges")).toBe("adminbotWorkshopNudges");
+    expect(tabFromPath("/pending-actions")).toBe("adminbot");
+    expect(tabFromPath("/registrations")).toBe("adminbotRegistrations");
+    expect(tabFromPath("/settings")).toBe("adminbotSettings");
+    expect(tabFromPath("/members")).toBe("adminbotMembers");
+    expect(tabFromPath("/papers")).toBe("adminbotPapers");
+    expect(tabFromPath("/announcements")).toBe("adminbotAnnouncements");
+    expect(tabFromPath("/deadlines")).toBe("adminbotDeadlines");
+    expect(tabFromPath("/workshop-nudges")).toBe("adminbotWorkshopNudges");
     expect(tabFromPath("/activity")).toBe("activity");
     expect(tabFromPath("/sessions")).toBe("sessions");
+  });
+
+  // Every URL these pages used to have is in somebody's bookmarks, in Slack threads and in mail
+  // that has already been sent. Dropping the prefix must not 404 any of them, so the whole set is
+  // asserted rather than a sample: a path added to TAB_PATHS without its alias fails here.
+  it("still resolves every pre-rename /adminbot path", () => {
+    const renamed: Record<string, string> = {
+      "/adminbot": "adminbot",
+      "/adminbot/registrations": "adminbotRegistrations",
+      "/adminbot/onboarding": "adminbotOnboarding",
+      "/adminbot/reimbursements": "adminbotReimbursements",
+      "/adminbot/settings": "adminbotSettings",
+      "/adminbot/members": "adminbotMembers",
+      "/adminbot/opportunities": "adminbotOpportunities",
+      "/adminbot/profile-overview": "adminbotProfileOverview",
+      "/adminbot/professor": "adminbotProfessor",
+      "/adminbot/time-availability": "adminbotTimeAvailability",
+      "/adminbot/meetings": "adminbotMeetings",
+      "/adminbot/signatures": "adminbotSignatures",
+      "/adminbot/rec-letters": "adminbotRecLetters",
+      "/adminbot/meeting-requests": "adminbotMeetingRequests",
+      "/adminbot/papers": "adminbotPapers",
+      "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
+      "/adminbot/announcements": "adminbotAnnouncements",
+      "/adminbot/conference-papers": "adminbotConferencePapers",
+      "/adminbot/calendar": "adminbotCalendar",
+      "/adminbot/deadlines": "adminbotDeadlines",
+      // The tab that became three, aliased long before the prefix was dropped.
+      "/adminbot/logistics": "adminbotSignatures",
+    };
+    for (const [path, tab] of Object.entries(renamed)) {
+      expect(tabFromPath(path), path).toBe(tab);
+    }
+  });
+
+  // The canonical path is the short one: an old link resolves, but nothing generates it.
+  it("generates only unprefixed paths", () => {
+    for (const tab of ALL_TABS) {
+      expect(pathForTab(tab).startsWith("/adminbot"), tab).toBe(false);
+    }
   });
 
   // Root is the dashboard for a signed-in viewer; app-render still coerces a visitor's root to
