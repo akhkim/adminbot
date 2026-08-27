@@ -604,10 +604,12 @@
   display: grid;
   /* The heading is its own separator now that it is sentence case at --control-ui-text-lg, so the
      gap above it only has to keep the previous group's last row from touching it. */
-  gap: 2px;
+  gap: 1px;
   /* The gap between groups stays larger than the gap between rows inside one -- that difference is
-     the only thing that makes them read as groups, so it is the last spacing to give up. */
-  margin-bottom: 8px;
+     the only thing that makes them read as groups, so it is the last spacing to give up. Halved
+     with the rest of the sidebar, and still 4x the in-group gap, which is what keeps the grouping
+     legible at this density. */
+  margin-bottom: 4px;
 }
 
 .nav-section:last-child {
@@ -621,7 +623,9 @@
      the group past the 258px sidebar, and .sidebar-nav's overflow-x: hidden sheared the right
      edge off the active row's highlight. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 1px;
+  /* Rows already carry their own padding, so they do not touch at zero -- and a 1px gap between
+     30px rows was never doing visible work anyway. */
+  gap: 0;
 }
 
 .nav-section--collapsed .nav-section__items {
@@ -861,13 +865,17 @@
   border-radius: 50%;
 }
 
+/* Chat, change password and sign out. These sat at an 8px gap and 42px rows while the nav above
+   them ran at 30px rows and no gap, so the footer read as a different, airier list rather than as
+   the bottom of the same one. Both halved, and the rows brought down to the nav's height: these
+   are the same kind of thing as a tab and should not be 40% taller than one. */
 .sidebar-utility-group {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
 .sidebar-utility-link {
-  min-height: 42px;
+  min-height: 30px;
 }
 
 .sidebar-version {
@@ -880,19 +888,6 @@
   border-radius: var(--radius-lg);
   background: var(--bg-accent);
   border: 1px solid var(--border);
-}
-
-.sidebar-version__label {
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: var(--tracking-tight);
-}
-
-.sidebar-version__text {
-  font-size: var(--control-ui-text-xs);
-  color: var(--text);
-  font-weight: 600;
 }
 
 .sidebar-version__dot {
