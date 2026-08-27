@@ -163,7 +163,6 @@ import {
   resolveAdminBotMode,
   resolveAssistantAttachmentAuthToken,
   resolveDashboardHeaderContext,
-  renderSidebarConnectionStatus,
   renderTopbarThemeModeToggle,
   createChatSession,
   dismissChatError,
@@ -3050,12 +3049,12 @@ export function renderApp(state: AppViewState) {
                     ? html`<span class="nav-item__text">${t("login.member.signOut")}</span>`
                     : nothing}
                 </button>
-                <!-- The build version used to sit here. It is an operator detail on a page whose
-                     readers are lab members, and it took a whole row at the one place in the
-                     sidebar where space is scarcest. The connection status stays -- that one
-                     answers "is this page live", which anybody looking at a stale queue needs --
-                     and no longer hides when the server reports no version. -->
-                <div class="sidebar-version">${renderSidebarConnectionStatus(state)}</div>
+                <!-- Nothing sits below sign out now. The version came out first, and the
+                     connection pill it left behind was a bordered box holding one dot: on a page
+                     where a member's real signal that something is stale is the page itself, it
+                     was a permanent widget answering a question nobody was asking. Gateway
+                     connectivity still surfaces where it matters -- the Overview page and the
+                     chat composer both report it. -->
               </div>
             </div>
           </div>
