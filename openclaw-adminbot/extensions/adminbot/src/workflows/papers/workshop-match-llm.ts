@@ -41,6 +41,27 @@ export const PAPERS_PER_REQUEST = 8;
  */
 export const MAX_CONCURRENT_REQUESTS = 6;
 
+/**
+ * Ceilings, because this runs inside an HTTP request that a browser is waiting on.
+ *
+ * The match is a full cross-product: every upcoming workshop against every paper, in batches. On
+ * the live roster that is 125 workshops and 153 papers -- 2,500 model calls, twenty minutes at
+ * three seconds each and an hour at eight. Nothing holds a request open that long, so the browser
+ * gave up and the page reported the service as unreachable, which is what it looked like from
+ * there.
+ *
+ * A call that hangs is abandoned. If the whole match cannot finish inside the budget it raises,
+ * naming the scale, rather than returning what it happened to get through: at this size a partial
+ * result is a handful of workshops out of a hundred and change, and a list that looks complete and
+ * is not would send an administrator to nudge the wrong people about the wrong papers.
+ *
+ * Neither bound makes the feature fast. They stop it hanging and make it say why. The fix is to
+ * stop computing this per click -- the recommendations want buffering, so a scheduled pass does
+ * the work and the page reads what it produced.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+export const TOTAL_BUDGET_MS = 60_000;
+
 /** How much of a call for papers the model is shown. Scope lives at the top; boilerplate does not. */
 const MAX_CALL_CHARS = 4_000;
 
@@ -52,6 +73,10 @@ export type WorkshopMatcherOptions = {
   env?: NodeJS.ProcessEnv;
   papersPerRequest?: number;
   maxConcurrentRequests?: number;
+  /** How long one model call may take before it is abandoned. */
+  requestTimeoutMs?: number;
+  /** How long the whole match may take before the remaining jobs are skipped. */
+  totalBudgetMs?: number;
 };
 
 const SYSTEM_PROMPT = `You decide which of a research lab's papers belong at a specific workshop.
@@ -181,15 +206,39 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
   const apiKey = options.apiKey ?? env.VLLM_API_KEY?.trim();
   const batchSize = Math.max(1, options.papersPerRequest ?? PAPERS_PER_REQUEST);
   const concurrency = Math.max(1, options.maxConcurrentRequests ?? MAX_CONCURRENT_REQUESTS);
+  const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
+  const totalBudgetMs = Math.max(1, options.totalBudgetMs ?? TOTAL_BUDGET_MS);
 
   return async ({ papers, workshops }) => {
-    const jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
-    for (const workshop of workshops) {
-      for (let start = 0; start < papers.length; start += batchSize) {
-        jobs.push({ workshop, papers: papers.slice(start, start + batchSize) });
+    // One entry per paper, not per author. workshopNudgeInputsFromAdminBot repeats a paper once
+    // for every recipient it resolves, which is right for addressing the nudge and wrong here: the
+    // model scores a paper against a workshop, and asking it the same question seven times for a
+    // seven-author paper is seven times the work for an identical answer. On the live roster this
+    // alone is 276 entries down to 153.
+    const distinct = new Map<string, WorkshopNudgePaper>();
+    for (const paper of papers) {
+      if (!distinct.has(paper.paper_id)) {
+        distinct.set(paper.paper_id, paper);
       }
     }
+    const unique = [...distinct.values()];
+
+    const jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
+    for (const workshop of workshops) {
+      for (let start = 0; start < unique.length; start += batchSize) {
+        jobs.push({ workshop, papers: unique.slice(start, start + batchSize) });
+      }
+    }
+
+    const deadline = Date.now() + totalBudgetMs;
+    let skipped = 0;
     const results = await runWithConcurrency(jobs, concurrency, async (job) => {
+      // Checked per job rather than once: the point is to stop *starting* work, so a run that is
+      // already over budget finishes what is in flight and issues nothing more.
+      if (Date.now() >= deadline) {
+        skipped += 1;
+        return [];
+      }
       const reply = await completeLocally({
         fetchImpl,
         baseUrl,
@@ -198,6 +247,9 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         purposeLabel: PURPOSE,
         // A recommendation an administrator may re-run should not change under them.
         temperature: 0,
+        // Without this one unanswered call holds the whole request open, which is exactly how a
+        // slow model server became "couldn't reach the AdminBot service" on the page.
+        signal: AbortSignal.timeout(requestTimeoutMs),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: buildWorkshopMatchPrompt(job.workshop, job.papers) },
@@ -205,6 +257,16 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
       });
       return parseWorkshopMatchReply(reply, job.workshop.workshop_id, job.papers);
     });
+    if (skipped > 0) {
+      const done = jobs.length - skipped;
+      throw new Error(
+        `${PURPOSE} did not finish in ${Math.round(totalBudgetMs / 1000)}s: ` +
+          `${workshops.length} upcoming workshops against ${unique.length} papers is ` +
+          `${jobs.length} model calls and only ${done} completed. ` +
+          `This pass is too large to run from a button — it needs to run on a schedule and be ` +
+          `read from a buffer.`,
+      );
+    }
     // Jobs finish out of order; the caller's output must not depend on which model call was quick.
     return results
       .flat()

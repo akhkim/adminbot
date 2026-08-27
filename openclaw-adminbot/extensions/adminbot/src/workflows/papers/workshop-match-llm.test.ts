@@ -147,3 +147,94 @@ describe("createLocalWorkshopMatcher", () => {
     );
   });
 });
+
+describe("what the matcher will and will not ask the model to do", () => {
+  // The match is a cross-product, and it runs inside an HTTP request a browser is waiting on. On
+  // the live roster it is 125 upcoming workshops against 153 papers -- thousands of model calls,
+  // tens of minutes. The browser gave up long before the server did, and the page reported the
+  // service as unreachable, which is what it looked like from there.
+
+  it("asks about each paper once, however many authors it has", async () => {
+    // workshopNudgeInputsFromAdminBot repeats a paper once per recipient, which is right for
+    // addressing a nudge and wrong here: the model scores a paper against a workshop, so a
+    // seven-author paper asked seven times is seven times the work for one answer.
+    const seen: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: { body?: string }) => {
+      seen.push(String(init?.body ?? ""));
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({ fetchImpl, papersPerRequest: 50 });
+    await match({
+      workshops: [profile("mint")],
+      papers: [paper("p-1"), paper("p-1"), paper("p-1"), paper("p-2")],
+    });
+
+    expect(seen).toHaveLength(1);
+    const body = seen[0] ?? "";
+    expect(body.split("paper_id: p-1").length - 1).toBe(1);
+    expect(body).toContain("paper_id: p-2");
+  });
+
+  it("abandons a model call that never answers", async () => {
+    // One unanswered call used to hold the whole request open, with no timeout anywhere in the
+    // path -- which is how a slow model server turned into "couldn't reach the AdminBot service".
+    const fetchImpl = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    ) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      requestTimeoutMs: 20,
+      totalBudgetMs: 5_000,
+    });
+
+    await expect(match({ workshops: [profile("mint")], papers: [paper("p-1")] })).rejects.toThrow();
+  });
+
+  it("refuses to pass off a partial match as a whole one", async () => {
+    // Truncating silently is the one outcome worse than failing: a handful of workshops out of a
+    // hundred, rendered as the answer, sends somebody to nudge the wrong people.
+    const fetchImpl = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      totalBudgetMs: 25,
+    });
+
+    const workshops = Array.from({ length: 40 }, (_, index) => profile(`w-${index}`));
+    await expect(match({ workshops, papers: [paper("p-1")] })).rejects.toThrow(
+      /did not finish|model calls/iu,
+    );
+  });
+
+  it("says how big the pass was, so the message is actionable", async () => {
+    const fetchImpl = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      totalBudgetMs: 25,
+    });
+
+    const workshops = Array.from({ length: 30 }, (_, index) => profile(`w-${index}`));
+    await match({ workshops, papers: [paper("p-1"), paper("p-2")] }).catch((error: Error) => {
+      expect(error.message).toContain("30 upcoming workshops");
+      expect(error.message).toContain("2 papers");
+      // And names the actual remedy rather than leaving somebody to guess.
+      expect(error.message).toMatch(/schedule|buffer/iu);
+    });
+  });
+});
