@@ -1360,6 +1360,9 @@ export const en: TranslationMap = {
     stageLabel: "step {index} of {total}",
     personStage: "{stage} — {step}",
     person: {
+      collapseTitle: "Fold this person's papers away",
+      expandTitle: "Show this person's papers again",
+      folded: "{count} paper(s) hidden — show",
       papers: "{count} paper(s)",
       attention: "{count} needing something",
       waiting: "{count} {reason}",

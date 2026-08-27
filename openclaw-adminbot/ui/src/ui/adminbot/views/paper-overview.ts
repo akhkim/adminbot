@@ -36,6 +36,15 @@ export type PaperOverviewFilter = {
   venue: string;
   stage: string;
   state: PaperOverviewState;
+  /**
+   * People whose paper list is folded away, by person key.
+   *
+   * On the filter rather than in storage because it is the same kind of thing as the search box:
+   * how this reader is looking at the list right now. Somebody with eleven papers pushes everyone
+   * below them off the screen, and an administrator scanning for who is stuck should be able to
+   * put that person's stack away without losing the row that says how they are doing.
+   */
+  collapsed: string[];
 };
 
 export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
@@ -43,6 +52,7 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
   venue: "",
   stage: "",
   state: "all",
+  collapsed: [],
 };
 
 /**
@@ -777,6 +787,7 @@ function renderPersonPaper(props: PaperOverviewProps, row: PaperOverviewRow) {
       <button
         class="logistics-requests__open"
         type="button"
+        data-testid=${`paper-overview-open-${row.paper.id}`}
         @click=${() => props.onOpenPaper(row.paper.id)}
       >
         ${row.paper.title}
@@ -856,7 +867,19 @@ function renderPersonOutstandingCell(person: PaperPersonRow) {
   return html`<div class="paper-overview__flags">${flags}</div>`;
 }
 
+/** Fold one person's papers away, or bring them back. */
+function togglePerson(props: PaperOverviewProps, key: string) {
+  const collapsed = new Set(props.filter.collapsed ?? []);
+  if (collapsed.has(key)) {
+    collapsed.delete(key);
+  } else {
+    collapsed.add(key);
+  }
+  props.onFilterChange({ ...props.filter, collapsed: [...collapsed] });
+}
+
 function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
+  const collapsed = (props.filter.collapsed ?? []).includes(person.key);
   return html`
     <tr
       class="profile-overview__row paper-overview__row"
@@ -866,7 +889,24 @@ function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
     >
       <td class="profile-overview__cell">
         <div class="paper-overview__person">
-          <strong>${person.name || t("paperOverview.noAuthors")}</strong>
+          <!-- The name is the control. Nothing else on the row is a plausible target for "show me
+               less of this person", and a separate chevron would be one more thing to aim at on a
+               table somebody is scanning. -->
+          <button
+            type="button"
+            class="paper-overview__person-toggle"
+            aria-expanded=${collapsed ? "false" : "true"}
+            data-testid=${`paper-overview-person-toggle-${person.key}`}
+            title=${collapsed
+              ? t("paperOverview.person.expandTitle")
+              : t("paperOverview.person.collapseTitle")}
+            @click=${() => togglePerson(props, person.key)}
+          >
+            <span class="paper-overview__person-chevron" aria-hidden="true"
+              >${collapsed ? "▸" : "▾"}</span
+            >
+            <strong>${person.name || t("paperOverview.noAuthors")}</strong>
+          </button>
           <span class="profile-overview__status"
             >${t("paperOverview.person.papers", { count: String(person.papers.length) })}</span
           >
@@ -882,9 +922,21 @@ function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
         ${renderPersonEvidenceCell(person)}
       </td>
       <td class="profile-overview__cell">
-        <ul class="paper-overview__papers">
-          ${person.papers.map((row) => renderPersonPaper(props, row))}
-        </ul>
+        <!-- Folded away, not filtered out. The person's row keeps its progress, evidence and
+             outstanding counts, because those are what an administrator is scanning for; it is
+             the stack of titles underneath that costs the screen. -->
+        ${collapsed
+          ? html`<button
+              type="button"
+              class="paper-overview__papers-folded"
+              data-testid=${`paper-overview-person-folded-${person.key}`}
+              @click=${() => togglePerson(props, person.key)}
+            >
+              ${t("paperOverview.person.folded", { count: String(person.papers.length) })}
+            </button>`
+          : html`<ul class="paper-overview__papers">
+              ${person.papers.map((row) => renderPersonPaper(props, row))}
+            </ul>`}
       </td>
       <td class="profile-overview__cell">${renderPersonOutstandingCell(person)}</td>
     </tr>
