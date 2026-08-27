@@ -38,7 +38,30 @@ export function stampFieldProvenance(params: {
   actor?: string;
 }): Record<string, AdminBotFieldProvenance> {
   const provenance = { ...params.existing?.field_provenance };
-  for (const [field, value] of Object.entries(params.next)) {
+  for (const field of changedProfileFields(params.existing, params.next)) {
+    provenance[field] = {
+      source: params.source,
+      at: params.at,
+      ...(params.actor ? { actor: params.actor } : {}),
+    };
+  }
+  return provenance;
+}
+
+/**
+ * The fields this patch actually changes, by the same rules the provenance stamp uses.
+ *
+ * Shared rather than duplicated because the field-update log and the provenance map have to agree
+ * exactly: a field the log calls an edit but provenance does not stamp (or the reverse) is a row
+ * that makes the adoption rate and the audit trail contradict each other, and there would be no
+ * way to tell which one was lying.
+ */
+export function changedProfileFields(
+  existing: AdminBotLabMember | undefined,
+  next: Record<string, unknown>,
+): string[] {
+  const changed: string[] = [];
+  for (const [field, value] of Object.entries(next)) {
     if (SKIP_FIELDS.has(field)) {
       continue;
     }
@@ -49,16 +72,12 @@ export function stampFieldProvenance(params: {
     if (value === undefined) {
       continue;
     }
-    if (sameValue((params.existing as Record<string, unknown> | undefined)?.[field], value)) {
+    if (sameValue((existing as Record<string, unknown> | undefined)?.[field], value)) {
       continue;
     }
-    provenance[field] = {
-      source: params.source,
-      at: params.at,
-      ...(params.actor ? { actor: params.actor } : {}),
-    };
+    changed.push(field);
   }
-  return provenance;
+  return changed;
 }
 
 // Fields the service stamps on every write regardless of who asked, so they say nothing about who

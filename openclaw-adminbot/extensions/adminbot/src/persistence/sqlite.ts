@@ -26,6 +26,7 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
@@ -491,6 +492,44 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_paper_weekly_updates_week_idx
         ON adminbot_paper_weekly_updates(week_start);
+
+      -- Every sign-in, not just the most recent one. Real columns rather than a payload blob:
+      -- these two logs exist to be counted and grouped, and a JSON parse per row is the wrong
+      -- shape for "how many distinct members signed in last month".
+      CREATE TABLE IF NOT EXISTS adminbot_login_events (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        at TEXT NOT NULL
+      );
+
+      -- Both reads are recent-first: one member's own history, and the lab-wide sweep behind the
+      -- adoption line.
+      CREATE INDEX IF NOT EXISTS adminbot_login_events_member_idx
+        ON adminbot_login_events(member_id, at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_login_events_at_idx
+        ON adminbot_login_events(at DESC);
+
+      -- Who changed which field of what, when. slot_id is namespaced by subject (see
+      -- contracts/activity-log.ts) so profile fields and paper slots share one table without
+      -- colliding.
+      CREATE TABLE IF NOT EXISTS adminbot_update_events (
+        id TEXT PRIMARY KEY,
+        subject TEXT NOT NULL,
+        slot_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        subject_member_id TEXT
+      );
+
+      -- "What has this person touched" and "who has touched this slot" are the two questions asked
+      -- of this table; the third index serves the adoption sweep, which filters on source first.
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_member_idx
+        ON adminbot_update_events(member_id, at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_slot_idx
+        ON adminbot_update_events(slot_id, at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_source_idx
+        ON adminbot_update_events(source, at DESC);
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -846,6 +885,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ["adminbot_account_registrations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
     ["adminbot_logistics_requests", "member_id"],
+    ["adminbot_login_events", "member_id"],
     ["adminbot_member_locations", "member_id"],
     ["adminbot_nudge_ledger", "member_id"],
     ["adminbot_paper_conference_attendees", "member_id"],
@@ -855,6 +895,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ["adminbot_paper_slots", "provided_by_member_id"],
     ["adminbot_paper_slots", "waived_by_member_id"],
     ["adminbot_password_resets", "member_id"],
+    // Both member columns on an update event move. `member_id` is who typed, and repointing it is
+    // what keeps the merged member's authorship -- and so their adoption rate -- intact.
+    // `subject_member_id` is whose record was touched, and a merge that moved one without the
+    // other would turn a self-edit into an admin edit, or the reverse.
+    ["adminbot_update_events", "member_id"],
+    ["adminbot_update_events", "subject_member_id"],
     // The login itself. Moving it is the point of a merge -- one person with two accounts ends up
     // with one account they can still sign in to -- and the collision rule decides which address
     // that is: if the survivor already has a credential, theirs stands and the duplicate's row is
@@ -1466,6 +1512,88 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(since) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
+  }
+
+  appendLoginEvent(event: AdminBotLoginEvent): void {
+    this.db
+      .prepare("INSERT INTO adminbot_login_events (id, member_id, at) VALUES (?, ?, ?)")
+      .run(event.id, event.member_id, event.at);
+  }
+
+  listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, member_id, at FROM adminbot_login_events
+         WHERE member_id = ? ORDER BY at DESC, rowid DESC LIMIT ?`,
+        )
+        // -1 is SQLite's "no limit", which keeps this one statement rather than two.
+        .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[]
+    );
+  }
+
+  listLoginEventsSince(since: string): AdminBotLoginEvent[] {
+    return this.db
+      .prepare(
+        "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
+      )
+      .all(since) as AdminBotLoginEvent[];
+  }
+
+  appendUpdateEvent(event: AdminBotUpdateEvent): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_update_events
+           (id, subject, slot_id, member_id, at, source, subject_member_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.subject,
+        event.slot_id,
+        event.member_id,
+        event.at,
+        event.source,
+        event.subject_member_id ?? null,
+      );
+  }
+
+  listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents(
+      "WHERE member_id = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+      memberId,
+      typeof limit === "number" ? limit : -1,
+    );
+  }
+
+  listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents(
+      "WHERE slot_id = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+      slotId,
+      typeof limit === "number" ? limit : -1,
+    );
+  }
+
+  listUpdateEventsSince(since: string): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents("WHERE at >= ? ORDER BY at DESC, rowid DESC", since);
+  }
+
+  // SQLite gives back `null` for an absent TEXT column, but the contract says the field is absent.
+  // Normalizing here keeps every reader's "did somebody else edit this" check a null check.
+  private readUpdateEvents(
+    clause: string,
+    ...params: Array<string | number>
+  ): AdminBotUpdateEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, subject, slot_id, member_id, at, source, subject_member_id
+         FROM adminbot_update_events ${clause}`,
+      )
+      .all(...params) as Array<AdminBotUpdateEvent & { subject_member_id: string | null }>;
+    return rows.map(({ subject_member_id, ...rest }) => ({
+      ...rest,
+      ...(subject_member_id ? { subject_member_id } : {}),
+    }));
   }
 
   saveMeeting(meeting: AdminBotMeetingRecord): void {

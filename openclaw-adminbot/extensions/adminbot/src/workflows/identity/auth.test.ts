@@ -405,6 +405,28 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
   });
 
+  it("appends a row per sign-in, where last_login_at only remembers the most recent one", () => {
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(true);
+    expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(true);
+
+    // Two sign-ins, two rows -- against one `last_login_at`. This is the whole point of the log:
+    // the field cannot say whether somebody came back, and it is erased by the next bulk write.
+    expect(store.listLoginEvents("ada")).toHaveLength(2);
+    expect(store.listLoginEvents("ada").every((event) => event.member_id === "ada")).toBe(true);
+    expect(store.getLabMember("ada")?.last_login_at).toBeTruthy();
+  });
+
+  it("does not record a sign-in that failed", () => {
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    expect(auth.login({ email: "ada@example.com", password: "nope-nope-nope" }).ok).toBe(false);
+    expect(store.listLoginEvents("ada")).toEqual([]);
+  });
+
   it("stamps a last-login location from a configured geolocator, without blocking login itself", async () => {
     const geolocateIp = vi.fn(async () => ({ country: "Switzerland", continent: "Europe" }));
     const { store, auth } = setup({ geolocateIp });

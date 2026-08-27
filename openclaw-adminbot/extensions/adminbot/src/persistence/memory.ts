@@ -28,6 +28,7 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
@@ -70,6 +71,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
+  // Append-only, like their SQLite tables: nothing in normal operation updates or removes an
+  // event, so a plain array is the whole implementation.
+  private readonly loginEvents: AdminBotLoginEvent[] = [];
+  private readonly updateEvents: AdminBotUpdateEvent[] = [];
   private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
   private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
   private settings: AdminBotSettings | undefined;
@@ -241,6 +246,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         bump("member_locations");
       }
     }
+    for (const [index, entry] of this.loginEvents.entries()) {
+      if (entry.member_id === fromMemberId) {
+        this.loginEvents[index] = { ...entry, member_id: toMemberId };
+        bump("login_events");
+      }
+    }
+    // Both columns, for the reason the SQLite sweep spells out: moving who typed without moving
+    // whose record was touched would flip a self-edit into an admin edit.
+    for (const [index, entry] of this.updateEvents.entries()) {
+      const moved = {
+        ...entry,
+        ...(entry.member_id === fromMemberId ? { member_id: toMemberId } : {}),
+        ...(entry.subject_member_id === fromMemberId ? { subject_member_id: toMemberId } : {}),
+      };
+      if (
+        moved.member_id !== entry.member_id ||
+        moved.subject_member_id !== entry.subject_member_id
+      ) {
+        this.updateEvents[index] = moved;
+        bump("update_events");
+      }
+    }
     for (const [key, draft] of [...this.socialDrafts]) {
       if (draft.generated_by_member_id === fromMemberId) {
         this.socialDrafts.set(key, { ...draft, generated_by_member_id: toMemberId });
@@ -405,6 +432,43 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[] {
     return this.memberLocations.filter((entry) => entry.observed_at >= since);
+  }
+
+  appendLoginEvent(event: AdminBotLoginEvent): void {
+    this.loginEvents.push(event);
+  }
+
+  listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
+    return recentFirst(
+      this.loginEvents.filter((event) => event.member_id === memberId),
+      limit,
+    );
+  }
+
+  listLoginEventsSince(since: string): AdminBotLoginEvent[] {
+    return recentFirst(this.loginEvents.filter((event) => event.at >= since));
+  }
+
+  appendUpdateEvent(event: AdminBotUpdateEvent): void {
+    this.updateEvents.push(event);
+  }
+
+  listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter((event) => event.member_id === memberId),
+      limit,
+    );
+  }
+
+  listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter((event) => event.slot_id === slotId),
+      limit,
+    );
+  }
+
+  listUpdateEventsSince(since: string): AdminBotUpdateEvent[] {
+    return recentFirst(this.updateEvents.filter((event) => event.at >= since));
   }
 
   saveMeeting(meeting: AdminBotMeetingRecord): void {
@@ -730,4 +794,22 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   deleteSlackChannelNamingRecord(channelId: string): boolean {
     return this.slackChannelNaming.delete(channelId);
   }
+}
+
+// Both logs read newest-first everywhere, matching the `ORDER BY at DESC, rowid DESC` their SQLite
+// tables are indexed for -- the two stores are meant to be indistinguishable to the service.
+//
+// The tie-break is not decoration. Two writes inside the same millisecond are ordinary here: one
+// profile save stamps every changed field with a single `now`, so a member editing three fields
+// produces three rows that compare equal. Ordering those by timestamp alone leaves the newest row
+// undefined, and "who touched this last" is exactly the question this table exists to answer. The
+// caller's insertion order is the real sequence, so equal timestamps fall back to it, reversed.
+function recentFirst<T extends { at: string }>(events: T[], limit?: number): T[] {
+  const sorted = events
+    .map((event, index) => ({ event, index }))
+    .toSorted(
+      (left, right) => right.event.at.localeCompare(left.event.at) || right.index - left.index,
+    )
+    .map((entry) => entry.event);
+  return typeof limit === "number" ? sorted.slice(0, limit) : sorted;
 }

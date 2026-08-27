@@ -335,6 +335,13 @@ export class AdminBotAuthService {
     }
     const now = this.now().toISOString();
     this.store.saveLabMember({ ...current, last_login_at: now, updated_at: now });
+    // The field above is overwritten by the next sign-in and by any bulk write that touches the
+    // member; this row is not. It is the difference between "is this person alive" and "how often
+    // do they actually come back", and only the second one can be read after an importer has run.
+    //
+    // Same choke point on purpose: a login that stamps the field but not the log, or the reverse,
+    // is two sources of truth that disagree with nobody able to say which drifted.
+    this.store.appendLoginEvent({ id: randomUUID(), member_id: memberId, at: now });
   }
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has

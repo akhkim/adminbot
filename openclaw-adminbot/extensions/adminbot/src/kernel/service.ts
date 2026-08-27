@@ -77,6 +77,14 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  paperSlotId,
+  profileSlotId,
+  type AdminBotLoginEvent,
+  type AdminBotUpdateEvent,
+  type AdminBotUpdateSource,
+  type AdminBotUpdateSubject,
+} from "../contracts/activity-log.js";
+import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
   validateDeadlineProposalInput,
@@ -181,6 +189,7 @@ import {
   lastSelfEditAt,
   projectAdoption,
   selfFilledFieldCount,
+  changedProfileFields,
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
@@ -332,6 +341,13 @@ export type AdminBotServiceStore = {
   listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
   /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
   listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+  appendLoginEvent(event: AdminBotLoginEvent): void;
+  listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
+  listLoginEventsSince(since: string): AdminBotLoginEvent[];
+  appendUpdateEvent(event: AdminBotUpdateEvent): void;
+  listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[];
+  listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[];
+  listUpdateEventsSince(since: string): AdminBotUpdateEvent[];
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
@@ -1617,6 +1633,17 @@ export class AdminBotService {
       delete stored.availability_notes;
     }
     this.store.saveLabMember(stored);
+    // Same patch, same rules, same instant as the provenance stamp above -- see
+    // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
+    // per field; this keeps every writer, which is the half that survives a bulk re-import.
+    this.recordUpdateEvents({
+      subject: "profile",
+      slotIds: changedProfileFields(existing, member as Record<string, unknown>).map(profileSlotId),
+      memberId: origin.actor ?? stored.id,
+      subjectMemberId: stored.id,
+      source: origin.source ?? "import",
+      at: now,
+    });
     // One hook covers every path that edits a profile — the member's own form, an admin, the
     // roster importer — because they all land here. Recording it at the three call sites instead
     // is how one of them ends up forgotten.
@@ -2611,6 +2638,16 @@ export class AdminBotService {
       return serviceError(400, result.error);
     }
     this.store.savePaperSlot(result.record);
+    // The slot row keeps only the latest writer; this keeps all of them. `privileged` is the same
+    // flag the ownership check above ran on, so an admin filling in somebody else's slot is
+    // recorded as an admin edit and never counts as that author adopting the checklist.
+    this.recordUpdateEvents({
+      subject: "paper_slot",
+      slotIds: [paperSlotId(params.paperId, result.record.slot)],
+      memberId: params.memberId,
+      source: params.privileged ? "admin" : "member",
+      at: result.record.provided_at ?? new Date().toISOString(),
+    });
     // Deliberately no value in the audit details: one of these slots holds a credential, and an
     // audit trail is read by more people than the paper is.
     this.recordAudit({
@@ -3720,6 +3757,77 @@ export class AdminBotService {
    * "only record a change" rule is enforced in one place rather than at three call sites that
    * would drift apart.
    */
+  /**
+   * Append one row per changed field. No-ops on an empty list, which is the common case: most
+   * saves are a form being re-submitted unchanged, and a log that recorded those would say a
+   * member had been active on a day they only looked.
+   */
+  private recordUpdateEvents(params: {
+    subject: AdminBotUpdateSubject;
+    slotIds: readonly string[];
+    memberId: string;
+    source: AdminBotUpdateSource;
+    at: string;
+    subjectMemberId?: string;
+  }): void {
+    for (const slotId of params.slotIds) {
+      this.store.appendUpdateEvent({
+        id: randomUUID(),
+        subject: params.subject,
+        slot_id: slotId,
+        member_id: params.memberId,
+        at: params.at,
+        source: params.source,
+        // Absent on a self-edit, so "did they do it themselves" stays a null check.
+        ...(params.subjectMemberId && params.subjectMemberId !== params.memberId
+          ? { subject_member_id: params.subjectMemberId }
+          : {}),
+      });
+    }
+  }
+
+  /** Every sign-in this member has made, newest first. */
+  listLoginEvents(
+    memberId: string,
+    limit?: number,
+  ): AdminBotServiceResponse<{ logins: AdminBotLoginEvent[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, "member not found");
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { logins: this.store.listLoginEvents(memberId, limit) },
+    };
+  }
+
+  /** Everything this member has changed, newest first. */
+  listUpdateEventsByMember(
+    memberId: string,
+    limit?: number,
+  ): AdminBotServiceResponse<{ updates: AdminBotUpdateEvent[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, "member not found");
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { updates: this.store.listUpdateEventsByMember(memberId, limit) },
+    };
+  }
+
+  /** Everyone who has ever changed this one slot, newest first. */
+  listUpdateEventsBySlot(
+    slotId: string,
+    limit?: number,
+  ): AdminBotServiceResponse<{ updates: AdminBotUpdateEvent[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { updates: this.store.listUpdateEventsBySlot(slotId, limit) },
+    };
+  }
+
   recordMemberLocation(params: {
     memberId: string;
     source: AdminBotLocationSource;
