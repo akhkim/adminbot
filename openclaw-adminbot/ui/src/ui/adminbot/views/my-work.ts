@@ -149,6 +149,14 @@ export type MyWorkProps = {
   onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
   /** Writes the signed-in member's own line for this week. Absent leaves the log read-only. */
   onSaveWeeklyUpdate?: (paperId: string, body: string) => void;
+  /**
+   * Removes the paper outright. Absent hides the control entirely.
+   *
+   * Optional rather than always-on because the affordance should only appear where the viewer can
+   * actually use it -- the service allows an admin any paper and a member only one they authored,
+   * and a button that always 403s teaches people to distrust the page.
+   */
+  onDeletePaper?: (paper: AdminBotPaperRecord) => void;
 };
 
 export type BlockerDraft = {
@@ -965,11 +973,44 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
               })}
               ${renderWeeklyUpdates(paper, props)} ${renderCycle(state, paper, props)}
-              ${renderStepControls(state, paper, props)}
+              ${renderStepControls(state, paper, props)} ${renderDeletePaper(paper, props)}
             `
           : nothing}
       </div>
     </article>
+  `;
+}
+
+/**
+ * Removing a paper filed by mistake.
+ *
+ * Last thing in the card, behind a confirm naming the title. Deleting takes the evidence slots,
+ * the social drafts, the weekly updates and the conference rows with it, and none of that comes
+ * back -- so the one thing this control must not be is easy to hit while scrolling.
+ *
+ * A plain confirm() rather than a bespoke dialog: it is the one prompt a browser will not let a
+ * page style into looking harmless, which is the right property here.
+ */
+function renderDeletePaper(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  if (!props.onDeletePaper) {
+    return nothing;
+  }
+  return html`
+    <p class="my-work-item__danger">
+      <button
+        class="btn btn--sm danger"
+        type="button"
+        data-testid=${`delete-paper-${paper.id}`}
+        @click=${() => {
+          if (globalThis.confirm?.(t("myWork.delete.confirm", { title: paper.title }))) {
+            props.onDeletePaper?.(paper);
+          }
+        }}
+      >
+        ${t("myWork.delete.action")}
+      </button>
+      <span class="muted">${t("myWork.delete.hint")}</span>
+    </p>
   `;
 }
 

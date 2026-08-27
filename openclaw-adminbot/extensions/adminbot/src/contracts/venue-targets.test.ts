@@ -64,3 +64,66 @@ describe("paperTargetsVenue", () => {
     expect(paperTargetsVenue(paper, "CLR")).toBe(false);
   });
 });
+
+describe("a designated conference pre-registers the paper", () => {
+  // Every string below is a real `artifacts.conference` value off the production roster. 127
+  // papers carry one and only 12 also carry a venue target, so before this these were all
+  // invisible to the pre-registration sweep.
+  const conference = (value: string) => ({ artifacts: { conference: value } });
+
+  it("matches a bare conference name", () => {
+    expect(paperTargetsVenue(conference("NeurIPS"), "NeurIPS")).toBe(true);
+    expect(paperTargetsVenue(conference("ICLR"), "ICLR")).toBe(true);
+  });
+
+  it("ignores the year somebody typed alongside it", () => {
+    expect(paperTargetsVenue(conference("ICLR 2027"), "ICLR")).toBe(true);
+    expect(paperTargetsVenue(conference("AAAI 2027"), "AAAI")).toBe(true);
+  });
+
+  it("sees through a track in parentheses", () => {
+    expect(paperTargetsVenue(conference("EMNLP 2026 (main)"), "EMNLP")).toBe(true);
+    expect(paperTargetsVenue(conference("EMNLP 2026 (demo)"), "EMNLP")).toBe(true);
+  });
+
+  it("reads Findings as the conference it is findings of", () => {
+    expect(paperTargetsVenue(conference("Findings of ACL"), "ACL")).toBe(true);
+    expect(paperTargetsVenue(conference("Findings of EMNLP"), "EMNLP")).toBe(true);
+  });
+
+  it("finds the venue inside an ARR commitment sentence", () => {
+    const value = "ARR Acceptance, Committed to EMNLP Findings";
+    expect(paperTargetsVenue(conference(value), "EMNLP")).toBe(true);
+    // The ARR half is a real target too -- that is where the paper actually went in.
+    expect(paperTargetsVenue(conference(value), "ARR")).toBe(true);
+  });
+
+  it("does not invent a venue the string never names", () => {
+    expect(paperTargetsVenue(conference("NeurIPS"), "ICLR")).toBe(false);
+    expect(paperTargetsVenue(conference("Findings of ACL"), "EMNLP")).toBe(false);
+    expect(paperTargetsVenue(conference("Preprint"), "ICLR")).toBe(false);
+    expect(paperTargetsVenue(conference(""), "ICLR")).toBe(false);
+  });
+
+  it("lets a bare family match a track, but not one track another", () => {
+    // "Who is aiming at ICLR" includes an ICLR workshop paper.
+    expect(paperTargetsVenue({ artifacts: { conference: "ICLR-workshop" } }, "ICLR")).toBe(true);
+    // Asking about one track must not be answered by a different one: they are different
+    // deadlines and different decisions.
+    expect(paperTargetsVenue({ artifacts: { conference: "EMNLP-demo" } }, "EMNLP-main")).toBe(
+      false,
+    );
+    expect(paperTargetsVenue({ artifacts: { conference: "EMNLP-main" } }, "EMNLP-main")).toBe(true);
+  });
+
+  it("still honours an explicit venue target, and the two coexist", () => {
+    const paper = {
+      artifacts: {
+        conference: "NeurIPS",
+        venue_targets: JSON.stringify([{ venue_id: "ICLR", label: "ICLR", confidence: 60 }]),
+      },
+    };
+    expect(paperTargetsVenue(paper, "ICLR")).toBe(true);
+    expect(paperTargetsVenue(paper, "NeurIPS")).toBe(true);
+  });
+});

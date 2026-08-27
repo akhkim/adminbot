@@ -375,7 +375,7 @@ async function postJson(
 async function authedJson(
   baseUrl: string,
   path: string,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   token: string,
   payload?: unknown,
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
@@ -389,8 +389,9 @@ async function authedJson(
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
       },
-      // GET carries no body; every other member-session call sends JSON.
-      ...(method === "GET" ? {} : { body: JSON.stringify(payload) }),
+      // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
+      // a JSON body is legal but pointless here, and some proxies drop it.
+      ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
     return { unreachable: true };
@@ -1478,6 +1479,32 @@ export async function saveOwnPaper(
     "PUT",
     sessionToken,
     body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+// Removes a paper over the member's own session (DELETE /papers/:id). Same reasoning as
+// saveOwnPaper: the service decides there what this member may remove -- any paper for an admin,
+// one they authored for a plain member -- so the affordance never has to guess.
+export async function deleteOwnPaper(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}`,
+    "DELETE",
+    sessionToken,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

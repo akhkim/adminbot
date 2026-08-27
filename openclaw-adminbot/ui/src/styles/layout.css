@@ -7081,6 +7081,18 @@ adminbot-deadlines-view {
 
 /* Target venue and confidence, editable where they are displayed. Styled down to read as text
    until you touch them -- the card is for scanning, not a form. */
+/* Fenced off rather than sitting flush with the controls above it: everything else on this card
+   is reversible and this is not, so it should not read as the next button in a row. */
+.my-work-item__danger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
 .my-work-item__target {
   display: flex;
   gap: var(--space-2);
