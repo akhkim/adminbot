@@ -100,7 +100,11 @@ import {
   sendServiceResult,
 } from "./server.http.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
-import { previewWorkshopNudges, sendWorkshopNudges } from "./server.workshop-nudges.js";
+import {
+  readWorkshopNudgeRun,
+  sendWorkshopNudges,
+  startWorkshopNudgeRun,
+} from "./server.workshop-nudges.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -1165,14 +1169,27 @@ async function handleAuthenticatedRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
+    // Reading is free and starts nothing. This used to run the whole match -- thousands of model
+    // calls, tens of minutes -- inside the request, so opening the page began a pass nobody could
+    // wait for. The answer of the last pass is what the page wants; producing a new one is a
+    // separate, deliberate act below.
+    sendJson(res, 200, readWorkshopNudgeRun(service));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/workshop-nudges/refresh") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
     try {
       sendJson(
         res,
-        200,
-        await previewWorkshopNudges({
+        202,
+        startWorkshopNudgeRun({
           service,
           match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
+          ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
         }),
       );
     } catch (error) {

@@ -35,6 +35,7 @@ import type {
   AdminBotPaperReimbursementRecord,
   AdminBotSocialConsentRecord,
   AdminBotSocialDraftRecord,
+  AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
 import type {
   AdminBotPaperSlot,
@@ -530,6 +531,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_update_events(slot_id, at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_update_events_source_idx
         ON adminbot_update_events(source, at DESC);
+
+      -- One row per workshop-matching pass. The pass is thousands of model calls and does not fit
+      -- in the request that starts it, so the answer is kept here and the page reads it.
+      CREATE TABLE IF NOT EXISTS adminbot_workshop_match_runs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        started_by TEXT,
+        calls_done INTEGER NOT NULL DEFAULT 0,
+        calls_total INTEGER NOT NULL DEFAULT 0,
+        payload_json TEXT,
+        error TEXT
+      );
+
+      -- Every read is "the newest pass", whether to show its answer or its progress.
+      CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
+        ON adminbot_workshop_match_runs(started_at DESC);
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -1516,6 +1535,51 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(since) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
+  }
+
+  saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_workshop_match_runs
+           (id, status, started_at, finished_at, started_by, calls_done, calls_total, payload_json, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           status = excluded.status,
+           finished_at = excluded.finished_at,
+           started_by = excluded.started_by,
+           calls_done = excluded.calls_done,
+           calls_total = excluded.calls_total,
+           payload_json = excluded.payload_json,
+           error = excluded.error`,
+      )
+      .run(
+        run.id,
+        run.status,
+        run.started_at,
+        run.finished_at ?? null,
+        run.started_by ?? null,
+        run.calls_done,
+        run.calls_total,
+        run.payload_json ?? null,
+        run.error ?? null,
+      );
+  }
+
+  latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, status, started_at, finished_at, started_by, calls_done, calls_total,
+                payload_json, error
+         FROM adminbot_workshop_match_runs ORDER BY started_at DESC LIMIT 1`,
+      )
+      .get() as (AdminBotWorkshopMatchRun & Record<string, unknown>) | undefined;
+    if (!row) {
+      return undefined;
+    }
+    // SQL NULL comes back as null; the contract says these fields are absent.
+    return Object.fromEntries(
+      Object.entries(row).filter(([, value]) => value !== null),
+    ) as unknown as AdminBotWorkshopMatchRun;
   }
 
   appendLoginEvent(event: AdminBotLoginEvent): void {

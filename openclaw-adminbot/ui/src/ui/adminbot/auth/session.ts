@@ -1387,6 +1387,30 @@ export async function previewWorkshopNudges(
   return { ok: true, value: result.body };
 }
 
+/**
+ * Ask for a fresh match (POST /workshop-nudges/refresh).
+ *
+ * Returns as soon as the pass has started, not when it finishes: the pass is thousands of model
+ * calls and no browser holds a connection that long. Poll previewWorkshopNudges for the answer.
+ */
+export async function refreshWorkshopNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 /** Recomputes selected recipients and sends one server-generated Slack nudge to each. */
 export async function sendWorkshopNudges(
   recipientMemberIds: string[],

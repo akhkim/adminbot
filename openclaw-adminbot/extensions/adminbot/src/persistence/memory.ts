@@ -37,6 +37,7 @@ import type {
   AdminBotPaperReimbursementRecord,
   AdminBotSocialConsentRecord,
   AdminBotSocialDraftRecord,
+  AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
@@ -73,6 +74,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
   // Append-only, like their SQLite tables: nothing in normal operation updates or removes an
   // event, so a plain array is the whole implementation.
+  private readonly workshopMatchRuns = new Map<string, AdminBotWorkshopMatchRun>();
   private readonly loginEvents: AdminBotLoginEvent[] = [];
   private readonly updateEvents: AdminBotUpdateEvent[] = [];
   private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
@@ -433,6 +435,16 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[] {
     return this.memberLocations.filter((entry) => entry.observed_at >= since);
+  }
+
+  saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
+    this.workshopMatchRuns.set(run.id, run);
+  }
+
+  latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
+    return [...this.workshopMatchRuns.values()].toSorted((left, right) =>
+      right.started_at.localeCompare(left.started_at),
+    )[0];
   }
 
   appendLoginEvent(event: AdminBotLoginEvent): void {

@@ -195,46 +195,85 @@ describe("what the matcher will and will not ask the model to do", () => {
     await expect(match({ workshops: [profile("mint")], papers: [paper("p-1")] })).rejects.toThrow();
   });
 
-  it("refuses to pass off a partial match as a whole one", async () => {
-    // Truncating silently is the one outcome worse than failing: a handful of workshops out of a
-    // hundred, rendered as the answer, sends somebody to nudge the wrong people.
+  it("runs every job, however many there are", async () => {
+    // No ceiling on the pass as a whole any more. It no longer happens inside the request that
+    // asks for it, so the only thing that matters is that it finishes -- a truncated match is a
+    // handful of workshops out of a hundred, and rendering that as the answer would send somebody
+    // to nudge the wrong people.
+    const calls: number[] = [];
     const fetchImpl = vi.fn(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 15));
+      calls.push(1);
+      await new Promise((resolve) => setTimeout(resolve, 1));
       return reply({ matches: [] });
     }) as unknown as GuidebookFetch;
 
     const match = createLocalWorkshopMatcher({
       fetchImpl,
       papersPerRequest: 1,
-      maxConcurrentRequests: 1,
-      totalBudgetMs: 25,
+      maxConcurrentRequests: 4,
     });
+    const workshops = Array.from({ length: 12 }, (_, index) => profile(`w-${index}`));
+    await match({ workshops, papers: [paper("p-1"), paper("p-2")] });
 
-    const workshops = Array.from({ length: 40 }, (_, index) => profile(`w-${index}`));
-    await expect(match({ workshops, papers: [paper("p-1")] })).rejects.toThrow(
-      /did not finish|model calls/iu,
-    );
+    expect(calls).toHaveLength(24);
   });
 
-  it("says how big the pass was, so the message is actionable", async () => {
+  it("reports progress as it goes, so a caller can persist it", async () => {
+    // A pass is thousands of calls; without this a page opened mid-pass can only say "running".
+    const seen: Array<[number, number]> = [];
+    const fetchImpl = vi.fn(async () => reply({ matches: [] })) as unknown as GuidebookFetch;
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+    });
+
+    await match({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (done, total) => seen.push([done, total]),
+    });
+
+    expect(seen).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it("keeps going when one batch fails, and says nothing about it in the results", async () => {
+    let call = 0;
     const fetchImpl = vi.fn(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 15));
-      return reply({ matches: [] });
+      call += 1;
+      if (call === 1) {
+        throw new Error("one bad batch");
+      }
+      return reply({ matches: [{ paper_id: "p-1", relevance: 90, reason: "On scope." }] });
     }) as unknown as GuidebookFetch;
 
     const match = createLocalWorkshopMatcher({
       fetchImpl,
       papersPerRequest: 1,
       maxConcurrentRequests: 1,
-      totalBudgetMs: 25,
+    });
+    const matches = await match({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
     });
 
-    const workshops = Array.from({ length: 30 }, (_, index) => profile(`w-${index}`));
-    await match({ workshops, papers: [paper("p-1"), paper("p-2")] }).catch((error: Error) => {
-      expect(error.message).toContain("30 upcoming workshops");
-      expect(error.message).toContain("2 papers");
-      // And names the actual remedy rather than leaving somebody to guess.
-      expect(error.message).toMatch(/schedule|buffer/iu);
-    });
+    // The surviving workshop still produced its recommendation.
+    expect(matches.map((entry) => entry.workshop_id)).toEqual(["b"]);
+  });
+
+  it("raises the real cause when every call fails", async () => {
+    // Not a bad batch -- the endpoint. The original error carries the reason, which for the
+    // non-loopback refusal is a rule about where paper titles may go, not an outage.
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED");
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({ fetchImpl });
+    await expect(match({ workshops: [profile("a")], papers: [paper("p-1")] })).rejects.toThrow(
+      /ECONNREFUSED/u,
+    );
   });
 });
