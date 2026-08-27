@@ -5023,7 +5023,7 @@ export class AdminBotService {
     }
     const members = this.store
       .listLabMembers()
-      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .filter(isActiveRosterMember)
       .filter((member) => !isOnboardingStepComplete(member.onboarding, stepId));
     // The composed nudge text rides along so the reaction-confirm poller
     // (scripts/adminbot_onboarding_confirm.py) re-nudges with exactly the words the service
@@ -5218,7 +5218,7 @@ export class AdminBotService {
   }> {
     const members = this.store
       .listLabMembers()
-      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .filter(isActiveRosterMember)
       .map((member) => ({ member, missing: missingMandatoryProfileFields(member) }))
       .filter(({ missing }) => missing.length > 0)
       .map(({ member, missing }) => ({
@@ -5265,7 +5265,7 @@ export class AdminBotService {
     const activity = this.memberActivityCounts();
     const members = this.store
       .listLabMembers()
-      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .filter(isActiveRosterMember)
       .map((member) => {
         const missing = missingMandatoryProfileFields(member);
         const timeline = countTimelineEntries(member);
@@ -5527,7 +5527,7 @@ export class AdminBotService {
   }> {
     return this.store
       .listLabMembers()
-      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .filter(isActiveRosterMember)
       .map((member) => ({
         id: member.id,
         name: member.name,
@@ -8547,6 +8547,26 @@ const EMPTY_ACTIVITY: AdminBotMemberActivityCounts = {
   profile_edits: 0,
   paper_updates: 0,
 };
+
+/**
+ * Somebody the lab would still chase about their own record.
+ *
+ * Two fields, because the lab writes "has left" in two places and they do not agree. `status` is
+ * AdminBot's own flag, set by an admin on the member page. `member_type` is the spreadsheet's
+ * Member Type column, imported verbatim, and it is the one the lab actually maintains -- on the
+ * current roster 22 people are alumni there while only 2 carry `status: "alumni"`, and not one
+ * person has both. Reading `status` alone left all 22 in every sweep and in the adoption columns,
+ * which is a reminder to somebody who left months ago.
+ *
+ * Either saying alumni is enough. The failure this guards against is chasing a person who has
+ * gone, and neither field is authoritative enough to override the other.
+ */
+function isActiveRosterMember(member: AdminBotLabMember): boolean {
+  if (member.status === "alumni" || member.status === "external") {
+    return false;
+  }
+  return !adminBotIsAlumniType(member.member_type);
+}
 
 /** See bulkMemberWriteSeconds. Distinct members written in one second before it reads as a sync. */
 const BULK_MEMBER_WRITE_THRESHOLD = 5;
