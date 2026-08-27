@@ -23,7 +23,7 @@ function runPython(body: string): unknown {
   const preamble = [
     "import json, sys, importlib.util",
     `sys.path.insert(0, ${JSON.stringify(scriptsDir)})`,
-    "from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency_marker, archival_status_of, entry_type_of, venue_priority_of, WORKSHOP_FAMILIES",
+    "from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency_marker, archival_status_of, entry_type_of, venue_priority_of, WORKSHOP_FAMILIES, is_sweep_due, sweep_interval_days",
     "def load(name):",
     `    spec = importlib.util.spec_from_file_location(name.replace('-', '_'), ${JSON.stringify(scriptsDir)} + '/' + name + '.py')`,
     "    module = importlib.util.module_from_spec(spec)",
@@ -499,5 +499,84 @@ describe("deadline reminder cadence", () => {
       // Any "<venue> Workshops" group reaches the one venue-agnostic workshop template, so a new
       // series needs a dataset row rather than a code edit.
     ).toEqual(["workshop", "workshop", "emnlp_commitment", "emnlp_commitment"]);
+  });
+});
+
+// The sweep used to re-read every venue on every run, which is what earns a 429 from OpenReview
+// partway through and silently truncates the board.
+describe("sweep cadence", () => {
+  const clock = (now: string) =>
+    `AoEClock(__import__("datetime").datetime.fromisoformat(${JSON.stringify(now)}))`;
+
+  it("re-reads an imminent workshop daily and everything else fortnightly", () => {
+    const result = runPython(
+      [
+        `c = ${clock("2026-08-27T12:00:00+00:00")}`,
+        "print(json.dumps({",
+        "  'workshop_tomorrow': sweep_interval_days(c, 'workshop', '2026-08-28 23:59:59'),",
+        "  'workshop_two_days': sweep_interval_days(c, 'workshop', '2026-08-29 23:59:59'),",
+        "  'workshop_far': sweep_interval_days(c, 'workshop', '2026-12-01 23:59:59'),",
+        "  'workshop_passed': sweep_interval_days(c, 'workshop', '2026-08-01 23:59:59'),",
+        "  'conference_tomorrow': sweep_interval_days(c, 'main_conference', '2026-08-28 23:59:59'),",
+        "  'arr_far': sweep_interval_days(c, 'arr_direct_submission', '2026-12-01 23:59:59'),",
+        "}))",
+      ].join("\n"),
+    );
+    expect(result).toEqual({
+      workshop_tomorrow: 1,
+      workshop_two_days: 1,
+      workshop_far: 14,
+      // A passed deadline cannot move, so it drops off the daily cadence.
+      workshop_passed: 14,
+      // Conferences are fortnightly however close they are.
+      conference_tomorrow: 14,
+      arr_far: 14,
+    });
+  });
+
+  it("decides due-ness from the last recorded read", () => {
+    const result = runPython(
+      [
+        `c = ${clock("2026-08-27T12:00:00+00:00")}`,
+        "print(json.dumps({",
+        "  'imminent_checked_today': is_sweep_due(c, 'workshop', '2026-08-28 23:59:59', '2026-08-27T00:00:00Z'),",
+        "  'imminent_checked_yesterday': is_sweep_due(c, 'workshop', '2026-08-28 23:59:59', '2026-08-26T00:00:00Z'),",
+        "  'far_checked_a_week_ago': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2026-08-20T00:00:00Z'),",
+        "  'far_checked_a_fortnight_ago': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2026-08-12T00:00:00Z'),",
+        "  'conference_checked_a_week_ago': is_sweep_due(c, 'main_conference', '2026-12-01 23:59:59', '2026-08-20T00:00:00Z'),",
+        "}))",
+      ].join("\n"),
+    );
+    expect(result).toEqual({
+      imminent_checked_today: false,
+      imminent_checked_yesterday: true,
+      far_checked_a_week_ago: false,
+      far_checked_a_fortnight_ago: true,
+      conference_checked_a_week_ago: false,
+    });
+  });
+
+  // A venue that never refreshes again is a worse failure than one refreshed too often.
+  it("treats a missing, unparseable or future stamp as due", () => {
+    const result = runPython(
+      [
+        `c = ${clock("2026-08-27T12:00:00+00:00")}`,
+        "print(json.dumps({",
+        "  'never': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', ''),",
+        "  'none': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', None),",
+        "  'garbage': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', 'not-a-date'),",
+        "  'future': is_sweep_due(c, 'workshop', '2026-12-01 23:59:59', '2027-01-01T00:00:00Z'),",
+        "  'bad_deadline': is_sweep_due(c, 'workshop', 'nonsense', '2026-08-26T00:00:00Z'),",
+        "}))",
+      ].join("\n"),
+    );
+    expect(result).toEqual({
+      never: true,
+      none: true,
+      garbage: true,
+      future: true,
+      // An unparseable deadline falls back to the fortnightly interval, so one day old is not due.
+      bad_deadline: false,
+    });
   });
 });

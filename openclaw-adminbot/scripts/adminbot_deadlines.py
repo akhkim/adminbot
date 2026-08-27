@@ -289,6 +289,69 @@ class AoEClock:
         return target.date() == self.today
 
 
+# How often a venue's own source is re-read.
+#
+# The sweep used to re-read every tracked venue on every run -- a few hundred requests against
+# OpenReview and the workshop sites in one burst, which is what earns a 429 partway through and
+# silently truncates the board. Almost all of it was wasted: a deadline six months out does not
+# move between Tuesdays.
+#
+# So the cadence follows the thing that actually changes. A workshop inside its final few days is
+# where CFP pages get edited -- an extension announced the day before is the case the board exists
+# to catch -- and everything else, workshops further out and conferences alike, is re-read
+# fortnightly.
+SWEEP_IMMINENT_DAYS = 3
+SWEEP_IMMINENT_INTERVAL_DAYS = 1
+SWEEP_INTERVAL_DAYS = 14
+
+
+def sweep_interval_days(
+    clock: "AoEClock", entry_type: str, deadline_aoe: str
+) -> int:
+    """How many days may pass before this venue's source is read again.
+
+    Only a workshop earns the daily cadence, and only while its deadline is both imminent and still
+    ahead: a passed deadline cannot move, so re-reading it daily buys nothing and spends the
+    request budget the imminent ones need.
+    """
+    if entry_type != "workshop":
+        return SWEEP_INTERVAL_DAYS
+    try:
+        if clock.has_passed(deadline_aoe):
+            return SWEEP_INTERVAL_DAYS
+        days = clock.days_until(deadline_aoe)
+    except (ValueError, TypeError):
+        # An unparseable deadline is a data problem, not a reason to hammer the source.
+        return SWEEP_INTERVAL_DAYS
+    return SWEEP_IMMINENT_INTERVAL_DAYS if days < SWEEP_IMMINENT_DAYS else SWEEP_INTERVAL_DAYS
+
+
+def is_sweep_due(
+    clock: "AoEClock", entry_type: str, deadline_aoe: str, last_checked: str | None
+) -> bool:
+    """Whether this venue's source should be re-read on this run.
+
+    A venue with no recorded check is always due: that is what a newly discovered workshop looks
+    like, and it has never been read at all. An unparseable stamp is treated the same way, because
+    the alternative is a venue that silently never refreshes again.
+    """
+    stamp = (last_checked or "").strip()
+    if not stamp:
+        return True
+    try:
+        checked = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if checked.tzinfo is None:
+        checked = checked.replace(tzinfo=datetime.timezone.utc)
+    age_days = (clock.now - checked).total_seconds() / 86400
+    # A clock that has gone backwards (a restored backup, a stamp written ahead) reads as a
+    # negative age. Treat it as due rather than as freshly checked forever.
+    if age_days < 0:
+        return True
+    return age_days >= sweep_interval_days(clock, entry_type, deadline_aoe)
+
+
 class DeadlineDataset:
     """Reader for the generated deadline files under extensions/adminbot/content/deadlines.
 
