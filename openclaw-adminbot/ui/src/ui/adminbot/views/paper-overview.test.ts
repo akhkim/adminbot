@@ -432,7 +432,9 @@ describe("renderPaperOverviewTable", () => {
       rows: build({ papers: [paper()] }),
       filter: { state: "all" },
     });
-    tableRows(container)[0]?.querySelector<HTMLButtonElement>("button")?.click();
+    // By testid, not by position: the person's name is a button too now (it folds their papers
+    // away), so "the first button in the row" is no longer the paper title.
+    container.querySelector<HTMLButtonElement>('[data-testid="paper-overview-open-p-1"]')?.click();
     expect(opened).toEqual(["p-1"]);
   });
 
@@ -455,5 +457,76 @@ describe("renderPaperOverviewTable", () => {
       filter: { state: "all" },
     });
     expect(container.textContent).toContain("no venue");
+  });
+});
+
+describe("folding a person's papers away", () => {
+  // Somebody with eleven papers pushes everyone below them off the screen. An administrator
+  // scanning for who is stuck needs to put that stack away without losing the row that says how
+  // the person is doing.
+  const two = () =>
+    build({
+      papers: [paper(), paper({ id: "p-2", title: "Second paper" })],
+    });
+
+  it("asks the page to fold, keyed by person", () => {
+    const { container, filters } = draw({ rows: two(), filter: { state: "all" } });
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="paper-overview-person-toggle-"]',
+    );
+    expect(toggle).not.toBeNull();
+    toggle?.click();
+    expect(filters.at(-1)?.collapsed).toHaveLength(1);
+  });
+
+  it("hides the titles but keeps the person's row", () => {
+    const { container, filters } = draw({ rows: two(), filter: { state: "all" } });
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="paper-overview-person-toggle-"]',
+    );
+    toggle?.click();
+    const collapsed = filters.at(-1)?.collapsed ?? [];
+
+    const folded = draw({ rows: two(), filter: { state: "all", collapsed } });
+    expect(folded.container.textContent).not.toContain("Second paper");
+    // The measures an administrator is actually scanning stay put.
+    expect(
+      folded.container.querySelector('[data-testid="adminbot-paper-overview"]'),
+    ).not.toBeNull();
+    expect(tableRows(folded.container)).toHaveLength(1);
+  });
+
+  it("offers its own way back from the folded cell", () => {
+    const { container, filters } = draw({ rows: two(), filter: { state: "all" } });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="paper-overview-person-toggle-"]')
+      ?.click();
+    const collapsed = filters.at(-1)?.collapsed ?? [];
+
+    const folded = draw({ rows: two(), filter: { state: "all", collapsed } });
+    const back = folded.container.querySelector<HTMLButtonElement>(
+      '[data-testid^="paper-overview-person-folded-"]',
+    );
+    // The row is wide; reaching back for the name means crossing the table.
+    expect(back).not.toBeNull();
+    back?.click();
+    expect(folded.filters.at(-1)?.collapsed).toEqual([]);
+  });
+
+  it("says how many it is holding back", () => {
+    const { container, filters } = draw({ rows: two(), filter: { state: "all" } });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="paper-overview-person-toggle-"]')
+      ?.click();
+    const collapsed = filters.at(-1)?.collapsed ?? [];
+    const folded = draw({ rows: two(), filter: { state: "all", collapsed } });
+    expect(
+      folded.container.querySelector('[data-testid^="paper-overview-person-folded-"]')?.textContent,
+    ).toContain("2");
+  });
+
+  it("leaves everyone else expanded", () => {
+    const { container } = draw({ rows: two(), filter: { state: "all", collapsed: ["nobody"] } });
+    expect(container.textContent).toContain("Second paper");
   });
 });
