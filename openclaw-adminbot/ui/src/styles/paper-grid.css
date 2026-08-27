@@ -29,7 +29,10 @@
   --sheet-gutter: color-mix(in srgb, var(--text) 7%, var(--bg));
   --sheet-cell: var(--bg);
   --sheet-active: var(--sheet-green);
-  --sheet-row: 2rem;
+  /* Tall enough that a cell reads as a box you fill in rather than a line of a table. */
+  --sheet-row: 2.9rem;
+  /* The gap between the cell edge and the field inside it. What makes the box visible. */
+  --sheet-pad: 4px;
 }
 
 .paper-grid__bar {
@@ -91,7 +94,7 @@
   table-layout: fixed;
   width: max-content;
   min-width: 100%;
-  font-size: 0.85em;
+  font-size: 0.92em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -200,32 +203,38 @@
 
 .paper-grid__cell {
   position: relative;
-  width: 20ch;
+  /* No width here -- the <colgroup> owns it now, and a second opinion just fights it. */
   height: var(--sheet-row);
 }
 
+/* Inset by a few pixels with its own border, so every cell reads as a field waiting for a link
+   rather than as an empty table cell. Absolute positioning stays: it is what lets a focused
+   field widen over its neighbours to show a long URL in full. */
 .paper-grid__cell input {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  inset: var(--sheet-pad);
+  width: calc(100% - (var(--sheet-pad) * 2));
   padding: 0 var(--space-2);
-  border: 0;
-  border-radius: 0;
-  background: var(--sheet-cell);
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--text) 3%, var(--bg));
   color: var(--text);
   font: inherit;
   text-overflow: ellipsis;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .paper-grid__cell input:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text) 4%, var(--bg));
+  border-color: color-mix(in srgb, var(--sheet-green) 55%, transparent);
+  background: color-mix(in srgb, var(--text) 6%, var(--bg));
 }
 
 /* The active cell: blue ring, raised, and wide enough to read a whole URL. */
 
 .paper-grid__cell input:focus {
   z-index: 20;
-  width: max(56ch, 100%);
+  width: max(56ch, calc(100% - (var(--sheet-pad) * 2)));
+  border-color: var(--sheet-active);
   outline: 2px solid var(--sheet-active);
   outline-offset: -2px;
   background: var(--sheet-cell);
@@ -305,9 +314,8 @@
    Both handles are invisible until the pointer is near them: nine columns of always-on grab
    targets reads as clutter on a surface whose whole job is showing thirty rows at once. */
 
-.paper-grid__table th {
-  position: relative;
-}
+/* No blanket `position: relative` on th: it outranks `.paper-grid__sticky` and would un-pin the
+   Paper column. Sticky is itself a positioned ancestor, so the resize handles anchor to it. */
 
 .paper-grid__resize {
   position: absolute;
@@ -361,7 +369,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .paper-grid__resize::after,
-  .paper-grid__fill {
+  .paper-grid__fill,
+  .paper-grid__cell input {
     transition: none;
   }
 }
