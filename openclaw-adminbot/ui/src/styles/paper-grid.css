@@ -226,12 +226,6 @@
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-/* The example is a hint, not content: quiet enough that a column of them reads as empty at a
-   glance, legible enough to answer "what goes here" without hunting for a tooltip. */
-.paper-grid__cell input::placeholder {
-  color: color-mix(in srgb, var(--text) 32%, transparent);
-}
-
 .paper-grid__cell input:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--sheet-green) 55%, transparent);
   background: color-mix(in srgb, var(--text) 6%, var(--bg));
@@ -381,4 +375,82 @@
   .paper-grid__cell input {
     transition: none;
   }
+}
+/* ── column help ────────────────────────────────────────────────────────────────────────
+   A question mark beside each column name. The rule belongs to the column, so it is stated
+   once at the top rather than repeated as a placeholder in every empty cell. */
+
+.paper-grid__help-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-left: 0.4em;
+  vertical-align: middle;
+}
+
+.paper-grid__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  padding: 0;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.paper-grid__help:hover,
+.paper-grid__help[aria-expanded="true"] {
+  opacity: 1;
+  background: var(--sheet-green);
+  border-color: var(--sheet-green);
+  color: #fff;
+}
+
+.paper-grid__help:focus-visible {
+  outline: 2px solid var(--sheet-active);
+  outline-offset: 2px;
+}
+
+/* Anchored to the heading and lifted above the sheet. `max-content` up to a readable measure,
+   so a one-line format does not get a paragraph-shaped box. */
+.paper-grid__help-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 40ch;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--sheet-line);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-raised, var(--bg));
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+}
+
+.paper-grid__help-hint {
+  color: var(--text-muted);
+  font-size: 0.92em;
+}
+
+.paper-grid__help-pop code {
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-size: 0.92em;
+  word-break: break-all;
 }

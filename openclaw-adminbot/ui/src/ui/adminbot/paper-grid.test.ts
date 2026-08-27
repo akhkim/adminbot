@@ -39,7 +39,7 @@ function paper(id: string, artifacts: Record<string, string> = {}): AdminBotPape
 const arxivCol = {
   key: "arxiv_url",
   save: "arxivUrl",
-  example: "https://arxiv.org/abs/2508.01234",
+  format: "https://arxiv.org/abs/…",
   label: "arXiv",
   short: "arXiv",
   hosts: ["arxiv.org"],
@@ -305,22 +305,57 @@ describe("table width", () => {
 });
 
 describe("what a column asks for", () => {
-  // The validation rules live in `hosts` and `path`, which nobody filling the sheet can see. The
-  // example is the only place they are stated in a form a reader can act on, so it has to be a
-  // link the column would actually accept -- an example the grid rejects is worse than none.
-  it("gives every column an example that passes its own validation", () => {
+  // The rules live in `hosts` and `path`, which nobody filling the sheet can see. The format
+  // string is the only place they are stated for a reader, so it has to agree with them.
+  it("states a format for every column", () => {
     for (const column of gridColumns()) {
-      expect(column.example, `${column.label} has no example`).toBeTruthy();
-      expect(
-        cellError(column, column.example),
-        `${column.label}: example "${column.example}" is rejected by its own rule`,
-      ).toBeUndefined();
+      expect(column.format, `${column.label} has no format`).toBeTruthy();
     }
   });
 
-  it("rejects the arXiv PDF, which is the mistake the example exists to prevent", () => {
+  it("names a host and path the column would actually accept", () => {
+    for (const column of gridColumns()) {
+      if (!column.hosts) {
+        continue;
+      }
+      const url = new URL(column.format.split(" ")[0] as string);
+      expect(
+        column.hosts,
+        `${column.label}: ${url.hostname} is not in its own host list`,
+      ).toContain(url.hostname);
+      if (column.path) {
+        expect(
+          column.path.test(url.pathname),
+          `${column.label}: ${url.pathname} fails its own path rule`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("shows a shape, never a usable link", () => {
+    // A complete example reads as real and gets pasted, which is how a sheet ends up with thirty
+    // rows pointing at one fictional document. Every URL format stops at the prefix.
+    for (const column of gridColumns()) {
+      if (column.format.startsWith("https://")) {
+        expect(column.format, `${column.label} reads as a real link`).toContain("…");
+      }
+    }
+  });
+
+  it("still rejects the arXiv PDF, which is what its note is for", () => {
     const arxiv = gridColumns().find((column) => column.key === "arxiv_url");
     expect(cellError(arxiv!, "https://arxiv.org/pdf/2508.01234")).toBeDefined();
+    expect(cellError(arxiv!, "https://arxiv.org/abs/2508.01234")).toBeUndefined();
   });
 });
 
+describe("the help bubble", () => {
+  it("opens one column at a time and closes on a second press", () => {
+    const state = emptyPaperGridState();
+    expect(state.helpFor).toBeNull();
+    state.helpFor = "arxiv_url";
+    expect(state.helpFor).toBe("arxiv_url");
+    state.helpFor = null;
+    expect(state.helpFor).toBeNull();
+  });
+});

@@ -46,13 +46,14 @@ type Column = {
   pattern?: RegExp;
   hint?: string;
   /**
-   * A real link of the kind this column wants, shown in every empty cell.
+   * The shape of an acceptable value, as a prefix.
    *
-   * The rules were only ever written down in `hosts` and `path`, which the reader cannot see, and
-   * as a tooltip on the header, which they have to find. Somebody filling thirty rows should be
-   * able to tell what belongs in a column by looking at it.
+   * Deliberately not a complete link. A full example with a plausible document id reads as real
+   * and invites being pasted -- which is how a sheet ends up with thirty rows pointing at the
+   * same fictional document. A prefix answers "what goes here" and cannot be mistaken for an
+   * answer to "what goes in this row".
    */
-  example: string;
+  format: string;
 };
 
 // Columns follow the slot registry in fields_update.md. `arxiv_paper_password` is listed
@@ -61,7 +62,7 @@ type Column = {
 const COLUMNS: Column[] = [
   {
     key: "brainstorming_doc_url",
-    example: "https://docs.google.com/document/d/1AbCdEfGhIjK/edit",
+    format: "https://docs.google.com/document/… or https://drive.google.com/drive/folders/…",
     save: "brainstormingDocUrl",
     label: "Project doc / folder",
     short: "Project",
@@ -70,7 +71,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "overleaf_view_url",
-    example: "https://www.overleaf.com/read/xzqvbnmklpqr",
+    format: "https://www.overleaf.com/read/…",
     save: "overleafViewUrl",
     label: "Overleaf (view)",
     short: "Overleaf view",
@@ -79,7 +80,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "overleaf_edit_url",
-    example: "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    format: "https://www.overleaf.com/project/…",
     save: "overleafEditUrl",
     label: "Overleaf (edit)",
     short: "Overleaf edit",
@@ -88,7 +89,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "google_drive_pdf_url",
-    example: "https://drive.google.com/file/d/1AbCdEfGhIjK/view",
+    format: "https://drive.google.com/file/…",
     save: "googleDrivePdfUrl",
     label: "Drive PDF (arXiv version)",
     short: "Drive PDF",
@@ -97,7 +98,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "arxiv_url",
-    example: "https://arxiv.org/abs/2508.01234",
+    format: "https://arxiv.org/abs/…",
     save: "arxivUrl",
     label: "arXiv",
     short: "arXiv",
@@ -107,7 +108,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "arxiv_paper_password",
-    example: "f3k9qz",
+    format: "Six letters or digits",
     label: "arXiv paper password",
     short: "arXiv pw",
     pattern: /^[A-Za-z0-9]{6}$/u,
@@ -115,7 +116,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "google_slides_url",
-    example: "https://docs.google.com/presentation/d/1AbCdEfGhIjK/edit",
+    format: "https://docs.google.com/presentation/…",
     save: "googleSlidesUrl",
     label: "Slides",
     short: "Slides",
@@ -125,7 +126,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "poster_url",
-    example: "https://drive.google.com/file/d/1AbCdEfGhIjK/view",
+    format: "https://… (any site)",
     save: "posterUrl",
     label: "Poster",
     short: "Poster",
@@ -248,6 +249,8 @@ export type PaperGridState = {
   history: PaperGridHistoryEntry[];
   /** Column key -> pixels. Read by the <colgroup>; written by the drag handles. */
   widths: Map<string, number>;
+  /** Key of the column whose help bubble is open, or null. One at a time. */
+  helpFor: string | null;
 };
 
 export function emptyPaperGridState(): PaperGridState {
@@ -258,6 +261,7 @@ export function emptyPaperGridState(): PaperGridState {
     showHistory: false,
     history: loadHistory(),
     widths: loadWidths(),
+    helpFor: null,
   };
 }
 
@@ -649,6 +653,41 @@ function startFill(
   globalThis.addEventListener("pointerup", done);
 }
 
+/**
+ * The question mark on a column heading, and the bubble it opens.
+ *
+ * On the heading rather than in the cells: the rule is a fact about the column, so stating it
+ * once where the column is named beats repeating it down thirty rows -- and a cell that says
+ * something when it is empty is a cell the reader has to check before trusting it is empty.
+ */
+function renderColumnHelp(state: PaperGridState, column: Column, onChange: () => void) {
+  const key = String(column.key);
+  const open = state.helpFor === key;
+  return html`<span class="paper-grid__help-wrap">
+    <button
+      type="button"
+      class="paper-grid__help"
+      aria-expanded=${open ? "true" : "false"}
+      aria-label=${`What goes in ${column.label}?`}
+      data-testid=${`grid-help-${key}`}
+      @click=${(event: Event) => {
+        event.stopPropagation();
+        state.helpFor = open ? null : key;
+        onChange();
+      }}
+    >
+      ?
+    </button>
+    ${open
+      ? html`<span class="paper-grid__help-pop" role="note">
+          <strong>${column.label}</strong>
+          ${column.hint ? html`<span class="paper-grid__help-hint">${column.hint}</span>` : nothing}
+          <code>${column.format}</code>
+        </span>`
+      : nothing}
+  </span>`;
+}
+
 export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   const { state, papers } = props;
   const changedRows = new Set(
@@ -662,7 +701,15 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   );
 
   return html`
-    <div class="paper-grid">
+    <div
+      class="paper-grid"
+      @click=${() => {
+        if (state.helpFor !== null) {
+          state.helpFor = null;
+          props.onChange();
+        }
+      }}
+    >
       <div class="paper-grid__bar">
         <div>
           <strong>Bulk link entry</strong>
@@ -763,15 +810,13 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
               </th>
               ${COLUMNS.map(
                 (column) => html`
-                  <th
-                    scope="col"
-                    title=${`${column.label}${column.hint ? ` — ${column.hint}` : ""}\ne.g. ${column.example}`}
-                  >
+                  <th scope="col">
                     ${column.short}${column.save
                       ? nothing
                       : html`<span class="paper-grid__pending" title="No backend field yet">
                           ◦
                         </span>`}
+                    ${renderColumnHelp(state, column, props.onChange)}
                     <span
                       class="paper-grid__resize"
                       title="Drag to resize"
@@ -806,8 +851,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                           type="text"
                           .value=${value}
                           ?disabled=${!column.save}
-                          placeholder=${column.example}
-                          title=${error ?? `${column.label} — e.g. ${column.example}`}
+                          title=${error ?? column.label}
                           data-row=${rowIndex}
                           data-col=${columnIndex}
                           @input=${(event: Event) => {
