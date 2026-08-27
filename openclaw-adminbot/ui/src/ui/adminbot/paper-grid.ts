@@ -21,12 +21,15 @@ import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/cont
 /**
  * Above this many papers the grid is offered. Below it, the cards are the better surface.
  *
- * Three, not ten. Ten made the sheet an admin-only feature by accident: almost nobody in the lab
- * carries eleven papers, so the one surface built for pasting a column out of Sheets was
- * unreachable for the people doing the pasting. The paste is worth as much for four papers as for
- * forty; below four, the cards genuinely are better.
+ * Two, so the sheet appears from the third paper on.
+ *
+ * Ten made it an admin-only feature by accident: almost nobody in the lab carries eleven papers,
+ * so the one surface built for pasting a column out of Sheets was unreachable for the people
+ * doing the pasting. Three was the first correction and it was still one too high -- somebody
+ * with exactly three papers, which is a normal number to have, still saw nothing. Pasting beats
+ * three separate forms; below three there is nothing to paste.
  */
-export const PAPER_GRID_THRESHOLD = 3;
+export const PAPER_GRID_THRESHOLD = 2;
 
 type ArtifactKey = NonNullable<AdminBotPaperRecord["artifacts"]>;
 

@@ -3605,6 +3605,7 @@ export function renderApp(state: AppViewState) {
         ${adminBotPanel
           ? renderAdminBot({
               panel: adminBotPanel,
+              onRerender: () => requestHostUpdate?.(),
               paperSlotOverview: state.adminBotPaperSlotOverview,
               connected: state.connected,
               loading: state.adminBotLoading,

@@ -135,12 +135,12 @@ describe("what gets saved", () => {
 });
 
 describe("threshold", () => {
-  it("is 3 — the grid is offered above it, not at it", () => {
-    expect(PAPER_GRID_THRESHOLD).toBe(3);
-    // Strictly above: three papers read better as cards, four is where pasting a column starts
-    // to beat filling in four separate forms.
-    expect(3 > PAPER_GRID_THRESHOLD).toBe(false);
-    expect(4 > PAPER_GRID_THRESHOLD).toBe(true);
+  it("is 2 — the sheet appears from the third paper on", () => {
+    expect(PAPER_GRID_THRESHOLD).toBe(2);
+    // Three papers is a normal number to have, and it must show the button. The first attempt at
+    // this used `> 3`, which hid the sheet from exactly that person.
+    expect(2 > PAPER_GRID_THRESHOLD).toBe(false);
+    expect(3 > PAPER_GRID_THRESHOLD).toBe(true);
   });
 });
 
