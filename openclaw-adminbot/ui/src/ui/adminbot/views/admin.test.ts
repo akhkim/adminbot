@@ -1157,6 +1157,18 @@ describe("pre-registration venue table", () => {
       },
     },
     { id: "c", title: "Not registered", authors: [], current_step: "overleaf_writing" },
+    {
+      id: "d",
+      title: "Registered from its own card",
+      authors: ["Andrew Kim"],
+      current_step: "brainstorming_docs",
+      artifacts: {
+        conference: "ICLR 2027",
+        // The shape Add a project and the card's target picker write: a venue-catalog id, with
+        // the year in the label rather than in the id.
+        venue_targets: JSON.stringify([{ venue_id: "ICLR", label: "ICLR 2027", confidence: 50 }]),
+      },
+    },
   ] as never as AdminBotPaperRecord[];
 
   function draw(venueFilter = "") {
@@ -1172,7 +1184,23 @@ describe("pre-registration venue table", () => {
 
   it("shows one row per paper, not one per venue", () => {
     const board = draw().querySelector('[data-testid="prereg-board"]');
-    expect(board?.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(board?.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+
+  it("lists a paper registered through the card picker, not just through the dialog", () => {
+    // The bug: the board filtered targets by exact id against its own venue ids, so a paper
+    // registered with a venue-catalog id was dropped -- it read "PRE-REGISTERED 50% ICLR 2027"
+    // on its own card and was absent from the ICLR board at the same time.
+    const board = draw().querySelector('[data-testid="prereg-board"]');
+    expect(board?.textContent).toContain("Registered from its own card");
+  });
+
+  it("keeps it when the board is filtered to that venue", () => {
+    const board = draw("iclr2027_paper").querySelector('[data-testid="prereg-board"]');
+    expect(board?.textContent).toContain("Registered from its own card");
+    // And still drops one aimed elsewhere, so the match has not become a catch-all.
+    const arr = draw("arr_2026_october").querySelector('[data-testid="prereg-board"]');
+    expect(arr?.textContent).not.toContain("Registered from its own card");
   });
 
   it("omits papers with no venue at all", () => {

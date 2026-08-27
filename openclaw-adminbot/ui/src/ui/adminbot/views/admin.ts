@@ -42,7 +42,12 @@ import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/ava
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { isOptionalMemberField, PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
-import { PRE_REGISTRATION_VENUES, daysUntil, readVenueTargets } from "../venue-targets.ts";
+import {
+  PRE_REGISTRATION_VENUES,
+  daysUntil,
+  readVenueTargets,
+  venueTargetMatches,
+} from "../venue-targets.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
 import {
@@ -1858,7 +1863,14 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   const rows = papers
     .map((paper) => ({
       paper,
-      targets: readVenueTargets(paper).filter((target) => open.has(target.venue_id)),
+      // Matched on the venue rather than the id string. Two id spaces write this field -- the
+      // pre-registration dialog writes the board's own ids, while Add a project and the card's
+      // target picker write venue-catalog ids with the year in the label -- so a string test
+      // silently dropped every paper registered through the second one. A paper reading
+      // "PRE-REGISTERED 50% ICLR 2027" on its own card was absent from the ICLR board.
+      targets: readVenueTargets(paper).filter((target) =>
+        [...open].some((venueId) => venueTargetMatches(target, venueId)),
+      ),
     }))
     .filter((row) => row.targets.length > 0)
     .sort(
