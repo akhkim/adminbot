@@ -718,3 +718,67 @@ describe("deleting a paper", () => {
     expect(open.container.querySelector('[data-testid="delete-paper-p1"]')).not.toBeNull();
   });
 });
+
+describe("declaring a target venue", () => {
+  // Declaring where a paper is going *is* pre-registering it. These two selects wrote only
+  // `artifacts.conference`, while every reader of "is this pre-registered" looks at
+  // `artifacts.venue_targets` -- so an author who set their target here was still counted as not
+  // having pre-registered, and still got asked to.
+  function retarget(record: AdminBotPaperRecord) {
+    const { container, saved } = draw({ papers: [record], openIds: ["p1"] });
+    const venue = container.querySelector<HTMLSelectElement>('[data-testid="target-venue-p1"]');
+    if (!venue) {
+      throw new Error("venue select missing");
+    }
+    venue.value = "ICLR";
+    venue.dispatchEvent(new Event("change", { bubbles: true }));
+    return saved.at(-1);
+  }
+
+  function targetsOf(input: { venueTargets?: string } | undefined) {
+    return JSON.parse(input?.venueTargets || "[]") as Array<{
+      venue_id: string;
+      confidence: number;
+    }>;
+  }
+
+  it("registers the paper for the venue it was just pointed at", () => {
+    const written = retarget(paper());
+    expect(written?.conference).toContain("ICLR");
+    const targets = targetsOf(written);
+    expect(targets).toHaveLength(1);
+    expect(targets[0]?.venue_id).toBe("ICLR");
+    // The odds select is untouched here, so the target takes the same default Add a project uses
+    // rather than a zero, which would read as "certainly not going".
+    expect(targets[0]?.confidence).toBe(50);
+  });
+
+  it("replaces its own venue instead of stacking a second entry for it", () => {
+    const written = retarget(
+      paper({
+        artifacts: {
+          conference: "ICLR 2026",
+          venue_targets: JSON.stringify([{ venue_id: "ICLR", label: "ICLR 2026", confidence: 30 }]),
+        },
+      } as Partial<AdminBotPaperRecord>),
+    );
+    expect(targetsOf(written)).toHaveLength(1);
+  });
+
+  it("leaves a venue the paper is also aimed at alone", () => {
+    // Somebody adjusting the year on this card must not drop the second venue they registered
+    // through the pre-registration dialog.
+    const written = retarget(
+      paper({
+        artifacts: {
+          venue_targets: JSON.stringify([
+            { venue_id: "arr_2026_october", label: "ARR October", confidence: 80 },
+          ]),
+        },
+      } as Partial<AdminBotPaperRecord>),
+    );
+    const ids = targetsOf(written).map((target) => target.venue_id);
+    expect(ids).toContain("arr_2026_october");
+    expect(ids).toContain("ICLR");
+  });
+});
