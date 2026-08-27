@@ -154,7 +154,8 @@ describe("standalone deadline board", () => {
       expect(card.dataset.entryType).toBe("main_conference");
       expect(card.dataset.archivalStatus).toBe("archival");
       expect(card.dataset.venuePriority).toBe("primary");
-      expect(card.querySelector(".priority")?.textContent).toBe("Primary");
+      // The badge is gone board-wide; the data attribute stays as metadata.
+      expect(card.querySelector(".priority")).toBeNull();
       expect(card.querySelector(".archival")?.textContent).toBe("Archival");
       expect(document.querySelector("#foot")?.textContent).toContain(
         "Showing 1 of 1 matching past deadlines",
@@ -164,10 +165,10 @@ describe("standalone deadline board", () => {
 
       document.querySelector<HTMLButtonElement>("#v-groups")!.click();
       expect(document.querySelectorAll(".deadline-group")).toHaveLength(1);
-      expect(document.querySelector(".deadline-group__summary-countdown")?.textContent).toBe(
-        "passed",
-      );
-      document.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+      // A lone main conference is a standalone card: its row shows directly, with no disclosure
+      // summary to expand and no collapsed countdown of its own.
+      expect(document.querySelector(".deadline-group--standalone")).not.toBeNull();
+      expect(document.querySelector(".deadline-group__summary")).toBeNull();
       expect(document.querySelector(".deadline-group__row-countdown")?.textContent).toBe("passed");
       expect(document.querySelector(".deadline-group__row-date")?.textContent).toContain(
         "23:59 AoE",
@@ -224,16 +225,9 @@ describe("standalone deadline board", () => {
       expect(document.querySelector(".chip .ct")?.textContent).toBe("2");
       expect(document.querySelectorAll(".chip")).toHaveLength(2);
 
-      const priority = document.querySelector<HTMLSelectElement>("#priority")!;
-      priority.value = "primary";
-      priority.dispatchEvent(new dom.window.Event("change"));
-
-      expect(document.querySelectorAll(".card")).toHaveLength(0);
-      expect(document.querySelector("#s-total")?.textContent).toBe("0");
-      expect(document.querySelector(".chip .ct")?.textContent).toBe("0");
-      expect(document.querySelector("#foot")?.textContent).toContain(
-        "Showing 0 of 0 matching upcoming deadlines",
-      );
+      // The priority facet was removed along with the badges.
+      expect(document.querySelector("#priority")).toBeNull();
+      expect(document.querySelectorAll(".search.filter")).toHaveLength(2);
     } finally {
       dom.window.close();
     }

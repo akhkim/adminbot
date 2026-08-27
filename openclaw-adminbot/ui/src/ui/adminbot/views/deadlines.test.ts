@@ -14,8 +14,10 @@ import {
   entriesForDeadlinePeriod,
   filterDeadlineBoardEntries,
   groupDeadlineBoardEntries,
+  headlineDeadlineEntry,
+  mergeArrSubmissionDuplicates,
+  workshopGroupLabel,
   priorDeadlineRevisions,
-  priorityLabelOf,
   renderDeadlines,
   workshopSourceLinks,
 } from "./deadlines.ts";
@@ -173,21 +175,17 @@ describe("deadline board model", () => {
     );
   });
 
-  it("applies type, archival-status, and priority filters independently", () => {
+  it("applies type and archival-status filters independently", () => {
     const entries = buildDeadlineBoardEntries();
     const filtered = filterDeadlineBoardEntries(entries, "", "", {
       entryType: "workshop",
       archivalStatus: "mixed",
-      priority: "standard",
     });
 
     expect(filtered.length).toBeGreaterThan(0);
     expect(
       filtered.every(
-        (entry) =>
-          entry.venue.entry_type === "workshop" &&
-          entry.venue.archival_status === "mixed" &&
-          entry.venue.venue_priority === "standard",
+        (entry) => entry.venue.entry_type === "workshop" && entry.venue.archival_status === "mixed",
       ),
     ).toBe(true);
   });
@@ -211,21 +209,13 @@ describe("deadline board model", () => {
     expect(priorDeadlineRevisions({ revisions } as DeadlineVenue)).toEqual([revisions[0]]);
   });
 
-  it("keeps venue priority and publication policy as independent labels", () => {
+  it("labels publication policy without reference to venue priority", () => {
     const venue = {
       archival_status: "archival",
       entry_type: "main_conference",
       venue_priority: "primary",
     } as DeadlineVenue;
-    expect(priorityLabelOf(venue)).toBe("Primary");
     expect(archivalLabelOf(venue)).toBe("Archival");
-    expect(
-      priorityLabelOf({ ...venue, entry_type: "demo_track", venue_priority: "secondary" }),
-    ).toBe("Secondary");
-    expect(priorityLabelOf({ ...venue, entry_type: "arr_commitment" })).toBe("Primary");
-    expect(priorityLabelOf({ ...venue, entry_type: "workshop", venue_priority: "standard" })).toBe(
-      "",
-    );
     expect(archivalLabelOf({ ...venue, archival_status: "unknown" })).toBe(
       "Archival status not established",
     );
@@ -233,14 +223,11 @@ describe("deadline board model", () => {
     expect(archivalLabelOf({ ...venue, archival_status: "mixed" })).toBe("Archival + non-archival");
   });
 
-  it("groups the filtered chronology without duplicating deadlines", () => {
+  it("groups workshops only, and never loses or duplicates a deadline", () => {
     const entries = buildDeadlineBoardEntries();
     const groups = groupDeadlineBoardEntries(entries);
 
-    expect(groups[0].instant).toBe(groups[0].entries[0].instant);
-    expect(groups.map((group) => group.label).toSorted()).toEqual(
-      [...new Set(entries.map((entry) => entry.venue.venue_group))].toSorted(),
-    );
+    // Nothing may be dropped or double-counted by the split into groups and standalone cards.
     expect(groups.flatMap((group) => group.entries)).toHaveLength(entries.length);
     expect(
       groups
@@ -248,16 +235,94 @@ describe("deadline board model", () => {
         .map((entry) => entry.venue.id)
         .toSorted(),
     ).toEqual(entries.map((entry) => entry.venue.id).toSorted());
+
+    // Every real group is a workshop bundle holding more than one entry.
+    for (const group of groups.filter((candidate) => !candidate.standalone)) {
+      expect(group.entries.length).toBeGreaterThan(1);
+      expect(group.entries.every((entry) => entry.venue.entry_type === "workshop")).toBe(true);
+    }
+
+    // Conferences never group, however many deadlines they carry.
+    const iclr = groups.filter((group) => group.entries[0]?.venue.venue_group === "ICLR 2027");
+    expect(iclr).toHaveLength(2);
+    expect(iclr.every((group) => group.standalone)).toBe(true);
+    expect(iclr.map((group) => group.entries[0]?.venue.deadline_label).toSorted()).toEqual([
+      "abstract deadline",
+      "full paper",
+    ]);
+
     const neurips = entries.filter((entry) => entry.venue.venue_group === "NeurIPS 2026 Workshops");
-    const neuripsGroup = groups.find((group) => group.label === "NeurIPS 2026 Workshops");
+    const neuripsGroup = groups.find((group) => group.label === "Workshops of NeurIPS 2026");
     expect(neurips.length).toBeGreaterThan(100);
+    expect(neuripsGroup?.standalone).toBe(false);
     expect(neuripsGroup?.entries.length).toBe(neurips.length);
     expect(neuripsGroup?.sections.nonArchival.length).toBe(neurips.length);
-    expect(neuripsGroup?.sections.unknown.length).toBe(0);
-    const emnlpGroup = groups.find((group) => group.label === "EMNLP 2026 Workshops");
+
+    const emnlpGroup = groups.find((group) => group.label === "Workshops of EMNLP 2026");
     expect(emnlpGroup?.sections.mixed.length).toBeGreaterThan(0);
-    expect(emnlpGroup?.sections.unknown.length).toBe(0);
-    expect(groups.find((group) => group.label === "EMNLP 2026")?.sections.archival.length).toBe(1);
+  });
+
+  it("renames a workshop group after its parent, and leaves other labels alone", () => {
+    expect(workshopGroupLabel("EMNLP 2026 Workshops")).toBe("Workshops of EMNLP 2026");
+    expect(workshopGroupLabel("NeurIPS 2026 Workshops")).toBe("Workshops of NeurIPS 2026");
+    // Not a workshop group: spelled exactly as the data has it.
+    expect(workshopGroupLabel("ICLR 2027")).toBe("ICLR 2027");
+    expect(workshopGroupLabel("ARR October 2026")).toBe("ARR October 2026");
+  });
+
+  it("leads the countdown with an archival non-workshop deadline", () => {
+    const entries = buildDeadlineBoardEntries();
+    const upcoming = entriesForDeadlinePeriod(
+      entries,
+      Date.parse("2026-08-24T12:00:00Z"),
+      "upcoming",
+    );
+
+    // The nearest deadline overall is a workshop; the headline must skip past it.
+    expect(upcoming[0]?.venue.entry_type).toBe("workshop");
+    const headline = headlineDeadlineEntry(upcoming);
+    expect(headline?.venue.entry_type).not.toBe("workshop");
+    expect(headline?.venue.archival_status).toBe("archival");
+
+    // With nothing but workshops left, an imperfect headline still beats an empty one.
+    const workshopsOnly = upcoming.filter((entry) => entry.venue.entry_type === "workshop");
+    expect(headlineDeadlineEntry(workshopsOnly)).toBe(workshopsOnly[0]);
+    expect(headlineDeadlineEntry([])).toBeUndefined();
+  });
+
+  it("merges a conference into the ARR cycle it submits through", () => {
+    const entries = buildDeadlineBoardEntries();
+    const atOct12 = entries.filter(
+      (entry) =>
+        entry.venue.entry_type === "arr_direct_submission" &&
+        entry.venue.deadline_aoe.startsWith("2026-10-12"),
+    );
+
+    // NAACL 2027 and the ARR October cycle shared an instant; one card survives.
+    expect(atOct12).toHaveLength(1);
+    expect(atOct12[0]?.venue.venue_group).toBe("NAACL 2027");
+    // The absorbed cycle stays searchable on the survivor.
+    expect(atOct12[0]?.venue.name).toContain("ARR October 2026");
+
+    // A cycle with no conference against it is untouched.
+    const may = entries.filter((entry) => entry.venue.venue_group === "ARR May 2026");
+    expect(may).toHaveLength(1);
+    expect(may[0]?.venue.name).not.toContain("via");
+  });
+
+  it("leaves an unpaired ARR cycle alone", () => {
+    const solo = [
+      {
+        venue: {
+          entry_type: "arr_direct_submission",
+          venue_group: "ARR May 2026",
+          name: "ARR — May 2026",
+          archival_status: "unknown",
+        },
+        instant: 1,
+      },
+    ] as unknown as Parameters<typeof mergeArrSubmissionDuplicates>[0];
+    expect(mergeArrSubmissionDuplicates(solo)).toHaveLength(1);
   });
 });
 
@@ -463,7 +528,7 @@ describe("renderDeadlines", () => {
     ).toBe("Search conferences & workshops…");
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
     expect(
       [...container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select")].every(
         (select) =>
@@ -511,11 +576,13 @@ describe("renderDeadlines", () => {
       button.textContent?.trim().replace(/\s+\d+$/u, ""),
     );
 
-    expect(labels).toContain("EMNLP 2026 Workshops");
-    expect(labels).toContain("NeurIPS 2026 Workshops");
+    // Workshop bundles lead with the word that distinguishes them; everything else keeps the
+    // label the data spells.
+    expect(labels).toContain("Workshops of EMNLP 2026");
+    expect(labels).toContain("Workshops of NeurIPS 2026");
     expect(labels).toContain("ICLR 2027");
     expect(labels).toContain("EACL 2027");
-    expect(labels).toContain("ARR October 2026");
+    expect(labels).not.toContain("EMNLP 2026 Workshops");
     expect(labels).not.toContain("Workshops of ICLR 2027");
     expect(labels).not.toContain("Workshops of EACL 2027");
 
@@ -524,13 +591,15 @@ describe("renderDeadlines", () => {
     const headings = [...container.querySelectorAll(".deadline-group__heading strong")].map(
       (heading) => heading.textContent?.trim(),
     );
-    expect(headings).toContain("EMNLP 2026 Workshops");
-    expect(headings).toContain("NeurIPS 2026 Workshops");
-    expect(headings).toContain("ICLR 2027");
-    expect(headings).toContain("EACL 2027");
+    expect(headings).toContain("Workshops of EMNLP 2026");
+    expect(headings).toContain("Workshops of NeurIPS 2026");
+    // Conferences are standalone cards now, so they have no collapsible group heading at all.
+    expect(headings).not.toContain("ICLR 2027");
+    expect(headings).not.toContain("EACL 2027");
+    expect(container.querySelectorAll(".deadline-group--standalone").length).toBeGreaterThan(0);
   });
 
-  it("keeps classification labels separate across cards and grouped rows", async () => {
+  it("shows publication policy on cards, and no venue-priority badge anywhere", async () => {
     const container = await renderView();
     buttonNamed(container, "Cards").click();
     await settle(container);
@@ -539,49 +608,25 @@ describe("renderDeadlines", () => {
     const workshop = cards.find(
       (card) => card.dataset.entryType === "workshop" && card.dataset.archivalStatus === "mixed",
     )!;
-    expect(workshop.dataset.archivalStatus).toBeDefined();
     expect(workshop.querySelector(".deadline-card__urgency")?.textContent?.trim()).not.toBe("");
-    expect(workshop.querySelector(".deadline-priority")).toBeNull();
     expect(workshop.querySelector(".deadline-archival")?.textContent?.trim()).toBe(
       "Archival + non-archival",
     );
 
-    const primary = cards.find(
+    // The archival label survives on a conference; the priority badge is gone from every card,
+    // including the venues that used to carry Primary and Secondary.
+    const archivalConference = cards.find(
       (card) =>
         card.dataset.archivalStatus === "archival" &&
-        card.dataset.venuePriority === "primary" &&
         ["main_conference", "demo_track"].includes(card.dataset.entryType ?? ""),
     )!;
-    expect(primary.querySelector('[data-priority="primary"]')?.textContent?.trim()).toBe("Primary");
-    expect(primary.querySelector('[data-archival="archival"]')?.textContent?.trim()).toBe(
-      "Archival",
-    );
-
-    const secondary = cards.find(
-      (card) =>
-        card.dataset.archivalStatus === "archival" &&
-        card.dataset.venuePriority === "secondary" &&
-        ["main_conference", "demo_track"].includes(card.dataset.entryType ?? ""),
-    )!;
-    expect(secondary.querySelector('[data-priority="secondary"]')?.textContent?.trim()).toBe(
-      "Secondary",
-    );
-    expect(secondary.querySelector('[data-archival="archival"]')?.textContent?.trim()).toBe(
-      "Archival",
-    );
-
-    const arrCommitment = cards.find(
-      (card) =>
-        card.dataset.entryType === "arr_commitment" &&
-        card.dataset.venuePriority === "secondary" &&
-        card.dataset.archivalStatus === "archival",
-    )!;
-    expect(arrCommitment.querySelector('[data-priority="secondary"]')?.textContent?.trim()).toBe(
-      "Secondary",
-    );
-    expect(arrCommitment.querySelector('[data-archival="archival"]')?.textContent?.trim()).toBe(
-      "Archival",
-    );
+    expect(
+      archivalConference.querySelector('[data-archival="archival"]')?.textContent?.trim(),
+    ).toBe("Archival");
+    expect(container.querySelectorAll(".deadline-priority")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-priority]")).toHaveLength(0);
+    expect(container.textContent).not.toContain("Primary");
+    expect(container.textContent).not.toContain("Secondary");
 
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -589,32 +634,14 @@ describe("renderDeadlines", () => {
       (group) =>
         group
           .querySelector(".deadline-group__heading")
-          ?.textContent?.includes("NeurIPS 2026 Workshops"),
+          ?.textContent?.includes("Workshops of NeurIPS 2026"),
     )!;
     const workshopNote = workshopGroup.querySelector<HTMLElement>(".deadline-group__row-note")!;
     expect(workshopNote.querySelector(".deadline-card__labels")).not.toBeNull();
     expect(workshopNote.querySelector(".deadline-card__type")?.textContent?.trim()).toBe(
       "Workshop",
     );
-    const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find((group) =>
-      group.querySelector(".deadline-group__heading")?.textContent?.includes("ICLR 2027"),
-    )!;
-    iclr.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
-    await settle(container);
-    const openIclr = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
-      (group) =>
-        group.hasAttribute("data-open") &&
-        group.querySelector(".deadline-group__heading")?.textContent?.includes("ICLR 2027"),
-    )!;
-    expect(openIclr.querySelector('[data-priority="primary"]')?.textContent?.trim()).toBe(
-      "Primary",
-    );
-    expect(openIclr.querySelector('[data-archival="archival"]')?.textContent?.trim()).toBe(
-      "Archival",
-    );
-    expect(
-      openIclr.querySelector(".deadline-group__row-note .deadline-card__labels"),
-    ).not.toBeNull();
+    expect(container.querySelectorAll(".deadline-priority")).toHaveLength(0);
   });
 
   it("shows Past newest first with exact times and keeps all filters available", async () => {
@@ -679,7 +706,7 @@ describe("renderDeadlines", () => {
     const container = await renderView();
     const button = [
       ...container.querySelectorAll<HTMLButtonElement>(".deadline-board__groups button"),
-    ].find((candidate) => candidate.textContent?.includes("NeurIPS 2026 Workshops"))!;
+    ].find((candidate) => candidate.textContent?.includes("Workshops of NeurIPS 2026"))!;
 
     button.click();
     await settle(container);
@@ -688,7 +715,7 @@ describe("renderDeadlines", () => {
       (node) => node.textContent?.trim() ?? "",
     );
     expect(groups.length).toBeGreaterThan(50);
-    expect(groups.every((label) => label.startsWith("NeurIPS 2026 Workshops"))).toBe(true);
+    expect(groups.every((label) => label.startsWith("Workshops of NeurIPS 2026"))).toBe(true);
     expect(button.getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -714,7 +741,7 @@ describe("renderDeadlines", () => {
     const container = await renderView();
     const workshopGroup = [
       ...container.querySelectorAll<HTMLButtonElement>(".deadline-board__groups button"),
-    ].find((button) => button.textContent?.includes("NeurIPS 2026 Workshops"))!;
+    ].find((button) => button.textContent?.includes("Workshops of NeurIPS 2026"))!;
     workshopGroup.click();
     await settle(container);
 
@@ -736,17 +763,11 @@ describe("renderDeadlines", () => {
       `Showing ${cards.length} of ${cards.length} matching upcoming deadlines`,
     );
 
-    const priority = container.querySelector<HTMLSelectElement>(
-      '[data-testid="deadline-filter-priority"]',
-    )!;
-    priority.value = "primary";
-    priority.dispatchEvent(new Event("change", { bubbles: true }));
-    await settle(container);
+    // The priority facet is gone; the two that remain are the whole filter bar.
+    expect(container.querySelector('[data-testid="deadline-filter-priority"]')).toBeNull();
     expect(
-      [...container.querySelectorAll<HTMLElement>(".deadline-card")].every(
-        (card) => card.dataset.venuePriority === "primary",
-      ),
-    ).toBe(true);
+      container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
+    ).toHaveLength(2);
   });
 
   it("switches among cards, grouped disclosures, and a complete table", async () => {
@@ -823,7 +844,7 @@ describe("renderDeadlines", () => {
       (entry) => entry.venue.name === workshop.querySelector(".deadline-card__name")?.textContent,
     )!.venue;
     expect(workshop.querySelector(".deadline-card__group-name")?.textContent).toBe(
-      venue.venue_group,
+      workshopGroupLabel(venue.venue_group),
     );
     const title = workshop.querySelector<HTMLAnchorElement>(".deadline-card__name a")!;
     const actions = [

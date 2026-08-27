@@ -1,7 +1,7 @@
 // Native rendering for every Control UI deadline surface.
 //
 // The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
-// generated deadline dataset and present the same board: period, type and priority filters,
+// generated deadline dataset and present the same board: period, type and archival filters,
 // search, venue groups, source links, history, and card/group/table views. This renderer stays in
 // app's document flow so the containing page owns one ordinary vertical scroll.
 
@@ -40,23 +40,25 @@ export type DeadlineBoardGroup = {
   entries: DeadlineBoardEntry[];
   instant: number;
   sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]>;
+  /**
+   * Render as a single card rather than a collapsible group. True for everything that is not a
+   * workshop, and for a workshop group that ended up holding one entry.
+   */
+  standalone: boolean;
 };
 export type DeadlineBoardView = "cards" | "groups" | "table";
 export type DeadlineBoardPeriod = "upcoming" | "past";
 export type DeadlineBoardEntryType = "all" | DeadlineVenue["entry_type"];
 export type DeadlineBoardArchivalStatus = "all" | DeadlineVenue["archival_status"];
-export type DeadlineBoardPriority = "all" | DeadlineVenue["venue_priority"];
 export type DeadlineBoardFilters = Readonly<{
   entryType: DeadlineBoardEntryType;
   archivalStatus: DeadlineBoardArchivalStatus;
-  priority: DeadlineBoardPriority;
 }>;
 type DeadlineUrgency = Urgency | "passed";
 
 export const DEFAULT_DEADLINE_BOARD_FILTERS: DeadlineBoardFilters = {
   entryType: "all",
   archivalStatus: "all",
-  priority: "all",
 };
 
 export function parentConferenceOptions(venues: readonly DeadlineVenue[]): string[] {
@@ -72,13 +74,95 @@ export function parentConferenceOptions(venues: readonly DeadlineVenue[]): strin
 export function buildDeadlineBoardEntries(
   venues: readonly DeadlineVenue[] = DEADLINE_VENUES,
 ): DeadlineBoardEntry[] {
-  return venues
+  const sorted = venues
     .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
     .filter((entry) => Number.isFinite(entry.instant))
     .toSorted(
       (left, right) =>
         left.instant - right.instant || left.venue.name.localeCompare(right.venue.name),
     );
+  return mergeArrSubmissionDuplicates(sorted);
+}
+
+/**
+ * Collapse a conference and the ARR cycle it submits through into one deadline.
+ *
+ * NAACL 2027 takes papers via the ARR October 2026 cycle, so the board carried two cards for a
+ * single act: "ARR — October 2026 cycle (direct submission)" and "NAACL 2027 (main, ARR
+ * submission)", both `arr_direct_submission`, both at 2026-10-12 23:59:59. Two countdowns to the
+ * same instant reads as two things to do.
+ *
+ * Matched on entry type plus instant rather than on a venue list, so a cycle with no conference
+ * hanging off it (May and August 2026 today) is left alone and a future pairing needs no code
+ * change. The conference wins the card: it names the venue somebody is actually targeting and
+ * carries the real archival status, where the generic cycle is `unknown`. The cycle's name is kept
+ * on the survivor so searching "ARR October" still finds it.
+ */
+export function mergeArrSubmissionDuplicates(
+  entries: readonly DeadlineBoardEntry[],
+): DeadlineBoardEntry[] {
+  const byInstant = new Map<number, DeadlineBoardEntry[]>();
+  for (const entry of entries) {
+    if (entry.venue.entry_type !== "arr_direct_submission") {
+      continue;
+    }
+    const bucket = byInstant.get(entry.instant);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      byInstant.set(entry.instant, [entry]);
+    }
+  }
+
+  const dropped = new Set<DeadlineBoardEntry>();
+  const renamed = new Map<DeadlineBoardEntry, DeadlineBoardEntry>();
+  for (const bucket of byInstant.values()) {
+    if (bucket.length < 2) {
+      continue;
+    }
+    // A named venue beats a bare cycle. `archival_status` is the tell: the cycle cannot know
+    // whether the eventual venue archives, so it is recorded as unknown.
+    const survivor = bucket.find((entry) => entry.venue.archival_status !== "unknown") ?? bucket[0];
+    if (!survivor) {
+      continue;
+    }
+    const absorbed = bucket.filter((entry) => entry !== survivor);
+    for (const entry of absorbed) {
+      dropped.add(entry);
+    }
+    const viaGroups = absorbed.map((entry) => entry.venue.venue_group.trim()).filter(Boolean);
+    if (viaGroups.length > 0) {
+      renamed.set(survivor, {
+        ...survivor,
+        venue: { ...survivor.venue, name: `${survivor.venue.name} · via ${viaGroups.join(", ")}` },
+      });
+    }
+  }
+
+  return entries.filter((entry) => !dropped.has(entry)).map((entry) => renamed.get(entry) ?? entry);
+}
+
+/**
+ * The entry the countdown leads with.
+ *
+ * Never a workshop. Workshops outnumber everything else on this board roughly ten to one, so the
+ * nearest deadline is nearly always one of them — and a hero counting down to a non-archival
+ * workshop while an archival conference closes the same week actively misleads the lab about what
+ * it is about to miss. Prefer an archival non-workshop, then any non-workshop, and only then fall
+ * back to the plain next entry: an imperfect headline still beats an empty one when a filter has
+ * narrowed the board to workshops alone.
+ */
+export function headlineDeadlineEntry(
+  entries: readonly DeadlineBoardEntry[],
+): DeadlineBoardEntry | undefined {
+  return (
+    entries.find(
+      (entry) =>
+        entry.venue.archival_status === "archival" && entry.venue.entry_type !== "workshop",
+    ) ??
+    entries.find((entry) => entry.venue.entry_type !== "workshop") ??
+    entries[0]
+  );
 }
 
 export function entriesForDeadlinePeriod(
@@ -112,9 +196,6 @@ export function filterDeadlineBoardEntries(
     if (filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus) {
       return false;
     }
-    if (filters.priority !== "all" && venue.venue_priority !== filters.priority) {
-      return false;
-    }
     if (!needle) {
       return true;
     }
@@ -132,10 +213,39 @@ export function filterDeadlineBoardEntries(
   });
 }
 
+/**
+ * Rewrites a workshop group heading into "Workshops of <parent>".
+ *
+ * The generated data spells these "EMNLP 2026 Workshops". Leading with the parent conference put
+ * the least distinguishing word last, so a column of headings read as a list of venues rather than
+ * a list of workshop sets. Only the trailing "Workshops" is moved; a group that does not end that
+ * way is left exactly as the data spells it.
+ */
+export function workshopGroupLabel(venueGroup: string): string {
+  const trimmed = venueGroup.trim();
+  const parent = trimmed.replace(/\s+workshops$/iu, "").trim();
+  return parent && parent !== trimmed ? `Workshops of ${parent}` : trimmed;
+}
+
+/**
+ * Bundle workshops by parent conference; leave everything else as its own card.
+ *
+ * Grouping earned its place for the 140 workshops, where one EMNLP heading replaces ten near
+ * identical rows. It never earned it for conferences: ICLR 2027's abstract and full-paper
+ * deadlines are two dates a person plans around separately, and folding them behind one collapsed
+ * heading hid the abstract deadline entirely. A group of one is likewise just a card wearing a
+ * disclosure triangle, so it is flattened back into one.
+ *
+ * `standalone` carries that decision to the renderer rather than the renderer re-deriving it, so
+ * the flat list and the grouped list cannot disagree about what counts as a group.
+ */
 export function groupDeadlineBoardEntries(
   entries: readonly DeadlineBoardEntry[],
 ): DeadlineBoardGroup[] {
   const groups = new Map<string, DeadlineBoardGroup>();
+  // One ordered list, appended to as each group or card is first seen. Sorting the result by
+  // instant instead would silently reverse the "Past" view, which arrives newest-first.
+  const ordered: DeadlineBoardGroup[] = [];
   for (const entry of entries) {
     const id = entry.venue.venue_group.trim();
     const kind: DeadlineGroupKind =
@@ -148,11 +258,7 @@ export function groupDeadlineBoardEntries(
             : entry.venue.archival_status === "mixed"
               ? "mixed"
               : "unknown";
-    const current = groups.get(id);
-    if (current) {
-      current.entries.push(entry);
-      current.sections[kind].push(entry);
-    } else {
+    const makeSections = (): Record<DeadlineGroupKind, DeadlineBoardEntry[]> => {
       const sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]> = {
         archival: [],
         nonArchival: [],
@@ -161,16 +267,47 @@ export function groupDeadlineBoardEntries(
         other: [],
       };
       sections[kind].push(entry);
-      groups.set(id, {
-        id,
+      return sections;
+    };
+
+    // Anything that is not a workshop is its own card, keyed by venue id so two entries from the
+    // same conference (ICLR's abstract and full paper) can never collide into one heading.
+    if (entry.venue.entry_type !== "workshop") {
+      ordered.push({
+        id: `${id}::${entry.venue.id}::${entry.instant}`,
         label: id,
         entries: [entry],
         instant: entry.instant,
-        sections,
+        sections: makeSections(),
+        standalone: true,
       });
+      continue;
+    }
+
+    const current = groups.get(id);
+    if (current) {
+      current.entries.push(entry);
+      current.sections[kind].push(entry);
+    } else {
+      const created: DeadlineBoardGroup = {
+        id,
+        label: workshopGroupLabel(id),
+        entries: [entry],
+        instant: entry.instant,
+        sections: makeSections(),
+        standalone: false,
+      };
+      groups.set(id, created);
+      ordered.push(created);
     }
   }
-  return [...groups.values()];
+  // A workshop group that attracted only one entry is a card, not a group.
+  for (const group of groups.values()) {
+    if (group.entries.length === 1) {
+      group.standalone = true;
+    }
+  }
+  return ordered;
 }
 
 function groupOptions(entries: readonly DeadlineBoardEntry[], period: DeadlineBoardPeriod) {
@@ -186,7 +323,9 @@ function groupOptions(entries: readonly DeadlineBoardEntry[], period: DeadlineBo
     } else {
       groups.set(entry.venue.venue_group, {
         id: entry.venue.venue_group,
-        label: entry.venue.venue_group,
+        // Same wording as the group heading. The id stays the raw venue_group, which is what
+        // filtering matches on, so renaming the chip cannot break selection.
+        label: workshopGroupLabel(entry.venue.venue_group),
         count: 1,
         instant: entry.instant,
       });
@@ -229,13 +368,6 @@ function renderDeadlineTitle(venue: DeadlineVenue, label = venue.name) {
     : label;
 }
 
-export function priorityLabelOf(venue: DeadlineVenue): string {
-  if (venue.venue_priority === "primary") {
-    return "Primary";
-  }
-  return venue.venue_priority === "secondary" ? "Secondary" : "";
-}
-
 export function archivalLabelOf(venue: DeadlineVenue): string {
   if (venue.archival_status === "unknown") {
     return "Archival status not established";
@@ -246,21 +378,19 @@ export function archivalLabelOf(venue: DeadlineVenue): string {
   return venue.archival_status === "non_archival" ? "Non-archival" : "Archival";
 }
 
+/**
+ * Only the publication policy is shown now.
+ *
+ * The Primary/Secondary venue priority was dropped from the board: it applied to 10 of 154 venues,
+ * carried no date information, and sat beside the archival label where the two were routinely read
+ * as one classification. `venue_priority` is still on the record for anything that wants to rank
+ * venues — it is simply not a badge.
+ */
 function renderClassification(venue: DeadlineVenue) {
-  const priority = priorityLabelOf(venue);
   const archival = archivalLabelOf(venue);
-  return priority || archival
+  return archival
     ? html`<span class="deadline-classification">
-        ${priority
-          ? html`<span class="deadline-priority" data-priority=${venue.venue_priority}
-              >${priority}</span
-            >`
-          : nothing}
-        ${archival
-          ? html`<span class="deadline-archival" data-archival=${venue.archival_status}
-              >${archival}</span
-            >`
-          : nothing}
+        <span class="deadline-archival" data-archival=${venue.archival_status}>${archival}</span>
       </span>`
     : nothing;
 }
@@ -295,13 +425,6 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
   { value: "non_archival", label: "Non-archival" },
   { value: "mixed", label: "Archival + non-archival" },
   { value: "unknown", label: "Archival status unknown" },
-];
-
-const PRIORITY_OPTIONS: ReadonlyArray<{ value: DeadlineBoardPriority; label: string }> = [
-  { value: "all", label: "All priorities" },
-  { value: "primary", label: "Primary priority" },
-  { value: "secondary", label: "Secondary priority" },
-  { value: "standard", label: "Standard priority" },
 ];
 
 function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
@@ -387,7 +510,6 @@ class AdminbotDeadlinesView extends LitElement {
   private query = "";
   private entryType: DeadlineBoardEntryType = "all";
   private archivalStatus: DeadlineBoardArchivalStatus = "all";
-  private priority: DeadlineBoardPriority = "all";
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
   private venues: DeadlineVenue[] = DEADLINE_VENUES;
@@ -494,11 +616,6 @@ class AdminbotDeadlinesView extends LitElement {
   private setArchivalStatus(event: Event): void {
     this.archivalStatus = (event.currentTarget as HTMLSelectElement)
       .value as DeadlineBoardArchivalStatus;
-    this.requestUpdate();
-  }
-
-  private setPriority(event: Event): void {
-    this.priority = (event.currentTarget as HTMLSelectElement).value as DeadlineBoardPriority;
     this.requestUpdate();
   }
 
@@ -1164,20 +1281,6 @@ class AdminbotDeadlinesView extends LitElement {
             )}
           </select>
         </label>
-        <label class="deadline-board__facet">
-          <span class="sr-only">Filter by priority</span>
-          <select
-            data-testid="deadline-filter-priority"
-            .value=${this.priority}
-            @change=${this.setPriority}
-          >
-            ${PRIORITY_OPTIONS.map(
-              (option) => html`<option value=${option.value}>
-                ${option.label} (${count("priority", option.value)})
-              </option>`,
-            )}
-          </select>
-        </label>
         <div class="deadline-board__groups" role="group" aria-label="Filter by venue">
           <button
             type="button"
@@ -1207,11 +1310,7 @@ class AdminbotDeadlinesView extends LitElement {
   private renderArchivalGuide() {
     return html`
       <details class="deadline-board__guide">
-        <summary>What priority and archival status mean</summary>
-        <p>
-          Primary and Secondary are the lab's venue priorities. Archival status is a separate
-          publication-policy classification.
-        </p>
+        <summary>What archival status means</summary>
         <p>
           Workshop status follows its own CFP or an official parent policy. A workshop can offer
           archival, non-archival, or separate archival and non-archival routes.
@@ -1286,9 +1385,9 @@ class AdminbotDeadlinesView extends LitElement {
         <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
         <p
           class="deadline-card__group"
-          title=${`${venue.venue_group} · ${capitalize(venue.deadline_label)}`}
+          title=${`${workshopGroupLabel(venue.venue_group)} · ${capitalize(venue.deadline_label)}`}
         >
-          <span class="deadline-card__group-name">${venue.venue_group}</span>
+          <span class="deadline-card__group-name">${workshopGroupLabel(venue.venue_group)}</span>
           <span aria-hidden="true">·</span>
           <span class="deadline-card__stage">${capitalize(venue.deadline_label)}</span>
         </p>
@@ -1478,6 +1577,20 @@ class AdminbotDeadlinesView extends LitElement {
   private renderGroups(entries: readonly DeadlineBoardEntry[]) {
     return html`<div class="deadline-board__group-list">
       ${groupDeadlineBoardEntries(entries).map((group, index) => {
+        // A card, not a group: no disclosure triangle, no section headings, nothing to expand.
+        // Rendered through the same row renderer the panel uses so the two cannot drift apart.
+        const solo = group.entries[0];
+        if (group.standalone && solo) {
+          return html`<section
+            class="deadline-group deadline-group--standalone"
+            data-count="1"
+            data-standalone="true"
+            data-urgency=${urgency(solo, this.now)}
+            data-period=${this.period}
+          >
+            ${this.renderGroupRow(solo, group.label)}
+          </section>`;
+        }
         const open = this.expandedGroups.has(group.id);
         const panelId = `deadline-group-panel-${index}`;
         const counts = [
@@ -1547,7 +1660,6 @@ class AdminbotDeadlinesView extends LitElement {
     const filters: DeadlineBoardFilters = {
       entryType: this.entryType,
       archivalStatus: this.archivalStatus,
-      priority: this.priority,
     };
     const matching = filterDeadlineBoardEntries(periodEntries, "", this.query, filters);
     if (
@@ -1557,7 +1669,7 @@ class AdminbotDeadlinesView extends LitElement {
       this.activeGroup = "";
     }
     const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "", filters);
-    const next = filtered[0];
+    const next = headlineDeadlineEntry(filtered);
     const latestSourceCheck = this.venues
       .map((venue) => venue.source_checked_at || "")
       .filter(Boolean)
