@@ -128,6 +128,7 @@ import {
   type AdminBotPaperReimbursementRecord,
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
+  type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotBranchPriority,
@@ -343,6 +344,8 @@ export type AdminBotServiceStore = {
   listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
   /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
   listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+  saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
+  latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
   appendLoginEvent(event: AdminBotLoginEvent): void;
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
   listLoginEventsSince(since: string): AdminBotLoginEvent[];
@@ -3822,6 +3825,20 @@ export class AdminBotService {
           : {}),
       });
     }
+  }
+
+  /**
+   * The newest workshop-matching pass, or undefined before the first one.
+   *
+   * Plain pass-throughs: the pass is orchestrated in the route because it outlives the request,
+   * and the service's job here is only to own the storage.
+   */
+  latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
+    return this.store.latestWorkshopMatchRun();
+  }
+
+  saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
+    this.store.saveWorkshopMatchRun(run);
   }
 
   /** Every sign-in this member has made, newest first. */

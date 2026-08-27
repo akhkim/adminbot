@@ -41,7 +41,8 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
             </button>
           </div>`
         : nothing}
-      ${!result && props.state.loading
+      ${renderRunProgress(props)}
+      ${!result && props.state.loading && props.state.run?.status !== "running"
         ? html`<div class="card adminbot-card adminbot-card--wide muted">
             Finding workshop matches…
           </div>`
@@ -66,6 +67,35 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
         : nothing}
     </section>
   `;
+}
+
+/**
+ * What a pass in flight looks like.
+ *
+ * The match is thousands of model calls and runs to completion on the server, so the page can be
+ * opened, closed and reopened while it works. A bare spinner would say nothing about that -- and
+ * after a minute or two it reads as broken rather than busy -- so this says how far along it is
+ * and that leaving is safe.
+ */
+function renderRunProgress(props: WorkshopNudgesProps) {
+  const run = props.state.run;
+  if (run?.status !== "running") {
+    return nothing;
+  }
+  const done = run.calls_done ?? 0;
+  const total = run.calls_total ?? 0;
+  return html`<div
+    class="card adminbot-card adminbot-card--wide workshop-nudges__running"
+    data-testid="workshop-nudges-running"
+  >
+    <strong>Matching in progress…</strong>
+    <span class="muted">
+      ${total > 0
+        ? `${done} of ${total} model calls done.`
+        : "Working out how many papers and workshops to compare."}
+      You can leave this page — the pass keeps running and the result is kept.
+    </span>
+  </div>`;
 }
 
 function renderResultActions(props: WorkshopNudgesProps, result: WorkshopNudgeResult) {

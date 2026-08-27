@@ -167,6 +167,35 @@ export type AdminBotNudgeDomain = (typeof adminBotNudgeDomains)[number];
  * profile field -- because the ledger never joins back to anything. It only ever answers "have we
  * already asked, and when".
  */
+/**
+ * One workshop-matching pass, and what it produced.
+ *
+ * The match is a cross-product -- every upcoming workshop against every paper -- which on this
+ * roster is thousands of model calls and tens of minutes. That never fitted inside the request the
+ * button makes, so the browser gave up and the page reported the service as unreachable. It is
+ * kept here instead: the pass runs to completion server-side and writes its answer, and opening
+ * the page reads the answer rather than starting the work again.
+ *
+ * Still on command, not on a schedule. Pressing Refresh starts a pass; everyone who opens the page
+ * afterwards sees what it found, until somebody asks for a newer one.
+ */
+export type AdminBotWorkshopMatchRun = {
+  id: string;
+  /** `running` while the pass is in flight; `ready` and `failed` are both terminal. */
+  status: "running" | "ready" | "failed";
+  started_at: string;
+  finished_at?: string;
+  /** Who pressed Refresh. A pass is somebody's decision, and it costs real model time. */
+  started_by?: string;
+  /** Model calls finished and total, so a page open mid-pass can say how far along it is. */
+  calls_done: number;
+  calls_total: number;
+  /** The preview payload, once the pass finished. */
+  payload_json?: string;
+  /** Why it failed, when it did. */
+  error?: string;
+};
+
 export type AdminBotNudgeLedgerRecord = {
   domain: AdminBotNudgeDomain;
   subject_id: string;

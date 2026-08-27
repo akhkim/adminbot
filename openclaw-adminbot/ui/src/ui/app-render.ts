@@ -23,6 +23,7 @@ import {
   runAdminBotVenueIndexJob,
   searchAdminBotVenuePapers,
   loadWorkshopNudgePreview,
+  refreshWorkshopNudgePreview,
   setWorkshopNudgeRecipients,
   setAdminBotVenue,
   setAdminBotVenueInterests,
@@ -1727,6 +1728,18 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   pendingUpdate = requestHostUpdate;
+
+  // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
+  // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
+  // `run` behind, so this fires once per visit and not once per frame.
+  if (
+    state.tab === "adminbotWorkshopNudges" &&
+    !state.adminBotWorkshopNudges.run &&
+    !state.adminBotWorkshopNudges.loading &&
+    !state.adminBotWorkshopNudges.error
+  ) {
+    void loadWorkshopNudgePreview(state).finally(() => requestHostUpdate?.());
+  }
 
   // Which request form the sidebar asked for. The three tabs are one view with the picker taken
   // out, so the tab *is* the template -- read once here rather than at each of the three use sites,
@@ -3700,7 +3713,10 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyWorkshopNudges, (m) =>
               m.renderWorkshopNudges({
                 state: state.adminBotWorkshopNudges,
-                onRefresh: () => void loadWorkshopNudgePreview(state),
+                // Refresh starts a new pass; opening the tab only reads the stored one. The two
+                // cost wildly different things -- one cheap request against thousands of model
+                // calls -- so they are deliberately different actions.
+                onRefresh: () => void refreshWorkshopNudgePreview(state),
                 onToggleRecipient: (memberId) => toggleWorkshopNudgeRecipient(state, memberId),
                 onSetRecipients: (memberIds, selected) =>
                   setWorkshopNudgeRecipients(state, memberIds, selected),

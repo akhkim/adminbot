@@ -42,25 +42,22 @@ export const PAPERS_PER_REQUEST = 8;
 export const MAX_CONCURRENT_REQUESTS = 6;
 
 /**
- * Ceilings, because this runs inside an HTTP request that a browser is waiting on.
+ * One call's ceiling. There is deliberately no ceiling on the pass as a whole.
  *
  * The match is a full cross-product: every upcoming workshop against every paper, in batches. On
- * the live roster that is 125 workshops and 153 papers -- 2,500 model calls, twenty minutes at
- * three seconds each and an hour at eight. Nothing holds a request open that long, so the browser
- * gave up and the page reported the service as unreachable, which is what it looked like from
- * there.
+ * the live roster that is 125 workshops and 153 papers -- around 2,500 model calls and tens of
+ * minutes. That never fitted inside the request the button makes, which is why the browser gave up
+ * and the page reported the service as unreachable.
  *
- * A call that hangs is abandoned. If the whole match cannot finish inside the budget it raises,
- * naming the scale, rather than returning what it happened to get through: at this size a partial
- * result is a handful of workshops out of a hundred and change, and a list that looks complete and
- * is not would send an administrator to nudge the wrong people about the wrong papers.
+ * The answer is not to do less work. It is to stop doing it inside the request: the caller starts
+ * a pass, the pass runs to completion server-side and writes what it found, and the page reads
+ * that. So every job here runs, however long the whole thing takes.
  *
- * Neither bound makes the feature fast. They stop it hanging and make it say why. The fix is to
- * stop computing this per click -- the recommendations want buffering, so a scheduled pass does
- * the work and the page reads what it produced.
+ * A single call still gets a timeout, because one unanswered request would otherwise hold a
+ * concurrency slot for the life of the process. A timed-out call costs its own batch and nothing
+ * else -- the pass carries on and reports how many failed.
  */
-export const REQUEST_TIMEOUT_MS = 30_000;
-export const TOTAL_BUDGET_MS = 60_000;
+export const REQUEST_TIMEOUT_MS = 60_000;
 
 /** How much of a call for papers the model is shown. Scope lives at the top; boilerplate does not. */
 const MAX_CALL_CHARS = 4_000;
@@ -75,8 +72,8 @@ export type WorkshopMatcherOptions = {
   maxConcurrentRequests?: number;
   /** How long one model call may take before it is abandoned. */
   requestTimeoutMs?: number;
-  /** How long the whole match may take before the remaining jobs are skipped. */
-  totalBudgetMs?: number;
+  /** Called as each job settles, so a caller can persist progress while the pass runs. */
+  onProgress?: (done: number, total: number) => void;
 };
 
 const SYSTEM_PROMPT = `You decide which of a research lab's papers belong at a specific workshop.
@@ -207,9 +204,8 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
   const batchSize = Math.max(1, options.papersPerRequest ?? PAPERS_PER_REQUEST);
   const concurrency = Math.max(1, options.maxConcurrentRequests ?? MAX_CONCURRENT_REQUESTS);
   const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
-  const totalBudgetMs = Math.max(1, options.totalBudgetMs ?? TOTAL_BUDGET_MS);
 
-  return async ({ papers, workshops }) => {
+  return async ({ papers, workshops, onProgress }) => {
     // One entry per paper, not per author. workshopNudgeInputsFromAdminBot repeats a paper once
     // for every recipient it resolves, which is right for addressing the nudge and wrong here: the
     // model scores a paper against a workshop, and asking it the same question seven times for a
@@ -230,15 +226,39 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
       }
     }
 
-    const deadline = Date.now() + totalBudgetMs;
-    let skipped = 0;
+    let done = 0;
+    let failed = 0;
+    let firstError: unknown;
     const results = await runWithConcurrency(jobs, concurrency, async (job) => {
-      // Checked per job rather than once: the point is to stop *starting* work, so a run that is
-      // already over budget finishes what is in flight and issues nothing more.
-      if (Date.now() >= deadline) {
-        skipped += 1;
+      try {
+        return await runJob(job);
+      } catch (error) {
+        // One workshop's batch could not be scored. The pass is thousands of calls and a single
+        // unlucky one is not a reason to throw the rest away; it is counted, and the first cause
+        // is kept in case it turns out to be every one of them.
+        failed += 1;
+        firstError ??= error;
         return [];
+      } finally {
+        done += 1;
+        (onProgress ?? options.onProgress)?.(done, jobs.length);
       }
+    });
+
+    if (jobs.length > 0 && failed === jobs.length) {
+      // Nothing succeeded, so this is not a bad batch, it is the endpoint. Rethrow the original
+      // cause rather than a summary: the refusal to talk to a non-loopback endpoint is a rule
+      // about where paper titles may go, and replacing it with "could not reach the model" would
+      // report a deliberate guard as an outage.
+      throw firstError instanceof Error
+        ? firstError
+        : new Error(
+            `${PURPOSE} could not reach the model: all ${jobs.length} calls failed. ` +
+              `Check that the completion endpoint at ${baseUrl} is running.`,
+          );
+    }
+
+    async function runJob(job: { workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }) {
       const reply = await completeLocally({
         fetchImpl,
         baseUrl,
@@ -256,16 +276,6 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         ],
       });
       return parseWorkshopMatchReply(reply, job.workshop.workshop_id, job.papers);
-    });
-    if (skipped > 0) {
-      const done = jobs.length - skipped;
-      throw new Error(
-        `${PURPOSE} did not finish in ${Math.round(totalBudgetMs / 1000)}s: ` +
-          `${workshops.length} upcoming workshops against ${unique.length} papers is ` +
-          `${jobs.length} model calls and only ${done} completed. ` +
-          `This pass is too large to run from a button — it needs to run on a schedule and be ` +
-          `read from a buffer.`,
-      );
     }
     // Jobs finish out of order; the caller's output must not depend on which model call was quick.
     return results

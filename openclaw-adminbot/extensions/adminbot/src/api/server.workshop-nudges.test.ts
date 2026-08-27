@@ -135,6 +135,38 @@ function seedPaper(
   }
 }
 
+/**
+ * Start a pass and wait for the stored answer.
+ *
+ * Two steps now, because the match no longer happens inside the request that asks for it: a pass
+ * is thousands of model calls, so Refresh starts it and the preview reads whatever the last pass
+ * left behind. The tests use a stub matcher, so the wait is short -- but it is a real wait, and
+ * polling here is what the page does too.
+ */
+async function runAndRead(baseUrl: string, headers: Record<string, string>) {
+  const started = await fetch(`${baseUrl}/workshop-nudges/refresh`, {
+    method: "POST",
+    headers,
+    body: "{}",
+  });
+  if (started.status !== 202) {
+    return started;
+  }
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const read = await fetch(`${baseUrl}/workshop-nudges/preview`, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+    const body = (await read.clone().json()) as { status?: string };
+    if (body.status === "ready" || body.status === "failed") {
+      return read;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("the pass never finished");
+}
+
 describe("workshop nudge HTTP flow", () => {
   it("previews current native papers and exact messages for an administrator", async () => {
     const { baseUrl, mock } = await startService();
@@ -149,21 +181,23 @@ describe("workshop nudge HTTP flow", () => {
     });
     seedPaper(mock);
 
-    const response = await fetch(`${baseUrl}/workshop-nudges/preview`, {
-      method: "POST",
-      headers,
-      body: "{}",
-    });
+    const response = await runAndRead(baseUrl, headers);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      paper_count: number;
-      recipients: Array<{
-        recipient_member_id: string;
-        delivery_ready: boolean;
-        draft: { text: string } | null;
-      }>;
-      coverage: { members_without_usable_papers: Array<{ member_id: string }> };
+    // The payload is what the last pass produced, wrapped in the run that produced it.
+    const run = (await response.json()) as {
+      status: string;
+      preview: {
+        paper_count: number;
+        recipients: Array<{
+          recipient_member_id: string;
+          delivery_ready: boolean;
+          draft: { text: string } | null;
+        }>;
+        coverage: { members_without_usable_papers: Array<{ member_id: string }> };
+      };
     };
+    expect(run.status).toBe("ready");
+    const body = run.preview;
     expect(body.paper_count).toBe(1);
     expect(body.recipients).toEqual([
       expect.objectContaining({
@@ -191,11 +225,7 @@ describe("workshop nudge HTTP flow", () => {
       status: "active",
     });
     seedPaper(mock, "Old meta agents title");
-    const preview = await fetch(`${baseUrl}/workshop-nudges/preview`, {
-      method: "POST",
-      headers,
-      body: "{}",
-    });
+    const preview = await runAndRead(baseUrl, headers);
     expect(JSON.stringify(await preview.json())).toContain("Old meta agents title");
 
     seedPaper(mock, "Current meta agents title");
@@ -232,22 +262,23 @@ describe("workshop nudge HTTP flow", () => {
       status: "active",
     });
     seedPaper(mock);
-    const preview = await fetch(`${baseUrl}/workshop-nudges/preview`, {
-      method: "POST",
-      headers,
-      body: "{}",
-    });
+    const preview = await runAndRead(baseUrl, headers);
     expect(await preview.json()).toMatchObject({
-      recipients: [
-        {
-          recipient_member_id: "member-1",
-          delivery_ready: false,
-          delivery_blocked_reason: "No Slack identity is linked.",
-        },
-      ],
+      status: "ready",
+      preview: {
+        recipients: [
+          {
+            recipient_member_id: "member-1",
+            delivery_ready: false,
+            delivery_blocked_reason: "No Slack identity is linked.",
+          },
+        ],
+      },
     });
 
-    for (const pathname of ["preview", "send"]) {
+    // Reading, starting a pass and sending are all lab-internal: a service token is insufficient
+    // for every one of them.
+    for (const pathname of ["preview", "refresh", "send"]) {
       const response = await fetch(`${baseUrl}/workshop-nudges/${pathname}`, {
         method: "POST",
         headers: {

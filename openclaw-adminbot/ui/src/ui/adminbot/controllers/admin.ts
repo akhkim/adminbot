@@ -20,6 +20,7 @@ import {
   fetchMemberResource,
   loadStoredMemberSession,
   previewWorkshopNudges,
+  refreshWorkshopNudges,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
@@ -286,6 +287,25 @@ export type WorkshopNudgeReviewState = {
   result: WorkshopNudgeResult | null;
   selectedRecipientIds: string[];
   view: WorkshopNudgeViewState;
+  /**
+   * The stored pass this page is showing, and whether a newer one is being produced.
+   *
+   * The match is thousands of model calls and tens of minutes, so it no longer runs inside the
+   * request that asks for it: a pass is started on command, runs to completion server-side, and
+   * writes its answer. Opening the page reads that answer.
+   */
+  run: WorkshopNudgeRunView | null;
+};
+
+export type WorkshopNudgeRunView = {
+  status: "none" | "running" | "ready" | "failed";
+  started_at?: string;
+  finished_at?: string;
+  started_by?: string;
+  calls_done?: number;
+  calls_total?: number;
+  error?: string;
+  preview?: WorkshopNudgeResult;
 };
 
 export type WorkshopNudgeViewState = {
@@ -304,6 +324,7 @@ export function createEmptyWorkshopNudgeReviewState(): WorkshopNudgeReviewState 
     sending: false,
     error: null,
     result: null,
+    run: null,
     selectedRecipientIds: [],
     view: {
       tab: "recipients",
@@ -1380,6 +1401,38 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
   }
 }
 
+/** How often the page checks back on a pass that is still running. */
+const WORKSHOP_RUN_POLL_MS = 5_000;
+
+/**
+ * Start a new match.
+ *
+ * Separate from loading, because they cost wildly different things: reading the stored answer is
+ * one cheap request, and producing a new one is thousands of model calls. Opening the page must
+ * never do the second by accident.
+ */
+export async function refreshWorkshopNudgePreview(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      error: "Sign in with a lab administrator account before refreshing recommendations.",
+    };
+    return;
+  }
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
+  const started = await refreshWorkshopNudges(session.sessionToken, session.baseUrl);
+  if (!started.ok) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      loading: false,
+      error: started.message?.trim() || cvErrorText(started.kind, "start a workshop match"),
+    };
+    return;
+  }
+  await loadWorkshopNudgePreview(host);
+}
+
 export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void> {
   const session = requirePrivilegedSession(host);
   if (!session) {
@@ -1410,16 +1463,28 @@ export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void
       };
       return;
     }
-    const value = result.value as WorkshopNudgeResult;
+    const run = result.value as WorkshopNudgeRunView;
+    const value = run.preview ?? null;
     host.adminBotWorkshopNudges = {
       ...host.adminBotWorkshopNudges,
       loading: false,
+      run,
       result: value,
-      selectedRecipientIds: value.recipients
-        .filter((recipient) => recipient.delivery_ready)
-        .map((recipient) => recipient.recipient_member_id),
+      // A failed pass says why on the page rather than looking like an empty result.
+      error: run.status === "failed" ? (run.error ?? "The last match did not finish.") : null,
+      selectedRecipientIds: value
+        ? value.recipients
+            .filter((recipient) => recipient.delivery_ready)
+            .map((recipient) => recipient.recipient_member_id)
+        : [],
       view: { ...host.adminBotWorkshopNudges.view, page: 0, detailKey: null },
     };
+    // While a pass is in flight the page checks back on its own, so somebody who pressed Refresh
+    // and walked away comes back to the answer rather than to a spinner that stopped meaning
+    // anything. Polling stops the moment the pass is terminal.
+    if (run.status === "running") {
+      setTimeout(() => void loadWorkshopNudgePreview(host), WORKSHOP_RUN_POLL_MS);
+    }
   } catch (error) {
     host.adminBotWorkshopNudges = {
       ...host.adminBotWorkshopNudges,

@@ -135,6 +135,12 @@ export type WorkshopPaperMatch = {
 export type WorkshopMatcher = (request: {
   papers: readonly WorkshopNudgePaper[];
   workshops: readonly WorkshopProfile[];
+  /**
+   * Called as each model call settles. A pass is thousands of calls and tens of minutes, so the
+   * caller persisting it needs somewhere to hang "how far along is this" -- otherwise a page
+   * opened mid-pass can only say "running" and never "running, 800 of 2500".
+   */
+  onProgress?: (done: number, total: number) => void;
 }) => Promise<WorkshopPaperMatch[]>;
 
 /**
