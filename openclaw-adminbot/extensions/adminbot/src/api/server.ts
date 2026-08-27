@@ -52,6 +52,7 @@ import {
 } from "../privacy/sensitive-info-doc.js";
 import { renderAdminBotWebUi } from "../web/console/index.js";
 import { renderMemberMapWebUi } from "../web/member-map/index.js";
+import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -634,6 +635,13 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
   }
   if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
     sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
+    return;
+  }
+  // Public and login-free by design: the deck asks for the venue guide to be reachable by anyone
+  // the guidebook or the chatbot points at it, including collaborators with no AdminBot account.
+  // Served here, above resolvePrincipal, for the same reason /deadlines is.
+  if (req.method === "GET" && url.pathname === "/venue-picker") {
+    sendHtml(res, 200, renderVenuePickerWebUi());
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
