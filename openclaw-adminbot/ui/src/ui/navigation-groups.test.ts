@@ -76,8 +76,8 @@ describe("TAB_GROUPS", () => {
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
     expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
-    // Seven entries, not ten: Lab Overview, Nudges and Membership are each one page with a tab bar
-    // inside it (TAB_PAGES), and only the landing tab is listed here.
+    // Eight entries, not eleven: Lab Overview, Nudges and Membership are each one page with a tab
+    // bar inside it (TAB_PAGES), and only the landing tab is listed here.
     expect(byLabel("admin")).toEqual([
       // First in the group: it is the page that says which of the others to open.
       "adminbotProfessor",
@@ -85,6 +85,9 @@ describe("TAB_GROUPS", () => {
       "adminbotAnnouncements",
       "adminbotRegistrations",
       "adminbotCalendar",
+      // Grant Report sits after the surfaces it reads from: it is compiled out of the lab's paper
+      // record, so it is a thing you write at the end of a cycle, not one you operate during it.
+      "adminbotGrantReport",
       // Tasks & Tools: the jobs listed there are the lab's own scheduled passes, so it is
       // governance rather than an upstream operator surface.
       "cron",

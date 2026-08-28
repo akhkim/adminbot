@@ -105,6 +105,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // nothing; the index it searches is the same for everybody.
   adminbotConferencePapers: "member",
   adminbotCalendar: "admin",
+  // Names every paper in the lab against its funding case, including the ones no section
+  // claims. That is a governance read about the lab as a whole, not about the viewer.
+  adminbotGrantReport: "admin",
   activity: "admin",
   agents: "admin",
   aiAgents: "admin",

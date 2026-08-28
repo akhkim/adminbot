@@ -52,6 +52,7 @@ export const TAB_GROUPS = [
       "adminbotAnnouncements",
       "adminbotRegistrations",
       "adminbotCalendar",
+      "adminbotGrantReport",
       // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
       // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
       // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
@@ -186,6 +187,7 @@ export type Tab =
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
   | "adminbotCalendar"
+  | "adminbotGrantReport"
   | "adminbotDeadlines"
   | "overview"
   | "channels"
@@ -269,6 +271,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
   adminbotCalendar: "/calendar",
+  adminbotGrantReport: "/grant-report",
   adminbotDeadlines: "/deadlines",
   overview: "/overview",
   channels: "/channels",
@@ -455,6 +458,9 @@ export function iconForTab(tab: Tab): IconName {
       return "check";
     case "adminbotProfessor":
       return "lobster";
+    // A document assembled out of the lab's own record, not a live board.
+    case "adminbotGrantReport":
+      return "scrollText";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":

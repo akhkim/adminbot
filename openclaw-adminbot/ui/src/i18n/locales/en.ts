@@ -471,6 +471,7 @@ export const en: TranslationMap = {
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
     adminbotCalendar: "Calendar",
+    adminbotGrantReport: "Grant Report",
     adminbotDeadlines: "Deadlines",
     adminbotOpportunities: "Opportunities",
     activity: "Activity",
@@ -522,6 +523,8 @@ export const en: TranslationMap = {
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
+    adminbotGrantReport:
+      "Every paper mapped to a safety area, and the track record behind each ask.",
     adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
     activity: "Browser-local tool activity summaries.",
