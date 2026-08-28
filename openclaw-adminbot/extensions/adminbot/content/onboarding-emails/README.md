@@ -13,8 +13,9 @@ can onboard anyone by talking to AdminBot in Slack.
 
 Templates marked **lab text** are the lab's own supplied wording, used verbatim (or
 verbatim plus the matrix items it did not cover -- see `enriched:` in front matter).
-The four subgroups with no supplied wording keep their earlier drafts, which the lab
-has approved for use.
+The three subgroups with no supplied wording keep their earlier drafts, which the lab
+has approved for use. (`acquaintance` was one of them until the template doc's section G
+supplied wording for it.)
 
 ### Candidate pipeline (pre-membership)
 
@@ -49,7 +50,7 @@ The lab's wording groups collaborators by engagement level; the code groups them
 | Single-Project Collaborator (Nikita-type) | `slightly_better_than_emails` | `external-slightly-better-than-emails.md` | **lab text**            |
 | High-Commitment (Michael Regan-type)      | `coauthor_major`              | `external-coauthor-major.md`              | **lab text**            |
 | --                                        | `interviewee`                 | `external-interviewee.md`                 | draft, approved for use |
-| --                                        | `acquaintance`                | `external-acquaintance.md`                | draft, approved for use |
+| --                                        | `acquaintance`                | `external-acquaintance.md`                | **lab text**            |
 | --                                        | `alumni`                      | `external-alumni.md`                      | draft, approved for use |
 | --                                        | `disappearing_coauthor`       | `external-disappearing-coauthor.md`       | draft, approved for use |
 
@@ -66,7 +67,7 @@ Resolved: the two `XXX` contacts render from `ADMINBOT_CONTACT_EMAILS`; the sign
 link is the site root, since `/signup` is not a routed path; every template now carries a
 subject line; `coauthor_major` is 20-40 h/week (the matrix was right); the thin lab text for
 `coauthor_minor` and `external_prof` has been enriched with the matrix items it omitted;
-the four subgroups without lab text keep their approved drafts.
+the three subgroups without lab text keep their approved drafts.
 
 ## Slack Connect and the free workspace
 
@@ -195,6 +196,36 @@ omitted from every template:
 | `{slack_connect_link}`         | **generated at send** | `conversations.inviteShared` -> `url`; expires in 14 days, so it cannot be stored |
 | `{drive_folder_link}`          | **generated at send** | copy of the prototype folder, renamed `Zhijing-<Name>`                            |
 | `{dashboard_url}`              | constant              | `https://jinesis-admin.vercel.app`                                                |
+| `{record_name}`                | **contact sheet**     | who the lab holds this person as; operator may override                           |
+| `{record_email}`               | **contact sheet**     | their preferred correspondence address                                            |
+| `{record_role}`                | **contact sheet**     | the `tldr` background line, e.g. "Professor, University of X"                     |
+| `{record_projects}`            | **contact sheet**     | what they are collaborating with us on                                            |
+
+## The contact spreadsheet
+
+The four `{record_*}` tokens are read at send time from the lab's contact workbook -- the
+`Full Slack Member List` tab -- rather than from the roster table. That sheet is what the lab
+actually edits, and the records-confirmation mail exists to read our record back to the
+recipient: quoting a stale row and getting "yes, correct" in reply is worse than not sending.
+See `../../src/workflows/onboarding/contact-sheet.ts`.
+
+Three properties matter and are covered by tests:
+
+- **Read-only.** The sheet can never create a member, change a privilege, or grant access. It
+  supplies copy, nothing else.
+- **A default, not an override.** Anything the operator typed on the form wins, so a correction
+  made by hand is never clobbered by a row that has not caught up. A blank form field is treated
+  as "not typed" rather than as an empty value.
+- **`Member Type` is never the Role line.** It holds the internal tier and the privilege flags
+  (real rows read `full, adminbot-admin, adminbot-developer`), so it would both name the
+  recipient's bucket and disclose who holds admin. Role comes from `tldr`; when `tldr` is empty
+  the send refuses and names `record_role` as missing, which the operator then fills.
+
+A miss, an unreadable sheet, or a deployment with no Google account degrades to exactly the old
+behaviour: the operator types the four values. The sheet is looked up only for templates whose
+copy still mentions a `{record_*}` token, so it costs nothing on every other send.
+`ADMINBOT_CONTACT_SHEET_ID` / `ADMINBOT_CONTACT_SHEET_RANGE` override the defaults; the range must
+name the tab, since the workbook's first tab is `Paper submissions`.
 
 Channel _names_ are written into the copy directly rather than parameterised, since
 they never vary: `#jinesis-with-friends-and-collaborators`, `#jinesis-active`,

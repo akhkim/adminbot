@@ -13,6 +13,11 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import {
+  contactRecordValues,
+  createContactSheetLookup,
+  type AdminBotContactSheetLookup,
+} from "./contact-sheet.js";
 import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
@@ -142,6 +147,14 @@ export type AdminBotOnboardingSenderOptions = {
   submitDcsForm?: DcsFormRunner;
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
+  /**
+   * Looks the recipient up in the lab's contact spreadsheet to fill the `{record_*}` tokens.
+   *
+   * Injected rather than called directly so a test can supply rows without a Google account, and
+   * so the composition root decides whether this deployment reads the sheet at all. Defaults to
+   * the real sheet; see `contact-sheet.ts` for why the sheet outranks the roster table here.
+   */
+  lookupContact?: AdminBotContactSheetLookup;
   defaultSlackChannelId?: string;
   sendEmail?: (params: {
     to: string;
@@ -226,6 +239,10 @@ export function createAdminBotOnboardingSender(
 ): AdminBotOnboardingSender {
   const env = options.env ?? process.env;
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
+  // Built once per sender so its short cache survives a burst of sends from one onboarding session
+  // instead of re-reading the sheet for every recipient.
+  const lookupContact: AdminBotContactSheetLookup =
+    options.lookupContact ?? createContactSheetLookup({ env });
   return async (request) => {
     const overrides: AdminBotGuideOverrides = {
       ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
@@ -247,8 +264,29 @@ export function createAdminBotOnboardingSender(
       };
     }
 
+    // Edited copy is judged by what it still says, not by what the stored template said.
+    const copy = `${overrides.subject ?? template.subject ?? ""}\n${overrides.body ?? template.body}`;
+
+    // The `{record_*}` tokens come off the lab's contact spreadsheet rather than the roster table,
+    // because the sheet is what the lab actually edits. Looked up only when the copy asks for one:
+    // most onboarding mails name nothing off the sheet, and reading it for them would put a Google
+    // call on the critical path of every send for nothing. What comes back is only a default --
+    // anything the operator typed on the form still wins, so a correction they just made by hand
+    // is never overwritten by a stale row.
+    const wantsRecord = copy.includes("{record_");
+    const fromSheet = wantsRecord
+      ? contactRecordValues(await lookupContact(email))
+      : ({} as Record<string, string | undefined>);
+
+    // Blank-aware, rather than a plain spread: the tab posts every field it rendered, so an
+    // untouched `record_role` arrives as "" and a spread would let it beat the sheet value.
+    const typed = Object.fromEntries(
+      Object.entries(request.values ?? {}).filter(([, value]) => value?.trim()),
+    );
     const base: Record<string, string | undefined> = {
       ...request.values,
+      ...fromSheet,
+      ...typed,
       first_name: request.values?.first_name?.trim() || firstNameOf(name),
       // The address the mail is going to, for the copy that has to name it back to the reader
       // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
@@ -260,8 +298,6 @@ export function createAdminBotOnboardingSender(
     // operator for one field at a time after a Drive folder already exists is how half-provisioned
     // people happen. Generated values are excluded here because they do not exist yet.
     const generated = new Set(["drive_folder_link", "slack_connect_link"]);
-    // Edited copy is judged by what it still says, not by what the stored template said.
-    const copy = `${overrides.subject ?? template.subject ?? ""}\n${overrides.body ?? template.body}`;
     const missingByHand = template.required.filter(
       (token) => copy.includes(`{${token}}`) && !generated.has(token) && !base[token]?.trim(),
     );

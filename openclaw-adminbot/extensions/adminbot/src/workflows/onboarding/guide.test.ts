@@ -166,8 +166,9 @@ describe("composeOnboardingGuide", () => {
     expect(unset.ok ? [] : unset.missing).toContain("ADMINBOT_SLACK_INVITE_URL");
 
     // An unset *optional* token is graceful: the line carrying it goes, the email still composes,
-    // and no half-rendered placeholder survives.
-    const noSocials = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    // and no half-rendered placeholder survives. Asked of `interviewee`, which is now the template
+    // carrying a socials line built from the optional tokens.
+    const noSocials = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {
       ADMINBOT_SLACK_INVITE_URL: ENV.ADMINBOT_SLACK_INVITE_URL,
     });
     expect(noSocials.ok).toBe(true);
@@ -175,7 +176,7 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(noSocials.guide.body).not.toMatch(/\{[a-z_]+\}/u);
-    expect(noSocials.guide.body).not.toContain("If you want to follow what we publish");
+    expect(noSocials.guide.body).not.toContain("If you would like to follow along more generally");
   });
 
   // The DCS-address example must survive substitution literally, and the address it illustrates

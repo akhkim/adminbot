@@ -170,28 +170,38 @@ A quick note on rhythm, since email can make quiet periods look like disinterest
 Best regards,`,
   },
   {
+    // Lab text (template doc section G). It replaced the earlier approved draft, which opened on a
+    // named project and handed over a provisioned 1:1 folder. Neither survives: an acquaintance is
+    // tied to the lab rather than to one project, and -- exactly as for `coauthor_minor` -- the
+    // project folder reaches them pinned in the Slack project channel. Dropping
+    // {drive_folder_link} therefore also stops the send provisioning a folder, which is the
+    // intent, not a side effect.
     id: "acquaintance",
     kind: "subgroup",
-    subject: `Joining our collaborators channel`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
+    subject: `Greetings from the Jinesis Lab`,
+    required: ["first_name", "slack_connect_link"],
     body: `Hi {first_name},
 
-Good to be working alongside you on {project_or_context}. A few things to connect you properly:
+This is Professor Zhijing Jin's research lab, now known as Jinesis Lab at the University of Toronto, Department of Computer Science.
 
-- Slack Connect to #jinesis-with-friends-and-collaborators, where our wider circle keeps in touch: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-- Our project Google Drive folder: {drive_folder_link}
-- If you want to follow what we publish: Zhijing on LinkedIn ({pi_linkedin_url}), the lab at https://www.linkedin.com/company/jinesis-lab/, and {lab_x_url}
+A few ways to connect:
 
-We also run city-based dinners and team building events, and would be glad to have you at the next one near you.
+1. Slack: You will be invited to a channel in our workspace through Slack Connect, where we will share any exciting news or updates about the lab: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
 
-Best,
-{sender_name}`,
+2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. If you are actively participating in a project, this will be pinned to your Slack project group chat. (Or please ask in the channel if you cannot see it in our group chat.)
+
+3. Keep updated by following our social media accounts:
+
+- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
+- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
+
+When Jinesis members are gathering in your city, we may also send an occasional invitation. There is no expectation to participate - we simply would be pleased to keep in touch.
+
+If the Slack invitation does not arrive or anything is unclear, please reply here and we will be happy to help.
+
+Warmly,
+Jinesis Lab by Prof. Zhijing Jin`,
   },
   {
     // The template doc's version says only that a Slack Connect invitation is on its way. The link
@@ -286,7 +296,7 @@ A very warm welcome to the Jinesis Lab! To facilitate our project collaboration,
 
 1. Slack: You will be invited to various channels in our workspace. Day-to-day coordination happens there rather than over email. Also, your main communication is to message in the group, or ask personal questions to your project lead or senior Jinesis members in our project.
 
-2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. This one will be pinned to your Slack project group chat. (Or please ask in the channel if you cannot see it in our group chat.)
+2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. This will be pinned to your Slack project group chat. (Or please ask in the channel if you cannot see it in our group chat.)
 
 3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphic interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously, and might need time-zone conversion including daylight savings.
 
