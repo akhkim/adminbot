@@ -62,6 +62,7 @@ describe("iconForTab", () => {
       overview: "barChart",
       adminbot: "brain",
       adminbotRegistrations: "user",
+      adminbotBadges: "spark",
       adminbotOnboarding: "send",
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
@@ -118,6 +119,7 @@ describe("titleForTab", () => {
       overview: "Overview",
       adminbot: "Pending Actions",
       adminbotRegistrations: "Requests",
+      adminbotBadges: "Badges",
       adminbotOnboarding: "Onboarding",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
@@ -170,6 +172,7 @@ describe("subtitleForTab", () => {
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
       adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
+      adminbotBadges: "Manage badge definitions, assignments, and self-nominations.",
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
@@ -266,6 +269,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/overview")).toBe("overview");
     expect(tabFromPath("/pending-actions")).toBe("adminbot");
     expect(tabFromPath("/registrations")).toBe("adminbotRegistrations");
+    expect(tabFromPath("/badges")).toBe("adminbotBadges");
     expect(tabFromPath("/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/members")).toBe("adminbotMembers");
     expect(tabFromPath("/papers")).toBe("adminbotPapers");
@@ -283,6 +287,7 @@ describe("tabFromPath", () => {
     const renamed: Record<string, string> = {
       "/adminbot": "adminbot",
       "/adminbot/registrations": "adminbotRegistrations",
+      "/adminbot/badges": "adminbotBadges",
       "/adminbot/onboarding": "adminbotOnboarding",
       "/adminbot/reimbursements": "adminbotReimbursements",
       "/adminbot/settings": "adminbotSettings",

@@ -84,6 +84,7 @@ describe("TAB_GROUPS", () => {
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
+      "adminbotBadges",
       "adminbotCalendar",
       // Grant Report sits after the surfaces it reads from: it is compiled out of the lab's paper
       // record, so it is a thing you write at the end of a cycle, not one you operate during it.
@@ -129,6 +130,7 @@ describe("TAB_GROUPS", () => {
     expect(tabFromPath("/adminbot/profile-overview")).toBe("adminbotProfileOverview");
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
+    expect(tabFromPath("/adminbot/badges")).toBe("adminbotBadges");
   });
 
   it("keeps the OpenClaw group active for nested settings routes", () => {
@@ -149,7 +151,9 @@ describe("TAB_GROUPS", () => {
     // Registration review is lab governance, so it belongs to the Admin group, not to OpenClaw's
     // settings page.
     expect(isTabInGroup(admin, "adminbotRegistrations")).toBe(true);
+    expect(isTabInGroup(admin, "adminbotBadges")).toBe(true);
     expect(isTabInGroup(openclaw, "adminbotRegistrations")).toBe(false);
+    expect(isTabInGroup(openclaw, "adminbotBadges")).toBe(false);
   });
 
   it("routes every published settings slice", () => {

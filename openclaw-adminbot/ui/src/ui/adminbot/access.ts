@@ -88,6 +88,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotWorkshopNudges: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
+  adminbotBadges: "admin",
   // Everybody's completeness at once, which is a governance read; the service re-checks it.
   // Lab-internal curation rather than a public listing, so it stops at `member`: signed-in
   // only, and every member sees the same rows. Nothing on it is filtered by who is looking.

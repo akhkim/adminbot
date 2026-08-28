@@ -7,6 +7,12 @@
  */
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
+  AdminBotBadgeAssignment,
+  AdminBotBadgeDefinition,
+  AdminBotBadgeNomination,
+  AdminBotBadgeNominationStatus,
+} from "../contracts/badges.js";
+import type {
   AdminBotAccountRegistration,
   AdminBotAuditEvent,
   AdminBotAuthSession,
@@ -51,6 +57,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly executionResults = new Map<string, AdminBotExecutionResult>();
   private readonly executionResultsByIdempotencyKey = new Map<string, AdminBotExecutionResult>();
   private readonly labMembers = new Map<string, AdminBotLabMember>();
+  private readonly badgeDefinitions = new Map<string, AdminBotBadgeDefinition>();
+  private readonly badgeAssignments = new Map<string, AdminBotBadgeAssignment>();
+  private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
@@ -177,6 +186,76 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
+  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
+    this.badgeDefinitions.set(badge.id, badge);
+  }
+
+  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
+    return this.badgeDefinitions.get(badgeId);
+  }
+
+  listBadgeDefinitions(): AdminBotBadgeDefinition[] {
+    return [...this.badgeDefinitions.values()].toSorted((left, right) =>
+      left.sort_order - right.sort_order ||
+      left.category.localeCompare(right.category) ||
+      left.name.localeCompare(right.name) ||
+      (left.tier ?? "").localeCompare(right.tier ?? ""),
+    );
+  }
+
+  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void {
+    for (const [key, existing] of [...this.badgeAssignments]) {
+      if (
+        existing.member_id === assignment.member_id &&
+        existing.family_key === assignment.family_key &&
+        key !== badgeAssignmentKey(assignment.member_id, assignment.badge_id)
+      ) {
+        this.badgeAssignments.delete(key);
+      }
+    }
+    this.badgeAssignments.set(
+      badgeAssignmentKey(assignment.member_id, assignment.badge_id),
+      assignment,
+    );
+  }
+
+  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined {
+    return [...this.badgeAssignments.values()].find(
+      (assignment) => assignment.member_id === memberId && assignment.family_key === familyKey,
+    );
+  }
+
+  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[] {
+    return [...this.badgeAssignments.values()]
+      .filter((assignment) => !memberId || assignment.member_id === memberId)
+      .toSorted((left, right) => left.awarded_at.localeCompare(right.awarded_at));
+  }
+
+  deleteBadgeAssignment(memberId: string, badgeId: string): boolean {
+    return this.badgeAssignments.delete(badgeAssignmentKey(memberId, badgeId));
+  }
+
+  saveBadgeNomination(nomination: AdminBotBadgeNomination): void {
+    this.badgeNominations.set(nomination.id, nomination);
+  }
+
+  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined {
+    return this.badgeNominations.get(nominationId);
+  }
+
+  listBadgeNominations(params?: {
+    memberId?: string;
+    status?: AdminBotBadgeNominationStatus;
+  }): AdminBotBadgeNomination[] {
+    return [...this.badgeNominations.values()]
+      .filter(
+        (nomination) =>
+          (!params?.memberId || nomination.member_id === params.memberId) &&
+          (!params?.status || nomination.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
   deleteLabMember(memberId: string): boolean {
     return this.labMembers.delete(memberId);
   }
@@ -224,6 +303,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     remap(this.paperReimbursements, "paper_reimbursements", (key) =>
       key.replace(fromMemberId, toMemberId),
     );
+    remap(this.badgeAssignments, "badge_assignments", (_key, record) =>
+      badgeAssignmentKey(record.member_id, record.badge_id),
+    );
+    remap(this.badgeNominations, "badge_nominations", (key) => key);
     remap(this.registrations, "account_registrations", (key) => key);
     remap(this.passwordResets, "password_resets", (key) => key);
     // Sessions are not repointed -- see the note in the SQLite store; the service revokes the
@@ -807,6 +890,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   deleteSlackChannelNamingRecord(channelId: string): boolean {
     return this.slackChannelNaming.delete(channelId);
   }
+}
+
+function badgeAssignmentKey(memberId: string, badgeId: string): string {
+  return `${memberId}\u0000${badgeId}`;
 }
 
 // Both logs read newest-first everywhere, matching the `ORDER BY at DESC, rowid DESC` their SQLite

@@ -4,6 +4,12 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
+  AdminBotBadgeAssignment,
+  AdminBotBadgeDefinition,
+  AdminBotBadgeNomination,
+  AdminBotBadgeNominationStatus,
+} from "../contracts/badges.js";
+import type {
   AdminBotAccountRegistration,
   AdminBotCvChangeEvent,
   AdminBotVenueIndexStatus,
@@ -222,6 +228,50 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_lab_members_privilege_idx
         ON adminbot_lab_members(privilege_level, updated_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_definitions (
+        id TEXT PRIMARY KEY,
+        family_key TEXT NOT NULL,
+        category TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_definitions_family_idx
+        ON adminbot_badge_definitions(family_key, sort_order, updated_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_assignments (
+        member_id TEXT NOT NULL,
+        badge_id TEXT NOT NULL,
+        family_key TEXT NOT NULL,
+        awarded_at TEXT NOT NULL,
+        awarded_by TEXT NOT NULL,
+        source TEXT NOT NULL,
+        nomination_id TEXT,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (member_id, badge_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_assignments_member_family_idx
+        ON adminbot_badge_assignments(member_id, family_key, awarded_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_nominations (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        badge_id TEXT NOT NULL,
+        family_key TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_member_status_idx
+        ON adminbot_badge_nominations(member_id, status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_status_idx
+        ON adminbot_badge_nominations(status, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_papers (
         id TEXT PRIMARY KEY,
@@ -885,6 +935,210 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
   }
 
+  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_definitions (
+          id,
+          family_key,
+          category,
+          sort_order,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          family_key = excluded.family_key,
+          category = excluded.category,
+          sort_order = excluded.sort_order,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        badge.id,
+        badge.family_key,
+        badge.category,
+        badge.sort_order,
+        badge.updated_at,
+        JSON.stringify(badge),
+      );
+  }
+
+  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_definitions WHERE id = ?")
+      .get(badgeId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeDefinition>(row.payload_json) : undefined;
+  }
+
+  listBadgeDefinitions(): AdminBotBadgeDefinition[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_definitions
+          ORDER BY sort_order ASC, category ASC, json_extract(payload_json, '$.name') ASC`,
+      )
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeDefinition>(row.payload_json));
+  }
+
+  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `DELETE FROM adminbot_badge_assignments
+            WHERE member_id = ? AND family_key = ? AND badge_id != ?`,
+        )
+        .run(assignment.member_id, assignment.family_key, assignment.badge_id);
+      this.db
+        .prepare(
+          `INSERT INTO adminbot_badge_assignments (
+            member_id,
+            badge_id,
+            family_key,
+            awarded_at,
+            awarded_by,
+            source,
+            nomination_id,
+            payload_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(member_id, badge_id) DO UPDATE SET
+            family_key = excluded.family_key,
+            awarded_at = excluded.awarded_at,
+            awarded_by = excluded.awarded_by,
+            source = excluded.source,
+            nomination_id = excluded.nomination_id,
+            payload_json = excluded.payload_json`,
+        )
+        .run(
+          assignment.member_id,
+          assignment.badge_id,
+          assignment.family_key,
+          assignment.awarded_at,
+          assignment.awarded_by,
+          assignment.source,
+          assignment.nomination_id ?? null,
+          JSON.stringify(assignment),
+        );
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_assignments
+          WHERE member_id = ? AND family_key = ?
+          ORDER BY awarded_at DESC
+          LIMIT 1`,
+      )
+      .get(memberId, familyKey) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeAssignment>(row.payload_json) : undefined;
+  }
+
+  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[] {
+    const rows = (
+      memberId
+        ? this.db
+            .prepare(
+              `SELECT payload_json
+                FROM adminbot_badge_assignments
+                WHERE member_id = ?
+                ORDER BY awarded_at ASC`,
+            )
+            .all(memberId)
+        : this.db
+            .prepare(
+              `SELECT payload_json
+                FROM adminbot_badge_assignments
+                ORDER BY awarded_at ASC`,
+            )
+            .all()
+    ) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeAssignment>(row.payload_json));
+  }
+
+  deleteBadgeAssignment(memberId: string, badgeId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_badge_assignments WHERE member_id = ? AND badge_id = ?")
+      .run(memberId, badgeId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  saveBadgeNomination(nomination: AdminBotBadgeNomination): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_nominations (
+          id,
+          member_id,
+          badge_id,
+          family_key,
+          status,
+          created_at,
+          decided_at,
+          decided_by,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          member_id = excluded.member_id,
+          badge_id = excluded.badge_id,
+          family_key = excluded.family_key,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        nomination.id,
+        nomination.member_id,
+        nomination.badge_id,
+        nomination.family_key,
+        nomination.status,
+        nomination.created_at,
+        nomination.decided_at ?? null,
+        nomination.decided_by ?? null,
+        JSON.stringify(nomination),
+      );
+  }
+
+  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_nominations WHERE id = ?")
+      .get(nominationId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeNomination>(row.payload_json) : undefined;
+  }
+
+  listBadgeNominations(params?: {
+    memberId?: string;
+    status?: AdminBotBadgeNominationStatus;
+  }): AdminBotBadgeNomination[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.memberId) {
+      clauses.push("member_id = ?");
+      values.push(params.memberId);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_nominations
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeNomination>(row.payload_json));
+  }
+
   deleteLabMember(memberId: string): boolean {
     const result = this.db
       .prepare("DELETE FROM adminbot_lab_members WHERE id = ?")
@@ -902,6 +1156,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_badge_assignments", "member_id"],
+    ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
     ["adminbot_logistics_requests", "member_id"],
     ["adminbot_login_events", "member_id"],

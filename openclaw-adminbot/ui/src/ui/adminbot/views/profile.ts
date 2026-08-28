@@ -22,7 +22,13 @@ import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
-import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import type {
+  AssignedBadge,
+  BadgeDefinition,
+  BadgeNominationView,
+  LabMember,
+  MemberProfileUpdate,
+} from "../auth/session.ts";
 import {
   joinPhoneNumber,
   resolvePhoneDial,
@@ -41,8 +47,9 @@ import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
-  onPolishPhoto: () => void;
-  onApplyPolishedPhoto: (variantId: string) => void;
+  onPolishPhoto?: () => void;
+  onApplyPolishedPhoto?: (variantId: string) => void;
+  onSubmitBadgeNomination?: (badgeId: string, evidence: string) => void;
 };
 
 const EDITABLE_FIELDS = PROFILE_FIELDS;
@@ -498,6 +505,30 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
   return badges;
 }
 
+function assignedBadgeLabel(badge: Pick<AssignedBadge, "name" | "tier">): string {
+  return badge.tier ? `${badge.name} · ${badge.tier}` : badge.name;
+}
+
+function nominationBadgeLabel(nomination: BadgeNominationView): string {
+  return nomination.badge_tier
+    ? `${nomination.badge_name} · ${nomination.badge_tier}`
+    : nomination.badge_name;
+}
+
+function availableBadgeDefinitions(state: AppViewState, member: LabMember): BadgeDefinition[] {
+  const assignedFamilies = new Set(
+    ((member.assigned_badges ?? []) as AssignedBadge[]).map((badge) => badge.family_key),
+  );
+  const pendingFamilies = new Set(
+    (state.profileBadgeNominations ?? [])
+      .filter((nomination) => nomination.status === "pending")
+      .map((nomination) => nomination.family_key),
+  );
+  return (state.adminBotBadgeDefinitions ?? []).filter(
+    (badge) => !assignedFamilies.has(badge.family_key) && !pendingFamilies.has(badge.family_key),
+  );
+}
+
 // Collects whatever the basics form holds. Governed fields have no input to read, so they cannot
 // be submitted even by hand-editing the DOM -- the same reason the service whitelists them.
 function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
@@ -945,19 +976,167 @@ function renderSlackActivity(member: LabMember) {
 }
 
 function renderBadges(state: AppViewState, member: LabMember) {
-  const badges = badgesFor(state, member);
-  if (!badges.length) {
+  const computed = badgesFor(state, member);
+  const assigned = ((member.assigned_badges ?? []) as AssignedBadge[]).toSorted(
+    (left, right) =>
+      left.sort_order - right.sort_order ||
+      left.category.localeCompare(right.category) ||
+      left.name.localeCompare(right.name),
+  );
+  if (!assigned.length && !computed.length) {
     return html`<p class="profile__badges-empty">${t("profile.badges.empty")}</p>`;
   }
   return html`
     <div class="profile__badges" data-testid="profile-badges">
-      ${badges.map(
+      ${assigned.map(
+        (badge) => html`<span class="profile-badge profile-badge--managed" tabindex="0">
+          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+          <span>${assignedBadgeLabel(badge)}</span>
+          <span class="profile-badge__popover" role="tooltip">
+            <strong>${badge.category}</strong>
+            <span>${badge.description}</span>
+            ${badge.criteria_url
+              ? html`<a
+                  class="profile-badge__link"
+                  href=${badge.criteria_url}
+                  target=${EXTERNAL_LINK_TARGET}
+                  rel=${buildExternalLinkRel()}
+                  >${t("profile.badges.criteriaLink")}</a
+                >`
+              : nothing}
+          </span>
+        </span>`,
+      )}
+      ${computed.map(
         (badge) => html`<span class="profile-badge">
           <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
           ${badge}
         </span>`,
       )}
     </div>
+  `;
+}
+
+function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | undefined) {
+  if (!value) {
+    return nothing;
+  }
+  const parsed = new Date(value);
+  const text = Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return html`<span>${t(`profile.badges.${labelKey}`, { date: text })}</span>`;
+}
+
+function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props: ProfileProps) {
+  const available = availableBadgeDefinitions(state, member);
+  const nominations = state.profileBadgeNominations ?? [];
+  return html`
+    <section class="profile__section" data-testid="profile-badge-nominations">
+      <h2 class="profile__section-title">${t("profile.badges.nominateTitle")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.nominateHint")}</p>
+      ${state.profileBadgeNotice
+        ? html`<div
+            class="callout ${state.profileBadgeNotice.kind === "error" ? "danger" : "success"}"
+            role="status"
+          >
+            ${state.profileBadgeNotice.text}
+          </div>`
+        : nothing}
+      ${available.length
+        ? html`<form
+            class="profile-badge-form"
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              const form = event.currentTarget as HTMLFormElement;
+              props.onSubmitBadgeNomination?.(
+                String(new FormData(form).get("badge_id") ?? ""),
+                String(new FormData(form).get("evidence") ?? ""),
+              );
+            }}
+          >
+            <div class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.nominateSelect")}</span>
+              <div class="profile-badge-picker">
+                ${available.map(
+                  (badge) => html`
+                    <label
+                      class="profile-badge-picker__card"
+                      data-testid="profile-badge-picker-card"
+                    >
+                      <input
+                        type="radio"
+                        name="badge_id"
+                        class="sr-only"
+                        value=${badge.id}
+                        ?disabled=${state.profileBadgeBusy}
+                        required
+                      />
+                      <span class="profile-badge-picker__title">
+                        ${assignedBadgeLabel(badge)}
+                        ${badge.category
+                          ? html`<span class="ab-chip">${badge.category}</span>`
+                          : nothing}
+                      </span>
+                      <p class="profile-badge-picker__description">${badge.description}</p>
+                    </label>
+                  `,
+                )}
+              </div>
+            </div>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.nominateEvidence")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <textarea
+                class="input adminbot-badge-textarea--compact"
+                name="evidence"
+                rows="1"
+                ?disabled=${state.profileBadgeBusy}
+                required
+              ></textarea>
+            </label>
+            <div class="profile__form-actions">
+              <button class="btn primary" type="submit" ?disabled=${state.profileBadgeBusy}>
+                ${t("profile.badges.nominateButton")}
+              </button>
+            </div>
+          </form>`
+        : html`<p class="profile__badges-empty">${t("profile.badges.nominateNoneAvailable")}</p>`}
+      <div class="profile-badge-nominations">
+        <h3 class="profile__group-title">${t("profile.badges.nominationsTitle")}</h3>
+        ${nominations.length
+          ? html`<ul class="profile-badge-nominations__list">
+              ${nominations.map(
+                (nomination) => html`<li class="profile-badge-nominations__item">
+                  <div class="profile-badge-nominations__head">
+                    <span class="profile-badge">
+                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+                      ${nominationBadgeLabel(nomination)}
+                    </span>
+                    <span class=${`ab-chip ab-chip--${nomination.status}`}>
+                      ${t(`profile.badges.status.${nomination.status}`)}
+                    </span>
+                  </div>
+                  <p class="profile-badge-nominations__description">
+                    ${nomination.badge_description}
+                  </p>
+                  ${nomination.evidence
+                    ? html`<p class="profile-badge-nominations__description">
+                        <strong>${t("adminbotBadges.field.evidence")}:</strong>
+                        ${nomination.evidence}
+                      </p>`
+                    : nothing}
+                  <div class="profile-badge-nominations__meta">
+                    ${nominationMeta("submittedAt", nomination.created_at)}
+                    ${nominationMeta("decidedAt", nomination.decided_at)}
+                  </div>
+                </li>`,
+              )}
+            </ul>`
+          : html`<p class="profile__badges-empty">${t("adminbotBadges.emptyNominations")}</p>`}
+      </div>
+    </section>
   `;
 }
 
@@ -1014,7 +1193,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
           type="button"
           class="btn"
           ?disabled=${state.adminBotPhotoPolishBusy}
-          @click=${() => props.onPolishPhoto()}
+          @click=${() => props.onPolishPhoto?.()}
         >
           ${state.adminBotPhotoPolishBusy
             ? "Polishing..."
@@ -1046,7 +1225,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
                               type="button"
                               class="btn btn--sm primary"
                               ?disabled=${state.adminBotPhotoApplyBusy || variant.id === selectedId}
-                              @click=${() => props.onApplyPolishedPhoto(variant.id)}
+                              @click=${() => props.onApplyPolishedPhoto?.(variant.id)}
                             >
                               ${variant.id === selectedId
                                 ? "Applied"
@@ -1331,6 +1510,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         ${renderCompletionLedger(member)}
       </header>
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
+      ${renderBadgeSelfNomination(state, member, props)}
       ${renderSuggestions(state, member)}
     </div>
   `;
