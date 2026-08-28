@@ -34,7 +34,10 @@ import {
   composeOnboardingGuide,
   firstNameOf,
 } from "../extensions/adminbot/src/workflows/onboarding/guide.ts";
-import { renderTaskRecommendation } from "../extensions/adminbot/src/workflows/onboarding/task-recommendations.ts";
+import {
+  findTaskRecommendation,
+  renderTaskRecommendation,
+} from "../extensions/adminbot/src/workflows/onboarding/task-recommendations.ts";
 import { classify } from "./adminbot-import-member-types.ts";
 
 const NAME_COL = 0;
@@ -50,6 +53,9 @@ const TLDR_COL = 22;
 
 /** The batch the review named: "Test Onboard = 3". Excel hands these back as "3.0". */
 const TEST_ONBOARD_GROUP = "3";
+
+/** The tracking mailbox every lab mail is bcc'd to, per the template doc's global conventions. */
+const TRACKING_BCC = "jinesis.adminbot@gmail.com";
 
 /**
  * The reviewed applicant -> recommendation mapping, read from `--matches <file>`.
@@ -103,11 +109,94 @@ function addressesOf(row: Row): string[] {
   return found;
 }
 
+// Free mailbox providers. A lead cc'd on mail to an applicant should be reachable at the address
+// their institution gave them, not at a personal account that happens to be first in the row.
+const FREEMAIL = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "yahoo.com",
+  "icloud.com",
+  "protonmail.com",
+  "proton.me",
+  "qq.com",
+  "163.com",
+]);
+
+function isInstitutional(address: string): boolean {
+  return !FREEMAIL.has(address.split("@")[1]?.toLowerCase() ?? "");
+}
+
+/**
+ * Everyone on the sheet, indexed by first name, for resolving the lead named in an applicant's
+ * "Member Attributes" cell ("Andrew: AdminBot modular task", "Rahul, causal tutor human subject").
+ *
+ * The value is a list, not an address: two people can share a first name, and a cc sent to the
+ * wrong one puts an applicant's file in front of somebody uninvolved. An ambiguous name resolves to
+ * nothing and is reported instead.
+ */
+function directoryByFirstName(rows: readonly Row[]): Map<string, string[]> {
+  const directory = new Map<string, string[]>();
+  for (const row of rows.slice(1)) {
+    const name = cell(row, NAME_COL);
+    const first = name.split(/\s+/u)[0]?.toLowerCase();
+    if (!first) {
+      continue;
+    }
+    const addresses = addressesOf(row);
+    const best = addresses.find(isInstitutional) ?? addresses[0];
+    if (!best) {
+      continue;
+    }
+    directory.set(first, [...(directory.get(first) ?? []), best]);
+  }
+  return directory;
+}
+
+/**
+ * The leads named in a "Member Attributes" cell, as addresses.
+ *
+ * Matched on whole words against the sheet's own first names rather than on a hand-kept list of
+ * leads, so a new lead works the day their row exists. Returns what could not be resolved so the
+ * caller can report it rather than quietly cc nobody.
+ */
+export function leadsFromAttributes(
+  attributes: string,
+  directory: ReadonlyMap<string, string[]>,
+): { cc: string[]; ambiguous: string[] } {
+  const cc: string[] = [];
+  const ambiguous: string[] = [];
+  const seen = new Set<string>();
+  for (const word of attributes.toLowerCase().match(/[a-z]+/gu) ?? []) {
+    if (seen.has(word)) {
+      continue;
+    }
+    seen.add(word);
+    const found = directory.get(word);
+    if (!found) {
+      continue;
+    }
+    if (found.length > 1) {
+      ambiguous.push(word);
+      continue;
+    }
+    if (found[0] && !cc.includes(found[0])) {
+      cc.push(found[0]);
+    }
+  }
+  return { cc, ambiguous };
+}
+
 export type PlanEntry = {
   sheet_row: number;
   name: string;
   email: string;
   other_addresses?: string[];
+  /** The project lead(s) the copy says are cc'd, resolved from the sheet. */
+  cc: string[];
+  /** Every lab mail is bcc'd to the tracking mailbox, per the template conventions. */
+  bcc: string[];
   template_id: string;
   member_type?: string;
   also_named?: string[];
@@ -217,6 +306,7 @@ export function buildPlan(
   matches: RecommendationMatches = {},
   emailOverrides: ReadonlyMap<string, string> = new Map(),
   env: NodeJS.ProcessEnv = process.env,
+  formLinks: Readonly<Record<string, string>> = {},
 ): Plan {
   const plan: Plan = {
     generated_at: new Date().toISOString(),
@@ -225,6 +315,7 @@ export function buildPlan(
     skipped: [],
   };
   const [firstRow, lastRow] = matchingRange;
+  const directory = directoryByFirstName(rows);
 
   for (let sheetRow = firstRow; sheetRow <= lastRow; sheetRow += 1) {
     const row = rows[sheetRow - 1];
@@ -265,8 +356,34 @@ export function buildPlan(
         );
       }
     }
-    // Always a human step: it is one person's own response link and there is no API that returns it.
-    needs.push('application_form_link: this applicant\'s own "edit response" URL');
+    // The applicant's own filled-in response, from `--form-links`. The Forms API cannot produce
+    // this (see adminbot-form-response-links.ts), so an unmatched applicant is a `needs`.
+    const formLink = formLinks[(email ?? "").toLowerCase()];
+    if (formLink) {
+      values.application_form_link = formLink;
+    } else {
+      needs.push('application_form_link: this applicant\'s own "edit response" URL');
+    }
+
+    // The copy promises a cc'd project lead, so a mail with an empty cc contradicts its own text.
+    // The sentence is the better source than the row's free text -- "AdminBot privacy logic" names
+    // the task but nobody, while the sentence it maps to names Andrew -- so the recommendation's
+    // own leads come first, and the row's notes add anyone else it mentions.
+    const fromRecommendation = recommendationId
+      ? (findTaskRecommendation(recommendationId)?.leads ?? []).join(" ")
+      : "";
+    const { cc, ambiguous } = leadsFromAttributes(
+      `${fromRecommendation}\n${attributes}`,
+      directory,
+    );
+    if (cc.length === 0) {
+      needs.push(
+        `cc: no project lead resolved from "${attributes.split("\n")[0] || "(no attributes)"}"`,
+      );
+    }
+    for (const ambiguousName of ambiguous) {
+      needs.push(`cc: "${ambiguousName}" matches more than one person on the sheet -- say which`);
+    }
 
     plan.direct_matching.push({
       sheet_row: sheetRow,
@@ -277,6 +394,8 @@ export function buildPlan(
       ...(recommendationId
         ? { values: { ...values, recommendation: recommendationId } }
         : { values }),
+      cc,
+      bcc: [TRACKING_BCC],
       needs,
       ...(attributes ? { note: attributes } : {}),
       ...draftFor("interview_invite_project_matching", values, env),
@@ -331,6 +450,11 @@ export function buildPlan(
       template_id: templateId,
       member_type: memberType,
       ...(classified.alsoNamed.length ? { also_named: classified.alsoNamed } : {}),
+      // A member's own onboarding names no lead, so cc is whoever their row happens to name and is
+      // usually empty. Absence is not a `needs` here: unlike the applicant mail, this copy does not
+      // promise anyone is copied.
+      cc: leadsFromAttributes(cell(row, MEMBER_ATTRIBUTES_COL), directory).cc,
+      bcc: [TRACKING_BCC],
       values,
       needs,
       // `first_name` is not in `values`: the send derives it from the recipient's name rather than
@@ -345,7 +469,7 @@ function main(argv: readonly string[]): void {
   const rowsIndex = argv.indexOf("--rows");
   if (rowsIndex === -1 || !argv[rowsIndex + 1]) {
     console.error(
-      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
+      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--form-links <links.json>] [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
     );
     process.exit(1);
   }
@@ -364,12 +488,21 @@ function main(argv: readonly string[]): void {
       : (JSON.parse(
           fs.readFileSync(argv[matchesIndex + 1] as string, "utf8"),
         ) as RecommendationMatches);
+  const linksIndex = argv.indexOf("--form-links");
+  const formLinks: Record<string, string> =
+    linksIndex === -1 || !argv[linksIndex + 1]
+      ? {}
+      : (JSON.parse(fs.readFileSync(argv[linksIndex + 1] as string, "utf8")) as Record<
+          string,
+          string
+        >);
   const plan = buildPlan(
     rows,
     [first as number, last as number],
     matches,
     parseEmailOverrides(argv),
     process.env,
+    formLinks,
   );
   const output = `${JSON.stringify(plan, undefined, 2)}\n`;
   const outIndex = argv.indexOf("--out");

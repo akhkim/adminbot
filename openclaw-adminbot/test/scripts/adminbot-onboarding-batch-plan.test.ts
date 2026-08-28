@@ -47,17 +47,19 @@ describe("onboarding batch plan", () => {
     }
   });
 
-  // The form link and the causal topic are the two values a run can never fill, so they must show
-  // up as needs rather than as a blank that ships.
-  it("reports an unmatched applicant and an unfilled topic instead of guessing", () => {
+  // An applicant with no reviewed sentence is reported; one whose sentence has only an optional
+  // clause outstanding still gets their recommendation.
+  it("reports an unmatched applicant, and still renders one with an optional clause missing", () => {
     const rows = [
       HEADER,
       sheetRow({ slackEmail: "youssef.saad@mail.utoronto.ca", attributes: "Test 1 / Test 2" }),
       sheetRow({ slackEmail: "someone.new@example.edu", attributes: "Bryan: word play RL" }),
     ];
     const plan = buildPlan(rows, [2, 3], MATCHES);
-    expect(plan.direct_matching[0]?.needs.join(" ")).toContain("causal_topic");
-    expect(plan.direct_matching[0]?.values.task_recommendation).toBeUndefined();
+    expect(plan.direct_matching[0]?.values.task_recommendation).toContain(
+      "learn about causality from scratch.",
+    );
+    expect(plan.direct_matching[0]?.needs.join(" ")).not.toContain("task_recommendation");
     expect(plan.direct_matching[1]?.needs.join(" ")).toContain("no approved sentence");
   });
 
@@ -149,6 +151,76 @@ describe("onboarding batch plan", () => {
     );
     expect(overridden.test_onboard_3[0]?.email).toBe("korinna@example.edu");
     expect(overridden.test_onboard_3[0]?.needs).toEqual([]);
+  });
+});
+
+describe("cc and form links", () => {
+  // The lead is resolved from the sheet's own first names, so a new lead works the day their row
+  // exists rather than when someone remembers to update a list here.
+  const DIRECTORY_ROWS = [
+    HEADER,
+    sheetRow({
+      name: "Andrew Kim",
+      correspondence: "andrew.personal@gmail.com",
+      slackEmail: "akim@cs.toronto.edu",
+    }),
+    sheetRow({ name: "Rahul Shrestha", correspondence: "rahul@cs.toronto.edu" }),
+    sheetRow({ slackEmail: "applicant@example.edu", attributes: "Andrew: AdminBot modular task" }),
+  ];
+
+  it("ccs the named lead at their institutional address, and always bccs tracking", () => {
+    const plan = buildPlan(DIRECTORY_ROWS, [4, 4], { "applicant@example.edu": "adminbot_only" });
+    const entry = plan.direct_matching[0];
+    // Not andrew.personal@gmail.com: a lead cc'd on mail to an applicant is reached where their
+    // institution put them.
+    expect(entry?.cc).toEqual(["akim@cs.toronto.edu"]);
+    expect(entry?.bcc).toEqual(["jinesis.adminbot@gmail.com"]);
+  });
+
+  it("reports an unresolvable lead rather than sending with an empty cc", () => {
+    const rows = [
+      HEADER,
+      sheetRow({ slackEmail: "applicant@example.edu", attributes: "somebody we do not know" }),
+    ];
+    const plan = buildPlan(rows, [2, 2], { "applicant@example.edu": "adminbot_only" });
+    expect(plan.direct_matching[0]?.cc).toEqual([]);
+    expect(plan.direct_matching[0]?.needs.join(" ")).toContain("no project lead resolved");
+  });
+
+  // Two people share a first name: cc'ing the wrong one puts an applicant's file in front of
+  // somebody uninvolved, so it asks instead.
+  it("refuses to guess between two people with the same first name", () => {
+    const rows = [
+      HEADER,
+      sheetRow({ name: "Rahul Shrestha", correspondence: "rahul.one@cs.example" }),
+      sheetRow({ name: "Rahul Other", correspondence: "rahul.two@cs.example" }),
+      sheetRow({ slackEmail: "applicant@example.edu", attributes: "Rahul: causal tutor" }),
+    ];
+    const plan = buildPlan(rows, [4, 4], { "applicant@example.edu": "adminbot_only" });
+    expect(plan.direct_matching[0]?.cc).toEqual([]);
+    expect(plan.direct_matching[0]?.needs.join(" ")).toContain("matches more than one person");
+  });
+
+  it("fills the form link when one is supplied, and needs it otherwise", () => {
+    const matches = { "applicant@example.edu": "adminbot_only" };
+    const withoutLink = buildPlan(DIRECTORY_ROWS, [4, 4], matches);
+    expect(withoutLink.direct_matching[0]?.needs.join(" ")).toContain("application_form_link");
+    expect(withoutLink.direct_matching[0]?.body).toContain("{application_form_link}");
+
+    const link = "https://docs.google.com/forms/d/FORMID/edit#response=ACYDBN";
+    const withLink = buildPlan(
+      DIRECTORY_ROWS,
+      [4, 4],
+      matches,
+      new Map(),
+      {},
+      {
+        "applicant@example.edu": link,
+      },
+    );
+    expect(withLink.direct_matching[0]?.values.application_form_link).toBe(link);
+    expect(withLink.direct_matching[0]?.body).toContain(link);
+    expect(withLink.direct_matching[0]?.needs.join(" ")).not.toContain("application_form_link");
   });
 });
 

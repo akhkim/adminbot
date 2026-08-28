@@ -16,12 +16,38 @@ export type TaskRecommendationPlaceholder = {
   readonly describes: string;
 };
 
+/**
+ * A clause the sentence reads correctly without.
+ *
+ * The distinction from a placeholder is whether omitting it invents anything. "focusing on X"
+ * narrows a match that is already fully stated; dropping it loses detail but says nothing false.
+ * A placeholder, by contrast, names the work itself, so an empty one has to block.
+ */
+export type TaskRecommendationOptionalClause = {
+  /** The token in `text` this clause occupies. Rendered as "" when `token` has no value. */
+  readonly slot: string;
+  /** Rendered into `slot` when `token` is supplied; may reference `token`. */
+  readonly template: string;
+  readonly token: string;
+  readonly describes: string;
+};
+
 export type AdminBotTaskRecommendation = {
   readonly id: string;
   /** What this recommendation is for, shown to the operator picking one. */
   readonly summary: string;
   readonly text: string;
+  /**
+   * First names of the leads this sentence names, for resolving the cc.
+   *
+   * The copy tells the applicant their point of contact is "the lead cc'ed". A mail that names
+   * Andrew in the body and copies nobody contradicts itself, and the applicant replies into a
+   * thread the lead never sees -- so the cc is derived from the sentence rather than only from the
+   * sheet's free-text notes, which often describe the task without naming anyone.
+   */
+  readonly leads: readonly string[];
   readonly placeholders?: readonly TaskRecommendationPlaceholder[];
+  readonly optional_clauses?: readonly TaskRecommendationOptionalClause[];
 };
 
 /**
@@ -42,6 +68,7 @@ export const ADMINBOT_TASK_RECOMMENDATIONS = [
     // The default for anyone whose match is AdminBot and nothing else. Named in the review as the
     // correction for xinping.song@mail.utoronto.ca and for "all adminbot-only tasks".
     id: "adminbot_only",
+    leads: ["Andrew"],
     summary: "AdminBot coding test tasks, with Andrew (the adminbot-only default)",
     text: `Zhijing's personal recommendation is to match you with Andrew for some coding test tasks for our AdminBot project.`,
   },
@@ -49,28 +76,39 @@ export const ADMINBOT_TASK_RECOMMENDATIONS = [
     // The same match, phrased for an applicant whose own background is worth naming. The two
     // variants below differ only in the clause the lab supplied for that applicant.
     id: "adminbot_career_launch",
+    leads: ["Andrew"],
     summary: "AdminBot work led by Andrew, for an applicant with Career Launch Agent experience",
     text: `Zhijing's personal recommendation is to match you with the AdminBot work led by Andrew, especially your past project experience in the Career Launch Agent and you can also help collect resume-related datasets for admission and job applications.`,
   },
   {
     id: "adminbot_openrouter_privacy",
+    leads: ["Andrew"],
     summary: "AdminBot work led by Andrew, on privacy-aware pre-processing for OpenRouter calls",
     text: `Zhijing's personal recommendation is to match you with the AdminBot work led by Andrew, where you can help implement privacy-aware LLM pre-processing before sending a query to the OpenRouter API calls.`,
   },
   {
     id: "causaltutor_rahul",
+    leads: ["Rahul"],
     summary: "CausalTutor human-subject work with Rahul, then modular tasks",
     text: `Zhijing's personal recommendation is to match you with the CausalTutor human-subject work led by Rahul, starting there first and then moving on to simple modular tasks.`,
   },
   {
-    // The two-match variant. The lab's note breaks off mid-sentence at "focusing on", so the topic
-    // is a placeholder rather than a guess: an applicant must not be told they are being matched to
-    // a causality study whose subject we invented for them.
+    // The two-match variant. The lab's note breaks off mid-sentence at "focusing on", so that
+    // trailing clause is optional rather than required: both matches are already fully named, and
+    // the sentence is complete and true without it. Blocking on it stopped the one applicant it
+    // was written for from getting any recommendation at all, which is the worse failure -- while
+    // inventing a topic to fill it would put words in Zhijing's mouth about a named person.
     id: "adminbot_and_causaltutor",
+    leads: ["Andrew", "Rahul"],
     summary: "Both: an AdminBot test task with Andrew, and a CausalTutor human test with Rahul",
-    text: `Zhijing's personal recommendation is to match you (1) with Andrew for a test task about AdminBot programming (e.g., enabling Chrome and cache checks), and (2) with Rahul to do a human test to use CausalTutor to learn about causality from scratch, focusing on {causal_topic}.`,
-    placeholders: [
-      { token: "causal_topic", describes: "what the CausalTutor human test should focus on" },
+    text: `Zhijing's personal recommendation is to match you (1) with Andrew for a test task about AdminBot programming (e.g., enabling Chrome and cache checks), and (2) with Rahul to do a human test to use CausalTutor to learn about causality from scratch{causal_focus}.`,
+    optional_clauses: [
+      {
+        slot: "causal_focus",
+        token: "causal_topic",
+        template: `, focusing on {causal_topic}`,
+        describes: "what the CausalTutor human test should focus on, if it has been decided",
+      },
     ],
   },
 ] as const satisfies readonly AdminBotTaskRecommendation[];
@@ -110,9 +148,17 @@ export function renderTaskRecommendation(
   if (missing.length > 0) {
     return { ok: false, reason: "missing-values", missing };
   }
+  // Optional clauses resolve first, so a slot with no value leaves nothing behind for the
+  // placeholder pass to trip over.
+  const resolved: Record<string, string> = { ...values };
+  for (const clause of recommendation.optional_clauses ?? []) {
+    resolved[clause.slot] = values[clause.token]?.trim()
+      ? clause.template.replace(`{${clause.token}}`, values[clause.token]?.trim() ?? "")
+      : "";
+  }
   const text = recommendation.text.replace(
     /\{([a-z_]+)\}/gu,
-    (whole, token: string) => values[token]?.trim() ?? whole,
+    (whole, token: string) => resolved[token]?.trim() ?? whole,
   );
   return { ok: true, text };
 }

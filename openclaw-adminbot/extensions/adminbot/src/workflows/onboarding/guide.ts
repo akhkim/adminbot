@@ -320,7 +320,12 @@ export function applicantResponseLinkProblem(link: string | undefined): string |
   const identifiesOneResponse =
     url.searchParams.has("edit2") ||
     url.searchParams.has("edit_requested") ||
-    [...url.searchParams.keys()].some((key) => key.startsWith("entry."));
+    [...url.searchParams.keys()].some((key) => key.startsWith("entry.")) ||
+    // The form's own responses view, scrolled to one submission:
+    // .../forms/d/<id>/edit#response=<responseId>. This is what the Forms API can actually produce
+    // -- no API returns a responder's edit URL -- and it is the link the cc'd project lead opens to
+    // read the answers. See scripts/adminbot-form-response-links.ts.
+    /^#response=.+/u.test(url.hash);
   if (identifiesOneResponse) {
     return undefined;
   }

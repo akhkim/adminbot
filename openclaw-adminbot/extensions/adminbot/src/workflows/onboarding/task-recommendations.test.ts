@@ -29,14 +29,22 @@ describe("task recommendations", () => {
     }
   });
 
-  // The sentence claims to be Zhijing's personal judgement about one person, so a half-filled
-  // version of it is worse than no mail.
-  it("refuses rather than shipping an unfilled topic", () => {
-    expect(renderTaskRecommendation("adminbot_and_causaltutor")).toMatchObject({
-      ok: false,
-      reason: "missing-values",
-      missing: ["causal_topic"],
+  // The clause the lab's note broke off at is optional: both matches are named without it, so the
+  // sentence is complete and true, and blocking on it left the applicant with no recommendation.
+  it("drops an optional clause rather than blocking, and slots it in when supplied", () => {
+    const without = renderTaskRecommendation("adminbot_and_causaltutor");
+    expect(without.ok).toBe(true);
+    expect(without.ok ? without.text : "").toContain("learn about causality from scratch.");
+    expect(without.ok ? without.text : "").not.toContain("focusing on");
+    expect(without.ok ? without.text : "").not.toMatch(/\{[a-z_]+\}/u);
+
+    const with_ = renderTaskRecommendation("adminbot_and_causaltutor", {
+      causal_topic: "confounding",
     });
+    expect(with_.ok ? with_.text : "").toContain("from scratch, focusing on confounding.");
+  });
+
+  it("still refuses an unknown id", () => {
     expect(renderTaskRecommendation("no_such_id")).toMatchObject({
       ok: false,
       reason: "unknown-id",
