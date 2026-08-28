@@ -17,12 +17,23 @@
 //      to. Member Type is multi-valued ("alumni, coauthor-major"), so it is resolved through the
 //      same `classify()` the roster import uses rather than by a second, divergent rule here.
 //
+// Every entry carries its full draft -- subject and body, composed from the same templates the
+// send path uses -- so the plan can be read as mail rather than as metadata. Values still
+// outstanding appear in the body as a literal `{token}` and are listed in `needs`.
+//
 // Nothing is sent and nothing is written back to the sheet. This emits a plan for review; mailing
 // it is a separate, approved step. That split is the point: the previous batch's damage came from
 // generating and sending in one motion, so anything this cannot fill becomes a `needs` entry a
 // human answers rather than a blank that ships.
+//
+// Deployment tokens (the Slack invite URL, the bot address) come from the environment, exactly as
+// they do at send time. Unset, the draft still renders and those tokens stay visible.
 import fs from "node:fs";
 import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.ts";
+import {
+  composeOnboardingGuide,
+  firstNameOf,
+} from "../extensions/adminbot/src/workflows/onboarding/guide.ts";
 import { renderTaskRecommendation } from "../extensions/adminbot/src/workflows/onboarding/task-recommendations.ts";
 import { classify } from "./adminbot-import-member-types.ts";
 
@@ -104,7 +115,52 @@ export type PlanEntry = {
   /** Everything a human still has to supply before this can be sent. */
   needs: string[];
   note?: string;
+  /** The mail as it stands. Any value still missing appears as a literal `{token}`. */
+  subject: string;
+  body: string;
 };
+
+/**
+ * The draft for one entry, with unfilled values left visible as `{token}`.
+ *
+ * A plan you cannot read is a plan nobody checks, and the previous batch's mistakes -- a
+ * recommendation naming the wrong work, a blank form link -- were all visible in the body and
+ * invisible in the metadata. So every entry carries its mail, including the ones that are not ready
+ * to send.
+ *
+ * `{token}` is passed as its own value for anything absent, which is what the send path's preview
+ * already does: it satisfies the required-values check without resolving to anything, so the draft
+ * renders and the gap stays legible instead of becoming a blank the eye slides over. `needs` is
+ * still the authority on what is outstanding.
+ */
+function draftFor(
+  templateId: string,
+  values: Record<string, string>,
+  env: NodeJS.ProcessEnv,
+): { subject: string; body: string } {
+  const template = findOnboardingTemplate(templateId);
+  if (!template) {
+    return { subject: "", body: "" };
+  }
+  const selfReferencing: Record<string, string> = { ...values };
+  for (const token of template.required) {
+    if (!selfReferencing[token]?.trim()) {
+      selfReferencing[token] = `{${token}}`;
+    }
+  }
+  const composed = composeOnboardingGuide(templateId, selfReferencing, env);
+  if (composed.ok) {
+    return { subject: composed.guide.subject, body: composed.guide.body };
+  }
+  // Unconfigured deployment tokens (no ADMINBOT_SLACK_INVITE_URL on this machine, say). Render what
+  // we can by hand so the draft is still reviewable, and leave the rest as `{token}`.
+  const fill = (text: string): string =>
+    text.replace(/\{([a-z_]+)\}/gu, (whole, token: string) => selfReferencing[token] ?? whole);
+  return {
+    subject: fill(template.subject ?? ""),
+    body: fill(template.body),
+  };
+}
 
 export type Plan = {
   generated_at: string;
@@ -160,6 +216,7 @@ export function buildPlan(
   matchingRange: readonly [number, number],
   matches: RecommendationMatches = {},
   emailOverrides: ReadonlyMap<string, string> = new Map(),
+  env: NodeJS.ProcessEnv = process.env,
 ): Plan {
   const plan: Plan = {
     generated_at: new Date().toISOString(),
@@ -222,6 +279,7 @@ export function buildPlan(
         : { values }),
       needs,
       ...(attributes ? { note: attributes } : {}),
+      ...draftFor("interview_invite_project_matching", values, env),
     });
   }
 
@@ -275,6 +333,9 @@ export function buildPlan(
       ...(classified.alsoNamed.length ? { also_named: classified.alsoNamed } : {}),
       values,
       needs,
+      // `first_name` is not in `values`: the send derives it from the recipient's name rather than
+      // taking it from the form, so the draft has to derive it the same way to read correctly.
+      ...draftFor(templateId, { ...values, first_name: firstNameOf(name) }, env),
     });
   }
   return plan;
@@ -308,6 +369,7 @@ function main(argv: readonly string[]): void {
     [first as number, last as number],
     matches,
     parseEmailOverrides(argv),
+    process.env,
   );
   const output = `${JSON.stringify(plan, undefined, 2)}\n`;
   const outIndex = argv.indexOf("--out");

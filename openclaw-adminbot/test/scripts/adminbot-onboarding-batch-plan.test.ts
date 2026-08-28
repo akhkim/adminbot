@@ -151,3 +151,53 @@ describe("onboarding batch plan", () => {
     expect(overridden.test_onboard_3[0]?.needs).toEqual([]);
   });
 });
+
+describe("drafts", () => {
+  const ENV: NodeJS.ProcessEnv = {
+    ADMINBOT_SLACK_INVITE_URL: "https://join.slack.com/t/example/shared_invite/zt-example",
+    ADMINBOT_CONTACT_EMAILS: "ops@example.com",
+    ADMINBOT_BOT_EMAIL: "adminbot@example.com",
+  };
+
+  it("carries the composed mail on every entry, ready or not", () => {
+    const rows = [
+      HEADER,
+      sheetRow({ slackEmail: "xinping.song@mail.utoronto.ca", attributes: "Andrew: AdminBot" }),
+      sheetRow({
+        name: "Yuen Chen",
+        memberType: "alumni",
+        testOnboard: "3.0",
+        correspondence: "yuen@x.edu",
+      }),
+    ];
+    const plan = buildPlan(rows, [2, 2], MATCHES, new Map(), ENV);
+
+    const applicant = plan.direct_matching[0];
+    expect(applicant?.subject).toBe("Your application to the Jinesis Lab");
+    // The reviewed sentence is in the body, not just named in `values`.
+    expect(applicant?.body).toContain("with Andrew for some coding test tasks");
+    // The one value no run can fill stays visible rather than becoming a blank.
+    expect(applicant?.body).toContain("{application_form_link}");
+
+    const member = plan.test_onboard_3[0];
+    // The greeting is derived from the sheet's name, the way the send derives it.
+    expect(member?.body).toMatch(/^Hi Yuen,/u);
+    expect(member?.subject).toBe("Staying Connected with the Jinesis Lab");
+  });
+
+  // A machine with no deployment config must still produce a reviewable draft.
+  it("still drafts when the deployment tokens are unset", () => {
+    const rows = [
+      HEADER,
+      sheetRow({
+        name: "Yuen Chen",
+        memberType: "alumni",
+        testOnboard: "3.0",
+        correspondence: "yuen@x.edu",
+      }),
+    ];
+    const [entry] = buildPlan(rows, [99, 99], {}, new Map(), {}).test_onboard_3;
+    expect(entry?.body).toContain("Hi Yuen,");
+    expect(entry?.body).toContain("{slack_invite_url}");
+  });
+});
