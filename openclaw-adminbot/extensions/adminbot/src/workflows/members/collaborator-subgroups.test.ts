@@ -29,7 +29,6 @@ describe("collaboratorSubgroupAccess", () => {
       "welcome_linkedin_twitter",
       "slack_guest_space_check",
       "slack_guest_chat_zhijing",
-      "project_channel",
       "project_drive_folder",
       "what_to_expect_stories",
       "city_dinner_invite",
@@ -51,9 +50,13 @@ describe("collaboratorSubgroupAccess", () => {
 
   it.each([
     ["interviewee", "slack_guest_space_check", "yes"],
-    // The `p` cell from the spreadsheet: unconfirmed, and deliberately not a yes or a no.
-    ["interviewee", "project_channel", "pending"],
     ["interviewee", "what_to_expect_stories", "yes_separate"],
+    ["own_pace_advisee", "adminbot_portal_access", "yes"],
+    ["own_pace_advisee", "rec_letter_button", "yes"],
+    ["own_pace_advisee", "what_to_expect_stories", "yes_separate"],
+    ["coauthor_discussant_designer", "active_channels", "yes"],
+    ["coauthor_discussant_designer", "project_channel", "yes"],
+    ["coauthor_minor", "slack_guest_space_check", "yes"],
     ["slightly_better_than_emails", "spreadsheet_basic", "yes"],
     ["alumni", "rec_letter_button", "yes"],
     ["coauthor_minor", "google_file_practice_guide", "yes_separate"],
@@ -70,15 +73,31 @@ describe("collaboratorSubgroupAccess", () => {
     ["slightly_better_than_emails", "rec_letter_button"],
     ["external_prof", "weekly_meeting"],
     ["interviewee", "spreadsheet_basic"],
+    ["interviewee", "project_channel"],
     ["disappearing_coauthor", "project_drive_folder"],
+    // coauthor_minor is not in the two active channels; the sheet gives that row to
+    // own_pace_advisee, coauthor_major and coauthor_discussant_designer only.
+    ["coauthor_minor", "active_channels"],
+    ["own_pace_advisee", "project_channel"],
+    ["own_pace_advisee", "weekly_meeting"],
+    ["coauthor_discussant_designer", "rec_letter_button"],
+    ["coauthor_discussant_designer", "welcome_linkedin_twitter"],
   ] as const)("omits ungranted %s / %s", (subgroup, item) => {
     expect(grantedItems(subgroup)).not.toContain(item);
   });
 
-  it("keeps coauthor_major a superset of coauthor_minor apart from the basic spreadsheet row", () => {
+  it("leaves coauthor_minor exactly two rows coauthor_major does not hold", () => {
+    // Not a superset relation: a major coauthor is already inside the main Slack space, so the
+    // guest-space check is a row the lighter subgroup holds and the heavier one does not.
     const major = new Set(grantedItems("coauthor_major"));
     const minorOnly = grantedItems("coauthor_minor").filter((item) => !major.has(item));
-    expect(minorOnly).toEqual(["spreadsheet_basic"]);
+    expect(minorOnly).toEqual(["spreadsheet_basic", "slack_guest_space_check"]);
+  });
+
+  it("carries the unanswered private-info row without granting it to anyone", () => {
+    for (const subgroup of adminBotExternalCollaboratorSubgroups) {
+      expect(grantedItems(subgroup)).not.toContain("trusted_lab_private_info");
+    }
   });
 
   it("puts only coauthor_major on the Vector sponsor roster row", () => {
@@ -88,11 +107,18 @@ describe("collaboratorSubgroupAccess", () => {
     }
   });
 
-  it("invites the same set to city dinners as to the social follow welcome", () => {
+  it("invites everyone on the social follow welcome to city dinners, and one subgroup more", () => {
+    // These two rows tracked each other while the matrix had eight columns. They no longer do:
+    // coauthor_discussant_designer is on the dinner row but not the LinkedIn/Twitter welcome row,
+    // so the relation is containment rather than equality.
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const items = grantedItems(subgroup);
-      expect(items.includes("city_dinner_invite")).toBe(items.includes("welcome_linkedin_twitter"));
+      if (items.includes("welcome_linkedin_twitter")) {
+        expect(items).toContain("city_dinner_invite");
+      }
     }
+    expect(grantedItems("coauthor_discussant_designer")).toContain("city_dinner_invite");
+    expect(grantedItems("coauthor_discussant_designer")).not.toContain("welcome_linkedin_twitter");
   });
 });
 

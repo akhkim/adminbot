@@ -250,6 +250,9 @@ export function createAdminBotOnboardingSender(
     const base: Record<string, string | undefined> = {
       ...request.values,
       first_name: request.values?.first_name?.trim() || firstNameOf(name),
+      // The address the mail is going to, for the copy that has to name it back to the reader
+      // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
+      member_email: request.values?.member_email?.trim() || email,
       zhijing_whatsapp: request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
     };
 

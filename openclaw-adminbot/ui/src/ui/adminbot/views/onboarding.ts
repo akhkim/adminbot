@@ -26,9 +26,27 @@ export type OnboardingTemplateOption = {
 export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = [
   {
     id: "interview_invite",
-    label: "Interview invite",
+    label: "Interview invite — 30 min with Zhijing",
     group: "Candidate",
-    required: ["first_name"],
+    required: [],
+  },
+  {
+    id: "interview_invite_theme_meeting",
+    label: "Interview invite — themed meeting and Slack instead",
+    group: "Candidate",
+    required: [],
+  },
+  {
+    id: "interview_invite_project_matching",
+    label: "Interview invite — forwarded to a project lead",
+    group: "Candidate",
+    required: ["application_form_link", "task_doc_link"],
+  },
+  {
+    id: "outreach_reply",
+    label: "Cold outreach — point them at the form",
+    group: "Candidate",
+    required: ["application_form_link", "first_name"],
   },
   {
     id: "trial_phase",
@@ -59,13 +77,13 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "own_pace_advisee",
     label: "Own-pace advisee — access and setup",
     group: "Advisee",
-    required: ["first_name", "meeting_arrangement"],
+    required: ["first_name", "drive_folder_link"],
   },
   {
     id: "own_pace_advisee_norms",
     label: "Own-pace advisee — communication and working norms",
     group: "Advisee",
-    required: ["first_name"],
+    required: ["first_name", "drive_folder_link"],
   },
   {
     id: "interviewee",
@@ -109,27 +127,27 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "alumni",
     label: "Alumni",
     group: "External collaborator",
-    required: ["first_name", "sender_name", "slack_connect_link"],
+    required: ["first_name", "slack_connect_link"],
   },
   {
     id: "coauthor_minor",
     label: "Coauthor, 5-10 h/week — access and setup",
     group: "External collaborator",
-    required: [
-      "first_name",
-      "project_channel",
-      "discussion_channel",
-      "meeting_channel",
-      "primary_contact",
-      "drive_folder_link",
-      "drive_guide_link",
-    ],
+    required: ["first_name"],
   },
   {
     id: "coauthor_minor_norms",
     label: "Coauthor, 5-10 h/week — supervision and working norms",
     group: "External collaborator",
-    required: ["first_name", "project_or_context", "contact_name", "team_lead_role"],
+    required: [
+      "first_name",
+      "project_or_context",
+      "contact_name",
+      "team_lead_role",
+      "recipient_role",
+      "main_doers",
+      "guidance_coauthors",
+    ],
   },
   {
     id: "coauthor_major",
@@ -137,9 +155,8 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     group: "External collaborator",
     required: [
       "first_name",
-      "project_channel",
-      "discussion_channel",
-      "meeting_channel",
+      "member_email",
+      "portal_password",
       "drive_folder_link",
       "drive_guide_link",
     ],
@@ -212,7 +229,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
 const GENERATED = new Set(["drive_folder_link", "slack_connect_link"]);
 // Derived from the name field and the lab's settings respectively. `dashboard_url` used to be
 // listed here, which hid a field that nothing filled -- it is deployment configuration now.
-const DERIVED = new Set(["first_name", "zhijing_whatsapp"]);
+const DERIVED = new Set(["first_name", "zhijing_whatsapp", "member_email"]);
 
 const FIELD_LABELS: Record<string, string> = {
   project_or_context: "Project or context",
@@ -245,6 +262,12 @@ const FIELD_LABELS: Record<string, string> = {
   record_email: "Preferred email we hold",
   record_projects: "Projects we have them on",
   sender_name: "Sending as",
+  portal_password: "Portal password to send them",
+  application_form_link: "Application form link",
+  task_doc_link: "Starter task doc link",
+  recipient_role: "Their role on the project",
+  main_doers: "Who drives the day-to-day work",
+  guidance_coauthors: "Who advises rather than implements",
 };
 
 export function onboardingFieldsFor(templateId: string): string[] {

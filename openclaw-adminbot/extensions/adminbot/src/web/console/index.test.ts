@@ -361,9 +361,9 @@ describe("renderAdminBotWebUi", () => {
   it("offers the collaborator subgroup on the member editor, gated on the privilege select", () => {
     expect(html).toContain('id="member-subgroup-field" hidden');
     expect(html).toContain('<select name="collaborator_subgroup" id="member-subgroup">');
-    // All eight subgroups reach the page, labeled through the same humanize() the roster uses.
+    // All ten subgroups reach the page, labeled through the same humanize() the roster uses.
     expect(html).toContain(
-      '["interviewee","slightly_better_than_emails","acquaintance","alumni","coauthor_minor","coauthor_major","disappearing_coauthor","external_prof"]',
+      '["interviewee","slightly_better_than_emails","acquaintance","alumni","own_pace_advisee","coauthor_minor","coauthor_major","coauthor_discussant_designer","disappearing_coauthor","external_prof"]',
     );
     expect(html).toContain("collaboratorSubgroups,");
     expect(html).toContain('"Not set",');
@@ -384,8 +384,10 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain('"coauthor_minor":[');
     expect(html).toContain('{"label":"Recommendation letter button","cell":"case_by_case"}');
     expect(html).toContain('{"label":"Google file common practice guide","cell":"yes_separate"}');
-    expect(html).toContain('{"label":"#proj-xxx project channel","cell":"pending"}');
     expect(html).toContain('{"label":"Recommendation letter button","cell":"auto_decline"}');
+    // The two subgroups the matrix gained travel with the page like the rest.
+    expect(html).toContain('"own_pace_advisee":[');
+    expect(html).toContain('"coauthor_discussant_designer":[');
     // Non-plain cells carry the instruction as a marker inside the tag.
     expect(html).toContain('pending: { text: "pending" }');
     expect(html).toContain('case_by_case: { text: "case-by-case" }');

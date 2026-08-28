@@ -76,8 +76,10 @@ export const adminBotExternalCollaboratorSubgroups = [
   "slightly_better_than_emails",
   "acquaintance",
   "alumni",
+  "own_pace_advisee",
   "coauthor_minor",
   "coauthor_major",
+  "coauthor_discussant_designer",
   "disappearing_coauthor",
   "external_prof",
 ] as const;

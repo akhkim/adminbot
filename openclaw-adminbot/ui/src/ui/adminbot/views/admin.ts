@@ -2,6 +2,7 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
 import {
   adminBotPaperSlotRegistry,
@@ -51,13 +52,6 @@ import {
 
 export type BlockerSort = "stage" | "age" | "paper";
 import {
-  EMPTY_PAPER_OVERVIEW_FILTER,
-  paperOverviewRows,
-  renderPaperOverviewTable,
-  type PaperOverviewFilter,
-} from "./paper-overview.ts";
-import { renderAdminBotReimbursements } from "./reimbursements.ts";
-import {
   PAPER_GRID_THRESHOLD,
   diffForHistory,
   emptyPaperGridState,
@@ -65,6 +59,13 @@ import {
   renderPaperGrid,
   type PaperGridState,
 } from "../paper-grid.ts";
+import {
+  EMPTY_PAPER_OVERVIEW_FILTER,
+  paperOverviewRows,
+  renderPaperOverviewTable,
+  type PaperOverviewFilter,
+} from "./paper-overview.ts";
+import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
@@ -176,18 +177,12 @@ const privilegeLevels: AdminBotPrivilegeLevel[] = [
   "admin",
 ];
 
-// Ordered least- to most-engaged, matching the service list. Labels come from `friendly()` so the
-// vocabulary lives in one place instead of a second hand-written label map.
-const collaboratorSubgroups: AdminBotExternalCollaboratorSubgroup[] = [
-  "interviewee",
-  "slightly_better_than_emails",
-  "acquaintance",
-  "alumni",
-  "coauthor_minor",
-  "coauthor_major",
-  "disappearing_coauthor",
-  "external_prof",
-];
+// The service's own list, in its own order (least- to most-engaged), rather than a copy. It was a
+// hand-written copy until two subgroups were added to the contract and never reached this
+// dropdown, which made them impossible to assign from the members panel. Labels come from
+// `friendly()` so the vocabulary still lives in one place.
+const collaboratorSubgroups: readonly AdminBotExternalCollaboratorSubgroup[] =
+  adminBotExternalCollaboratorSubgroups;
 
 const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "active", label: "Full time" },
@@ -1659,7 +1654,6 @@ function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean
 
 /** Open sheet, or null for the table. Module-level like my-work's, and reset by onExit. */
 let paperGridState: PaperGridState | null = null;
-
 
 /**
  * Active Papers.

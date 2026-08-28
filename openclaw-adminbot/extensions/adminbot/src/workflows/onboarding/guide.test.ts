@@ -109,16 +109,16 @@ describe("onboarding template copy", () => {
 
 describe("composeOnboardingGuide", () => {
   it("refuses to compose when a required value is blank", () => {
-    const result = composeOnboardingGuide("coauthor_minor", { first_name: "Ada" });
+    const result = composeOnboardingGuide("coauthor_major", { first_name: "Ada" });
     expect(result.ok).toBe(false);
     if (result.ok) {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    // The setup mail names the channels and who to ask when Zhijing is busy; the project itself
-    // and who supervises the work moved to the norms mail that follows it (coauthor_minor_norms).
-    expect(result.missing).toContain("project_channel");
-    expect(result.missing).toContain("primary_contact");
+    // The setup mail hands over a portal sign-in and points at the Drive practice guide; the
+    // project itself and who supervises the work are in the norms mail that follows it.
+    expect(result.missing).toContain("portal_password");
+    expect(result.missing).toContain("drive_guide_link");
   });
 
   // The alumni mail asked for a portal address the tab hid from the operator and nothing filled,
@@ -222,7 +222,7 @@ describe("composeOnboardingGuide", () => {
 
     // The optional token stays optional only where a template declines to require it: the other
     // templates still refuse rather than greet a stranger with "Hi,".
-    expect(composeOnboardingGuide("interview_invite", {}, ENV)).toMatchObject({
+    expect(composeOnboardingGuide("rejection", {}, ENV)).toMatchObject({
       ok: false,
       reason: "missing-values",
       missing: ["first_name"],
@@ -285,7 +285,7 @@ describe("onboarding sender", () => {
     const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
 
     const result = await send({
-      template_id: "coauthor_minor",
+      template_id: "coauthor_major",
       name: "Ada Lovelace",
       email: "ada@example.com",
     });
@@ -295,8 +295,10 @@ describe("onboarding sender", () => {
       return;
     }
     expect(result.error.status).toBe(422);
+    // `drive_folder_link` is not on this list: it is provisioned by the send rather than typed.
+    // `member_email` is not either -- it defaults to the address being written to.
     expect(result.error.missing).toEqual(
-      expect.arrayContaining(["discussion_channel", "drive_guide_link", "project_channel"]),
+      expect.arrayContaining(["drive_guide_link", "portal_password"]),
     );
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
