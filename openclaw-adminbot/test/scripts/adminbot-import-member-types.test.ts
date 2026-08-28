@@ -67,16 +67,24 @@ describe("classify", () => {
     expect(classify("full, coauthor-major")).toEqual({ kind: "full", privilege_level: "member" });
   });
 
-  it("takes the least-granting subgroup when a row names several, and says what it passed over", () => {
+  it("takes the most-engaged subgroup when a row names several, and says what it passed over", () => {
+    // Someone who has left the day-to-day but still coauthors is onboarded as the coauthor: that
+    // is the access they need now, and `alumni` beside it records where they came from.
     expect(classify("alumni, coauthor-major")).toEqual({
       kind: "collaborator",
       privilege_level: "external_collaborator",
-      collaborator_subgroup: "alumni",
-      alsoNamed: ["coauthor_major"],
+      collaborator_subgroup: "coauthor_major",
+      alsoNamed: ["alumni"],
     });
     expect(classify("alumni, coauthor-minor, interviewee")).toMatchObject({
-      collaborator_subgroup: "alumni",
-      alsoNamed: ["coauthor_minor", "interviewee"],
+      collaborator_subgroup: "coauthor_minor",
+      alsoNamed: ["alumni", "interviewee"],
+    });
+    expect(classify("alumni, disappearing-coauthor")).toMatchObject({
+      collaborator_subgroup: "disappearing_coauthor",
+    });
+    expect(classify("alumni, coauthor-discussant-or-designer")).toMatchObject({
+      collaborator_subgroup: "coauthor_discussant_designer",
     });
   });
 

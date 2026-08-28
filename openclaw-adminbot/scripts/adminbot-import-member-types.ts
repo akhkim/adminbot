@@ -43,22 +43,30 @@ export const SUBGROUP_BY_TOKEN: Record<string, AdminBotExternalCollaboratorSubgr
   "external-prof": "external_prof",
 };
 
-// Where a row names more than one subgroup, the earliest entry here wins. `alumni` leads
-// deliberately: the roster already reads that token as decisive elsewhere (adminBotIsAlumniType --
-// "checked after the batch, and it wins"), and of the readings available it is the one that grants
-// least. A row like "alumni, coauthor-major" therefore lands on `alumni`, and the summary lists
-// every row this rule had to decide so the choice can be overridden per person.
+// Where a row names more than one subgroup, the earliest entry here wins: the most engaged
+// collaboration the row names, not the lightest.
+//
+// This is a lab decision rather than something the sheet settles. A row reading
+// "alumni, coauthor-major" describes someone who has left the day-to-day and is still doing
+// 20-40 hrs/week on a paper, and it is the coauthoring that says what access they need now --
+// the project channel, the weekly meeting, a place on the sponsor roster. `alumni` is read here
+// as where they came from. (Note that this is the opposite reading from adminBotIsAlumniType,
+// which asks a different question -- "should a sweep address this person" -- and for that one
+// having left still wins.)
+//
+// Every row this rule has to decide is listed in the run summary, so a person it gets wrong can
+// be set by hand rather than by changing the order for everybody.
 const SUBGROUP_PRECEDENCE: readonly AdminBotExternalCollaboratorSubgroup[] = [
-  "alumni",
-  "disappearing_coauthor",
-  "interviewee",
-  "slightly_better_than_emails",
-  "acquaintance",
-  "external_prof",
-  "own_pace_advisee",
-  "coauthor_minor",
-  "coauthor_major",
   "coauthor_discussant_designer",
+  "coauthor_major",
+  "coauthor_minor",
+  "own_pace_advisee",
+  "external_prof",
+  "acquaintance",
+  "slightly_better_than_emails",
+  "interviewee",
+  "disappearing_coauthor",
+  "alumni",
 ];
 
 export function memberTypeTokens(memberType: string): string[] {
