@@ -20,6 +20,48 @@ describe("renderEmailBodyHtml", () => {
     );
   });
 
+  it("makes '1. ' steps an ordered list, across the blank lines the copy puts between them", () => {
+    // The onboarding templates separate every numbered step with a blank line so the plain-text
+    // part reads well. That must not split the list into five one-item lists, or five paragraphs.
+    expect(renderEmailBodyHtml("1. First step.\n\n2. Second step.\n\n3. Third step.")).toBe(
+      "<ol><li>First step.</li><li>Second step.</li><li>Third step.</li></ol>",
+    );
+  });
+
+  it("nests a run of bullets inside the numbered step that introduces them", () => {
+    // "5. Keep updated by following our social media accounts:" and its unindented bullets: the
+    // bullets belong to that step, and must not terminate the numbered list.
+    expect(
+      renderEmailBodyHtml("1. Portal: sign in.\n\n2. Socials:\n\n- LinkedIn\n- X\n\nQuestions?"),
+    ).toBe(
+      "<ol><li>Portal: sign in.</li><li>Socials:<ul><li>LinkedIn</li><li>X</li></ul></li></ol>" +
+        "<p>Questions?</p>",
+    );
+  });
+
+  it("keeps a list that does not start at one numbered as the copy numbered it", () => {
+    expect(renderEmailBodyHtml("3. Third.\n\n4. Fourth.")).toBe(
+      '<ol start="3"><li>Third.</li><li>Fourth.</li></ol>',
+    );
+  });
+
+  it("ends a list at a line of prose, so the next run starts its own list", () => {
+    expect(renderEmailBodyHtml("1. One.\n\nThen this.\n\n1. One again.")).toBe(
+      "<ol><li>One.</li></ol><p>Then this.</p><ol><li>One again.</li></ol>",
+    );
+  });
+
+  it("links a bare email address, but leaves quoted and templated examples as text", () => {
+    expect(renderEmailBodyHtml("Write to akim@cs.toronto.edu for help.")).toBe(
+      '<p>Write to <a href="mailto:akim@cs.toronto.edu">akim@cs.toronto.edu</a> for help.</p>',
+    );
+    // The member template prints example usernames; those are copy about an address, not one to
+    // write to, so neither the quoted nor the placeholder-built form becomes a link.
+    expect(renderEmailBodyHtml('Try "firstname@cs.toronto.edu" or {last_name}@cs.toronto.edu.')).toBe(
+      "<p>Try &quot;firstname@cs.toronto.edu&quot; or {last_name}@cs.toronto.edu.</p>",
+    );
+  });
+
   it("linkifies bare URLs without swallowing the sentence's punctuation", () => {
     expect(renderEmailBodyHtml("Sign up at https://example.com/signup and follow the guide.")).toBe(
       '<p>Sign up at <a href="https://example.com/signup">https://example.com/signup</a> and ' +
@@ -77,6 +119,8 @@ describe("renderEmailBodyHtml", () => {
       const template = findOnboardingTemplate(id);
       const html = renderEmailBodyHtml(template?.body ?? "");
       expect(html.split("<ul>").length, id).toBe(html.split("</ul>").length);
+      // `<ol` rather than `<ol>`, so a list carrying a `start` attribute still counts.
+      expect(html.split("<ol").length, id).toBe(html.split("</ol>").length);
       expect(html.split("<li>").length, id).toBe(html.split("</li>").length);
       expect(html.split("<p>").length, id).toBe(html.split("</p>").length);
     }
