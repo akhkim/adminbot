@@ -116,7 +116,7 @@ Thank you for taking the time to interview with the Jinesis Lab and for sharing 
 
 After careful consideration, we have decided not to move forward at this time. We were unable to identify a strong match between your current experience and the lab's present research needs.
 
-If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: NLP PhD Global Equality.
+If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: [NLP PhD Global Equality](https://github.com/zhijing-jin/nlp-phd-global-equality).
 
 We sincerely appreciate your interest in the lab and wish you the best in your academic and professional path.
 
@@ -192,7 +192,7 @@ This is Professor Zhijing Jin's research lab, now known as Jinesis Lab at the Un
 
 A few ways to connect:
 
-1. Slack: You will be invited to a channel in our workspace through Slack Connect, where we will share any exciting news or updates about the lab: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+1. Slack: You will be invited to a channel in our workspace through Slack Connect, where we will share any exciting news or updates about the lab: {slack_connect_link}
 
 2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. If you are actively participating in a project, this will be pinned to your Slack project group chat. (Or please ask in the channel if you cannot see it in our group chat.)
 
@@ -236,8 +236,8 @@ We welcome you to keep an active profile on our lab portal {dashboard_url}
 
 5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 Best of luck to the next stage of your career and life, and we look forward to keeping in touch!
@@ -248,36 +248,34 @@ Jinesis Lab by Prof. Zhijing Jin, University of Toronto`,
   {
     // The portal credential is a per-send value rather than copy: the lab hands out a starting
     // password on this mail, and a shared literal in the tree would be a checked-in credential.
-    // The Drive step is not in the template doc's version of this mail but is kept, because the
-    // access matrix grants coauthor_major both the project folder and the file-practice guide
-    // outright (google_file_practice_guide is a plain `yes` for this subgroup, not `yes_separate`),
-    // and dropping {drive_folder_link} would also stop the send provisioning the folder at all.
+    //
+    // The Drive step is gone as of the lab's revised version of this mail, which numbers straight
+    // from Meetings to the socials. It had been kept against the doc on the grounds that the access
+    // matrix grants coauthor_major the project folder and the file-practice guide outright
+    // (`google_file_practice_guide` is a plain `yes` here, not `yes_separate`) -- so this is a
+    // deliberate divergence from the matrix, not an oversight.
+    //
+    // Consequence worth knowing: the send provisions a Drive folder only when the copy still says
+    // {drive_folder_link}, so a coauthor-major onboarding no longer creates one. If the lab wants
+    // the folder without the paragraph, the provisioning has to move off the copy.
     id: "coauthor_major",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: [
-      "drive_folder_link",
-      "drive_guide_link",
-      "first_name",
-      "member_email",
-      "portal_password",
-    ],
+    required: ["first_name", "member_email", "portal_password"],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab, which we would appreciate if you could do in the upcoming 5 days:
+A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab. Since you have major roles in Jinesis projects, if possible, we would appreciate if you could do in the upcoming 5 days or so:
 
 1. Member portal: Log into our lab portal {dashboard_url} using {member_email} and password {portal_password}. You should complete everything under "My Info", including your profile info, onboarding steps, time availability registration, and your project list.
 
 2. Slack: You should have access to various channels in our Slack workspace. Day-to-day coordination happens there rather than over email.
 
-3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphic interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously, and might need time-zone conversion including daylight savings.
+3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphical interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously and might need time-zone conversion, including daylight saving time.
 
-4. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
+4. Keep updated by following our social media accounts:
 
-5. Keep updated by following our social media accounts:
-
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
@@ -308,8 +306,8 @@ A very warm welcome to the Jinesis Lab! To facilitate our project collaboration,
 
 4. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
@@ -495,8 +493,8 @@ A few things to get you set up:
 
 4. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
@@ -524,8 +522,8 @@ Please communicate changes in your availability early. If coursework, co-supervi
 
 Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 We're glad to have you working with us and looking forward to seeing the project develop!

@@ -115,10 +115,11 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    // The setup mail hands over a portal sign-in and points at the Drive practice guide; the
-    // project itself and who supervises the work are in the norms mail that follows it.
+    // The setup mail hands over a portal sign-in; the project itself and who supervises the work
+    // are in the norms mail that follows it. The Drive paragraph is gone as of the lab's revised
+    // version, so this mail no longer asks for the practice-guide link.
     expect(result.missing).toContain("portal_password");
-    expect(result.missing).toContain("drive_guide_link");
+    expect(result.missing).not.toContain("drive_guide_link");
   });
 
   // The alumni mail asked for a portal address the tab hid from the operator and nothing filled,
@@ -151,7 +152,9 @@ describe("composeOnboardingGuide", () => {
   });
 
   it("fills every placeholder once satisfied", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), ENV);
+    // Asked of `alumni`: the acquaintance mail no longer carries the free-workspace fallback line,
+    // so it is no longer a template that depends on ADMINBOT_SLACK_INVITE_URL.
+    const result = composeOnboardingGuide("alumni", valuesFor("alumni"), ENV);
     expect(result.ok).toBe(true);
     if (!result.ok) {
       return;
@@ -161,7 +164,7 @@ describe("composeOnboardingGuide", () => {
 
     // An unconfigured workspace must refuse rather than mail a placeholder invite link, and must
     // say which variable to set.
-    const unset = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {});
+    const unset = composeOnboardingGuide("alumni", valuesFor("alumni"), {});
     expect(unset).toMatchObject({ ok: false, reason: "missing-environment" });
     expect(unset.ok ? [] : unset.missing).toContain("ADMINBOT_SLACK_INVITE_URL");
 
@@ -242,7 +245,7 @@ describe("composeOnboardingGuide", () => {
   // placeholders are non-empty. Without this they satisfy every "is it set?" check and the failure
   // surfaces much later, from Slack or Gmail, describing the value rather than the configuration.
   it("treats an unedited REPLACE_ME placeholder as unset", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    const result = composeOnboardingGuide("alumni", valuesFor("alumni"), {
       ADMINBOT_SLACK_INVITE_URL: "REPLACE_ME_WITH_THE_SLACK_INVITE_URL",
     });
     expect(result).toMatchObject({ ok: false, reason: "missing-environment" });
@@ -298,9 +301,7 @@ describe("onboarding sender", () => {
     expect(result.error.status).toBe(422);
     // `drive_folder_link` is not on this list: it is provisioned by the send rather than typed.
     // `member_email` is not either -- it defaults to the address being written to.
-    expect(result.error.missing).toEqual(
-      expect.arrayContaining(["drive_guide_link", "portal_password"]),
-    );
+    expect(result.error.missing).toEqual(expect.arrayContaining(["portal_password"]));
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();

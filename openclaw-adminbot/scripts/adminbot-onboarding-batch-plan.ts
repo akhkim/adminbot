@@ -29,6 +29,7 @@
 // Deployment tokens (the Slack invite URL, the bot address) come from the environment, exactly as
 // they do at send time. Unset, the draft still renders and those tokens stay visible.
 import fs from "node:fs";
+import { renderEmailBodyText } from "../extensions/adminbot/src/connectors/email-html.ts";
 import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.ts";
 import {
   composeOnboardingGuide,
@@ -239,7 +240,9 @@ function draftFor(
   }
   const composed = composeOnboardingGuide(templateId, selfReferencing, env);
   if (composed.ok) {
-    return { subject: composed.guide.subject, body: composed.guide.body };
+    // Rendered the way the text/plain part is delivered: the copy carries links as `[label](url)`,
+    // and a reviewer should read "Jinesis-Lab (https://…)" rather than the notation.
+    return { subject: composed.guide.subject, body: renderEmailBodyText(composed.guide.body) };
   }
   // Unconfigured deployment tokens (no ADMINBOT_SLACK_INVITE_URL on this machine, say). Render what
   // we can by hand so the draft is still reviewable, and leave the rest as `{token}`.
@@ -247,7 +250,7 @@ function draftFor(
     text.replace(/\{([a-z_]+)\}/gu, (whole, token: string) => selfReferencing[token] ?? whole);
   return {
     subject: fill(template.subject ?? ""),
-    body: fill(template.body),
+    body: renderEmailBodyText(fill(template.body)),
   };
 }
 
@@ -285,6 +288,34 @@ function needsFor(templateId: string, values: Record<string, string>): string[] 
  * and in the batch, but her row carries no correspondence, Slack or calendar address, so she was
  * silently absent from the previous run.
  */
+/**
+ * People to leave out of this batch, passed as `--exclude "<address or name>"`.
+ *
+ * A flag rather than an edit to the sheet: "not in this batch" is a decision about one run, while
+ * the sheet records who someone is. Removing their row, or their Test Onboard mark, would lose that
+ * -- and the next run would quietly mail them.
+ */
+export function parseExclusions(argv: readonly string[]): Set<string> {
+  const excluded = new Set<string>();
+  argv.forEach((arg, index) => {
+    if (arg === "--exclude" && argv[index + 1]) {
+      excluded.add((argv[index + 1] as string).trim().toLowerCase());
+    }
+  });
+  return excluded;
+}
+
+function isExcluded(
+  excluded: ReadonlySet<string>,
+  name: string,
+  addresses: readonly string[],
+): boolean {
+  return (
+    excluded.has(name.trim().toLowerCase()) ||
+    addresses.some((address) => excluded.has(address.trim().toLowerCase()))
+  );
+}
+
 export function parseEmailOverrides(argv: readonly string[]): Map<string, string> {
   const overrides = new Map<string, string>();
   argv.forEach((arg, index) => {
@@ -307,6 +338,7 @@ export function buildPlan(
   emailOverrides: ReadonlyMap<string, string> = new Map(),
   env: NodeJS.ProcessEnv = process.env,
   formLinks: Readonly<Record<string, string>> = {},
+  excluded: ReadonlySet<string> = new Set(),
 ): Plan {
   const plan: Plan = {
     generated_at: new Date().toISOString(),
@@ -332,6 +364,14 @@ export function buildPlan(
         reason: attributes
           ? `no email address on this row (it carries only a note: "${attributes.split("\n")[0]}")`
           : "empty row",
+      });
+      continue;
+    }
+    if (isExcluded(excluded, cell(row, NAME_COL), addresses)) {
+      plan.skipped.push({
+        sheet_row: sheetRow,
+        name: cell(row, NAME_COL) || (addresses[0] ?? ""),
+        reason: "excluded from this batch by --exclude",
       });
       continue;
     }
@@ -437,6 +477,14 @@ export function buildPlan(
     if (cell(row, TLDR_COL)) {
       values.record_role = cell(row, TLDR_COL);
     }
+    if (isExcluded(excluded, name, addresses)) {
+      plan.skipped.push({
+        sheet_row: sheetRow,
+        name,
+        reason: "excluded from this batch by --exclude",
+      });
+      continue;
+    }
     const needs = needsFor(templateId, values);
     if (addresses.length === 0) {
       needs.unshift("email: no address on this sheet row");
@@ -469,7 +517,7 @@ function main(argv: readonly string[]): void {
   const rowsIndex = argv.indexOf("--rows");
   if (rowsIndex === -1 || !argv[rowsIndex + 1]) {
     console.error(
-      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--form-links <links.json>] [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
+      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--form-links <links.json>] [--exclude "<name or address>"]... [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
     );
     process.exit(1);
   }
@@ -503,6 +551,7 @@ function main(argv: readonly string[]): void {
     parseEmailOverrides(argv),
     process.env,
     formLinks,
+    parseExclusions(argv),
   );
   const output = `${JSON.stringify(plan, undefined, 2)}\n`;
   const outIndex = argv.indexOf("--out");

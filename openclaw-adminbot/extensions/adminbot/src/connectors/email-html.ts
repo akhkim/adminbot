@@ -19,6 +19,13 @@
 /** Two spaces per nesting level, matching how the templates indent a sub-bullet. */
 const INDENT_WIDTH = 2;
 
+// Anchor text: `[label](https://…)` or `[label](mailto:…)`.
+//
+// The lab's template document hyperlinks words rather than printing URLs -- "LinkedIn: Zhijing-Jin,
+// Jinesis-Lab, EuroSafeAI" is three destinations behind three names. Without a notation for that,
+// those words shipped as dead text with the URL nowhere in the mail at all.
+const MARKDOWN_LINK = /\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/gu;
+
 // Bare URLs in the copy. Deliberately narrow: it stops at whitespace and at the characters that
 // would break the attribute it lands in, and trailing sentence punctuation is trimmed afterwards
 // so "…at https://example.com/x." does not linkify the full stop.
@@ -42,23 +49,54 @@ function escapeHtml(text: string): string {
 
 type Link = { start: number; end: number; href: string; label: string };
 
-/** Every URL and email address in `text`, in source order and never overlapping. */
+/** Every anchor, URL and email address in `text`, in source order and never overlapping. */
 function linksIn(text: string): Link[] {
   const links: Link[] = [];
+  const covers = (start: number, end: number): boolean =>
+    links.some((link) => start < link.end && end > link.start);
+
+  // Anchors first, so the URL and address passes both see their target as already claimed and do
+  // not linkify the inside of a `[label](url)` a second time.
+  for (const match of text.matchAll(MARKDOWN_LINK)) {
+    const [whole = "", label = "", href = ""] = match;
+    links.push({ start: match.index, end: match.index + whole.length, href, label });
+  }
   for (const match of text.matchAll(URL_PATTERN)) {
     const raw = match[0].replace(TRAILING_PUNCTUATION, "");
-    links.push({ start: match.index, end: match.index + raw.length, href: raw, label: raw });
+    const start = match.index;
+    if (covers(start, start + raw.length)) {
+      continue;
+    }
+    links.push({ start, end: start + raw.length, href: raw, label: raw });
   }
   for (const match of text.matchAll(EMAIL_PATTERN)) {
     const raw = match[0].replace(TRAILING_PUNCTUATION, "");
     const start = match.index;
     // An address inside a URL -- a mailto: or a userinfo host -- is already covered by that link.
-    if (links.some((link) => start < link.end && start + raw.length > link.start)) {
+    if (covers(start, start + raw.length)) {
       continue;
     }
     links.push({ start, end: start + raw.length, href: `mailto:${raw}`, label: raw });
   }
-  return links.sort((left, right) => left.start - right.start);
+  return links.toSorted((left, right) => left.start - right.start);
+}
+
+/**
+ * The body as a text-only client should read it: anchor text followed by its destination.
+ *
+ * The copy carries links in one notation and the two parts of the mail render it differently -- the
+ * html alternative as an anchor, this as "label (url)". Without it a text-only reader saw the
+ * `[label](url)` source, which reads as a templating bug rather than as a link. A `mailto:` prefix
+ * is dropped here because an address on its own is what a person would type.
+ *
+ * A label that already *is* its destination -- the newsletter address, hyperlinked to itself --
+ * renders once rather than as "x (x)".
+ */
+export function renderEmailBodyText(body: string): string {
+  return body.replace(MARKDOWN_LINK, (_whole, label: string, href: string) => {
+    const destination = href.replace(/^mailto:/u, "");
+    return label === destination ? label : `${label} (${destination})`;
+  });
 }
 
 /**
