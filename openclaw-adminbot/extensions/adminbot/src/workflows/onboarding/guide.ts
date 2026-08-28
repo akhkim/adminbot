@@ -286,3 +286,43 @@ export function driveWorkspaceFolderName(fullName: string): string {
 export function firstNameOf(fullName: string): string {
   return fullName.trim().split(/\s+/u).find(Boolean) ?? "";
 }
+
+/**
+ * Rejects an application-form link that is the blank form rather than the applicant's own response.
+ *
+ * The project-matching mail says "we have forwarded your application form ..." to a project lead
+ * who is cc'd, so the link has to open what that applicant actually wrote. The public
+ * `/viewform` URL opens an empty form, and the August batch went out with exactly that -- the lead
+ * received a blank questionnaire and no way to see the answers they were being asked to judge.
+ *
+ * A per-responder link is the one Apps Script's `getEditResponseUrl()` returns, which carries an
+ * `edit2=` token; a prefilled link carries `usp=pp_url` and its `entry.` parameters. Anything else
+ * on a `docs.google.com/forms` host is the blank form under some other spelling. Non-Google links
+ * are left alone: the lab sometimes forwards a PDF or a Drive copy instead, and this is a guard
+ * against one specific mistake, not a URL allowlist.
+ *
+ * Returns the problem as a sentence, or undefined when the link is fine.
+ */
+export function applicantResponseLinkProblem(link: string | undefined): string | undefined {
+  const value = link?.trim() ?? "";
+  if (!value) {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return "the application form link is not a URL";
+  }
+  if (!/(^|\.)docs\.google\.com$/u.test(url.hostname) || !url.pathname.includes("/forms/")) {
+    return undefined;
+  }
+  const identifiesOneResponse =
+    url.searchParams.has("edit2") ||
+    url.searchParams.has("edit_requested") ||
+    [...url.searchParams.keys()].some((key) => key.startsWith("entry."));
+  if (identifiesOneResponse) {
+    return undefined;
+  }
+  return 'the application form link is the blank form, not this applicant\'s own response: forward the per-person link (the one their "edit response" URL points at) so the project lead sees their answers';
+}

@@ -200,6 +200,29 @@ omitted from every template:
 | `{record_email}`               | **contact sheet**     | their preferred correspondence address                                            |
 | `{record_role}`                | **contact sheet**     | the `tldr` background line, e.g. "Professor, University of X"                     |
 | `{record_projects}`            | **contact sheet**     | what they are collaborating with us on                                            |
+| `{application_form_link}`      | form                  | the applicant's **own** response, not the blank form — validated before send       |
+| `{task_recommendation}`        | catalog               | one sentence from `task-recommendations.ts`, chosen per applicant                  |
+
+## The project-matching mail
+
+Two things about `interview_invite_project_matching` were wrong in the August batch and are now
+enforced rather than remembered.
+
+**The forwarded link must be the applicant's own response.** The copy says "we have forwarded your
+application form ..." to a cc'd project lead, and the batch went out carrying the public
+`/viewform` URL — which opens an empty questionnaire. The lead received a blank form and no way to
+see the answers they were being asked to judge. `applicantResponseLinkProblem()` in `guide.ts`
+refuses any `docs.google.com/forms` link that does not identify one response (an `edit2=` token
+from Apps Script's `getEditResponseUrl()`, or a prefilled link's `entry.` parameters). Non-Google
+links pass: the lab sometimes forwards a PDF instead, and this guards one mistake rather than
+allowlisting URLs.
+
+**The recommendation is chosen per applicant.** It used to be one hard-coded sentence about the
+WordPlay RL modular task sent to everyone, which produced recommendations naming work the
+applicant had no connection to. The sentences now live in `task-recommendations.ts` and are
+selected by id; `scripts/adminbot-task-recommendations.ts` renders the batch JSON from that same
+catalog, so correcting a sentence cannot miss a generated file. Both failure modes are refusals in
+the script, not mail: an unfilled placeholder in the sentence, and a blank form link.
 
 ## The contact spreadsheet
 

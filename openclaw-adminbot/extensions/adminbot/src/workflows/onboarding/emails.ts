@@ -84,12 +84,18 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interview_invite_project_matching",
     kind: "candidate",
     subject: `Your application to the Jinesis Lab`,
-    required: ["application_form_link", "task_doc_link"],
+    // `application_form_link` is the applicant's OWN response, not the blank form -- see
+    // `applicantResponseLinkProblem` in guide.ts. Sending the public /viewform URL forwarded a lead
+    // an empty form, which is the bug this batch was reviewed for.
+    //
+    // `task_recommendation` replaced `task_doc_link`: the sentence is chosen per applicant from
+    // `task-recommendations.ts` instead of every applicant being pointed at one starter doc.
+    required: ["application_form_link", "task_recommendation"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly personally work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
 
-If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. Zhijing's personal recommendation is to match you with the WordPlay RL training modular task, where you can try implementing 1-2 environments following this doc {task_doc_link}.
+If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. {task_recommendation}
 
 If the lead finds it a fit, they will reply to this email thread. Your main point of contact will be the lead cc'ed, who will check your technical contributions after you share your code implementation and report with them. There might still be a chance that either they are at full capacity or the project is not a match.
 
@@ -222,11 +228,11 @@ We welcome you to keep an active profile on our lab portal {dashboard_url}
 
 1. If you have used the lab portal in the past, your account will remain valid. Otherwise, create an account using your personal email.
 
-2. Feel free to keep updating your profile in the "My Profile" tab, especially the "CV", "your residence city", and LinkedIn fields, so we can connect and keep posted on your latest updates, and may organize gatherings in your local city and invite you by calendar.
+2. Feel free to keep updating your profile in the "My Profile" tab, especially the "CV", "Resident Location", and LinkedIn fields, so we can connect and keep posted on your latest updates, and may organize gatherings in your local city and invite you by calendar. You can also update your "current_city" whenever you attend conferences, because during each big conference, we will have a calendar invite to organize a gathering for all Jinesis members and friends, based on the info collected in your portal.
 
 3. Also, you can use the portal for the following features: request a recommendation letter from Zhijing; check conference deadline countdown at https://jinesis-admin.vercel.app/adminbot/deadlines (no login needed); and find interesting papers at https://jinesis-admin.vercel.app/adminbot/conference-papers (no login needed).
 
-4. Slack: If you still use Slack, we will send a Slack Connect invitation to our Jinesis friends and alumni channel: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+4. Slack: If you still use Slack, we will send a Slack Connect invitation to our Jinesis friends and alumni channel: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url} If you prefer a different email address for Slack so it can link with your main workspace, feel free to indicate on your portal "My Profile" tab's "My Email for Slack" field.
 
 5. Keep updated by following our social media accounts:
 
@@ -234,7 +240,7 @@ We welcome you to keep an active profile on our lab portal {dashboard_url}
 - X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
-You are welcome to join any of our gathering events too. Hope to see you at one!
+Best of luck to the next stage of your career and life, and we look forward to keeping in touch!
 
 Warmly,
 Jinesis Lab by Prof. Zhijing Jin, University of Toronto`,

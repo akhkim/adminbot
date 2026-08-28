@@ -22,6 +22,7 @@ import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
+  applicantResponseLinkProblem,
   composeOnboardingGuide,
   configuredEnvValue,
   driveWorkspaceFolderName,
@@ -310,6 +311,19 @@ export function createAdminBotOnboardingSender(
           missing: missingByHand,
         },
       };
+    }
+
+    // A present-but-wrong value the required-values check cannot catch: the blank form passes as a
+    // filled-in link. Refused rather than warned, because the damage lands on the project lead
+    // rather than on the operator, who never sees what was forwarded.
+    if (copy.includes("{application_form_link}")) {
+      const problem = applicantResponseLinkProblem(base.application_form_link);
+      if (problem) {
+        return {
+          ok: false,
+          error: { status: 422, message: problem, missing: ["application_form_link"] },
+        };
+      }
     }
 
     if (request.preview) {
