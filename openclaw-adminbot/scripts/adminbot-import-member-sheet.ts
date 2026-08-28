@@ -168,7 +168,9 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-const normalizeName = (value: string) => value.trim().replaceAll(/\s+/gu, " ").toLowerCase();
+// Exported alongside parseCsv: matching a sheet row to a roster member has to agree exactly
+// between the importers, or two of them would disagree about who a row is.
+export const normalizeName = (value: string) => value.trim().replaceAll(/\s+/gu, " ").toLowerCase();
 
 function main(): void {
   const args = process.argv.slice(2);
