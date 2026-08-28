@@ -75,14 +75,16 @@ const DEFAULT_TIMEZONE = "America/Toronto";
 /**
  * Where a message ends up once this pass is finished with it.
  *
- * Labels rather than a trash call, which is what this used to do. Deleting a handled message made
- * the inbox a to-do list, which is the right shape, but it also threw away the only record of what
- * the automation actually did with a message -- and the failures, which are the ones somebody has
- * to act on, were left sitting in the inbox looking exactly like mail nobody had processed yet.
- *
- * So: every message the pass touches gets exactly one of these, and only the completed ones leave
- * the inbox. What is left in the inbox is then precisely the work outstanding, and each piece of it
+ * Every message the pass touches gets exactly one of these, and only the completed ones leave the
+ * inbox. What is left in the inbox is then precisely the work outstanding, and each piece of it
  * says why it is there.
+ *
+ * A completed message is then trashed as well, unless ADMINBOT_EMAIL_TRASH_HANDLED=0. The label is
+ * written first and on purpose: an earlier version of this script deleted handled mail outright and
+ * threw away the only record of what the automation had done with it. Labelling before trashing
+ * keeps that record -- the message sits in Trash carrying `AdminBot/Handled`, is searchable there
+ * for 30 days, and can be restored by anyone who disagrees with the call. Failures and
+ * needs-review are never trashed; they are the ones somebody has to act on.
  */
 const OUTCOME_LABELS = {
   completed: "AdminBot/Handled",
@@ -110,6 +112,27 @@ export function outcomeLabelChange(outcome: EmailOutcome): { add: string[]; remo
     remove.push("INBOX");
   }
   return { add: [add], remove };
+}
+
+/**
+ * Whether a message filed under `outcome` is trashed afterwards.
+ *
+ * Pure and exported for the same reason as the rule above: this one deletes mail, so the condition
+ * under which it fires should be assertable without a mailbox to delete from.
+ *
+ * On by default, and only ever for `completed`. Anything that failed or needs review stays put --
+ * trashing those is how a failure becomes a failure nobody ever acts on. Set
+ * ADMINBOT_EMAIL_TRASH_HANDLED=0 to stop trashing entirely and leave handled mail in All Mail,
+ * which is what this script did before.
+ *
+ * Trash, never a permanent delete: Gmail keeps trashed mail for 30 days, so a message the
+ * classifier got wrong is recoverable for a month by whoever notices.
+ */
+export function shouldTrashAfterFiling(outcome: EmailOutcome, env: NodeJS.ProcessEnv): boolean {
+  if (outcome !== "completed") {
+    return false;
+  }
+  return (env.ADMINBOT_EMAIL_TRASH_HANDLED ?? "1").trim() !== "0";
 }
 
 export type EmailMessage = {
@@ -582,11 +605,15 @@ class GoogleClient {
   }
 
   /**
-   * File a message under its outcome.
+   * File a message under its outcome, and trash it if the pass fully handled it.
    *
    * The other two outcome labels are always removed, so a message that failed last hour and was
    * handled this hour does not carry both. Only a completed message leaves the inbox: the whole
    * point is that what remains in the inbox is what still needs a person.
+   *
+   * The label write happens first and is not merged with the trash call, because the label is the
+   * record of what was done and it has to survive the deletion -- a message trashed without it is
+   * indistinguishable in Trash from mail a human threw away.
    */
   async file(messageId: string, outcome: EmailOutcome): Promise<void> {
     const { add, remove } = outcomeLabelChange(outcome);
@@ -603,6 +630,9 @@ class GoogleClient {
         remove.join(","),
       ]),
     );
+    if (shouldTrashAfterFiling(outcome, process.env)) {
+      await command(GOG, this.args(["gmail", "trash", messageId]));
+    }
   }
 
   async createEvent(event: CalendarEvent): Promise<unknown> {

@@ -3,6 +3,7 @@ import {
   authorizeClassification,
   formatTalkLatex,
   outcomeLabelChange,
+  shouldTrashAfterFiling,
   resolveEmailAutomationSlackAccount,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
@@ -164,6 +165,29 @@ describe("adminbot email automation", () => {
       expect(change.remove).toContain("AdminBot/Error");
       expect(change.remove).toContain("AdminBot/Needs Review");
       expect(change.remove).not.toContain("AdminBot/Handled");
+    });
+  });
+
+  describe("shouldTrashAfterFiling", () => {
+    it("trashes a fully handled message by default", () => {
+      expect(shouldTrashAfterFiling("completed", {})).toBe(true);
+      expect(shouldTrashAfterFiling("completed", { ADMINBOT_EMAIL_TRASH_HANDLED: "1" })).toBe(true);
+    });
+
+    it("never trashes an outcome that still needs a person", () => {
+      // The failure mode this guards is the one that made the script stop deleting in the first
+      // place: a failure that was deleted is a failure nobody ever acts on.
+      for (const outcome of ["needs_review", "failed"] as const) {
+        expect(shouldTrashAfterFiling(outcome, {})).toBe(false);
+        expect(shouldTrashAfterFiling(outcome, { ADMINBOT_EMAIL_TRASH_HANDLED: "1" })).toBe(false);
+      }
+    });
+
+    it("can be turned off entirely, back to labelling only", () => {
+      expect(shouldTrashAfterFiling("completed", { ADMINBOT_EMAIL_TRASH_HANDLED: "0" })).toBe(false);
+      expect(shouldTrashAfterFiling("completed", { ADMINBOT_EMAIL_TRASH_HANDLED: " 0 " })).toBe(
+        false,
+      );
     });
   });
 });
