@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findOnboardingTemplate } from "../workflows/onboarding/emails.js";
 import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
-import { renderEmailBodyHtml } from "./email-html.js";
+import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
 describe("renderEmailBodyHtml", () => {
   it("makes each blank-line-separated block a paragraph, keeping internal breaks", () => {
@@ -80,5 +80,78 @@ describe("renderEmailBodyHtml", () => {
       expect(html.split("<li>").length, id).toBe(html.split("</li>").length);
       expect(html.split("<p>").length, id).toBe(html.split("</p>").length);
     }
+  });
+});
+
+describe("anchor-text links", () => {
+  it("renders [label](url) as an anchor and keeps the label as the text", () => {
+    const html = renderEmailBodyHtml(
+      "Follow [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/) today.",
+    );
+    expect(html).toContain('<a href="https://www.linkedin.com/in/zhijing-jin/">Zhijing-Jin</a>');
+    // The source notation must never survive into the delivered markup.
+    expect(html).not.toContain("](");
+  });
+
+  it("accepts a mailto: target", () => {
+    const html = renderEmailBodyHtml("Write to [our list](mailto:list@example.com).");
+    expect(html).toContain('<a href="mailto:list@example.com">our list</a>');
+  });
+
+  it("links a bare email address as a mailto, showing the address", () => {
+    const html = renderEmailBodyHtml(
+      'Email "subscribe" to jinesis+subscribe@googlegroups.com now.',
+    );
+    expect(html).toContain(
+      '<a href="mailto:jinesis+subscribe@googlegroups.com">jinesis+subscribe@googlegroups.com</a>',
+    );
+  });
+
+  it("does not start an address inside a URL that contains an @", () => {
+    const html = renderEmailBodyHtml("See https://example.com/u/ada@example.com/profile here.");
+    expect(html).toContain('<a href="https://example.com/u/ada@example.com/profile">');
+    expect(html).not.toContain("mailto:");
+  });
+
+  it("still linkifies a bare URL, and still trims trailing punctuation", () => {
+    const html = renderEmailBodyHtml("Read https://example.com/x.");
+    expect(html).toContain('<a href="https://example.com/x">https://example.com/x</a>');
+    expect(html).toContain("</a>.");
+  });
+
+  it("escapes both halves so neither can close the attribute it sits in", () => {
+    const html = renderEmailBodyHtml('[a"b](https://example.com/?q=1&r=2)');
+    expect(html).toContain('href="https://example.com/?q=1&amp;r=2"');
+    expect(html).toContain("&quot;");
+    expect(html).not.toContain('"b"');
+  });
+
+  it("leaves a bracket that is not a link alone", () => {
+    expect(renderEmailBodyHtml("Fill in [NAME] before sending.")).toContain("[NAME]");
+  });
+});
+
+describe("renderEmailBodyText", () => {
+  it("shows the label and its destination instead of the source notation", () => {
+    expect(renderEmailBodyText("Follow [Zhijing-Jin](https://x.com/ZhijingJin) today.")).toBe(
+      "Follow Zhijing-Jin (https://x.com/ZhijingJin) today.",
+    );
+  });
+
+  it("drops the mailto: prefix, because an address is what a person would type", () => {
+    expect(renderEmailBodyText("Write to [our list](mailto:list@example.com).")).toBe(
+      "Write to our list (list@example.com).",
+    );
+  });
+
+  it("does not say the same thing twice when the label is already the destination", () => {
+    expect(renderEmailBodyText("[list@example.com](mailto:list@example.com)")).toBe(
+      "list@example.com",
+    );
+  });
+
+  it("leaves copy with no links untouched", () => {
+    const body = "Hi Ada,\n\nRead https://example.com/x and reply.";
+    expect(renderEmailBodyText(body)).toBe(body);
   });
 });

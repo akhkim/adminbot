@@ -18,10 +18,29 @@
 /** Two spaces per nesting level, matching how the templates indent a sub-bullet. */
 const INDENT_WIDTH = 2;
 
-// Bare URLs in the copy. Deliberately narrow: it stops at whitespace and at the characters that
-// would break the attribute it lands in, and trailing sentence punctuation is trimmed afterwards
-// so "…at https://example.com/x." does not linkify the full stop.
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/gu;
+// Everything in the copy that should reach the recipient as a link, in one alternation so a single
+// pass can escape and linkify together (see escapeAndLinkify).
+//
+// Three shapes, in precedence order:
+//
+//   1. `[label](https://…)` or `[label](mailto:…)` -- anchor text. The lab's template document
+//      hyperlinks words rather than printing URLs ("LinkedIn: Zhijing-Jin, Jinesis-Lab"), and
+//      without this those words shipped as dead text with the URL nowhere in the mail at all.
+//   2. A bare URL. Stops at whitespace and at the characters that would break the attribute it
+//      lands in; trailing sentence punctuation is trimmed afterwards, so "…at
+//      https://example.com/x." does not linkify the full stop.
+//   3. A bare email address, which becomes a mailto: link. Clients differ on whether they
+//      autolink one themselves, and the newsletter address is an instruction to write to it.
+//
+// The URL branch precedes the address branch so the "@" inside a URL never starts an address.
+const LINK_PATTERN = new RegExp(
+  [
+    String.raw`\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)`,
+    String.raw`https?:\/\/[^\s<>"']+`,
+    String.raw`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`,
+  ].join("|"),
+  "gu",
+);
 const TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/u;
 
 function escapeHtml(text: string): string {
@@ -34,22 +53,30 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Escapes `text` and turns bare URLs into links.
+ * Escapes `text` and turns links into anchors.
  *
  * Escaping and linkifying have to happen in one pass: escaping first would rewrite `&` inside a
  * query string into `&amp;` before the URL is recognised, and linkifying first would then escape
- * the markup it just produced.
+ * the markup it just produced. Both the label and the href are escaped, so a `"` inside either can
+ * never close the attribute it sits in.
  */
 function escapeAndLinkify(text: string): string {
   let result = "";
   let cursor = 0;
-  for (const match of text.matchAll(URL_PATTERN)) {
+  for (const match of text.matchAll(LINK_PATTERN)) {
     const start = match.index;
-    const raw = match[0];
-    const trimmed = raw.replace(TRAILING_PUNCTUATION, "");
+    const [whole = "", label, target] = match;
     result += escapeHtml(text.slice(cursor, start));
-    const href = escapeHtml(trimmed);
-    result += `<a href="${href}">${href}</a>`;
+    if (label !== undefined && target !== undefined) {
+      result += `<a href="${escapeHtml(target)}">${escapeHtml(label)}</a>`;
+      cursor = start + whole.length;
+      continue;
+    }
+    const trimmed = whole.replace(TRAILING_PUNCTUATION, "");
+    // An address is shown as itself and linked as a mailto:; a URL is both.
+    const isAddress = !trimmed.startsWith("http");
+    const href = escapeHtml(isAddress ? `mailto:${trimmed}` : trimmed);
+    result += `<a href="${href}">${escapeHtml(trimmed)}</a>`;
     cursor = start + trimmed.length;
   }
   return result + escapeHtml(text.slice(cursor));
@@ -107,6 +134,26 @@ function renderParagraph(lines: readonly string[]): string {
  * list and everything else becomes a paragraph whose own newlines become `<br />`. An empty body
  * renders as an empty string, which callers treat as "send text only".
  */
+// Anchor-text links, for the text/plain part. Same pattern as the first branch of LINK_PATTERN.
+const MARKDOWN_LINK = /\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/gu;
+
+/**
+ * The body as a text-only client should read it: anchor text followed by its destination, rather
+ * than the `[label](url)` source.
+ *
+ * The copy carries links in one notation and the two parts of the mail render it differently --
+ * the html alternative as an anchor, this as "label (url)". Without it a text-only reader saw the
+ * markdown itself, which reads as a templating bug rather than as a link. A bare `mailto:` prefix
+ * is dropped here because an address on its own is what a person would type.
+ */
+export function renderEmailBodyText(body: string): string {
+  return body.replaceAll(MARKDOWN_LINK, (_whole, label: string, target: string) => {
+    const shown = target.startsWith("mailto:") ? target.slice("mailto:".length) : target;
+    // "[Ada](mailto:ada@x.com)" is one thing said twice; print it once.
+    return shown === label ? label : `${label} (${shown})`;
+  });
+}
+
 export function renderEmailBodyHtml(body: string): string {
   const lines = body.replaceAll("\r\n", "\n").split("\n");
   let html = "";
