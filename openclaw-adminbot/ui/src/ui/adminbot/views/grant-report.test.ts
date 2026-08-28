@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
+import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { SAFETY_AREA_IDS } from "../grant-report/areas.ts";
 import {
   allTrackRecordsMarkdown,
@@ -14,6 +15,13 @@ import {
   unmappedPapers,
 } from "../grant-report/linkage.ts";
 import { GRANT_PAPERS } from "../grant-report/papers.ts";
+import {
+  classifyRecord,
+  inferPlacement,
+  needsReview,
+  resolvePapers,
+  titleKey,
+} from "../grant-report/resolve.ts";
 import { GRANT_SECTIONS, GRANT_SECTION_BY_ID } from "../grant-report/sections.ts";
 import { renderGrantReport } from "./grant-report.ts";
 
@@ -21,20 +29,30 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function renderView(): Promise<HTMLElement> {
+function record(partial: Partial<AdminBotPaperRecord> & { title: string }): AdminBotPaperRecord {
+  return {
+    id: partial.id ?? partial.title,
+    title: partial.title,
+    authors: partial.authors ?? [],
+    current_step: partial.current_step ?? ("idea" as AdminBotPaperRecord["current_step"]),
+    ...partial,
+  } as AdminBotPaperRecord;
+}
+
+async function renderView(papers: readonly AdminBotPaperRecord[] = []): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
-  render(renderGrantReport(), container);
+  render(renderGrantReport({ papers }), container);
   await (
-    container.querySelector("adminbot-grant-report-view") as {
-      updateComplete?: Promise<unknown>;
-    }
+    container.querySelector("adminbot-grant-report-view") as { updateComplete?: Promise<unknown> }
   )?.updateComplete;
   return container;
 }
 
+const SNAPSHOT = resolvePapers([]);
+
 describe("grant report data", () => {
-  it("gives every paper a unique id", () => {
+  it("gives every snapshot paper a unique id", () => {
     const ids = GRANT_PAPERS.map((paper) => paper.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -74,15 +92,93 @@ describe("grant report data", () => {
 
   it("leaves no leaf section of the technical agenda without papers", () => {
     for (const section of GRANT_SECTIONS.filter((s) => s.depth > 2)) {
-      expect(papersForSection(section.id).length, section.id).toBeGreaterThan(0);
+      expect(papersForSection(SNAPSHOT, section.id).length, section.id).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("resolvePapers", () => {
+  it("falls back to the whole snapshot when the store is empty", () => {
+    expect(resolvePapers([]).length).toBe(GRANT_PAPERS.length);
+    expect(resolvePapers([]).every((paper) => paper.fromSnapshot)).toBe(true);
+  });
+
+  // The point of the whole change: a paper added to the store shows up without anyone editing code.
+  it("includes a paper the store has that the snapshot does not", () => {
+    const resolved = resolvePapers([record({ title: "A Brand New Interpretability Paper" })]);
+    const added = resolved.find((paper) => paper.title === "A Brand New Interpretability Paper");
+    expect(added).toBeDefined();
+    expect(added!.fromSnapshot).toBe(false);
+  });
+
+  it("does not list a paper twice when the store and the snapshot both have it", () => {
+    const title = GRANT_PAPERS.find((paper) => !paper.published)!.title;
+    const resolved = resolvePapers([record({ title })]);
+    const matches = resolved.filter((paper) => titleKey(paper.title) === titleKey(title));
+    expect(matches.length).toBe(1);
+    expect(matches[0].fromSnapshot).toBe(false);
+  });
+
+  it("matches a store title to the snapshot through case and punctuation", () => {
+    const curated = GRANT_PAPERS.find((paper) => paper.areas.length > 0 && !paper.published)!;
+    const noisy = `${curated.title.toUpperCase()}!!`;
+    const classified = classifyRecord(record({ title: noisy }));
+    expect(classified.origin).toBe("curated");
+    expect(classified.areas).toEqual(curated.areas);
+  });
+
+  it("keeps published prior work even when the store never carries it", () => {
+    const resolved = resolvePapers([record({ title: "Something Else Entirely" })]);
+    const published = resolved.filter((paper) => paper.published);
+    expect(published.length).toBe(GRANT_PAPERS.filter((paper) => paper.published).length);
+  });
+
+  it("prefers the store's venue and authors over the sheet's note", () => {
+    const curated = GRANT_PAPERS.find((paper) => !paper.published)!;
+    const classified = classifyRecord(
+      record({ title: curated.title, venue: "ICLR 2027", authors: ["Ada", "Grace"] }),
+    );
+    expect(classified.venue).toBe("ICLR 2027");
+    expect(classified.authors).toBe("Ada, Grace");
+  });
+});
+
+describe("inferPlacement", () => {
+  it("guesses interpretability from the title", () => {
+    const guess = inferPlacement("Sparse Autoencoder Probes for Refusal Circuits", "NeurIPS");
+    expect(guess.areas).toContain("whiteBox");
+    expect(guess.sections).toContain("p1.1.5");
+  });
+
+  it("guesses adversarial defense from the title", () => {
+    const guess = inferPlacement("Tamper-Resistant Unlearning for Open-Weight Models", "");
+    expect(guess.sections).toContain("p1.1.3");
+  });
+
+  it("returns nothing for a title it does not recognise", () => {
+    const guess = inferPlacement("A Study of Widget Assembly Throughput", "");
+    expect(guess.areas).toEqual([]);
+    expect(guess.sections).toEqual([]);
+  });
+
+  it("marks an unrecognised store paper unclassified rather than dropping it", () => {
+    const classified = classifyRecord(record({ title: "A Study of Widget Assembly Throughput" }));
+    expect(classified.origin).toBe("unclassified");
+    const resolved = resolvePapers([record({ title: "A Study of Widget Assembly Throughput" })]);
+    expect(resolved.some((paper) => paper.origin === "unclassified")).toBe(true);
+  });
+
+  it("marks a rule-matched store paper inferred, never curated", () => {
+    const classified = classifyRecord(record({ title: "Probing Latent Deception Circuits" }));
+    expect(classified.origin).toBe("inferred");
+    expect(needsReview([classified]).length).toBe(1);
   });
 });
 
 describe("linkage", () => {
   it("rolls a child section's papers up into its parent", () => {
-    const child = papersForSection("p1.1.1.A");
-    const parent = papersForSection("p1.1.1");
+    const child = papersForSection(SNAPSHOT, "p1.1.1.A");
+    const parent = papersForSection(SNAPSHOT, "p1.1.1");
     expect(child.length).toBeGreaterThan(0);
     for (const paper of child) {
       expect(parent.map((p) => p.id)).toContain(paper.id);
@@ -90,35 +186,47 @@ describe("linkage", () => {
   });
 
   it("counts a paper in each area it belongs to", () => {
-    const multi = GRANT_PAPERS.find((paper) => paper.areas.length > 1);
+    const multi = SNAPSHOT.find((paper) => paper.areas.length > 1);
     expect(multi).toBeDefined();
     for (const area of multi!.areas) {
-      expect(papersForArea(area).map((p) => p.id)).toContain(multi!.id);
+      expect(papersForArea(SNAPSHOT, area).map((p) => p.id)).toContain(multi!.id);
     }
   });
 
   it("keeps published prior work out of the pipeline count", () => {
-    expect(pipelinePapers().every((paper) => !paper.published)).toBe(true);
-    expect(pipelinePapers().length).toBeLessThan(GRANT_PAPERS.length);
+    expect(pipelinePapers(SNAPSHOT).every((paper) => !paper.published)).toBe(true);
+    expect(pipelinePapers(SNAPSHOT).length).toBeLessThan(SNAPSHOT.length);
   });
 
   it("reports unmapped papers rather than hiding them", () => {
-    const unmapped = unmappedPapers();
+    const unmapped = unmappedPapers(SNAPSHOT);
     expect(unmapped.length).toBeGreaterThan(0);
     expect(unmapped.every((paper) => paper.sections.length === 0)).toBe(true);
   });
 
   it("orders area counts largest first", () => {
-    const counts = areaCounts().map((row) => row.count);
+    const counts = areaCounts(SNAPSHOT).map((row) => row.count);
     expect(counts.toSorted((a, b) => b - a)).toEqual(counts);
   });
 });
 
 describe("markdown export", () => {
   it("emits one table row per paper", () => {
-    const lines = areaMapMarkdown().split("\n");
+    const lines = areaMapMarkdown(SNAPSHOT).split("\n");
     // Two header lines, then one row per paper.
-    expect(lines.length).toBe(GRANT_PAPERS.length + 2);
+    expect(lines.length).toBe(SNAPSHOT.length + 2);
+  });
+
+  // An unconfirmed guess must never reach a funding document looking like a considered judgment.
+  it("flags an inferred placement in the exported table", () => {
+    const resolved = resolvePapers([record({ title: "Probing Latent Deception Circuits" })]);
+    const markdown = areaMapMarkdown(resolved);
+    expect(markdown).toContain("Probing Latent Deception Circuits _(inferred — confirm)_");
+    expect(fullReportMarkdown(resolved)).toContain("placements are inferred and unconfirmed");
+  });
+
+  it("says so plainly when every placement is curated", () => {
+    expect(fullReportMarkdown(SNAPSHOT)).toContain("All placements are curated.");
   });
 
   it("emits a track record block for every section", () => {
@@ -136,7 +244,7 @@ describe("markdown export", () => {
   });
 
   it("carries provenance into the full report", () => {
-    const markdown = fullReportMarkdown();
+    const markdown = fullReportMarkdown(SNAPSHOT);
     expect(markdown).toContain("Jinesis Contact/Paper list with Zhijing");
     expect(markdown).toContain("Task 1 — Papers mapped to the six areas");
     expect(markdown).toContain("Task 2 — Track record by proposal section");
@@ -146,9 +254,23 @@ describe("markdown export", () => {
 describe("renderGrantReport", () => {
   it("opens on the area map with all six areas", async () => {
     const container = await renderView();
-    const areas = container.querySelectorAll(".gr-area");
-    expect(areas.length).toBe(SAFETY_AREA_IDS.length);
+    expect(container.querySelectorAll(".gr-area").length).toBe(SAFETY_AREA_IDS.length);
     expect(container.textContent).toContain("make it want the right thing");
+  });
+
+  it("renders a paper the store just added", async () => {
+    const container = await renderView([record({ title: "A Brand New Interpretability Paper" })]);
+    expect(container.textContent).toContain("A Brand New Interpretability Paper");
+  });
+
+  it("warns when placements are unconfirmed, and stays quiet when they are not", async () => {
+    const clean = await renderView();
+    expect(clean.querySelector(".gr-banner")).toBeNull();
+
+    document.body.innerHTML = "";
+    const dirty = await renderView([record({ title: "Probing Latent Deception Circuits" })]);
+    expect(dirty.querySelector(".gr-banner")).not.toBeNull();
+    expect(dirty.textContent).toContain("inferred — confirm");
   });
 
   it("filters the paper list to one area when that area is clicked", async () => {
@@ -179,13 +301,14 @@ describe("renderGrantReport", () => {
     expect(container.textContent).toContain("Track record");
   });
 
-  it("shows the coverage panel with the unclaimed papers", async () => {
-    const container = await renderView();
+  it("lists the papers awaiting confirmation on the coverage panel", async () => {
+    const container = await renderView([record({ title: "Probing Latent Deception Circuits" })]);
     const view = container.querySelector("adminbot-grant-report-view") as HTMLElement & {
       updateComplete: Promise<unknown>;
     };
     (container.querySelectorAll(".gr-panel-tab")[2] as HTMLButtonElement).click();
     await view.updateComplete;
+    expect(container.textContent).toContain("Awaiting confirmation");
     expect(container.textContent).toContain("Lab output the technical agenda does not claim");
     expect(container.querySelectorAll(".gr-stat").length).toBe(4);
   });

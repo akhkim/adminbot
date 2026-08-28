@@ -3704,7 +3704,9 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
           : nothing}
         ${state.tab === "adminbotGrantReport" && adminBotMode === "admin"
-          ? renderLazyView(lazyGrantReport, (m) => m.renderGrantReport())
+          ? renderLazyView(lazyGrantReport, (m) =>
+              m.renderGrantReport({ papers: state.adminBotData.papers }),
+            )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

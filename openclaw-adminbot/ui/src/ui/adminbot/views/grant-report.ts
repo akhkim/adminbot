@@ -1,16 +1,19 @@
 // Control UI view for the Grant Report tab: the lab's papers on two maps, and the track-record
 // blocks the proposal needs.
 //
-// Self-contained, like the Opportunities board -- it reads bundled snapshots and needs no gateway
-// load, because a grant report wants a citable state of the world rather than whatever the working
-// sheet said at the moment the page happened to open. See ../grant-report/papers.ts for what the
-// snapshot is and when it was compiled.
+// Reads the live paper store, so the report tracks the database rather than a file somebody has to
+// remember to edit -- a paper added to AdminBot shows up here on the next render. What it cannot
+// read is where a paper belongs on the safety taxonomy, which is a judgment call; resolve.ts places
+// what it can and marks the rest, and every surface below distinguishes a curated placement from a
+// guess. A guess that reaches a funder looking like a considered claim is the failure mode this
+// whole screen is arranged to prevent.
 //
 // Three panels, because compiling a grant report is three different questions: what kind of safety
 // work do we do (Areas), what have we already done for each thing we are asking money for
-// (Track record), and what did neither map catch (Coverage). Every panel exports markdown, since
-// the output of this tab is text that ends up in a document.
+// (Track record), and what did neither map catch, plus what still needs a human (Coverage).
 import { html, nothing, LitElement } from "lit";
+import { property } from "lit/decorators.js";
+import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   SAFETY_AREAS,
   SAFETY_AREA_BY_ID,
@@ -30,7 +33,7 @@ import {
   unclassifiedPapers,
   unmappedPapers,
 } from "../grant-report/linkage.ts";
-import { GRANT_PAPERS, type GrantPaper } from "../grant-report/papers.ts";
+import { needsReview, resolvePapers, type ClassifiedPaper } from "../grant-report/resolve.ts";
 import {
   GRANT_SECTIONS,
   GRANT_SECTION_BY_ID,
@@ -62,6 +65,9 @@ function copyToClipboard(text: string): void {
 }
 
 class AdminbotGrantReportView extends LitElement {
+  /** The live store's papers. Empty until the AdminBot load lands, which is a real render state. */
+  @property({ attribute: false }) records: readonly AdminBotPaperRecord[] = [];
+
   private panel: Panel = "areas";
   private areaFilter: SafetyAreaId | null = null;
   private openSections = new Set<string>();
@@ -112,7 +118,7 @@ class AdminbotGrantReportView extends LitElement {
     `;
   }
 
-  private renderAreaChips(paper: GrantPaper) {
+  private renderAreaChips(paper: ClassifiedPaper) {
     if (paper.areas.length === 0) {
       return html`<span class="gr-chip gr-chip-none">no area</span>`;
     }
@@ -123,16 +129,31 @@ class AdminbotGrantReportView extends LitElement {
     );
   }
 
-  private renderPaperRow(paper: GrantPaper) {
+  private renderPaperRow(paper: ClassifiedPaper) {
     return html`
-      <div class="gr-paper">
+      <div class=${`gr-paper ${paper.origin === "curated" ? "" : "is-unconfirmed"}`}>
         <div class="gr-paper-head">
           <span class="gr-paper-title">
             ${paper.link
               ? html`<a href=${paper.link} target="_blank" rel="noopener">${paper.title}</a>`
               : paper.title}
           </span>
-          ${paper.published ? html`<span class="gr-chip gr-chip-pub">published</span>` : nothing}
+          ${paper.origin === "inferred"
+            ? html`<span
+                class="gr-chip gr-chip-warn"
+                title="Placed by keyword rule, not by a person"
+                >inferred — confirm</span
+              >`
+            : nothing}
+          ${paper.origin === "unclassified"
+            ? html`<span class="gr-chip gr-chip-warn">needs placing</span>`
+            : nothing}
+          ${paper.fromSnapshot && !paper.published
+            ? html`<span class="gr-chip gr-chip-quiet" title="On the sheet, no PaperPublish record"
+                >sheet only</span
+              >`
+            : nothing}
+          ${paper.published ? html`<span class="gr-chip gr-chip-quiet">published</span>` : nothing}
         </div>
         <div class="gr-paper-meta">
           ${paper.venue ? html`<span>${paper.venue}</span>` : nothing}
@@ -154,12 +175,29 @@ class AdminbotGrantReportView extends LitElement {
     `;
   }
 
-  private renderAreas() {
-    const counts = areaCounts();
+  private renderReviewBanner(papers: readonly ClassifiedPaper[]) {
+    const pending = needsReview(papers);
+    if (pending.length === 0) {
+      return nothing;
+    }
+    return html`
+      <div class="gr-banner">
+        <strong>${pending.length}</strong> of ${papers.length} papers are placed by keyword rule
+        rather than by a person. They carry a guess everywhere they appear, including in the
+        exported markdown &mdash; confirm them in
+        <code>ui/src/ui/adminbot/grant-report/papers.ts</code> before this goes to a funder.
+        <button class="gr-copy" @click=${() => this.select("coverage")}>Review them</button>
+      </div>
+    `;
+  }
+
+  private renderAreas(papers: readonly ClassifiedPaper[]) {
+    const counts = areaCounts(papers);
     const byId = new Map(counts.map((row) => [row.area, row.count]));
-    const shown = this.areaFilter ? papersForArea(this.areaFilter) : GRANT_PAPERS;
+    const shown = this.areaFilter ? papersForArea(papers, this.areaFilter) : papers;
     return html`
       <p class="gr-intro">${TAXONOMY_FRAMING}</p>
+      ${this.renderReviewBanner(papers)}
       <div class="gr-area-grid">
         ${SAFETY_AREAS.map((area) => {
           const active = this.areaFilter === area.id;
@@ -192,24 +230,24 @@ class AdminbotGrantReportView extends LitElement {
                 Clear filter
               </button>`
             : nothing}
-          ${this.renderCopyButton("area-map", areaMapMarkdown(), "Copy table")}
+          ${this.renderCopyButton("area-map", areaMapMarkdown(papers), "Copy table")}
         </span>
       </div>
       <div class="gr-papers">${shown.map((paper) => this.renderPaperRow(paper))}</div>
     `;
   }
 
-  private renderSection(section: GrantSection) {
+  private renderSection(papers: readonly ClassifiedPaper[], section: GrantSection) {
     const open = this.openSections.has(section.id);
-    const papers = papersForSection(section.id);
-    const mix = areaMixForSection(section.id);
+    const inSection = papersForSection(papers, section.id);
+    const mix = areaMixForSection(papers, section.id);
     return html`
       <div class=${`gr-section gr-depth-${section.depth}`}>
         <button class="gr-section-head" @click=${() => this.toggleSection(section.id)}>
           <span class="gr-caret">${open ? "▾" : "▸"}</span>
           <span class="gr-section-number">${section.number}</span>
           <span class="gr-section-title">${section.title}</span>
-          <span class="gr-section-count">${papers.length}</span>
+          <span class="gr-section-count">${inSection.length}</span>
         </button>
         ${open
           ? html`
@@ -252,8 +290,10 @@ class AdminbotGrantReportView extends LitElement {
                   </ul>
                 </div>
                 <details class="gr-evidence">
-                  <summary>${papers.length} papers assigned here</summary>
-                  <div class="gr-papers">${papers.map((paper) => this.renderPaperRow(paper))}</div>
+                  <summary>${inSection.length} papers assigned here</summary>
+                  <div class="gr-papers">
+                    ${inSection.map((paper) => this.renderPaperRow(paper))}
+                  </div>
                 </details>
               </div>
             `
@@ -262,11 +302,12 @@ class AdminbotGrantReportView extends LitElement {
     `;
   }
 
-  private renderTrack() {
+  private renderTrack(papers: readonly ClassifiedPaper[]) {
     return html`
       <div class="gr-listhead">
         <span>
-          One track-record block per section of Part 1, in the shape Part 2.3 already uses.
+          One track-record block per section of Part 1, in the shape Part 2.3 already uses. The
+          prose is written by hand; the paper counts beside it are live.
         </span>
         <span class="gr-listhead-right">
           <button
@@ -281,24 +322,33 @@ class AdminbotGrantReportView extends LitElement {
           >
             ${this.openSections.size === GRANT_SECTIONS.length ? "Collapse all" : "Expand all"}
           </button>
-          ${this.renderCopyButton("full", fullReportMarkdown(), "Copy full report")}
+          ${this.renderCopyButton("full", fullReportMarkdown(papers), "Copy full report")}
         </span>
       </div>
-      <div class="gr-sections">${GRANT_SECTIONS.map((section) => this.renderSection(section))}</div>
+      <div class="gr-sections">
+        ${GRANT_SECTIONS.map((section) => this.renderSection(papers, section))}
+      </div>
     `;
   }
 
-  private renderCoverage() {
-    const pipeline = pipelinePapers();
-    const unmapped = unmappedPapers();
-    const unclassified = unclassifiedPapers();
-    const published = GRANT_PAPERS.filter((paper) => paper.published);
+  private renderCoverage(papers: readonly ClassifiedPaper[]) {
+    const pipeline = pipelinePapers(papers);
+    const pending = needsReview(papers);
+    const unmapped = unmappedPapers(papers);
+    const unclassified = unclassifiedPapers(papers);
+    const live = papers.filter((paper) => !paper.fromSnapshot);
     const stats = [
-      { label: "Papers on the sheet", value: pipeline.length },
-      { label: "Published work cited", value: published.length },
-      { label: "Proposal sections", value: GRANT_SECTIONS.length },
+      { label: "Papers in the report", value: pipeline.length },
+      { label: "From the live store", value: live.length },
+      { label: "Awaiting confirmation", value: pending.length },
       { label: "Unclaimed by the agenda", value: unmapped.length },
     ];
+    const maxCount = Math.max(
+      1,
+      ...GRANT_SECTIONS.filter((s) => s.depth > 2).map(
+        (s) => papersForSection(papers, s.id).length,
+      ),
+    );
     return html`
       <div class="gr-stats">
         ${stats.map(
@@ -310,19 +360,27 @@ class AdminbotGrantReportView extends LitElement {
           `,
         )}
       </div>
+      ${pending.length > 0
+        ? html`
+            <h4 class="gr-h4">Awaiting confirmation</h4>
+            <p class="gr-intro">
+              Papers the live store carries that no one has placed by hand. The keyword rules made a
+              guess where they could; everything here is unconfirmed, and it is marked as such in
+              the export too. Confirm a paper by giving it an entry in
+              <code>grant-report/papers.ts</code>.
+            </p>
+            <div class="gr-papers">${pending.map((paper) => this.renderPaperRow(paper))}</div>
+          `
+        : nothing}
       <h4 class="gr-h4">Papers per proposal section</h4>
       <div class="gr-bars">
         ${GRANT_SECTIONS.filter((section) => section.depth > 2).map((section) => {
-          const count = papersForSection(section.id).length;
-          const max = Math.max(
-            1,
-            ...GRANT_SECTIONS.filter((s) => s.depth > 2).map((s) => papersForSection(s.id).length),
-          );
+          const count = papersForSection(papers, section.id).length;
           return html`
             <div class="gr-bar-row">
               <span class="gr-bar-label">${section.number} ${section.title}</span>
               <span class="gr-bar-track">
-                <span class="gr-bar-fill" style=${`width:${(count / max) * 100}%`}></span>
+                <span class="gr-bar-fill" style=${`width:${(count / maxCount) * 100}%`}></span>
               </span>
               <span class="gr-bar-value">${count}</span>
             </div>
@@ -349,6 +407,7 @@ class AdminbotGrantReportView extends LitElement {
   }
 
   override render() {
+    const papers = resolvePapers(this.records);
     return html`
       <style>
         .grant-report-view {
@@ -369,6 +428,20 @@ class AdminbotGrantReportView extends LitElement {
         }
         .gr-prov a {
           color: inherit;
+        }
+        .gr-banner {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 13px;
+          margin-bottom: 16px;
+          border: 1px solid #e0a458;
+          border-radius: 10px;
+          background: color-mix(in srgb, #e0a458 8%, transparent);
+          color: var(--text, #d7e2f4);
+          font-size: 12.5px;
+          line-height: 1.6;
         }
         .gr-panels {
           display: flex;
@@ -463,6 +536,7 @@ class AdminbotGrantReportView extends LitElement {
           color: var(--text-muted, #9fb0cc);
           font-size: 11.5px;
           cursor: pointer;
+          white-space: nowrap;
         }
         .gr-copy:hover {
           color: var(--accent, #4f8cff);
@@ -478,6 +552,9 @@ class AdminbotGrantReportView extends LitElement {
           border: 1px solid var(--border, #26324a);
           border-radius: 8px;
           background: var(--surface, #141b2b);
+        }
+        .gr-paper.is-unconfirmed {
+          border-style: dashed;
         }
         .gr-paper-head {
           display: flex;
@@ -521,8 +598,11 @@ class AdminbotGrantReportView extends LitElement {
           font-variant-numeric: tabular-nums;
         }
         .gr-chip-none,
-        .gr-chip-pub {
+        .gr-chip-quiet {
           --c: #66799a;
+        }
+        .gr-chip-warn {
+          --c: #e0a458;
         }
         .gr-note {
           color: var(--text-muted, #66799a);
@@ -712,14 +792,16 @@ class AdminbotGrantReportView extends LitElement {
       </style>
       <section class="grant-report-view">
         <p class="gr-prov">
-          Compiled ${SOURCE.compiledOn} from the
+          Papers are read live from the AdminBot store and unioned with the
           <code>${SOURCE.sheet.tab}</code> tab of
-          <a href=${SOURCE.sheet.url} target="_blank" rel="noopener">${SOURCE.sheet.title}</a>,
-          against
+          <a href=${SOURCE.sheet.url} target="_blank" rel="noopener">${SOURCE.sheet.title}</a>
+          as of ${SOURCE.compiledOn}, so a paper on the sheet but not yet in AdminBot still counts.
+          Sections follow
           <a href=${SOURCE.proposal.url} target="_blank" rel="noopener">${SOURCE.proposal.title}</a
-          >. Areas follow
+          >; areas follow
           <a href=${SOURCE.taxonomy.url} target="_blank" rel="noopener">${SOURCE.taxonomy.title}</a>
-          (${SOURCE.taxonomy.attribution}). This is a snapshot, not a live read of the sheet.
+          (${SOURCE.taxonomy.attribution}). Where a paper sits is a human judgment; anything the
+          rules guessed is labelled.
         </p>
         <div class="gr-panels" role="tablist">
           ${(Object.keys(PANEL_LABELS) as Panel[]).map((panel) => {
@@ -736,9 +818,9 @@ class AdminbotGrantReportView extends LitElement {
             `;
           })}
         </div>
-        ${this.panel === "areas" ? this.renderAreas() : nothing}
-        ${this.panel === "track" ? this.renderTrack() : nothing}
-        ${this.panel === "coverage" ? this.renderCoverage() : nothing}
+        ${this.panel === "areas" ? this.renderAreas(papers) : nothing}
+        ${this.panel === "track" ? this.renderTrack(papers) : nothing}
+        ${this.panel === "coverage" ? this.renderCoverage(papers) : nothing}
       </section>
     `;
   }
@@ -748,6 +830,6 @@ if (!customElements.get("adminbot-grant-report-view")) {
   customElements.define("adminbot-grant-report-view", AdminbotGrantReportView);
 }
 
-export function renderGrantReport() {
-  return html`<adminbot-grant-report-view></adminbot-grant-report-view>`;
+export function renderGrantReport(props: { papers: readonly AdminBotPaperRecord[] }) {
+  return html`<adminbot-grant-report-view .records=${props.papers}></adminbot-grant-report-view>`;
 }
