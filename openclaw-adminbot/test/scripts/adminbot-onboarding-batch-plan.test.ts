@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildPlan, parseEmailOverrides } from "../../scripts/adminbot-onboarding-batch-plan.ts";
+import {
+  applicationLinksFromAttributes,
+  buildPlan,
+  parseEmailOverrides,
+} from "../../scripts/adminbot-onboarding-batch-plan.ts";
 
 // The columns the plan reads, at their real indices on the "Full Slack Member List" tab.
 function sheetRow(fields: Partial<Record<string, string>>): string[] {
@@ -221,6 +225,61 @@ describe("cc and form links", () => {
     expect(withLink.direct_matching[0]?.values.application_form_link).toBe(link);
     expect(withLink.direct_matching[0]?.body).toContain(link);
     expect(withLink.direct_matching[0]?.needs.join(" ")).not.toContain("application_form_link");
+  });
+});
+
+describe("application links in the sheet's notes", () => {
+  const APPLICATION = "https://docs.google.com/document/d/1kZGmrQ/edit?rtpof=true";
+  const TASK_DOC = "https://docs.google.com/document/d/1aH8qG5/edit?tab=t.0";
+
+  // Some applicants sent a document instead of filling the form, and the link in the notes is the
+  // only thing that shows the lead what they wrote.
+  it("takes the URL on the 'Student application' line", () => {
+    const found = applicationLinksFromAttributes(
+      `Rahul, causal tutor human subject first\nStudent application: ${APPLICATION}`,
+    );
+    expect(found.application).toBe(APPLICATION);
+    expect(found.others).toEqual([]);
+  });
+
+  // "Bryan: word play RL as interviews" is followed by the WordPlay *task* doc. Forwarding a task
+  // brief as though it were the applicant's file is the same mistake as forwarding the blank form.
+  it("never mistakes an unlabelled task doc for the application", () => {
+    const found = applicationLinksFromAttributes(`Bryan: word play RL as interviews\n${TASK_DOC}`);
+    expect(found.application).toBeUndefined();
+    expect(found.others).toEqual([TASK_DOC]);
+  });
+
+  it("surfaces a second document rather than choosing between them", () => {
+    const found = applicationLinksFromAttributes(
+      `Kem, check if they could help\nStudent application: ${APPLICATION}\n${TASK_DOC}`,
+    );
+    expect(found.application).toBe(APPLICATION);
+    expect(found.others).toEqual([TASK_DOC]);
+  });
+
+  it("fills application_form_link from the row, and reports the row that has none", () => {
+    const withDoc = buildPlan(
+      [
+        HEADER,
+        sheetRow({
+          slackEmail: "doc@example.edu",
+          attributes: `Rahul, causal tutor\nStudent application: ${APPLICATION}`,
+        }),
+      ],
+      [2, 2],
+      { "doc@example.edu": "cladder_rahul" },
+    );
+    expect(withDoc.direct_matching[0]?.values.application_form_link).toBe(APPLICATION);
+    expect(withDoc.direct_matching[0]?.needs.join(" ")).not.toContain("application_form_link");
+
+    const withTaskDocOnly = buildPlan(
+      [HEADER, sheetRow({ slackEmail: "task@example.edu", attributes: `Bryan: RL\n${TASK_DOC}` })],
+      [2, 2],
+      { "task@example.edu": "wordplay_rl_bryan" },
+    );
+    expect(withTaskDocOnly.direct_matching[0]?.values.application_form_link).toBeUndefined();
+    expect(withTaskDocOnly.direct_matching[0]?.other_links).toEqual([TASK_DOC]);
   });
 });
 

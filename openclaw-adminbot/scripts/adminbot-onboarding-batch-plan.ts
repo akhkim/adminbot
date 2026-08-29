@@ -189,6 +189,40 @@ export function leadsFromAttributes(
   return { cc, ambiguous };
 }
 
+const URL_IN_TEXT = /https?:\/\/\S+/gu;
+
+/**
+ * The applicant's own application document, when the sheet carries it in "Member Attributes".
+ *
+ * Some rows have no form response at all -- the person applied by sending a document -- and for
+ * those the link in the notes is the only thing that shows the lead what they wrote.
+ *
+ * Only a URL on a line that says "Student application" counts. Other rows carry links to the *task*
+ * ("Bryan: word play RL as interviews" is followed by the WordPlay task doc), and forwarding a task
+ * brief as though it were the applicant's file is the same class of mistake as forwarding the blank
+ * form. Any further URLs are returned separately for the reviewer rather than chosen between.
+ */
+export function applicationLinksFromAttributes(attributes: string): {
+  application?: string;
+  others: string[];
+} {
+  let application: string | undefined;
+  const others: string[] = [];
+  for (const line of attributes.split("\n")) {
+    const urls = line.match(URL_IN_TEXT) ?? [];
+    const labelled = /student\s+application/iu.test(line);
+    for (const url of urls) {
+      const cleaned = url.replace(/[.,;)]+$/u, "");
+      if (labelled && !application) {
+        application = cleaned;
+        continue;
+      }
+      others.push(cleaned);
+    }
+  }
+  return { ...(application ? { application } : {}), others };
+}
+
 export type PlanEntry = {
   sheet_row: number;
   name: string;
@@ -196,6 +230,8 @@ export type PlanEntry = {
   other_addresses?: string[];
   /** The project lead(s) the copy says are cc'd, resolved from the sheet. */
   cc: string[];
+  /** Other URLs the row carries: a second application document, or a task brief. */
+  other_links?: string[];
   /** Every lab mail is bcc'd to the tracking mailbox, per the template conventions. */
   bcc: string[];
   template_id: string;
@@ -398,7 +434,8 @@ export function buildPlan(
     }
     // The applicant's own filled-in response, from `--form-links`. The Forms API cannot produce
     // this (see adminbot-form-response-links.ts), so an unmatched applicant is a `needs`.
-    const formLink = formLinks[(email ?? "").toLowerCase()];
+    const fromAttributes = applicationLinksFromAttributes(attributes);
+    const formLink = formLinks[(email ?? "").toLowerCase()] ?? fromAttributes.application;
     if (formLink) {
       values.application_form_link = formLink;
     } else {
@@ -436,6 +473,9 @@ export function buildPlan(
         : { values }),
       cc,
       bcc: [TRACKING_BCC],
+      // Anything else the row links -- a second application document, a task brief -- so the
+      // reviewer sees it rather than the parser choosing between them.
+      ...(fromAttributes.others.length ? { other_links: fromAttributes.others } : {}),
       needs,
       ...(attributes ? { note: attributes } : {}),
       ...draftFor("interview_invite_project_matching", values, env),

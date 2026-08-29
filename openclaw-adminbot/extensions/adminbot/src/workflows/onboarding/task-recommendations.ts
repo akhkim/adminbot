@@ -107,6 +107,31 @@ export const ADMINBOT_TASK_RECOMMENDATIONS = [
     text: `Zhijing's personal recommendation is to match you with the CausalTutor human-subject work led by Rahul, starting there first and then moving on to simple modular tasks.`,
   },
   {
+    // The WordPlay rows say "Bryan: word play RL as interviews" -- the task doubles as the
+    // interview, which is why the sentence names both rather than promising a placement.
+    id: "wordplay_rl_bryan",
+    leads: ["Bryan"],
+    summary: "The RL portion of WordPlay, with an interview led by Bryan",
+    text: `Zhijing's personal recommendation is to match you with the RL portion of our WordPlay project, with an interview led by Bryan.`,
+  },
+  {
+    // Row 181: "Kem, check if they could help with your FAccT paper or our demo paper? Mostly
+    // annotation based would be good because her previous background is basic python programming".
+    // The shape of the contribution is named because it is the reason for the match; the applicant's
+    // experience level, which is the lab's own assessment, is not.
+    id: "facct_or_demo_kem",
+    leads: ["Kem"],
+    summary: "The FAccT paper or the demo paper with Kem, annotation-focused",
+    text: `Zhijing's personal recommendation is to match you with Kem on our FAccT paper or our demo paper, where the contribution would be mostly annotation-based.`,
+  },
+  {
+    // Row 178: "Rahul: CLadder leaderboard, which needs perturbation of existing data samples".
+    id: "cladder_rahul",
+    leads: ["Rahul"],
+    summary: "The CLadder leaderboard with Rahul",
+    text: `Zhijing's personal recommendation is to match you with Rahul on the CLadder leaderboard, which needs perturbation of existing data samples.`,
+  },
+  {
     // The two-match variant. The lab's note breaks off mid-sentence at "focusing on", so that
     // trailing clause is optional rather than required: both matches are already fully named, and
     // the sentence is complete and true without it. Blocking on it stopped the one applicant it
