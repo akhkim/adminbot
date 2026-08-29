@@ -40,7 +40,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "interview_invite_project_matching",
     label: "Interview invite — forwarded to a project lead",
     group: "Candidate",
-    required: ["application_form_link", "task_doc_link"],
+    required: ["application_form_link", "task_recommendation"],
   },
   {
     id: "outreach_reply",

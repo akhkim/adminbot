@@ -88,12 +88,21 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interview_invite_project_matching",
     kind: "candidate",
     subject: `Your application to the Jinesis Lab`,
-    required: ["application_form_link", "task_doc_link"],
+    // `task_recommendation` is the whole personalised sentence, not a fragment: it names the lead
+    // and the task, carries the task doc inline when the lead has one, and numbers the parts
+    // "(1) ... and (2) ..." when two leads share the applicant. It is written per applicant by
+    // AdminBotEmailModel.projectMatch(), which owns that wording.
+    //
+    // `application_form_link` must be the applicant's *own* response
+    // (.../viewform?edit2=<token>), never the bare form and never the response sheet: the mail is
+    // addressed to one applicant and cc's the lead, so a link to everyone's answers would put the
+    // rest of the batch in front of both.
+    required: ["application_form_link", "task_recommendation"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly personally work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
 
-If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. Zhijing's personal recommendation is to match you with the WordPlay RL training modular task, where you can try implementing 1-2 environments following this doc {task_doc_link}.
+If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. {task_recommendation}
 
 If the lead finds it a fit, they will reply to this email thread. Your main point of contact will be the lead cc'ed, who will check your technical contributions after you share your code implementation and report with them. There might still be a chance that either they are at full capacity or the project is not a match.
 
