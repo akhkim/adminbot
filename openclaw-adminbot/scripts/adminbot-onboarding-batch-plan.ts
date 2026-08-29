@@ -355,6 +355,44 @@ function isExcluded(
   );
 }
 
+/**
+ * Values that are the same for everyone in a run, passed as `--value <token>=<value>`.
+ *
+ * `portal_password` is the case this exists for: the lab hands every new member the same starting
+ * password, but it is still a credential, so it is supplied per run rather than written into the
+ * copy -- the same reason `emails.ts` keeps it as a placeholder instead of a literal.
+ *
+ * Applied as a fallback, never an override: anything the sheet or the form already provided wins,
+ * so a batch-wide default cannot quietly replace a value that was set per person.
+ */
+export function parseSharedValues(argv: readonly string[]): Map<string, string> {
+  const shared = new Map<string, string>();
+  argv.forEach((arg, index) => {
+    if (arg !== "--value") {
+      return;
+    }
+    const pair = argv[index + 1] ?? "";
+    const split = pair.indexOf("=");
+    if (split > 0) {
+      shared.set(pair.slice(0, split).trim(), pair.slice(split + 1));
+    }
+  });
+  return shared;
+}
+
+function withSharedValues(
+  values: Record<string, string>,
+  shared: ReadonlyMap<string, string>,
+): Record<string, string> {
+  const merged = { ...values };
+  for (const [token, value] of shared) {
+    if (!merged[token]?.trim() && value.trim()) {
+      merged[token] = value;
+    }
+  }
+  return merged;
+}
+
 export function parseEmailOverrides(argv: readonly string[]): Map<string, string> {
   const overrides = new Map<string, string>();
   argv.forEach((arg, index) => {
@@ -378,6 +416,7 @@ export function buildPlan(
   env: NodeJS.ProcessEnv = process.env,
   formLinks: Readonly<Record<string, string>> = {},
   excluded: ReadonlySet<string> = new Set(),
+  sharedValues: ReadonlyMap<string, string> = new Map(),
 ): Plan {
   const plan: Plan = {
     generated_at: new Date().toISOString(),
@@ -528,7 +567,8 @@ export function buildPlan(
       });
       continue;
     }
-    const needs = needsFor(templateId, values);
+    const withShared = withSharedValues(values, sharedValues);
+    const needs = needsFor(templateId, withShared);
     if (addresses.length === 0) {
       needs.unshift("email: no address on this sheet row");
     }
@@ -546,11 +586,11 @@ export function buildPlan(
       // promise anyone is copied.
       cc: leadsFromAttributes(cell(row, MEMBER_ATTRIBUTES_COL), directory).cc,
       bcc: [TRACKING_BCC],
-      values,
+      values: withShared,
       needs,
       // `first_name` is not in `values`: the send derives it from the recipient's name rather than
       // taking it from the form, so the draft has to derive it the same way to read correctly.
-      ...draftFor(templateId, { ...values, first_name: firstNameOf(name) }, env),
+      ...draftFor(templateId, { ...withShared, first_name: firstNameOf(name) }, env),
     });
   }
   return plan;
@@ -560,7 +600,7 @@ function main(argv: readonly string[]): void {
   const rowsIndex = argv.indexOf("--rows");
   if (rowsIndex === -1 || !argv[rowsIndex + 1]) {
     console.error(
-      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--form-links <links.json>] [--exclude "<name or address>"]... [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
+      'usage: --rows <rows.json> [--matches <matches.json>] [--out <plan.json>] [--form-links <links.json>] [--exclude "<name or address>"]... [--value <token>=<value>]... [--matching-rows <first>-<last>] [--email "Name=addr@example"]...',
     );
     process.exit(1);
   }
@@ -595,6 +635,7 @@ function main(argv: readonly string[]): void {
     process.env,
     formLinks,
     parseExclusions(argv),
+    parseSharedValues(argv),
   );
   const output = `${JSON.stringify(plan, undefined, 2)}\n`;
   const outIndex = argv.indexOf("--out");

@@ -3,6 +3,7 @@ import {
   applicationLinksFromAttributes,
   buildPlan,
   parseEmailOverrides,
+  parseSharedValues,
 } from "../../scripts/adminbot-onboarding-batch-plan.ts";
 
 // The columns the plan reads, at their real indices on the "Full Slack Member List" tab.
@@ -331,6 +332,61 @@ describe("drafts", () => {
     const [entry] = buildPlan(rows, [99, 99], {}, new Map(), ENV).test_onboard_3;
     expect(entry?.body).toContain("[Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/)");
     expect(entry?.body).not.toContain("Zhijing-Jin (https://");
+  });
+
+  // The lab hands every new member the same starting password, but it is still a credential, so
+  // it is supplied per run rather than written into the copy.
+  it("fills a batch-wide value without overriding one already set", () => {
+    const rows = [
+      HEADER,
+      sheetRow({
+        name: "Soumya Jain",
+        memberType: "coauthor-major",
+        testOnboard: "3.0",
+        correspondence: "soumya@x.edu",
+      }),
+    ];
+    expect(buildPlan(rows, [99, 99], {}, new Map(), ENV).test_onboard_3[0]?.needs).toContain(
+      "portal_password",
+    );
+
+    const shared = parseSharedValues(["--value", "portal_password=jinesis"]);
+    const [entry] = buildPlan(
+      rows,
+      [99, 99],
+      {},
+      new Map(),
+      ENV,
+      {},
+      new Set(),
+      shared,
+    ).test_onboard_3;
+    expect(entry?.needs).toEqual([]);
+    expect(entry?.body).toContain("password jinesis");
+
+    // A value the sheet already supplied wins: a batch-wide default must not silently replace
+    // something set per person.
+    const perPerson = parseSharedValues(["--value", "record_role=from the flag"]);
+    const [withTldr] = buildPlan(
+      [
+        HEADER,
+        sheetRow({
+          name: "T",
+          memberType: "coauthor-minor",
+          testOnboard: "3.0",
+          correspondence: "t@x.edu",
+          tldr: "from the sheet",
+        }),
+      ],
+      [99, 99],
+      {},
+      new Map(),
+      ENV,
+      {},
+      new Set(),
+      perPerson,
+    ).test_onboard_3;
+    expect(withTldr?.values.record_role).toBe("from the sheet");
   });
 
   // A machine with no deployment config must still produce a reviewable draft.
