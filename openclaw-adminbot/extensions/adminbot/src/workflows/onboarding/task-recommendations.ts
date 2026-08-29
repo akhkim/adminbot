@@ -63,6 +63,20 @@ export const RETIRED_RECOMMENDATION_PHRASES: readonly string[] = [
   "WordPlay RL training modular task",
 ];
 
+/**
+ * The caveat that follows every recommendation.
+ *
+ * Zhijing's suggestion is a suggestion: the lead decides whether the applicant fits, and the mail
+ * already warns that "there might still be a chance that either they are at full capacity or the
+ * project is not a match". Without this the recommendation reads as a placement, and an applicant
+ * who is then turned down has been told two different things by the same lab.
+ *
+ * Appended by the renderer rather than written into each entry, so a recommendation added later
+ * cannot ship without it -- which is the failure this shape exists to prevent.
+ */
+export const TASK_RECOMMENDATION_CAVEAT =
+  "Note that this can still be totally up to the project lead to decide your suitability.";
+
 export const ADMINBOT_TASK_RECOMMENDATIONS = [
   {
     // The default for anyone whose match is AdminBot and nothing else. Named in the review as the
@@ -160,5 +174,5 @@ export function renderTaskRecommendation(
     /\{([a-z_]+)\}/gu,
     (whole, token: string) => resolved[token]?.trim() ?? whole,
   );
-  return { ok: true, text };
+  return { ok: true, text: `${text} ${TASK_RECOMMENDATION_CAVEAT}` };
 }

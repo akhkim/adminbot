@@ -5,6 +5,7 @@ import { applicantResponseLinkProblem } from "./guide.js";
 import {
   ADMINBOT_TASK_RECOMMENDATIONS,
   RETIRED_RECOMMENDATION_PHRASES,
+  TASK_RECOMMENDATION_CAVEAT,
   renderTaskRecommendation,
 } from "./task-recommendations.js";
 
@@ -38,10 +39,10 @@ describe("task recommendations", () => {
     expect(without.ok ? without.text : "").not.toContain("focusing on");
     expect(without.ok ? without.text : "").not.toMatch(/\{[a-z_]+\}/u);
 
-    const with_ = renderTaskRecommendation("adminbot_and_causaltutor", {
+    const withTopic = renderTaskRecommendation("adminbot_and_causaltutor", {
       causal_topic: "confounding",
     });
-    expect(with_.ok ? with_.text : "").toContain("from scratch, focusing on confounding.");
+    expect(withTopic.ok ? withTopic.text : "").toContain("from scratch, focusing on confounding.");
   });
 
   it("still refuses an unknown id", () => {
@@ -62,6 +63,21 @@ describe("task recommendations", () => {
     for (const phrase of RETIRED_RECOMMENDATION_PHRASES) {
       expect(catalog, phrase).not.toContain(phrase);
       expect(templates, phrase).not.toContain(phrase);
+    }
+  });
+
+  // Zhijing's suggestion is a suggestion; the lead decides. Asserted for every entry rather than
+  // for one, because the point of appending it in the renderer is that a later addition to the
+  // catalog cannot ship without it.
+  it("ends every recommendation with the lead's-discretion caveat", () => {
+    for (const recommendation of ADMINBOT_TASK_RECOMMENDATIONS) {
+      const values = Object.fromEntries(
+        (recommendation.placeholders ?? []).map((placeholder) => [placeholder.token, "a topic"]),
+      );
+      const result = renderTaskRecommendation(recommendation.id, values);
+      expect(result.ok && result.text.endsWith(TASK_RECOMMENDATION_CAVEAT), recommendation.id).toBe(
+        true,
+      );
     }
   });
 
