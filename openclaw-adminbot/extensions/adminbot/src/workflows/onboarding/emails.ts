@@ -35,6 +35,10 @@ export type AdminBotOnboardingTemplate = {
   required: readonly string[];
 };
 
+// `acquaintance`, `coauthor_discussant_designer` and `external_prof` deliberately have no
+// onboarding template. Those collaborations do not open with a welcome mail: the access-level
+// algorithm (collaborator-subgroups.ts) grants the subgroup's access items in the backend, and
+// that is the whole onboarding. Do not re-add one without Zhijing asking for it.
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
   {
     // The proofread "top1" variant: a 30-minute conversation with Zhijing. Two sibling variants
@@ -168,30 +172,6 @@ Jinesis Lab by Prof. Zhijing Jin`,
 A quick note on rhythm, since email can make quiet periods look like disinterest when the opposite is true. On our side, work on {project_or_context} is ongoing; our next substantive update will reach you by {update_due_date}. Between updates, please read silence as work in progress. Naturally, if anything urgent comes up on your side, write any time and we will respond.
 
 Best regards,`,
-  },
-  {
-    id: "acquaintance",
-    kind: "subgroup",
-    subject: `Joining our collaborators channel`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
-    body: `Hi {first_name},
-
-Good to be working alongside you on {project_or_context}. A few things to connect you properly:
-
-- Slack Connect to #jinesis-with-friends-and-collaborators, where our wider circle keeps in touch: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-- Our project Google Drive folder: {drive_folder_link}
-- If you want to follow what we publish: Zhijing on LinkedIn ({pi_linkedin_url}), the lab at https://www.linkedin.com/company/jinesis-lab/, and {lab_x_url}
-
-We also run city-based dinners and team building events, and would be glad to have you at the next one near you.
-
-Best,
-{sender_name}`,
   },
   {
     // The template doc's version says only that a Slack Connect invitation is on its way. The link
@@ -346,36 +326,6 @@ I will send a short separate note shortly on how we work with shared files, whic
 
 Best,
 {sender_name}`,
-  },
-  {
-    id: "external_prof",
-    kind: "subgroup",
-    subject: `Starting our collaboration on {project_or_context}`,
-    required: [
-      "contact_name",
-      "first_name",
-      "next_steps",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-      "update_cadence",
-    ],
-    body: `Dear {first_name},
-
-We are very glad to be starting this collaboration on {project_or_context}, and thank you for the materials and context you have shared so far.
-
-To make the collaboration smooth, a brief note on how our lab works. Research setup on our side takes some time: we prefer to come back with something well considered. So that quiet periods are never misread, we work on a simple rhythm: we will send you a substantive update roughly every {update_cadence}, and between updates you can safely assume the project is moving. You are of course welcome to write to us at any point!
-
-Your main contact for day-to-day matters is {contact_name} (cc'd), and Zhijing remains involved throughout. As immediate next steps, we suggest: {next_steps}.
-
-Two practical things. You are invited to our Slack workspace through Slack Connect, in #jinesis-with-friends-and-collaborators, which is low traffic and a good way to reach us without a formal email: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-
-We will also email you at the points that matter on the projects you are attached to: when a paper is submitted or resubmitted, and when a social media draft goes out for review, so nothing goes public with your name on it without you having seen it. If you would rather we narrowed or widened that, just say.
-
-We are looking forward to this!
-
-Best regards,
-{sender_name}, on behalf of the Jinesis AI Lab`,
   },
   {
     id: "slightly_better_than_emails",

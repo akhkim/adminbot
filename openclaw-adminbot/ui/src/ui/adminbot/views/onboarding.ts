@@ -112,18 +112,6 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     ],
   },
   {
-    id: "acquaintance",
-    label: "Acquaintance",
-    group: "External collaborator",
-    required: [
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "drive_folder_link",
-      "slack_connect_link",
-    ],
-  },
-  {
     id: "alumni",
     label: "Alumni",
     group: "External collaborator",
@@ -184,20 +172,6 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     label: "Intermittent coauthor — recommendation letter declined",
     group: "External collaborator",
     required: ["first_name"],
-  },
-  {
-    id: "external_prof",
-    label: "Senior collaborator / professor",
-    group: "External collaborator",
-    required: [
-      "first_name",
-      "project_or_context",
-      "update_cadence",
-      "contact_name",
-      "next_steps",
-      "sender_name",
-      "slack_connect_link",
-    ],
   },
   {
     id: "external_prof_slack_connect",

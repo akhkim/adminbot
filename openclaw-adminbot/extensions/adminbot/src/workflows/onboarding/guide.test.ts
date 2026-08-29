@@ -144,14 +144,14 @@ describe("composeOnboardingGuide", () => {
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
-    const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "acquaintance");
+    const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "interviewee");
     expect(
-      missingGuideValues(template!, { ...valuesFor("acquaintance"), first_name: "   " }),
+      missingGuideValues(template!, { ...valuesFor("interviewee"), first_name: "   " }),
     ).toEqual(["first_name"]);
   });
 
   it("fills every placeholder once satisfied", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), ENV);
+    const result = composeOnboardingGuide("interviewee", valuesFor("interviewee"), ENV);
     expect(result.ok).toBe(true);
     if (!result.ok) {
       return;
@@ -161,13 +161,13 @@ describe("composeOnboardingGuide", () => {
 
     // An unconfigured workspace must refuse rather than mail a placeholder invite link, and must
     // say which variable to set.
-    const unset = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {});
+    const unset = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {});
     expect(unset).toMatchObject({ ok: false, reason: "missing-environment" });
     expect(unset.ok ? [] : unset.missing).toContain("ADMINBOT_SLACK_INVITE_URL");
 
     // An unset *optional* token is graceful: the line carrying it goes, the email still composes,
     // and no half-rendered placeholder survives.
-    const noSocials = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    const noSocials = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {
       ADMINBOT_SLACK_INVITE_URL: ENV.ADMINBOT_SLACK_INVITE_URL,
     });
     expect(noSocials.ok).toBe(true);
@@ -175,7 +175,7 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(noSocials.guide.body).not.toMatch(/\{[a-z_]+\}/u);
-    expect(noSocials.guide.body).not.toContain("If you want to follow what we publish");
+    expect(noSocials.guide.body).not.toContain("If you would like to follow along more generally");
   });
 
   // The DCS-address example must survive substitution literally, and the address it illustrates
@@ -241,7 +241,7 @@ describe("composeOnboardingGuide", () => {
   // placeholders are non-empty. Without this they satisfy every "is it set?" check and the failure
   // surfaces much later, from Slack or Gmail, describing the value rather than the configuration.
   it("treats an unedited REPLACE_ME placeholder as unset", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    const result = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {
       ADMINBOT_SLACK_INVITE_URL: "REPLACE_ME_WITH_THE_SLACK_INVITE_URL",
     });
     expect(result).toMatchObject({ ok: false, reason: "missing-environment" });
