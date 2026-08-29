@@ -21,6 +21,12 @@
 // send path uses -- so the plan can be read as mail rather than as metadata. Values still
 // outstanding appear in the body as a literal `{token}` and are listed in `needs`.
 //
+// Links stay in the copy's own `[label](url)` notation rather than being flattened to
+// "label (url)". The flattened form is what a text-only client receives, but it is lossy: nothing
+// in it says which half was the anchor, so a person pasting the draft into Gmail cannot rebuild
+// the hyperlink. The bracket form survives that round trip -- paste it anywhere that understands
+// markdown, or hand it back to `renderEmailBodyHtml` and get the anchors out.
+//
 // Nothing is sent and nothing is written back to the sheet. This emits a plan for review; mailing
 // it is a separate, approved step. That split is the point: the previous batch's damage came from
 // generating and sending in one motion, so anything this cannot fill becomes a `needs` entry a
@@ -29,7 +35,6 @@
 // Deployment tokens (the Slack invite URL, the bot address) come from the environment, exactly as
 // they do at send time. Unset, the draft still renders and those tokens stay visible.
 import fs from "node:fs";
-import { renderEmailBodyText } from "../extensions/adminbot/src/connectors/email-html.ts";
 import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.ts";
 import {
   composeOnboardingGuide,
@@ -276,9 +281,7 @@ function draftFor(
   }
   const composed = composeOnboardingGuide(templateId, selfReferencing, env);
   if (composed.ok) {
-    // Rendered the way the text/plain part is delivered: the copy carries links as `[label](url)`,
-    // and a reviewer should read "Jinesis-Lab (https://…)" rather than the notation.
-    return { subject: composed.guide.subject, body: renderEmailBodyText(composed.guide.body) };
+    return { subject: composed.guide.subject, body: composed.guide.body };
   }
   // Unconfigured deployment tokens (no ADMINBOT_SLACK_INVITE_URL on this machine, say). Render what
   // we can by hand so the draft is still reviewable, and leave the rest as `{token}`.
@@ -286,7 +289,7 @@ function draftFor(
     text.replace(/\{([a-z_]+)\}/gu, (whole, token: string) => selfReferencing[token] ?? whole);
   return {
     subject: fill(template.subject ?? ""),
-    body: renderEmailBodyText(fill(template.body)),
+    body: fill(template.body),
   };
 }
 

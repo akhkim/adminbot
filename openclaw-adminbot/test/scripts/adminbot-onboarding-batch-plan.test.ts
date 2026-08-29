@@ -316,6 +316,23 @@ describe("drafts", () => {
     expect(member?.subject).toBe("Staying Connected with the Jinesis Lab");
   });
 
+  // Flattening to "label (url)" is lossy: nothing in it says which half was the anchor, so a
+  // person pasting the draft into Gmail cannot rebuild the hyperlink. The bracket form survives.
+  it("keeps links in the copy's [label](url) notation", () => {
+    const rows = [
+      HEADER,
+      sheetRow({
+        name: "Yuen Chen",
+        memberType: "alumni",
+        testOnboard: "3.0",
+        correspondence: "yuen@x.edu",
+      }),
+    ];
+    const [entry] = buildPlan(rows, [99, 99], {}, new Map(), ENV).test_onboard_3;
+    expect(entry?.body).toContain("[Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/)");
+    expect(entry?.body).not.toContain("Zhijing-Jin (https://");
+  });
+
   // A machine with no deployment config must still produce a reviewable draft.
   it("still drafts when the deployment tokens are unset", () => {
     const rows = [
