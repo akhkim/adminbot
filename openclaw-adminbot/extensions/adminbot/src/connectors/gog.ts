@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
-import { renderEmailBodyHtml } from "./email-html.js";
+import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 60_000;
@@ -221,7 +221,16 @@ async function sendWithAttachments(proposal: AdminBotStoredProposal, run: GogRun
       paths.push(filePath);
     }
     const args = rootArgs("gmail.send", optionalString(payload, "account"));
-    args.push("gmail", "send", "--to", to, "--subject", subject, "--body", body);
+    args.push(
+      "gmail",
+      "send",
+      "--to",
+      to,
+      "--subject",
+      subject,
+      "--body",
+      renderEmailBodyText(body),
+    );
     args.push("--body-html", optionalString(payload, "body_html") ?? renderEmailBodyHtml(body));
     for (const filePath of paths) {
       // Repeated rather than comma-joined: a file name containing a comma would otherwise split
@@ -351,7 +360,7 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   const commandPath = draft ? "gmail.drafts.create" : "gmail.send";
   const args = rootArgs(commandPath, optionalString(payload, "account"));
   args.push("gmail", ...(draft ? ["drafts", "create"] : ["send"]));
-  args.push("--to", to, "--subject", subject, "--body", body);
+  args.push("--to", to, "--subject", subject, "--body", renderEmailBodyText(body));
   // gog sends `--body` as text/plain, which the delivery path soft-wraps and the reading client
   // then re-wraps -- the ~70-character breaks the operator sees mid-paragraph. `--body-html` adds
   // an alternative part that is not wrapped; `--body` stays, so a text-only client still gets the
