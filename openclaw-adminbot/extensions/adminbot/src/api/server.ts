@@ -117,6 +117,7 @@ import {
   type MemberSheetOnboardRequest,
   type MemberSheetSource,
   onboardFromMemberSheet,
+  previewOnboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
 } from "./server.member-sheet.js";
@@ -3124,6 +3125,40 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendJson(res, 200, editResult);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/membership/sheet/onboard/preview") {
+    // Composes the very mails onboarding would queue, so it shows member addresses and rendered
+    // email bodies: the same gate as executing, even though it writes nothing.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const previewBody = (await readJson(req)) as MemberSheetOnboardRequest;
+    let previewResult;
+    try {
+      previewResult = await previewOnboardFromMemberSheet(ctx.memberSheet, previewBody);
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in previewResult) {
+      sendJson(res, previewResult.error.status, {
+        error: { message: previewResult.error.message },
+      });
+      return;
+    }
+    sendJson(res, 200, previewResult);
     return;
   }
   if (req.method === "POST" && url.pathname === "/membership/sheet/onboard") {

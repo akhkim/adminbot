@@ -215,21 +215,35 @@ function firstAddress(cell: string | undefined): string | undefined {
     .find((part) => part.includes("@"));
 }
 
+/** One row's mail, fully composed, exactly as executing the onboarding would queue it. */
+export type PlannedOnboardEmail = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  template_id: string;
+  subject: string;
+  body: string;
+  reply_to: string;
+};
+
+export type MemberSheetOnboardPreview = {
+  planned: PlannedOnboardEmail[];
+  skipped: MemberSheetOnboardResult["skipped"];
+};
+
 /**
- * Composes the onboarding mail for each selected row and queues it for approval.
+ * Resolves each selected row to the mail it would get, queueing nothing.
  *
- * A row is skipped, with its reason, rather than half-onboarded: no address, a Member Type whose
- * onboarding is the backend access grant rather than a mail, or a template whose placeholders this
- * row cannot fill. The tab shows those next to the rows they belong to, which is the whole point
- * of running this from the roster rather than from a script.
+ * Shared by the preview route and the execution so that what the admin read is what gets queued:
+ * both run this same resolution over a fresh read of the sheet, and the only thing execution adds
+ * is the proposal. A row that changes between preview and confirm is therefore re-resolved at
+ * confirm time -- the same freshest-read rule the edit path follows.
  */
-export async function onboardFromMemberSheet(
-  service: AdminBotService,
+async function planOnboardFromMemberSheet(
   source: MemberSheetSource,
   request: MemberSheetOnboardRequest,
-  actor: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<MemberSheetOnboardResult | { error: { status: number; message: string } }> {
+  env: NodeJS.ProcessEnv,
+): Promise<MemberSheetOnboardPreview | { error: { status: number; message: string } }> {
   const wanted = new Set(request.sheet_rows ?? []);
   if (wanted.size === 0) {
     return { error: { status: 400, message: "sheet_rows is required and must not be empty" } };
@@ -247,7 +261,7 @@ export async function onboardFromMemberSheet(
     };
   }
 
-  const created: MemberSheetOnboardResult["created"] = [];
+  const planned: PlannedOnboardEmail[] = [];
   const skipped: MemberSheetOnboardResult["skipped"] = [];
   const overrides = request.addresses ?? {};
 
@@ -289,31 +303,81 @@ export async function onboardFromMemberSheet(
       });
       continue;
     }
-    const proposal = service.createProposal({
-      type: "email.send",
-      summary: `${actor}: onboard ${name || email} (${template.templateId}) from the member roster`,
-      proposed_payload: {
-        to: email,
-        subject: composed.guide.subject ?? "",
-        body: composed.guide.body,
-        // AdminBot sends from a mailbox nobody reads, and these mails invite a reply.
-        reply_to: env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
-      },
-    });
-    if (!proposal.ok) {
-      skipped.push({ sheet_row: row.sheetRow, reason: proposal.error.message });
-      continue;
-    }
-    created.push({
+    planned.push({
       sheet_row: row.sheetRow,
+      name,
       email,
       template_id: template.templateId,
-      proposal_id: proposal.payload.id,
+      subject: composed.guide.subject ?? "",
+      body: composed.guide.body,
+      // AdminBot sends from a mailbox nobody reads, and these mails invite a reply.
+      reply_to: env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
     });
   }
 
   for (const missing of wanted) {
     skipped.push({ sheet_row: missing, reason: "no such row in the sheet" });
+  }
+  return { planned, skipped };
+}
+
+/**
+ * What onboarding the selected rows would do, for the tab to show before anything is queued.
+ *
+ * The mails are composed for real -- same templates, same addresses, same values -- so the
+ * preview is the mail, not a summary of it. Nothing is created: no proposal, no audit entry.
+ */
+export async function previewOnboardFromMemberSheet(
+  source: MemberSheetSource,
+  request: MemberSheetOnboardRequest,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MemberSheetOnboardPreview | { error: { status: number; message: string } }> {
+  return planOnboardFromMemberSheet(source, request, env);
+}
+
+/**
+ * Composes the onboarding mail for each selected row and queues it for approval.
+ *
+ * A row is skipped, with its reason, rather than half-onboarded: no address, a Member Type whose
+ * onboarding is the backend access grant rather than a mail, or a template whose placeholders this
+ * row cannot fill. The tab shows those next to the rows they belong to, which is the whole point
+ * of running this from the roster rather than from a script.
+ */
+export async function onboardFromMemberSheet(
+  service: AdminBotService,
+  source: MemberSheetSource,
+  request: MemberSheetOnboardRequest,
+  actor: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MemberSheetOnboardResult | { error: { status: number; message: string } }> {
+  const plan = await planOnboardFromMemberSheet(source, request, env);
+  if ("error" in plan) {
+    return plan;
+  }
+
+  const created: MemberSheetOnboardResult["created"] = [];
+  const skipped = [...plan.skipped];
+  for (const mail of plan.planned) {
+    const proposal = service.createProposal({
+      type: "email.send",
+      summary: `${actor}: onboard ${mail.name || mail.email} (${mail.template_id}) from the member roster`,
+      proposed_payload: {
+        to: mail.email,
+        subject: mail.subject,
+        body: mail.body,
+        reply_to: mail.reply_to,
+      },
+    });
+    if (!proposal.ok) {
+      skipped.push({ sheet_row: mail.sheet_row, reason: proposal.error.message });
+      continue;
+    }
+    created.push({
+      sheet_row: mail.sheet_row,
+      email: mail.email,
+      template_id: mail.template_id,
+      proposal_id: proposal.payload.id,
+    });
   }
   return { created, skipped };
 }

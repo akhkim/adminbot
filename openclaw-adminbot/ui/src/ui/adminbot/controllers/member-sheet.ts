@@ -6,9 +6,11 @@ import {
   fetchMemberSheet as fetchMemberSheetRequest,
   loadStoredMemberSession,
   type MemberSheetEditResult,
+  type MemberSheetOnboardPreview,
   type MemberSheetOnboardResult,
   type MemberSheetView,
   onboardFromMemberSheet as onboardFromMemberSheetRequest,
+  previewOnboardFromMemberSheet as previewOnboardFromMemberSheetRequest,
   proposeMemberSheetEdits as proposeMemberSheetEditsRequest,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
@@ -31,6 +33,8 @@ export type AdminBotMemberSheetHost = {
   memberSheetSelection?: number[];
   memberSheetSaveResult?: MemberSheetEditResult | null;
   memberSheetOnboardResult?: MemberSheetOnboardResult | null;
+  /** The composed mails the selected rows would get, shown for review before anything is queued. */
+  memberSheetOnboardPreview?: MemberSheetOnboardPreview | null;
   settings: UiSettings;
 };
 
@@ -139,6 +143,43 @@ export async function saveMemberSheetEdits(host: AdminBotMemberSheetHost): Promi
   }
 }
 
+/**
+ * Composes what onboarding the selection would do, without doing it.
+ *
+ * Onboarding used to run on the first press: correct mails, but an admin had to press the button
+ * to find out what they said. The preview shows each row's rendered mail and the rows that would
+ * be skipped; confirming from the panel is what calls `onboardSelectedMemberRows`.
+ */
+export async function previewOnboardSelectedRows(host: AdminBotMemberSheetHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.memberSheetError = "Sign in again to onboard from the member sheet.";
+    return;
+  }
+  const rows = host.memberSheetSelection ?? [];
+  if (rows.length === 0) {
+    return;
+  }
+  host.memberSheetBusy = true;
+  host.memberSheetError = null;
+  host.memberSheetOnboardResult = null;
+  try {
+    const result = await previewOnboardFromMemberSheetRequest(
+      rows,
+      {},
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.memberSheetError = describeMemberSheetFailure(result);
+      return;
+    }
+    host.memberSheetOnboardPreview = result.value;
+  } finally {
+    host.memberSheetBusy = false;
+  }
+}
+
 export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
@@ -163,6 +204,8 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
       return;
     }
     host.memberSheetOnboardResult = result.value;
+    // The preview has served its purpose: what it showed is now queued (or reported skipped).
+    host.memberSheetOnboardPreview = null;
     // Only clear the rows that produced something; a skipped row stays selected so its reason
     // stays next to it and a second press after filling a gap does not need re-selecting.
     const created = new Set(result.value.created.map((entry) => entry.sheet_row));
