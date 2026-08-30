@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { createAdminBotMockService } from "./server.js";
+import { workshopRunIsAbandoned } from "./server.workshop-nudges.js";
 
 const SERVICE_TOKEN = "test-service-token";
 const running: Array<{
@@ -289,5 +290,33 @@ describe("workshop nudge HTTP flow", () => {
       });
       expect(response.status).toBe(403);
     }
+  });
+});
+
+// The pass is an un-awaited task inside the service, so a row saying `running` is only evidence
+// that one started. The tab that reported 1671 of 2540 model calls for days was reading a run
+// whose process had been gone since the count stopped moving, and "one pass at a time" then
+// refused every attempt to start a new one -- in the dead run's name.
+describe("a pass that stopped moving", () => {
+  const stale = (progressAt?: string) => ({
+    status: "running" as const,
+    started_at: "2026-08-30T00:00:00.000Z",
+    ...(progressAt ? { progress_at: progressAt } : {}),
+  });
+  const now = new Date("2026-08-30T02:00:00.000Z");
+
+  it("is abandoned once it has gone quiet for long enough", () => {
+    expect(workshopRunIsAbandoned(stale("2026-08-30T01:59:00.000Z"), now)).toBe(false);
+    expect(workshopRunIsAbandoned(stale("2026-08-30T01:00:00.000Z"), now)).toBe(true);
+  });
+
+  it("falls back to the start time for a run written before the clock existed", () => {
+    expect(workshopRunIsAbandoned(stale(), now)).toBe(true);
+  });
+
+  it("leaves a finished pass alone", () => {
+    expect(
+      workshopRunIsAbandoned({ ...stale(), status: "ready" as unknown as "running" }, now),
+    ).toBe(false);
   });
 });

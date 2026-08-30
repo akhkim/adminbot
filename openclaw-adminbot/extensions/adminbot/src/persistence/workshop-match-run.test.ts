@@ -102,6 +102,16 @@ describe.each(stores)("%s store: workshop match runs", (_name, makeStore) => {
   });
 });
 
+describe.each(stores)("%s store: a pass in flight", (_name, makeStore) => {
+  it("stamps when it last moved", () => {
+    const store = makeStore();
+    store.saveWorkshopMatchRun(run({ calls_done: 40, calls_total: 2540 }));
+    // Without this, a row that says `running` cannot be told from one whose process is gone, and
+    // the "one pass at a time" guard refuses every later pass in the dead one's name.
+    expect(Date.parse(store.latestWorkshopMatchRun()?.progress_at ?? "")).toBeGreaterThan(0);
+  });
+});
+
 describe("sqlite store: durability", () => {
   it("keeps a finished pass across a restart", () => {
     const databasePath = tempDbPath();
@@ -113,5 +123,26 @@ describe("sqlite store: durability", () => {
     const reopened = sqliteStore(databasePath).latestWorkshopMatchRun();
     expect(reopened?.status).toBe("ready");
     expect(JSON.parse(reopened?.payload_json ?? "{}")).toEqual({ paper_count: 7 });
+  });
+
+  // A pass is an un-awaited task inside the service, so it cannot outlive the process that started
+  // it. Before this, a restart mid-pass left the row saying `running` forever: the tab sat on
+  // "Matching in progress..." counting calls nobody was making, and every later pass was refused.
+  it("closes out a pass its process did not survive", () => {
+    const databasePath = tempDbPath();
+    sqliteStore(databasePath).saveWorkshopMatchRun(run({ calls_done: 1671, calls_total: 2540 }));
+
+    const reopened = sqliteStore(databasePath).latestWorkshopMatchRun();
+    expect(reopened?.status).toBe("failed");
+    expect(reopened?.error).toContain("restarted");
+    expect(reopened?.finished_at).toBeTruthy();
+    // The counts stay as they were: they say how far it got before it died.
+    expect(reopened?.calls_done).toBe(1671);
+  });
+
+  it("leaves a pass that finished properly alone", () => {
+    const databasePath = tempDbPath();
+    sqliteStore(databasePath).saveWorkshopMatchRun(run({ status: "ready" }));
+    expect(sqliteStore(databasePath).latestWorkshopMatchRun()?.status).toBe("ready");
   });
 });

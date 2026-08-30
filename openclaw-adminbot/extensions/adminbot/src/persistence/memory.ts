@@ -633,7 +633,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
-    this.workshopMatchRuns.set(run.id, run);
+    // Stamped here as well as in SQLite, so a caller that reads `progress_at` to tell a live pass
+    // from an abandoned one behaves the same against either store.
+    this.workshopMatchRuns.set(run.id, { ...run, progress_at: new Date().toISOString() });
   }
 
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
