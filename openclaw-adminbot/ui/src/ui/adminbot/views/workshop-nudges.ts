@@ -15,6 +15,10 @@ type WorkshopNudgeUnresolved = WorkshopNudgeResult["unresolved_recipients"][numb
 export type WorkshopNudgesProps = {
   state: WorkshopNudgeReviewState;
   onRefresh: () => void;
+  /** Stop the pass in flight. */
+  onCancelRun: () => void;
+  /** Replace the pass in flight with a new one, without waiting out the server's stall window. */
+  onForceRefresh: () => void;
   onToggleRecipient: (memberId: string) => void;
   onSetRecipients: (memberIds: string[], selected: boolean) => void;
   onViewChange: (patch: WorkshopNudgeViewPatch) => void;
@@ -76,6 +80,12 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
  * opened, closed and reopened while it works. A bare spinner would say nothing about that -- and
  * after a minute or two it reads as broken rather than busy -- so this says how far along it is
  * and that leaving is safe.
+ *
+ * It also has to offer a way out. A pass whose count has stopped moving looks exactly like a slow
+ * one from here, and for a long time this card was the whole page: no button, nothing to press,
+ * nothing to do but reload and read the same number again. The server now writes a stalled pass
+ * off on its own after half an hour, but an administrator who already knows should not have to
+ * wait for it.
  */
 function renderRunProgress(props: WorkshopNudgesProps) {
   const run = props.state.run;
@@ -84,6 +94,7 @@ function renderRunProgress(props: WorkshopNudgesProps) {
   }
   const done = run.calls_done ?? 0;
   const total = run.calls_total ?? 0;
+  const failed = run.calls_failed ?? 0;
   return html`<div
     class="card adminbot-card adminbot-card--wide workshop-nudges__running"
     data-testid="workshop-nudges-running"
@@ -93,8 +104,31 @@ function renderRunProgress(props: WorkshopNudgesProps) {
       ${total > 0
         ? `${done} of ${total} model calls done.`
         : "Working out how many papers and workshops to compare."}
+      ${failed > 0
+        ? `${failed} call${failed === 1 ? "" : "s"} failed and will be missing from the result.`
+        : ""}
       You can leave this page — the pass keeps running and the result is kept.
     </span>
+    <div class="workshop-nudges__running-actions">
+      <button
+        class="btn"
+        type="button"
+        data-testid="workshop-nudges-cancel"
+        ?disabled=${props.state.loading}
+        @click=${props.onCancelRun}
+      >
+        Stop this pass
+      </button>
+      <button
+        class="btn"
+        type="button"
+        data-testid="workshop-nudges-force-refresh"
+        ?disabled=${props.state.loading}
+        @click=${props.onForceRefresh}
+      >
+        Start over
+      </button>
+    </div>
   </div>`;
 }
 

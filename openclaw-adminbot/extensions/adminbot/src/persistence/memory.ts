@@ -635,13 +635,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
     // Stamped here as well as in SQLite, so a caller that reads `progress_at` to tell a live pass
     // from an abandoned one behaves the same against either store.
-    this.workshopMatchRuns.set(run.id, { ...run, progress_at: new Date().toISOString() });
+    this.workshopMatchRuns.set(run.id, {
+      ...run,
+      calls_failed: run.calls_failed ?? 0,
+      progress_at: new Date().toISOString(),
+    });
   }
 
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
-    return [...this.workshopMatchRuns.values()].toSorted((left, right) =>
-      right.started_at.localeCompare(left.started_at),
-    )[0];
+    // Insertion order breaks a tie on `started_at`, which is a millisecond stamp two runs really
+    // can share: replacing a wedged pass writes the old row off and starts the new one in the same
+    // tick. A stable sort on the timestamp alone hands back whichever was inserted first -- the
+    // dead one -- so the replacement is invisible and the tab stays wedged on the run it replaced.
+    return [...this.workshopMatchRuns.values()]
+      .map((run, index) => ({ run, index }))
+      .toSorted(
+        (left, right) =>
+          right.run.started_at.localeCompare(left.run.started_at) || right.index - left.index,
+      )[0]?.run;
   }
 
   appendLoginEvent(event: AdminBotLoginEvent): void {

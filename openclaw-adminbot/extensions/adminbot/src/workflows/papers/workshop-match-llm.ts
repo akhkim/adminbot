@@ -59,6 +59,20 @@ export const MAX_CONCURRENT_REQUESTS = 6;
  */
 export const REQUEST_TIMEOUT_MS = 60_000;
 
+/**
+ * Attempts per job, timeout included.
+ *
+ * The timeout above bounds one request; it does not bound the damage. A vLLM instance that drops
+ * a connection under load, or a tunnel that blips for a second, loses a whole (workshop, batch)
+ * pair -- and on a 2,500-call sweep enough of those turn a complete answer into a quietly partial
+ * one. Three is enough for a blip and few enough that a genuinely dead endpoint still fails the
+ * pass in minutes rather than hours.
+ */
+export const MAX_ATTEMPTS_PER_CALL = 3;
+
+/** Pause before a retry. Short: this is a blip, not a queue, and a sweep has thousands to get through. */
+const RETRY_BACKOFF_MS = 500;
+
 /** How much of a call for papers the model is shown. Scope lives at the top; boilerplate does not. */
 const MAX_CALL_CHARS = 4_000;
 
@@ -70,10 +84,14 @@ export type WorkshopMatcherOptions = {
   env?: NodeJS.ProcessEnv;
   papersPerRequest?: number;
   maxConcurrentRequests?: number;
-  /** How long one model call may take before it is abandoned. */
+  /** How long one model call may take before it is abandoned. Applied per attempt. */
   requestTimeoutMs?: number;
+  /** Attempts per job before it is counted as failed. */
+  maxAttemptsPerCall?: number;
+  /** Pause between attempts. Exposed so a test does not have to spend it. */
+  retryBackoffMs?: number;
   /** Called as each job settles, so a caller can persist progress while the pass runs. */
-  onProgress?: (done: number, total: number) => void;
+  onProgress?: (done: number, total: number, failed: number) => void;
 };
 
 const SYSTEM_PROMPT = `You decide which of a research lab's papers belong at a specific workshop.
@@ -204,8 +222,10 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
   const batchSize = Math.max(1, options.papersPerRequest ?? PAPERS_PER_REQUEST);
   const concurrency = Math.max(1, options.maxConcurrentRequests ?? MAX_CONCURRENT_REQUESTS);
   const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
+  const maxAttempts = Math.max(1, options.maxAttemptsPerCall ?? MAX_ATTEMPTS_PER_CALL);
+  const retryBackoffMs = Math.max(0, options.retryBackoffMs ?? RETRY_BACKOFF_MS);
 
-  return async ({ papers, workshops, onProgress }) => {
+  return async ({ papers, workshops, onProgress, signal }) => {
     // One entry per paper, not per author. workshopNudgeInputsFromAdminBot repeats a paper once
     // for every recipient it resolves, which is right for addressing the nudge and wrong here: the
     // model scores a paper against a workshop, and asking it the same question seven times for a
@@ -229,9 +249,13 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     let done = 0;
     let failed = 0;
     let firstError: unknown;
+    const report = onProgress ?? options.onProgress;
+    // Fired even before the first job settles, so the page stops saying "working out how many
+    // papers and workshops to compare" the moment there is a number to say.
+    report?.(0, jobs.length, 0);
     const results = await runWithConcurrency(jobs, concurrency, async (job) => {
       try {
-        return await runJob(job);
+        return await runJobWithRetries(job);
       } catch (error) {
         // One workshop's batch could not be scored. The pass is thousands of calls and a single
         // unlucky one is not a reason to throw the rest away; it is counted, and the first cause
@@ -240,11 +264,20 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         firstError ??= error;
         return [];
       } finally {
+        // Unconditional, and in a `finally` on purpose. A failure that did not advance `done` is
+        // how a pass reaches 1671 of 2540 and stops: the total is fixed at the start, so every job
+        // must report exactly once however it ends or the count never closes.
         done += 1;
-        (onProgress ?? options.onProgress)?.(done, jobs.length);
+        report?.(done, jobs.length, failed);
       }
     });
 
+    if (signal?.aborted) {
+      // Cancelled by an administrator. Say so rather than reporting the aborts as an outage: the
+      // endpoint was not necessarily at fault, and "the model is down" would send them to fix the
+      // wrong thing.
+      throw new Error(`${PURPOSE} pass was cancelled after ${done} of ${jobs.length} calls`);
+    }
     if (jobs.length > 0 && failed === jobs.length) {
       // Nothing succeeded, so this is not a bad batch, it is the endpoint. Rethrow the original
       // cause rather than a summary: the refusal to talk to a non-loopback endpoint is a rule
@@ -258,6 +291,35 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
           );
     }
 
+    /**
+     * One job, retried a bounded number of times.
+     *
+     * The timeout below bounds a single request, which is what stops one unanswered call from
+     * holding a concurrency slot for the life of the process. It does not make the call succeed --
+     * so a blip on the tunnel would otherwise silently drop a whole (workshop, batch) pair out of
+     * the answer. Retrying here keeps that pair; failing after `maxAttempts` keeps the pass moving.
+     */
+    async function runJobWithRetries(job: {
+      workshop: WorkshopProfile;
+      papers: WorkshopNudgePaper[];
+    }) {
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        if (signal?.aborted) {
+          throw new Error(`${PURPOSE} was cancelled`);
+        }
+        try {
+          return await runJob(job);
+        } catch (error) {
+          lastError = error;
+          if (attempt < maxAttempts && !signal?.aborted && retryBackoffMs > 0) {
+            await delay(retryBackoffMs);
+          }
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+
     async function runJob(job: { workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }) {
       const reply = await completeLocally({
         fetchImpl,
@@ -268,8 +330,12 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         // A recommendation an administrator may re-run should not change under them.
         temperature: 0,
         // Without this one unanswered call holds the whole request open, which is exactly how a
-        // slow model server became "couldn't reach the AdminBot service" on the page.
-        signal: AbortSignal.timeout(requestTimeoutMs),
+        // slow model server became "couldn't reach the AdminBot service" on the page. Combined
+        // with the pass signal so a cancelled pass does not sit out the remaining timeout of
+        // every call already in flight.
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)])
+          : AbortSignal.timeout(requestTimeoutMs),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: buildWorkshopMatchPrompt(job.workshop, job.papers) },
@@ -294,6 +360,13 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
  * `Promise.all` over every job at once would open one socket per (workshop, batch) pair, which on a
  * full sweep is hundreds against a single vLLM instance.
  */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    // Unref'd: a backoff must never be the reason the process stays alive at shutdown.
+    setTimeout(resolve, ms).unref?.();
+  });
+}
+
 async function runWithConcurrency<Job, Result>(
   jobs: readonly Job[],
   limit: number,

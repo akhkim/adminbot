@@ -4,7 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { createAdminBotMockService } from "./server.js";
-import { workshopRunIsAbandoned } from "./server.workshop-nudges.js";
+import {
+  cancelWorkshopNudgeRun,
+  readWorkshopNudgeRun,
+  startWorkshopNudgeRun,
+  WORKSHOP_RUN_STALLED_MESSAGE,
+  workshopRunIsAbandoned,
+} from "./server.workshop-nudges.js";
 
 const SERVICE_TOKEN = "test-service-token";
 const running: Array<{
@@ -279,7 +285,7 @@ describe("workshop nudge HTTP flow", () => {
 
     // Reading, starting a pass and sending are all lab-internal: a service token is insufficient
     // for every one of them.
-    for (const pathname of ["preview", "refresh", "send"]) {
+    for (const pathname of ["preview", "refresh", "send", "cancel"]) {
       const response = await fetch(`${baseUrl}/workshop-nudges/${pathname}`, {
         method: "POST",
         headers: {
@@ -318,5 +324,78 @@ describe("a pass that stopped moving", () => {
     expect(
       workshopRunIsAbandoned({ ...stale(), status: "ready" as unknown as "running" }, now),
     ).toBe(false);
+  });
+});
+
+/**
+ * Noticing a stalled pass on the cheap route, not only on the expensive one.
+ *
+ * `workshopRunIsAbandoned` was only ever consulted by `startWorkshopNudgeRun`, which is what a
+ * press of Find recommendations calls. But the tab does not press anything: it polls the read
+ * route every few seconds, and that route handed back `status: "running"` verbatim. So an
+ * administrator watching "1671 of 2540 model calls done" was watching a number that no code path
+ * they were exercising could ever change. Staleness is a fact about the row; the reader is
+ * entitled to act on it.
+ */
+describe("reading a pass that stopped moving", () => {
+  const wedged = (id: string) => ({
+    id,
+    status: "running" as const,
+    started_at: new Date().toISOString(),
+    calls_done: 1671,
+    calls_total: 2540,
+  });
+
+  it("closes out a stalled run instead of reporting it as running forever", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_stalled"));
+
+    const view = readWorkshopNudgeRun(mock.service, new Date(Date.now() + 61 * 60 * 1000));
+    expect(view.status).toBe("failed");
+    expect(view.error).toBe(WORKSHOP_RUN_STALLED_MESSAGE);
+    // The counts stay put: they are the only record of how far it got, and resetting them to zero
+    // would leave nobody able to say what happened.
+    expect(view.calls_done).toBe(1671);
+    expect(view.calls_total).toBe(2540);
+    // And the closing is persisted, so the next poll does not have to rediscover it.
+    expect(mock.service.latestWorkshopMatchRun()?.status).toBe("failed");
+  });
+
+  it("leaves a pass that is still moving alone", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_live"));
+    expect(readWorkshopNudgeRun(mock.service, new Date()).status).toBe("running");
+  });
+
+  it("lets an administrator stop a pass without waiting out the stall window", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_wedged"));
+
+    const view = cancelWorkshopNudgeRun({ service: mock.service, actor: "admin-1" });
+    expect(view.status).toBe("failed");
+    expect(view.error).toContain("stopped by admin-1");
+    expect(view.error).toContain("1671 of 2540");
+  });
+
+  it("starts a fresh pass over a wedged one when the administrator forces it", async () => {
+    const { mock } = await startService();
+    const now = new Date();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_wedged"));
+
+    // Without `force` the guard hands back the wedged run: it has not gone quiet long enough yet,
+    // which is the right default for a pass nobody is watching and the wrong one for an
+    // administrator who has been staring at a still count.
+    const refused = startWorkshopNudgeRun({ service: mock.service, match: async () => [], now });
+    expect(refused.calls_done).toBe(1671);
+    expect(mock.service.latestWorkshopMatchRun()?.id).toBe("wsm_wedged");
+
+    const forced = startWorkshopNudgeRun({
+      service: mock.service,
+      match: async () => [],
+      now,
+      force: true,
+    });
+    expect(forced.calls_done).toBe(0);
+    expect(mock.service.latestWorkshopMatchRun()?.id).not.toBe("wsm_wedged");
   });
 });

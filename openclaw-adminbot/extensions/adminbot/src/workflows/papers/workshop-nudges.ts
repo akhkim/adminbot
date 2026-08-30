@@ -139,8 +139,20 @@ export type WorkshopMatcher = (request: {
    * Called as each model call settles. A pass is thousands of calls and tens of minutes, so the
    * caller persisting it needs somewhere to hang "how far along is this" -- otherwise a page
    * opened mid-pass can only say "running" and never "running, 800 of 2500".
+   *
+   * `failed` is how many of those `done` calls gave up rather than answered. A call that failed
+   * must still count toward `done`, or a pass with one bad batch never reaches its total and the
+   * tab sits on "Matching in progress..." forever; reporting the failures separately is what keeps
+   * that honest.
    */
-  onProgress?: (done: number, total: number) => void;
+  onProgress?: (done: number, total: number, failed: number) => void;
+  /**
+   * Abort the pass. Jobs already in flight are cancelled and no further ones are started.
+   *
+   * A pass is tens of minutes of a shared model, so an administrator who started one against a
+   * broken endpoint needs a way to stop it that does not involve restarting the service.
+   */
+  signal?: AbortSignal;
 }) => Promise<WorkshopPaperMatch[]>;
 
 /**

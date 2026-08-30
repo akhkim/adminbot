@@ -116,6 +116,7 @@ import {
   readMemberSheet,
 } from "./server.member-sheet.js";
 import {
+  cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
   sendWorkshopNudges,
   startWorkshopNudgeRun,
@@ -1288,10 +1289,30 @@ async function handleAuthenticatedRoute(
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/workshop-nudges/cancel") {
+    // Stopping a pass costs nothing and destroys nothing but model time already being wasted, but
+    // it is still a decision about lab-wide work, so it sits behind the same gate as starting one.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendJson(
+      res,
+      200,
+      cancelWorkshopNudgeRun({
+        service,
+        ...(principal.kind === "member" ? { actor: principal.member.id } : {}),
+      }),
+    );
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/workshop-nudges/refresh") {
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
+    // `force` is the administrator saying they have already decided the pass in flight is dead,
+    // rather than waiting out the stall window that exists for the case where nobody is watching.
+    const refreshBody = readRecord(await readJsonOrEmpty(req));
     try {
       sendJson(
         res,
@@ -1300,6 +1321,7 @@ async function handleAuthenticatedRoute(
           service,
           match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
+          ...(refreshBody.force === true ? { force: true } : {}),
           ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
         }),
       );

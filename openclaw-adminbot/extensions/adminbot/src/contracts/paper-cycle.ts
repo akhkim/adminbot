@@ -191,6 +191,15 @@ export type AdminBotWorkshopMatchRun = {
   calls_done: number;
   calls_total: number;
   /**
+   * Model calls that were counted as done because they gave up, not because they answered.
+   *
+   * A failed call still advances `calls_done` -- it has to, or a pass with one bad batch never
+   * reaches its total and the page spins forever. That makes `calls_done` alone a lie about how
+   * much of the answer is real, so the count of the ones that failed travels beside it and the
+   * page says "2540 of 2540, 37 failed" rather than pretending to a complete sweep.
+   */
+  calls_failed?: number;
+  /**
    * When this run last moved.
    *
    * A pass is a fire-and-forget async task inside the service process, so a restart leaves its row

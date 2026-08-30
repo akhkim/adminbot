@@ -99,6 +99,8 @@ function draw(
   const props: WorkshopNudgesProps = {
     state: value,
     onRefresh: vi.fn(),
+    onCancelRun: vi.fn(),
+    onForceRefresh: vi.fn(),
     onToggleRecipient: vi.fn(),
     onSetRecipients: vi.fn(),
     onViewChange: vi.fn(),
@@ -239,5 +241,36 @@ describe("renderWorkshopNudges", () => {
     );
     selectAll?.click();
     expect(onSetRecipients).toHaveBeenCalledWith(["member-1"], false);
+  });
+
+  // "Matching in progress… 1671 of 2540 model calls done" with no button on the card was the whole
+  // page for an administrator whose pass had died: nothing to press, nothing to do but reload and
+  // read the same number again.
+  it("offers a way out of a pass that is not moving", () => {
+    const onCancelRun = vi.fn();
+    const onForceRefresh = vi.fn();
+    const value = createEmptyWorkshopNudgeReviewState();
+    value.run = { status: "running", calls_done: 1671, calls_total: 2540, calls_failed: 3 };
+    const { container } = draw(value, { onCancelRun, onForceRefresh });
+
+    expect(container.textContent).toContain("1671 of 2540 model calls done");
+    expect(container.textContent).toContain("3 calls failed");
+    container.querySelector<HTMLButtonElement>('[data-testid="workshop-nudges-cancel"]')?.click();
+    expect(onCancelRun).toHaveBeenCalledOnce();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="workshop-nudges-force-refresh"]')
+      ?.click();
+    expect(onForceRefresh).toHaveBeenCalledOnce();
+  });
+
+  // Vercel ships this UI ahead of the Aurora service as a matter of routine, so a run arriving
+  // without the newer counts must render as a pass with nothing wrong, not as "undefined failed".
+  it("renders a run from a service that does not send failed-call counts", () => {
+    const value = createEmptyWorkshopNudgeReviewState();
+    value.run = { status: "running", calls_done: 10, calls_total: 20 };
+    const { container } = draw(value);
+    expect(container.textContent).toContain("10 of 20 model calls done");
+    expect(container.textContent).not.toContain("undefined");
+    expect(container.textContent).not.toContain("calls failed");
   });
 });

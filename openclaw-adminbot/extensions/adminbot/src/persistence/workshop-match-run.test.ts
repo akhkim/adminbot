@@ -85,6 +85,28 @@ describe.each(stores)("%s store: workshop match runs", (_name, makeStore) => {
     expect(store.latestWorkshopMatchRun()?.id).toBe("new");
   });
 
+  it("returns the replacement when both runs started in the same millisecond", () => {
+    // Not hypothetical: replacing a wedged pass writes the old row off and inserts the new one in
+    // the same tick, so they share a timestamp. Ordering on `started_at` alone then hands back
+    // whichever was written first -- the dead run -- and the tab stays wedged on the pass that was
+    // just replaced, which is the exact failure the replacement exists to end.
+    const store = makeStore();
+    const sameMoment = "2026-08-27T11:00:00.000Z";
+    store.saveWorkshopMatchRun(
+      run({ id: "abandoned", started_at: sameMoment, status: "failed", calls_done: 1671 }),
+    );
+    store.saveWorkshopMatchRun(run({ id: "replacement", started_at: sameMoment }));
+    expect(store.latestWorkshopMatchRun()?.id).toBe("replacement");
+  });
+
+  it("keeps how many calls failed", () => {
+    const store = makeStore();
+    store.saveWorkshopMatchRun(run({ calls_done: 2540, calls_total: 2540, calls_failed: 37 }));
+    // A failed call still advances `calls_done`, so without this the page cannot tell a complete
+    // sweep from one that gave up on 37 workshops and reported the total anyway.
+    expect(store.latestWorkshopMatchRun()?.calls_failed).toBe(37);
+  });
+
   it("keeps why a pass failed", () => {
     const store = makeStore();
     store.saveWorkshopMatchRun(run({ status: "failed", error: "connect ECONNREFUSED" }));

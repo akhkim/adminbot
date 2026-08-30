@@ -1449,6 +1449,53 @@ export async function searchVenuePapers(
   return { ok: true, value: result.body };
 }
 
+/**
+ * Fill in run fields an older service does not send.
+ *
+ * Vercel ships this UI ahead of the Aurora service as a matter of routine, so every run field
+ * added on the server arrives as `undefined` here for however long that gap lasts. Defaulting at
+ * the boundary is what keeps a page that renders "3 of 2540 calls failed" from rendering
+ * "undefined of 2540 calls failed" against a service that has never heard of failed calls.
+ */
+function withWorkshopRunDefaults(body: unknown): unknown {
+  if (!body || typeof body !== "object") {
+    return body;
+  }
+  const run = body as Record<string, unknown>;
+  if (typeof run.status !== "string") {
+    return body;
+  }
+  return {
+    ...run,
+    calls_failed: typeof run.calls_failed === "number" ? run.calls_failed : 0,
+  };
+}
+
+/**
+ * Stop the pass in flight (POST /workshop-nudges/cancel).
+ *
+ * A service too old to know this route answers 404, which `mapErrorResponse` turns into an error
+ * the page shows rather than a crash -- the right outcome while Vercel is ahead of Aurora, because
+ * the stall window still recovers the run on its own, just more slowly.
+ */
+export async function cancelWorkshopNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/cancel", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
+}
+
 /** Computes the current native-paper workshop preview. Admin only; it sends nothing. */
 export async function previewWorkshopNudges(
   sessionToken: string,
@@ -1465,7 +1512,7 @@ export async function previewWorkshopNudges(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
 }
 
 /**
@@ -1477,8 +1524,13 @@ export async function previewWorkshopNudges(
 export async function refreshWorkshopNudges(
   sessionToken: string,
   baseUrl: string,
+  // `force` replaces a pass that still claims to be running. An older service ignores the field
+  // and applies its own stall window, which is slower but not wrong.
+  force = false,
 ): Promise<AuthResult<unknown>> {
-  const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {});
+  const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {
+    ...(force ? { force: true } : {}),
+  });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
@@ -1489,7 +1541,7 @@ export async function refreshWorkshopNudges(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
 }
 
 /** Recomputes selected recipients and sends one server-generated Slack nudge to each. */

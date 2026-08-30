@@ -220,7 +220,7 @@ describe("what the matcher will and will not ask the model to do", () => {
 
   it("reports progress as it goes, so a caller can persist it", async () => {
     // A pass is thousands of calls; without this a page opened mid-pass can only say "running".
-    const seen: Array<[number, number]> = [];
+    const seen: Array<[number, number, number]> = [];
     const fetchImpl = vi.fn(async () => reply({ matches: [] })) as unknown as GuidebookFetch;
     const match = createLocalWorkshopMatcher({
       fetchImpl,
@@ -231,16 +231,24 @@ describe("what the matcher will and will not ask the model to do", () => {
     await match({
       workshops: [profile("a"), profile("b")],
       papers: [paper("p-1")],
-      onProgress: (done, total) => seen.push([done, total]),
+      onProgress: (done, total, failed) => seen.push([done, total, failed]),
     });
 
+    // The leading zero is the total becoming known: until the jobs are built the page can only say
+    // "working out how many papers and workshops to compare", and it should stop saying that as
+    // soon as there is a number rather than after the first model call comes back.
     expect(seen).toEqual([
-      [1, 2],
-      [2, 2],
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
     ]);
   });
 
-  it("keeps going when one batch fails, and says nothing about it in the results", async () => {
+  it("retries a call that fails, so one blip does not silently drop a workshop", async () => {
+    // The per-call timeout stops an unanswered request from holding a concurrency slot forever. It
+    // does not get the answer. A tunnel that blips for a second would otherwise cost a whole
+    // (workshop, batch) pair, and the page cannot tell a dropped pair from a workshop that matched
+    // nothing.
     let call = 0;
     const fetchImpl = vi.fn(async () => {
       call += 1;
@@ -254,14 +262,68 @@ describe("what the matcher will and will not ask the model to do", () => {
       fetchImpl,
       papersPerRequest: 1,
       maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
     });
     const matches = await match({
       workshops: [profile("a"), profile("b")],
       papers: [paper("p-1")],
     });
 
+    expect(matches.map((entry) => entry.workshop_id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps going when one batch fails for good, and reports it as a failed call", async () => {
+    const seen: Array<[number, number, number]> = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: { body?: string }) => {
+      if (init?.body?.includes("Workshop a")) {
+        throw new Error("one bad batch");
+      }
+      return reply({ matches: [{ paper_id: "p-1", relevance: 90, reason: "On scope." }] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
+    });
+    const matches = await match({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (done, total, failed) => seen.push([done, total, failed]),
+    });
+
     // The surviving workshop still produced its recommendation.
     expect(matches.map((entry) => entry.workshop_id)).toEqual(["b"]);
+    // And the failure counted toward `done`. A failed call that did not advance the count is how a
+    // pass reaches 1671 of 2540 and stops: the total is fixed at the start, so a job that reports
+    // nothing leaves a hole the count can never close, and the tab spins forever.
+    expect(seen.at(-1)).toEqual([2, 2, 1]);
+  });
+
+  it("stops when the pass is cancelled, and says it was cancelled", async () => {
+    // Waiting out the thirty-minute stall window is the right default for a pass nobody is
+    // watching. An administrator standing in front of a pass they know is broken should not have
+    // to restart the service to reclaim the model.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => {
+      controller.abort();
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
+    });
+    await expect(
+      match({
+        workshops: [profile("a"), profile("b")],
+        papers: [paper("p-1")],
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/cancelled/u);
   });
 
   it("raises the real cause when every call fails", async () => {
