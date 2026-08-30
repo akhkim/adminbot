@@ -259,7 +259,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
         </label>
       </div>
 
-      <label class="adminbot-form__field logistics-queue__note">
+      <label class="adminbot-form adminbot-form__field logistics-queue__note">
         <span>${t("logistics.queue.note")}</span>
         <input
           type="text"

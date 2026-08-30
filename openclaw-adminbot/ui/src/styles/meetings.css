@@ -62,16 +62,8 @@
   cursor: pointer;
 }
 
+/* Field layout and control skin come from .adminbot-form; this only sizes and seats the form. */
 .meetings__file form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
   margin-top: var(--space-3);
   max-width: 32rem;
-}
-
-.meetings__file label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
 }

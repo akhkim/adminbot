@@ -2615,7 +2615,7 @@ function renderAnnouncements(props: AdminBotProps) {
   const recipientCount = draft.selectedMemberIds.length;
   return html`
     <div class="adminbot-announce">
-      <div class="adminbot-announce__compose">
+      <div class="adminbot-form adminbot-announce__compose">
         <label class="adminbot-form__field">
           <span>Channel</span>
           <select
