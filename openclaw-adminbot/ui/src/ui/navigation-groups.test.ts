@@ -76,19 +76,16 @@ describe("TAB_GROUPS", () => {
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
     expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
-    // Eight entries, not eleven: Lab Overview, Nudges and Membership are each one page with a tab
-    // bar inside it (TAB_PAGES), and only the landing tab is listed here.
+    // Six entries, not eleven: Lab Overview, Nudges and Membership are each one page with a tab
+    // bar inside it (TAB_PAGES), and only the landing tab is listed here. Badges rides on
+    // Membership and the Grant Report on Lab Overview, so neither is a sidebar entry of its own.
     expect(byLabel("admin")).toEqual([
       // First in the group: it is the page that says which of the others to open.
       "adminbotProfessor",
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
-      "adminbotBadges",
       "adminbotCalendar",
-      // Grant Report sits after the surfaces it reads from: it is compiled out of the lab's paper
-      // record, so it is a thing you write at the end of a cycle, not one you operate during it.
-      "adminbotGrantReport",
       // Tasks & Tools: the jobs listed there are the lab's own scheduled passes, so it is
       // governance rather than an upstream operator surface.
       "cron",
@@ -122,6 +119,29 @@ describe("TAB_GROUPS", () => {
     expect(isTabInGroup(admin, "adminbotOnboarding")).toBe(true);
     expect(isTabInGroup(admin, "adminbotProfileOverview")).toBe(true);
     expect(sidebarTabFor("adminbotProfileOverview")).toBe("adminbotPapers");
+    // Badges lights Membership and the Grant Report lights Lab Overview, rather than lighting
+    // nothing now that neither is listed in the sidebar itself.
+    expect(isTabInGroup(admin, "adminbotBadges")).toBe(true);
+    expect(isTabInGroup(admin, "adminbotGrantReport")).toBe(true);
+    expect(sidebarTabFor("adminbotBadges")).toBe("adminbotRegistrations");
+    expect(sidebarTabFor("adminbotGrantReport")).toBe("adminbotPapers");
+  });
+
+  it("seats Badges on Membership and the Grant Report on Lab Overview", () => {
+    expect(pageTabsFor("adminbotBadges")).toEqual([
+      "adminbotRegistrations",
+      "adminbotOnboarding",
+      "adminbotBadges",
+    ]);
+    expect(pageTabsFor("adminbotGrantReport")).toEqual([
+      "adminbotPapers",
+      "adminbotProfileOverview",
+      "adminbotGrantReport",
+    ]);
+    // Neither is its own sidebar entry any more, which is the whole point of the move.
+    const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);
+    expect(sidebarTabs).not.toContain("adminbotBadges");
+    expect(sidebarTabs).not.toContain("adminbotGrantReport");
   });
 
   it("keeps every sub-tab path routable so existing links still land", () => {
@@ -131,6 +151,7 @@ describe("TAB_GROUPS", () => {
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
     expect(tabFromPath("/adminbot/badges")).toBe("adminbotBadges");
+    expect(tabFromPath("/adminbot/grant-report")).toBe("adminbotGrantReport");
   });
 
   it("keeps the OpenClaw group active for nested settings routes", () => {
