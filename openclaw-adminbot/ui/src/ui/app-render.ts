@@ -22,6 +22,7 @@ import {
   runAdminBotCvDigestJob,
   runAdminBotVenueIndexJob,
   searchAdminBotVenuePapers,
+  cancelWorkshopNudgeRun,
   loadWorkshopNudgePreview,
   refreshWorkshopNudgePreview,
   setWorkshopNudgeRecipients,
@@ -3826,6 +3827,10 @@ export function renderApp(state: AppViewState) {
                 // cost wildly different things -- one cheap request against thousands of model
                 // calls -- so they are deliberately different actions.
                 onRefresh: () => void refreshWorkshopNudgePreview(state),
+                onCancelRun: () => void cancelWorkshopNudgeRun(state),
+                // Replaces a pass that still claims to be running, instead of waiting out the
+                // server's stall window. Offered only from the in-progress card.
+                onForceRefresh: () => void refreshWorkshopNudgePreview(state, true),
                 onToggleRecipient: (memberId) => toggleWorkshopNudgeRecipient(state, memberId),
                 onSetRecipients: (memberIds, selected) =>
                   setWorkshopNudgeRecipients(state, memberIds, selected),

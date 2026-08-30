@@ -608,6 +608,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         started_by TEXT,
         calls_done INTEGER NOT NULL DEFAULT 0,
         calls_total INTEGER NOT NULL DEFAULT 0,
+        calls_failed INTEGER NOT NULL DEFAULT 0,
         progress_at TEXT,
         payload_json TEXT,
         error TEXT
@@ -644,6 +645,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     );
     if (!columns.has("progress_at")) {
       this.db.exec("ALTER TABLE adminbot_workshop_match_runs ADD COLUMN progress_at TEXT");
+    }
+    if (!columns.has("calls_failed")) {
+      this.db.exec(
+        "ALTER TABLE adminbot_workshop_match_runs ADD COLUMN calls_failed INTEGER NOT NULL DEFAULT 0",
+      );
     }
     this.db
       .prepare(
@@ -1851,15 +1857,16 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_workshop_match_runs
-           (id, status, started_at, finished_at, started_by, calls_done, calls_total, progress_at,
-            payload_json, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, status, started_at, finished_at, started_by, calls_done, calls_total, calls_failed,
+            progress_at, payload_json, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            status = excluded.status,
            finished_at = excluded.finished_at,
            started_by = excluded.started_by,
            calls_done = excluded.calls_done,
            calls_total = excluded.calls_total,
+           calls_failed = excluded.calls_failed,
            progress_at = excluded.progress_at,
            payload_json = excluded.payload_json,
            error = excluded.error`,
@@ -1872,6 +1879,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         run.started_by ?? null,
         run.calls_done,
         run.calls_total,
+        run.calls_failed ?? 0,
         // Stamped on write rather than carried by the caller: every save is this run moving, and a
         // clock a caller can forget to wind is the failure this column exists to catch.
         new Date().toISOString(),
@@ -1884,8 +1892,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const row = this.db
       .prepare(
         `SELECT id, status, started_at, finished_at, started_by, calls_done, calls_total,
-                progress_at, payload_json, error
-         FROM adminbot_workshop_match_runs ORDER BY started_at DESC LIMIT 1`,
+                calls_failed, progress_at, payload_json, error
+         -- rowid breaks a tie on started_at, which two runs really can share: replacing a wedged
+         -- pass writes the old row off and inserts the new one in the same millisecond, and
+         -- without the tiebreak "latest" can resolve to the dead run the new one replaced.
+         FROM adminbot_workshop_match_runs ORDER BY started_at DESC, rowid DESC LIMIT 1`,
       )
       .get() as (AdminBotWorkshopMatchRun & Record<string, unknown>) | undefined;
     if (!row) {

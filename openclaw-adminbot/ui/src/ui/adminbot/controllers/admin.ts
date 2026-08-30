@@ -19,6 +19,7 @@ import {
   removePendingAction,
   fetchMemberResource,
   loadStoredMemberSession,
+  cancelWorkshopNudges,
   previewWorkshopNudges,
   refreshWorkshopNudges,
   polishOwnProfilePhoto,
@@ -303,6 +304,13 @@ export type WorkshopNudgeRunView = {
   started_by?: string;
   calls_done?: number;
   calls_total?: number;
+  /**
+   * How many of `calls_done` gave up rather than answered.
+   *
+   * Defaulted at the fetch boundary, because a service older than this field sends nothing and the
+   * page would otherwise render "undefined calls failed" for as long as Vercel is ahead of Aurora.
+   */
+  calls_failed?: number;
   error?: string;
   preview?: WorkshopNudgeResult;
 };
@@ -1294,7 +1302,12 @@ const WORKSHOP_RUN_POLL_MS = 5_000;
  * one cheap request, and producing a new one is thousands of model calls. Opening the page must
  * never do the second by accident.
  */
-export async function refreshWorkshopNudgePreview(host: AdminBotHost): Promise<void> {
+export async function refreshWorkshopNudgePreview(
+  host: AdminBotHost,
+  // Set when the administrator is deliberately replacing a pass that still says it is running,
+  // rather than waiting out the server's stall window.
+  force = false,
+): Promise<void> {
   const session = requirePrivilegedSession(host);
   if (!session) {
     host.adminBotWorkshopNudges = {
@@ -1304,7 +1317,7 @@ export async function refreshWorkshopNudgePreview(host: AdminBotHost): Promise<v
     return;
   }
   host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
-  const started = await refreshWorkshopNudges(session.sessionToken, session.baseUrl);
+  const started = await refreshWorkshopNudges(session.sessionToken, session.baseUrl, force);
   if (!started.ok) {
     host.adminBotWorkshopNudges = {
       ...host.adminBotWorkshopNudges,
@@ -1376,6 +1389,35 @@ export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Stop the pass in flight.
+ *
+ * Reaching a stalled pass used to mean waiting out the server's thirty-minute window or restarting
+ * the service, neither of which is available to somebody looking at a wedged tab in a browser.
+ */
+export async function cancelWorkshopNudgeRun(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      error: "Sign in with a lab administrator account before stopping a pass.",
+    };
+    return;
+  }
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
+  const stopped = await cancelWorkshopNudges(session.sessionToken, session.baseUrl);
+  if (!stopped.ok) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      loading: false,
+      error: stopped.message?.trim() || cvErrorText(stopped.kind, "stop the workshop match"),
+    };
+    return;
+  }
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
+  await loadWorkshopNudgePreview(host);
 }
 
 export function toggleWorkshopNudgeRecipient(host: AdminBotHost, memberId: string): void {
