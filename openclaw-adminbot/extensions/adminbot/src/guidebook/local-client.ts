@@ -134,13 +134,30 @@ export async function completeLocally(params: {
   purposeLabel?: string;
   /** Sampling temperature. Left at the guidebook's 0.2 unless a caller needs otherwise. */
   temperature?: number;
+  /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
+  maxTokens?: number;
+  /**
+   * Further request fields, spread over the payload last.
+   *
+   * vLLM takes `chat_template_kwargs: { enable_thinking: false }` and a `response_format` JSON
+   * schema, and every caller that wants a short, parseable answer out of Qwen sends both. They are
+   * passed through rather than modelled here because they are vLLM's vocabulary, not OpenAI's,
+   * and the next server may spell them differently.
+   */
+  extra?: Record<string, unknown>;
 }): Promise<string> {
   const parsed = (await postJson(
     params.fetchImpl,
     params.baseUrl,
     "chat/completions",
     params.apiKey,
-    { model: params.model, messages: params.messages, temperature: params.temperature ?? 0.2 },
+    {
+      model: params.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
+      ...params.extra,
+    },
     params.purposeLabel ?? "guidebook answer",
     params.signal,
   )) as { choices?: Array<{ message?: { content?: unknown } }> };

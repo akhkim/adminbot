@@ -36,10 +36,14 @@ export const PAPERS_PER_REQUEST = 8;
 /**
  * Requests in flight.
  *
- * The tunnel serves one vLLM instance shared with the guidebook, meeting summaries and the privacy
- * broker. Six keeps a nudge sweep fast without turning every other feature on the box into a queue.
+ * Two, because that is what the server admits: Aurora's vLLM runs with `--max-num-seqs 2`
+ * (deploy/aurora/setup-qwen35-vllm.sh), so anything past two does not run faster, it queues
+ * inside vLLM -- and a queued request's clock is already ticking against the timeout below. At
+ * six in flight, four of every six calls spent most of their budget waiting for a slot and then
+ * timed out, and the retries queued behind them did the same: 24 of the first 37 calls of a pass
+ * failed that way. ADMINBOT_WORKSHOP_MATCH_CONCURRENCY raises it for a server that admits more.
  */
-export const MAX_CONCURRENT_REQUESTS = 6;
+export const MAX_CONCURRENT_REQUESTS = 2;
 
 /**
  * One call's ceiling. There is deliberately no ceiling on the pass as a whole.
@@ -56,8 +60,12 @@ export const MAX_CONCURRENT_REQUESTS = 6;
  * A single call still gets a timeout, because one unanswered request would otherwise hold a
  * concurrency slot for the life of the process. A timed-out call costs its own batch and nothing
  * else -- the pass carries on and reports how many failed.
+ *
+ * Two minutes for the first attempt, and each retry gets one more (see runJobWithRetries): a
+ * call that timed out once was most likely slow rather than dead, and giving the retry the same
+ * budget that just proved too short only fails it the same way, more slowly.
  */
-export const REQUEST_TIMEOUT_MS = 60_000;
+export const REQUEST_TIMEOUT_MS = 120_000;
 
 /**
  * Attempts per job, timeout included.
@@ -70,8 +78,52 @@ export const REQUEST_TIMEOUT_MS = 60_000;
  */
 export const MAX_ATTEMPTS_PER_CALL = 3;
 
-/** Pause before a retry. Short: this is a blip, not a queue, and a sweep has thousands to get through. */
-const RETRY_BACKOFF_MS = 500;
+/**
+ * Pause before a retry, multiplied by the attempt number.
+ *
+ * A retry that goes straight back is a retry into the same queue that just timed the call out.
+ * Two seconds, then four, is long enough for the requests ahead of it to drain and short enough
+ * that a sweep does not spend its time sleeping.
+ */
+const RETRY_BACKOFF_MS = 2_000;
+
+/**
+ * Output ceiling per call.
+ *
+ * The answer is a JSON object naming at most eight papers with one sentence each -- a few hundred
+ * tokens. Without a ceiling a reasoning model is free to spend thousands on deliberation first,
+ * and on a 2,500-call sweep that is the difference between minutes and hours.
+ */
+const MAX_OUTPUT_TOKENS = 1_024;
+
+/**
+ * What a reply must look like, enforced by the server.
+ *
+ * vLLM's guided decoding makes the model produce this shape and nothing else, so a reply can no
+ * longer arrive fenced, prefaced with "Here is the JSON", or truncated mid-object -- each of which
+ * used to cost a whole (workshop, batch) pair as a parse failure. parseWorkshopMatchReply still
+ * checks the contents; this only guarantees there is a well-formed object to check.
+ */
+const REPLY_SCHEMA = {
+  type: "object",
+  properties: {
+    matches: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          paper_id: { type: "string" },
+          relevance: { type: "integer", minimum: 0, maximum: 100 },
+          reason: { type: "string" },
+        },
+        required: ["paper_id", "relevance", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["matches"],
+  additionalProperties: false,
+} as const;
 
 /** How much of a call for papers the model is shown. Scope lives at the top; boilerplate does not. */
 const MAX_CALL_CHARS = 4_000;
@@ -90,8 +142,11 @@ export type WorkshopMatcherOptions = {
   maxAttemptsPerCall?: number;
   /** Pause between attempts. Exposed so a test does not have to spend it. */
   retryBackoffMs?: number;
-  /** Called as each job settles, so a caller can persist progress while the pass runs. */
-  onProgress?: (done: number, total: number, failed: number) => void;
+  /**
+   * Called as each job settles, so a caller can persist progress while the pass runs. `detail`
+   * is the most recent failure's message, so a pass that is losing calls can say why.
+   */
+  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
 };
 
 const SYSTEM_PROMPT = `You decide which of a research lab's papers belong at a specific workshop.
@@ -220,7 +275,14 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
   const model = options.model ?? env.ADMINBOT_WORKSHOP_MATCH_MODEL?.trim() ?? DEFAULT_MODEL;
   const apiKey = options.apiKey ?? env.VLLM_API_KEY?.trim();
   const batchSize = Math.max(1, options.papersPerRequest ?? PAPERS_PER_REQUEST);
-  const concurrency = Math.max(1, options.maxConcurrentRequests ?? MAX_CONCURRENT_REQUESTS);
+  const configuredConcurrency = Number(env.ADMINBOT_WORKSHOP_MATCH_CONCURRENCY);
+  const concurrency = Math.max(
+    1,
+    options.maxConcurrentRequests ??
+      (Number.isInteger(configuredConcurrency) && configuredConcurrency > 0
+        ? configuredConcurrency
+        : MAX_CONCURRENT_REQUESTS),
+  );
   const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
   const maxAttempts = Math.max(1, options.maxAttemptsPerCall ?? MAX_ATTEMPTS_PER_CALL);
   const retryBackoffMs = Math.max(0, options.retryBackoffMs ?? RETRY_BACKOFF_MS);
@@ -249,6 +311,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     let done = 0;
     let failed = 0;
     let firstError: unknown;
+    let lastFailure: string | undefined;
     const report = onProgress ?? options.onProgress;
     // Fired even before the first job settles, so the page stops saying "working out how many
     // papers and workshops to compare" the moment there is a number to say.
@@ -259,16 +322,19 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
       } catch (error) {
         // One workshop's batch could not be scored. The pass is thousands of calls and a single
         // unlucky one is not a reason to throw the rest away; it is counted, and the first cause
-        // is kept in case it turns out to be every one of them.
+        // is kept in case it turns out to be every one of them. The latest cause travels with the
+        // progress report: "24 calls failed" on its own sent an administrator to guess between the
+        // tunnel, the model and the prompt, and the message names which.
         failed += 1;
         firstError ??= error;
+        lastFailure = describeFailure(error, job.workshop);
         return [];
       } finally {
         // Unconditional, and in a `finally` on purpose. A failure that did not advance `done` is
         // how a pass reaches 1671 of 2540 and stops: the total is fixed at the start, so every job
         // must report exactly once however it ends or the count never closes.
         done += 1;
-        report?.(done, jobs.length, failed);
+        report?.(done, jobs.length, failed, lastFailure);
       }
     });
 
@@ -294,10 +360,14 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     /**
      * One job, retried a bounded number of times.
      *
-     * The timeout below bounds a single request, which is what stops one unanswered call from
-     * holding a concurrency slot for the life of the process. It does not make the call succeed --
-     * so a blip on the tunnel would otherwise silently drop a whole (workshop, batch) pair out of
-     * the answer. Retrying here keeps that pair; failing after `maxAttempts` keeps the pass moving.
+     * The timeout bounds a single request, which is what stops one unanswered call from holding a
+     * concurrency slot for the life of the process. It does not make the call succeed -- so a
+     * blip on the tunnel would otherwise silently drop a whole (workshop, batch) pair out of the
+     * answer. Retrying here keeps that pair; failing after `maxAttempts` keeps the pass moving.
+     *
+     * Each attempt waits longer before starting and is allowed longer to finish. A call that timed
+     * out was most likely queued behind slower ones rather than lost, and retrying it at once with
+     * the same budget re-joins the same queue with the same result.
      */
     async function runJobWithRetries(job: {
       workshop: WorkshopProfile;
@@ -309,18 +379,21 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
           throw new Error(`${PURPOSE} was cancelled`);
         }
         try {
-          return await runJob(job);
+          return await runJob(job, requestTimeoutMs * attempt);
         } catch (error) {
           lastError = error;
           if (attempt < maxAttempts && !signal?.aborted && retryBackoffMs > 0) {
-            await delay(retryBackoffMs);
+            await delay(retryBackoffMs * attempt);
           }
         }
       }
       throw lastError instanceof Error ? lastError : new Error(String(lastError));
     }
 
-    async function runJob(job: { workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }) {
+    async function runJob(
+      job: { workshop: WorkshopProfile; papers: WorkshopNudgePaper[] },
+      timeoutMs: number,
+    ) {
       const reply = await completeLocally({
         fetchImpl,
         baseUrl,
@@ -329,13 +402,24 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         purposeLabel: PURPOSE,
         // A recommendation an administrator may re-run should not change under them.
         temperature: 0,
+        maxTokens: MAX_OUTPUT_TOKENS,
+        extra: {
+          // The model is asked for a verdict, not a chain of thought. Left on, Qwen deliberates
+          // for thousands of tokens before the JSON, which is most of what made a call slow
+          // enough to time out; every other local caller in this tree turns it off the same way.
+          chat_template_kwargs: { enable_thinking: false },
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: "workshop_paper_matches", strict: true, schema: REPLY_SCHEMA },
+          },
+        },
         // Without this one unanswered call holds the whole request open, which is exactly how a
         // slow model server became "couldn't reach the AdminBot service" on the page. Combined
         // with the pass signal so a cancelled pass does not sit out the remaining timeout of
         // every call already in flight.
         signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)])
-          : AbortSignal.timeout(requestTimeoutMs),
+          ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: buildWorkshopMatchPrompt(job.workshop, job.papers) },
@@ -360,6 +444,19 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
  * `Promise.all` over every job at once would open one socket per (workshop, batch) pair, which on a
  * full sweep is hundreds against a single vLLM instance.
  */
+/**
+ * A failure as the page should show it: which workshop, and what went wrong -- with the
+ * timeout's bare "The operation was aborted due to timeout" spelled out as the wait it was.
+ */
+function describeFailure(error: unknown, workshop: WorkshopProfile): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause =
+    error instanceof Error && (error.name === "TimeoutError" || /timeout/iu.test(message))
+      ? "the model did not answer in time"
+      : message;
+  return `${workshop.name}: ${cause}`;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     // Unref'd: a backoff must never be the reason the process stays alive at shutdown.

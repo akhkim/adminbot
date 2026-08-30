@@ -232,7 +232,11 @@ export function startWorkshopNudgeRun(params: {
   void (async () => {
     // The last progress this pass reported. Carried forward onto the terminal row so a run that
     // finished with failures still says how many, and a cancelled one still says how far it got.
-    let progress = { done: 0, total: 0, failed: 0 };
+    let progress: { done: number; total: number; failed: number; detail?: string } = {
+      done: 0,
+      total: 0,
+      failed: 0,
+    };
     /**
      * Persist only while this run is still the one the store believes in.
      *
@@ -255,8 +259,8 @@ export function startWorkshopNudgeRun(params: {
         match: params.match,
         now: params.now,
         signal: controller.signal,
-        onProgress: (done, total, failed) => {
-          progress = { done, total, failed: failed ?? 0 };
+        onProgress: (done, total, failed, detail) => {
+          progress = { done, total, failed: failed ?? 0, detail: detail ?? progress.detail };
           saveIfCurrent({
             ...run,
             calls_done: done,
@@ -277,7 +281,10 @@ export function startWorkshopNudgeRun(params: {
         // difference between "no workshop matched these papers" and "we never asked about them".
         ...(progress.failed > 0
           ? {
-              error: `${progress.failed} of ${progress.total} model calls failed, so some workshops were not scored. The results below are what did answer.`,
+              error:
+                `${progress.failed} of ${progress.total} model calls failed, so some workshops were not scored.` +
+                (progress.detail ? ` Last failure — ${progress.detail}.` : "") +
+                " The results below are what did answer.",
             }
           : {}),
       });
@@ -303,7 +310,7 @@ export async function previewWorkshopNudges(params: {
   service: AdminBotService;
   match: WorkshopMatcher;
   now: Date;
-  onProgress?: (done: number, total: number, failed: number) => void;
+  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
   signal?: AbortSignal;
 }): Promise<WorkshopNudgePreview> {
   const papers = servicePayload(params.service.listPapers()).papers;
