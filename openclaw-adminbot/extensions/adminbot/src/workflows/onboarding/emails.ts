@@ -35,6 +35,10 @@ export type AdminBotOnboardingTemplate = {
   required: readonly string[];
 };
 
+// `acquaintance`, `coauthor_discussant_designer` and `external_prof` deliberately have no
+// onboarding template. Those collaborations do not open with a welcome mail: the access-level
+// algorithm (collaborator-subgroups.ts) grants the subgroup's access items in the backend, and
+// that is the whole onboarding. Do not re-add one without Zhijing asking for it.
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
   {
     // The proofread "top1" variant: a 30-minute conversation with Zhijing. Two sibling variants
@@ -84,12 +88,21 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interview_invite_project_matching",
     kind: "candidate",
     subject: `Your application to the Jinesis Lab`,
-    required: ["application_form_link", "task_doc_link"],
+    // `task_recommendation` is the whole personalised sentence, not a fragment: it names the lead
+    // and the task, carries the task doc inline when the lead has one, and numbers the parts
+    // "(1) ... and (2) ..." when two leads share the applicant. It is written per applicant by
+    // AdminBotEmailModel.projectMatch(), which owns that wording.
+    //
+    // `application_form_link` must be the applicant's *own* response
+    // (.../viewform?edit2=<token>), never the bare form and never the response sheet: the mail is
+    // addressed to one applicant and cc's the lead, so a link to everyone's answers would put the
+    // rest of the batch in front of both.
+    required: ["application_form_link", "task_recommendation"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly personally work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
 
-If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. Zhijing's personal recommendation is to match you with the WordPlay RL training modular task, where you can try implementing 1-2 environments following this doc {task_doc_link}.
+If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. {task_recommendation}
 
 If the lead finds it a fit, they will reply to this email thread. Your main point of contact will be the lead cc'ed, who will check your technical contributions after you share your code implementation and report with them. There might still be a chance that either they are at full capacity or the project is not a match.
 
@@ -170,30 +183,6 @@ A quick note on rhythm, since email can make quiet periods look like disinterest
 Best regards,`,
   },
   {
-    id: "acquaintance",
-    kind: "subgroup",
-    subject: `Joining our collaborators channel`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
-    body: `Hi {first_name},
-
-Good to be working alongside you on {project_or_context}. A few things to connect you properly:
-
-- Slack Connect to #jinesis-with-friends-and-collaborators, where our wider circle keeps in touch: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-- Our project Google Drive folder: {drive_folder_link}
-- If you want to follow what we publish: Zhijing on LinkedIn ({pi_linkedin_url}), the lab at https://www.linkedin.com/company/jinesis-lab/, and {lab_x_url}
-
-We also run city-based dinners and team building events, and would be glad to have you at the next one near you.
-
-Best,
-{sender_name}`,
-  },
-  {
     // The template doc's version says only that a Slack Connect invitation is on its way. The link
     // token is kept in the copy regardless: the send path provisions the invite only when the body
     // still mentions {slack_connect_link}, so removing it would promise an invitation that no
@@ -239,13 +228,9 @@ Jinesis Lab by Prof. Zhijing Jin, University of Toronto`,
     id: "coauthor_major",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: [
-      "drive_folder_link",
-      "drive_guide_link",
-      "first_name",
-      "member_email",
-      "portal_password",
-    ],
+    // `portal_password` is absent on purpose: it is the same seeded string for every account, so
+    // it is a configured deployment token (guide.ts) rather than something an operator retypes.
+    required: ["drive_folder_link", "drive_guide_link", "first_name", "member_email"],
     body: `Hi {first_name},
 
 A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab, which we would appreciate if you could do in the upcoming 5 days:
@@ -348,36 +333,6 @@ Best,
 {sender_name}`,
   },
   {
-    id: "external_prof",
-    kind: "subgroup",
-    subject: `Starting our collaboration on {project_or_context}`,
-    required: [
-      "contact_name",
-      "first_name",
-      "next_steps",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-      "update_cadence",
-    ],
-    body: `Dear {first_name},
-
-We are very glad to be starting this collaboration on {project_or_context}, and thank you for the materials and context you have shared so far.
-
-To make the collaboration smooth, a brief note on how our lab works. Research setup on our side takes some time: we prefer to come back with something well considered. So that quiet periods are never misread, we work on a simple rhythm: we will send you a substantive update roughly every {update_cadence}, and between updates you can safely assume the project is moving. You are of course welcome to write to us at any point!
-
-Your main contact for day-to-day matters is {contact_name} (cc'd), and Zhijing remains involved throughout. As immediate next steps, we suggest: {next_steps}.
-
-Two practical things. You are invited to our Slack workspace through Slack Connect, in #jinesis-with-friends-and-collaborators, which is low traffic and a good way to reach us without a formal email: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-
-We will also email you at the points that matter on the projects you are attached to: when a paper is submitted or resubmitted, and when a social media draft goes out for review, so nothing goes public with your name on it without you having seen it. If you would rather we narrowed or widened that, just say.
-
-We are looking forward to this!
-
-Best regards,
-{sender_name}, on behalf of the Jinesis AI Lab`,
-  },
-  {
     id: "slightly_better_than_emails",
     kind: "subgroup",
     subject: `Collaborating with us on {project_or_context}`,
@@ -448,7 +403,7 @@ If the call time doesn't work, just decline the call and the suggestion and an a
 
 Thank you for your interest in joining the Jinesis Lab with Prof. Zhijing Jin! We're excited to have you on board. Our lab has recently developed an online lab management portal. Please follow the steps below:
 
-If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "jinesis", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
+If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "{portal_password}", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
 
 If you do not have an @cs.toronto.edu email yet, you will receive an email asking about your preferred email username. If possible, feel free to prioritize a username like "firstname@cs.toronto.edu" or "lastname@cs.toronto.edu". If those are taken, you can try {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., "{email_format_example}". If all of the above are taken, feel free to customize a username that reflects your first and last name reasonably well, so we can use it for professional communications with senior external collaborators.
 

@@ -116,9 +116,46 @@ describe("composeOnboardingGuide", () => {
     }
     expect(result.reason).toBe("missing-values");
     // The setup mail hands over a portal sign-in and points at the Drive practice guide; the
-    // project itself and who supervises the work are in the norms mail that follows it.
-    expect(result.missing).toContain("portal_password");
+    // project itself and who supervises the work are in the norms mail that follows it. The
+    // password is not on this list -- it is the same seeded string for everyone, so it is a
+    // configured deployment token rather than a field.
     expect(result.missing).toContain("drive_guide_link");
+    expect(result.missing).not.toContain("portal_password");
+  });
+
+  // The mail's whole job here is to tell the reader what to type the first time they sign in, so
+  // the seeded password has to reach the copy without anybody retyping it.
+  it("fills the seeded portal password without being given one", () => {
+    const result = composeOnboardingGuide(
+      "coauthor_major",
+      {
+        first_name: "Ada",
+        member_email: "ada@cs.toronto.edu",
+        drive_folder_link: "https://drive.example/folder",
+        drive_guide_link: "https://drive.example/guide",
+      },
+      ENV,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.guide.body).toContain("password jinesis");
+    expect(result.guide.body).not.toMatch(/\{[a-z_]+\}/u);
+  });
+
+  it("lets a deployment that reseeded say so", () => {
+    const result = composeOnboardingGuide(
+      "coauthor_major",
+      {
+        first_name: "Ada",
+        member_email: "ada@cs.toronto.edu",
+        drive_folder_link: "https://drive.example/folder",
+        drive_guide_link: "https://drive.example/guide",
+      },
+      { ...ENV, ADMINBOT_SEEDED_PORTAL_PASSWORD: "something-else" },
+    );
+    expect(result.ok && result.guide.body).toContain("something-else");
   });
 
   // The alumni mail asked for a portal address the tab hid from the operator and nothing filled,
@@ -144,14 +181,14 @@ describe("composeOnboardingGuide", () => {
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
-    const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "acquaintance");
+    const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "interviewee");
     expect(
-      missingGuideValues(template!, { ...valuesFor("acquaintance"), first_name: "   " }),
+      missingGuideValues(template!, { ...valuesFor("interviewee"), first_name: "   " }),
     ).toEqual(["first_name"]);
   });
 
   it("fills every placeholder once satisfied", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), ENV);
+    const result = composeOnboardingGuide("interviewee", valuesFor("interviewee"), ENV);
     expect(result.ok).toBe(true);
     if (!result.ok) {
       return;
@@ -161,13 +198,13 @@ describe("composeOnboardingGuide", () => {
 
     // An unconfigured workspace must refuse rather than mail a placeholder invite link, and must
     // say which variable to set.
-    const unset = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {});
+    const unset = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {});
     expect(unset).toMatchObject({ ok: false, reason: "missing-environment" });
     expect(unset.ok ? [] : unset.missing).toContain("ADMINBOT_SLACK_INVITE_URL");
 
     // An unset *optional* token is graceful: the line carrying it goes, the email still composes,
     // and no half-rendered placeholder survives.
-    const noSocials = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    const noSocials = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {
       ADMINBOT_SLACK_INVITE_URL: ENV.ADMINBOT_SLACK_INVITE_URL,
     });
     expect(noSocials.ok).toBe(true);
@@ -175,7 +212,7 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(noSocials.guide.body).not.toMatch(/\{[a-z_]+\}/u);
-    expect(noSocials.guide.body).not.toContain("If you want to follow what we publish");
+    expect(noSocials.guide.body).not.toContain("If you would like to follow along more generally");
   });
 
   // The DCS-address example must survive substitution literally, and the address it illustrates
@@ -241,7 +278,7 @@ describe("composeOnboardingGuide", () => {
   // placeholders are non-empty. Without this they satisfy every "is it set?" check and the failure
   // surfaces much later, from Slack or Gmail, describing the value rather than the configuration.
   it("treats an unedited REPLACE_ME placeholder as unset", () => {
-    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+    const result = composeOnboardingGuide("interviewee", valuesFor("interviewee"), {
       ADMINBOT_SLACK_INVITE_URL: "REPLACE_ME_WITH_THE_SLACK_INVITE_URL",
     });
     expect(result).toMatchObject({ ok: false, reason: "missing-environment" });
@@ -296,10 +333,10 @@ describe("onboarding sender", () => {
     }
     expect(result.error.status).toBe(422);
     // `drive_folder_link` is not on this list: it is provisioned by the send rather than typed.
-    // `member_email` is not either -- it defaults to the address being written to.
-    expect(result.error.missing).toEqual(
-      expect.arrayContaining(["drive_guide_link", "portal_password"]),
-    );
+    // `member_email` is not either -- it defaults to the address being written to. Nor is
+    // `portal_password`, which is the same seeded value for every account and is filled in.
+    expect(result.error.missing).toEqual(expect.arrayContaining(["drive_guide_link"]));
+    expect(result.error.missing).not.toContain("portal_password");
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
@@ -696,5 +733,115 @@ describe("onboarding sender", () => {
 
   it("derives the first name from the full name", () => {
     expect(firstNameOf("Maria Garcia Lopez")).toBe("Maria");
+  });
+});
+
+describe("reusing a Slack Connect invite", () => {
+  const CHANNEL_ENV = { ...ENV, ADMINBOT_ONBOARDING_CHANNEL_ID: "C0EXAMPLE" };
+
+  function cache(seed?: { url: string; created_at: string }) {
+    const rows = new Map<string, { email: string; channel_id: string } & typeof seedValue>();
+    const seedValue = { url: "", created_at: "" };
+    if (seed) {
+      rows.set("ada@example.com C0EXAMPLE", {
+        email: "ada@example.com",
+        channel_id: "C0EXAMPLE",
+        ...seed,
+      });
+    }
+    return {
+      rows,
+      get: (email: string, channelId: string) => rows.get(`${email} ${channelId}`),
+      save: (invite: { email: string; channel_id: string; url: string; created_at: string }) => {
+        rows.set(`${invite.email} ${invite.channel_id}`, invite);
+      },
+    };
+  }
+
+  function sendWith(
+    inviteCache: ReturnType<typeof cache>,
+    inviteToSlackConnect: ReturnType<typeof vi.fn>,
+    now: Date,
+  ) {
+    return createAdminBotOnboardingSender({
+      env: CHANNEL_ENV,
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+      slackConnectInviteCache: inviteCache,
+      now: () => now,
+    })({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
+  }
+
+  // Minting one per send filled the recipient's inbox with a fresh Slack invitation every time a
+  // mail was corrected and re-sent, and left several live invitations to the same channel.
+  it("hands out a link minted eight days ago instead of minting another", async () => {
+    const inviteCache = cache({
+      url: "https://slack.example/first",
+      created_at: "2026-08-01T00:00:00.000Z",
+    });
+    const inviteToSlackConnect = vi.fn();
+    const result = await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-09T00:00:00Z"));
+
+    expect(result.ok).toBe(true);
+    expect(inviteToSlackConnect).not.toHaveBeenCalled();
+    expect(result.ok && result.payload.body).toContain("https://slack.example/first");
+  });
+
+  // Slack's own links go stale, and a stale link is worse than none: the recipient clicks it, is
+  // told it is invalid, and has nothing to fall back on.
+  it("mints a fresh link once the stored one is older than the window", async () => {
+    const inviteCache = cache({
+      url: "https://slack.example/stale",
+      created_at: "2026-08-01T00:00:00.000Z",
+    });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/fresh" });
+    const result = await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-16T00:00:00Z"));
+
+    expect(inviteToSlackConnect).toHaveBeenCalledTimes(1);
+    expect(result.ok && result.payload.body).toContain("https://slack.example/fresh");
+    // The replacement is what a later send inside the window will now reuse.
+    expect(inviteCache.get("ada@example.com", "C0EXAMPLE")).toMatchObject({
+      url: "https://slack.example/fresh",
+      created_at: "2026-08-16T00:00:00.000Z",
+    });
+  });
+
+  it("remembers a link it had to mint, so the next send reuses it", async () => {
+    const inviteCache = cache();
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/new" });
+    await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-01T00:00:00Z"));
+    await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-05T00:00:00Z"));
+    expect(inviteToSlackConnect).toHaveBeenCalledTimes(1);
+  });
+
+  // Fourteen days exactly is outside the window: the boundary belongs to the fresh mint, because
+  // handing out a link on its expiry day is the case this guard exists to avoid.
+  it("treats the fourteenth day as expired", async () => {
+    const inviteCache = cache({
+      url: "https://slack.example/edge",
+      created_at: "2026-08-01T00:00:00.000Z",
+    });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/fresh" });
+    await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-15T00:00:00Z"));
+    expect(inviteToSlackConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("mints rather than trusting a stored row whose date cannot be read", async () => {
+    const inviteCache = cache({ url: "https://slack.example/odd", created_at: "not a date" });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/fresh" });
+    await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-02T00:00:00Z"));
+    expect(inviteToSlackConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("still works with no cache wired, minting every time", async () => {
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/plain" });
+    const send = createAdminBotOnboardingSender({
+      env: CHANNEL_ENV,
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    await send({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
+    await send({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
+    expect(inviteToSlackConnect).toHaveBeenCalledTimes(2);
   });
 });

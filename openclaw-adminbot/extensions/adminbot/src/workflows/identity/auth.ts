@@ -21,6 +21,16 @@ const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_BYTES = 32;
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 
+/**
+ * The temporary password every seeded portal account starts with.
+ *
+ * One constant because it appears in three places that have to agree: the seeding scripts write
+ * it, the onboarding mail tells the reader to type it, and the full-member batch uses it to tell
+ * "never signed in" from "has chosen their own password". A copy that drifted in any one of those
+ * would lock somebody out of their own onboarding.
+ */
+export const ADMINBOT_SEEDED_PORTAL_PASSWORD = "jinesis";
+
 const MIN_PASSWORD_LENGTH = 10;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;

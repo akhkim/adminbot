@@ -73,7 +73,7 @@ describe("renderEmailBodyHtml", () => {
   });
 
   it("renders every onboarding template without leaving a tag unbalanced", () => {
-    for (const id of ["acquaintance", "alumni", "coauthor_minor", "member_what_to_expect"]) {
+    for (const id of ["interviewee", "alumni", "coauthor_minor", "member_what_to_expect"]) {
       const template = findOnboardingTemplate(id);
       const html = renderEmailBodyHtml(template?.body ?? "");
       expect(html.split("<ul>").length, id).toBe(html.split("</ul>").length);

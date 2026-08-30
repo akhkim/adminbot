@@ -46,6 +46,13 @@ export const adminBotActionTypes = [
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
+  // Writing cells back to the lab's member spreadsheet from the Membership tab's grid. A typed
+  // action rather than a call out of the service for the usual reason -- it reaches Google and
+  // changes a document several people read -- and for one specific to this sheet: the roster is
+  // what the onboarding and nudge sweeps read, so a bad write is not a cosmetic problem. The
+  // payload carries the exact ranges that will be written, so the approval card shows the cells
+  // rather than a diff the approver has to reconstruct.
+  "sheet.update_cells",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -1496,6 +1503,24 @@ export type AdminBotEmailPayload = {
   cc?: string | string[];
   bcc?: string | string[];
   reply_to?: string;
+  account?: string;
+};
+
+/** One contiguous block of cells to write, in Sheets A1 notation. */
+export type AdminBotSheetValueRange = {
+  /** A1 notation including the tab: "Full Slack Member List!S169:T169". */
+  range: string;
+  /** Row-major values for that range. Empty string clears a cell; the range shape must match. */
+  values: string[][];
+};
+
+// Writing the member roster back to Google. `before` is not sent to Sheets -- it is what the cell
+// held when the grid was read, kept so the approval card can show what is being overwritten and so
+// the executor can refuse a write whose ground has moved under it.
+export type AdminBotSheetUpdatePayload = {
+  spreadsheet_id: string;
+  updates: AdminBotSheetValueRange[];
+  before?: AdminBotSheetValueRange[];
   account?: string;
 };
 

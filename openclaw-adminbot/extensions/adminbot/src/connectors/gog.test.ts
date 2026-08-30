@@ -373,3 +373,86 @@ describe("logistics.send_signed_document", () => {
     ).rejects.toThrow(/attachment/u);
   });
 });
+
+describe("sheet.update_cells", () => {
+  it("writes every edited range in one batch-update, restricted to that exact command", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [
+            { range: "Full Slack Member List!S169", values: [["coauthor-minor"]] },
+            { range: "Full Slack Member List!R170", values: [["3"]] },
+          ],
+          // Carried for the approval card, so it can show what is being overwritten. Never sent.
+          before: [{ range: "Full Slack Member List!S169", values: [["alumni"]] }],
+        }),
+      ),
+    ).resolves.toEqual({ handled: true });
+
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.batch-update",
+      "sheets",
+      "batch-update",
+      "--data-json",
+      JSON.stringify([
+        { range: "Full Slack Member List!S169", values: [["coauthor-minor"]] },
+        { range: "Full Slack Member List!R170", values: [["3"]] },
+      ]),
+      "--input",
+      "RAW",
+      "1ZqdaRze",
+    ]);
+  });
+
+  // USER_ENTERED would turn this into a live formula reaching into whatever sheet the text names.
+  it("writes a leading-equals cell as text rather than as a formula", async () => {
+    const calls: string[][] = [];
+    const executor = createGogAdminBotExecutor({ run: async (args) => void calls.push(args) });
+
+    await executor.execute(
+      proposal("sheet.update_cells", {
+        spreadsheet_id: "1ZqdaRze",
+        updates: [{ range: "Sheet1!A1", values: [['=IMPORTRANGE("other","A1")']] }],
+      }),
+    );
+
+    expect(calls[0]).toContain("RAW");
+    expect(calls[0]).not.toContain("USER_ENTERED");
+  });
+
+  it("refuses an empty or malformed edit rather than calling gog", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await expect(
+      executor.execute(proposal("sheet.update_cells", { spreadsheet_id: "1ZqdaRze", updates: [] })),
+    ).rejects.toThrow(/non-empty/u);
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [{ range: "Sheet1!A1", values: "not a matrix" }],
+        }),
+      ),
+    ).rejects.toThrow(/row matrix/u);
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [{ range: "   ", values: [["x"]] }],
+        }),
+      ),
+    ).rejects.toThrow(/range is required/u);
+
+    expect(run).not.toHaveBeenCalled();
+  });
+});

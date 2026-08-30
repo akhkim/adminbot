@@ -11,6 +11,7 @@
 // is whatever is in the boxes -- the stored template is the starting draft, not the wire format.
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { renderMemberSheet } from "./member-sheet.ts";
 
 export type OnboardingTemplateOption = {
   id: string;
@@ -40,7 +41,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "interview_invite_project_matching",
     label: "Interview invite — forwarded to a project lead",
     group: "Candidate",
-    required: ["application_form_link", "task_doc_link"],
+    required: ["application_form_link", "task_recommendation"],
   },
   {
     id: "outreach_reply",
@@ -112,18 +113,6 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     ],
   },
   {
-    id: "acquaintance",
-    label: "Acquaintance",
-    group: "External collaborator",
-    required: [
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "drive_folder_link",
-      "slack_connect_link",
-    ],
-  },
-  {
     id: "alumni",
     label: "Alumni",
     group: "External collaborator",
@@ -153,13 +142,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "coauthor_major",
     label: "Coauthor, 20-40 h/week — access and setup",
     group: "External collaborator",
-    required: [
-      "first_name",
-      "member_email",
-      "portal_password",
-      "drive_folder_link",
-      "drive_guide_link",
-    ],
+    required: ["first_name", "member_email", "drive_folder_link", "drive_guide_link"],
   },
   {
     id: "coauthor_major_norms",
@@ -184,20 +167,6 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     label: "Intermittent coauthor — recommendation letter declined",
     group: "External collaborator",
     required: ["first_name"],
-  },
-  {
-    id: "external_prof",
-    label: "Senior collaborator / professor",
-    group: "External collaborator",
-    required: [
-      "first_name",
-      "project_or_context",
-      "update_cadence",
-      "contact_name",
-      "next_steps",
-      "sender_name",
-      "slack_connect_link",
-    ],
   },
   {
     id: "external_prof_slack_connect",
@@ -262,7 +231,6 @@ const FIELD_LABELS: Record<string, string> = {
   record_email: "Preferred email we hold",
   record_projects: "Projects we have them on",
   sender_name: "Sending as",
-  portal_password: "Portal password to send them",
   application_form_link: "Application form link",
   task_doc_link: "Starter task doc link",
   recipient_role: "Their role on the project",
@@ -411,6 +379,7 @@ export function renderAdminBotOnboarding(state: AppViewState) {
 
   return html`
     <section class="adminbot-onboarding">
+      ${renderMemberSheet(state)}
       <form
         class="adminbot-form"
         @submit=${(event: Event) => {

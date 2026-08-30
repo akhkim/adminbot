@@ -34,7 +34,10 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
@@ -48,14 +51,32 @@ import type {
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
-import type { AdminBotServiceStore, AdminBotSlackChannelNamingRecord } from "../kernel/service.js";
+import type {
+  AdminBotServiceStore,
+  AdminBotSlackChannelNamingRecord,
+  AdminBotSlackConnectInvite,
+} from "../kernel/service.js";
+
+/** Addresses are matched case-insensitively, as they are in the SQLite store. */
+function slackConnectInviteKey(email: string, channelId: string): string {
+  return `${email.trim().toLowerCase()}\u0000${channelId}`;
+}
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly proposals = new Map<string, AdminBotStoredProposal>();
   private readonly deadlineSubmissionActions = new Map<string, string>();
-  private readonly publishedDeadlines = new Map<string, PublishedDeadlineRecord>();
-  private readonly executionResults = new Map<string, AdminBotExecutionResult>();
-  private readonly executionResultsByIdempotencyKey = new Map<string, AdminBotExecutionResult>();
+  private readonly publishedDeadlines = new Map<
+    string,
+    PublishedDeadlineRecord
+  >();
+  private readonly executionResults = new Map<
+    string,
+    AdminBotExecutionResult
+  >();
+  private readonly executionResultsByIdempotencyKey = new Map<
+    string,
+    AdminBotExecutionResult
+  >();
   private readonly labMembers = new Map<string, AdminBotLabMember>();
   private readonly badgeDefinitions = new Map<string, AdminBotBadgeDefinition>();
   private readonly badgeAssignments = new Map<string, AdminBotBadgeAssignment>();
@@ -65,42 +86,88 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // re-save onto the same row.
   private readonly paperSlots = new Map<string, AdminBotPaperSlotRecord>();
   // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
-  private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
+  private readonly paperflowEvidence = new Map<
+    string,
+    AdminBotPaperflowEvidenceRecord
+  >();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
   // both stores rather than accumulating duplicates in one of them.
   private readonly nudgeLedger = new Map<string, AdminBotNudgeLedgerRecord>();
   private readonly socialDrafts = new Map<string, AdminBotSocialDraftRecord>();
-  private readonly socialConsents = new Map<string, AdminBotSocialConsentRecord>();
-  private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
-  private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
+  private readonly socialConsents = new Map<
+    string,
+    AdminBotSocialConsentRecord
+  >();
+  private readonly conferenceAttendees = new Map<
+    string,
+    AdminBotConferenceAttendeeRecord
+  >();
+  private readonly paperReimbursements = new Map<
+    string,
+    AdminBotPaperReimbursementRecord
+  >();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
-  private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
+  private readonly memberNotifications = new Map<
+    string,
+    AdminBotMemberNotification
+  >();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
-  private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
+  private readonly logisticsRequests = new Map<
+    string,
+    AdminBotLogisticsRequest
+  >();
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
   // Append-only, like their SQLite tables: nothing in normal operation updates or removes an
   // event, so a plain array is the whole implementation.
-  private readonly workshopMatchRuns = new Map<string, AdminBotWorkshopMatchRun>();
+  private readonly workshopMatchRuns = new Map<
+    string,
+    AdminBotWorkshopMatchRun
+  >();
   private readonly loginEvents: AdminBotLoginEvent[] = [];
   private readonly updateEvents: AdminBotUpdateEvent[] = [];
-  private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
-  private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
+  private readonly openReviewCycles = new Map<
+    string,
+    AdminBotOpenReviewCycleRecord
+  >();
+  private readonly openReviewMilestones = new Map<
+    string,
+    AdminBotOpenReviewMilestoneRecord
+  >();
   private settings: AdminBotSettings | undefined;
   private readonly auditEvents: AdminBotAuditEvent[] = [];
-  private readonly credentialsByMemberId = new Map<string, AdminBotMemberCredential>();
-  private readonly credentialsByEmail = new Map<string, AdminBotMemberCredential>();
-  private readonly registrations = new Map<string, AdminBotAccountRegistration>();
+  private readonly credentialsByMemberId = new Map<
+    string,
+    AdminBotMemberCredential
+  >();
+  private readonly credentialsByEmail = new Map<
+    string,
+    AdminBotMemberCredential
+  >();
+  private readonly registrations = new Map<
+    string,
+    AdminBotAccountRegistration
+  >();
   private readonly sessions = new Map<string, AdminBotAuthSession>();
   private readonly passwordResets = new Map<string, AdminBotPasswordReset>();
-  private readonly slackChannelNaming = new Map<string, AdminBotSlackChannelNamingRecord>();
+  private readonly slackChannelNaming = new Map<
+    string,
+    AdminBotSlackChannelNamingRecord
+  >();
+  private readonly slackConnectInvites = new Map<
+    string,
+    AdminBotSlackConnectInvite
+  >();
   // Keyed by adminBotFeedbackId, matching the SQLite primary key, so a re-rating collapses onto
   // the same row in both stores.
   private readonly feedback = new Map<string, AdminBotFeedbackEntry>();
   // Keyed `paperId\u0000memberId\u0000weekStart`, matching the SQLite composite primary key.
-  private readonly paperWeeklyUpdates = new Map<string, AdminBotPaperWeeklyUpdate>();
+  private readonly paperWeeklyUpdates = new Map<
+    string,
+    AdminBotPaperWeeklyUpdate
+  >();
 
   saveProposal(proposal: AdminBotStoredProposal): void {
     this.proposals.set(proposal.id, proposal);
@@ -115,12 +182,21 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   listPending(limit?: number): AdminBotStoredProposal[] {
-    const max = Number.isFinite(limit) && typeof limit === "number" ? limit : this.proposals.size;
-    return [...this.proposals.values()].filter((entry) => entry.status === "pending").slice(0, max);
+    const max =
+      Number.isFinite(limit) && typeof limit === "number"
+        ? limit
+        : this.proposals.size;
+    return [...this.proposals.values()]
+      .filter((entry) => entry.status === "pending")
+      .slice(0, max);
   }
 
-  listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
-    return [...this.proposals.values()].filter((proposal) => proposal.type === type);
+  listProposalsByType(
+    type: AdminBotStoredProposal["type"],
+  ): AdminBotStoredProposal[] {
+    return [...this.proposals.values()].filter(
+      (proposal) => proposal.type === type,
+    );
   }
 
   saveDeadlineProposalSubmission(
@@ -168,7 +244,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.executionResults.get(actionId);
   }
 
-  getExecutionResultByIdempotencyKey(idempotencyKey: string): AdminBotExecutionResult | undefined {
+  getExecutionResultByIdempotencyKey(
+    idempotencyKey: string,
+  ): AdminBotExecutionResult | undefined {
     return this.executionResultsByIdempotencyKey.get(idempotencyKey);
   }
 
@@ -268,7 +346,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
    * collision rule matches SQLite's `UPDATE OR IGNORE` + delete: if the survivor already has a row
    * for the same subject, theirs stands and the duplicate's is dropped.
    */
-  reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
+  reassignMemberReferences(
+    fromMemberId: string,
+    toMemberId: string,
+  ): Record<string, number> {
     const moved: Record<string, number> = {};
     const bump = (label: string) => {
       moved[label] = (moved[label] ?? 0) + 1;
@@ -291,9 +372,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         }
       }
     };
-    remap(this.cvChanges, "cv_changes", (key) => key.replace(fromMemberId, toMemberId));
+    remap(this.cvChanges, "cv_changes", (key) =>
+      key.replace(fromMemberId, toMemberId),
+    );
     remap(this.logisticsRequests, "logistics_requests", (key) => key);
-    remap(this.nudgeLedger, "nudge_ledger", (key) => key.replace(fromMemberId, toMemberId));
+    remap(this.nudgeLedger, "nudge_ledger", (key) =>
+      key.replace(fromMemberId, toMemberId),
+    );
     remap(this.socialConsents, "social_draft_consents", (key) =>
       key.replace(fromMemberId, toMemberId),
     );
@@ -343,7 +428,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       const moved = {
         ...entry,
         ...(entry.member_id === fromMemberId ? { member_id: toMemberId } : {}),
-        ...(entry.subject_member_id === fromMemberId ? { subject_member_id: toMemberId } : {}),
+        ...(entry.subject_member_id === fromMemberId
+          ? { subject_member_id: toMemberId }
+          : {}),
       };
       if (
         moved.member_id !== entry.member_id ||
@@ -355,7 +442,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
     for (const [key, draft] of [...this.socialDrafts]) {
       if (draft.generated_by_member_id === fromMemberId) {
-        this.socialDrafts.set(key, { ...draft, generated_by_member_id: toMemberId });
+        this.socialDrafts.set(key, {
+          ...draft,
+          generated_by_member_id: toMemberId,
+        });
         bump("social_drafts");
       }
     }
@@ -424,7 +514,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void {
-    this.nudgeLedger.set(`${record.domain}|${record.subject_id}|${record.member_id}`, record);
+    this.nudgeLedger.set(
+      `${record.domain}|${record.subject_id}|${record.member_id}`,
+      record,
+    );
   }
 
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[] {
@@ -440,7 +533,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
     return [...this.socialDrafts.values()]
       .filter((draft) => paperId === undefined || draft.paper_id === paperId)
-      .toSorted((left, right) => right.generated_at.localeCompare(left.generated_at));
+      .toSorted((left, right) =>
+        right.generated_at.localeCompare(left.generated_at),
+      );
   }
 
   saveSocialConsent(record: AdminBotSocialConsentRecord): void {
@@ -454,20 +549,30 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {
-    this.conferenceAttendees.set(`${record.paper_id}|${record.attendee_key}`, record);
+    this.conferenceAttendees.set(
+      `${record.paper_id}|${record.attendee_key}`,
+      record,
+    );
   }
 
-  listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[] {
+  listConferenceAttendees(
+    paperId?: string,
+  ): AdminBotConferenceAttendeeRecord[] {
     return [...this.conferenceAttendees.values()]
       .filter((entry) => paperId === undefined || entry.paper_id === paperId)
       .toSorted((left, right) => left.name.localeCompare(right.name));
   }
 
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void {
-    this.paperReimbursements.set(`${record.paper_id}|${record.member_id}`, record);
+    this.paperReimbursements.set(
+      `${record.paper_id}|${record.member_id}`,
+      record,
+    );
   }
 
-  listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
+  listPaperReimbursements(
+    paperId?: string,
+  ): AdminBotPaperReimbursementRecord[] {
     return [...this.paperReimbursements.values()].filter(
       (entry) => paperId === undefined || entry.paper_id === paperId,
     );
@@ -482,7 +587,8 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .filter((record) => paperId === undefined || record.paper_id === paperId)
       .toSorted(
         (left, right) =>
-          left.paper_id.localeCompare(right.paper_id) || left.slot.localeCompare(right.slot),
+          left.paper_id.localeCompare(right.paper_id) ||
+          left.slot.localeCompare(right.slot),
       );
   }
 
@@ -501,7 +607,8 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .filter((record) => paperId === undefined || record.paper_id === paperId)
       .toSorted(
         (left, right) =>
-          left.paper_id.localeCompare(right.paper_id) || left.stage.localeCompare(right.stage),
+          left.paper_id.localeCompare(right.paper_id) ||
+          left.stage.localeCompare(right.stage),
       );
   }
 
@@ -509,10 +616,15 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.memberLocations.push(entry);
   }
 
-  listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[] {
+  listMemberLocations(
+    memberId: string,
+    limit?: number,
+  ): AdminBotMemberLocationEntry[] {
     const entries = this.memberLocations
       .filter((entry) => entry.member_id === memberId)
-      .toSorted((left, right) => right.observed_at.localeCompare(left.observed_at));
+      .toSorted((left, right) =>
+        right.observed_at.localeCompare(left.observed_at),
+      );
     return typeof limit === "number" ? entries.slice(0, limit) : entries;
   }
 
@@ -549,14 +661,20 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.updateEvents.push(event);
   }
 
-  listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[] {
+  listUpdateEventsByMember(
+    memberId: string,
+    limit?: number,
+  ): AdminBotUpdateEvent[] {
     return recentFirst(
       this.updateEvents.filter((event) => event.member_id === memberId),
       limit,
     );
   }
 
-  listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[] {
+  listUpdateEventsBySlot(
+    slotId: string,
+    limit?: number,
+  ): AdminBotUpdateEvent[] {
     return recentFirst(
       this.updateEvents.filter((event) => event.slot_id === slotId),
       limit,
@@ -590,7 +708,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listMemberNotifications(memberId: string): AdminBotMemberNotification[] {
     return [...this.memberNotifications.values()]
       .filter((notification) => notification.member_id === memberId)
-      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+      .toSorted((left, right) =>
+        right.created_at.localeCompare(left.created_at),
+      );
   }
 
   deleteMemberNotification(notificationId: string): boolean {
@@ -607,7 +727,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
-  recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean {
+  recordOpenReviewMilestone(
+    milestone: AdminBotOpenReviewMilestoneRecord,
+  ): boolean {
     const key = `${milestone.venue_id} ${milestone.role} ${milestone.milestone_key}`;
     if (this.openReviewMilestones.has(key)) {
       return false;
@@ -616,7 +738,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return true;
   }
 
-  listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[] {
+  listOpenReviewMilestones(
+    venueId?: string,
+  ): AdminBotOpenReviewMilestoneRecord[] {
     return [...this.openReviewMilestones.values()]
       .filter((milestone) => !venueId || milestone.venue_id === venueId)
       .toSorted((left, right) => left.fired_at.localeCompare(right.fired_at));
@@ -638,7 +762,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[] {
     return [...this.cvChanges.values()]
       .filter((event) => event.detected_at >= sinceIso)
-      .toSorted((left, right) => left.detected_at.localeCompare(right.detected_at));
+      .toSorted((left, right) =>
+        left.detected_at.localeCompare(right.detected_at),
+      );
   }
 
   private readonly venueIndexes = new Map<
@@ -680,7 +806,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
     return [...this.logisticsRequests.values()]
       .filter((request) => !memberId || request.member_id === memberId)
-      .toSorted((left, right) => right.submitted_at.localeCompare(left.submitted_at));
+      .toSorted((left, right) =>
+        right.submitted_at.localeCompare(left.submitted_at),
+      );
   }
 
   deleteLogisticsRequest(requestId: string): boolean {
@@ -705,7 +833,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   pruneAuditEventsBefore(cutoffIso: string): number {
     const before = this.auditEvents.length;
-    const retained = this.auditEvents.filter((event) => event.timestamp >= cutoffIso);
+    const retained = this.auditEvents.filter(
+      (event) => event.timestamp >= cutoffIso,
+    );
     this.auditEvents.length = 0;
     this.auditEvents.push(...retained);
     return before - retained.length;
@@ -715,7 +845,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.credentialsByEmail.get(email.toLowerCase());
   }
 
-  getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined {
+  getCredentialByMemberId(
+    memberId: string,
+  ): AdminBotMemberCredential | undefined {
     return this.credentialsByMemberId.get(memberId);
   }
 
@@ -724,7 +856,11 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.credentialsByEmail.set(credential.email.toLowerCase(), credential);
   }
 
-  updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
+  updateCredentialEmail(
+    memberId: string,
+    newEmail: string,
+    updatedAt: string,
+  ): void {
     const existing = this.credentialsByMemberId.get(memberId);
     if (!existing) {
       return;
@@ -748,7 +884,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.registrations.get(id);
   }
 
-  listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[] {
+  listAccountRegistrations(
+    status?: AdminBotRegistrationStatus,
+  ): AdminBotAccountRegistration[] {
     const all = [...this.registrations.values()].toSorted((left, right) =>
       left.created_at.localeCompare(right.created_at),
     );
@@ -769,14 +907,19 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
   }
 
-  getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
+  getPendingRegistrationByEmail(
+    email: string,
+  ): AdminBotAccountRegistration | undefined {
     const lowered = email.toLowerCase();
     return [...this.registrations.values()].find(
-      (entry) => entry.status === "pending" && entry.email.toLowerCase() === lowered,
+      (entry) =>
+        entry.status === "pending" && entry.email.toLowerCase() === lowered,
     );
   }
 
-  getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined {
+  getPendingRegistrationByMemberId(
+    memberId: string,
+  ): AdminBotAccountRegistration | undefined {
     return [...this.registrations.values()].find(
       (entry) => entry.status === "pending" && entry.member_id === memberId,
     );
@@ -816,7 +959,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.passwordResets.set(reset.token_hash, { ...reset });
   }
 
-  getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined {
+  getPasswordResetByTokenHash(
+    tokenHash: string,
+  ): AdminBotPasswordReset | undefined {
     return this.passwordResets.get(tokenHash);
   }
 
@@ -870,14 +1015,34 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listFeedback(featureId?: string): AdminBotFeedbackEntry[] {
     return [...this.feedback.values()]
       .filter((entry) => !featureId || entry.feature_id === featureId)
-      .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
+      .toSorted((left, right) =>
+        right.updated_at.localeCompare(left.updated_at),
+      );
+  }
+
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void {
+    this.slackConnectInvites.set(
+      slackConnectInviteKey(invite.email, invite.channel_id),
+      invite,
+    );
+  }
+
+  getSlackConnectInvite(
+    email: string,
+    channelId: string,
+  ): AdminBotSlackConnectInvite | undefined {
+    return this.slackConnectInvites.get(
+      slackConnectInviteKey(email, channelId),
+    );
   }
 
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {
     this.slackChannelNaming.set(record.channel_id, record);
   }
 
-  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined {
+  getSlackChannelNamingRecord(
+    channelId: string,
+  ): AdminBotSlackChannelNamingRecord | undefined {
     return this.slackChannelNaming.get(channelId);
   }
 
@@ -904,11 +1069,15 @@ function badgeAssignmentKey(memberId: string, badgeId: string): string {
 // produces three rows that compare equal. Ordering those by timestamp alone leaves the newest row
 // undefined, and "who touched this last" is exactly the question this table exists to answer. The
 // caller's insertion order is the real sequence, so equal timestamps fall back to it, reversed.
-function recentFirst<T extends { at: string }>(events: T[], limit?: number): T[] {
+function recentFirst<T extends { at: string }>(
+  events: T[],
+  limit?: number,
+): T[] {
   const sorted = events
     .map((event, index) => ({ event, index }))
     .toSorted(
-      (left, right) => right.event.at.localeCompare(left.event.at) || right.index - left.index,
+      (left, right) =>
+        right.event.at.localeCompare(left.event.at) || right.index - left.index,
     )
     .map((entry) => entry.event);
   return typeof limit === "number" ? sorted.slice(0, limit) : sorted;

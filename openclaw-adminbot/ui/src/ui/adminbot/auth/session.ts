@@ -940,6 +940,92 @@ export async function sendOnboardingGuide(
   return { ok: true, value: result.body as OnboardingGuideResult };
 }
 
+/** The lab's member spreadsheet as the Membership grid shows it. */
+export type MemberSheetView = {
+  spreadsheet_id: string;
+  tab: string;
+  url: string;
+  header: string[];
+  rows: { sheet_row: number; cells: string[] }[];
+  read_at: string;
+};
+
+export type MemberSheetEditResult = {
+  proposal?: { id: string; status: string };
+  updates: { range: string; values: string[][] }[];
+  conflicts: {
+    sheet_row: number;
+    column: number;
+    header: string;
+    expected: string;
+    actual: string;
+  }[];
+  unchanged: number;
+  touches_access: boolean;
+};
+
+export type MemberSheetOnboardResult = {
+  created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  skipped: { sheet_row: number; reason: string; missing?: string[] }[];
+};
+
+export async function fetchMemberSheet(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetView>> {
+  const result = await authedJson(baseUrl, "/membership/sheet", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberSheetView };
+}
+
+/**
+ * `expected` carries what each edited cell held when the grid was drawn, so the service can refuse
+ * a write against a cell somebody else has changed since. Sending the edits without it would let
+ * this tab silently revert whoever was editing the sheet in Google at the same time.
+ */
+export async function proposeMemberSheetEdits(
+  edits: { sheet_row: number; column: number; value: string }[],
+  expected: Record<string, string>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetEditResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet", "POST", sessionToken, {
+    edits,
+    expected,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberSheetEditResult };
+}
+
+export async function onboardFromMemberSheet(
+  sheetRows: number[],
+  values: Record<string, Record<string, string>>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetOnboardResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/onboard", "POST", sessionToken, {
+    sheet_rows: sheetRows,
+    ...(Object.keys(values).length > 0 ? { values } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberSheetOnboardResult };
+}
+
 export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeRequest = {

@@ -298,6 +298,20 @@ export class OpenClawApp extends LitElement {
   @state() onboardingName = "";
   @state() onboardingEmail = "";
   @state() onboardingValues: Record<string, string> = {};
+  @state() memberSheet:
+    | import("./adminbot/auth/session.ts").MemberSheetView
+    | null = null;
+  @state() memberSheetBusy = false;
+  @state() memberSheetError: string | null = null;
+  @state() memberSheetEdits: Record<string, string> = {};
+  @state() memberSheetBaseline: Record<string, string> = {};
+  @state() memberSheetSelection: number[] = [];
+  @state() memberSheetSaveResult:
+    | import("./adminbot/auth/session.ts").MemberSheetEditResult
+    | null = null;
+  @state() memberSheetOnboardResult:
+    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | null = null;
   @state() onboardingBusy = false;
   @state() onboardingError: string | null = null;
   @state() onboardingMissing: string[] = [];
@@ -1593,6 +1607,33 @@ export class OpenClawApp extends LitElement {
     return sendOnboardingGuideController(
       this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
       options,
+    );
+  }
+
+  loadMemberSheet(): Promise<void> {
+    return loadMemberSheetController(
+      this as unknown as Parameters<typeof loadMemberSheetController>[0],
+    );
+  }
+
+  saveMemberSheetEdits(): Promise<void> {
+    return saveMemberSheetEditsController(
+      this as unknown as Parameters<typeof saveMemberSheetEditsController>[0],
+    );
+  }
+
+  onboardSelectedMemberRows(): Promise<void> {
+    return onboardSelectedMemberRowsController(
+      this as unknown as Parameters<typeof onboardSelectedMemberRowsController>[0],
+    );
+  }
+
+  editMemberSheetCell(sheetRow: number, column: number, value: string): void {
+    editMemberSheetCellController(
+      this as unknown as Parameters<typeof editMemberSheetCellController>[0],
+      sheetRow,
+      column,
+      value,
     );
   }
 

@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
+import { readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
 import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
@@ -108,6 +109,13 @@ import {
 } from "./server.http.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
+  type MemberSheetEditRequest,
+  type MemberSheetOnboardRequest,
+  onboardFromMemberSheet,
+  proposeMemberSheetEdits,
+  readMemberSheet,
+} from "./server.member-sheet.js";
+import {
   readWorkshopNudgeRun,
   sendWorkshopNudges,
   startWorkshopNudgeRun,
@@ -121,6 +129,35 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const SESSION_COOKIE = "adminbot_session";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 604800;
+
+/**
+ * The lab's member spreadsheet, as the Membership grid reads it.
+ *
+ * The id and tab travel with the reader so the UI can link to the sheet it is showing and so the
+ * write path can address cells in it, without either side having to know how the deployment was
+ * configured.
+ */
+export type AdminBotMemberSheetSource = {
+  spreadsheetId: string;
+  tab: string;
+  read: (range: string) => Promise<string[][]>;
+};
+
+/** The whole tab. Sheets caps an open-ended range at the used region, so this is not 26 columns. */
+const MEMBER_SHEET_RANGE = "A:Z";
+
+function defaultMemberSheet(env: NodeJS.ProcessEnv): AdminBotMemberSheetSource | undefined {
+  const spreadsheetId = env.ADMINBOT_MEMBER_SHEET_ID?.trim();
+  if (!spreadsheetId) {
+    return undefined;
+  }
+  const tab = env.ADMINBOT_MEMBER_SHEET_TAB?.trim() || "Full Slack Member List";
+  return {
+    spreadsheetId,
+    tab,
+    read: async (range) => readGogSheetRows(spreadsheetId, { range }),
+  };
+}
 
 /**
  * Where the CV digest is published, and how.
@@ -197,6 +234,14 @@ export type AdminBotMockServiceOptions = {
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
+  /**
+   * The lab's member spreadsheet, as the Membership tab's grid reads and writes it.
+   *
+   * Injected rather than imported for the same reason as readDrivePdfBase64: the route stays
+   * testable without a Google session, and the one place that shells out to gog is the host
+   * wiring. Absent means this deployment has no roster to show, and the route says so.
+   */
+  memberSheet?: AdminBotMemberSheetSource;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -387,6 +432,7 @@ type AdminBotRouteContext = {
    * cannot fetch a PDF for itself, and the route says so instead of pretending.
    */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
+  memberSheet?: AdminBotMemberSheetSource;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -466,6 +512,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         ? { geolocateIp: createIpinfoGeolocator(ipinfoToken) }
         : {}),
   });
+  // The roster the Membership grid reads. Built from configuration rather than assumed: a
+  // deployment that has not named a spreadsheet has no grid at all, which is a clearer answer
+  // than a tab that fails at the CLI when somebody opens it.
+  const memberSheet = options.memberSheet ?? defaultMemberSheet(process.env);
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
   // request identically. Undefined when no script path is configured, which the sender reports
   // rather than silently skipping.
@@ -484,6 +534,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ...(options.inviteToSlackConnect
         ? { inviteToSlackConnect: options.inviteToSlackConnect }
         : {}),
+      // Remembers each minted invite so a re-send hands out the same link rather than a second
+      // invitation. The service owns the store, so the cache is wired here rather than reaching
+      // into persistence from the sender.
+      slackConnectInviteCache: {
+        get: (email, channelId) => service.getSlackConnectInvite(email, channelId),
+        save: (invite) => service.saveSlackConnectInvite(invite),
+      },
     });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
@@ -524,6 +581,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
+    ...(memberSheet ? { memberSheet } : {}),
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -3002,6 +3060,92 @@ async function handleAuthenticatedRoute(
       res,
       service.listOnboardingStepPending(decodeURIComponent(onboardingPending[1])),
     );
+    return;
+  }
+  // The Membership tab's grid over the lab's own member spreadsheet. Admin-only to read: the
+  // roster carries every member's address and the lab's notes about them.
+  if (url.pathname === "/membership/sheet" && (req.method === "GET" || req.method === "POST")) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    if (req.method === "GET") {
+      try {
+        sendJson(res, 200, await readMemberSheet(ctx.memberSheet));
+      } catch (error) {
+        sendJson(res, 502, {
+          error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+        });
+      }
+      return;
+    }
+    const editBody = (await readJson(req)) as MemberSheetEditRequest;
+    let editResult;
+    try {
+      editResult = await proposeMemberSheetEdits(
+        service,
+        ctx.memberSheet,
+        editBody,
+        principalActor(principal),
+      );
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+      });
+      return;
+    }
+    if ("error" in editResult) {
+      sendJson(res, editResult.error.status, { error: { message: editResult.error.message } });
+      return;
+    }
+    sendJson(res, 200, editResult);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/membership/sheet/onboard") {
+    // Queues real mail to real people, so the same reasoning as /onboarding/guide below: a
+    // genuine admin member session, never the shared service principal.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
+    let onboardResult;
+    try {
+      onboardResult = await onboardFromMemberSheet(
+        service,
+        ctx.memberSheet,
+        onboardBody,
+        principalActor(principal),
+      );
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+      });
+      return;
+    }
+    if ("error" in onboardResult) {
+      sendJson(res, onboardResult.error.status, {
+        error: { message: onboardResult.error.message },
+      });
+      return;
+    }
+    sendJson(res, 200, onboardResult);
     return;
   }
   if (req.method === "POST" && url.pathname === "/onboarding/guide") {
