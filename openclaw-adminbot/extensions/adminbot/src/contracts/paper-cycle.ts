@@ -190,6 +190,14 @@ export type AdminBotWorkshopMatchRun = {
   /** Model calls finished and total, so a page open mid-pass can say how far along it is. */
   calls_done: number;
   calls_total: number;
+  /**
+   * When this run last moved.
+   *
+   * A pass is a fire-and-forget async task inside the service process, so a restart leaves its row
+   * saying `running` with nobody working on it -- and the "one pass at a time" guard then refuses
+   * every new pass forever. Progress time is what tells a stuck row from a live one.
+   */
+  progress_at?: string;
   /** The preview payload, once the pass finished. */
   payload_json?: string;
   /** Why it failed, when it did. */

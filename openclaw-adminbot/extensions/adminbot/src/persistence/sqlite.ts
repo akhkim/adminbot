@@ -608,6 +608,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         started_by TEXT,
         calls_done INTEGER NOT NULL DEFAULT 0,
         calls_total INTEGER NOT NULL DEFAULT 0,
+        progress_at TEXT,
         payload_json TEXT,
         error TEXT
       );
@@ -619,6 +620,43 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
+    this.migrateWorkshopMatchRuns();
+  }
+
+  /**
+   * Give the run table its progress clock, and close out passes their process did not survive.
+   *
+   * A workshop-matching pass runs as an un-awaited task inside the service, so it dies with the
+   * process. The row it leaves behind still says `running`, and `startWorkshopNudgeRun` refuses to
+   * start a pass while one is running -- so a single restart mid-pass wedges the tab permanently on
+   * "Matching in progress...", counting model calls nobody is making any more. Nothing short of a
+   * hand-edited database recovered from it.
+   *
+   * Startup is the one moment where "running" is provably wrong: no pass can predate this process.
+   */
+  private migrateWorkshopMatchRuns(): void {
+    const columns = new Set(
+      (
+        this.db
+          .prepare("PRAGMA table_info(adminbot_workshop_match_runs)")
+          .all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("progress_at")) {
+      this.db.exec("ALTER TABLE adminbot_workshop_match_runs ADD COLUMN progress_at TEXT");
+    }
+    this.db
+      .prepare(
+        `UPDATE adminbot_workshop_match_runs
+            SET status = 'failed',
+                finished_at = COALESCE(finished_at, ?),
+                error = COALESCE(
+                  error,
+                  'The service restarted while this pass was running, so it was abandoned. Start a new one.'
+                )
+          WHERE status = 'running'`,
+      )
+      .run(new Date().toISOString());
   }
 
   /**
@@ -1813,14 +1851,16 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_workshop_match_runs
-           (id, status, started_at, finished_at, started_by, calls_done, calls_total, payload_json, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, status, started_at, finished_at, started_by, calls_done, calls_total, progress_at,
+            payload_json, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            status = excluded.status,
            finished_at = excluded.finished_at,
            started_by = excluded.started_by,
            calls_done = excluded.calls_done,
            calls_total = excluded.calls_total,
+           progress_at = excluded.progress_at,
            payload_json = excluded.payload_json,
            error = excluded.error`,
       )
@@ -1832,6 +1872,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         run.started_by ?? null,
         run.calls_done,
         run.calls_total,
+        // Stamped on write rather than carried by the caller: every save is this run moving, and a
+        // clock a caller can forget to wind is the failure this column exists to catch.
+        new Date().toISOString(),
         run.payload_json ?? null,
         run.error ?? null,
       );
@@ -1841,7 +1884,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const row = this.db
       .prepare(
         `SELECT id, status, started_at, finished_at, started_by, calls_done, calls_total,
-                payload_json, error
+                progress_at, payload_json, error
          FROM adminbot_workshop_match_runs ORDER BY started_at DESC LIMIT 1`,
       )
       .get() as (AdminBotWorkshopMatchRun & Record<string, unknown>) | undefined;

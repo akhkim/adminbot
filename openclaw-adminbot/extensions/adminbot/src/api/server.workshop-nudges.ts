@@ -63,6 +63,32 @@ export type WorkshopNudgeRunView = {
 };
 
 /**
+ * How long a pass may go without finishing a single model call before it is presumed dead.
+ *
+ * Generous on purpose: a batch against a busy model can take minutes, and killing a pass that is
+ * merely slow costs the whole run. What this catches is the other case -- a pass whose process is
+ * gone, or whose model endpoint stopped answering entirely -- where the row would otherwise say
+ * `running` forever and every later pass would be refused in its name.
+ */
+const ABANDONED_AFTER_MS = 30 * 60 * 1000;
+
+/** Whether a run claiming to be in flight has stopped moving. */
+export function workshopRunIsAbandoned(
+  run: Pick<AdminBotWorkshopMatchRun, "status" | "started_at" | "progress_at">,
+  now: Date,
+): boolean {
+  if (run.status !== "running") {
+    return false;
+  }
+  const movedAt = Date.parse(run.progress_at ?? run.started_at);
+  if (!Number.isFinite(movedAt)) {
+    // A row with no readable clock is older than this column; it cannot be shown to be alive.
+    return true;
+  }
+  return now.getTime() - movedAt > ABANDONED_AFTER_MS;
+}
+
+/**
  * Start a pass, and return immediately.
  *
  * The work outlives the request on purpose. Awaiting it here is exactly the shape that failed:
@@ -80,7 +106,19 @@ export function startWorkshopNudgeRun(params: {
 }): WorkshopNudgeRunView {
   const existing = params.service.latestWorkshopMatchRun();
   if (existing?.status === "running") {
-    return readWorkshopNudgeRun(params.service);
+    if (!workshopRunIsAbandoned(existing, params.now)) {
+      return readWorkshopNudgeRun(params.service);
+    }
+    // It stopped moving. Close it out rather than leaving two rows claiming to be in flight, and
+    // say why: an operator pressing Refresh again on a wedged tab deserves better than silence.
+    params.service.saveWorkshopMatchRun({
+      ...existing,
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      error:
+        existing.error ??
+        "This pass stopped answering and was abandoned; the pass below replaces it.",
+    });
   }
   const run: AdminBotWorkshopMatchRun = {
     id: `wsm_${randomUUID()}`,
