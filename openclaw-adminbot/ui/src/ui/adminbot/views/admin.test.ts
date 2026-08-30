@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type AdminBotLabMember,
   type AdminBotLabMemberSaveInput,
@@ -1234,5 +1234,101 @@ describe("pre-registration venue table", () => {
   it("marks a missing Overleaf link rather than leaving the cell ambiguous", () => {
     const board = draw("iclr2027_paper").querySelector('[data-testid="prereg-board"]');
     expect(board?.querySelector(".venue-table__missing")).not.toBeNull();
+  });
+});
+
+// The roster editor takes whatever the admin currently knows: no field blocks the save (the id is
+// the upsert key and the one exception), and edits land on the record by themselves after a pause,
+// so the Save button is a flush rather than a gate.
+describe("renderAdminBot members panel — lenient saves and autosave", () => {
+  function editForm(container: HTMLElement): HTMLFormElement {
+    const form = container.querySelector<HTMLFormElement>("#adminbot-edit-member-0 form");
+    expect(form).not.toBeNull();
+    return form!;
+  }
+
+  it("puts no required mark on registry fields, calendar email included", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const form = editForm(container);
+    expect(form.querySelector('input[name="calendar_email"]')?.hasAttribute("required")).toBe(
+      false,
+    );
+    // Only the id — the upsert key — may refuse to be blank, and on an edit it is prefilled
+    // and readonly, so nothing blocks saving an existing record.
+    for (const input of form.querySelectorAll<HTMLInputElement>("input[required]")) {
+      expect(input.name).toBe("id");
+      expect(input.readOnly).toBe(true);
+    }
+  });
+
+  it("saves with mandatory-ledger fields blank, omitting them from the patch", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const form = editForm(container);
+    const calendar = form.querySelector<HTMLInputElement>('input[name="calendar_email"]');
+    calendar!.value = "";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]!.id).toBe(members[0]!.id);
+    // A blank answer is left out of the patch (absent means "leave it alone"), never refused.
+    expect("calendar_email" in (saved[0]!.profile ?? {})).toBe(false);
+  });
+
+  it("saves with the name box emptied by omitting name, so the stored one survives", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const form = editForm(container);
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(1);
+    expect("name" in saved[0]!).toBe(false);
+  });
+
+  it("autosaves an edit after the typing pause, without the Save button", () => {
+    vi.useFakeTimers();
+    try {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const form = editForm(container);
+      const location = form.querySelector<HTMLInputElement>('input[name="location"]');
+      location!.value = "Toronto, Canada";
+      location!.dispatchEvent(new Event("input", { bubbles: true }));
+      // Still typing: nothing saved yet, and further keystrokes restart the clock.
+      expect(saved).toHaveLength(0);
+      vi.advanceTimersByTime(500);
+      location!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(500);
+      expect(saved).toHaveLength(0);
+      vi.advanceTimersByTime(300);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]!.profile?.location).toBe("Toronto, Canada");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not autosave the add-member form, which would create half-typed records", () => {
+    vi.useFakeTimers();
+    try {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const idInput = container.querySelector<HTMLInputElement>(
+        '#adminbot-add-member input[name="id"]',
+      );
+      idInput!.value = "pa";
+      idInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

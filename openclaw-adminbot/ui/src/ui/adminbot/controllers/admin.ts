@@ -380,7 +380,9 @@ export type AdminBotSensitiveInfoRecord = {
 
 export type AdminBotLabMemberSaveInput = {
   id: string;
-  name: string;
+  // Optional so an emptied name box saves the rest of the form: omitted, the service keeps the
+  // stored name on an existing record instead of rejecting the whole save.
+  name?: string;
   email?: string;
   slackUserId?: string;
   privilegeLevel?: AdminBotPrivilegeLevel;
@@ -1622,7 +1624,7 @@ export async function executeAdminBotAction(
 
 function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
   return {
-    name: member.name,
+    ...(member.name ? { name: member.name } : {}),
     ...(member.email ? { email: member.email } : {}),
     ...(member.slackUserId ? { slack_user_id: member.slackUserId } : {}),
     ...(member.privilegeLevel ? { privilege_level: member.privilegeLevel } : {}),
@@ -1714,7 +1716,7 @@ export async function saveAdminBotMember(
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_lab_member", {
       id: member.id,
-      name: member.name,
+      ...(member.name ? { name: member.name } : {}),
       ...(member.email ? { email: member.email } : {}),
       ...(member.slackUserId ? { slackUserId: member.slackUserId } : {}),
       ...(member.privilegeLevel ? { privilegeLevel: member.privilegeLevel } : {}),
