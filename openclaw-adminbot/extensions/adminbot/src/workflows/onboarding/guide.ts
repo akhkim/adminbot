@@ -4,6 +4,7 @@
 // the same code to preview, and the route calls it again before touching Gmail. A placeholder that
 // survives into a delivered email is the failure this exists to prevent -- "{contact_name}" reaching
 // a collaborator is worse than the send not happening.
+import { ADMINBOT_SEEDED_PORTAL_PASSWORD } from "../identity/auth.js";
 import { findOnboardingTemplate, type AdminBotOnboardingTemplate } from "./emails.js";
 
 // Written into the DCS-address example in the member template as literal copy, not as a value the
@@ -46,6 +47,14 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
   dashboard_url: {
     varName: "ADMINBOT_DASHBOARD_URL",
     fallback: "https://jinesis-admin.vercel.app/",
+  },
+  // The temporary password every seeded portal account starts with. It is the same string for
+  // everyone, so asking an operator to retype it per send was a field that could only be got
+  // wrong -- and a typo here locks somebody out of their own onboarding. Configured rather than
+  // constant so a deployment that reseeds with a different password says so in one place.
+  portal_password: {
+    varName: "ADMINBOT_SEEDED_PORTAL_PASSWORD",
+    fallback: ADMINBOT_SEEDED_PORTAL_PASSWORD,
   },
 } as const;
 

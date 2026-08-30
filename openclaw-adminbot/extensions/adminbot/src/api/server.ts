@@ -529,6 +529,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ...(options.inviteToSlackConnect
         ? { inviteToSlackConnect: options.inviteToSlackConnect }
         : {}),
+      // Remembers each minted invite so a re-send hands out the same link rather than a second
+      // invitation. The service owns the store, so the cache is wired here rather than reaching
+      // into persistence from the sender.
+      slackConnectInviteCache: {
+        get: (email, channelId) => service.getSlackConnectInvite(email, channelId),
+        save: (invite) => service.saveSlackConnectInvite(invite),
+      },
     });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??

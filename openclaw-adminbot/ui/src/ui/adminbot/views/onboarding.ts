@@ -142,13 +142,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "coauthor_major",
     label: "Coauthor, 20-40 h/week — access and setup",
     group: "External collaborator",
-    required: [
-      "first_name",
-      "member_email",
-      "portal_password",
-      "drive_folder_link",
-      "drive_guide_link",
-    ],
+    required: ["first_name", "member_email", "drive_folder_link", "drive_guide_link"],
   },
   {
     id: "coauthor_major_norms",
@@ -237,7 +231,6 @@ const FIELD_LABELS: Record<string, string> = {
   record_email: "Preferred email we hold",
   record_projects: "Projects we have them on",
   sender_name: "Sending as",
-  portal_password: "Portal password to send them",
   application_form_link: "Application form link",
   task_doc_link: "Starter task doc link",
   recipient_role: "Their role on the project",

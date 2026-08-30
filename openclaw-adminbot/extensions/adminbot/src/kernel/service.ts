@@ -414,6 +414,8 @@ export type AdminBotServiceStore = {
   /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
   saveFeedback(entry: AdminBotFeedbackEntry): void;
   listFeedback(featureId?: string): AdminBotFeedbackEntry[];
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void;
+  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined;
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
   getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
@@ -534,6 +536,44 @@ export type AdminBotSlackChannelNamingEvent = {
   purpose?: string;
   topic?: string;
 };
+
+/**
+ * A Slack Connect invite that has already been minted, so a re-send reuses it.
+ *
+ * Kept per address and channel: the same person invited to the onboarding channel and to a
+ * project channel holds two different invitations.
+ */
+export type AdminBotSlackConnectInvite = {
+  email: string;
+  channel_id: string;
+  url: string;
+  created_at: string;
+};
+
+/**
+ * How long a minted invite is handed out again before a fresh one is asked for.
+ *
+ * Slack's shared-invite links do not last forever, and a link that has gone stale is worse than no
+ * link: the recipient clicks it, is told it is invalid, and has nothing to fall back on. Fourteen
+ * days is comfortably inside Slack's own window while still being long enough that the ordinary
+ * case -- an onboarding mail re-sent a day or two later after a correction -- reuses one link
+ * rather than filling the channel with invitations.
+ */
+export const ADMINBOT_SLACK_CONNECT_INVITE_DAYS = 14;
+
+export function adminBotSlackConnectInviteIsFresh(
+  invite: Pick<AdminBotSlackConnectInvite, "created_at">,
+  now: Date = new Date(),
+): boolean {
+  const created = Date.parse(invite.created_at);
+  if (Number.isNaN(created)) {
+    // An unreadable date is not evidence of freshness; mint a new one rather than hand out a link
+    // nobody can date.
+    return false;
+  }
+  const ageDays = (now.getTime() - created) / 86_400_000;
+  return ageDays >= 0 && ageDays < ADMINBOT_SLACK_CONNECT_INVITE_DAYS;
+}
 
 export type AdminBotSlackChannelNamingRecord = {
   channel_id: string;
@@ -1477,6 +1517,21 @@ export class AdminBotService {
 
   getSettings(): AdminBotServiceResponse<AdminBotSettings> {
     return { ok: true, status: 200, payload: this.resolveSettings() };
+  }
+
+  /**
+   * The Slack Connect invite already minted for this address and channel, if any.
+   *
+   * Returns the row whatever its age; freshness is the caller's question, and
+   * `adminBotSlackConnectInviteIsFresh` is how it is asked. Keeping a stale row lets an operator
+   * see when somebody was last invited, which is what gets asked when a link stops working.
+   */
+  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined {
+    return this.store.getSlackConnectInvite(email, channelId);
+  }
+
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void {
+    this.store.saveSlackConnectInvite(invite);
   }
 
   updateSettings(settings: AdminBotSettingsInput): AdminBotServiceResponse<AdminBotSettings> {

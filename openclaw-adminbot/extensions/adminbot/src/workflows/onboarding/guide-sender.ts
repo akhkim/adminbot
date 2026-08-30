@@ -12,7 +12,9 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
+import { ADMINBOT_SEEDED_PORTAL_PASSWORD } from "../identity/auth.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
@@ -48,7 +50,9 @@ const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 /**
  * Mints a Slack Connect invite and returns its URL.
  *
- * The link expires after roughly 14 days, which is why it is minted per send and never stored.
+ * The link goes stale after roughly a fortnight, so a minted one is remembered for
+ * ADMINBOT_SLACK_CONNECT_INVITE_DAYS and handed out again inside that window rather than re-minted
+ * per send -- see `slackConnectInviteCache`. Past it, this is called again for a fresh one.
  *
  * Note that `conversations.inviteShared` requires `emails` or `user_ids`, so Slack will also send
  * its own invite mail to the address. The guide carries the same link deliberately: the recipient
@@ -143,6 +147,26 @@ export type AdminBotOnboardingSenderOptions = {
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
+  /**
+   * Remembers the Slack Connect invite minted for one address and channel, so a re-send hands out
+   * the same link instead of a second invitation.
+   *
+   * Optional: without it every send mints a new one, which is the old behaviour and still correct,
+   * just noisier for the recipient.
+   */
+  slackConnectInviteCache?: {
+    get: (
+      email: string,
+      channelId: string,
+    ) => { url: string; created_at: string } | undefined;
+    save: (invite: {
+      email: string;
+      channel_id: string;
+      url: string;
+      created_at: string;
+    }) => void;
+  };
+  now?: () => Date;
   sendEmail?: (params: {
     to: string;
     subject: string;
@@ -193,7 +217,12 @@ export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
         // paragraph, at whatever width the encoder and the reading client agree on.
         ...(bodyHtml ? ["--body-html", bodyHtml] : []),
       ],
-      { env, maxBuffer: GOG_MAX_OUTPUT_BYTES, timeout: GOG_TIMEOUT_MS, windowsHide: true },
+      {
+        env,
+        maxBuffer: GOG_MAX_OUTPUT_BYTES,
+        timeout: GOG_TIMEOUT_MS,
+        windowsHide: true,
+      },
     );
   };
 }
@@ -212,7 +241,11 @@ function composeFailure(
       missing: result.missing,
     };
   }
-  return { status: 422, message: "missing required values", missing: result.missing };
+  return {
+    status: 422,
+    message: "missing required values",
+    missing: result.missing,
+  };
 }
 
 /** The html alternative as a spreadable field, omitted rather than empty when there is no body. */
@@ -228,7 +261,9 @@ export function createAdminBotOnboardingSender(
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
   return async (request) => {
     const overrides: AdminBotGuideOverrides = {
-      ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
+      ...(request.subject_override?.trim()
+        ? { subject: request.subject_override }
+        : {}),
       ...(request.body_override?.trim() ? { body: request.body_override } : {}),
     };
     const name = request.name?.trim() ?? "";
@@ -237,13 +272,19 @@ export function createAdminBotOnboardingSender(
       return { ok: false, error: { status: 400, message: "name is required" } };
     }
     if (!email.includes("@")) {
-      return { ok: false, error: { status: 400, message: "a valid email is required" } };
+      return {
+        ok: false,
+        error: { status: 400, message: "a valid email is required" },
+      };
     }
     const template = findOnboardingTemplate(request.template_id);
     if (!template) {
       return {
         ok: false,
-        error: { status: 404, message: `unknown template: ${request.template_id}` },
+        error: {
+          status: 404,
+          message: `unknown template: ${request.template_id}`,
+        },
       };
     }
 
@@ -253,7 +294,8 @@ export function createAdminBotOnboardingSender(
       // The address the mail is going to, for the copy that has to name it back to the reader
       // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
       member_email: request.values?.member_email?.trim() || email,
-      zhijing_whatsapp: request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
+      zhijing_whatsapp:
+        request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
     };
 
     // Report every missing hand-entered value at once, before provisioning anything: asking the
@@ -263,7 +305,10 @@ export function createAdminBotOnboardingSender(
     // Edited copy is judged by what it still says, not by what the stored template said.
     const copy = `${overrides.subject ?? template.subject ?? ""}\n${overrides.body ?? template.body}`;
     const missingByHand = template.required.filter(
-      (token) => copy.includes(`{${token}}`) && !generated.has(token) && !base[token]?.trim(),
+      (token) =>
+        copy.includes(`{${token}}`) &&
+        !generated.has(token) &&
+        !base[token]?.trim(),
     );
     if (missingByHand.length > 0) {
       return {
@@ -297,7 +342,11 @@ export function createAdminBotOnboardingSender(
       // The preview shows the operator exactly what the send would produce, html included.
       return {
         ok: true,
-        payload: { ...preview.guide, ...htmlOf(preview.guide.body), sent: false },
+        payload: {
+          ...preview.guide,
+          ...htmlOf(preview.guide.body),
+          sent: false,
+        },
       };
     }
 
@@ -317,7 +366,9 @@ export function createAdminBotOnboardingSender(
       if (!probe.ok) {
         return { ok: false, error: composeFailure(probe) };
       }
-      const unknown = unfilledPlaceholders(`${probe.guide.subject}\n${probe.guide.body}`);
+      const unknown = unfilledPlaceholders(
+        `${probe.guide.subject}\n${probe.guide.body}`,
+      );
       if (unknown.length > 0) {
         return {
           ok: false,
@@ -336,11 +387,17 @@ export function createAdminBotOnboardingSender(
 
     // Provisioned because the copy being sent asks for it, not because the stored template does:
     // an operator who deleted the Drive sentence should not still get a folder created for them.
-    if (copy.includes("{drive_folder_link}") && !values.drive_folder_link?.trim()) {
+    if (
+      copy.includes("{drive_folder_link}") &&
+      !values.drive_folder_link?.trim()
+    ) {
       if (!options.provisionDriveWorkspace) {
         return {
           ok: false,
-          error: { status: 501, message: "Drive workspace provisioning is not configured" },
+          error: {
+            status: 501,
+            message: "Drive workspace provisioning is not configured",
+          },
         };
       }
       const workspace = await options.provisionDriveWorkspace({
@@ -351,11 +408,17 @@ export function createAdminBotOnboardingSender(
       values.drive_folder_link = workspace.link;
     }
 
-    if (copy.includes("{slack_connect_link}") && !values.slack_connect_link?.trim()) {
+    if (
+      copy.includes("{slack_connect_link}") &&
+      !values.slack_connect_link?.trim()
+    ) {
       if (!options.inviteToSlackConnect) {
         return {
           ok: false,
-          error: { status: 501, message: "Slack Connect invites are not configured" },
+          error: {
+            status: 501,
+            message: "Slack Connect invites are not configured",
+          },
         };
       }
       const channelId =
@@ -371,27 +434,50 @@ export function createAdminBotOnboardingSender(
           },
         };
       }
-      // Reported, not thrown. Slack refuses for ordinary reasons -- not_in_channel is the usual
-      // one, because the bot has to be in a channel before it can invite anyone into it -- and an
-      // exception out of here killed the whole batch on its first recipient rather than failing
-      // that one send and moving on.
-      let invite: { url: string };
-      try {
-        invite = await options.inviteToSlackConnect({ email, channelId });
-      } catch (error) {
-        return {
-          ok: false,
-          error: {
-            status: 502,
-            message: `could not invite ${email} to the onboarding channel (${channelId}): ${error instanceof Error ? error.message : String(error)}`,
-          },
-        };
+      // A link already minted for this person and channel is handed out again while it is still
+      // inside the reuse window. Minting one per send filled the recipient's inbox with a fresh
+      // Slack invitation every time a mail was corrected and re-sent, and left several live
+      // invitations to the same channel pointing at the same person.
+      const cached = options.slackConnectInviteCache?.get(email, channelId);
+      if (
+        cached?.url &&
+        adminBotSlackConnectInviteIsFresh(cached, options.now?.() ?? new Date())
+      ) {
+        slackLink = cached.url;
+        values.slack_connect_link = cached.url;
+      } else {
+        // Reported, not thrown. Slack refuses for ordinary reasons -- not_in_channel is the usual
+        // one, because the bot has to be in a channel before it can invite anyone into it -- and an
+        // exception out of here killed the whole batch on its first recipient rather than failing
+        // that one send and moving on.
+        let invite: { url: string };
+        try {
+          invite = await options.inviteToSlackConnect({ email, channelId });
+        } catch (error) {
+          return {
+            ok: false,
+            error: {
+              status: 502,
+              message: `could not invite ${email} to the onboarding channel (${channelId}): ${error instanceof Error ? error.message : String(error)}`,
+            },
+          };
+        }
+        slackLink = invite.url;
+        // Slack invited them either way; only the shareable link is optional. The copy reads
+        // "...stay in touch: {slack_connect_link}", so a missing link becomes the sentence that is
+        // actually true -- the invitation is in their inbox -- rather than a refusal to send.
+        values.slack_connect_link =
+          invite.url || "check your inbox for the Slack invitation";
+        if (invite.url) {
+          // Only a real link is worth remembering; the fallback sentence is not one.
+          options.slackConnectInviteCache?.save({
+            email,
+            channel_id: channelId,
+            url: invite.url,
+            created_at: (options.now?.() ?? new Date()).toISOString(),
+          });
+        }
       }
-      slackLink = invite.url;
-      // Slack invited them either way; only the shareable link is optional. The copy reads
-      // "...stay in touch: {slack_connect_link}", so a missing link becomes the sentence that is
-      // actually true -- the invitation is in their inbox -- rather than a refusal to send.
-      values.slack_connect_link = invite.url || "check your inbox for the Slack invitation";
     }
 
     // Project-channel invites, before the mail rather than after it. Nothing has been sent yet, so
@@ -399,7 +485,9 @@ export function createAdminBotOnboardingSender(
     // it could only be reported, and the recipient would already be holding the promise.
     const projectChannels = [
       ...new Set(
-        (request.slack_project_channels ?? []).map((entry) => entry.trim()).filter(Boolean),
+        (request.slack_project_channels ?? [])
+          .map((entry) => entry.trim())
+          .filter(Boolean),
       ),
     ];
     const projectInvites: { channel: string; url: string }[] = [];
@@ -407,12 +495,18 @@ export function createAdminBotOnboardingSender(
       if (!options.inviteToSlackConnect) {
         return {
           ok: false,
-          error: { status: 501, message: "Slack Connect invites are not configured" },
+          error: {
+            status: 501,
+            message: "Slack Connect invites are not configured",
+          },
         };
       }
       for (const channel of projectChannels) {
         try {
-          const invite = await options.inviteToSlackConnect({ email, channelId: channel });
+          const invite = await options.inviteToSlackConnect({
+            email,
+            channelId: channel,
+          });
           projectInvites.push({ channel, url: invite.url });
         } catch (error) {
           return {
@@ -426,7 +520,12 @@ export function createAdminBotOnboardingSender(
       }
     }
 
-    const composed = composeOnboardingGuide(template.id, values, env, overrides);
+    const composed = composeOnboardingGuide(
+      template.id,
+      values,
+      env,
+      overrides,
+    );
     if (!composed.ok) {
       return { ok: false, error: composeFailure(composed) };
     }
@@ -447,17 +546,26 @@ export function createAdminBotOnboardingSender(
       };
     }
     const html = htmlOf(guide.body);
-    await sendEmail({ to: email, subject: guide.subject, body: guide.body, ...html });
+    await sendEmail({
+      to: email,
+      subject: guide.subject,
+      body: guide.body,
+      ...html,
+    });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
     // failed form is a follow-up item, not a reason to tell the operator the send failed. Awaited
     // rather than fired and forgotten, because the operator asked for it in this request and the
     // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
     let dcsForm: { submitted: boolean; error?: string } | undefined;
-    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
+    const wantsDcsForm =
+      request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
     if (wantsDcsForm) {
       if (!options.submitDcsForm) {
-        dcsForm = { submitted: false, error: "the DCS form runner is not configured" };
+        dcsForm = {
+          submitted: false,
+          error: "the DCS form runner is not configured",
+        };
       } else {
         const { firstName, lastName } = splitDisplayName(name);
         try {
@@ -480,7 +588,9 @@ export function createAdminBotOnboardingSender(
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
-        ...(projectInvites.length > 0 ? { project_channel_invites: projectInvites } : {}),
+        ...(projectInvites.length > 0
+          ? { project_channel_invites: projectInvites }
+          : {}),
         ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },
     };

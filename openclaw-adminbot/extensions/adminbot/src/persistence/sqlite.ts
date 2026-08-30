@@ -466,6 +466,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_slack_channel_naming_updated_idx
         ON adminbot_slack_channel_naming(updated_at);
 
+      -- Slack Connect invite links, kept so a re-send does not mint a second one.
+      --
+      -- Keyed by address *and* channel: the same person can be invited to the onboarding channel
+      -- and to a project channel, and those are different invitations. Slack's own links expire,
+      -- so a row older than the reuse window is treated as absent rather than deleted -- keeping
+      -- it means "we invited them on this date", which is the question asked when somebody says
+      -- the link no longer works.
+      CREATE TABLE IF NOT EXISTS adminbot_slack_connect_invites (
+        email TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (email, channel_id)
+      );
+
       -- One row per member per surface: a re-rating is a change of mind, not a second vote.
       -- Anonymous rows share one slot per feature (see adminBotFeedbackId).
       CREATE TABLE IF NOT EXISTS adminbot_feedback (
@@ -2197,6 +2212,33 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .all()
     ) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotFeedbackEntry>(row.payload_json));
+  }
+
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_slack_connect_invites (
+          email,
+          channel_id,
+          url,
+          created_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(email, channel_id) DO UPDATE SET
+          url = excluded.url,
+          created_at = excluded.created_at`,
+      )
+      .run(invite.email.trim().toLowerCase(), invite.channel_id, invite.url, invite.created_at);
+  }
+
+  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT email, channel_id, url, created_at
+         FROM adminbot_slack_connect_invites
+         WHERE email = ? AND channel_id = ?`,
+      )
+      .get(email.trim().toLowerCase(), channelId) as AdminBotSlackConnectInvite | undefined;
+    return row;
   }
 
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {

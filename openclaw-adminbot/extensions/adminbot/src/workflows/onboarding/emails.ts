@@ -228,13 +228,9 @@ Jinesis Lab by Prof. Zhijing Jin, University of Toronto`,
     id: "coauthor_major",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: [
-      "drive_folder_link",
-      "drive_guide_link",
-      "first_name",
-      "member_email",
-      "portal_password",
-    ],
+    // `portal_password` is absent on purpose: it is the same seeded string for every account, so
+    // it is a configured deployment token (guide.ts) rather than something an operator retypes.
+    required: ["drive_folder_link", "drive_guide_link", "first_name", "member_email"],
     body: `Hi {first_name},
 
 A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab, which we would appreciate if you could do in the upcoming 5 days:
@@ -407,7 +403,7 @@ If the call time doesn't work, just decline the call and the suggestion and an a
 
 Thank you for your interest in joining the Jinesis Lab with Prof. Zhijing Jin! We're excited to have you on board. Our lab has recently developed an online lab management portal. Please follow the steps below:
 
-If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "jinesis", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
+If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "{portal_password}", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
 
 If you do not have an @cs.toronto.edu email yet, you will receive an email asking about your preferred email username. If possible, feel free to prioritize a username like "firstname@cs.toronto.edu" or "lastname@cs.toronto.edu". If those are taken, you can try {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., "{email_format_example}". If all of the above are taken, feel free to customize a username that reflects your first and last name reasonably well, so we can use it for professional communications with senior external collaborators.
 
