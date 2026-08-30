@@ -244,7 +244,7 @@ export async function onboardFromMemberSheet(
       template.templateId,
       {
         first_name: name.split(/\s+/u)[0] ?? "",
-        ...(request.values?.[String(row.sheetRow)] ?? {}),
+        ...request.values?.[String(row.sheetRow)],
       },
       env,
     );
@@ -254,7 +254,7 @@ export async function onboardFromMemberSheet(
         reason: `${template.templateId}: ${composed.reason}${
           composed.missing.length > 0 ? ` (${composed.missing.join(", ")})` : ""
         }`,
-        ...(composed.reason === "missing-values" ? { missing: composed.missing } : {}),
+        ...(composed.reason === "missing-values" && { missing: composed.missing }),
       });
       continue;
     }
