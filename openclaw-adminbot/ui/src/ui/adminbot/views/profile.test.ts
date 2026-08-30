@@ -976,6 +976,56 @@ describe("renderProfile visual structure", () => {
     expect(hero.querySelector(".profile__completeness-percent")?.textContent).toMatch(/^\d+%$/);
   });
 
+  it("shows admin-managed badges ahead of computed badges and renders the self-nomination form", () => {
+    const member = createMember({
+      assigned_badges: [
+        {
+          member_id: "pat",
+          badge_id: "causality__level_2",
+          family_key: "causality",
+          awarded_at: "2026-08-01T00:00:00.000Z",
+          awarded_by: "admin",
+          source: "admin",
+          category: "Causality",
+          name: "Causality",
+          tier: "Level 2",
+          description: "Causal researcher with at least one main-conference publication.",
+          sort_order: 70,
+        },
+      ],
+    } as Partial<LabMember>);
+    const state = createState(member, {
+      adminBotData: {
+        members: [member],
+        papers: [{ id: "p1", title: "A paper", submitted_by_member_id: member.id }],
+      },
+      adminBotBadgeDefinitions: [
+        {
+          id: "team_contributor__infra_builder",
+          family_key: "team_contributor__infra_builder",
+          category: "Team Contributor",
+          name: "Infra Builder",
+          description: "Built or maintains shared lab infrastructure.",
+          sort_order: 10,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      profileBadgeNominations: [],
+    } as unknown as Partial<AppViewState>);
+    const container = renderPage(state, vi.fn());
+
+    const badges = [...container.querySelectorAll(".profile-badge")].map((badge) =>
+      badge.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(badges[0]).toContain("Causality · Level 2");
+    expect(badges.some((badge) => badge?.includes("Author"))).toBe(true);
+    expect(container.querySelector('[data-testid="profile-badge-nominations"]')).not.toBeNull();
+    expect(container.querySelector('input[name="badge_id"]')).not.toBeNull();
+    expect(container.querySelector('textarea[name="evidence"][required]')).not.toBeNull();
+    expect(container.textContent).toContain("Built or maintains shared lab infrastructure.");
+  });
+
   it("edits the record in place, with no edit button and no separate blanks card", () => {
     const member = createMember({ role: "", location: "" });
     const state = createState(member);

@@ -2470,6 +2470,7 @@
 }
 
 .profile-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2479,6 +2480,10 @@
   background: var(--panel);
   font-size: var(--control-ui-text-xs);
   color: var(--text-strong);
+}
+
+.profile-badge--managed {
+  cursor: help;
 }
 
 .profile-badge__icon {
@@ -2494,6 +2499,328 @@
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
+}
+
+.profile-badge__popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: max-content;
+  max-width: min(320px, 70vw);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-2, 0 4px 16px rgb(0 0 0 / 25%));
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.profile-badge--managed:hover .profile-badge__popover,
+.profile-badge--managed:focus-within .profile-badge__popover {
+  opacity: 1;
+  visibility: visible;
+}
+
+.profile-badge__link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.profile-badge-form,
+.profile-badge-nominations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.profile-badge-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-2);
+  max-height: 340px;
+  overflow-y: scroll;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  scrollbar-gutter: stable;
+}
+
+.profile-badge-picker__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.profile-badge-picker__card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.profile-badge-picker__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.profile-badge-picker__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.profile-badge-nominations__list,
+.adminbot-badge-list,
+.adminbot-badge-nominations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-badge-nominations__item,
+.adminbot-badge-list__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.profile-badge-nominations__head,
+.adminbot-badge-card__head,
+.adminbot-badge-list__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.profile-badge-nominations__description,
+.profile-badge-nominations__meta,
+.adminbot-badge-evidence {
+  margin: 0;
+}
+
+.profile-badge-nominations__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-badge-form {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.adminbot-badge-form__wide {
+  grid-column: 1 / -1;
+}
+
+.adminbot-badge-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(540px, 100%);
+}
+
+.adminbot-badge-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  max-height: 340px;
+  overflow-y: scroll;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  scrollbar-gutter: stable;
+}
+
+.adminbot-badge-catalog__card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.adminbot-badge-catalog__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.adminbot-badge-catalog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.adminbot-badge-catalog__edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.adminbot-badge-catalog__edit:hover {
+  color: var(--accent);
+  border-color: var(--accent-muted);
+}
+
+.adminbot-badge-catalog__edit svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+}
+
+.adminbot-badge-catalog__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.adminbot-badge-catalog__body {
+  padding: 0 var(--space-3) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-badge-tier-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  grid-column: 1 / -1;
+}
+
+/* `textarea.input` carries a 68px min-height (roughly 3 lines) meant for longer free text; a badge
+   description or evidence note is usually one line, so these override it down to a single input
+   row and rely on `resize: vertical` (already on `textarea.input`) for the admin/member to drag it
+   open when a note runs long. */
+.adminbot-badge-textarea--compact {
+  min-height: var(--control-h-md);
+}
+
+.adminbot-badge-tier-rows__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.adminbot-badge-tier-rows__row input.input {
+  flex: 1;
+}
+
+.adminbot-badge-tier-rows__row textarea.input {
+  flex: 2;
+  resize: vertical;
+}
+
+.adminbot-badge-table {
+  min-width: 640px;
+}
+
+.adminbot-badge-table td {
+  vertical-align: top;
+}
+
+/* Badges sit in the row by default, flat and wrapped; evidence is per-chip and only ever shown on
+   hover/focus of that one chip (same popover-on-hover pattern as `.profile-badge__popover`), so a
+   member holding several badges doesn't turn every row into a wall of evidence text. */
+.adminbot-badge-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-badge-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--panel);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-badge-chip--has-evidence {
+  cursor: help;
+  border-style: dashed;
+}
+
+.adminbot-badge-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  line-height: 1;
+}
+
+.adminbot-badge-chip__remove:hover {
+  color: var(--danger);
+}
+
+.adminbot-badge-chip__popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-2, 0 4px 16px rgb(0 0 0 / 25%));
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.adminbot-badge-chip--has-evidence:hover .adminbot-badge-chip__popover,
+.adminbot-badge-chip--has-evidence:focus-within .adminbot-badge-chip__popover {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* The completion ledger: the number, then one tick per required field, grouped the way the record
@@ -2906,6 +3233,11 @@
   font-size: var(--control-ui-text-lg);
   font-weight: 700;
   color: var(--muted-strong);
+}
+
+.profile__section-subtitle {
+  margin: calc(-1 * var(--space-4)) 0 var(--space-5);
+  color: var(--muted);
 }
 
 .profile__suggestions-group {

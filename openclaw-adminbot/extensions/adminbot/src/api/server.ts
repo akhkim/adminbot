@@ -24,6 +24,11 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import {
+  adminBotBadgeNominationStatuses,
+  type AdminBotBadgeDefinitionInput,
+  type AdminBotBadgeNominationStatus,
+} from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
@@ -1920,6 +1925,138 @@ async function handleAuthenticatedRoute(
     const rawLimit = url.searchParams.get("limit");
     const limit = rawLimit ? Number(rawLimit) : undefined;
     sendServiceResult(res, service.listPending(limit));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/badges") {
+    if (principal.kind === "anonymous") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    sendServiceResult(res, service.listBadgeDefinitions());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/badges") {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotBadgeDefinitionInput;
+    sendServiceResult(res, service.createBadgeDefinition(body, principal.member.id));
+    return;
+  }
+  const updateBadge = /^\/badges\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && updateBadge) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.updateBadgeDefinition(
+        decodeURIComponent(updateBadge[1]!),
+        body as Partial<AdminBotBadgeDefinitionInput>,
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/badges/assignments") {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.assignBadge(
+        asString(body.member_id),
+        asString(body.badge_id),
+        principal.member.id,
+        asString(body.evidence) || undefined,
+      ),
+    );
+    return;
+  }
+  const removeBadge = /^\/badges\/assignments\/([^/]+)\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && removeBadge) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.removeBadge(
+        decodeURIComponent(removeBadge[1]!),
+        decodeURIComponent(removeBadge[2]!),
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/badges/nominations") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const rawStatus = url.searchParams.get("status");
+    const status =
+      rawStatus && adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
+        ? (rawStatus as AdminBotBadgeNominationStatus)
+        : undefined;
+    const isAdmin = principal.member.privilege_level === "admin";
+    sendServiceResult(
+      res,
+      service.listBadgeNominations({
+        ...(!isAdmin
+          ? { memberId: principal.member.id }
+          : url.searchParams.get("member_id")
+            ? { memberId: url.searchParams.get("member_id") ?? undefined }
+            : {}),
+        ...(status ? { status } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/badges/nominations") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.submitBadgeNomination(principal.member.id, {
+        badge_id: asString(body.badge_id),
+        ...(typeof body.evidence === "string" ? { evidence: body.evidence } : {}),
+      }),
+    );
+    return;
+  }
+  const approveBadgeNomination = /^\/badges\/nominations\/([^/]+)\/approve$/u.exec(url.pathname);
+  if (req.method === "POST" && approveBadgeNomination) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideBadgeNomination(
+        decodeURIComponent(approveBadgeNomination[1]!),
+        "approved",
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  const rejectBadgeNomination = /^\/badges\/nominations\/([^/]+)\/reject$/u.exec(url.pathname);
+  if (req.method === "POST" && rejectBadgeNomination) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideBadgeNomination(
+        decodeURIComponent(rejectBadgeNomination[1]!),
+        "rejected",
+        principal.member.id,
+      ),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members") {

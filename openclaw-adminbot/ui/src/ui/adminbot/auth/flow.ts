@@ -107,6 +107,15 @@ export type MemberAuthHost = {
   // leaving the previous member's data in place would make the next person to sign in on this
   // browser land on a page showing it, with nothing to trigger a refetch.
   adminBotData?: AdminBotDashboardData;
+  adminBotBadgeDefinitions?: import("./session.ts").BadgeDefinition[];
+  adminBotBadgeDefinitionsLoadedAt?: number | null;
+  adminBotBadgeDefinitionsError?: import("../data/badges.ts").BadgeLoadError | null;
+  adminBotBadgeNominations?: import("./session.ts").BadgeNominationView[];
+  adminBotBadgeNominationsLoadedAt?: number | null;
+  adminBotBadgeNominationsError?: import("../data/badges.ts").BadgeLoadError | null;
+  profileBadgeNominations?: import("./session.ts").BadgeNominationView[];
+  profileBadgeNominationsLoadedAt?: number | null;
+  profileBadgeNominationsError?: import("../data/badges.ts").BadgeLoadError | null;
   adminBotOnboarding: MemberOnboarding | null;
   // Whether the signed-in member has explicitly clicked "I have read this" on the dashboard's
   // onboarding warning card, in this browser. False (and the card showing) is the default
@@ -544,6 +553,15 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   if (host.adminBotData) {
     host.adminBotData = createEmptyAdminBotDashboardData();
   }
+  host.adminBotBadgeDefinitions = [];
+  host.adminBotBadgeDefinitionsLoadedAt = null;
+  host.adminBotBadgeDefinitionsError = null;
+  host.adminBotBadgeNominations = [];
+  host.adminBotBadgeNominationsLoadedAt = null;
+  host.adminBotBadgeNominationsError = null;
+  host.profileBadgeNominations = [];
+  host.profileBadgeNominationsLoadedAt = null;
+  host.profileBadgeNominationsError = null;
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
   host.loginMode = "signin";

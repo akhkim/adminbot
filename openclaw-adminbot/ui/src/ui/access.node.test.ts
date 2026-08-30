@@ -115,6 +115,7 @@ describe("visibleTabsForRole", () => {
     for (const tab of [
       "adminbot",
       "adminbotSettings",
+      "adminbotBadges",
       "adminbotAnnouncements",
       // Writes to the shared calendar and mails people, with no approval queue behind it.
       "adminbotCalendar",
