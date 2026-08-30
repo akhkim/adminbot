@@ -803,88 +803,6 @@ export async function nudgeOnboardingStep(
   return { ok: true, value: result.body as MemberNudgeResult };
 }
 
-export type OnboardingGuideRequest = {
-  templateId: string;
-  name: string;
-  email: string;
-  values: Record<string, string>;
-  preview: boolean;
-  /** Left out entirely when the tab has no opinion, so the service applies its own default. */
-  submitDcsForm?: boolean;
-  /**
-   * The copy as the operator edited it in the preview. Sent only when it differs from what the
-   * preview returned, so an untouched preview still sends the stored template.
-   */
-  subjectOverride?: string;
-  bodyOverride?: string;
-  /** Channels the send should invite them to, by name or id; empty means none. */
-  projectChannels?: readonly string[];
-};
-
-export type OnboardingGuideResult = {
-  template_id: string;
-  subject: string;
-  body: string;
-  sent: boolean;
-  drive_folder_link?: string;
-  slack_connect_link?: string;
-  project_channel_invites?: { channel: string; url: string }[];
-};
-
-/**
- * Previews or sends an onboarding guide as the signed-in admin.
- *
- * The 422 carries the exact list of values the service is still waiting on, which is the whole
- * point of the endpoint refusing rather than sending a half-filled email; it is surfaced verbatim
- * so the form can name the fields instead of guessing.
- */
-export async function sendOnboardingGuide(
-  request: OnboardingGuideRequest,
-  sessionToken: string,
-  baseUrl: string,
-): Promise<
-  | AuthResult<OnboardingGuideResult>
-  | { ok: false; kind: "missing"; missing: string[] }
-  | { ok: false; kind: "rejected"; message: string }
-> {
-  const result = await authedJson(baseUrl, "/onboarding/guide", "POST", sessionToken, {
-    template_id: request.templateId,
-    name: request.name,
-    email: request.email,
-    values: request.values,
-    preview: request.preview,
-    ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
-    ...(request.subjectOverride ? { subject_override: request.subjectOverride } : {}),
-    ...(request.bodyOverride ? { body_override: request.bodyOverride } : {}),
-    ...(request.projectChannels?.length ? { slack_project_channels: request.projectChannels } : {}),
-  });
-  if ("unreachable" in result) {
-    return { ok: false, kind: "unreachable" };
-  }
-  if (!result.response.ok) {
-    const error = (result.body as { error?: { missing?: string[]; message?: string } } | undefined)
-      ?.error;
-    if (result.response.status === 422 && error?.missing?.length) {
-      return { ok: false, kind: "missing", missing: error.missing };
-    }
-    if (result.response.status === 403) {
-      return { ok: false, kind: "forbidden" };
-    }
-    // Everything else this route refuses -- an unconfigured mail account (503), Drive or Slack
-    // provisioning that is not wired up (501), an unknown template (404), a rejected name or
-    // address (400) -- arrives with a message that says exactly which one it was. Passing it
-    // through matters more here than on most routes: only 400 is about what the admin typed, so
-    // the generic "check the details" advice is wrong for every other case, and an operator who
-    // follows it re-types a correct form until they give up.
-    const message = normalizeOptionalString(error?.message);
-    if (message) {
-      return { ok: false, kind: "rejected", message };
-    }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
-  }
-  return { ok: true, value: result.body as OnboardingGuideResult };
-}
-
 /** The lab's member spreadsheet as the Membership grid shows it. */
 export type MemberSheetView = {
   spreadsheet_id: string;
@@ -914,6 +832,28 @@ export type MemberSheetOnboardResult = {
   skipped: { sheet_row: number; reason: string; missing?: string[] }[];
 };
 
+/**
+ * The service's own sentence about why a member-sheet call failed.
+ *
+ * The three routes here fail for reasons only the service can name -- a spreadsheet it cannot read
+ * because the host's Google token expired (502), a deployment pointed at a sheet that does not
+ * exist -- and `mapErrorResponse` carries a message only for 400. Without this the grid answered
+ * every one of them with "The member sheet could not be reached", which is true and useless.
+ */
+function memberSheetFailure(
+  response: Response,
+  body: unknown,
+): { ok: false; kind: AuthErrorKind; message?: string } {
+  const mapped = mapErrorResponse(response, body, { weakOn400: false });
+  if (mapped.message) {
+    return { ok: false, ...mapped };
+  }
+  const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  return typeof message === "string" && message.trim()
+    ? { ok: false, ...mapped, message: message.trim() }
+    : { ok: false, ...mapped };
+}
+
 export async function fetchMemberSheet(
   sessionToken: string,
   baseUrl: string,
@@ -923,7 +863,7 @@ export async function fetchMemberSheet(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return memberSheetFailure(result.response, result.body);
   }
   return { ok: true, value: result.body as MemberSheetView };
 }
@@ -947,7 +887,7 @@ export async function proposeMemberSheetEdits(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return memberSheetFailure(result.response, result.body);
   }
   return { ok: true, value: result.body as MemberSheetEditResult };
 }
@@ -966,7 +906,7 @@ export async function onboardFromMemberSheet(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return memberSheetFailure(result.response, result.body);
   }
   return { ok: true, value: result.body as MemberSheetOnboardResult };
 }

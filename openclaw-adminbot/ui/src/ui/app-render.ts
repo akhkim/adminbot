@@ -2632,6 +2632,21 @@ export function renderApp(state: AppViewState) {
     state.adminBotLogisticsRequestsLoadedAt = Date.now();
     void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
   }
+  // The member roster is the Membership tab, so it reads itself when the tab opens rather than
+  // waiting for a "Load the sheet" press: an operator who opens Membership and sees an empty panel
+  // reads it as broken, and it was. `memberSheetLoadedAt` is the sentinel rather than `memberSheet`
+  // -- a read that fails leaves the grid null, and retrying it on every render would hammer Google
+  // with the same failure. Reload is still one press away.
+  if (
+    state.tab === "adminbotOnboarding" &&
+    hasMemberSession &&
+    !state.memberSheetBusy &&
+    (state.memberSheetLoadedAt ?? null) === null &&
+    state.loadMemberSheet
+  ) {
+    state.memberSheetLoadedAt = Date.now();
+    void Promise.resolve(state.loadMemberSheet()).finally(() => requestHostUpdate?.());
+  }
   // Notifications are read once per session, on whichever tab the member lands on, rather than
   // when they open a particular one -- the whole point is that the popup reaches somebody who is
   // looking at something else. Undefined is the "never asked" sentinel; a member with none sets []

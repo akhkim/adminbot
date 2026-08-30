@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotService } from "../kernel/service.js";
+import { defaultMemberSheet } from "./server.js";
 import {
   type MemberSheetSource,
   onboardFromMemberSheet,
@@ -281,5 +282,35 @@ describe("onboarding from the roster", () => {
     expect(
       await onboardFromMemberSheet(service, source(), { sheet_rows: [] }, "andrew", env),
     ).toMatchObject({ error: { status: 400 } });
+  });
+});
+
+describe("defaultMemberSheet", () => {
+  // The tab answered 503 in production for months because nothing set this variable, and a 503 on
+  // the read path is indistinguishable, from the grid, from a sheet with no rows.
+  it("resolves the lab's own roster with nothing configured", () => {
+    const source = defaultMemberSheet({});
+    expect(source.spreadsheetId).toBe("1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68");
+    expect(source.tab).toBe("Full Slack Member List");
+  });
+
+  it("takes the tab from the poller's range, which deployments already set", () => {
+    expect(defaultMemberSheet({ ADMINBOT_MEMBER_SHEET_RANGE: "'Full Slack Member List'!A:Z" }).tab)
+      .toBe("Full Slack Member List");
+    expect(defaultMemberSheet({ ADMINBOT_MEMBER_SHEET_RANGE: "Members!A:Z" }).tab).toBe("Members");
+    // A bare range names no tab, so it must not be mistaken for one.
+    expect(defaultMemberSheet({ ADMINBOT_MEMBER_SHEET_RANGE: "A:Z" }).tab).toBe(
+      "Full Slack Member List",
+    );
+  });
+
+  it("lets the environment point at another sheet entirely", () => {
+    const source = defaultMemberSheet({
+      ADMINBOT_MEMBER_SHEET_ID: "other-sheet",
+      ADMINBOT_MEMBER_SHEET_TAB: "Roster copy",
+      ADMINBOT_MEMBER_SHEET_RANGE: "Ignored!A:Z",
+    });
+    expect(source.spreadsheetId).toBe("other-sheet");
+    expect(source.tab).toBe("Roster copy");
   });
 });

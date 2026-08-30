@@ -141,12 +141,42 @@ export type AdminBotMemberSheetSource = {
 /** The whole tab. Sheets caps an open-ended range at the used region, so this is not 26 columns. */
 const MEMBER_SHEET_RANGE = "A:Z";
 
-function defaultMemberSheet(env: NodeJS.ProcessEnv): AdminBotMemberSheetSource | undefined {
-  const spreadsheetId = env.ADMINBOT_MEMBER_SHEET_ID?.trim();
-  if (!spreadsheetId) {
+/**
+ * The lab's own roster, which is the sheet this deployment exists to administer.
+ *
+ * Defaulted rather than required. Leaving it entirely to configuration meant a deployment that had
+ * never set ADMINBOT_MEMBER_SHEET_ID answered the Membership grid with a 503 and the tab sat empty
+ * -- which is what production did, because nothing ever set it. The environment still overrides,
+ * so another lab, or a copy of the sheet to test edits against, is one variable away.
+ */
+const DEFAULT_MEMBER_SHEET_ID = "1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68";
+const DEFAULT_MEMBER_SHEET_TAB = "Full Slack Member List";
+
+/**
+ * The tab name out of a `Tab!A:Z` range.
+ *
+ * ADMINBOT_MEMBER_SHEET_RANGE predates this grid -- the sheet poller reads the roster through it --
+ * so a deployment that already names its tab there should not have to name it a second time.
+ */
+function tabFromRange(range: string | undefined): string | undefined {
+  const separator = (range ?? "").lastIndexOf("!");
+  if (separator < 0) {
     return undefined;
   }
-  const tab = env.ADMINBOT_MEMBER_SHEET_TAB?.trim() || "Full Slack Member List";
+  const tab = (range ?? "")
+    .slice(0, separator)
+    .trim()
+    .replace(/^'(.*)'$/su, "$1")
+    .replaceAll("''", "'");
+  return tab || undefined;
+}
+
+export function defaultMemberSheet(env: NodeJS.ProcessEnv): AdminBotMemberSheetSource {
+  const spreadsheetId = env.ADMINBOT_MEMBER_SHEET_ID?.trim() || DEFAULT_MEMBER_SHEET_ID;
+  const tab =
+    env.ADMINBOT_MEMBER_SHEET_TAB?.trim() ||
+    tabFromRange(env.ADMINBOT_MEMBER_SHEET_RANGE?.trim()) ||
+    DEFAULT_MEMBER_SHEET_TAB;
   return {
     spreadsheetId,
     tab,

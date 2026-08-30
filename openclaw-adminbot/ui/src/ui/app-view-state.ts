@@ -102,26 +102,12 @@ export type AppViewState = {
   // Whether the sign-in gate is on screen. A visitor browses the public shell until they ask for
   // it, so the gate is a surface they open rather than a wall they start behind.
   authGateVisible: boolean;
-  // Onboarding tab: the form is driven by the selected template's required placeholders.
-  onboardingTemplateId?: string;
-  onboardingName?: string;
-  onboardingEmail?: string;
-  onboardingValues?: Record<string, string>;
-  onboardingBusy?: boolean;
-  /** Unset means "the service decides", which is on for the full-member guide and off elsewhere. */
-  onboardingSubmitDcsForm?: boolean;
-  onboardingError?: string | null;
-  onboardingMissing?: string[];
-  onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
-  /** The previewed email as the operator edited it; this is what a send delivers. */
-  onboardingDraftSubject?: string;
-  onboardingDraftBody?: string;
-  /** Comma-separated project channels the send invites them to. */
-  onboardingProjectChannels?: string;
   // Membership tab: the lab's member spreadsheet as an editable grid. `memberSheetEdits` holds
   // only the cells actually changed, keyed "row:column", so saving one cell never rewrites the
   // row around it.
   memberSheet?: import("./adminbot/auth/session.ts").MemberSheetView | null;
+  /** When the tab last read the sheet on its own; null means it never has. */
+  memberSheetLoadedAt?: number | null;
   memberSheetBusy?: boolean;
   memberSheetError?: string | null;
   memberSheetEdits?: Record<string, string>;
@@ -135,7 +121,6 @@ export type AppViewState = {
   saveMemberSheetEdits?: () => void | Promise<void>;
   onboardSelectedMemberRows?: () => void | Promise<void>;
   editMemberSheetCell?: (sheetRow: number, column: number, value: string) => void;
-  sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.
   calendarEvents?: import("./adminbot/auth/session.ts").CalendarEvent[];
