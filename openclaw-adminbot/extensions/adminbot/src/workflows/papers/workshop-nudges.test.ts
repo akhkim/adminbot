@@ -366,6 +366,109 @@ describe("workshop nudge matching", () => {
     });
   });
 
+  it("nudges only the first author, never a professor or an alumnus, and skips settled papers", () => {
+    const member = (
+      id: string,
+      name: string,
+      extra: Partial<AdminBotLabMember> = {},
+    ): AdminBotLabMember =>
+      ({
+        id,
+        name,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: "member",
+        access: [],
+        status: "active",
+        created_at: "2035-01-01T00:00:00Z",
+        updated_at: "2035-01-01T00:00:00Z",
+        ...extra,
+      }) as AdminBotLabMember;
+    const paper = (
+      id: string,
+      extra: Partial<AdminBotPaperRecord> = {},
+    ): AdminBotPaperRecord =>
+      ({
+        id,
+        title: id,
+        authors: [],
+        current_step: "submission",
+        created_at: "2035-01-01T00:00:00Z",
+        updated_at: "2035-02-01T00:00:00Z",
+        ...extra,
+      }) as AdminBotPaperRecord;
+
+    const inputs = workshopNudgeInputsFromAdminBot({
+      members: [
+        member("ada", "Ada"),
+        member("ben", "Ben"),
+        // Status still `active`, but the governance record says alumni: the roster keeps leavers
+        // whose status was never flipped, and they must not be nudged.
+        member("gone", "Gone", { member_type: "alumni, coauthor-minor" }),
+        member("prof", "Zhijing", { role: "Professor" }),
+      ],
+      papers: [
+        // Linked author order decides when no explicit first author is recorded: Ada, not Ben.
+        paper("ordered", {
+          author_links: [
+            { name: "Ada", member_id: "ada" },
+            { name: "Ben", member_id: "ben" },
+          ],
+        }),
+        // The explicit record wins over link order.
+        paper("explicit", {
+          first_author_member_id: "ben",
+          author_links: [
+            { name: "Ada", member_id: "ada" },
+            { name: "Ben", member_id: "ben" },
+          ],
+        }),
+        // First-authored by people the sweep must not address: no fallback to a coauthor.
+        paper("professors", {
+          author_links: [
+            { name: "Zhijing", member_id: "prof" },
+            { name: "Ada", member_id: "ada" },
+          ],
+        }),
+        paper("alumni-led", { author_links: [{ name: "Gone", member_id: "gone" }] }),
+        // Settled papers spend no model calls and nudge nobody.
+        paper("accepted", {
+          venue_decision: "accept",
+          author_links: [{ name: "Ada", member_id: "ada" }],
+        }),
+        paper("published-note", {
+          notes: "Status: Published\nVenue: ICML",
+          author_links: [{ name: "Ada", member_id: "ada" }],
+        }),
+      ],
+      attendees: [],
+      workshops: [profile("meta", "neurips-2035")],
+    });
+
+    const recipients = new Map(
+      inputs.papers
+        .filter((entry) => entry.recipient_member_id)
+        .map((entry) => [entry.paper_id, entry.recipient_member_id]),
+    );
+    expect(recipients).toEqual(
+      new Map([
+        ["ordered", "ada"],
+        ["explicit", "ben"],
+      ]),
+    );
+    expect(inputs.papers.map((entry) => entry.paper_id)).not.toContain("accepted");
+    expect(inputs.papers.map((entry) => entry.paper_id)).not.toContain("published-note");
+    expect(inputs.coverage.papers_without_active_recipients.map((entry) => entry.paper_id)).toEqual(
+      ["alumni-led", "professors"],
+    );
+    // Neither the professor nor the alumnus is a member the sweep considers at all.
+    expect(
+      inputs.coverage.members_without_usable_papers.map((entry) => entry.member_id),
+    ).not.toContain("prof");
+    expect(
+      inputs.coverage.members_without_usable_papers.map((entry) => entry.member_id),
+    ).not.toContain("gone");
+  });
+
   it("judges a co-authored paper once and recommends it to every author", async () => {
     const seen: string[][] = [];
     const result = await matchWorkshopNudges({

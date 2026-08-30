@@ -237,7 +237,7 @@ describe("renderWorkshopNudges", () => {
     expect(onViewChange).toHaveBeenCalledWith({ tab: "unresolved", page: 0, detailKey: null });
 
     const selectAll = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Select all ready recipients on this page"]',
+      'input[aria-label="Select all ready recipients"]',
     );
     selectAll?.click();
     expect(onSetRecipients).toHaveBeenCalledWith(["member-1"], false);

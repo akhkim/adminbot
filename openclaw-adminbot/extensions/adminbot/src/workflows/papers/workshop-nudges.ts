@@ -11,6 +11,7 @@
 // prose is what a model does and a vector distance does not.
 
 import {
+  adminBotIsAlumniType,
   isAdminBotFullMember,
   type AdminBotLabMember,
   type AdminBotPaperRecord,
@@ -215,7 +216,15 @@ export function workshopNudgeInputsFromAdminBot(params: {
 }): WorkshopNudgeNativeInputs {
   const activeMembers = params.members.filter(
     (member) =>
-      isAdminBotFullMember(member) && member.status !== "alumni" && member.status !== "external",
+      isAdminBotFullMember(member) &&
+      member.status !== "alumni" &&
+      member.status !== "external" &&
+      // The roster carries leavers whose status was never flipped; the Member Type column is the
+      // governance record, so an `alumni` token there wins over an `active` status.
+      !adminBotIsAlumniType(member.member_type) &&
+      // Professors get the papers, not the nudges: a workshop-submission prompt is a thing the
+      // lab asks of whoever is doing the submitting, and it is not the professor.
+      (member.role ?? "").trim().toLowerCase() !== "professor",
   );
   const membersById = new Map(activeMembers.map((member) => [member.id, member]));
   const paperIdsByMember = new Map<string, Set<string>>();
@@ -226,6 +235,11 @@ export function workshopNudgeInputsFromAdminBot(params: {
   for (const paper of [...params.papers].toSorted((left, right) =>
     left.id.localeCompare(right.id),
   )) {
+    // A settled paper is not looking for a venue, so it neither spends model calls in the match
+    // nor puts its author in the nudge queue.
+    if (paperIsSettled(paper)) {
+      continue;
+    }
     const unresolvedNames = (paper.author_links ?? [])
       .filter((author) => !author.member_id && !author.email)
       .map((author) => author.name.trim())
@@ -238,13 +252,19 @@ export function workshopNudgeInputsFromAdminBot(params: {
       });
     }
 
-    const recipientIds = unique([
-      ...(paper.author_links ?? []).flatMap((author) =>
-        author.member_id ? [author.member_id] : [],
-      ),
-      ...(paper.first_author_member_id ? [paper.first_author_member_id] : []),
-      ...(paper.submitted_by_member_id ? [paper.submitted_by_member_id] : []),
-    ]).filter((memberId) => membersById.has(memberId));
+    // The first author, and only the first author: the workshop submission is theirs to make,
+    // and nudging every coauthor asked seven people to answer one question. The explicit
+    // `first_author_member_id` wins; the paper's first author link covers records that predate
+    // it; whoever filed the paper stands in only when the record names no authors at all. There
+    // is deliberately no falling through to a later coauthor -- a paper first-authored by a
+    // professor, an alumnus, or an outside author gets no nudge and is reported below, rather
+    // than sending the message to somebody it was not meant for.
+    const firstAuthorId =
+      paper.first_author_member_id ??
+      ((paper.author_links ?? []).length > 0
+        ? (paper.author_links ?? [])[0]?.member_id
+        : paper.submitted_by_member_id);
+    const recipientIds = firstAuthorId && membersById.has(firstAuthorId) ? [firstAuthorId] : [];
     if (!recipientIds.length) {
       normalized.push(workshopPaperFromAdminBot(paper));
       papersWithoutRecipients.push({ paper_id: paper.id, title: paper.title });
@@ -502,6 +522,22 @@ function rankUpToThreeWorkshops(
       ...recommendation,
       final_rank: workshopRanks.get(recommendation.workshop.workshop_id),
     }));
+}
+
+/**
+ * A paper whose venue question is answered.
+ *
+ * An accepted or otherwise finished paper has nothing to gain from a workshop recommendation, and
+ * on a full sweep the settled papers are model calls spent asking about work that is already
+ * placed. `venue_decision` is the typed record; legacy rows carry the same fact as prose in a
+ * `Status:` note, so that is read too.
+ */
+function paperIsSettled(paper: AdminBotPaperRecord): boolean {
+  if (paper.venue_decision === "accept") {
+    return true;
+  }
+  const noted = noteValue(paper.notes, "Status");
+  return Boolean(noted && /accept|publish|complete|camera[\s-]?ready|\bdone\b/iu.test(noted));
 }
 
 function workshopPaperFromAdminBot(
