@@ -122,6 +122,9 @@ import {
   loadProfileBadgeNominations,
   removeAdminBadge,
   saveAdminBadgeDefinition,
+  shouldLoadAdminBadgeNominations,
+  shouldLoadBadgeDefinitions,
+  shouldLoadProfileBadgeNominations,
   submitOwnBadgeNomination,
 } from "./adminbot/data/badges.ts";
 import {
@@ -2577,28 +2580,25 @@ export function renderApp(state: AppViewState) {
   if (state.tab === "profile" && hasMemberSession && state.adminBotLocationDrift === undefined) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
   }
+  // The three badge reads share one rule, in shouldLoad*: a failed load must not be retried from
+  // the render pass. Each of these used to test only "not loading and never loaded", which a
+  // failure satisfies forever -- so a service that answered 403 or 404 got one request per render,
+  // for as long as the tab stayed open, and the error card flickered instead of settling.
   if (
     (state.tab === "profile" || state.tab === "adminbotBadges") &&
     hasMemberSession &&
-    !state.adminBotBadgeDefinitionsLoading &&
-    state.adminBotBadgeDefinitionsLoadedAt === null
+    shouldLoadBadgeDefinitions(state)
   ) {
     void loadBadgeDefinitions(state).finally(() => requestHostUpdate?.());
   }
-  if (
-    state.tab === "profile" &&
-    hasMemberSession &&
-    !state.profileBadgeNominationsLoading &&
-    state.profileBadgeNominationsLoadedAt === null
-  ) {
+  if (state.tab === "profile" && hasMemberSession && shouldLoadProfileBadgeNominations(state)) {
     void loadProfileBadgeNominations(state).finally(() => requestHostUpdate?.());
   }
   if (
     state.tab === "adminbotBadges" &&
     adminBotMode === "admin" &&
     hasMemberSession &&
-    !state.adminBotBadgeNominationsLoading &&
-    state.adminBotBadgeNominationsLoadedAt === null
+    shouldLoadAdminBadgeNominations(state)
   ) {
     void loadAdminBadgeNominations(state).finally(() => requestHostUpdate?.());
   }
