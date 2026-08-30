@@ -288,9 +288,59 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarRemoveAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
+    case "sheet.update_cells":
+      return buildSheetUpdateArgs(proposal);
     default:
       return undefined;
   }
+}
+
+/**
+ * One `sheets batch-update` for the whole edit, rather than one call per cell.
+ *
+ * Per-cell calls would leave the roster half-written when the fifth of nine fails, and this sheet
+ * is what the onboarding and nudge sweeps read. A single API request either lands or does not.
+ *
+ * `--input RAW` on purpose: USER_ENTERED lets a cell beginning `=` become a live formula and one
+ * beginning `+` or `-` be re-typed. An administrator editing a roster cell in a grid means the
+ * text they typed, and a pasted value must never become a reference into somebody else's sheet.
+ */
+export function buildSheetUpdateArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const spreadsheetId = requireString(payload, "spreadsheet_id");
+  const updates = payload.updates;
+  if (!Array.isArray(updates) || updates.length === 0) {
+    throw new Error("sheet.update_cells proposed_payload.updates must be a non-empty array");
+  }
+  const data = updates.map((entry) => {
+    const update = entry as Record<string, unknown>;
+    const range = typeof update.range === "string" ? update.range.trim() : "";
+    if (!range) {
+      throw new Error("sheet.update_cells update.range is required");
+    }
+    const values = update.values;
+    if (!Array.isArray(values) || values.some((row) => !Array.isArray(row))) {
+      throw new Error(`sheet.update_cells update.values for ${range} must be a row matrix`);
+    }
+    return {
+      range,
+      values: (values as unknown[][]).map((row) =>
+        row.map((cell) => (cell === undefined || cell === null ? "" : String(cell))),
+      ),
+    };
+  });
+
+  const args = rootArgs("sheets.batch-update", optionalString(payload, "account"));
+  args.push(
+    "sheets",
+    "batch-update",
+    "--data-json",
+    JSON.stringify(data),
+    "--input",
+    "RAW",
+    spreadsheetId,
+  );
+  return args;
 }
 
 function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): string[] {

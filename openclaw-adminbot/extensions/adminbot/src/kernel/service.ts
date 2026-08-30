@@ -669,6 +669,12 @@ const DEFAULT_ACTION_POLICIES = {
   // Publishing changes the lab's public deadline catalogue. One authenticated administrator
   // reviews the exact payload hash before the internal publication executor can project it.
   "deadline.publish": approvalPolicy("T2", ["admin"]),
+  // Writing the member roster back to Google. The sheet is what the onboarding and nudge sweeps
+  // read, and several people work in it directly, so an overwrite is felt by more than its author.
+  // An administrator reviews the exact cells first, which is also the point at which a Member Type
+  // or access edit made in the grid gets a second pair of eyes -- the poller has always refused to
+  // let the sheet act as an authorization surface on its own.
+  "sheet.update_cells": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
