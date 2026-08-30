@@ -168,6 +168,98 @@ function renderOnboardResult(state: AppViewState) {
 }
 
 /**
+ * What pressing "Queue" will do, shown before it is done.
+ *
+ * Onboarding automates real things -- one composed email per selected member, queued as an
+ * approval-gated proposal -- and the only way to trust an automation is to read what it is about
+ * to do. The mails here are the very ones confirming queues: same templates, same addresses,
+ * same values, composed by the service on the same code path. Rows that would be skipped are
+ * listed with their reasons, so "3 selected, 2 queued" is never a surprise.
+ */
+function renderOnboardPreview(state: AppViewState) {
+  const preview = state.memberSheetOnboardPreview;
+  if (!preview) {
+    return nothing;
+  }
+  const busy = Boolean(state.memberSheetBusy);
+  const planned = preview.planned;
+  return html`
+    <section class="adminbot-onboard-preview" data-testid="onboard-preview">
+      <div class="adminbot-onboard-preview__head">
+        <strong>Review before onboarding</strong>
+        <span>
+          ${planned.length === 0
+            ? "Nothing would be queued for this selection."
+            : `Confirming queues ${planned.length} email ${
+                planned.length === 1 ? "proposal" : "proposals"
+              } in Pending Actions. Nothing is sent until an admin approves them there.`}
+        </span>
+      </div>
+      ${planned.map(
+        (mail) => html`
+          <details class="adminbot-onboard-preview__mail">
+            <summary>
+              <span class="adminbot-onboard-preview__who">
+                Row ${mail.sheet_row} · ${mail.name || mail.email}
+              </span>
+              <span class="adminbot-onboard-preview__meta">${mail.template_id} → ${mail.email}</span>
+            </summary>
+            <dl class="adminbot-onboard-preview__fields">
+              <dt>To</dt>
+              <dd>${mail.email}</dd>
+              <dt>Reply-To</dt>
+              <dd>${mail.reply_to}</dd>
+              <dt>Subject</dt>
+              <dd>${mail.subject}</dd>
+            </dl>
+            <pre class="adminbot-onboard-preview__body">${mail.body}</pre>
+          </details>
+        `,
+      )}
+      ${preview.skipped.length > 0
+        ? html`
+            <div class="callout warning">
+              <p>
+                ${preview.skipped.length} of the selected
+                ${preview.skipped.length === 1 ? "row" : "rows"} would be skipped:
+              </p>
+              <ul>
+                ${preview.skipped.map(
+                  (skip) => html`<li>Row ${skip.sheet_row}: ${skip.reason}</li>`,
+                )}
+              </ul>
+            </div>
+          `
+        : nothing}
+      <div class="adminbot-onboard-preview__actions">
+        <button
+          class="btn primary"
+          type="button"
+          data-testid="onboard-confirm"
+          ?disabled=${busy || planned.length === 0}
+          @click=${() => void state.onboardSelectedMemberRows?.()}
+        >
+          ${planned.length === 0
+            ? "Nothing to queue"
+            : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
+        </button>
+        <button
+          class="btn"
+          type="button"
+          data-testid="onboard-preview-cancel"
+          ?disabled=${busy}
+          @click=${() => {
+            state.memberSheetOnboardPreview = null;
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+/**
  * Before the sheet has been read. The tab reads it on open, so this is normally a moment of
  * "Reading…"; the button is for the failure case, where the read is worth a second try without
  * reloading the console.
@@ -216,36 +308,48 @@ export function renderMemberSheet(state: AppViewState) {
 
   return html`
     <section class="adminbot-member-sheet adminbot-member-roster">
-      <header class="adminbot-member-sheet__header">
-        <h3>Member roster</h3>
-        <a href=${sheet.url} target="_blank" rel="noopener noreferrer">Open in Google Sheets</a>
-        <button type="button" ?disabled=${busy} @click=${() => void state.loadMemberSheet?.()}>
-          ${busy ? "Working…" : "Reload"}
-        </button>
-        <button
-          type="button"
-          ?disabled=${busy || editCount === 0}
-          @click=${() => void state.saveMemberSheetEdits?.()}
-        >
-          ${editCount === 0
-            ? "No changes"
-            : `Propose ${editCount} ${editCount === 1 ? "change" : "changes"}`}
-        </button>
-        <button
-          type="button"
-          ?disabled=${busy || selection.length === 0}
-          @click=${() => void state.onboardSelectedMemberRows?.()}
-        >
-          ${selection.length === 0
-            ? "Select rows to onboard"
-            : `Onboard ${selection.length} selected`}
-        </button>
+      <header class="adminbot-member-roster__head">
+        <div class="adminbot-member-roster__titles">
+          <h3>Member roster</h3>
+          <a href=${sheet.url} target="_blank" rel="noopener noreferrer">Open in Google Sheets</a>
+        </div>
+        <div class="adminbot-member-roster__actions">
+          <button
+            class="btn"
+            type="button"
+            ?disabled=${busy}
+            @click=${() => void state.loadMemberSheet?.()}
+          >
+            ${busy ? "Working…" : "Reload"}
+          </button>
+          <button
+            class="btn"
+            type="button"
+            ?disabled=${busy || editCount === 0}
+            @click=${() => void state.saveMemberSheetEdits?.()}
+          >
+            ${editCount === 0
+              ? "No changes"
+              : `Propose ${editCount} ${editCount === 1 ? "change" : "changes"}`}
+          </button>
+          <button
+            class="btn primary"
+            type="button"
+            data-testid="onboard-preview-open"
+            ?disabled=${busy || selection.length === 0}
+            @click=${() => void state.previewOnboardSelectedRows?.()}
+          >
+            ${selection.length === 0
+              ? "Onboard…"
+              : `Preview onboarding (${selection.length})`}
+          </button>
+        </div>
       </header>
 
       ${state.memberSheetError
         ? html`<div class="callout danger" role="alert">${state.memberSheetError}</div>`
         : nothing}
-      ${renderConflicts(state)} ${renderOnboardResult(state)}
+      ${renderConflicts(state)} ${renderOnboardResult(state)} ${renderOnboardPreview(state)}
       ${state.memberSheetSaveResult?.proposal
         ? html`<div class="callout success">
             Queued as a proposal in Pending Actions${state.memberSheetSaveResult.touches_access
@@ -379,8 +483,8 @@ export function renderMemberSheet(state: AppViewState) {
       </div>
       <p class="adminbot-form__hint">
         Read ${sheet.rows.length} rows and ${sheet.header.length} columns from “${sheet.tab}”. Drag
-        the grid to pan. Edits become one approval item; onboarding a selection queues one email
-        each, and neither sends anything on its own.
+        the grid to pan. Edits become one approval item; onboarding shows each member's email for
+        review first, and nothing is sent without approval in Pending Actions.
       </p>
     </section>
   `;

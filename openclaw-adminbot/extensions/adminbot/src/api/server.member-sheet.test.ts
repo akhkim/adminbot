@@ -10,6 +10,7 @@ import { defaultMemberSheet } from "./server.js";
 import {
   type MemberSheetSource,
   onboardFromMemberSheet,
+  previewOnboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
 } from "./server.member-sheet.js";
@@ -171,6 +172,53 @@ describe("editing the roster", () => {
         "andrew",
       ),
     ).toMatchObject({ error: { status: 400 } });
+  });
+});
+
+describe("previewing an onboarding", () => {
+  const env = { ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example" } as NodeJS.ProcessEnv;
+
+  // The preview is the mail, not a summary of it: both routes run the same plan over the same
+  // sheet, so what the admin read in the panel is byte-for-byte what confirming queues.
+  it("composes the same mails onboarding would queue, and queues none of them", async () => {
+    const { service, proposals } = fakeService();
+    const request = {
+      sheet_rows: [2, 3],
+      values: { "2": { slack_connect_link: "https://slack.example/x" } },
+    };
+    const preview = await previewOnboardFromMemberSheet(source(), request, env);
+    if ("error" in preview) {
+      throw new Error(preview.error.message);
+    }
+    expect(proposals).toHaveLength(0);
+
+    expect(preview.planned).toHaveLength(1);
+    const mail = preview.planned[0]!;
+    expect(mail).toMatchObject({
+      sheet_row: 2,
+      name: "Yuen Chen",
+      email: "yuenc2@illinois.edu",
+      template_id: "alumni",
+      reply_to: "akim@cs.toronto.edu",
+    });
+    expect(mail.body.length).toBeGreaterThan(0);
+    expect(preview.skipped[0]!.reason).toContain("sends no onboarding mail");
+
+    const executed = await onboardFromMemberSheet(service, source(), request, "andrew", env);
+    if ("error" in executed) {
+      throw new Error(executed.error.message);
+    }
+    expect(proposals[0]!.payload).toMatchObject({
+      to: mail.email,
+      subject: mail.subject,
+      body: mail.body,
+      reply_to: mail.reply_to,
+    });
+  });
+
+  it("refuses an empty selection the way executing does", async () => {
+    const preview = await previewOnboardFromMemberSheet(source(), { sheet_rows: [] }, env);
+    expect(preview).toMatchObject({ error: { status: 400 } });
   });
 });
 

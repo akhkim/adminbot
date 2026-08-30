@@ -2029,6 +2029,125 @@
   text-align: center;
 }
 
+/* The roster's header: identity on the left, the three verbs on the right, instead of a link and
+   three unstyled buttons sharing one baseline. */
+.adminbot-member-roster__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.adminbot-member-roster__titles {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.adminbot-member-roster__titles h3 {
+  margin: 0;
+}
+
+.adminbot-member-roster__titles a {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}
+
+.adminbot-member-roster__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The onboarding preview: each selected member's composed mail, read before anything is queued. */
+.adminbot-onboard-preview {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--card);
+}
+
+.adminbot-onboard-preview__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.adminbot-onboard-preview__head span {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-onboard-preview__mail {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.adminbot-onboard-preview__mail summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.adminbot-onboard-preview__who {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.adminbot-onboard-preview__meta {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-onboard-preview__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.adminbot-onboard-preview__fields dt {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.adminbot-onboard-preview__fields dd {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.adminbot-onboard-preview__body {
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg);
+  font-size: var(--control-ui-text-xs);
+  white-space: pre-wrap;
+}
+
+.adminbot-onboard-preview__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .adminbot-member-sheet__edit {
   /* Lives under the name in the frozen first column rather than its own Actions column. */
   margin-top: var(--space-2);

@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import { editMemberSheetCell, memberSheetCellKey } from "../controllers/member-sheet.ts";
 import { renderMemberSheet } from "./member-sheet.ts";
@@ -97,6 +97,63 @@ describe("the roster grid", () => {
     ]);
   });
 
+  // Onboarding automates real mail, so the button no longer executes: it asks the service what
+  // would happen, and the panel below is what actually queues it.
+  it("previews onboarding instead of executing it, and confirms from the panel", () => {
+    const previewOnboardSelectedRows = vi.fn();
+    const onboardSelectedMemberRows = vi.fn();
+    const state: Partial<AppViewState> = {
+      memberSheet: SHEET,
+      memberSheetSelection: [2],
+      previewOnboardSelectedRows,
+      onboardSelectedMemberRows,
+      memberSheetOnboardPreview: {
+        planned: [
+          {
+            sheet_row: 2,
+            name: "Yuen Chen",
+            email: "yuen@example.org",
+            template_id: "alumni",
+            subject: "Welcome back",
+            body: "Dear Yuen,\nthe guide.",
+            reply_to: "akim@cs.toronto.edu",
+          },
+        ],
+        skipped: [{ sheet_row: 3, reason: "no email address on this row" }],
+      },
+    };
+    const host = draw(state);
+
+    host
+      .querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')
+      ?.click();
+    expect(previewOnboardSelectedRows).toHaveBeenCalledOnce();
+    expect(onboardSelectedMemberRows).not.toHaveBeenCalled();
+
+    const panel = text(host);
+    expect(panel).toContain("Review before onboarding");
+    expect(panel).toContain("Nothing is sent until an admin approves them there.");
+    expect(panel).toContain("Yuen Chen");
+    expect(panel).toContain("alumni → yuen@example.org");
+    expect(panel).toContain("Welcome back");
+    expect(panel).toContain("the guide.");
+    expect(panel).toContain("Row 3: no email address on this row");
+
+    host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]')?.click();
+    expect(onboardSelectedMemberRows).toHaveBeenCalledOnce();
+  });
+
+  it("dismisses the preview without queueing anything", () => {
+    const state: Partial<AppViewState> = {
+      memberSheet: SHEET,
+      memberSheetOnboardPreview: { planned: [], skipped: [] },
+    };
+    const host = draw(state);
+    expect(text(host)).toContain("Nothing would be queued for this selection.");
+    host.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-cancel"]')?.click();
+    expect(state.memberSheetOnboardPreview).toBeNull();
+  });
+
   it("selects every shown row from the heading checkbox", () => {
     const state: Partial<AppViewState> = { memberSheet: SHEET, memberSheetFilter: "rauno" };
     const host = draw(state);
@@ -182,10 +239,13 @@ describe("the roster grid", () => {
     expect(text(host)).toContain("sends no onboarding mail");
   });
 
-  it("only offers to onboard once rows are selected", () => {
-    expect(text(draw({ memberSheet: SHEET }))).toContain("Select rows to onboard");
+  it("only offers to onboard once rows are selected, and then only as a preview", () => {
+    const idle = draw({ memberSheet: SHEET });
+    expect(
+      idle.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')?.disabled,
+    ).toBe(true);
     expect(text(draw({ memberSheet: SHEET, memberSheetSelection: [2] }))).toContain(
-      "Onboard 1 selected",
+      "Preview onboarding (1)",
     );
   });
 });

@@ -70,6 +70,7 @@ import {
   editMemberSheetCell as editMemberSheetCellController,
   loadMemberSheet as loadMemberSheetController,
   onboardSelectedMemberRows as onboardSelectedMemberRowsController,
+  previewOnboardSelectedRows as previewOnboardSelectedRowsController,
   saveMemberSheetEdits as saveMemberSheetEditsController,
 } from "./adminbot/controllers/member-sheet.ts";
 import {
@@ -1605,6 +1606,12 @@ export class OpenClawApp extends LitElement {
   saveMemberSheetEdits(): Promise<void> {
     return saveMemberSheetEditsController(
       this as unknown as Parameters<typeof saveMemberSheetEditsController>[0],
+    );
+  }
+
+  previewOnboardSelectedRows(): Promise<void> {
+    return previewOnboardSelectedRowsController(
+      this as unknown as Parameters<typeof previewOnboardSelectedRowsController>[0],
     );
   }
 

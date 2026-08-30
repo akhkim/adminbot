@@ -958,6 +958,49 @@ export async function proposeMemberSheetEdits(
   return { ok: true, value: result.body as MemberSheetEditResult };
 }
 
+/** One row's mail, fully composed, exactly as executing the onboarding would queue it. */
+export type PlannedOnboardEmail = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  template_id: string;
+  subject: string;
+  body: string;
+  reply_to: string;
+};
+
+export type MemberSheetOnboardPreview = {
+  planned: PlannedOnboardEmail[];
+  skipped: MemberSheetOnboardResult["skipped"];
+};
+
+/**
+ * What onboarding the selected rows would do (POST /membership/sheet/onboard/preview) — the
+ * composed mails and the rows that would be skipped, with nothing queued.
+ *
+ * Deliberately its own route rather than a flag on the executing one: against a service too old
+ * to know it, a flag would be dropped and the "preview" would quietly onboard people. A 404 here
+ * is reported as the missing deploy it is.
+ */
+export async function previewOnboardFromMemberSheet(
+  sheetRows: number[],
+  values: Record<string, Record<string, string>>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetOnboardPreview>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/onboard/preview", "POST", sessionToken, {
+    sheet_rows: sheetRows,
+    ...(Object.keys(values).length > 0 ? { values } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetOnboardPreview };
+}
+
 export async function onboardFromMemberSheet(
   sheetRows: number[],
   values: Record<string, Record<string, string>>,
