@@ -15,6 +15,7 @@ ADMINBOT_PORT="8765"
 # How many past releases `deploy` keeps around: one to reuse node_modules from (see below) and a
 # couple more as real rollback targets. Older releases are pruned at the start of every deploy.
 KEEP_RELEASES="3"
+ALLOW_BEHIND="${AURORA_ALLOW_BEHIND:-0}"
 SSH_CONNECT_TIMEOUT="10"
 # Set once in your own shell (never in this file or any committed config) to run the whole
 # flow non-interactively, e.g.: read -rs AURORA_SSH_PASSWORD; export AURORA_SSH_PASSWORD
@@ -32,6 +33,8 @@ Options:
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
   --keep-releases <n>    Past releases to retain for deploy (default: 3)
+  --allow-behind         Deploy a ref that is behind origin/main (deliberate rollback);
+                          without it, deploy refuses a stale ref
 
 Non-interactive auth:
   Set AURORA_SSH_PASSWORD in your shell (never commit it) to skip every SSH
@@ -98,6 +101,10 @@ while (($# > 0)); do
       (($# >= 2)) || die "--keep-releases requires a value"
       KEEP_RELEASES="$2"
       shift 2
+      ;;
+    --allow-behind)
+      ALLOW_BEHIND="1"
+      shift
       ;;
     -h | --help)
       usage
@@ -186,6 +193,26 @@ REMOTE
     git -C "$REPO_ROOT" rev-parse --verify "${REF}^{commit}" >/dev/null ||
       die "not a committed Git revision: $REF"
     sha="$(git -C "$REPO_ROOT" rev-parse --short=12 "${REF}^{commit}")"
+    # Say what is about to ship, and refuse a ref that is behind the shared main. The default is
+    # HEAD of whatever clone this runs from, and a clone that was never pulled deploys its stale
+    # main just as faithfully as a fresh one: on 2026-08-30 that re-shipped a three-day-old
+    # service while the Vercel UI was already asking for routes it did not have, and every tab
+    # blamed "the service needs a deploy" -- right after one. --allow-behind is for a deliberate
+    # rollback.
+    printf 'deploying %s  %s\n' "$sha" "$(git -C "$REPO_ROOT" log -1 --format='%cd  %s' --date=short "${REF}^{commit}")" >&2
+    if git -C "$REPO_ROOT" fetch --quiet origin main 2>/dev/null; then
+      upstream="$(git -C "$REPO_ROOT" rev-parse --short=12 origin/main)"
+      if [[ "$upstream" != "$sha" ]] &&
+        git -C "$REPO_ROOT" merge-base --is-ancestor "${REF}^{commit}" origin/main; then
+        behind="$(git -C "$REPO_ROOT" rev-list --count "${REF}^{commit}..origin/main")"
+        if [[ "$ALLOW_BEHIND" != "1" ]]; then
+          die "ref $REF ($sha) is $behind commit(s) behind origin/main ($upstream); pull first, pass --ref origin/main, or --allow-behind for a deliberate rollback"
+        fi
+        printf 'warning: deploying %s, which is %s commit(s) behind origin/main (%s)\n' "$sha" "$behind" "$upstream" >&2
+      fi
+    else
+      printf 'note: could not fetch origin/main; not checking whether %s is stale\n' "$sha" >&2
+    fi
     release_id="${sha}-$(date -u +%Y%m%dT%H%M%SZ)"
     remote_release="${REMOTE_BASE}/releases/${release_id}"
     archive="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.tar")"
