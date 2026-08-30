@@ -383,6 +383,34 @@ Calendar, GitHub, and paper-pipeline records from that privilege level. Use
 People added without an explicit level receive `external_collaborator`, the
 least-privileged tier. Set `privilege_level` explicitly to grant more.
 
+### Membership roster grid
+
+The **Membership** tab's Onboarding section reads the lab's own Google spreadsheet live over
+`GET /membership/sheet`. It needs no configuration: it defaults to spreadsheet
+`1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68`, gid `764749323`, which is the
+`Full Slack Member List` tab.
+
+Point it somewhere else with any of:
+
+| Variable                       | What it names                                                 |
+| ------------------------------ | ------------------------------------------------------------- |
+| `ADMINBOT_MEMBER_SHEET_URL`    | A whole Sheets URL; the spreadsheet id and `gid` are read out of it |
+| `ADMINBOT_MEMBER_SHEET_ID`     | The spreadsheet id alone                                       |
+| `ADMINBOT_MEMBER_SHEET_GID`    | The tab, by gid                                                |
+| `ADMINBOT_MEMBER_SHEET_TAB`    | The tab, by title                                              |
+| `ADMINBOT_MEMBER_SHEET_RANGE`  | The poller's `Tab!A:Z` range; its tab name is used as a fallback |
+
+Prefer a gid. A gid survives a rename and a tab title does not, so the grid resolves the gid to
+whatever the tab is called at the moment of each read, and falls back to the configured title if
+the metadata call fails. A gid explicitly configured beats an explicitly configured title; the
+default gid does not, so an operator who spelled out a tab name keeps it.
+
+When the grid cannot read the sheet it says which of the three fixable things went wrong -- the tab
+does not exist under that name, AdminBot's Google account cannot open the spreadsheet, or its token
+has expired. A `404` from the route itself is reported as what it is: the Control UI ships from
+Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
+talking to a service that predates it and needs a deploy, not a broken spreadsheet.
+
 ### Member map
 
 `GET /member-map` groups active members by city. It's rendered two places: the

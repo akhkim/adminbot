@@ -122,6 +122,80 @@ export async function readGogSheetRows(
   return parseGogSheetRows(await capture(args));
 }
 
+export type GogSheetTab = { title: string; gid: number };
+
+/**
+ * The tabs of a spreadsheet, as `{ title, gid }`.
+ *
+ * A gid is what a Google Sheets URL carries and what survives a rename; a tab title is what the
+ * Sheets values API takes in an A1 range. Nothing else can bridge the two, so a deployment
+ * configured by URL has to ask the spreadsheet what the tab it is pointed at is currently called.
+ */
+export async function readGogSheetTabs(
+  spreadsheetId: string,
+  options: Omit<GogSheetReadOptions, "range"> = {},
+): Promise<GogSheetTab[]> {
+  const id = spreadsheetId.trim();
+  if (!id) {
+    throw new Error("gog sheets metadata requires a spreadsheet id");
+  }
+  const capture = options.capture ?? createGogCapture(options.env);
+  const args = rootArgs("sheets.metadata", optionalAccount(options.env));
+  args.push("--readonly", "sheets", "metadata", id);
+  return parseGogSheetTabs(await capture(args));
+}
+
+/**
+ * Locates tab descriptors anywhere in gog's envelope.
+ *
+ * Same reasoning as `findRowMatrix`: the envelope shape varies per command, and the Sheets API
+ * itself nests the pair under `sheets[].properties`, so match on the pair of fields rather than on
+ * a path.
+ */
+export function parseGogSheetTabs(output: string): GogSheetTab[] {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("gog sheets metadata did not return JSON output");
+  }
+  const found = new Map<number, string>();
+  collectSheetTabs(parsed, found);
+  return [...found].map(([gid, title]) => ({ title, gid }));
+}
+
+function collectSheetTabs(value: unknown, into: Map<number, string>): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectSheetTabs(entry, into);
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  const title = record.title;
+  // `sheetId` is the Sheets API spelling of a gid; `gid` is what some gog builds flatten it to.
+  const rawGid = record.sheetId ?? record.gid;
+  const gid =
+    typeof rawGid === "number"
+      ? rawGid
+      : typeof rawGid === "string" && /^\d+$/u.test(rawGid.trim())
+        ? Number(rawGid.trim())
+        : undefined;
+  if (typeof title === "string" && title.trim() && gid !== undefined && !into.has(gid)) {
+    into.set(gid, title);
+  }
+  for (const entry of Object.values(record)) {
+    collectSheetTabs(entry, into);
+  }
+}
+
 /**
  * gog wraps API results in an envelope whose shape varies per command, so locate the
  * Sheets `values` row matrix instead of assuming a fixed top-level key.
