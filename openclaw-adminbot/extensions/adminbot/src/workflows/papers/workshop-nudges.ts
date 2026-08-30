@@ -145,7 +145,7 @@ export type WorkshopMatcher = (request: {
    * tab sits on "Matching in progress..." forever; reporting the failures separately is what keeps
    * that honest.
    */
-  onProgress?: (done: number, total: number, failed: number) => void;
+  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
   /**
    * Abort the pass. Jobs already in flight are cancelled and no further ones are started.
    *
