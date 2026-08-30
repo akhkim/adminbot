@@ -23,7 +23,17 @@ import {
   type AdminBotHost,
 } from "../controllers/admin.ts";
 
-export type BadgeLoadError = "no-session" | "expired" | "forbidden" | "unreachable" | "failed";
+export type BadgeLoadError =
+  | "no-session"
+  | "expired"
+  | "forbidden"
+  | "unreachable"
+  // The service answered, but has no badge routes: a 404 from an AdminBot deployed before the
+  // badge system landed. The Control UI ships from Vercel and the service from Aurora, so the
+  // console routinely runs ahead of what it is talking to; without this the skew arrived as
+  // "your session expired" and sent admins round a sign-in loop nothing could fix.
+  | "not-deployed"
+  | "failed";
 
 type BadgeNotice = { kind: "success" | "error"; text: string } | null;
 
@@ -55,6 +65,13 @@ function loadErrorFor(kind: AuthErrorKind): BadgeLoadError {
   if (kind === "forbidden") {
     return "forbidden";
   }
+  if (kind === "not-found") {
+    return "not-deployed";
+  }
+  // Transient and worth a retry button; only a genuine 401 should tell somebody to sign in again.
+  if (kind === "rate-limited") {
+    return "failed";
+  }
   return "expired";
 }
 
@@ -65,7 +82,42 @@ function errorText(kind: AuthErrorKind, fallbackKey: string): string {
   if (kind === "forbidden") {
     return t("adminbotBadges.error.forbidden");
   }
+  if (kind === "not-found") {
+    return t("adminbotBadges.error.notDeployed");
+  }
   return t(fallbackKey);
+}
+
+/**
+ * Whether the tab still owes a fetch.
+ *
+ * The `*Error` term is the load-bearing half. These run from the render pass, and a failed load
+ * leaves `loadedAt` null with `loading` back to false -- so without it, the completion of a failed
+ * fetch re-renders, the guard passes again, and the tab hammers the service in a loop for as long
+ * as it stays open. The Refresh button is what clears the error and asks again.
+ */
+export function shouldLoadBadgeDefinitions(host: AdminBotBadgesHost): boolean {
+  return (
+    !host.adminBotBadgeDefinitionsLoading &&
+    !host.adminBotBadgeDefinitionsError &&
+    host.adminBotBadgeDefinitionsLoadedAt === null
+  );
+}
+
+export function shouldLoadAdminBadgeNominations(host: AdminBotBadgesHost): boolean {
+  return (
+    !host.adminBotBadgeNominationsLoading &&
+    !host.adminBotBadgeNominationsError &&
+    host.adminBotBadgeNominationsLoadedAt === null
+  );
+}
+
+export function shouldLoadProfileBadgeNominations(host: AdminBotBadgesHost): boolean {
+  return (
+    !host.profileBadgeNominationsLoading &&
+    !host.profileBadgeNominationsError &&
+    host.profileBadgeNominationsLoadedAt === null
+  );
 }
 
 export async function loadBadgeDefinitions(host: AdminBotBadgesHost): Promise<void> {
@@ -179,8 +231,10 @@ export async function saveAdminBadgeDefinition(
   }
   host.adminBotBadgeBusyKey = `definition:${input.id || "new"}`;
   host.adminBotBadgeNotice = null;
-  const result =
-    host.adminBotBadgeDefinitions.some((badge) => badge.id === input.id)
+  try {
+    // Inside the try: a throw from the request itself used to escape before the `finally`, leaving
+    // busyKey set and every button on the tab disabled until a reload.
+    const result = host.adminBotBadgeDefinitions.some((badge) => badge.id === input.id)
       ? await updateBadge(
           input.id!,
           input,
@@ -188,7 +242,6 @@ export async function saveAdminBadgeDefinition(
           resolveAdminBotBaseUrl(host.settings),
         )
       : await createBadge(input, stored.sessionToken, resolveAdminBotBaseUrl(host.settings));
-  try {
     if (!result.ok) {
       host.adminBotBadgeNotice = {
         kind: "error",

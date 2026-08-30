@@ -130,4 +130,67 @@ describe("renderAdminBotBadges", () => {
 
     expect(container.textContent).toContain("Ran the outreach booth solo.");
   });
+
+  // The Control UI ships from Vercel ahead of the service on Aurora, so an admin opening this tab
+  // against an older service gets a 404. That has to read as "the service needs a deploy", not as
+  // the sign-in problem the generic copy used to claim.
+  it("names the missing deploy when the service has no badge routes", () => {
+    const container = document.createElement("div");
+    const onRefresh = vi.fn();
+    render(renderAdminBotBadges(errorProps("not-deployed", onRefresh)), container);
+
+    expect(container.textContent).toContain("doesn't have badges yet");
+    expect(container.textContent).not.toContain("session has expired");
+    const retry = container.querySelector("button");
+    expect(retry).not.toBeNull();
+    retry?.click();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the sign-in prompt for a genuinely expired session, with no retry button", () => {
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(errorProps("expired", vi.fn())), container);
+
+    expect(container.textContent).toContain("session has expired");
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("says the catalog is empty rather than showing nothing at all", () => {
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(baseProps()), container);
+
+    expect(container.textContent).toContain("No badges defined yet.");
+  });
 });
+
+function baseProps(): Parameters<typeof renderAdminBotBadges>[0] {
+  return {
+    definitions: [],
+    definitionsLoading: false,
+    definitionsError: null,
+    nominations: [],
+    nominationsLoading: false,
+    nominationsError: null,
+    busyKey: null,
+    notice: null,
+    members: [],
+    assignRowId: "",
+    onToggleAssignRow: vi.fn(),
+    memberQuery: "",
+    onMemberQueryChange: vi.fn(),
+    editBadgeId: "",
+    onToggleEditBadge: vi.fn(),
+    onRefresh: vi.fn(),
+    onSaveDefinition: vi.fn(),
+    onAssign: vi.fn(),
+    onRemove: vi.fn(),
+    onDecide: vi.fn(),
+  };
+}
+
+function errorProps(
+  definitionsError: NonNullable<Parameters<typeof renderAdminBotBadges>[0]["definitionsError"]>,
+  onRefresh: () => void,
+): Parameters<typeof renderAdminBotBadges>[0] {
+  return { ...baseProps(), definitionsError, onRefresh };
+}

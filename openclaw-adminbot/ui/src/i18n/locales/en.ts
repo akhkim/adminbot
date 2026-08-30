@@ -1047,7 +1047,7 @@ export const en: TranslationMap = {
     remove: "Remove",
     approve: "Approve",
     reject: "Reject",
-    loading: "Loading badgesâ€¦",
+    loading: "Loading badges…",
     catalog: "Badge catalog",
     assignments: "Assignments",
     nominations: "Pending self-nominations",
@@ -1072,11 +1072,15 @@ export const en: TranslationMap = {
       expired: "Your session has expired. Sign in again to continue.",
       forbidden: "Only admins can manage badges.",
       unreachable: "The AdminBot service is unreachable. Check that it's running, then retry.",
+      notDeployed:
+        "This AdminBot service doesn't have badges yet — the Control UI is newer than the service it's talking to. Deploy the service, then retry.",
       failed: "Couldn't load badges. Retry in a moment.",
     },
     error: {
       unreachable: "The AdminBot service is unreachable. Check that it's running and try again.",
       forbidden: "Only admins can manage badges.",
+      notDeployed:
+        "This AdminBot service doesn't have badges yet — deploy the service and try again.",
       saveFailed: "Couldn't save that badge.",
       assignFailed: "Couldn't assign that badge.",
       removeFailed: "Couldn't remove that badge.",

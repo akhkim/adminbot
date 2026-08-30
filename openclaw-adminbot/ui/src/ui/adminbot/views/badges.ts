@@ -62,6 +62,8 @@ function errorSummaryKey(error: BadgeLoadError): string {
       return "adminbotBadges.empty.expired";
     case "forbidden":
       return "adminbotBadges.empty.forbidden";
+    case "not-deployed":
+      return "adminbotBadges.empty.notDeployed";
     case "failed":
       return "adminbotBadges.empty.failed";
     default:
@@ -70,7 +72,9 @@ function errorSummaryKey(error: BadgeLoadError): string {
 }
 
 function renderErrorState(props: AdminBotBadgesProps, error: BadgeLoadError) {
-  const retryable = error === "unreachable" || error === "failed";
+  // "not-deployed" is retryable too: nothing on this page fixes it, but the operator who deploys
+  // the service wants to check from here rather than reload the console.
+  const retryable = error === "unreachable" || error === "failed" || error === "not-deployed";
   return html`
     <div class="card adminbot-card adminbot-card--wide">
       <div class="card-title">${t("adminbotBadges.empty.title")}</div>
