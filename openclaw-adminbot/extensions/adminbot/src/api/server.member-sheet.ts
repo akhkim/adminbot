@@ -25,6 +25,15 @@ import { templateForMemberType } from "../workflows/onboarding/member-type-templ
 export type MemberSheetSource = {
   spreadsheetId: string;
   tab: string;
+  /**
+   * The tab actually to read, when the deployment names it by gid rather than by title.
+   *
+   * A gid survives a rename and a title does not, so a deployment configured by URL asks the
+   * spreadsheet what its tab is called now. Resolved once per request rather than at startup: the
+   * service runs for weeks, and a tab renamed in the meantime must not need a restart. `tab` above
+   * stays the fallback, so a metadata call that fails costs nothing.
+   */
+  resolveTab?: () => Promise<{ tab: string; gid?: number }>;
   read: (range: string) => Promise<string[][]>;
 };
 
@@ -45,12 +54,29 @@ function rangeFor(tab: string): string {
   return `${tab}!${RANGE}`;
 }
 
+/**
+ * The tab title and link this request should use.
+ *
+ * Every entry point resolves before it reads, because the title also ends up in the `A1` ranges of
+ * a `sheet.update_cells` proposal: resolving on the read path alone would let an edit be written
+ * back to a tab under its old name.
+ */
+async function resolveTarget(
+  source: MemberSheetSource,
+): Promise<{ tab: string; url: string }> {
+  const resolved = await source.resolveTab?.();
+  const tab = resolved?.tab || source.tab;
+  const base = `https://docs.google.com/spreadsheets/d/${source.spreadsheetId}/edit`;
+  return { tab, url: resolved?.gid === undefined ? base : `${base}#gid=${resolved.gid}` };
+}
+
 export async function readMemberSheet(source: MemberSheetSource): Promise<MemberSheetView> {
-  const grid = toSheetGrid(await source.read(rangeFor(source.tab)));
+  const target = await resolveTarget(source);
+  const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
   return {
     spreadsheet_id: source.spreadsheetId,
-    tab: source.tab,
-    url: `https://docs.google.com/spreadsheets/d/${source.spreadsheetId}/edit`,
+    tab: target.tab,
+    url: target.url,
     header: grid.header,
     rows: grid.rows.map((row) => ({ sheet_row: row.sheetRow, cells: row.cells })),
     read_at: new Date().toISOString(),
@@ -97,12 +123,13 @@ export async function proposeMemberSheetEdits(
     return { error: { status: 400, message: "edits is required and must not be empty" } };
   }
 
-  const grid = toSheetGrid(await source.read(rangeFor(source.tab)));
+  const target = await resolveTarget(source);
+  const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
   const expected = new Map(Object.entries(request.expected ?? {}));
 
   let plan;
   try {
-    plan = planSheetEdits(source.tab, edits, grid, expected);
+    plan = planSheetEdits(target.tab, edits, grid, expected);
   } catch (error) {
     return {
       error: { status: 400, message: error instanceof Error ? error.message : String(error) },
@@ -204,7 +231,7 @@ export async function onboardFromMemberSheet(
     return { error: { status: 400, message: "sheet_rows is required and must not be empty" } };
   }
 
-  const grid = toSheetGrid(await source.read(rangeFor(source.tab)));
+  const grid = toSheetGrid(await source.read(rangeFor((await resolveTarget(source)).tab)));
   const at = (name: string): number => grid.header.indexOf(name);
   const nameAt = at(NAME_HEADER) < 0 ? 0 : at(NAME_HEADER);
   const typeAt = at(MEMBER_TYPE_HEADER);

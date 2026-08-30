@@ -5,7 +5,7 @@ import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/
 import { emailPayloadSchema } from "../contracts/tool-schemas.js";
 import { AdminBotService } from "../kernel/service.js";
 import { renderEmailBodyHtml } from "./email-html.js";
-import { createGogAdminBotExecutor, readGogSheetRows } from "./gog.js";
+import { createGogAdminBotExecutor, readGogSheetRows, readGogSheetTabs } from "./gog.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -285,6 +285,58 @@ describe("readGogSheetRows", () => {
     );
     await expect(
       readGogSheetRows("sheet-3", { capture: async () => "", env: {} }),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("readGogSheetTabs", () => {
+  it("lists every tab as a title and a gid, through a read-only exact gog command", async () => {
+    const capture = vi.fn(async () =>
+      JSON.stringify({
+        properties: { title: "Jinesis Contact/Paper list with Zhijing" },
+        sheets: [
+          { properties: { title: "Paper submissions", sheetId: 846550934, index: 0 } },
+          { properties: { title: "Full Slack Member List", sheetId: 764749323, index: 5 } },
+        ],
+      }),
+    );
+
+    await expect(readGogSheetTabs("sheet-1", { capture, env: {} })).resolves.toEqual([
+      { title: "Paper submissions", gid: 846550934 },
+      { title: "Full Slack Member List", gid: 764749323 },
+    ]);
+    expect(capture).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.metadata",
+      "--readonly",
+      "sheets",
+      "metadata",
+      "sheet-1",
+    ]);
+  });
+
+  it("accepts the flattened envelope some gog builds emit", async () => {
+    // gog's envelope shape varies per command, and a gid arrives as a string in some of them.
+    const capture = vi.fn(async () =>
+      JSON.stringify({ result: { sheets: [{ title: "Members", gid: "7" }] } }),
+    );
+    await expect(readGogSheetTabs("sheet-2", { capture, env: {} })).resolves.toEqual([
+      { title: "Members", gid: 7 },
+    ]);
+  });
+
+  it("rejects an empty spreadsheet id and non-JSON gog output", async () => {
+    const capture = vi.fn(async () => "not json");
+    await expect(readGogSheetTabs("  ", { capture, env: {} })).rejects.toThrow(
+      "gog sheets metadata requires a spreadsheet id",
+    );
+    await expect(readGogSheetTabs("sheet-3", { capture, env: {} })).rejects.toThrow(
+      "gog sheets metadata did not return JSON output",
+    );
+    await expect(
+      readGogSheetTabs("sheet-3", { capture: async () => "", env: {} }),
     ).resolves.toEqual([]);
   });
 });

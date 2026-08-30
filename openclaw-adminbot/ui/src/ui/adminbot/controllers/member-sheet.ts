@@ -181,6 +181,10 @@ function describeMemberSheetFailure(result: { kind?: string; message?: string })
       return "AdminBot is unreachable.";
     case "forbidden":
       return "You need an admin session to work with the member sheet.";
+    case "not-found":
+      // Reached only when the service sent a 404 with no message of its own; the message-carrying
+      // case is handled above and names the missing route.
+      return "This AdminBot service has no member-sheet route yet — it needs a deploy.";
     default:
       return "The member sheet could not be reached.";
   }

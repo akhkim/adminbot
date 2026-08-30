@@ -6,6 +6,7 @@ import {
   claimMember,
   clearStoredMemberSession,
   fetchMemberSession,
+  fetchMemberSheet,
   fetchRelevantPapers,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
@@ -211,6 +212,36 @@ describe("fetchRoster", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(429, { retry_after_seconds: 15 }));
     const result = await fetchRoster(BASE_URL);
     expect(result).toEqual({ ok: false, kind: "rate-limited", retryAfterSeconds: 15 });
+  });
+});
+
+describe("fetchMemberSheet", () => {
+  it("returns the grid the service read", async () => {
+    const view = { spreadsheet_id: "1ZqdaRze", tab: "Full Slack Member List", rows: [] };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, view));
+    expect(await fetchMemberSheet("session-token", BASE_URL)).toEqual({ ok: true, value: view });
+  });
+
+  it("reports a bare 404 as a service that predates the route, not a missing sheet", async () => {
+    // The Control UI ships from Vercel and the service from Aurora, so the UI is routinely ahead.
+    // "not found" here is the catch-all for an unrouted path, and reading it as a missing
+    // spreadsheet sent people looking at Google for a deployment problem.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { error: { message: "not found" } }),
+    );
+    const result = await fetchMemberSheet("session-token", BASE_URL);
+    expect(result).toMatchObject({ ok: false, kind: "not-found" });
+    expect((result as { message?: string }).message).toContain("needs a deploy");
+  });
+
+  it("carries the service's own sentence when it has one", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(502, {
+        error: { message: 'the spreadsheet has no tab named "Full Slack Member List"' },
+      }),
+    );
+    const result = await fetchMemberSheet("session-token", BASE_URL);
+    expect((result as { message?: string }).message).toContain("no tab named");
   });
 });
 

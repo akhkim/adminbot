@@ -1,7 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
-import { readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
 import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
@@ -97,6 +96,11 @@ import type {
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
 import {
+  describeMemberSheetReadFailure,
+  memberSheetSource,
+  resolveMemberSheetConfig,
+} from "./member-sheet-config.js";
+import {
   PayloadTooLargeError,
   asString,
   readJson,
@@ -111,6 +115,7 @@ import { handleLogisticsRoute } from "./server.logistics.js";
 import {
   type MemberSheetEditRequest,
   type MemberSheetOnboardRequest,
+  type MemberSheetSource,
   onboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
@@ -137,53 +142,16 @@ const SESSION_COOKIE_MAX_AGE_SECONDS = 604800;
  * write path can address cells in it, without either side having to know how the deployment was
  * configured.
  */
-export type AdminBotMemberSheetSource = {
-  spreadsheetId: string;
-  tab: string;
-  read: (range: string) => Promise<string[][]>;
-};
+export type AdminBotMemberSheetSource = MemberSheetSource;
 
 /**
  * The lab's own roster, which is the sheet this deployment exists to administer.
  *
- * Defaulted rather than required. Leaving it entirely to configuration meant a deployment that had
- * never set ADMINBOT_MEMBER_SHEET_ID answered the Membership grid with a 503 and the tab sat empty
- * -- which is what production did, because nothing ever set it. The environment still overrides,
- * so another lab, or a copy of the sheet to test edits against, is one variable away.
+ * The defaults, the URL/gid parsing and the gid-to-title resolution live in
+ * `member-sheet-config.ts`; this stays a thin seam so `createAdminBotServer` has one call to make.
  */
-const DEFAULT_MEMBER_SHEET_ID = "1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68";
-const DEFAULT_MEMBER_SHEET_TAB = "Full Slack Member List";
-
-/**
- * The tab name out of a `Tab!A:Z` range.
- *
- * ADMINBOT_MEMBER_SHEET_RANGE predates this grid -- the sheet poller reads the roster through it --
- * so a deployment that already names its tab there should not have to name it a second time.
- */
-function tabFromRange(range: string | undefined): string | undefined {
-  const separator = (range ?? "").lastIndexOf("!");
-  if (separator < 0) {
-    return undefined;
-  }
-  const tab = (range ?? "")
-    .slice(0, separator)
-    .trim()
-    .replace(/^'(.*)'$/su, "$1")
-    .replaceAll("''", "'");
-  return tab || undefined;
-}
-
 export function defaultMemberSheet(env: NodeJS.ProcessEnv): AdminBotMemberSheetSource {
-  const spreadsheetId = env.ADMINBOT_MEMBER_SHEET_ID?.trim() || DEFAULT_MEMBER_SHEET_ID;
-  const tab =
-    env.ADMINBOT_MEMBER_SHEET_TAB?.trim() ||
-    tabFromRange(env.ADMINBOT_MEMBER_SHEET_RANGE?.trim()) ||
-    DEFAULT_MEMBER_SHEET_TAB;
-  return {
-    spreadsheetId,
-    tab,
-    read: async (range) => readGogSheetRows(spreadsheetId, { range }),
-  };
+  return memberSheetSource(resolveMemberSheetConfig(env));
 }
 
 /**
@@ -3109,7 +3077,7 @@ async function handleAuthenticatedRoute(
         sendJson(res, 200, await readMemberSheet(ctx.memberSheet));
       } catch (error) {
         sendJson(res, 502, {
-          error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+          error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
         });
       }
       return;
@@ -3125,7 +3093,7 @@ async function handleAuthenticatedRoute(
       );
     } catch (error) {
       sendJson(res, 502, {
-        error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
       });
       return;
     }
@@ -3162,7 +3130,7 @@ async function handleAuthenticatedRoute(
       );
     } catch (error) {
       sendJson(res, 502, {
-        error: { message: `could not read the member sheet: ${error instanceof Error ? error.message : String(error)}` },
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
       });
       return;
     }

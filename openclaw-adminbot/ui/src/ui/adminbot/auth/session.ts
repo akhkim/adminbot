@@ -903,10 +903,21 @@ function memberSheetFailure(
   if (mapped.message) {
     return { ok: false, ...mapped };
   }
-  const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
-  return typeof message === "string" && message.trim()
-    ? { ok: false, ...mapped, message: message.trim() }
-    : { ok: false, ...mapped };
+  const raw = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  const message = typeof raw === "string" ? raw.trim() : "";
+  // The service's catch-all 404 for an unrouted path. The Control UI ships from Vercel and the
+  // service from Aurora, so the UI is routinely ahead: a Membership tab talking to a service that
+  // predates /membership/sheet answered with the word "not found", which reads as a missing sheet
+  // and sent people looking at Google. It is a missing deployment.
+  if (response.status === 404 && (!message || message === "not found")) {
+    return {
+      ok: false,
+      ...mapped,
+      message:
+        "This AdminBot service has no /membership/sheet route, so it is older than this page. The sheet is fine; the service needs a deploy.",
+    };
+  }
+  return message ? { ok: false, ...mapped, message } : { ok: false, ...mapped };
 }
 
 export async function fetchMemberSheet(
