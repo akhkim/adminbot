@@ -113,6 +113,8 @@ export type AppViewState = {
   memberSheetEdits?: Record<string, string>;
   memberSheetBaseline?: Record<string, string>;
   memberSheetSelection?: number[];
+  /** Text typed into the roster's search box; matched against every cell, client-side. */
+  memberSheetFilter?: string;
   memberSheetSaveResult?: import("./adminbot/auth/session.ts").MemberSheetEditResult | null;
   memberSheetOnboardResult?:
     | import("./adminbot/auth/session.ts").MemberSheetOnboardResult

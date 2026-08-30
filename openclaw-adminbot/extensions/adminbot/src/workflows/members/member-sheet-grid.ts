@@ -42,14 +42,18 @@ export type SheetGrid = {
  * Splits a raw value matrix into a header and body rows carrying their true sheet row numbers.
  *
  * gog returns a ragged matrix -- trailing empty cells are omitted rather than padded -- so rows
- * are padded to the header width. Without that, editing the last column of a sparse row writes to
+ * are padded to the grid width. Without that, editing the last column of a sparse row writes to
  * whatever index happened to exist.
+ *
+ * The width is the widest row, not the header: the roster has columns past its last heading
+ * that hold data, and a header-width grid dropped those cells from the page without a trace.
+ * A column with no heading shows up under its letter instead.
  */
 export function toSheetGrid(values: string[][], firstRow = 1): SheetGrid {
   const [header = [], ...body] = values;
-  const width = header.length;
+  const width = Math.max(header.length, ...body.map((cells) => cells.length));
   return {
-    header: [...header],
+    header: Array.from({ length: width }, (_, column) => header[column] ?? ""),
     rows: body.map((cells, index) => ({
       sheetRow: firstRow + index + 1,
       cells: Array.from({ length: width }, (_, column) => cells[column] ?? ""),

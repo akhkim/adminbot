@@ -73,7 +73,7 @@ describe("reading the roster", () => {
   it("asks for the configured tab by name", async () => {
     const sheet = source();
     await readMemberSheet(sheet);
-    expect(sheet.read).toHaveBeenCalledWith("Full Slack Member List!A:Z");
+    expect(sheet.read).toHaveBeenCalledWith("Full Slack Member List!A:ZZ");
   });
 });
 
@@ -389,7 +389,7 @@ describe("resolving a gid to the tab it names", () => {
       },
     );
     const view = await readMemberSheet(source);
-    expect(readRows).toHaveBeenCalledWith("sheet-1", "Full Slack Member List!A:Z");
+    expect(readRows).toHaveBeenCalledWith("sheet-1", "Full Slack Member List!A:ZZ");
     expect(view.tab).toBe("Full Slack Member List");
     expect(view.url).toBe("https://docs.google.com/spreadsheets/d/sheet-1/edit#gid=764749323");
   });
@@ -424,7 +424,7 @@ describe("resolving a gid to the tab it names", () => {
       },
     );
     const view = await readMemberSheet(source);
-    expect(readRows).toHaveBeenCalledWith("sheet-1", "Full Slack Member List!A:Z");
+    expect(readRows).toHaveBeenCalledWith("sheet-1", "Full Slack Member List!A:ZZ");
     expect(view.tab).toBe("Full Slack Member List");
   });
 
@@ -445,7 +445,7 @@ describe("describeMemberSheetReadFailure", () => {
 
   it("names the tab, and the variable that repoints it, when the range does not exist", () => {
     const message = describeMemberSheetReadFailure(
-      new Error("gog command failed (exit 1): Unable to parse range: Full Slack Member List!A:Z"),
+      new Error("gog command failed (exit 1): Unable to parse range: Full Slack Member List!A:ZZ"),
       target,
     );
     expect(message).toContain('no tab named "Full Slack Member List"');
