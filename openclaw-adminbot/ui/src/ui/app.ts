@@ -47,7 +47,6 @@ import {
   type AdminBotDashboardData,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
-  sendOnboardingGuide as sendOnboardingGuideController,
 } from "./adminbot/controllers/admin.ts";
 import {
   inviteAdminBotCalendarAudience,
@@ -67,6 +66,12 @@ import {
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
+import {
+  editMemberSheetCell as editMemberSheetCellController,
+  loadMemberSheet as loadMemberSheetController,
+  onboardSelectedMemberRows as onboardSelectedMemberRowsController,
+  saveMemberSheetEdits as saveMemberSheetEditsController,
+} from "./adminbot/controllers/member-sheet.ts";
 import {
   loadAdminBotNotifications,
   markAdminBotNotificationsRead,
@@ -294,13 +299,10 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
-  @state() onboardingTemplateId = "interview_invite";
-  @state() onboardingName = "";
-  @state() onboardingEmail = "";
-  @state() onboardingValues: Record<string, string> = {};
   @state() memberSheet:
     | import("./adminbot/auth/session.ts").MemberSheetView
     | null = null;
+  @state() memberSheetLoadedAt: number | null = null;
   @state() memberSheetBusy = false;
   @state() memberSheetError: string | null = null;
   @state() memberSheetEdits: Record<string, string> = {};
@@ -312,15 +314,6 @@ export class OpenClawApp extends LitElement {
   @state() memberSheetOnboardResult:
     | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
     | null = null;
-  @state() onboardingBusy = false;
-  @state() onboardingError: string | null = null;
-  @state() onboardingMissing: string[] = [];
-  @state() onboardingResult:
-    | import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult
-    | null = null;
-  @state() onboardingDraftSubject = "";
-  @state() onboardingDraftBody = "";
-  @state() onboardingProjectChannels = "";
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
   // made the whole tab inert — events loaded and never appeared, and typing in the assistant did
@@ -1601,13 +1594,6 @@ export class OpenClawApp extends LitElement {
     } finally {
       this.execApprovalBusy = false;
     }
-  }
-
-  sendOnboardingGuide(options: { preview: boolean }): Promise<void> {
-    return sendOnboardingGuideController(
-      this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
-      options,
-    );
   }
 
   loadMemberSheet(): Promise<void> {

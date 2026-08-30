@@ -23,7 +23,6 @@ import {
   refreshWorkshopNudges,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
-  sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
   fetchVenueSources,
   rebuildVenueIndexes,
@@ -467,122 +466,6 @@ export type AdminBotPaperSaveInput = {
   isArchival?: string;
   presentationType?: string;
 };
-
-export type AdminBotOnboardingResult = {
-  template_id: string;
-  subject: string;
-  body: string;
-  sent: boolean;
-  drive_folder_link?: string;
-  slack_connect_link?: string;
-  project_channel_invites?: { channel: string; url: string }[];
-};
-
-export type AdminBotOnboardingHost = {
-  onboardingTemplateId?: string;
-  onboardingName?: string;
-  onboardingEmail?: string;
-  onboardingValues?: Record<string, string>;
-  onboardingBusy?: boolean;
-  onboardingSubmitDcsForm?: boolean;
-  onboardingError?: string | null;
-  onboardingMissing?: string[];
-  onboardingResult?: AdminBotOnboardingResult | null;
-  /** The preview as the operator edited it; empty means they left it as composed. */
-  onboardingDraftSubject?: string;
-  onboardingDraftBody?: string;
-  /** Comma-separated project channels the send should invite them to. */
-  onboardingProjectChannels?: string;
-  settings: UiSettings;
-};
-
-/** "#proj-a, proj-b" -> ["#proj-a", "proj-b"]; the service resolves names and ids alike. */
-export function parseProjectChannels(raw: string | undefined): string[] {
-  return (raw ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-/**
- * Previews or sends an onboarding guide.
- *
- * The service is the authority on whether this may happen at all: POST /onboarding/guide requires
- * an admin member session and rejects the shared service principal, so hiding the tab is only an
- * affordance and this call is not the permission check. The service also owns the "every required
- * value is present" rule, so a 422 comes back with the exact list and is rendered rather than
- * re-derived here.
- */
-export async function sendOnboardingGuide(
-  host: AdminBotOnboardingHost,
-  options: { preview: boolean },
-): Promise<void> {
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.onboardingError = "Sign in again to send onboarding guides.";
-    return;
-  }
-  host.onboardingBusy = true;
-  host.onboardingError = null;
-  host.onboardingMissing = [];
-  if (!options.preview) {
-    host.onboardingResult = null;
-  }
-  try {
-    // Only a send carries the edited copy. Re-previewing is how an operator gets back to the
-    // template after an edit they regret, so a preview deliberately recomposes from the form.
-    const edited = options.preview
-      ? {}
-      : {
-          ...(host.onboardingDraftSubject?.trim()
-            ? { subjectOverride: host.onboardingDraftSubject }
-            : {}),
-          ...(host.onboardingDraftBody?.trim() ? { bodyOverride: host.onboardingDraftBody } : {}),
-        };
-    const result = await sendOnboardingGuideRequest(
-      {
-        templateId: host.onboardingTemplateId ?? "",
-        name: host.onboardingName ?? "",
-        email: host.onboardingEmail ?? "",
-        values: host.onboardingValues ?? {},
-        preview: options.preview,
-        submitDcsForm: host.onboardingSubmitDcsForm,
-        // Only on a real send: a preview mints nothing, so passing them would only invite noise.
-        ...(options.preview
-          ? {}
-          : { projectChannels: parseProjectChannels(host.onboardingProjectChannels) }),
-        ...edited,
-      },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (result.ok) {
-      host.onboardingResult = result.value;
-      // A fresh preview seeds the editable draft; a send replaces it with what actually went out.
-      host.onboardingDraftSubject = result.value.subject;
-      host.onboardingDraftBody = result.value.body;
-      return;
-    }
-    if (result.kind === "missing") {
-      host.onboardingMissing = result.missing;
-      return;
-    }
-    host.onboardingError =
-      result.kind === "unreachable"
-        ? "The AdminBot service is unreachable — try again in a moment."
-        : result.kind === "forbidden"
-          ? "Only an admin can send onboarding guides."
-          : // The service names the actual refusal -- unconfigured mail, Drive or Slack
-            // provisioning that is not wired up, an unknown template. Show it: telling an admin to
-            // "check the details" when the details are fine and the server is missing an
-            // environment variable sends them round a loop nothing they type can break.
-            result.kind === "rejected"
-            ? result.message
-            : "Couldn't send that guide — check the details and try again.";
-  } finally {
-    host.onboardingBusy = false;
-  }
-}
 
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;

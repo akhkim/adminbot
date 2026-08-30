@@ -162,7 +162,9 @@ async function refreshAdminBadgeData(host: AdminBotBadgesHost): Promise<void> {
   await Promise.all([
     loadBadgeDefinitions(host),
     loadAdminBadgeNominations(host),
-    loadAdminBot(host as AdminBotHost, "admin"),
+    // The badge screens carry only their own slice of the app state; loadAdminBot reads the
+    // roster off the full host, and nothing it touches is missing here at runtime.
+    loadAdminBot(host as unknown as AdminBotHost, "admin"),
   ]);
 }
 

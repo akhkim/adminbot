@@ -13,6 +13,15 @@ import type { BadgeLoadError } from "../data/badges.ts";
 import { renderBadgeSelect } from "./badge-select.ts";
 import { renderBadgeTierRows } from "./badge-tier-rows.ts";
 
+/**
+ * The three fields this view reads off a member.
+ *
+ * Narrower than `LabMember` on purpose: the Admin tab holds its roster as the controller's
+ * `AdminBotLabMember`, which spells `onboarding` differently, and this list has no interest in
+ * either shape beyond a name, an id and the badges already on the row.
+ */
+export type BadgeRosterMember = Pick<LabMember, "id" | "name" | "assigned_badges">;
+
 export type AdminBotBadgesProps = {
   definitions: BadgeDefinition[];
   definitionsLoading: boolean;
@@ -22,7 +31,7 @@ export type AdminBotBadgesProps = {
   nominationsError: BadgeLoadError | null;
   busyKey: string | null;
   notice: { kind: "success" | "error"; text: string } | null;
-  members: LabMember[];
+  members: readonly BadgeRosterMember[];
   assignRowId: string;
   onToggleAssignRow: (memberId: string) => void;
   memberQuery: string;
@@ -272,7 +281,7 @@ function badgeOptions(definitions: BadgeDefinition[]) {
 // assign modal survives renders that happen before the admin submits it.
 const assignBadgeIdRef = createRef<HTMLInputElement>();
 
-function memberMatchesQuery(member: LabMember, query: string): boolean {
+function memberMatchesQuery(member: BadgeRosterMember, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) {
     return true;
@@ -351,7 +360,7 @@ function renderAssignModal(props: AdminBotBadgesProps) {
   `;
 }
 
-function renderMemberBadgeRow(props: AdminBotBadgesProps, member: LabMember) {
+function renderMemberBadgeRow(props: AdminBotBadgesProps, member: BadgeRosterMember) {
   const memberId = String(member.id ?? "");
   const assigned = (member.assigned_badges ?? []) as NonNullable<LabMember["assigned_badges"]>;
   return html`

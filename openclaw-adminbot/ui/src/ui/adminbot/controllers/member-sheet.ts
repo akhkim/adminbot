@@ -12,7 +12,7 @@ import {
   proposeMemberSheetEdits as proposeMemberSheetEditsRequest,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
-import type { UiSettings } from "../../settings.ts";
+import type { UiSettings } from "../../storage.ts";
 
 /**
  * The Membership grid over the lab's member spreadsheet.
@@ -48,7 +48,7 @@ export async function loadMemberSheet(host: AdminBotMemberSheetHost): Promise<vo
   host.memberSheetError = null;
   try {
     const result = await fetchMemberSheetRequest(
-      stored.token,
+      stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
@@ -111,7 +111,7 @@ export async function saveMemberSheetEdits(host: AdminBotMemberSheetHost): Promi
     const result = await proposeMemberSheetEditsRequest(
       edits,
       host.memberSheetBaseline ?? {},
-      stored.token,
+      stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
@@ -155,7 +155,7 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
     const result = await onboardFromMemberSheetRequest(
       rows,
       {},
-      stored.token,
+      stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {

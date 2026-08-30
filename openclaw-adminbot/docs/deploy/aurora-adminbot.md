@@ -149,7 +149,8 @@ scripts/aurora-adminbot-host.sh --user <cs-user> logs email
 ## Optional Google Sheet member poller
 
 Aurora can poll one Google Sheet tab every minute and import safe member-profile changes through
-the loopback AdminBot API. Add these values to
+the loopback AdminBot API. (The Membership tab's roster grid reads the lab's spreadsheet with no
+configuration at all; these variables are the poller's, and re-point the grid as a side effect.) Add these values to
 `~/.config/jinesis-adminbot/adminbot.env`, then rerun the normal `start` command:
 
 ```bash
