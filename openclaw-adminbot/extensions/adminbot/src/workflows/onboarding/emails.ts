@@ -110,7 +110,7 @@ Thank you for taking the time to interview with the Jinesis Lab and for sharing 
 
 After careful consideration, we have decided not to move forward at this time. We were unable to identify a strong match between your current experience and the lab's present research needs.
 
-If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: NLP PhD Global Equality.
+If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: [NLP PhD Global Equality](https://github.com/zhijing-jin/nlp-phd-global-equality).
 
 We sincerely appreciate your interest in the lab and wish you the best in your academic and professional path.
 
@@ -220,8 +220,8 @@ We welcome you to keep an active profile on our lab portal {dashboard_url}
 
 5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 You are welcome to join any of our gathering events too. Hope to see you at one!
@@ -260,8 +260,8 @@ A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab, w
 
 5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
@@ -292,8 +292,8 @@ A very warm welcome to the Jinesis Lab! To facilitate our project collaboration,
 
 4. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
@@ -479,8 +479,8 @@ A few things to get you set up:
 
 4. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
@@ -508,8 +508,8 @@ Please communicate changes in your availability early. If coursework, co-supervi
 
 Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 We're glad to have you working with us and looking forward to seeing the project develop!
