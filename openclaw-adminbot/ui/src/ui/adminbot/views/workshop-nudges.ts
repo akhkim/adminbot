@@ -261,11 +261,14 @@ function renderRecipientQueue(props: WorkshopNudgesProps, result: WorkshopNudgeR
       searchableRecipient(recipient).includes(query),
   );
   const page = pageSlice(filtered, props.state.view.page);
-  const readyIds = page.items
+  // Every ready recipient that matches the current filters, not just the page in view: with 40
+  // recipients across three pages, a "select all" that only reached the visible ten meant three
+  // rounds of select-and-flip-page, and unticking it silently left the other pages ticked.
+  const readyIds = filtered
     .filter((recipient) => recipient.delivery_ready)
     .map((recipient) => recipient.recipient_member_id);
   const selected = new Set(props.state.selectedRecipientIds);
-  const selectedOnPage = readyIds.filter((id) => selected.has(id)).length;
+  const selectedReady = readyIds.filter((id) => selected.has(id)).length;
   const detail = detailRecipient(result, props.state.view.detailKey);
   return html`<div class="workshop-nudges__master-detail" data-detail=${detail ? "open" : "closed"}>
     <div>
@@ -276,9 +279,9 @@ function renderRecipientQueue(props: WorkshopNudgesProps, result: WorkshopNudgeR
               <th class="data-table-checkbox-col">
                 <input
                   type="checkbox"
-                  aria-label="Select all ready recipients on this page"
-                  .checked=${readyIds.length > 0 && selectedOnPage === readyIds.length}
-                  .indeterminate=${selectedOnPage > 0 && selectedOnPage < readyIds.length}
+                  aria-label="Select all ready recipients"
+                  .checked=${readyIds.length > 0 && selectedReady === readyIds.length}
+                  .indeterminate=${selectedReady > 0 && selectedReady < readyIds.length}
                   ?disabled=${readyIds.length === 0}
                   @change=${(event: Event) =>
                     props.onSetRecipients(
