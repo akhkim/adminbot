@@ -54,6 +54,19 @@ describe("reading the sheet into a grid", () => {
     expect(grid.rows[0]!.cells).toEqual(["Kem Nguyen-Le", "", ""]);
   });
 
+  // The roster carries data in columns past its last heading. A header-width grid dropped those
+  // cells silently; now the header grows to the widest row and the extra columns arrive unnamed.
+  it("widens the header to the widest row, so unlabeled columns are not dropped", () => {
+    const grid = toSheetGrid([
+      ["Name", "Email"],
+      ["Kem Nguyen-Le", "kem@example.org", "note in column C"],
+      ["Youssef"],
+    ]);
+    expect(grid.header).toEqual(["Name", "Email", ""]);
+    expect(grid.rows[0]!.cells).toEqual(["Kem Nguyen-Le", "kem@example.org", "note in column C"]);
+    expect(grid.rows[1]!.cells).toEqual(["Youssef", "", ""]);
+  });
+
   it("honours a range that does not start at row 1", () => {
     const grid = toSheetGrid([["Name"], ["Youssef"]], 168);
     expect(grid.rows[0]!.sheetRow).toBe(169);

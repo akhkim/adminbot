@@ -1899,6 +1899,136 @@
   font-size: var(--control-ui-text-xs);
 }
 
+/* The member roster: the live spreadsheet as a grid. It shares the scroller, sticky heading and
+   drag-to-pan with the Lab Members table above, but its columns come from the sheet -- thirty of
+   them, sized from what they hold -- so the fixed table width and the "first column is the
+   person" pinning of the members grid do not apply. The checkbox, row number and name are pinned
+   instead, each offset by the ones before it, so a row still says who it is at column AD. */
+.adminbot-member-roster table.adminbot-member-roster__table {
+  min-width: 0;
+  width: max-content;
+  table-layout: fixed;
+}
+
+.adminbot-member-roster__col-pick {
+  width: 40px;
+}
+
+.adminbot-member-roster__col-row {
+  width: 56px;
+}
+
+.adminbot-member-roster :is(th, td) {
+  padding: 0;
+}
+
+.adminbot-member-roster :is(th, td):first-child {
+  min-width: 0;
+}
+
+.adminbot-member-roster thead th {
+  padding: 8px var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adminbot-member-roster :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+  position: sticky;
+  z-index: 2;
+  background: var(--card);
+}
+
+.adminbot-member-roster thead :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+  z-index: 3;
+  background: var(--bg-muted);
+}
+
+.adminbot-member-roster .adminbot-member-roster__pick {
+  left: 0;
+  text-align: center;
+}
+
+.adminbot-member-roster .adminbot-member-roster__pick input {
+  margin: 10px 0;
+}
+
+.adminbot-member-roster .adminbot-member-roster__row {
+  left: 40px;
+  padding: 10px var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  text-align: right;
+}
+
+.adminbot-member-roster .adminbot-member-roster__name {
+  left: 96px;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.adminbot-member-roster td.adminbot-member-roster__name input {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+/* A cell is its input. Borderless until focused so the grid reads as a sheet rather than a form
+   of three thousand boxes; the edited tint stays on the cell, and hovering it says what it held. */
+.adminbot-member-roster td input[type="text"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 9px var(--space-2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-overflow: ellipsis;
+  outline: none;
+}
+
+.adminbot-member-roster td input[type="text"]:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-member-roster td input[type="text"]:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
+  background: var(--bg);
+  text-overflow: clip;
+}
+
+.adminbot-member-roster td.is-edited {
+  background: var(--warn-muted, rgba(234, 179, 8, 0.14));
+}
+
+.adminbot-member-roster td.is-edited input[type="text"] {
+  font-weight: 500;
+}
+
+.adminbot-member-roster tbody tr.is-selected :is(td, th) {
+  background: var(--accent-muted, var(--bg-hover));
+}
+
+.adminbot-member-roster__count {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.adminbot-member-roster__none {
+  padding: var(--space-4);
+  color: var(--muted);
+  text-align: center;
+}
+
 .adminbot-member-sheet__edit {
   /* Lives under the name in the frozen first column rather than its own Actions column. */
   margin-top: var(--space-2);

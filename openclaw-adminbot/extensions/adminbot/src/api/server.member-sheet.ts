@@ -47,8 +47,12 @@ export type MemberSheetView = {
   read_at: string;
 };
 
-/** Reads the whole tab. `A:Z` is capped by Sheets at the used region, so this is not 26 columns. */
-const RANGE = "A:Z";
+/**
+ * Reads the whole tab. Sheets caps an open-ended range at the used region, so this is not 702
+ * columns -- but it was 26: `A:Z` quietly dropped everything past column Z, and the roster is 30
+ * columns wide, so the grid showed a sheet four columns narrower than the one people edit.
+ */
+const RANGE = "A:ZZ";
 
 function rangeFor(tab: string): string {
   return `${tab}!${RANGE}`;

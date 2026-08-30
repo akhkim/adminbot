@@ -43,6 +43,69 @@ describe("the roster grid", () => {
     expect(host.querySelector('a[href*="1ZqdaRze"]')).not.toBeNull();
   });
 
+  // The live roster: a blank first heading over the names, and data in columns past the last
+  // heading. Both used to be lost -- the name column was unpinned and unnamed, and a header-width
+  // read dropped the trailing columns. Every column is drawn, and a nameless one gets its letter.
+  it("shows every column, names a blank heading by its letter, and pins the name column first", () => {
+    const host = draw({
+      memberSheet: {
+        ...SHEET,
+        header: ["", "Joined month", "Member Type", "", ""],
+        rows: [{ sheet_row: 2, cells: ["Yuen Chen", "2024-01", "alumni", "", "note in E"] }],
+      },
+    });
+    const headings = [...host.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+    // Onboard checkbox, Row, then the sheet's own columns: name (column A) first, then the ones
+    // worth reading first, then the rest in sheet order.
+    expect(headings.slice(2)).toEqual([
+      "Column A",
+      "Member Type",
+      "Joined month",
+      "Column D",
+      "Column E",
+    ]);
+    expect(host.querySelector("thead th.adminbot-member-roster__name")?.textContent?.trim()).toBe(
+      "Column A",
+    );
+    expect(host.querySelector<HTMLInputElement>("td.adminbot-member-roster__name input")?.value).toBe(
+      "Yuen Chen",
+    );
+    const values = [...host.querySelectorAll<HTMLInputElement>("tbody input[type=text]")].map(
+      (input) => input.value,
+    );
+    expect(values).toContain("note in E");
+    expect(text(host)).toContain("5 columns");
+  });
+
+  it("filters rows by any cell, and counts what is shown", () => {
+    const host = draw({ memberSheet: SHEET, memberSheetFilter: "rauno" });
+    const rowHeadings = [...host.querySelectorAll("tbody th")].map((th) => th.textContent?.trim());
+    expect(rowHeadings).toEqual(["3"]);
+    expect(text(host)).toContain("1 of 2 rows");
+
+    const none = draw({ memberSheet: SHEET, memberSheetFilter: "nobody" });
+    expect(text(none)).toContain("No rows match");
+
+    // A pending edit is what the operator sees, so it is what the filter matches.
+    const edited = draw({
+      memberSheet: SHEET,
+      memberSheetFilter: "renamed",
+      memberSheetEdits: { [memberSheetCellKey(2, 0)]: "Renamed Person" },
+    });
+    expect([...edited.querySelectorAll("tbody th")].map((th) => th.textContent?.trim())).toEqual([
+      "2",
+    ]);
+  });
+
+  it("selects every shown row from the heading checkbox", () => {
+    const state: Partial<AppViewState> = { memberSheet: SHEET, memberSheetFilter: "rauno" };
+    const host = draw(state);
+    const all = host.querySelector<HTMLInputElement>("thead input[type=checkbox]");
+    all!.checked = true;
+    all!.dispatchEvent(new Event("change"));
+    expect(state.memberSheetSelection).toEqual([3]);
+  });
+
   it("shows an edited cell's new value, not the sheet's", () => {
     const host = draw({
       memberSheet: SHEET,

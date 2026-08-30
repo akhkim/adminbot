@@ -11,6 +11,7 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
+import { startSheetPan } from "./sheet-pan.ts";
 import type { PaperSlotOverviewRow } from "../auth/session.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
 import {
@@ -1087,37 +1088,6 @@ function sortSignedInMemberFirst(
   return own.length === 0 ? members : [...own, ...members.filter((m) => m.id !== signedInMemberId)];
 }
 
-// Click-and-drag horizontal panning for the roster scroller. The window listeners are
-// installed on drag start and removed on drag end, so the handler stays a stable module-level
-// reference and Lit re-renders never accumulate listeners. Drags starting on an interactive
-// element are ignored so Edit buttons, inputs, and links keep working.
-function startMemberSheetPan(event: MouseEvent): void {
-  const scroller = event.currentTarget;
-  if (!(scroller instanceof HTMLElement) || event.button !== 0) {
-    return;
-  }
-  const target = event.target;
-  if (
-    target instanceof Element &&
-    target.closest("button, input, select, textarea, a, label, [popover]")
-  ) {
-    return;
-  }
-  const startX = event.pageX;
-  const startScrollLeft = scroller.scrollLeft;
-  scroller.classList.add("adminbot-member-sheet__scroll--panning");
-  const onMove = (move: MouseEvent) => {
-    scroller.scrollLeft = startScrollLeft - (move.pageX - startX);
-  };
-  const onUp = () => {
-    scroller.classList.remove("adminbot-member-sheet__scroll--panning");
-    globalThis.removeEventListener("mousemove", onMove);
-    globalThis.removeEventListener("mouseup", onUp);
-  };
-  globalThis.addEventListener("mousemove", onMove);
-  globalThis.addEventListener("mouseup", onUp);
-}
-
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const papers = props.data.papers;
   const members = sortSignedInMemberFirst(allMembers, props.signedInMemberId);
@@ -1176,7 +1146,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </select></label
         >
       </form>
-      <div class="adminbot-member-sheet__scroll" @mousedown=${startMemberSheetPan}>
+      <div class="adminbot-member-sheet__scroll" @mousedown=${startSheetPan}>
         <table>
           <thead>
             <tr>
