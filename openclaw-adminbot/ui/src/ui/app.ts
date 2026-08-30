@@ -86,6 +86,7 @@ import {
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
@@ -724,6 +725,27 @@ export class OpenClawApp extends LitElement {
   @state() registrationsError: RegistrationsLoadError | null = null;
   @state() registrationsBusyId: string | null = null;
   @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[] = [];
+  @state() adminBotBadgeDefinitionsLoading = false;
+  @state() adminBotBadgeDefinitionsLoadedAt: number | null = null;
+  @state() adminBotBadgeDefinitionsError: BadgeLoadError | null = null;
+  @state() adminBotBadgeNominations: import("./adminbot/auth/session.ts").BadgeNominationView[] =
+    [];
+  @state() adminBotBadgeNominationsLoading = false;
+  @state() adminBotBadgeNominationsLoadedAt: number | null = null;
+  @state() adminBotBadgeNominationsError: BadgeLoadError | null = null;
+  @state() adminBotBadgeBusyKey: string | null = null;
+  @state() adminBotBadgeNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() adminBotBadgeAssignRowId = "";
+  @state() adminBotBadgeMemberQuery = "";
+  @state() adminBotBadgeEditId = "";
+  @state() profileBadgeNominations: import("./adminbot/auth/session.ts").BadgeNominationView[] =
+    [];
+  @state() profileBadgeNominationsLoading = false;
+  @state() profileBadgeNominationsLoadedAt: number | null = null;
+  @state() profileBadgeNominationsError: BadgeLoadError | null = null;
+  @state() profileBadgeBusy = false;
+  @state() profileBadgeNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;

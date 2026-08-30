@@ -75,6 +75,60 @@ export type ProfilePhotoReviewState = {
   selected_variant_id?: string;
 };
 
+export type AssignedBadge = {
+  member_id: string;
+  badge_id: string;
+  family_key: string;
+  awarded_at: string;
+  awarded_by: string;
+  source: "admin" | "nomination";
+  nomination_id?: string;
+  evidence?: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  sort_order: number;
+};
+
+export type BadgeDefinitionInput = {
+  id?: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+};
+
+export type BadgeDefinition = BadgeDefinitionInput & {
+  id: string;
+  family_key: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BadgeNominationStatus = "pending" | "approved" | "rejected";
+
+export type BadgeNominationView = {
+  id: string;
+  badge_id: string;
+  family_key: string;
+  member_id: string;
+  evidence?: string;
+  status: BadgeNominationStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  badge_category: string;
+  badge_name: string;
+  badge_description: string;
+  badge_tier?: string;
+  badge_criteria_url?: string;
+  member_name?: string;
+};
+
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
 export type LabMember = {
@@ -114,6 +168,7 @@ export type LabMember = {
   profile_photo_review?: ProfilePhotoReviewState | null;
   notes?: string | null;
   onboarding?: MemberOnboarding | null;
+  assigned_badges?: AssignedBadge[] | null;
   [key: string]: unknown;
 };
 
@@ -1780,6 +1835,206 @@ export function rejectRegistration(
   baseUrl: string,
 ): Promise<AuthResult<void>> {
   return decideRegistration(registrationId, "reject", sessionToken, baseUrl);
+}
+
+export async function fetchBadges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition[]>> {
+  const result = await authedJson(baseUrl, "/badges", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badges = (result.body as { badges?: BadgeDefinition[] } | null)?.badges ?? [];
+  return { ok: true, value: badges };
+}
+
+export async function createBadge(
+  input: BadgeDefinitionInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition>> {
+  const result = await authedJson(baseUrl, "/badges", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badge = (result.body as { badge?: BadgeDefinition } | null)?.badge;
+  return badge ? { ok: true, value: badge } : { ok: false, kind: "auth-failed" };
+}
+
+export async function updateBadge(
+  badgeId: string,
+  input: Partial<BadgeDefinitionInput>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/${encodeURIComponent(badgeId)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badge = (result.body as { badge?: BadgeDefinition } | null)?.badge;
+  return badge ? { ok: true, value: badge } : { ok: false, kind: "auth-failed" };
+}
+
+export async function assignBadgeToMember(
+  memberId: string,
+  badgeId: string,
+  sessionToken: string,
+  baseUrl: string,
+  evidence?: string,
+): Promise<AuthResult<AssignedBadge>> {
+  const result = await authedJson(baseUrl, "/badges/assignments", "POST", sessionToken, {
+    member_id: memberId,
+    badge_id: badgeId,
+    ...(evidence ? { evidence } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const assignment = (result.body as { assignment?: AssignedBadge } | null)?.assignment;
+  return assignment ? { ok: true, value: assignment } : { ok: false, kind: "auth-failed" };
+}
+
+export async function removeBadgeFromMember(
+  memberId: string,
+  badgeId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<void>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/assignments/${encodeURIComponent(memberId)}/${encodeURIComponent(badgeId)}`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: undefined };
+}
+
+export async function fetchBadgeNominations(
+  sessionToken: string,
+  baseUrl: string,
+  params: { memberId?: string; status?: BadgeNominationStatus } = {},
+): Promise<AuthResult<BadgeNominationView[]>> {
+  const query = new URLSearchParams();
+  if (params.memberId) {
+    query.set("member_id", params.memberId);
+  }
+  if (params.status) {
+    query.set("status", params.status);
+  }
+  const path = query.size ? `/badges/nominations?${query.toString()}` : "/badges/nominations";
+  const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nominations = (result.body as { nominations?: BadgeNominationView[] } | null)?.nominations;
+  return { ok: true, value: nominations ?? [] };
+}
+
+export async function submitBadgeNomination(
+  input: { badgeId: string; evidence: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  const result = await authedJson(baseUrl, "/badges/nominations", "POST", sessionToken, {
+    badge_id: input.badgeId,
+    evidence: input.evidence,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nomination = (result.body as { nomination?: BadgeNominationView } | null)?.nomination;
+  return nomination ? { ok: true, value: nomination } : { ok: false, kind: "auth-failed" };
+}
+
+async function decideBadgeNomination(
+  nominationId: string,
+  decision: "approve" | "reject",
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/nominations/${encodeURIComponent(nominationId)}/${decision}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nomination = (result.body as { nomination?: BadgeNominationView } | null)?.nomination;
+  return nomination ? { ok: true, value: nomination } : { ok: false, kind: "auth-failed" };
+}
+
+export function approveBadgeNomination(
+  nominationId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  return decideBadgeNomination(nominationId, "approve", sessionToken, baseUrl);
+}
+
+export function rejectBadgeNomination(
+  nominationId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  return decideBadgeNomination(nominationId, "reject", sessionToken, baseUrl);
 }
 
 export async function loginMember(

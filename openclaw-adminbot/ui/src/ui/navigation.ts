@@ -51,6 +51,7 @@ export const TAB_GROUPS = [
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
+      "adminbotBadges",
       "adminbotCalendar",
       "adminbotGrantReport",
       // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
@@ -170,6 +171,7 @@ export type Tab =
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
+  | "adminbotBadges"
   | "adminbotOnboarding"
   | "adminbotReimbursements"
   | "adminbotSettings"
@@ -254,6 +256,7 @@ const TAB_PATHS: Record<Tab, string> = {
   activity: "/activity",
   adminbot: "/pending-actions",
   adminbotRegistrations: "/registrations",
+  adminbotBadges: "/badges",
   adminbotOnboarding: "/onboarding",
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
@@ -316,6 +319,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/profile-overview": "adminbotProfileOverview",
   "/adminbot/rec-letters": "adminbotRecLetters",
   "/adminbot/registrations": "adminbotRegistrations",
+  "/adminbot/badges": "adminbotBadges",
   "/adminbot/reimbursements": "adminbotReimbursements",
   "/adminbot/settings": "adminbotSettings",
   "/adminbot/signatures": "adminbotSignatures",
@@ -448,6 +452,8 @@ export function iconForTab(tab: Tab): IconName {
     // The landing tab of the Membership page: who is in the lab, not just who is waiting.
     case "adminbotRegistrations":
       return "user";
+    case "adminbotBadges":
+      return "spark";
     case "adminbotOnboarding":
       return "send";
     case "adminbotReimbursements":

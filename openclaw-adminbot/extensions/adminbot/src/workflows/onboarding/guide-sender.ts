@@ -12,7 +12,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
-import { ADMINBOT_SEEDED_PORTAL_PASSWORD } from "../identity/auth.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";

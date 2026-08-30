@@ -115,6 +115,16 @@ import {
 } from "./adminbot/data/logistics-requests.ts";
 import "./components/feedback-widget.ts";
 import {
+  assignAdminBadge,
+  decideAdminBadgeNomination,
+  loadAdminBadgeNominations,
+  loadBadgeDefinitions,
+  loadProfileBadgeNominations,
+  removeAdminBadge,
+  saveAdminBadgeDefinition,
+  submitOwnBadgeNomination,
+} from "./adminbot/data/badges.ts";
+import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
@@ -806,6 +816,10 @@ const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyV
 const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
 const lazyAdminBotRegistrations = createLazyView(
   () => import("./adminbot/views/registrations.ts"),
+  notifyLazyViewChanged,
+);
+const lazyAdminBotBadges = createLazyView(
+  () => import("./adminbot/views/badges.ts"),
   notifyLazyViewChanged,
 );
 
@@ -2563,6 +2577,31 @@ export function renderApp(state: AppViewState) {
   if (state.tab === "profile" && hasMemberSession && state.adminBotLocationDrift === undefined) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
   }
+  if (
+    (state.tab === "profile" || state.tab === "adminbotBadges") &&
+    hasMemberSession &&
+    !state.adminBotBadgeDefinitionsLoading &&
+    state.adminBotBadgeDefinitionsLoadedAt === null
+  ) {
+    void loadBadgeDefinitions(state).finally(() => requestHostUpdate?.());
+  }
+  if (
+    state.tab === "profile" &&
+    hasMemberSession &&
+    !state.profileBadgeNominationsLoading &&
+    state.profileBadgeNominationsLoadedAt === null
+  ) {
+    void loadProfileBadgeNominations(state).finally(() => requestHostUpdate?.());
+  }
+  if (
+    state.tab === "adminbotBadges" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    !state.adminBotBadgeNominationsLoading &&
+    state.adminBotBadgeNominationsLoadedAt === null
+  ) {
+    void loadAdminBadgeNominations(state).finally(() => requestHostUpdate?.());
+  }
   // Logistics drafts are per-member, and this is where that is enforced. The scope changes when
   // somebody signs in, signs out, or a second person uses the same browser -- and each time, the
   // forms on screen belong to the previous scope and have to be cleared and refilled from that
@@ -3149,6 +3188,8 @@ export function renderApp(state: AppViewState) {
                 onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
                 onApplyPolishedPhoto: (variantId) =>
                   void applyAdminBotOwnProfilePhoto(state, variantId),
+                onSubmitBadgeNomination: (badgeId, evidence) =>
+                  void submitOwnBadgeNomination(state, badgeId, evidence),
               })}
               <!-- Back on this page, but folded away. It is required reading somebody walks once,
                    on a page they edit every week: open, it ended the page in a wall of steps they
@@ -3697,6 +3738,49 @@ export function renderApp(state: AppViewState) {
                 onDecide: (registrationId, decision) =>
                   void decideAdminBotRegistration(state, registrationId, decision),
                 onRefresh: () => void loadAdminBotRegistrations(state),
+              }),
+            )
+          : nothing}
+        ${state.tab === "adminbotBadges" && adminBotMode === "admin"
+          ? renderLazyView(lazyAdminBotBadges, (m) =>
+              m.renderAdminBotBadges({
+                definitions: state.adminBotBadgeDefinitions,
+                definitionsLoading: state.adminBotBadgeDefinitionsLoading,
+                definitionsError: state.adminBotBadgeDefinitionsError,
+                nominations: state.adminBotBadgeNominations,
+                nominationsLoading: state.adminBotBadgeNominationsLoading,
+                nominationsError: state.adminBotBadgeNominationsError,
+                busyKey: state.adminBotBadgeBusyKey,
+                notice: state.adminBotBadgeNotice,
+                members: state.adminBotData.members ?? [],
+                assignRowId: state.adminBotBadgeAssignRowId,
+                onToggleAssignRow: (memberId) => {
+                  state.adminBotBadgeAssignRowId =
+                    state.adminBotBadgeAssignRowId === memberId ? "" : memberId;
+                },
+                memberQuery: state.adminBotBadgeMemberQuery,
+                onMemberQueryChange: (query) => {
+                  state.adminBotBadgeMemberQuery = query;
+                },
+                editBadgeId: state.adminBotBadgeEditId,
+                onToggleEditBadge: (badgeId) => {
+                  state.adminBotBadgeEditId = state.adminBotBadgeEditId === badgeId ? "" : badgeId;
+                },
+                onRefresh: () => {
+                  state.adminBotBadgeDefinitionsLoadedAt = null;
+                  state.adminBotBadgeNominationsLoadedAt = null;
+                  void Promise.all([
+                    loadBadgeDefinitions(state),
+                    loadAdminBadgeNominations(state),
+                    loadAdminBot(state, "admin"),
+                  ]);
+                },
+                onSaveDefinition: (input) => saveAdminBadgeDefinition(state, input),
+                onAssign: (memberId, badgeId, evidence) =>
+                  void assignAdminBadge(state, memberId, badgeId, evidence),
+                onRemove: (memberId, badgeId) => void removeAdminBadge(state, memberId, badgeId),
+                onDecide: (nominationId, decision) =>
+                  void decideAdminBadgeNomination(state, nominationId, decision),
               }),
             )
           : nothing}

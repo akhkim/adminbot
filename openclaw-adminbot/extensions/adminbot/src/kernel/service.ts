@@ -105,6 +105,20 @@ import {
   type AdminBotFeedbackSummary,
 } from "../contracts/feedback.js";
 import {
+  ADMINBOT_BADGE_CATEGORY_MAX,
+  ADMINBOT_BADGE_DESCRIPTION_MAX,
+  ADMINBOT_BADGE_EVIDENCE_MAX,
+  adminBotDefaultBadgeDefinitions,
+  normalizeBadgeFamilyKey,
+  type AdminBotAssignedBadge,
+  type AdminBotBadgeAssignment,
+  type AdminBotBadgeDefinition,
+  type AdminBotBadgeDefinitionInput,
+  type AdminBotBadgeNomination,
+  type AdminBotBadgeNominationStatus,
+  type AdminBotBadgeNominationView,
+} from "../contracts/badges.js";
+import {
   adminBotDefaultGroupMeeting,
   adminBotGroupMeetingNudgeWindowHours,
   hoursUntilGroupMeeting,
@@ -292,6 +306,19 @@ export type AdminBotServiceStore = {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
+  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
+  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined;
+  listBadgeDefinitions(): AdminBotBadgeDefinition[];
+  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void;
+  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined;
+  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[];
+  deleteBadgeAssignment(memberId: string, badgeId: string): boolean;
+  saveBadgeNomination(nomination: AdminBotBadgeNomination): void;
+  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
+  listBadgeNominations(params?: {
+    memberId?: string;
+    status?: AdminBotBadgeNominationStatus;
+  }): AdminBotBadgeNomination[];
   /** Removes one roster row. False when there was nothing to remove. */
   deleteLabMember(memberId: string): boolean;
   /**
@@ -420,6 +447,10 @@ export type AdminBotServiceStore = {
   getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
   deleteSlackChannelNamingRecord(channelId: string): boolean;
+};
+
+export type AdminBotLabMemberView = AdminBotLabMember & {
+  assigned_badges?: AdminBotAssignedBadge[];
 };
 
 /**
@@ -845,6 +876,7 @@ export class AdminBotService {
   ) {
     this.pruneRetainedAuditEvents();
     this.refreshStoredDeadlineMilestones();
+    this.seedDefaultBadges();
   }
 
   private refreshStoredDeadlineMilestones(): void {
@@ -859,6 +891,41 @@ export class AdminBotService {
       }
       this.store.saveLabMember(updated);
     }
+  }
+
+  private seedDefaultBadges(): void {
+    const now = new Date().toISOString();
+    for (const seed of adminBotDefaultBadgeDefinitions) {
+      if (this.store.getBadgeDefinition(seed.id)) {
+        continue;
+      }
+      const familyKey =
+        seed.family_key ?? this.findExistingBadgeFamilyKey(seed.category, seed.name) ?? normalizeBadgeFamilyKey(seed.category, seed.name);
+      this.store.saveBadgeDefinition({
+        id: seed.id,
+        category: seed.category,
+        name: seed.name,
+        description: seed.description,
+        ...(seed.criteria_url ? { criteria_url: seed.criteria_url } : {}),
+        ...(seed.tier ? { tier: seed.tier } : {}),
+        family_key: familyKey,
+        sort_order: seed.sort_order ?? 0,
+        created_at: now,
+        updated_at: now,
+      });
+    }
+  }
+
+  private findExistingBadgeFamilyKey(category: string, name: string): string | undefined {
+    const needleCategory = category.trim().toLowerCase();
+    const needleName = name.trim().toLowerCase();
+    return this.store
+      .listBadgeDefinitions()
+      .find(
+        (badge) =>
+          badge.category.trim().toLowerCase() === needleCategory &&
+          badge.name.trim().toLowerCase() === needleName,
+      )?.family_key;
   }
 
   // One connector call may mutate an external service. Share it across concurrent retries so
@@ -1740,8 +1807,373 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  listLabMembers(): AdminBotServiceResponse<{ members: AdminBotLabMember[] }> {
-    return { ok: true, status: 200, payload: { members: this.store.listLabMembers() } };
+  listLabMembers(): AdminBotServiceResponse<{ members: AdminBotLabMemberView[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { members: this.store.listLabMembers().map((member) => this.memberView(member)) },
+    };
+  }
+
+  listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
+    return { ok: true, status: 200, payload: { badges: this.store.listBadgeDefinitions() } };
+  }
+
+  createBadgeDefinition(
+    input: AdminBotBadgeDefinitionInput,
+    actor: string,
+  ): AdminBotServiceResponse<{ badge: AdminBotBadgeDefinition }> {
+    return this.saveBadgeDefinition(input, actor);
+  }
+
+  updateBadgeDefinition(
+    badgeId: string,
+    input: Partial<AdminBotBadgeDefinitionInput>,
+    actor: string,
+  ): AdminBotServiceResponse<{ badge: AdminBotBadgeDefinition }> {
+    const existing = this.store.getBadgeDefinition(badgeId);
+    if (!existing) {
+      return serviceError(404, "badge not found");
+    }
+    return this.saveBadgeDefinition({ ...existing, ...input, id: badgeId }, actor, existing);
+  }
+
+  private saveBadgeDefinition(
+    input: AdminBotBadgeDefinitionInput,
+    actor: string,
+    existing?: AdminBotBadgeDefinition,
+  ): AdminBotServiceResponse<{ badge: AdminBotBadgeDefinition }> {
+    const badgeId = existing?.id ?? input.id?.trim() ?? `badge_${randomUUID()}`;
+    const category = input.category?.trim() ?? "";
+    const name = input.name?.trim() ?? "";
+    const description = input.description?.trim() ?? "";
+    const tier = input.tier?.trim() || undefined;
+    const criteriaUrl = input.criteria_url?.trim() || undefined;
+    if (!category) {
+      return serviceError(400, "badge category is required");
+    }
+    if (category.length > ADMINBOT_BADGE_CATEGORY_MAX) {
+      return serviceError(
+        400,
+        `badge category cannot exceed ${ADMINBOT_BADGE_CATEGORY_MAX} characters`,
+      );
+    }
+    if (!name) {
+      return serviceError(400, "badge name is required");
+    }
+    const nameError = validateLabel(name, "badge name");
+    if (nameError) {
+      return serviceError(400, nameError);
+    }
+    if (tier) {
+      const tierError = validateLabel(tier, "badge tier");
+      if (tierError) {
+        return serviceError(400, tierError);
+      }
+    }
+    if (!description) {
+      return serviceError(400, "badge description is required");
+    }
+    if (description.includes("\n") || description.includes("\r")) {
+      return serviceError(400, "badge description must be a single line");
+    }
+    if (description.length > ADMINBOT_BADGE_DESCRIPTION_MAX) {
+      return serviceError(
+        400,
+        `badge description cannot exceed ${ADMINBOT_BADGE_DESCRIPTION_MAX} characters`,
+      );
+    }
+    const criteriaError = validateExternalLink(criteriaUrl, "badge criteria");
+    if (criteriaError) {
+      return serviceError(400, criteriaError);
+    }
+    const now = new Date().toISOString();
+    const familyKey =
+      existing?.family_key ??
+      input.family_key?.trim() ??
+      this.findExistingBadgeFamilyKey(category, name) ??
+      normalizeBadgeFamilyKey(category, name);
+    const duplicate = this.store
+      .listBadgeDefinitions()
+      .find(
+        (badge) =>
+          badge.id !== badgeId &&
+          badge.family_key === familyKey &&
+          (badge.tier?.trim().toLowerCase() ?? "") === (tier?.trim().toLowerCase() ?? ""),
+      );
+    if (duplicate) {
+      return serviceError(409, "badge tier already exists in this badge family");
+    }
+    const badge: AdminBotBadgeDefinition = {
+      id: badgeId,
+      category,
+      name,
+      description,
+      ...(criteriaUrl ? { criteria_url: criteriaUrl } : {}),
+      ...(tier ? { tier } : {}),
+      family_key: familyKey,
+      sort_order: input.sort_order ?? existing?.sort_order ?? 0,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+    this.store.saveBadgeDefinition(badge);
+    this.recordAudit({
+      type: "badge.definition_saved",
+      actor,
+      details: { badge_id: badge.id, family_key: badge.family_key },
+    });
+    return { ok: true, status: 200, payload: { badge } };
+  }
+
+  assignBadge(
+    memberId: string,
+    badgeId: string,
+    actor: string,
+    evidenceInput?: string,
+  ): AdminBotServiceResponse<{ assignment: AdminBotAssignedBadge }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const badge = this.store.getBadgeDefinition(badgeId);
+    if (!badge) {
+      return serviceError(404, "badge not found");
+    }
+    const pending = this.store
+      .listBadgeNominations({ memberId, status: "pending" })
+      .find((nomination) => nomination.family_key === badge.family_key);
+    if (pending) {
+      return serviceError(409, "decide the pending nomination for this badge family first");
+    }
+    const evidence = evidenceInput?.trim();
+    if (evidence && evidence.length > ADMINBOT_BADGE_EVIDENCE_MAX) {
+      return serviceError(
+        400,
+        `badge evidence cannot exceed ${ADMINBOT_BADGE_EVIDENCE_MAX} characters`,
+      );
+    }
+    const now = new Date().toISOString();
+    this.store.saveBadgeAssignment({
+      member_id: memberId,
+      badge_id: badge.id,
+      family_key: badge.family_key,
+      awarded_at: now,
+      awarded_by: actor,
+      source: "admin",
+      ...(evidence ? { evidence } : {}),
+    });
+    const assignment = this.assignedBadgesFor(memberId).find((entry) => entry.badge_id === badge.id);
+    this.recordAudit({
+      type: "badge.assigned",
+      actor,
+      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+    });
+    if (!assignment) {
+      return serviceError(500, "badge assignment could not be read back");
+    }
+    return { ok: true, status: 200, payload: { assignment } };
+  }
+
+  removeBadge(
+    memberId: string,
+    badgeId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ removed: boolean }> {
+    const badge = this.store.getBadgeDefinition(badgeId);
+    if (!badge) {
+      return serviceError(404, "badge not found");
+    }
+    const removed = this.store.deleteBadgeAssignment(memberId, badgeId);
+    if (!removed) {
+      return serviceError(404, "badge assignment not found");
+    }
+    this.recordAudit({
+      type: "badge.removed",
+      actor,
+      details: { member_id: memberId, badge_id: badgeId, family_key: badge.family_key },
+    });
+    return { ok: true, status: 200, payload: { removed: true } };
+  }
+
+  listBadgeNominations(params: {
+    memberId?: string;
+    status?: AdminBotBadgeNominationStatus;
+  } = {}): AdminBotServiceResponse<{ nominations: AdminBotBadgeNominationView[] }> {
+    const nominations = this.store
+      .listBadgeNominations(params)
+      .map((nomination) => this.badgeNominationView(nomination))
+      .filter((nomination): nomination is AdminBotBadgeNominationView => Boolean(nomination));
+    return { ok: true, status: 200, payload: { nominations } };
+  }
+
+  submitBadgeNomination(
+    memberId: string,
+    input: { badge_id: string; evidence?: string },
+  ): AdminBotServiceResponse<{ nomination: AdminBotBadgeNominationView }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const badgeId = input.badge_id?.trim() ?? "";
+    if (!badgeId) {
+      return serviceError(400, "badge_id is required");
+    }
+    const badge = this.store.getBadgeDefinition(badgeId);
+    if (!badge) {
+      return serviceError(404, "badge not found");
+    }
+    if (this.store.getBadgeAssignment(memberId, badge.family_key)) {
+      return serviceError(409, "you already hold a badge in this badge family");
+    }
+    const existing = this.store
+      .listBadgeNominations({ memberId, status: "pending" })
+      .find((nomination) => nomination.family_key === badge.family_key);
+    if (existing) {
+      return serviceError(409, "you already have a pending nomination for this badge family");
+    }
+    const evidence = input.evidence?.trim();
+    if (!evidence) {
+      return serviceError(400, "badge evidence is required");
+    }
+    if (evidence.length > ADMINBOT_BADGE_EVIDENCE_MAX) {
+      return serviceError(
+        400,
+        `badge evidence cannot exceed ${ADMINBOT_BADGE_EVIDENCE_MAX} characters`,
+      );
+    }
+    const nomination: AdminBotBadgeNomination = {
+      id: `badge_nom_${randomUUID()}`,
+      badge_id: badge.id,
+      family_key: badge.family_key,
+      member_id: memberId,
+      evidence,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    };
+    this.store.saveBadgeNomination(nomination);
+    this.recordAudit({
+      type: "badge.nomination_submitted",
+      actor: memberId,
+      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+    });
+    const view = this.badgeNominationView(nomination);
+    if (!view) {
+      return serviceError(500, "badge nomination could not be read back");
+    }
+    return { ok: true, status: 200, payload: { nomination: view } };
+  }
+
+  decideBadgeNomination(
+    nominationId: string,
+    decision: Extract<AdminBotBadgeNominationStatus, "approved" | "rejected">,
+    actor: string,
+  ): AdminBotServiceResponse<{ nomination: AdminBotBadgeNominationView; assignment?: AdminBotAssignedBadge }> {
+    const nomination = this.store.getBadgeNomination(nominationId);
+    if (!nomination || nomination.status !== "pending") {
+      return serviceError(404, "badge nomination not found");
+    }
+    const badge = this.store.getBadgeDefinition(nomination.badge_id);
+    if (!badge) {
+      return serviceError(404, "badge not found");
+    }
+    const now = new Date().toISOString();
+    const decided: AdminBotBadgeNomination = {
+      ...nomination,
+      status: decision,
+      decided_at: now,
+      decided_by: actor,
+    };
+    this.store.saveBadgeNomination(decided);
+    let assignment: AdminBotAssignedBadge | undefined;
+    if (decision === "approved") {
+      this.store.saveBadgeAssignment({
+        member_id: nomination.member_id,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        awarded_at: now,
+        awarded_by: actor,
+        source: "nomination",
+        nomination_id: nomination.id,
+        ...(nomination.evidence ? { evidence: nomination.evidence } : {}),
+      });
+      assignment = this.assignedBadgesFor(nomination.member_id).find(
+        (entry) => entry.badge_id === badge.id,
+      );
+    }
+    this.recordAudit({
+      type:
+        decision === "approved" ? "badge.nomination_approved" : "badge.nomination_rejected",
+      actor,
+      details: {
+        nomination_id: nomination.id,
+        member_id: nomination.member_id,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+      },
+    });
+    const view = this.badgeNominationView(decided);
+    if (!view) {
+      return serviceError(500, "badge nomination could not be read back");
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { nomination: view, ...(assignment ? { assignment } : {}) },
+    };
+  }
+
+  private memberView(member: AdminBotLabMember): AdminBotLabMemberView {
+    const assigned = this.assignedBadgesFor(member.id);
+    return { ...member, ...(assigned.length ? { assigned_badges: assigned } : {}) };
+  }
+
+  private assignedBadgesFor(memberId: string): AdminBotAssignedBadge[] {
+    const badgesById = new Map(this.store.listBadgeDefinitions().map((badge) => [badge.id, badge]));
+    return this.store
+      .listBadgeAssignments(memberId)
+      .flatMap((assignment) => {
+        const badge = badgesById.get(assignment.badge_id);
+        if (!badge) {
+          return [];
+        }
+        return [
+          {
+            ...assignment,
+            category: badge.category,
+            name: badge.name,
+            description: badge.description,
+            ...(badge.criteria_url ? { criteria_url: badge.criteria_url } : {}),
+            ...(badge.tier ? { tier: badge.tier } : {}),
+            sort_order: badge.sort_order,
+          },
+        ];
+      })
+      .toSorted((left, right) =>
+        left.sort_order - right.sort_order ||
+        left.category.localeCompare(right.category) ||
+        left.name.localeCompare(right.name) ||
+        (left.tier ?? "").localeCompare(right.tier ?? ""),
+      );
+  }
+
+  private badgeNominationView(
+    nomination: AdminBotBadgeNomination,
+  ): AdminBotBadgeNominationView | undefined {
+    const badge = this.store.getBadgeDefinition(nomination.badge_id);
+    if (!badge) {
+      return undefined;
+    }
+    return {
+      ...nomination,
+      badge_category: badge.category,
+      badge_name: badge.name,
+      badge_description: badge.description,
+      ...(badge.tier ? { badge_tier: badge.tier } : {}),
+      ...(badge.criteria_url ? { badge_criteria_url: badge.criteria_url } : {}),
+      ...(this.store.getLabMember(nomination.member_id)?.name
+        ? { member_name: this.store.getLabMember(nomination.member_id)?.name }
+        : {}),
+    };
   }
 
   /**
