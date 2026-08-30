@@ -11,6 +11,7 @@
 // is whatever is in the boxes -- the stored template is the starting draft, not the wire format.
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { renderMemberSheet } from "./member-sheet.ts";
 
 export type OnboardingTemplateOption = {
   id: string;
@@ -385,6 +386,7 @@ export function renderAdminBotOnboarding(state: AppViewState) {
 
   return html`
     <section class="adminbot-onboarding">
+      ${renderMemberSheet(state)}
       <form
         class="adminbot-form"
         @submit=${(event: Event) => {

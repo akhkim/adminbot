@@ -118,6 +118,23 @@ export type AppViewState = {
   onboardingDraftBody?: string;
   /** Comma-separated project channels the send invites them to. */
   onboardingProjectChannels?: string;
+  // Membership tab: the lab's member spreadsheet as an editable grid. `memberSheetEdits` holds
+  // only the cells actually changed, keyed "row:column", so saving one cell never rewrites the
+  // row around it.
+  memberSheet?: import("./adminbot/auth/session.ts").MemberSheetView | null;
+  memberSheetBusy?: boolean;
+  memberSheetError?: string | null;
+  memberSheetEdits?: Record<string, string>;
+  memberSheetBaseline?: Record<string, string>;
+  memberSheetSelection?: number[];
+  memberSheetSaveResult?: import("./adminbot/auth/session.ts").MemberSheetEditResult | null;
+  memberSheetOnboardResult?:
+    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | null;
+  loadMemberSheet?: () => void | Promise<void>;
+  saveMemberSheetEdits?: () => void | Promise<void>;
+  onboardSelectedMemberRows?: () => void | Promise<void>;
+  editMemberSheetCell?: (sheetRow: number, column: number, value: string) => void;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.
