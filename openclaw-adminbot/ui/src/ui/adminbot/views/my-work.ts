@@ -83,8 +83,6 @@ import { openPreRegistrationDialog } from "../pre-registration.ts";
 import {
   formatVenueTargets,
   serializeVenueTargets,
-  nextDeadlineVenue,
-  papersNeedingRegistration,
   effectiveVenueTargets,
   readVenueTargets,
   venueTargetMatches,
@@ -1744,17 +1742,6 @@ function renderNudgePreview(props: MyWorkProps) {
 }
 
 /**
- * The pre-registration banner.
- *
- * Deliberately the loudest thing on the page, and deliberately temporary: it appears only while a
- * deadline is close and only while this member still has a paper that has not been pointed at it.
- * Register everything and it disappears, which is the only honest way to make a banner people do
- * not learn to scroll past.
- *
- * The count is of the member's own unregistered papers rather than the lab's, because a number
- * about other people's work is not a prompt to do anything.
- */
-/**
  * Decisions this member has not answered, and what they have half-picked.
  *
  * Session state, not app state: dismissing is a "not right now", and the stored flag is what
@@ -1898,48 +1885,6 @@ function renderDecisionBanners(
   })}`;
 }
 
-function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWorkProps) {
-  const next = nextDeadlineVenue();
-  if (!next || papers.length === 0) {
-    return nothing;
-  }
-  const outstanding = papersNeedingRegistration(papers, next.venue.venue_id);
-  if (outstanding.length === 0) {
-    return nothing;
-  }
-  const registered = papers.length - outstanding.length;
-  return html`
-    <section
-      class="prereg-banner ${next.days <= 14 ? "prereg-banner--urgent" : ""}"
-      data-testid="prereg-banner"
-    >
-      <div class="prereg-banner__text">
-        <div class="prereg-banner__title">
-          <span aria-hidden="true">🚨</span> Conference pre-registration — ${next.venue.label}
-        </div>
-        <div class="prereg-banner__sub">
-          ${next.days} day${next.days === 1 ? "" : "s"} to the deadline · ${outstanding.length} of
-          your ${papers.length} paper${papers.length === 1 ? "" : "s"} not registered
-          yet${registered > 0 ? ` · ${registered} done` : ""}
-        </div>
-      </div>
-      <button
-        type="button"
-        class="btn primary prereg-banner__cta"
-        data-testid="prereg-open"
-        @click=${() =>
-          openPreRegistrationDialog({
-            papers,
-            onSavePaper: props.onSavePaper,
-            onDone: () => props.onRerender?.(),
-          })}
-      >
-        Pre-register a paper
-      </button>
-    </section>
-  `;
-}
-
 /**
  * Opens the dialog once it is in the document.
  *
@@ -2074,7 +2019,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${props.personal ? renderPreRegistrationBanner(items, props) : nothing}
       ${props.personal
         ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
         : nothing}
