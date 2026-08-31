@@ -99,6 +99,16 @@
       "timeoutSeconds": 3600
     },
     {
+      "name": "adminbot-member-map",
+      "description": "Re-read Slack profile locations, the member map's top-priority source and the only one that cannot refresh itself",
+      "cron": "10 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-member-map-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-deadline-calendar",
       "description": "Publish conference deadlines to the lab calendar, after the venue refresh they read",
       "cron": "40 6 * * 1",
