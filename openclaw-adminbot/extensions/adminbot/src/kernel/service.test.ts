@@ -998,6 +998,78 @@ describe("AdminBotService", () => {
     expect(unwrap(service.listPending()).proposals).toEqual([]);
   });
 
+  // A connector that recognizes an action and declines to deliver it (a delivery kill switch) must
+  // not leave the system claiming it happened -- the audit trail is the product's whole promise.
+  describe("a connector that withholds delivery", () => {
+    const withholding = {
+      execute: vi.fn(async () => ({
+        handled: true,
+        delivered: false,
+        reason: "ADMINBOT_OPENREVIEW_SEND is not set to 1",
+      })),
+    };
+
+    function approvedProposal(service: AdminBotService) {
+      return unwrap(
+        service.createProposal({
+          type: "slack.send_message",
+          summary: "Tell the group",
+          proposed_payload: { channel: "slack", target: "C1", message: "hello" },
+        }),
+      );
+    }
+
+    it("records it as simulated, not executed, and says why", async () => {
+      const service = new AdminBotService(undefined, { executor: withholding });
+      const proposal = approvedProposal(service);
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "zhijing",
+        }),
+      );
+
+      const executed = unwrap(await service.execute(proposal.id, { dry_run: false }));
+      expect(executed.status).toBe("simulated");
+
+      // The proposal is still approved and waiting, never executed.
+      expect(unwrap(service.listPending()).proposals.find((p) => p.id === proposal.id)?.status).not.toBe(
+        "executed",
+      );
+
+      const audit = service.listAuditEvents();
+      expect(audit.some((event) => event.type === "execution.executed")).toBe(false);
+      const simulated = audit.find((event) => event.type === "execution.simulated");
+      expect(simulated).toBeDefined();
+      expect(JSON.stringify(simulated?.details)).toContain("ADMINBOT_OPENREVIEW_SEND");
+    });
+
+    // No execution result is stored for a withheld send, so flipping the switch and executing
+    // again really delivers instead of replaying the cached "simulated" answer.
+    it("still delivers when the same proposal is executed after the switch is on", async () => {
+      const executor = {
+        execute: vi.fn(async () => ({ handled: true, delivered: false, reason: "off" })),
+      };
+      const service = new AdminBotService(undefined, { executor });
+      const proposal = approvedProposal(service);
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "zhijing",
+        }),
+      );
+
+      expect(unwrap(await service.execute(proposal.id, { dry_run: false })).status).toBe(
+        "simulated",
+      );
+
+      executor.execute.mockImplementation(async () => ({ handled: true }));
+      expect(unwrap(await service.execute(proposal.id, { dry_run: false })).status).toBe("executed");
+    });
+  });
+
   describe("Slack channel naming enforcement", () => {
     it("reminds owner on invalid names, then proposes a rename after 48 hours", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };

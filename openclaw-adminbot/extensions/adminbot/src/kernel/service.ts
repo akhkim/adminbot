@@ -660,8 +660,30 @@ import {
 // Re-exported so callers that imported the store from the service keep working.
 export { AdminBotMemoryStore };
 
+/**
+ * What a connector reports back about one proposal.
+ *
+ * `handled` answers "is this mine", and on its own it used to answer "did it happen" too. Those
+ * came apart the moment a connector gained a delivery kill switch: the OpenReview bridge composes
+ * and validates a reminder, deliberately does not post it, and had no way to say so except
+ * `handled: true` -- which the service could only read as delivered, so an approved reminder that
+ * never left the building was stored as `executed` and written into the audit trail as a delivery.
+ *
+ * `delivered: false` is that missing answer. It means the connector recognized the action and
+ * declined to perform it, which the service records as a simulation rather than an execution --
+ * the state that already existed for `dry_run` requests, and the one thing that must never be
+ * confused with success. Omitting the field means delivered, so every connector that really does
+ * the work keeps returning `{ handled: true }` unchanged.
+ */
+export type AdminBotExecutorOutcome = {
+  handled: boolean;
+  delivered?: boolean;
+  /** Why it was not delivered, shown to whoever approved it. Only read when `delivered` is false. */
+  reason?: string;
+};
+
 export type AdminBotActionExecutor = {
-  execute(proposal: AdminBotStoredProposal): Promise<{ handled: boolean }>;
+  execute(proposal: AdminBotStoredProposal): Promise<AdminBotExecutorOutcome>;
 };
 
 export type AdminBotServiceOptions = {
@@ -1495,6 +1517,8 @@ export class AdminBotService {
       return { ok: true, status: 200, payload: result };
     }
     let handled: boolean;
+    let delivered = true;
+    let notDeliveredReason = "";
     if (proposal.type === "deadline.publish") {
       const publication = deadlinePayload(proposal);
       if (!publication) {
@@ -1529,7 +1553,10 @@ export class AdminBotService {
         return this.executionFailure(proposal, 501, "no live connector is configured");
       }
       try {
-        ({ handled } = await this.options.executor.execute(proposal));
+        const outcome = await this.options.executor.execute(proposal);
+        handled = outcome.handled;
+        delivered = outcome.delivered !== false;
+        notDeliveredReason = outcome.reason ?? "";
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -1541,6 +1568,25 @@ export class AdminBotService {
         501,
         `no live connector handles action type ${proposal.type}`,
       );
+    }
+    // Recognized but deliberately not performed -- a connector's delivery kill switch. Recorded
+    // exactly like a dry run, and for the same reason: nothing reached the outside world, so
+    // nothing may be stored as executed. The proposal stays approved and no execution result is
+    // saved, so flipping the switch and executing again really delivers rather than replaying a
+    // cached answer.
+    if (!delivered) {
+      const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
+      this.recordAudit({
+        type: "execution.simulated",
+        action_id: actionId,
+        details: {
+          action_type: proposal.type,
+          risk_tier: proposal.risk_tier,
+          idempotency_key: idempotencyKey,
+          not_delivered_reason: notDeliveredReason || "connector declined to deliver",
+        },
+      });
+      return { ok: true, status: 200, payload: result };
     }
     const result: AdminBotExecutionResult = {
       ...baseResult,
