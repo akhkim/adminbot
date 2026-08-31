@@ -161,6 +161,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-email-templates",
+      "description": "Check the email-template doc against the shipped copy",
+      "cron": "30 8 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-email-templates-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-paperflow-nudges",
       "description": "PaperFlow venue-stage nudges, once a week",
       "cron": "0 9 * * 1",
