@@ -16,6 +16,7 @@
 // few worth reading first, and a column with no heading is named by its letter rather than
 // hidden -- the roster has such columns, and they hold data.
 import { html, nothing } from "lit";
+import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { memberSheetCellKey } from "../controllers/member-sheet.ts";
 import { startSheetPan } from "./sheet-pan.ts";
@@ -51,6 +52,50 @@ export function columnLetter(index: number): string {
 export function nameColumn(header: readonly string[]): number {
   const named = header.indexOf("Name");
   return named >= 0 ? named : 0;
+}
+
+/** The Member Type column, or -1 when this sheet has no such heading. */
+export function memberTypeColumn(header: readonly string[]): number {
+  return header.indexOf("Member Type");
+}
+
+/**
+ * What the Member Type dropdown offers: the vocabulary, plus whatever this sheet already says.
+ *
+ * A closed list would have been wrong here, and quietly. The column is comma-separated, so eleven
+ * of the roster's rows carry two roles at once ("full, coauthor-major"), and three tokens the lab
+ * actually uses -- the adminbot-admin/developer tags and mailing-list -- postdate the routing table
+ * in member-type-template.ts. A select limited to the known list would have made all of those
+ * unselectable and, worse, silently rewritten them the first time somebody touched the row.
+ *
+ * So the sheet's own values are options too. The dropdown stops the typo it was asked to stop --
+ * `Full`, `coauthor_major`, a trailing space -- without being able to destroy a value it does not
+ * recognize. A combination nobody has used yet is the one thing it cannot express; that is what
+ * the free-text fallback below is for.
+ */
+export function memberTypeOptions(
+  rows: readonly { cells: Record<number, string> }[],
+  column: number,
+  current: string,
+): string[] {
+  const seen = new Set<string>(adminBotMemberTypes);
+  if (column >= 0) {
+    for (const row of rows) {
+      const value = (row.cells[column] ?? "").trim();
+      if (value) {
+        seen.add(value);
+      }
+    }
+  }
+  const trimmed = current.trim();
+  if (trimmed) {
+    seen.add(trimmed);
+  }
+  // Canonical vocabulary in its own meaningful order (most-committed first), then anything the
+  // sheet adds, alphabetically so a long tail stays findable.
+  const canonical = adminBotMemberTypes.filter((token) => seen.has(token));
+  const extra = [...seen].filter((value) => !canonical.includes(value as never)).toSorted();
+  return [...canonical, ...extra];
 }
 
 export function columnOrder(header: readonly string[]): number[] {
@@ -296,6 +341,7 @@ export function renderMemberSheet(state: AppViewState) {
 
   const order = columnOrder(sheet.header);
   const name = nameColumn(sheet.header);
+  const memberTypes = memberTypeColumn(sheet.header);
   const widths = new Map(order.map((column) => [column, columnWidth(sheet.header, sheet.rows, column)]));
   const visible = filterRows(sheet.rows, state.memberSheetFilter, state.memberSheetEdits);
   const filtered = visible.length !== sheet.rows.length;
@@ -458,13 +504,43 @@ export function renderMemberSheet(state: AppViewState) {
                     ]
                       .filter(Boolean)
                       .join(" ");
+                    const value = cellValue(state, row.sheet_row, column, original);
+                    const label = `${columnLabel(sheet.header, column)}, row ${row.sheet_row}`;
+                    const wasTitle = edited === undefined ? "" : `Was: ${original}`;
+                    if (column === memberTypes) {
+                      return html`
+                        <td class=${classes}>
+                          <select
+                            class="adminbot-member-roster__type"
+                            aria-label=${label}
+                            title=${wasTitle}
+                            @change=${(event: Event) =>
+                              state.editMemberSheetCell?.(
+                                row.sheet_row,
+                                column,
+                                (event.target as HTMLSelectElement).value,
+                              )}
+                          >
+                            <option value="" ?selected=${!value.trim()}>—</option>
+                            ${memberTypeOptions(sheet.rows, column, value).map(
+                              (option) => html`<option
+                                value=${option}
+                                ?selected=${option === value.trim()}
+                              >
+                                ${option}
+                              </option>`,
+                            )}
+                          </select>
+                        </td>
+                      `;
+                    }
                     return html`
                       <td class=${classes}>
                         <input
                           type="text"
-                          aria-label=${`${columnLabel(sheet.header, column)}, row ${row.sheet_row}`}
-                          title=${edited === undefined ? "" : `Was: ${original}`}
-                          .value=${cellValue(state, row.sheet_row, column, original)}
+                          aria-label=${label}
+                          title=${wasTitle}
+                          .value=${value}
                           @change=${(event: Event) =>
                             state.editMemberSheetCell?.(
                               row.sheet_row,
