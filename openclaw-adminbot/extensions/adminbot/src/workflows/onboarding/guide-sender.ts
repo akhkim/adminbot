@@ -103,6 +103,17 @@ export type AdminBotOnboardingSendRequest = {
    * that never arrives is the case this ordering exists to prevent.
    */
   slack_project_channels?: readonly string[];
+  /**
+   * Who else goes on the thread, and where a reply should land.
+   *
+   * Carried on the request because they are per-recipient facts, not template ones: the matching
+   * mails put each applicant's project lead on the thread so the lead can answer in place, and
+   * every one of these asks for a reply that must not come back to the bot mailbox nobody reads.
+   * Composed copy used to carry both in the plan file and lose them at the sender, which sent a
+   * mail whose "the lead cc'ed will be your contact" sentence was not true of the mail itself.
+   */
+  cc?: readonly string[];
+  reply_to?: string;
 };
 
 export type AdminBotOnboardingSendResult = {
@@ -171,6 +182,8 @@ export type AdminBotOnboardingSenderOptions = {
     subject: string;
     body: string;
     body_html?: string;
+    cc?: readonly string[];
+    reply_to?: string;
   }) => Promise<void>;
 };
 
@@ -189,11 +202,15 @@ export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
     subject,
     body,
     body_html: bodyHtml,
+    cc,
+    reply_to: replyTo,
   }: {
     to: string;
     subject: string;
     body: string;
     body_html?: string;
+    cc?: readonly string[];
+    reply_to?: string;
   }) => {
     const account = env.GOG_ACCOUNT?.trim();
     await execFile(
@@ -215,6 +232,10 @@ export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
         // Without an html alternative the delivered text/plain part is wrapped for us, mid
         // paragraph, at whatever width the encoder and the reading client agree on.
         ...(bodyHtml ? ["--body-html", bodyHtml] : []),
+        // gog takes both as comma-separated strings. Dropped here until now, so a plan that named
+        // a lead on the thread produced a mail that did not.
+        ...(cc?.length ? ["--cc", cc.join(",")] : []),
+        ...(replyTo ? ["--reply-to", replyTo] : []),
       ],
       {
         env,
@@ -550,6 +571,10 @@ export function createAdminBotOnboardingSender(
       subject: guide.subject,
       body: guide.body,
       ...html,
+      ...(request.cc?.length ? { cc: request.cc } : {}),
+      ...(request.reply_to?.trim()
+        ? { reply_to: request.reply_to.trim() }
+        : {}),
     });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a

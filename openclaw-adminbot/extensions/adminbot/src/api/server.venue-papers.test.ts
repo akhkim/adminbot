@@ -333,13 +333,17 @@ describe("POST /venue-papers/search", () => {
     expect(response.status).toBe(400);
   });
 
-  it("refuses an unauthenticated caller", async () => {
+  // Open to visitors, along with the rest of General Tools in the Control UI: this ranks a
+  // published conference programme against text the caller typed. No lab data, nothing filtered by
+  // who is asking, and it writes nothing. Indexing a venue is the half that stays privileged --
+  // see the /venue-papers/index case above, which still answers 401 to the same caller.
+  it("serves a visitor with no session", async () => {
     const baseUrl = await indexed();
     const response = await fetch(`${baseUrl}/venue-papers/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ venue_id: "ICLR.cc/2025/Conference", interests: "AI safety" }),
     });
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
   });
 });

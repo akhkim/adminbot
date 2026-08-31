@@ -17,6 +17,7 @@ import {
   iconForTab,
   normalizeBasePath,
   pathForTab,
+  TAB_GROUPS,
   titleForTab,
   type Tab,
 } from "../../navigation.ts";
@@ -26,11 +27,18 @@ import { visibleTabsForRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   generateGuestReimbursement,
+  loadAdminBotVenueSources,
   resetAdminBotReimbursement,
+  searchAdminBotVenuePapers,
   sendGuestReimbursementMessage,
+  setAdminBotVenue,
+  setAdminBotVenueInterests,
+  toggleAdminBotVenueAbstract,
   type GuestReimbursementHost,
 } from "../controllers/admin.ts";
+import { renderConferencePapers } from "./conference-papers.ts";
 import { renderDeadlines } from "./deadlines.ts";
+import { renderOpportunities } from "./opportunities.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 // Proxies the one state slice the guest flow owns back onto the reactive app instance, so
@@ -45,6 +53,37 @@ function guestHost(state: AppViewState): GuestReimbursementHost {
     },
     guestReimbursementBaseUrl: resolveAdminBotBaseUrl(state.settings),
   };
+}
+
+/** The shared tools, straight from the sidebar model, so the two lists cannot disagree. */
+const GENERAL_TOOLS_TABS: readonly Tab[] =
+  TAB_GROUPS.find((group) => group.label === "generalTools")?.tabs ?? [];
+
+/**
+ * Light and dark, for somebody with no account to store a preference on.
+ *
+ * The theme controls live in Appearance and Settings, both admin-only, so a visitor had no way to
+ * change the theme at all -- the one preference on this shell that is purely about how it looks to
+ * the person looking at it. `system` is not offered as a third state: this is a toggle, and the
+ * mode it starts from is whatever the viewer already resolved to.
+ */
+function renderPublicThemeToggle(state: AppViewState) {
+  const dark = state.themeResolved !== "light";
+  return html`
+    <button
+      type="button"
+      class="public-shell-theme"
+      data-testid="public-shell-theme"
+      aria-pressed=${dark ? "true" : "false"}
+      title=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
+      aria-label=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
+      @click=${() => {
+        state.setThemeMode(dark ? "light" : "dark");
+      }}
+    >
+      <span aria-hidden="true">${dark ? icons.sun : icons.moon}</span>
+    </button>
+  `;
 }
 
 function renderPublicNavItem(state: AppViewState, tab: Tab) {
@@ -88,6 +127,28 @@ function renderPublicPanel(state: AppViewState) {
       onReset: () => resetAdminBotReimbursement(host),
     });
   }
+  if (state.tab === "adminbotOpportunities") {
+    // Self-contained: the board reads a bundled snapshot, so there is nothing to load and nothing
+    // that differs between a visitor and a member.
+    return renderOpportunities();
+  }
+  if (state.tab === "adminbotConferencePapers") {
+    // The signed-in app loads this list from refreshActiveTab, which only runs behind a gateway
+    // connection a visitor does not have. Kicked from here instead, once: `loadingSources` is set
+    // synchronously by the loader and `error` survives a failure, so neither a slow request nor a
+    // dead service turns this into a loop. The state slice is reactive, so the answer re-renders.
+    const papers = state.adminBotVenuePapers;
+    if (papers.sources.length === 0 && !papers.loadingSources && !papers.error) {
+      void loadAdminBotVenueSources(state);
+    }
+    return renderConferencePapers({
+      state: state.adminBotVenuePapers,
+      onVenueChange: (venueId) => setAdminBotVenue(state, venueId),
+      onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
+      onSearch: () => void searchAdminBotVenuePapers(state),
+      onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+    });
+  }
   return renderDeadlines({
     role: "anonymous",
     settings: state.settings,
@@ -96,7 +157,10 @@ function renderPublicPanel(state: AppViewState) {
 
 export function renderPublicShell(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
-  const tabs = visibleTabsForRole(["adminbotReimbursements", "adminbotDeadlines"], "anonymous");
+  // Read off the sidebar's own General Tools group rather than named here. The pair used to be
+  // written out twice -- once in the access table, once in this list -- so opening a third tool to
+  // visitors changed the table and left the shell still rendering two.
+  const tabs = visibleTabsForRole(GENERAL_TOOLS_TABS, "anonymous");
   return html`
     <div class="app-shell app-shell--public">
       <header class="topbar topbar--public">
@@ -125,6 +189,7 @@ export function renderPublicShell(state: AppViewState) {
             >
               ←
             </a>
+            ${renderPublicThemeToggle(state)}
             <button
               type="button"
               class="public-signin"

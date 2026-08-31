@@ -1104,6 +1104,21 @@ export async function approveAdminBotAction(
 
 // Approvals require a real privileged member session — the gateway service principal is
 // rejected by the server (403) so that chat-driven privileged actions are impossible.
+/**
+ * The session if there is one, and the base URL either way.
+ *
+ * For the surfaces the access table opens to visitors: the conference-paper index is a published
+ * programme and the search writes nothing, so it is readable without an account. The service is
+ * still the authority -- these two routes are in its ANONYMOUS_ROUTES and rate-limited per IP like
+ * the reimbursement pair; this only stops the UI refusing to ask.
+ */
+function optionalSession(host: AdminBotHost): { sessionToken: string | null; baseUrl: string } {
+  return {
+    sessionToken: loadStoredMemberSession()?.sessionToken ?? null,
+    baseUrl: resolveAdminBotBaseUrl(host.settings),
+  };
+}
+
 function requirePrivilegedSession(
   host: AdminBotHost,
 ): { sessionToken: string; baseUrl: string } | null {
@@ -1273,10 +1288,7 @@ export async function runAdminBotVenueIndexJob(host: AdminBotHost): Promise<void
  * through typing.
  */
 export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
+  const session = optionalSession(host);
   host.adminBotVenuePapers = { ...host.adminBotVenuePapers, loadingSources: true, error: null };
   try {
     const result = await fetchVenueSources(session.sessionToken, session.baseUrl);
@@ -1340,10 +1352,7 @@ export function toggleAdminBotVenueAbstract(host: AdminBotHost, paperId: string)
 
 /** Ranks the chosen conference against the interests currently in the box. */
 export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
+  const session = optionalSession(host);
   const { venueId, interests } = host.adminBotVenuePapers;
   if (!venueId || !interests.trim()) {
     return;

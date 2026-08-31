@@ -2264,15 +2264,19 @@ describe("AdminBotService", () => {
       expect(unwrap(service.listLabMembers()).members[0]?.receives_nudges).toBeUndefined();
     });
 
-    // The one-time population. `full` is the criterion because it is what the spreadsheet already
-    // carries for "this person is in the lab", and it is what the coauthors and blank rows fail.
-    it("seeds the lab's own people and nobody else", () => {
+    // The people the lab chases: its own members, plus the two external levels doing enough of the
+    // work that the reminders are about them too. Everyone else is left out or written off.
+    it("seeds the three nudgeable levels and nobody else", () => {
       const service = new AdminBotService();
       unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
       unwrap(
         service.upsertLabMember({ id: "kai", name: "Kai Ito", member_type: "full, coauthor-major" }),
       );
-      unwrap(service.upsertLabMember({ id: "guest", name: "Guest", member_type: "coauthor-major" }));
+      unwrap(service.upsertLabMember({ id: "major", name: "Major", member_type: "coauthor-major" }));
+      unwrap(
+        service.upsertLabMember({ id: "advisee", name: "Advisee", member_type: "own-pace-advisee" }),
+      );
+      unwrap(service.upsertLabMember({ id: "minor", name: "Minor", member_type: "coauthor-minor" }));
       unwrap(service.upsertLabMember({ id: "blank", name: "Blank Row" }));
       unwrap(
         service.upsertLabMember({ id: "gone", name: "Gone", member_type: "full", status: "alumni" }),
@@ -2280,8 +2284,47 @@ describe("AdminBotService", () => {
       const result = unwrap(
         service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
       );
-      expect(result.added.toSorted()).toEqual(["kai", "mei"]);
+      expect(result.added.toSorted()).toEqual(["advisee", "kai", "major", "mei"]);
+      expect(result.silenced.toSorted()).toEqual(["gone", "minor"]);
       expect(service.listAuditEvents().map((event) => event.type)).toContain("nudge_list.seeded");
+    });
+
+    // The Member Type column is blank for 94 of the 200 roster rows, one of whom is an active
+    // author holding a paper's venue cycle. A test-onboard batch is the lab saying "we are
+    // onboarding this person", which answers the question that column left open.
+    it("seeds somebody the lab is onboarding even with no member type", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "khai", name: "Khai", test_onboard_batch: 2 }));
+      expect(
+        unwrap(service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false })).added,
+      ).toEqual(["khai"]);
+    });
+
+    // A batch does not outrank having left, or an access level with no portal to act in. Four of
+    // the twenty-one batched people on the live roster are alumni.
+    it("does not let a batch override an exclusion", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "gone",
+          name: "Gone",
+          member_type: "alumni",
+          test_onboard_batch: 3,
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          id: "guest",
+          name: "Guest",
+          member_type: "acquaintance",
+          test_onboard_batch: 1,
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added).toEqual([]);
+      expect(result.silenced.toSorted()).toEqual(["gone", "guest"]);
     });
 
     it("reports without writing when it is only asked to simulate", () => {

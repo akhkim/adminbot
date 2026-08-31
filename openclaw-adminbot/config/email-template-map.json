@@ -1,0 +1,69 @@
+{
+  "_doc": {
+    "purpose": "Ties each template in the email-template Google Doc to the copy shipped in extensions/adminbot/src/workflows/onboarding/emails.ts.",
+    "why": "The doc is where the templates are written and reviewed; emails.ts is what gets sent. Keeping them in step was a manual transcription every time somebody edited a paragraph. scripts/adminbot-email-templates-sync.ts reads this map and reports the differences; nothing writes emails.ts automatically, because the doc is a working document and an unattended writer would ship its half-finished edits.",
+    "identity": "A section is keyed by its slug line when it has one -- three do, e.g. 'top1-30min-zhijing' -- and otherwise by its nearest heading. Slugs are better: a heading rename shows up as an unmapped section, which is noise the person renaming has to clear. Worth asking for a slug line on every template.",
+    "unmapped": "Anything on neither list is reported as drift. docOnly and codeOnly are the deliberate exceptions, each with the reason it is one."
+  },
+  "documentId": "1FgBRqLxX0uTKlpoP8O97maKIntML0ZcMD1fMs68gayc",
+
+  "tokens": {
+    "akim@cs.toronto.edu": "{contact_emails}",
+    "[preferred name to be called from the Google Form response]": "{contact_name}",
+    "[PAPER_SHORT_TITLE]": "{paper_title}",
+    "[PROJECT_NAME]": "{project_or_context}",
+    "[VENUE]": "{venue}",
+    "[CITY]": "{city}",
+    "[DATE]": "{date}"
+  },
+
+  "templates": {
+    "top1-30min-zhijing": "interview_invite",
+    "top2-only-invite-to-theme-meeting-and-slack": "interview_invite_theme_meeting",
+    "Matching-with-specific-projects": "interview_invite_project_matching",
+    "Trial phase begins": "trial_phase",
+    "Interview rejection": "rejection",
+    "Alumni": "alumni",
+    "H. Outreach Email": "outreach_reply",
+    "Own-pace access and setup": "own_pace_advisee",
+    "Own-pace communication and working norms": "own_pace_advisee_norms",
+    "Coauthor-major access and setup": "coauthor_major",
+    "Coauthor-major supervision and working norms": "coauthor_major_norms",
+    "Coauthor-minor access and setup": "coauthor_minor",
+    "Coauthor-minor supervision and working norms": "coauthor_minor_norms",
+    "Disappearing-coauthor status check-in and alumni option": "disappearing_coauthor",
+    "Unfinished-paper working arrangement": "disappearing_coauthor_paper",
+    "Recommendation-letter request from a disappearing coauthor: automatic decline": "disappearing_coauthor_rec_letter",
+    "Slack Connect invitation: #friends-and-collaborators + project channel": "external_prof_slack_connect",
+    "Project Google Drive folder sharing": "external_prof_drive_folder",
+    "Records confirmation (back-end spreadsheet: email + background)": "external_prof_records_check",
+    "Periodic collaboration check-in (senior \"What to Expect\" variant)": "collaboration_rhythm_reminder"
+  },
+
+  "docOnly": {
+    "G. Acquaintance": "The doc's own note says acquaintances need no email, and emails.ts says the same: the access-level algorithm grants the subgroup's items and that is the whole onboarding.",
+    "Interview moderate result [Needs work]": "Marked [Needs work] in the doc and has no subject line yet. Nothing to ship until it is finished.",
+    "1. Pre-submission heads-up + sign-off request": "PaperFlow co-author mail. Sent by the main lead from the paper's own thread, not by the onboarding sender.",
+    "2. arXiv submission heads-up + sign-off request": "PaperFlow co-author mail, as above.",
+    "3. Submission confirmation + catch-up": "PaperFlow co-author mail, as above.",
+    "3a. Commitment announcement: venue decided, committing soon": "PaperFlow co-author mail, as above.",
+    "4a. Automatic with student intervention possible: Reviews received / rebuttal + resubmission update": "PaperFlow co-author mail, as above.",
+    "4b. Manual: Reviews received / rebuttal + resubmission update": "PaperFlow co-author mail, as above.",
+    "5a. Decision: acceptance": "PaperFlow co-author mail, as above.",
+    "5b. Decision: rejection, with path forward": "PaperFlow co-author mail, as above.",
+    "5c. After-conference report to co-authors": "PaperFlow co-author mail, as above.",
+    "6. Social media draft sign-off request (pre-post)": "Social-draft consent flow, which composes from the draft record rather than a stored template.",
+    "7. Posted notification + reshare invitation": "Social-draft consent flow, as above.",
+    "12. City-based dinner / team-building invitation": "Not implemented. The city-channel sweep adds people to a channel; the dinner invitation is still written by hand.",
+    "Variant A: accept": "Recommendation-letter handling is case-by-case by design; only the disappearing-coauthor decline is automated.",
+    "Variant B: decline, with warmth": "Case-by-case, as above."
+  },
+
+  "codeOnly": {
+    "interviewee": "Subgroup follow-up after a conversation. Written in code before the doc existed; no section covers it yet.",
+    "slightly_better_than_emails": "Subgroup onboarding for the lightest collaboration tier. No doc section yet.",
+    "member": "Full-member onboarding. The doc covers the external tiers; the internal welcome has never been in it.",
+    "member_rejection": "Application outcome for a full-member applicant. No doc section yet.",
+    "member_what_to_expect": "The supplement appended to the member welcome. Its prose lives in the doc's second tab (What to Expect), which this checker does not read -- the tab is written as guidance for people, not as a mail body."
+  }
+}

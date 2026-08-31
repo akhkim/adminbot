@@ -44,15 +44,17 @@ type PlannedSend = AdminBotOnboardingSendRequest & {
   note?: string;
 };
 
-type Args = {
+export type Args = {
   plan: string;
   preflight: boolean;
   send: boolean;
   only: readonly string[];
   receipts?: string;
+  noEmail: boolean;
+  redirectTo?: string;
 };
 
-function parseArgs(argv: readonly string[]): Args {
+export function parseArgs(argv: readonly string[]): Args {
   const valueOf = (flag: string): string | undefined => {
     const at = argv.indexOf(flag);
     return at === -1 ? undefined : argv[at + 1];
@@ -60,7 +62,7 @@ function parseArgs(argv: readonly string[]): Args {
   const plan = valueOf("--plan");
   if (!plan) {
     throw new Error(
-      "usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight] [--only <names>] [--send --yes] [--receipts <file>]",
+      "usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight] [--only <names>] [--no-email] [--redirect-to <address>] [--send --yes] [--receipts <file>]",
     );
   }
   const send = argv.includes("--send");
@@ -69,10 +71,22 @@ function parseArgs(argv: readonly string[]): Args {
     // one arrives here by editing a dry-run command and pressing up-enter.
     throw new Error("--send also requires --yes: this delivers real email and real Slack invites");
   }
+  const noEmail = argv.includes("--no-email");
+  const redirectTo = valueOf("--redirect-to")?.trim();
+  if (noEmail && redirectTo) {
+    // One says "send nothing", the other says "send it here". A run that accepted both would have
+    // to pick, and whichever it picked would surprise somebody.
+    throw new Error("--no-email and --redirect-to are mutually exclusive: pick one");
+  }
+  if (redirectTo && !redirectTo.includes("@")) {
+    throw new Error(`--redirect-to needs an address, got "${redirectTo}"`);
+  }
   return {
     plan,
     preflight: argv.includes("--preflight"),
     send,
+    noEmail,
+    ...(redirectTo ? { redirectTo } : {}),
     only: (valueOf("--only") ?? "")
       .split(",")
       .map((entry) => entry.trim())
@@ -334,12 +348,82 @@ function reportEnvironment(): void {
   console.log("");
 }
 
+/**
+ * Reads either shape of plan file.
+ *
+ * The tool was written for a flat array of send requests. The composed-email files the lab
+ * actually produces are grouped by cohort (`direct_matching`, `test_onboard_3`, ...) and carry the
+ * rendered `subject`/`body` plus the per-recipient `cc` and `reply_to`, which map onto the
+ * overrides the sender already understands. Accepting both means the file somebody reviewed is the
+ * file that gets sent, rather than a hand-conversion of it that can differ.
+ *
+ * An entry with a non-empty `needs` is dropped rather than sent. `needs` is the composer's record
+ * of a question it could not answer -- which of two applicants a document belongs to, most
+ * recently -- and a mail that goes out while that is open is a mail to the wrong person.
+ */
+export function loadPlan(planPath: string): {
+  sends: PlannedSend[];
+  skipped: Array<{ name: string; email: string; reason: string }>;
+} {
+  const raw = JSON.parse(readFileSync(planPath, "utf8")) as unknown;
+  if (Array.isArray(raw)) {
+    return { sends: raw as PlannedSend[], skipped: [] };
+  }
+  const groups = raw as Record<string, unknown>;
+  const sends: PlannedSend[] = [];
+  const skipped: Array<{ name: string; email: string; reason: string }> = [];
+  for (const [group, value] of Object.entries(groups)) {
+    if (!Array.isArray(value) || group === "skipped") {
+      continue;
+    }
+    for (const entry of value as Array<Record<string, unknown>>) {
+      const email = typeof entry.email === "string" ? entry.email : "";
+      const templateId = typeof entry.template_id === "string" ? entry.template_id : "";
+      if (!email || !templateId) {
+        continue;
+      }
+      const name = typeof entry.name === "string" && entry.name ? entry.name : email;
+      const needs = Array.isArray(entry.needs) ? entry.needs.filter(Boolean) : [];
+      if (needs.length > 0) {
+        skipped.push({ name, email, reason: String(needs[0]) });
+        continue;
+      }
+      sends.push({
+        template_id: templateId,
+        name,
+        email,
+        ...(entry.values && typeof entry.values === "object"
+          ? { values: entry.values as Record<string, string> }
+          : {}),
+        ...(typeof entry.subject === "string" && entry.subject
+          ? { subject_override: entry.subject }
+          : {}),
+        ...(typeof entry.body === "string" && entry.body ? { body_override: entry.body } : {}),
+        ...(Array.isArray(entry.cc) && entry.cc.length ? { cc: entry.cc as string[] } : {}),
+        ...(typeof entry.reply_to === "string" && entry.reply_to
+          ? { reply_to: entry.reply_to }
+          : {}),
+        ...(Array.isArray(entry.slack_project_channels)
+          ? { slack_project_channels: entry.slack_project_channels as string[] }
+          : {}),
+      });
+    }
+  }
+  return { sends, skipped };
+}
+
 const gogSendEmail = gogEmailSender();
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const planPath = args.plan;
-  const all = JSON.parse(readFileSync(planPath, "utf8")) as PlannedSend[];
+  const { sends: all, skipped } = loadPlan(planPath);
+  for (const entry of skipped) {
+    console.log(`skipping ${entry.name} <${entry.email}> — unresolved needs: ${entry.reason}`);
+  }
+  if (skipped.length > 0) {
+    console.log("");
+  }
   const plan =
     args.only.length === 0
       ? all
@@ -350,7 +434,17 @@ async function main(): Promise<void> {
     throw new Error(`--only matched nothing in ${planPath}`);
   }
   if (args.send) {
-    console.log(`SENDING FOR REAL: ${plan.length} email(s), plus every invite they imply.`);
+    if (args.noEmail) {
+      console.log(
+        `PROVISIONING FOR REAL, SENDING NO EMAIL: ${plan.length} recipient(s). Slack invites are minted; the mail is not sent.`,
+      );
+    } else if (args.redirectTo) {
+      console.log(
+        `REDIRECTED SEND: ${plan.length} email(s) all going to ${args.redirectTo}, cc suppressed. No Slack invite is minted — this run is for reading the copy.`,
+      );
+    } else {
+      console.log(`SENDING FOR REAL: ${plan.length} email(s), plus every invite they imply.`);
+    }
     console.log("");
   }
 
@@ -383,7 +477,10 @@ async function main(): Promise<void> {
         return { folderId: "dry-run", link: "https://drive.google.com/drive/folders/DRY-RUN" };
       },
       inviteToSlackConnect: async ({ email, channelId }) => {
-        if (args.send) {
+        // Not under --redirect-to. That run exists so somebody can read the copy; minting a real
+        // invite to the real person would make a review step outward-facing, and the full send
+        // afterwards would mint them a second one.
+        if (args.send && !args.redirectTo) {
           const invite = await realSlackInviter({ email, channelId });
           performed.push(`Slack: invited ${email} to ${channelId}`);
           return invite;
@@ -397,7 +494,7 @@ async function main(): Promise<void> {
           throw new Error("the DCS form is not wired into this script; use the tab instead");
         }
       },
-      ...(args.send
+      ...(args.send && !args.noEmail
         ? {
             // Wraps the real sender only to record it: without this the transcript of a live run
             // listed audits and invites and never said an email had gone out.
@@ -406,15 +503,54 @@ async function main(): Promise<void> {
               subject: string;
               body: string;
               body_html?: string;
+              cc?: readonly string[];
+              reply_to?: string;
             }) => {
-              await gogSendEmail(params);
-              performed.push(`Gmail: SENT "${params.subject}" to ${params.to}`);
+              // A redirected run is a rehearsal that goes through the real sender, so the reviewer
+              // reads exactly what the recipient would. The cc goes with the address: a preview
+              // must not put a project lead on a thread that is not really theirs yet.
+              const to = args.redirectTo ?? params.to;
+              const { cc: _cc, ...rest } = params;
+              await gogSendEmail(args.redirectTo ? { ...rest, to } : params);
+              performed.push(
+                args.redirectTo
+                  ? `Gmail: SENT "${params.subject}" to ${to} (REDIRECTED from ${params.to}; cc suppressed)`
+                  : `Gmail: SENT "${params.subject}" to ${to}`,
+              );
             },
           }
-        : {
+        : args.send && args.noEmail
+          ? {
+              // --no-email: provisioning is real, the mail is not. For a batch whose Slack invites
+              // should land now and whose copy is still being read.
+              sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
+                performed.push(`Gmail: SKIPPED "${subject}" to ${to} (--no-email)`);
+              },
+            }
+          : {
             // The one call that would actually reach a person. It records instead.
-            sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
-              performed.push(`Gmail: send "${subject}" to ${to}`);
+            //
+            // The cc and the Reply-To are printed because they are the half of a send a reviewer
+            // cannot see in the body: these mails tell the applicant "your contact is the lead
+            // cc'ed", and whether that is true of the actual message is only visible here.
+            sendEmail: async ({
+              to,
+              subject,
+              cc,
+              reply_to: replyTo,
+            }: {
+              to: string;
+              subject: string;
+              cc?: readonly string[];
+              reply_to?: string;
+            }) => {
+              const extra = [
+                cc?.length ? `cc ${cc.join(", ")}` : "",
+                replyTo ? `reply-to ${replyTo}` : "",
+              ].filter(Boolean);
+              performed.push(
+                `Gmail: send "${subject}" to ${to}${extra.length ? ` (${extra.join("; ")})` : ""}`,
+              );
             },
           }),
       headProfessorWhatsapp: () => process.env.ADMINBOT_HEAD_PROFESSOR_WHATSAPP?.trim(),
@@ -512,4 +648,8 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+// Guarded so the pure parts above can be imported by a test without the module performing a run.
+// Same shape as scripts/adminbot-email-automation.ts.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await main();
+}
