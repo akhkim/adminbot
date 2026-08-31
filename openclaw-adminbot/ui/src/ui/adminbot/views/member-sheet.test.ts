@@ -2,7 +2,8 @@ import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import { editMemberSheetCell, memberSheetCellKey } from "../controllers/member-sheet.ts";
-import { renderMemberSheet } from "./member-sheet.ts";
+import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { memberTypeOptions, renderMemberSheet } from "./member-sheet.ts";
 
 const SHEET = {
   spreadsheet_id: "1ZqdaRze",
@@ -168,9 +169,13 @@ describe("the roster grid", () => {
       memberSheet: SHEET,
       memberSheetEdits: { [memberSheetCellKey(2, 1)]: "full" },
     });
-    const values = [...host.querySelectorAll<HTMLInputElement>("tbody input[type=text]")].map(
-      (input) => input.value,
-    );
+    // Read across both controls: Member Type is a dropdown and every other column a text box, and
+    // "an edit shows the operator's value rather than the sheet's" is true of both.
+    const values = [
+      ...host.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "tbody input[type=text], tbody select",
+      ),
+    ].map((control) => control.value);
     expect(values).toContain("full");
     expect(host.querySelector("td.is-edited")).not.toBeNull();
   });
@@ -273,5 +278,97 @@ describe("recording an edit", () => {
     editMemberSheetCell(host, 2, 1, "coauthor-major");
     expect(host.memberSheetEdits).toEqual({ "2:1": "coauthor-major" });
     expect(host.memberSheetBaseline).toEqual({ "2:1": "alumni" });
+  });
+});
+
+// The Member Type column decides which onboarding mail a row gets and which access items the
+// backend grants, and it used to be a free text box in a grid of thirty of them. A typo there is
+// not a typo, it is a row that quietly stops matching any sweep.
+describe("the Member Type cell", () => {
+  function typeCell(host: HTMLElement, row = 0): HTMLSelectElement | null {
+    return [...host.querySelectorAll("tbody tr")][row]?.querySelector("select") ?? null;
+  }
+
+  it("is a dropdown, where every other column stays a text box", () => {
+    const host = draw({ memberSheet: SHEET });
+    const select = typeCell(host);
+    expect(select).not.toBeNull();
+    expect(select?.getAttribute("aria-label")).toBe("Member Type, row 2");
+    // One select in the row: the other two columns are still free text.
+    expect([...host.querySelectorAll("tbody tr")][0]?.querySelectorAll("select")).toHaveLength(1);
+    expect(
+      [...host.querySelectorAll("tbody tr")][0]?.querySelectorAll('input[type="text"]').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("offers the whole vocabulary, with the row's own value selected", () => {
+    const host = draw({ memberSheet: SHEET });
+    const options = [...(typeCell(host)?.options ?? [])].map((option) => option.value);
+    for (const token of adminBotMemberTypes) {
+      expect(options).toContain(token);
+    }
+    expect(typeCell(host)?.value).toBe("alumni");
+    expect(typeCell(host, 1)?.value).toBe("coauthor-discussant-or-designer");
+  });
+
+  // The column is comma-separated and three tokens the lab uses postdate the routing table, so a
+  // closed list would have made real rows unselectable and rewritten them on first touch.
+  it("keeps a value the vocabulary does not know, rather than dropping it", () => {
+    const host = draw({
+      memberSheet: {
+        ...SHEET,
+        rows: [
+          { sheet_row: 2, cells: ["Zhijing Jin", "full, adminbot-admin", ""] },
+          { sheet_row: 3, cells: ["Someone", "mailing-list", ""] },
+        ],
+      },
+    });
+    expect(typeCell(host)?.value).toBe("full, adminbot-admin");
+    const options = [...(typeCell(host)?.options ?? [])].map((option) => option.value);
+    // Offered to every row, so a second person can be given the same combination.
+    expect(options).toContain("full, adminbot-admin");
+    expect(options).toContain("mailing-list");
+  });
+
+  it("records a pick as an edit, like any other cell", () => {
+    const host: Partial<AppViewState> = { memberSheet: SHEET };
+    const edits: Array<[number, number, string]> = [];
+    const drawn = draw({
+      ...host,
+      editMemberSheetCell: (row: number, column: number, value: string) => {
+        edits.push([row, column, value]);
+      },
+    } as Partial<AppViewState>);
+    const select = typeCell(drawn);
+    select!.value = "full";
+    select!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(edits).toEqual([[2, 1, "full"]]);
+  });
+
+  it("can clear a cell back to empty", () => {
+    const drawn = draw({ memberSheet: SHEET });
+    const options = [...(typeCell(drawn)?.options ?? [])].map((option) => option.value);
+    expect(options[0]).toBe("");
+  });
+});
+
+describe("memberTypeOptions", () => {
+  it("puts the canonical vocabulary first, then whatever the sheet adds", () => {
+    const options = memberTypeOptions(
+      [{ cells: { 1: "zzz-custom" } }, { cells: { 1: "full" } }],
+      1,
+      "",
+    );
+    expect(options[0]).toBe("full");
+    expect(options.at(-1)).toBe("zzz-custom");
+  });
+
+  it("never repeats a value", () => {
+    const options = memberTypeOptions([{ cells: { 1: "full" } }], 1, "full");
+    expect(options.filter((option) => option === "full")).toHaveLength(1);
+  });
+
+  it("survives a sheet with no Member Type column", () => {
+    expect(memberTypeOptions([{ cells: { 0: "x" } }], -1, "")).toEqual([...adminBotMemberTypes]);
   });
 });

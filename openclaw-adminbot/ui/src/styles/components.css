@@ -2009,6 +2009,40 @@
   font-weight: 500;
 }
 
+/* The Member Type cell is a select, not a text box, so it has to look like the cells beside it
+   rather than like a form control dropped into a table: same invisible border until hovered, same
+   focus treatment, same height. The native arrow is left alone -- `color-scheme: dark` themes it,
+   and the redraw that a background chevron needs is what smeared the other selects in this app. */
+.adminbot-member-roster td .adminbot-member-roster__type {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 9px var(--space-1) 9px var(--space-2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.adminbot-member-roster td .adminbot-member-roster__type:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-member-roster td .adminbot-member-roster__type:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
+  background: var(--bg);
+}
+
+.adminbot-member-roster td.is-edited .adminbot-member-roster__type {
+  font-weight: 500;
+}
+
 .adminbot-member-roster tbody tr.is-selected :is(td, th) {
   background: var(--accent-muted, var(--bg-hover));
 }

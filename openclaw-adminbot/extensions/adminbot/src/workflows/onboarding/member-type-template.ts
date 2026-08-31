@@ -12,9 +12,16 @@
  * and `external_prof` no longer have templates and `coauthor_discussant_designer` never did. A row
  * carrying only those is refused here rather than silently mailed something close enough.
  */
+import type { AdminBotMemberType } from "../../contracts/actions.js";
 
-/** Most-committed first. The first token a row carries decides its template. */
-const TEMPLATE_BY_TYPE: readonly (readonly [token: string, templateId: string])[] = [
+/**
+ * Most-committed first. The first token a row carries decides its template.
+ *
+ * Every token here is one of `adminBotMemberTypes`, which is what the Onboarding grid offers as a
+ * dropdown -- a token this file routes on but that list does not offer would be a template nobody
+ * could ever select. A test holds the two together.
+ */
+const TEMPLATE_BY_TYPE: readonly (readonly [token: AdminBotMemberType, templateId: string])[] = [
   ["full", "member"],
   ["alumni", "alumni"],
   ["own-pace-advisee", "own_pace_advisee"],
@@ -26,7 +33,7 @@ const TEMPLATE_BY_TYPE: readonly (readonly [token: string, templateId: string])[
 ];
 
 /** Roles whose whole onboarding happens in the backend, with no mail. */
-export const NO_MAIL_MEMBER_TYPES: readonly string[] = [
+export const NO_MAIL_MEMBER_TYPES: readonly AdminBotMemberType[] = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
@@ -53,7 +60,11 @@ export function templateForMemberType(memberType: string | undefined): MemberTyp
       return { ok: true, templateId, token };
     }
   }
-  const noMail = tokens.filter((token) => NO_MAIL_MEMBER_TYPES.includes(token));
+  // Widened for the lookup: `tokens` is whatever the sheet cell held, which is exactly the case
+  // this is checking for, so it must not be narrowed to the known vocabulary first.
+  const noMail = tokens.filter((token) =>
+    (NO_MAIL_MEMBER_TYPES as readonly string[]).includes(token),
+  );
   if (noMail.length > 0) {
     return {
       ok: false,
