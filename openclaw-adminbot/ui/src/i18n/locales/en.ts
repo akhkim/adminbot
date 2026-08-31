@@ -2193,6 +2193,8 @@ export const en: TranslationMap = {
     public: {
       hint: "Sign in to see the lab roster, active papers, and everything else you have access to.",
       continueWithoutSignIn: "Continue without signing in",
+      themeDark: "Switch to dark mode",
+      themeLight: "Switch to light mode",
     },
     guest: {
       reimbursements: "Submit a reimbursement",

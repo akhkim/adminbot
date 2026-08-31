@@ -1329,7 +1329,9 @@
 .signed-out-topbar__action.btn.primary {
   background: var(--text-strong);
   border: 1px solid var(--text-strong);
-  color: #0a0a0a;
+  /* The page's own background, not a fixed near-black: this button inverts the page, so its text
+     has to follow the theme the way its box does. See .public-signin. */
+  color: var(--bg);
   opacity: 0.9;
   transition: opacity 150ms ease;
 }
@@ -3977,7 +3979,9 @@
   font-size: var(--control-ui-text-md);
   background: var(--text-strong);
   border: 1px solid var(--text-strong);
-  color: #0a0a0a;
+  /* The page's own background, not a fixed near-black: this button inverts the page, so its text
+     has to follow the theme the way its box does. See .public-signin. */
+  color: var(--bg);
   opacity: 0.9;
 }
 
@@ -4145,7 +4149,10 @@
   border-radius: var(--radius-md, 6px);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  color: #0a0a0a;
+  /* The page's own background, not a fixed near-black. This button inverts the page -- ink-coloured
+     box, page-coloured text -- so the text has to follow the theme the way the box does. Pinned to
+     #0a0a0a it read as black-on-black in the light theme, where --text-strong is #09090b. */
+  color: var(--bg);
   cursor: pointer;
   transition: opacity 150ms ease;
 }
@@ -4210,7 +4217,9 @@
 .public-signin.btn.primary {
   background: var(--text-strong);
   border: 1px solid var(--text-strong);
-  color: #0a0a0a;
+  /* The page's own background, not a fixed near-black: this button inverts the page, so its text
+     has to follow the theme the way its box does. See .public-signin. */
+  color: var(--bg);
   opacity: 0.9;
 }
 

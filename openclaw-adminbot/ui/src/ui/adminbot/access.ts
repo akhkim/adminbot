@@ -43,10 +43,16 @@ export function resolveAccessRole(params: {
 // Minimum role each tab needs. Every tab is listed: a new tab has to state its audience here or
 // the type check fails, so adding a surface can never silently expose it to visitors.
 const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
-  // Open to visitors. The reimbursement assistant is self-scoped — it only ever sees what the
-  // person in front of it typed — and the deadline board is a bundled public snapshot.
+  // Open to visitors: the whole General Tools group. None of the four is about the lab's own
+  // people. The reimbursement assistant is self-scoped -- it only ever sees what the person in
+  // front of it typed -- the deadline board and the opportunities board are bundled public
+  // snapshots that need no gateway at all, and the conference-paper search ranks a published
+  // programme against text the visitor typed. Nothing here is filtered by who is looking, which is
+  // the test for whether a surface needs an account.
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
+  adminbotOpportunities: "anonymous",
+  adminbotConferencePapers: "anonymous",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
@@ -90,9 +96,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotRegistrations: "admin",
   adminbotBadges: "admin",
   // Everybody's completeness at once, which is a governance read; the service re-checks it.
-  // Lab-internal curation rather than a public listing, so it stops at `member`: signed-in
-  // only, and every member sees the same rows. Nothing on it is filtered by who is looking.
-  adminbotOpportunities: "member",
+
   adminbotProfileOverview: "admin",
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
@@ -102,9 +106,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotAnnouncements: "admin",
   // Reads the lab calendar and spends model time on drafting, and every button on it files a
   // governance-gated action. Admin, and the service re-checks both routes independently.
-  // Members. It reads a public conference programme and the viewer's own interests, and writes
-  // nothing; the index it searches is the same for everybody.
-  adminbotConferencePapers: "member",
+
   adminbotCalendar: "admin",
   // Names every paper in the lab against its funding case, including the ones no section
   // claims. That is a governance read about the lab as a whole, not about the viewer.

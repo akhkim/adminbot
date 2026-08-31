@@ -349,6 +349,14 @@ const ANONYMOUS_ROUTES = new Set([
   "POST /reimbursements/converse",
   "POST /reimbursements/generate",
   "GET /member-map",
+  // The conference-paper surface, which the Control UI opens to visitors along with the rest of
+  // General Tools. Both are reads over a published conference programme, ranked against text the
+  // caller typed: no lab data, nothing filtered by who is asking, and neither writes. The search
+  // does spend an embedding call, which is what the per-IP limiter below is for -- the same reason
+  // the reimbursement pair is capped. Indexing a venue stays privileged: it is the expensive half
+  // and the only one that writes.
+  "GET /venue-papers/sources",
+  "POST /venue-papers/search",
 ]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
@@ -1170,10 +1178,6 @@ async function handleAuthenticatedRoute(
   // Members: which conferences are searchable, and how fresh each index is. Member-level because
   // the whole point of the tool is that a member opens it; nothing here is about a person.
   if (req.method === "GET" && url.pathname === "/venue-papers/sources") {
-    if (principal.kind !== "member" && principal.kind !== "service") {
-      sendJson(res, 401, { error: { message: "sign in to browse conference papers" } });
-      return;
-    }
     const settings = service.getSettings();
     const sources = settings.ok ? (settings.payload.venue_sources ?? []) : [];
     const statuses = new Map(
@@ -1198,10 +1202,8 @@ async function handleAuthenticatedRoute(
   }
 
   if (req.method === "POST" && url.pathname === "/venue-papers/search") {
-    if (principal.kind !== "member" && principal.kind !== "service") {
-      sendJson(res, 401, { error: { message: "sign in to search conference papers" } });
-      return;
-    }
+    // Open to visitors: see ANONYMOUS_ROUTES. The gate above admits anonymous callers only for the
+    // routes named there, and applies the per-IP rate limit on the way through.
     const body = readRecord(await readJson(req));
     const venueId = asString(body.venue_id)?.trim() ?? "";
     const interests = asString(body.interests)?.trim() ?? "";

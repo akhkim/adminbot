@@ -30,12 +30,16 @@ describe("renderPublicShell", () => {
     container = renderShell(createState());
   });
 
-  it("offers a visitor exactly the two open surfaces", () => {
+  // The whole General Tools group, in the sidebar's own order. Read off TAB_GROUPS rather than
+  // listed here twice, which is what let the shell keep rendering two after the access table
+  // opened four.
+  it("offers a visitor every open surface", () => {
     const items = [...container.querySelectorAll(".sidebar-nav .nav-item")];
-    expect(items).toHaveLength(2);
     expect(items.map((item) => item.getAttribute("href"))).toEqual([
       "/reimbursements",
       "/deadlines",
+      "/opportunities",
+      "/conference-papers",
     ]);
   });
 
@@ -84,5 +88,54 @@ describe("renderPublicShell", () => {
     container.remove();
     expect(container.textContent).toContain("Past and upcoming conference & workshop deadlines.");
     expect(container.querySelector(".content--public-deadlines > .adminbot-card")).toBeNull();
+  });
+});
+
+// Light and dark are the one preference that is purely about the person looking at the page, and
+// the controls for it live in Appearance and Settings -- both admin-only. A visitor had no way to
+// change the theme at all.
+describe("public shell theme toggle", () => {
+  function toggleIn(state: AppViewState): HTMLButtonElement {
+    const container = renderShell(state);
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="public-shell-theme"]',
+    );
+    expect(button).not.toBeNull();
+    return button as HTMLButtonElement;
+  }
+
+  it("offers dark mode without an account", () => {
+    const modes: string[] = [];
+    const state = createState({
+      themeResolved: "dark",
+      setThemeMode: (mode: string) => modes.push(mode),
+    } as unknown as Partial<AppViewState>);
+    const button = toggleIn(state);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    button.click();
+    // Dark now, so the toggle offers light.
+    expect(modes).toEqual(["light"]);
+  });
+
+  it("switches back the other way", () => {
+    const modes: string[] = [];
+    const state = createState({
+      themeResolved: "light",
+      setThemeMode: (mode: string) => modes.push(mode),
+    } as unknown as Partial<AppViewState>);
+    const button = toggleIn(state);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    button.click();
+    expect(modes).toEqual(["dark"]);
+  });
+
+  it("sits in the topbar, next to the sign-in button", () => {
+    const state = createState({
+      themeResolved: "dark",
+      setThemeMode: () => undefined,
+    } as unknown as Partial<AppViewState>);
+    const container = renderShell(state);
+    const button = container.querySelector('[data-testid="public-shell-theme"]');
+    expect(button?.closest(".topbar")).not.toBeNull();
   });
 });

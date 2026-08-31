@@ -12,6 +12,23 @@ import { TAB_GROUPS, type Tab } from "./navigation.ts";
 
 const ALL_TABS = TAB_GROUPS.flatMap((group) => group.tabs) as readonly Tab[];
 
+// The shared tools are the lab's public face: none of the four is about the lab's own people, and
+// nothing on them is filtered by who is looking. A visitor gets all four, and the service opens the
+// two routes the conference search needs (ANONYMOUS_ROUTES) rather than the tab merely appearing
+// and then failing.
+describe("General Tools", () => {
+  const generalTools = TAB_GROUPS.find((group) => group.label === "generalTools")
+    ?.tabs as readonly Tab[];
+
+  it("is open to visitors, every tab of it", () => {
+    expect(generalTools.length).toBeGreaterThan(0);
+    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual(generalTools);
+    for (const tab of generalTools) {
+      expect(canAccessTab(tab, "anonymous")).toBe(true);
+    }
+  });
+});
+
 describe("resolveAccessRole", () => {
   it("treats a missing session as anonymous however privileged the stale level looks", () => {
     expect(resolveAccessRole({ signedIn: false, privilegeLevel: null })).toBe("anonymous");
@@ -73,12 +90,14 @@ describe("resolveAccessRole", () => {
 });
 
 describe("visibleTabsForRole", () => {
-  it("shows a visitor the reimbursement assistant and the deadline board, and nothing else", () => {
-    // Unchanged by the sidebar rework: the two open tools moved into the "General Tools" group,
-    // but a visitor's reachable set is still exactly these two.
+  it("shows a visitor the shared tools, and nothing else", () => {
+    // The whole General Tools group and no more: the reachable set is the group, so a tool added
+    // to it is published and a tool added anywhere else is not.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
     ]);
   });
 
@@ -153,9 +172,14 @@ describe("the Calendar tab", () => {
 describe("the access table", () => {
   // A new tab with no entry is a type error, but an entry that defaults to "anonymous" by accident
   // would silently publish a surface. Pin the open set so widening it has to be deliberate.
-  it("opens exactly two surfaces to visitors", () => {
+  it("opens exactly the shared tools to visitors", () => {
     const open = ALL_TABS.filter((tab) => minimumRoleForTab(tab) === "anonymous");
-    expect(open).toEqual(["adminbotReimbursements", "adminbotDeadlines"]);
+    expect(open).toEqual([
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
+    ]);
   });
 
   it("is monotonic: anything a lesser role sees, a greater role sees too", () => {

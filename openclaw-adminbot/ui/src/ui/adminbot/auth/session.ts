@@ -431,7 +431,10 @@ async function authedJson(
   baseUrl: string,
   path: string,
   method: "GET" | "POST" | "PUT" | "DELETE",
-  token: string,
+  // Null for the handful of routes that are open to visitors (ANONYMOUS_ROUTES in the service).
+  // The header is then omitted rather than sent empty: `Bearer ` with nothing after it is a
+  // malformed credential, and the service would be right to treat it as one.
+  token: string | null,
   payload?: unknown,
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
   let response: Response;
@@ -442,7 +445,7 @@ async function authedJson(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
       // a JSON body is legal but pointless here, and some proxies drop it.
@@ -1461,7 +1464,7 @@ export async function fetchMemberResource(
 
 /** Lists the conferences an admin has made searchable, with how fresh each index is. */
 export async function fetchVenueSources(
-  sessionToken: string,
+  sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/sources", "GET", sessionToken);
@@ -1483,7 +1486,7 @@ export async function fetchVenueSources(
  */
 export async function searchVenuePapers(
   params: { venueId: string; interests: string },
-  sessionToken: string,
+  sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
