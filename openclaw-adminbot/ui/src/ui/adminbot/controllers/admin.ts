@@ -75,6 +75,9 @@ export type AdminBotLabMember = {
   notes?: string;
   privilege_level: AdminBotPrivilegeLevel;
   collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
+  // Whether AdminBot may write to this person at all. Absent reads as no: the list is one the lab
+  // adds to, so a row nobody has decided about is silent. See adminBotReceivesNudges.
+  receives_nudges?: boolean;
   access: AdminBotAccessGrant[];
   role?: string;
   status?: AdminBotMemberStatus;
@@ -390,6 +393,14 @@ export type AdminBotLabMemberSaveInput = {
   collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   notes?: string;
   status?: AdminBotMemberStatus;
+  /**
+   * Whether AdminBot may send this person anything at all.
+   *
+   * Governance, and spelled out here rather than carried in the profile bag for the same reason
+   * privilege and status are: it is not a fact about the person, it is a decision the lab made
+   * about them, and only an admin session may write it.
+   */
+  receivesNudges?: boolean;
   /**
    * Every profile field the roster editor collected, already in the service's wire shape.
    *
@@ -1709,6 +1720,9 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
     ...(member.notes ? { notes: member.notes } : {}),
     ...(member.status ? { status: member.status } : {}),
+    // `!== undefined`, not truthiness: `false` is how somebody is taken *off* the list, and a
+    // truthiness check would silently turn every removal into a no-op.
+    ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
     // Last, so a governance field can never be overwritten by a profile key of the same name.
     // The service re-checks every key against its own whitelist regardless.
     ...(member.profile ?? {}),

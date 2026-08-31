@@ -31,6 +31,7 @@ function serviceWith(options: { headProfessor?: boolean; slackForMei?: boolean }
   });
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "zhijing",
       name: "Zhijing Jin",
       privilege_level: "admin",
@@ -39,6 +40,7 @@ function serviceWith(options: { headProfessor?: boolean; slackForMei?: boolean }
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       privilege_level: "member",
@@ -246,6 +248,7 @@ describe("which nudges are important enough to escalate", () => {
     });
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "mei",
         name: "Mei Chen",
         privilege_level: "member",
@@ -381,7 +384,7 @@ describe("the escalation queue", () => {
     unwrap(await service.escalateStaleNudges("test"));
     expect(unwrap(service.listEscalatedNudges()).members).toHaveLength(1);
 
-    unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", status: "alumni" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", name: "Mei Chen", status: "alumni" } as never));
     expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
   });
 
@@ -391,6 +394,7 @@ describe("the escalation queue", () => {
     const { service } = serviceWith();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "ada",
         name: "Ada Ng",
         privilege_level: "member",

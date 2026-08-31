@@ -238,6 +238,72 @@ export function adminBotIsAlumniType(memberType: string | undefined): boolean {
   return adminBotMemberTypeTokens(memberType).includes("alumni");
 }
 
+/**
+ * Somebody who has left, however the roster happens to record it.
+ *
+ * Two places record it and they disagree in practice: `status` is the field the code was written
+ * against, but the roster was imported from a spreadsheet that spells it in `member_type`, and 22
+ * of the 24 alumni on the live roster carry the type with no status at all. Anything asking "has
+ * this person left" has to ask both, which is what this exists to make unmissable.
+ */
+export function adminBotIsAlumniMember(member: {
+  status?: string;
+  member_type?: string;
+}): boolean {
+  return member.status === "alumni" || adminBotIsAlumniType(member.member_type);
+}
+
+/**
+ * Member types the lab has decided may sign in to the Control UI.
+ *
+ * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design
+ * sheet in the lab's contact spreadsheet, which is where the access levels are actually decided.
+ * `full` is not on that sheet at all because the sheet describes external collaborators; a full
+ * member obviously has the portal.
+ */
+export const adminBotPortalAccessMemberTypes = [
+  "full",
+  "alumni",
+  "own-pace-advisee",
+  "coauthor-major",
+] as const;
+
+/** The access levels row 7 leaves blank: on the roster, but with no portal to sign in to. */
+export const adminBotNoPortalAccessMemberTypes = [
+  "slightly-better-than-emails",
+  "acquaintance",
+  "interviewee",
+  "coauthor-minor",
+  "disappearing-coauthor",
+  "external-prof",
+  "coauthor-discussant-or-designer",
+] as const;
+
+/**
+ * Whether this person can sign in to the portal, or `undefined` when the roster cannot say.
+ *
+ * Three states, not two, and the third one matters: 94 of the 200 roster rows carry no member type
+ * at all, and reading that absence as "no access" would turn a gap in the spreadsheet into a
+ * decision about a person. Unknown stays unknown and a human resolves it.
+ *
+ * Access is the union of somebody's types: "alumni, coauthor-minor" is an alumnus who also wrote a
+ * paper with us, and the alumnus half is what gets them in.
+ */
+export function adminBotHasPortalAccess(memberType: string | undefined): boolean | undefined {
+  const tokens = adminBotMemberTypeTokens(memberType).filter(Boolean);
+  if (tokens.length === 0) {
+    return undefined;
+  }
+  if (tokens.some((token) => (adminBotPortalAccessMemberTypes as readonly string[]).includes(token))) {
+    return true;
+  }
+  return tokens.every((token) =>
+    (adminBotNoPortalAccessMemberTypes as readonly string[]).includes(token),
+  )
+    ? false
+    : undefined;
+}
+
 function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
   return (memberType ?? "").split(",").map((part) => part.trim().toLowerCase());
 }
@@ -275,6 +341,55 @@ export const adminBotMandatoryProfileFields = [
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
+
+/**
+ * Mandatory fields whose answer only the lab can give.
+ *
+ * Required *of the record* and asked for on the admin editor, but never of the member: the profile
+ * page renders these disabled, so a member who has filled in every box they can see still has one
+ * of them blank. Chasing somebody for a field their own page will not let them type is a reminder
+ * they cannot act on, and this list is what keeps every reader agreeing on that.
+ *
+ * It is a list rather than a flag on the UI's field table because the reminder runs in the service,
+ * which cannot see that table. They disagreed: the page dropped `linkedin_urn` from its completion
+ * ledger and the reminder did not, so 173 of 174 active members read as complete on their own page
+ * and were chased every three days anyway -- nine of them for that field alone.
+ */
+export const adminBotAdminOwnedProfileFields = ["linkedin_urn"] as const;
+
+/**
+ * Whether AdminBot may send this person a nudge.
+ *
+ * An allowlist, and deliberately not a rule anything can infer. Eligibility used to be opt-*out*
+ * -- everyone on the roster minus explicit alumni and external -- and since almost every imported
+ * row has a blank status, 175 of 200 rows qualified. The roster is not a list of lab members: it
+ * carries coauthors at other institutions, people interviewed once, acquaintances and 92 rows with
+ * no member type at all, and all of them were being DMed and emailed. They are on the roster
+ * because the lab wants their record, which is a different question from whether the lab may write
+ * to them unprompted.
+ *
+ * So: off unless somebody turned it on. Absent reads as off, which means a newly imported row is
+ * silent until a human decides otherwise -- the failure mode of a missing flag is an unsent nudge
+ * rather than a stranger's inbox. It is enforced in sendMemberNudge, the one place every sweep and
+ * every hand-written nudge passes through, and it is kept off SELF_PROFILE_EDITABLE_FIELDS so
+ * nobody can add themselves.
+ */
+export function adminBotReceivesNudges(member: { receives_nudges?: boolean }): boolean {
+  return member.receives_nudges === true;
+}
+
+/**
+ * The mandatory fields a reminder may actually chase a member about.
+ *
+ * `name` is off it because validateLabMember already refuses to store a member without one, so it
+ * can never be the reason a stored record is incomplete; the admin-owned fields are off it because
+ * the member cannot answer them. What is left is the set the profile page marks required *and*
+ * lets the member fill in, which is the only set a nudge can honestly ask for.
+ */
+export const adminBotMemberAnswerableProfileFields = adminBotMandatoryProfileFields.filter(
+  (key): key is AdminBotMandatoryProfileField =>
+    key !== "name" && !(adminBotAdminOwnedProfileFields as readonly string[]).includes(key),
+);
 
 /** How many entries a member has on their Time Availability page, by list. */
 export type AdminBotMemberTimelineCounts = {
@@ -952,6 +1067,13 @@ export type AdminBotLabMemberInput = {
    * sets about themselves. See adminBotTestOnboardBatches.
    */
   test_onboard_batch?: number;
+  /**
+   * Whether AdminBot may send this person unsolicited mail at all. See adminBotReceivesNudges.
+   *
+   * Governance-owned and off unless an admin turns it on, which is the whole point: it is a list
+   * the lab adds to, not a property of the record that some import can set.
+   */
+  receives_nudges?: boolean;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -1650,6 +1772,7 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.published"
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
+    | "nudge_list.seeded"
     // One pass over the back catalogue, linking printed author names to the people they name.
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.

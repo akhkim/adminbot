@@ -79,6 +79,11 @@ export type AdminBotProfileOverviewProps = {
    * filter decides both.
    */
   onRemind: (scope: { include: "profile" | "timeline" | "both"; memberIds: string[] }) => void;
+  /**
+   * Populates the nudge list from the roster's member types. Sends no names -- the service picks,
+   * and it only ever adds people already marked as full members.
+   */
+  onSeedNudgeList: () => void;
   onOpenMember: (memberId: string) => void;
   filter: ProfileOverviewFilter;
   onFilterChange: (filter: ProfileOverviewFilter) => void;
@@ -539,6 +544,18 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                 : props.filter.gap === "timeline"
                   ? t("profileOverview.remindTimeline", { count: String(outstanding) })
                   : t("profileOverview.remind", { count: String(outstanding) })}
+            </button>
+            <!-- Next to the reminder button because it decides who that button can reach: nothing
+                 goes to anybody who is not on the nudge list. -->
+            <button
+              class="btn btn--sm"
+              type="button"
+              data-testid="profile-overview-seed-nudge-list"
+              title=${t("profileOverview.nudgeList.seedHint")}
+              ?disabled=${props.reminding}
+              @click=${() => props.onSeedNudgeList()}
+            >
+              ${t("profileOverview.nudgeList.seed")}
             </button>
           </div>
         </div>

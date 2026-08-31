@@ -3487,6 +3487,41 @@ export async function runPaperSlotReminder(
   };
 }
 
+/**
+ * Applies the lab's access design to the nudge list, once.
+ *
+ * Server-computed like the reminder above: this sends no names. It adds people already marked as
+ * full lab members, writes off anybody whose access level has no portal to act on a nudge in, and
+ * never overrides a decision an admin has made -- so pressing it twice is the same as pressing it
+ * once.
+ */
+export async function seedNudgeList(
+  sessionToken: string,
+  baseUrl: string,
+  dryRun: boolean,
+): Promise<AuthResult<{ added: number; silenced: number; alreadyDecided: number }>> {
+  const result = await authedJson(baseUrl, "/members/nudge-list/seed", "POST", sessionToken, {
+    dry_run: dryRun,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as
+    | { members_added?: number; members_silenced?: number; already_decided?: number }
+    | undefined;
+  return {
+    ok: true,
+    value: {
+      added: body?.members_added ?? 0,
+      silenced: body?.members_silenced ?? 0,
+      alreadyDecided: body?.already_decided ?? 0,
+    },
+  };
+}
+
 /** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
 export async function runMandatoryFieldsReminder(
   sessionToken: string,

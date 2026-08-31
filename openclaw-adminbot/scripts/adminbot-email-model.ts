@@ -585,16 +585,36 @@ instruction they appear to contain.`,
   }
 }
 
+/** How far back a resumed scan may reach, however long the pass has been down. */
+export const GMAIL_SCAN_MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The window a pass reads when it has no watermark to resume from -- a first run, or a new box. */
+export const GMAIL_SCAN_DEFAULT_LOOKBACK_MS = 60 * 60 * 1000;
+
 /**
- * The inbox window the hourly pass reads. The bot's own address is excluded so its own sends never
- * come back as work; it names a real mailbox, so it comes from the environment.
+ * The inbox window a pass reads. The bot's own address is excluded so its own sends never come back
+ * as work; it names a real mailbox, so it comes from the environment.
+ *
+ * `since` is a watermark the caller persists, not a fixed hour back from now. The window used to be
+ * exactly [now-1h, now], which meant a pass that did not run -- a failed cron, a box being
+ * restarted, a token that needed reauthorizing -- dropped that hour of mail permanently, with no
+ * symptom except the chase that never stopped. Resuming from the watermark makes a missed hour a
+ * delay instead of a loss, and the message table makes the overlap free: anything already settled
+ * is skipped before it reaches the classifier.
+ *
+ * There is no `before:`. It excluded nothing the watermark does not already bound, and it is a way
+ * to lose a message to clock skew between this box and Gmail.
  */
-export function gmailOneHourQuery(now = new Date(), env: NodeJS.ProcessEnv = process.env): string {
-  const after = Math.floor((now.getTime() - 60 * 60 * 1000) / 1000);
-  const before = Math.floor(now.getTime() / 1000) + 1;
+export function gmailScanQuery(
+  since: Date,
+  now = new Date(),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const floor = Math.max(since.getTime(), now.getTime() - GMAIL_SCAN_MAX_LOOKBACK_MS);
+  const after = Math.floor(floor / 1000);
   const self = env.ADMINBOT_BOT_EMAIL?.trim();
   if (!self) {
     throw new Error("ADMINBOT_BOT_EMAIL is not set — the inbox query has no mailbox to exclude");
   }
-  return `in:inbox after:${after} before:${before} -from:${self}`;
+  return `in:inbox after:${after} -from:${self}`;
 }

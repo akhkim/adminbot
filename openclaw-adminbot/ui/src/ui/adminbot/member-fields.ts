@@ -14,6 +14,7 @@
 // service already validates against (SELF_PROFILE_EDITABLE_FIELDS in kernel/service.ts), so this
 // file describes the form, never the permission.
 import {
+  adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
@@ -112,7 +113,7 @@ export function timezoneOptions(): readonly string[] {
 // Priority order: identity and how to reach the person, then work logistics, then what they
 // actually work on, then the external links, roughly from most to least commonly filled in for
 // a research-lab roster.
-export const PROFILE_FIELDS: ProfileField[] = [
+const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     key: "name",
     labelKey: "profile.fields.name",
@@ -309,7 +310,8 @@ export const PROFILE_FIELDS: ProfileField[] = [
     type: "short_text",
     // Read-only for the member: they see whether it is on file and, if not, follow the collector
     // link that produces it. Typing a 13-digit id off another site was the step that never worked.
-    adminOnly: true,
+    // The flag itself is stamped on below from adminBotAdminOwnedProfileFields, so this page and
+    // the service's reminder cannot disagree about who owes the answer.
     group: "links",
   },
   {
@@ -355,3 +357,12 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
 ];
+
+// Who owes each answer is declared once, in the contracts module, and stamped on here -- the same
+// list the service's reminder reads. Kept as a flag on the row rather than a lookup at each call
+// site because every consumer of this table already has the row in hand.
+export const PROFILE_FIELDS: ProfileField[] = PROFILE_FIELD_DEFINITIONS.map((field) =>
+  (adminBotAdminOwnedProfileFields as readonly string[]).includes(field.key)
+    ? { ...field, adminOnly: true as const }
+    : field,
+);

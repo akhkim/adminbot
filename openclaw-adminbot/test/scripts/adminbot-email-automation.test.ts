@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   authorizeClassification,
   formatTalkLatex,
   outcomeLabelChange,
   resolveEmailAutomationSlackAccount,
+  StateStore,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
 import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
@@ -165,5 +169,48 @@ describe("adminbot email automation", () => {
       expect(change.remove).toContain("AdminBot/Needs Review");
       expect(change.remove).not.toContain("AdminBot/Handled");
     });
+  });
+});
+
+// The scan window is resumable now, so what it remembers is part of the contract: a pass that
+// failed on something must not leave behind a watermark that carries the mailbox past it.
+describe("mailbox scan watermark", () => {
+  function store(): { state: StateStore; cleanup: () => void } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-scan-"));
+    const state = new StateStore(path.join(dir, "state.sqlite"));
+    return {
+      state,
+      cleanup: () => {
+        state.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("has nothing to resume from on a mailbox it has never read", () => {
+    const { state, cleanup } = store();
+    expect(state.scannedThrough()).toBeUndefined();
+    cleanup();
+  });
+
+  it("moves forward and never back", () => {
+    const { state, cleanup } = store();
+    state.markScannedThrough(new Date("2026-07-18T12:00:00Z"));
+    state.markScannedThrough(new Date("2026-07-18T09:00:00Z"));
+    expect(state.scannedThrough()?.toISOString()).toBe("2026-07-18T12:00:00.000Z");
+    cleanup();
+  });
+
+  it("treats a settled message as done and a retryable one as not", () => {
+    const { state, cleanup } = store();
+    state.begin(message({ id: "settled" }), { category: "unknown", reason: "test" });
+    expect(state.isSettled("settled")).toBe(false);
+    state.finish("settled", "completed");
+    expect(state.isSettled("settled")).toBe(true);
+    state.begin(message({ id: "broke" }), { category: "unknown", reason: "test" });
+    state.finish("broke", "failed", "boom");
+    expect(state.isSettled("broke")).toBe(false);
+    expect(state.isSettled("never-seen")).toBe(false);
+    cleanup();
   });
 });

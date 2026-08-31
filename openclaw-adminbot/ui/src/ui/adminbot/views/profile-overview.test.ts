@@ -23,6 +23,7 @@ function draw(options: DrawOptions = {}) {
   const reminds: Array<{ include: string; memberIds: string[] }> = [];
   const opened: string[] = [];
   const filters: ProfileOverviewFilter[] = [];
+  const seeds: boolean[] = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -37,11 +38,12 @@ function draw(options: DrawOptions = {}) {
       filter: { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", ...options.filter },
       onFilterChange: (next) => filters.push(next),
       onRemind: (scope) => reminds.push(scope),
+      onSeedNudgeList: () => seeds.push(true),
       onOpenMember: (id) => opened.push(id),
     }),
     container,
   );
-  return { container, reminds, opened, filters };
+  return { container, reminds, opened, filters, seeds };
 }
 
 function member(fields: Partial<MemberProfileOverviewRow> = {}): MemberProfileOverviewRow {
@@ -439,5 +441,35 @@ describe("profile overview filters", () => {
     expect(drawn.filters).toEqual([
       { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", search: "ben" },
     ]);
+  });
+});
+
+// The nudge list is what decides whether the reminder button can reach anybody at all, so the page
+// that runs the reminder is where it is populated from.
+describe("nudge list seeding", () => {
+  it("offers the seed alongside the reminder", () => {
+    const { container } = draw({ members: [member()] });
+    expect(
+      container.querySelector('[data-testid="profile-overview-seed-nudge-list"]'),
+    ).not.toBeNull();
+  });
+
+  it("asks the service to seed, sending no names of its own", () => {
+    const { container, seeds } = draw({ members: [member()] });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="profile-overview-seed-nudge-list"]')
+      ?.click();
+    expect(seeds).toEqual([true]);
+  });
+
+  // Shares the reminder's busy flag: seeding changes who the reminder would reach, so the two must
+  // never be in flight together.
+  it("is disabled while a send is in flight", () => {
+    const { container } = draw({ members: [member()], reminding: true });
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="profile-overview-seed-nudge-list"]',
+      )?.disabled,
+    ).toBe(true);
   });
 });

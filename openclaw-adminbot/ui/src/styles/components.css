@@ -10406,6 +10406,19 @@ details[open] > .ov-expandable-toggle::after {
   flex-direction: row;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
+}
+
+/* A toggle whose consequence is not guessable from its label carries a sentence saying what it
+   does -- the nudge list is one. It wraps onto its own line under the box rather than stretching
+   the row, and it indents past the checkbox so it reads as belonging to that label. */
+.adminbot-form__field--check small {
+  flex-basis: 100%;
+  margin-left: calc(1.1rem + var(--space-2));
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.4;
+  text-wrap: pretty;
 }
 
 /* Stacked, Jinesis first. Side by side made them compete for which one you were meant to use, and

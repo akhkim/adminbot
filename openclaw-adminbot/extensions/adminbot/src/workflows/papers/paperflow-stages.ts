@@ -5,7 +5,11 @@
 // outbound mail, and this file only turns records into a decision. That is what makes the whole
 // escalation testable without a database, a mailbox or a venue.
 
-import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
+import {
+  adminBotIsAlumniMember,
+  type AdminBotLabMember,
+  type AdminBotPaperRecord,
+} from "../../contracts/actions.js";
 import type { AdminBotNudgeLedgerRecord } from "../../contracts/paper-cycle.js";
 import {
   isAdminBotPaperSlotSettled,
@@ -30,9 +34,15 @@ export function isFullMember(member: AdminBotLabMember): boolean {
   if (member.privilege_level !== "member" && member.privilege_level !== "admin") {
     return false;
   }
-  // Alumni and external statuses outrank the privilege level: somebody who has left still has
-  // their roster row, and mailing them about a rebuttal window is a message nobody acts on.
-  return member.status !== "alumni" && member.status !== "external";
+  // Alumni and external outrank the privilege level: somebody who has left still has their roster
+  // row, and mailing them about a rebuttal window is a message nobody acts on.
+  //
+  // Asked through adminBotIsAlumniMember rather than off `status` alone, which is what this used
+  // to do. The roster records having left in two fields and the imported rows use the other one:
+  // 22 of the 24 alumni carry `member_type: alumni` with no status at all, so the status check
+  // saw none of them and this handed them papers. The Slack sweeps were reading both the whole
+  // time (isActiveRosterMember), so the rule was half-enforced -- silent on Slack, still emailing.
+  return !adminBotIsAlumniMember(member) && member.status !== "external";
 }
 
 /**

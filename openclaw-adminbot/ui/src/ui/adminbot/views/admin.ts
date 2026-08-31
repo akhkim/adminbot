@@ -371,6 +371,10 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
     ...(getFormValue(data, "status")
       ? { status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"] }
       : {}),
+    // A checkbox submits nothing when it is clear, so its absence is the "off" answer rather than
+    // a field the form did not ask about -- which is what lets this editor take somebody off the
+    // list, not just put them on it.
+    receivesNudges: data.has("receivesNudges"),
     profile: collectRegistryFields(data),
     ...(notes ? { notes } : {}),
   });
@@ -995,6 +999,18 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
               </option>`,
           )}
         </select>
+      </label>
+      <label class="adminbot-form__field adminbot-form__field--check">
+        <input
+          type="checkbox"
+          name="receivesNudges"
+          ?checked=${member?.receives_nudges === true}
+        />
+        <span>AdminBot may contact them</span>
+        <small
+          >Off unless the lab turns it on. Everything AdminBot sends — profile reminders, paper
+          chases, meeting nudges — goes only to people on this list.</small
+        >
       </label>
       <label class="adminbot-form__field"
         ><span>Status</span

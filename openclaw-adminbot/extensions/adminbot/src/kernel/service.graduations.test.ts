@@ -20,6 +20,7 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
   });
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "zhijing",
       name: "Zhijing Jin",
       privilege_level: "admin",
@@ -28,6 +29,7 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       privilege_level: "member",
@@ -81,7 +83,7 @@ describe("sweepGraduations", () => {
     const service = serviceWith();
     setMonth(service, "2026-04");
     unwrap(await service.sweepGraduations("cron", { nowIso: NOW }));
-    unwrap(service.upsertLabMember({ id: "mei", status: "alumni" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", status: "alumni" } as never));
     const after = unwrap(await service.sweepGraduations("cron", { nowIso: NOW }));
     expect(after.transitions).toEqual([]);
   });

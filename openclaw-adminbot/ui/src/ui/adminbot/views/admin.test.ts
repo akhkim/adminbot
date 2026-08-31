@@ -274,6 +274,33 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(missing).toEqual([]);
   });
 
+  // The nudge allowlist. Its whole value is that somebody chose each name, so the editor has to be
+  // able to say "no" as clearly as it says "yes" -- and an unchecked box submits nothing at all,
+  // which is the case that silently turns a removal into a no-op if the collector reads truthiness.
+  describe("nudge list checkbox", () => {
+    function submitWith(checked: boolean): AdminBotLabMemberSaveInput[] {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+      const box = popover?.querySelector<HTMLInputElement>('[name="receivesNudges"]');
+      box!.checked = checked;
+      popover
+        ?.querySelector<HTMLFormElement>("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      return saved;
+    }
+
+    it("puts somebody on the list", () => {
+      expect(submitWith(true)[0]?.receivesNudges).toBe(true);
+    });
+
+    it("takes somebody off it, rather than leaving the field unsaid", () => {
+      expect(submitWith(false)[0]?.receivesNudges).toBe(false);
+    });
+  });
+
   it("sends registry fields in the service's wire shape, typed by the registry", () => {
     const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(

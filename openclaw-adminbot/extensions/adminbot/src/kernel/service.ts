@@ -3,7 +3,11 @@ import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
+  adminBotHasPortalAccess,
+  adminBotIsAlumniMember,
+  adminBotReceivesNudges,
   isAdminBotFullMember,
+  type AdminBotMandatoryProfileField,
   type AdminBotProfileReminderScope,
 } from "../contracts/actions.js";
 import type {
@@ -69,7 +73,7 @@ import {
   adminBotOnboardingRepeatChaseDays,
   adminBotExternalCollaboratorSubgroups,
   adminBotMandatoryProfileFieldLabels,
-  adminBotMandatoryProfileFields,
+  adminBotMemberAnswerableProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
   ADMINBOT_DEADLINE_TIME_PATTERN,
@@ -163,6 +167,7 @@ import {
   adminBotPaperflowEvidenceMinConfidence,
   adminBotPaperflowStageRegistry,
   adminBotPaperflowStages,
+  adminBotPaperflowSubjectId,
   isAdminBotPaperflowStage,
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
@@ -4058,10 +4063,11 @@ export class AdminBotService {
     const items: AdminBotPaperflowStageNudge[] = [];
 
     for (const paper of this.store.listPapers()) {
+      const evidence = this.store.listPaperflowEvidence(paper.id);
       const open = openPaperflowStage({
         paper,
         slots: this.store.listPaperSlots(paper.id),
-        evidence: this.store.listPaperflowEvidence(paper.id),
+        evidence,
         now,
       });
       if (!open) {
@@ -4071,6 +4077,24 @@ export class AdminBotService {
       const entry = recipient
         ? ledger.get(`paperflow_stage|${open.subjectId}|${recipient.member.id}`)
         : ledger.get(`paperflow_stage|${open.subjectId}`);
+      // The cadence belongs to the paper, not to the rung of the ladder it happens to be on. Each
+      // stage carries its own ledger row, so closing one opened the next with a fresh row and no
+      // history -- and the author who had just answered got a mail about the same paper the very
+      // next morning. Evidence counts as recently-heard-from for the same reason a nudge does:
+      // somebody who has just told us where the paper is has earned the same quiet a nudge buys.
+      const heardFrom = [
+        ...adminBotPaperflowStages.map((stage) => {
+          const key = `paperflow_stage|${adminBotPaperflowSubjectId(paper.id, stage)}`;
+          return (recipient ? ledger.get(`${key}|${recipient.member.id}`) : ledger.get(key))
+            ?.last_nudged_at;
+        }),
+        ...evidence.map((row) => row.recorded_at),
+      ]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => Date.parse(value))
+        .filter((value) => !Number.isNaN(value));
+      // -Infinity on a paper nobody has ever been asked about, which is due by definition.
+      const lastHeardFrom = Math.max(...heardFrom, Number.NEGATIVE_INFINITY);
       items.push({
         paper_id: paper.id,
         title: paper.title,
@@ -4092,7 +4116,9 @@ export class AdminBotService {
         ...(paper.venue ? { venue: paper.venue } : {}),
         ...(entry?.last_nudged_at ? { last_nudged_at: entry.last_nudged_at } : {}),
         nudge_count: entry?.nudge_count ?? 0,
-        due: isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS),
+        due:
+          isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS) &&
+          lastHeardFrom <= now.getTime() - PAPERFLOW_STAGE_NUDGE_INTERVAL_MS,
       });
     }
     return { items };
@@ -5872,6 +5898,99 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Put the lab's own people on the nudge list, once, and leave every decision already made alone.
+   *
+   * The allowlist starts empty, which is the only honest default for a list whose point is that
+   * somebody chose each name -- but an empty list also means the lab's real members stop being
+   * chased, so there has to be a first population and this is it. `full` is the criterion because
+   * it is the one the spreadsheet already carries for "this person is in the lab", and it is the
+   * distinction the 124 coauthors, acquaintances and blank rows fail.
+   *
+   * Only members whose flag has never been set are touched. That is what makes it safe to run
+   * twice: an admin who removed somebody stays removed, because `false` is a decision and this
+   * only fills in the absence of one. It never removes anybody -- taking somebody off the list is
+   * an admin editing a record, not a sweep.
+   */
+  seedNudgeListFromMemberTypes(params: { actor: string; dryRun: boolean }): AdminBotServiceResponse<{
+    dry_run: boolean;
+    members_scanned: number;
+    members_added: number;
+    added: string[];
+    /** Written off the list because their access level has no portal to act on a nudge in. */
+    members_silenced: number;
+    silenced: string[];
+    /** Already decided either way, so left as they are. Reported so the count is explicable. */
+    already_decided: number;
+    /** No member type on the roster, so the sheet cannot answer for them. Left for a human. */
+    undecided: number;
+  }> {
+    const members = this.store.listLabMembers();
+    const now = new Date().toISOString();
+    const added: string[] = [];
+    const silenced: string[] = [];
+    let alreadyDecided = 0;
+    let undecided = 0;
+    for (const member of members) {
+      if (member.receives_nudges !== undefined) {
+        alreadyDecided += 1;
+        continue;
+      }
+      // Off, explicitly, for anybody whose access level has no portal: every nudge AdminBot sends
+      // asks somebody to go and do something in the Control UI, so mailing a person who cannot
+      // sign in is asking for something they cannot give. Written as a stored `false` rather than
+      // left absent because absent is "nobody has decided" -- and this is a decision, taken from
+      // the access sheet, that no later import or seeding run should quietly reverse.
+      // Alumni are written off the list even though row 7 gives them a portal: the portal is for
+      // reading their own record, not for being chased in. sendMemberNudge refuses them outright
+      // regardless, so this is the checkbox telling the truth rather than the enforcement.
+      if (adminBotIsAlumniMember(member) || adminBotHasPortalAccess(member.member_type) === false) {
+        silenced.push(member.id);
+        if (!params.dryRun) {
+          this.store.saveLabMember({ ...member, receives_nudges: false, updated_at: now });
+        }
+        continue;
+      }
+      if (!isActiveRosterMember(member) || !adminBotIsFullMemberType(member.member_type)) {
+        // Everyone left: an alumnus, a coauthor-major, or one of the 94 rows with no member type.
+        // The sheet either does not answer for them or answers "portal, yes" without saying
+        // anything about mail, so nobody is written either way and they stay silent by default.
+        undecided += 1;
+        continue;
+      }
+      added.push(member.id);
+      if (!params.dryRun) {
+        this.store.saveLabMember({ ...member, receives_nudges: true, updated_at: now });
+      }
+    }
+    if (!params.dryRun && (added.length > 0 || silenced.length > 0)) {
+      this.recordAudit({
+        type: "nudge_list.seeded",
+        actor: params.actor,
+        details: {
+          members_added: added.length,
+          member_ids: added,
+          members_silenced: silenced.length,
+          silenced_member_ids: silenced,
+        },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        dry_run: params.dryRun,
+        members_scanned: members.length,
+        members_added: added.length,
+        added,
+        members_silenced: silenced.length,
+        silenced,
+        already_decided: alreadyDecided,
+        undecided,
+      },
+    };
+  }
+
   migrateMemberNotesToFields(actor: string): AdminBotServiceResponse<{
     membersScanned: number;
     membersUpdated: number;
@@ -6196,34 +6315,38 @@ export class AdminBotService {
     if (due.length === 0) {
       return { ok: true, status: 200, payload: { created: [], skipped: [] } };
     }
-    // Grouped by the message they get rather than sent one request per person: three shapes at
-    // most, and everybody in a group is owed exactly the same sentence. A member missing both is
-    // told both in one message -- two separate nudges about the same page reads as a system that
-    // does not know what it already sent.
-    const groups = new Map<string, string[]>();
+    // Grouped by the message they get rather than sent one request per person: everybody in a group
+    // is owed exactly the same sentence, so they can share one send. The key is the gap itself now
+    // that the text names it -- people missing the same fields still batch, and nobody is told about
+    // a field somebody else is missing. A member missing both halves is told both in one message;
+    // two separate nudges about the same page reads as a system that does not know what it already
+    // sent.
+    const groups = new Map<string, { missingFields: string[]; timeline: boolean; ids: string[] }>();
     for (const row of due) {
-      const needsProfile = include !== "timeline" && row.missing_fields.length > 0;
-      const needsTimeline = include !== "profile" && row.timeline_short;
-      const key = `${needsProfile ? "p" : ""}${needsTimeline ? "t" : ""}`;
-      groups.set(key, [...(groups.get(key) ?? []), row.id]);
+      const missingFields = include !== "timeline" ? row.missing_fields : [];
+      const timeline = include !== "profile" && row.timeline_short;
+      const key = `${missingFields.join(",")}|${timeline}`;
+      const group = groups.get(key) ?? { missingFields, timeline, ids: [] };
+      group.ids.push(row.id);
+      groups.set(key, group);
     }
     const created: AdminBotMemberNudgeResult["created"] = [];
     const skipped: AdminBotMemberNudgeResult["skipped"] = [];
     const notified: string[] = [];
-    for (const [key, recipients] of groups) {
+    for (const { missingFields, timeline, ids: recipients } of groups.values()) {
+      const needsProfile = missingFields.length > 0;
       const result = await this.sendMemberNudge(
         {
           channel: "slack",
           recipient_member_ids: recipients,
-          message: buildProfileReminderMessage({
-            profile: key.includes("p"),
-            timeline: key.includes("t"),
-          }),
+          message: buildProfileReminderMessage({ missingFields, timeline }),
           kind: "profile",
-          title: key.includes("p")
-            ? "Your profile is missing required fields"
+          title: needsProfile
+            ? missingFields.length === 1
+              ? "Your profile is missing a required field"
+              : "Your profile is missing required fields"
             : "Your term timeline is empty",
-          tab: key.includes("p") ? "profile" : "adminbotTimeAvailability",
+          tab: needsProfile ? "profile" : "adminbotTimeAvailability",
           // Important: both halves are things only the member can do, and everything downstream --
           // scheduling, travel, the calendar's timezones -- is planned from them.
           important: true,
@@ -6590,6 +6713,26 @@ export class AdminBotService {
       const member = this.store.getLabMember(memberId);
       if (!member) {
         skipped.push({ member_id: memberId, reason: "member not found" });
+        continue;
+      }
+      // The allowlist, checked here because here is the only place every nudge passes: fifteen
+      // sweeps, the escalation pass and the admin's own hand-written nudge all funnel through this
+      // loop. Gating it in the sweeps instead would mean the next sweep somebody writes is a new
+      // way to mail a stranger.
+      //
+      // Ahead of the notification write on purpose. Somebody the lab has decided not to contact
+      // does not get a portal notification about it either -- that is still AdminBot addressing
+      // them, and it is what the dashboard would nag them with on their next sign-in.
+      // Alumni first, and ahead of the list rather than through it: somebody who has left is not
+      // chased, and that has been a rule of this system rather than a per-person choice since long
+      // before there was a list. The allowlist must not become a way to undo it by ticking a box --
+      // an admin who wants to reach an alumnus has their address, and this is not that path.
+      if (adminBotIsAlumniMember(member)) {
+        skipped.push({ member_id: memberId, reason: "member is alumni" });
+        continue;
+      }
+      if (!adminBotReceivesNudges(member)) {
+        skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
         continue;
       }
       // Filed before the send, and kept whatever the send does. Slack is where the lab talks, but
@@ -7947,6 +8090,9 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   // Decide who the batch sweeps address, so they are not facts a member states about themselves.
   "test_onboard_batch",
   "member_type",
+  // The nudge allowlist. Refused loudly rather than dropped quietly: a member who could add
+  // themselves would make the list something other than what the lab put on it.
+  "receives_nudges",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -8086,12 +8232,12 @@ function isAdminBotReimbursementState(
 }
 
 // The one list, shared with the Control UI through the contracts module so the reminder can never
-// chase a field the profile page calls optional. See adminBotMandatoryProfileFields.
+// chase a field the profile page calls optional -- or one it calls required but will not let the
+// member type. See adminBotMemberAnswerableProfileFields for what each exclusion is for.
 //
-// name is dropped here even though the page marks it required: validateLabMember already refuses to
-// store a member with no name, so it can never actually be the reason a stored record is
-// incomplete.
-const MANDATORY_PROFILE_FIELDS = adminBotMandatoryProfileFields.filter((key) => key !== "name");
+// Both sides used to drop exactly one field and drop a *different* one, so the two counts agreed at
+// twelve while the two sets did not, and nothing in either page's arithmetic could show it.
+const MANDATORY_PROFILE_FIELDS = adminBotMemberAnswerableProfileFields;
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
     const value = member[key];
@@ -8144,18 +8290,6 @@ function byProfileProgress(
   return left.name.localeCompare(right.name);
 }
 
-// One shared, deterministic reminder rather than a message per missing field: the whole point of
-// this reminder is that nobody composes it, so its content can never be attacker- or
-// agent-controlled. Listing exactly which lab-wide fields are still checked (not each member's own
-// missing subset) keeps the message identical for every recipient, which is what lets it go out
-// through a single sendMemberNudge call instead of one per person.
-/**
- * The reminder, in the shape of whatever this person is actually missing.
- *
- * One message rather than two when both are outstanding: they are two halves of the same page, and
- * a member who gets one nudge about their profile and another about their timeline reads a system
- * that does not know what it already sent.
- */
 /**
  * The ask, urgent, with the reason attached to it.
  *
@@ -8207,15 +8341,35 @@ function buildRegistrationUpdateMessage(params: { venue: string; unregistered: n
   ].join("\n");
 }
 
-function buildProfileReminderMessage(needs: { profile: boolean; timeline: boolean }): string {
+/**
+ * The reminder, in the shape of whatever this person is actually missing.
+ *
+ * Their own missing subset, not the lab-wide list. Naming every checked field made a member who was
+ * short one item read a message about eleven others, which is how a reminder teaches people that it
+ * is not about them -- and it hid the linkedin_urn bug for as long as it ran, because a complete
+ * profile and a nearly complete one got the identical sentence.
+ *
+ * Still nobody's prose: the field names come from adminBotMandatoryProfileFieldLabels and the only
+ * caller-supplied part is *which* of those fixed labels appear, so the text remains impossible for
+ * a member or an agent to steer.
+ *
+ * One message rather than two when both halves are outstanding: they are two halves of the same
+ * page, and a member who gets one nudge about their profile and another about their timeline reads
+ * a system that does not know what it already sent.
+ */
+function buildProfileReminderMessage(needs: { missingFields: string[]; timeline: boolean }): string {
   const lines: string[] = [];
-  if (needs.profile) {
-    const fields = MANDATORY_PROFILE_FIELDS.map(
-      (key) => adminBotMandatoryProfileFieldLabels[key],
-    ).join(", ");
+  if (needs.missingFields.length > 0) {
+    const fields = needs.missingFields
+      .map((key) => adminBotMandatoryProfileFieldLabels[key as AdminBotMandatoryProfileField] ?? key)
+      .join(", ");
+    const count =
+      needs.missingFields.length === 1
+        ? "one required field"
+        : `${needs.missingFields.length} required fields`;
     lines.push(
-      `Quick reminder: your AdminBot profile is missing one or more required fields (${fields}).`,
-      "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
+      `Quick reminder: your AdminBot profile is missing ${count} — ${fields}.`,
+      "Open your profile page in the Control UI and fill them in — it saves as you type.",
     );
   }
   if (needs.timeline) {
@@ -8305,6 +8459,12 @@ function validateLabMember(
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";
+  }
+  // Typed rather than coerced. An admin who sends "true" or 1 would otherwise store a value that
+  // adminBotReceivesNudges reads as off, and the symptom would be a member who is on the list
+  // according to the record and silent according to the sweeps.
+  if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
+    return "member receives_nudges must be true or false";
   }
   const emailError = validateCsEmail(member.email, privilegeLevel, existingEmail);
   if (emailError) {

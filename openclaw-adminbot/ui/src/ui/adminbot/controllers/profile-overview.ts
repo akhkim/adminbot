@@ -1,8 +1,8 @@
 // The Profile Overview tab's side of the wire.
 //
-// Two calls: read how far along everyone's record is, and run the reminder pass now rather than
-// waiting for the daily cron. Both are admin-only and the service enforces that; nothing here
-// decides who may look.
+// Three calls: read how far along everyone's record is, run the reminder pass now rather than
+// waiting for the daily cron, and populate the nudge list from the roster's member types. All are
+// admin-only and the service enforces that; nothing here decides who may look.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
@@ -11,6 +11,7 @@ import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
+  seedNudgeList,
   type EscalatedNudgeRow,
   type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
@@ -111,6 +112,40 @@ export async function remindAdminBotIncompleteProfiles(
       ? t("profileOverview.reminded", { count: String(result.value.created) })
       : t("profileOverview.remindedNone");
     // Re-read so the "last reminded" column reflects what just happened.
+    host.adminBotProfileOverviewLoadedAt = null;
+  } finally {
+    host.adminBotProfileOverviewReminding = false;
+  }
+}
+
+/**
+ * Apply the lab's access design to the nudge list, for a lab that has never had one.
+ *
+ * Shares the reminder's busy flag and notice line: they are the two write buttons on this page and
+ * only one of them should ever be in flight, since this changes who the reminder would reach.
+ */
+export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    return;
+  }
+  host.adminBotProfileOverviewReminding = true;
+  host.adminBotProfileOverviewError = null;
+  host.adminBotProfileOverviewNotice = null;
+  try {
+    const result = await seedNudgeList(wire.token, wire.baseUrl, false);
+    if (!result.ok) {
+      host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      return;
+    }
+    host.adminBotProfileOverviewNotice =
+      result.value.added || result.value.silenced
+        ? t("profileOverview.nudgeList.seeded", {
+            count: String(result.value.added),
+            silenced: String(result.value.silenced),
+          })
+        : t("profileOverview.nudgeList.seededNone");
     host.adminBotProfileOverviewLoadedAt = null;
   } finally {
     host.adminBotProfileOverviewReminding = false;

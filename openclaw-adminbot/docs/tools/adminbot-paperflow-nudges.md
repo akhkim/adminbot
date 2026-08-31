@@ -82,16 +82,17 @@ in the morning and Slacked about a poster in the afternoon.
 
 ## What runs
 
-`scripts/adminbot-paperflow-nudge-cron.sh` — **daily**, added in the Control UI's Cron tab as a
-`command` job:
+`scripts/adminbot-paperflow-nudge-cron.sh` — **weekly**, Mondays at 09:00, added in the Control
+UI's Cron tab as a `command` job:
 
 ```
 scripts/adminbot-paperflow-nudge-cron.sh
 ```
 
-Daily even though a stage is only asked about weekly: the per-stage clock is in the ledger, so
-running daily means a stage that came due overnight goes out that morning rather than waiting for
-the next weekly tick.
+Weekly, matching the cadence it enforces. It ran every weekday on the theory that the ledger is
+the real clock and a daily job only lets a stage that came due overnight go out that morning --
+true, but it meant five chances a week for a scheduling bug to become five emails, and a paper
+whose stage closed on Tuesday was asked the next question on Wednesday.
 
 The bcc side needs no job of its own — `scripts/adminbot-email-cron.sh` handles it as it reads the
 inbox.

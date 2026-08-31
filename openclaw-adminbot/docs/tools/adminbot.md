@@ -623,7 +623,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
 | `adminbot-graduations`              | `0 8 * * 1`          | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
 | `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four             |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                                 |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
