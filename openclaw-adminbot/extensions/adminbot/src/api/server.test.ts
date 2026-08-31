@@ -258,7 +258,7 @@ describe("AdminBot mock service", () => {
     expect(sweep.status).toBe(200);
     await expect(sweep.json()).resolves.toMatchObject({
       scanned: 1,
-      renamed: 1,
+      renames_proposed: 1,
       skipped: 0,
     });
   });

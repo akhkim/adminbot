@@ -715,6 +715,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;

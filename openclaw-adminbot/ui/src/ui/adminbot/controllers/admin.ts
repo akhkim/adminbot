@@ -27,6 +27,7 @@ import {
   saveOwnPaper,
   fetchVenueSources,
   rebuildVenueIndexes,
+  runChannelNamingSweep,
   publishCvDigest,
   searchVenuePapers,
   sendMemberNudge,
@@ -669,6 +670,7 @@ export type AdminBotHost = {
   adminBotVenuePapers: AdminBotVenuePapersState;
   adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
+  adminBotChannelNamingJob: AdminBotCvDigestJobState;
   // The viewer's own roster id, for prefilling their interests from their profile. Null under
   // break-glass gateway access, where there is no "me" to read topics from.
   memberId: string | null;
@@ -1133,6 +1135,82 @@ function cvErrorText(kind: string, action: string): string {
  * at a time, roughly a minute and a half per conference. It reports per-venue rather than pass or
  * fail because the venues are independent — one dead id should not read as "indexing is broken".
  */
+/**
+ * Files a rename proposal for every Slack channel whose naming reminder has run out.
+ *
+ * Reports what it queued rather than what it changed, because it changes nothing: the renames go
+ * to Pending Actions for an admin to approve. A run that finds channels still waiting on an
+ * earlier proposal says so instead of filing them twice.
+ */
+export async function runAdminBotChannelNamingJob(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotChannelNamingJob = { status: "running" };
+  try {
+    const result = await runChannelNamingSweep(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotChannelNamingJob = {
+        status: "error",
+        detail:
+          result.message?.trim() || cvErrorText(result.kind, "run the channel naming sweep"),
+        finishedAtMs: Date.now(),
+      };
+      return;
+    }
+    const payload = result.value as {
+      scanned?: number;
+      reminders_pending?: number;
+      renames_proposed?: number;
+      renames_awaiting_approval?: number;
+    };
+    host.adminBotChannelNamingJob = {
+      status: "ok",
+      detail: describeNamingSweep(payload),
+      finishedAtMs: Date.now(),
+    };
+  } catch (error) {
+    host.adminBotChannelNamingJob = {
+      status: "error",
+      detail: error instanceof Error ? error.message : String(error),
+      finishedAtMs: Date.now(),
+    };
+  }
+}
+
+// Every outcome is worth a sentence, because all three mean different things to the person who
+// just pressed the button: something is waiting on them, something is waiting on a channel owner,
+// or the roster is clean.
+function describeNamingSweep(payload: {
+  scanned?: number;
+  reminders_pending?: number;
+  renames_proposed?: number;
+  renames_awaiting_approval?: number;
+}): string {
+  const proposed = payload.renames_proposed ?? 0;
+  const awaiting = payload.renames_awaiting_approval ?? 0;
+  const reminded = payload.reminders_pending ?? 0;
+  const parts: string[] = [];
+  if (proposed) {
+    parts.push(
+      `Proposed ${proposed} rename${proposed === 1 ? "" : "s"} — approve them in Pending Actions.`,
+    );
+  }
+  if (awaiting) {
+    parts.push(`${awaiting} already waiting for approval.`);
+  }
+  if (reminded) {
+    parts.push(`${reminded} still inside the 48-hour window.`);
+  }
+  if (!parts.length) {
+    return `Nothing to rename across ${payload.scanned ?? 0} watched channel${
+      (payload.scanned ?? 0) === 1 ? "" : "s"
+    }.`;
+  }
+  return parts.join(" ");
+}
+
 export async function runAdminBotVenueIndexJob(host: AdminBotHost): Promise<void> {
   const session = requirePrivilegedSession(host);
   if (!session) {

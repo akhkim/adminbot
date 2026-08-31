@@ -20,6 +20,7 @@ import {
   applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   runAdminBotCvDigestJob,
+  runAdminBotChannelNamingJob,
   runAdminBotVenueIndexJob,
   searchAdminBotVenuePapers,
   cancelWorkshopNudgeRun,
@@ -4021,6 +4022,19 @@ export function renderApp(state: AppViewState) {
                       ? { finishedAtMs: state.adminBotCvDigestJob.finishedAtMs }
                       : {}),
                   },
+                  {
+                    id: "channel-naming",
+                    name: "Slack channel naming",
+                    description:
+                      "Find channels still breaking the naming policy 48 hours after their owner was reminded, and propose a rename for each. Renames nothing on its own — the proposals wait for you in Pending Actions.",
+                    status: state.adminBotChannelNamingJob.status,
+                    ...(state.adminBotChannelNamingJob.detail
+                      ? { detail: state.adminBotChannelNamingJob.detail }
+                      : {}),
+                    ...(state.adminBotChannelNamingJob.finishedAtMs
+                      ? { finishedAtMs: state.adminBotChannelNamingJob.finishedAtMs }
+                      : {}),
+                  },
                 ],
                 onRunCommandJob: (id) => {
                   if (id === "cv-digest") {
@@ -4028,6 +4042,9 @@ export function renderApp(state: AppViewState) {
                   }
                   if (id === "venue-index") {
                     void runAdminBotVenueIndexJob(state);
+                  }
+                  if (id === "channel-naming") {
+                    void runAdminBotChannelNamingJob(state);
                   }
                 },
                 loading: state.cronLoading,

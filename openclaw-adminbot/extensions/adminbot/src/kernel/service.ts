@@ -616,6 +616,14 @@ export type AdminBotSlackChannelNamingRecord = {
   last_seen_at: string;
   reminder_sent_at?: string;
   reminder_action_id?: string;
+  /**
+   * The rename proposal filed for this channel, once the reminder window has elapsed.
+   *
+   * Recorded for the same reason `reminder_action_id` is, and load-bearing in one more way: the
+   * sweep is re-runnable on demand, and without this a second press would file a second rename
+   * for a channel already waiting on the Actions tab.
+   */
+  rename_action_id?: string;
 };
 
 import { AdminBotMemoryStore } from "../persistence/memory.js";
@@ -688,8 +696,15 @@ export type AdminBotServiceOptions = {
 const DEFAULT_ACTION_POLICIES = {
   "slack.send_message": approvalPolicy("T3", ["admin"]),
   "slack.profile_photo_update": autoPolicy("T1"),
+  // The reminder DM stays automatic: it is server-composed, tells one person their channel does
+  // not match the policy, and asks them to fix it themselves.
   "slack.channel_naming_notify_owner": autoPolicy("T1"),
-  "slack.rename_channel": autoPolicy("T1"),
+  // The rename does not. Renaming a channel somebody made is visible to everyone in it and reads
+  // as a judgement about their work, which is the same reason `calendar.remove_attendees` sits at
+  // T3 -- and unlike a calendar removal it cannot be undone quietly, because the old name is what
+  // every link, bookmark and cross-post already points at. As an auto policy this was the one
+  // action in the system that proposed and approved itself in the same tick.
+  "slack.rename_channel": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
@@ -7403,7 +7418,6 @@ export class AdminBotService {
         channelId,
         channelName,
         suggestedName: naming.suggestedName,
-        mode: "reminder",
       });
       if (reminder.ok) {
         reminderSentAt = now;
@@ -7443,6 +7457,22 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * One pass over the channels whose reminder window has run out, filing a rename for each.
+   *
+   * Proposes; it does not rename. This used to call `execute` on the proposal it had just written,
+   * which made it the only sweep in the system that approved its own work -- and renaming somebody
+   * else's channel is not a clerical correction, it is a visible statement about their channel that
+   * lands with no warning beyond a DM sent two days earlier. It is now an ordinary T3 action: the
+   * proposal appears on the Actions tab with the current name, the suggested one, and the owner,
+   * and an admin decides.
+   *
+   * The consequence for the record is that it survives the sweep instead of being deleted on
+   * rename. A channel drops out of the ledger when it actually becomes compliant -- the top of the
+   * loop, driven by the rename event -- which is true whether the new name came from the owner or
+   * from an approved proposal, so no post-approval bookkeeping is needed here. `rename_action_id`
+   * is what keeps a re-run from filing a second rename for a channel already waiting.
+   */
   async runSlackChannelNamingSweep(
     actor = "slack-monitor",
     nowIso = new Date().toISOString(),
@@ -7450,7 +7480,8 @@ export class AdminBotService {
     AdminBotServiceResponse<{
       scanned: number;
       reminders_pending: number;
-      renamed: number;
+      renames_proposed: number;
+      renames_awaiting_approval: number;
       skipped: number;
     }>
   > {
@@ -7459,7 +7490,8 @@ export class AdminBotService {
       Date.parse(nowIso) - SLACK_CHANNEL_NAMING_RENAME_AFTER_MS,
     ).toISOString();
     let remindersPending = 0;
-    let renamed = 0;
+    let renamesProposed = 0;
+    let awaitingApproval = 0;
     let skipped = 0;
     for (const record of records) {
       const naming = evaluateSlackChannelName({ channelName: record.latest_channel_name });
@@ -7470,6 +7502,17 @@ export class AdminBotService {
       if (!record.reminder_sent_at || record.reminder_sent_at > dueBefore) {
         remindersPending += 1;
         continue;
+      }
+      // Already asked. A proposal an admin has not answered yet is the normal state for a sweep
+      // that can be pressed twice in a morning, so it is reported rather than re-filed. A rejected
+      // one is not re-filed either: "no" is an answer, and a job that asked again every run would
+      // be arguing with the person it is meant to be asking.
+      if (record.rename_action_id) {
+        const existing = this.store.getProposal(record.rename_action_id);
+        if (existing && existing.status !== "executed") {
+          awaitingApproval += 1;
+          continue;
+        }
       }
       const rename = this.createProposal({
         type: "slack.rename_channel",
@@ -7482,8 +7525,9 @@ export class AdminBotService {
           channel_id: record.channel_id,
           new_name: record.suggested_name,
         },
-        rationale:
-          "Channel naming policy auto-enforcement after a 48-hour reminder window elapsed.",
+        rationale: record.owner_user_id
+          ? `Channel naming policy: still non-compliant more than 48 hours after <@${record.owner_user_id}> was reminded.`
+          : "Channel naming policy: still non-compliant more than 48 hours after the reminder.",
         undo_plan:
           "Rename the channel again if a lab admin decides another compliant name is better.",
       });
@@ -7491,27 +7535,21 @@ export class AdminBotService {
         skipped += 1;
         continue;
       }
-      const renameExecuted = await this.execute(rename.payload.id, { dry_run: false });
-      if (!renameExecuted.ok) {
-        skipped += 1;
-        continue;
-      }
-      renamed += 1;
-      if (record.owner_user_id) {
-        await this.sendSlackChannelNamingNotice({
-          ownerUserId: record.owner_user_id,
-          channelId: record.channel_id,
-          channelName: record.latest_channel_name,
-          suggestedName: record.suggested_name,
-          mode: "renamed",
-        });
-      }
-      this.store.deleteSlackChannelNamingRecord(record.channel_id);
+      this.store.saveSlackChannelNamingRecord({
+        ...record,
+        rename_action_id: rename.payload.id,
+      });
+      renamesProposed += 1;
     }
     this.recordAudit({
       type: "slack.channel_naming_swept",
       actor,
-      details: { scanned: records.length, renamed, reminders_pending: remindersPending },
+      details: {
+        scanned: records.length,
+        renames_proposed: renamesProposed,
+        renames_awaiting_approval: awaitingApproval,
+        reminders_pending: remindersPending,
+      },
     });
     return {
       ok: true,
@@ -7519,44 +7557,38 @@ export class AdminBotService {
       payload: {
         scanned: records.length,
         reminders_pending: remindersPending,
-        renamed,
+        renames_proposed: renamesProposed,
+        renames_awaiting_approval: awaitingApproval,
         skipped,
       },
     };
   }
 
-  private async sendSlackChannelNamingNotice(
-    params: {
-      ownerUserId: string;
-      channelId: string;
-      channelName: string;
-      suggestedName: string;
-      mode: "reminder" | "renamed";
-    },
-    // No `actor` parameter: both call sites used to pass one and nothing here consumed it. The
-    // intent was presumably audit attribution, but this flow records no audit event of its own —
-    // createProposal/execute do their own. Reinstate it alongside a real audit type if the
-    // enforcement flow should name who triggered a notice.
-  ): Promise<AdminBotServiceResponse<AdminBotStoredProposal>> {
-    const message =
-      params.mode === "reminder"
-        ? [
-            `Hi <@${params.ownerUserId}>,`,
-            `the channel #${params.channelName} does not follow the lab naming policy.`,
-            `Please rename it to something like #${params.suggestedName} within 48 hours.`,
-            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
-          ].join(" ")
-        : [
-            `Hi <@${params.ownerUserId}>,`,
-            `we renamed #${params.channelName} to #${params.suggestedName} because it stayed non-compliant for over 48 hours after the reminder.`,
-            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
-          ].join(" ");
+  /**
+   * The one DM this policy sends: the heads-up, when a non-compliant channel is first seen.
+   *
+   * There used to be a second, sent right after the sweep renamed a channel to tell its owner it
+   * had happened. The sweep no longer renames anything -- it files a proposal an admin approves --
+   * so that message had no honest moment to be sent: at proposal time it would claim a rename that
+   * has not happened, and there is no hook after approval to send it from. Rather than keep an
+   * unreachable branch whose text asserts something false, it is gone. The owner's warning is this
+   * one, sent two days earlier, which is what the window is for.
+   */
+  private async sendSlackChannelNamingNotice(params: {
+    ownerUserId: string;
+    channelId: string;
+    channelName: string;
+    suggestedName: string;
+  }): Promise<AdminBotServiceResponse<AdminBotStoredProposal>> {
+    const message = [
+      `Hi <@${params.ownerUserId}>,`,
+      `the channel #${params.channelName} does not follow the lab naming policy.`,
+      `Please rename it to something like #${params.suggestedName} within 48 hours.`,
+      "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
+    ].join(" ");
     const proposal = this.createProposal({
       type: "slack.channel_naming_notify_owner",
-      summary:
-        params.mode === "reminder"
-          ? `Remind Slack channel owner about naming policy for #${params.channelName}`
-          : `Notify Slack channel owner after automatic rename to #${params.suggestedName}`,
+      summary: `Remind Slack channel owner about naming policy for #${params.channelName}`,
       target: {
         service: "slack",
         owner_user_id: params.ownerUserId,
@@ -7566,10 +7598,7 @@ export class AdminBotService {
         owner_user_id: params.ownerUserId,
         message,
       },
-      rationale:
-        params.mode === "reminder"
-          ? "Owner notification before policy enforcement."
-          : "Owner notification after automatic policy enforcement.",
+      rationale: "Owner notification before policy enforcement.",
       undo_plan: "Send a follow-up clarification if the channel context needs correction.",
     });
     if (!proposal.ok) {

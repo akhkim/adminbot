@@ -1621,6 +1621,40 @@ export async function sendWorkshopNudges(
 }
 
 /** Rebuilds every configured conference index (POST /venue-papers/index). Admin only. */
+/**
+ * Runs the Slack channel-naming sweep (POST /slack/channel-naming/sweep/run).
+ *
+ * Files a rename proposal for every channel still non-compliant 48 hours after its owner was
+ * reminded. It renames nothing itself -- the proposals wait on the Actions tab -- which is why
+ * this is safe to offer as a button an admin can press whenever they are tidying up.
+ */
+export async function runChannelNamingSweep(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    "/slack/channel-naming/sweep/run",
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 export async function rebuildVenueIndexes(
   sessionToken: string,
   baseUrl: string,

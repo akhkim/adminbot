@@ -578,6 +578,9 @@ export type AppViewState = {
   // Last press of the conference index job on the Cron tab. Same shape as the CV digest job: both
   // are "an admin pressed a button and something slow happened".
   adminBotVenueIndexJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
+  // Last press of the Slack channel naming sweep, same shape again. What it "did" is file
+  // proposals, so the detail line points at Pending Actions rather than reporting a change.
+  adminBotChannelNamingJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
   // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
   myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;

@@ -999,7 +999,7 @@ describe("AdminBotService", () => {
   });
 
   describe("Slack channel naming enforcement", () => {
-    it("reminds owner on invalid names, then renames after 48 hours", async () => {
+    it("reminds owner on invalid names, then proposes a rename after 48 hours", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
 
@@ -1021,7 +1021,7 @@ describe("AdminBotService", () => {
       );
       expect(beforeDue).toMatchObject({
         ok: true,
-        payload: { reminders_pending: 1, renamed: 0 },
+        payload: { reminders_pending: 1, renames_proposed: 0 },
       });
 
       const due = await service.runSlackChannelNamingSweep(
@@ -1030,10 +1030,53 @@ describe("AdminBotService", () => {
       );
       expect(due).toMatchObject({
         ok: true,
-        payload: { renamed: 1, skipped: 0 },
+        payload: { renames_proposed: 1, skipped: 0 },
       });
-      // reminder DM + rename + post-rename DM
-      expect(executor.execute).toHaveBeenCalledTimes(3);
+
+      // The reminder DM, and nothing else: renaming somebody's channel is a T3 action an admin
+      // approves, so the sweep leaves it on the Actions tab rather than executing it.
+      expect(executor.execute).toHaveBeenCalledTimes(1);
+      const pending = unwrap(service.listPending()).proposals;
+      const rename = pending.find((proposal) => proposal.type === "slack.rename_channel");
+      // "pending" is what puts it on the Actions tab waiting for an admin. It used to be a T1
+      // auto policy, which is what let the old sweep approve its own rename.
+      expect(rename).toMatchObject({
+        status: "pending",
+        risk_tier: "T3",
+        proposed_payload: { channel_id: "C1", new_name: "proj-eu-post-training" },
+      });
+      expect(rename?.approval_requirement).toMatchObject({
+        requires_approval: true,
+        approver_roles: ["admin"],
+      });
+      // The owner is named in the rationale, so whoever approves knows who was already asked.
+      expect(rename?.rationale).toContain("U1");
+    });
+
+    // The sweep is a button somebody can press twice in a morning, and a second press must not
+    // file a second rename for a channel already waiting on an answer.
+    it("reports a rename already awaiting approval instead of filing another", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C3",
+        channel_name: "eu-post-training",
+        owner_user_id: "U3",
+      });
+      const due = new Date(Date.now() + 49 * 60 * 60 * 1000).toISOString();
+
+      expect(await service.runSlackChannelNamingSweep("admin", due)).toMatchObject({
+        payload: { renames_proposed: 1 },
+      });
+      expect(await service.runSlackChannelNamingSweep("admin", due)).toMatchObject({
+        payload: { renames_proposed: 0, renames_awaiting_approval: 1 },
+      });
+
+      const renames = unwrap(service.listPending()).proposals.filter(
+        (proposal) => proposal.type === "slack.rename_channel",
+      );
+      expect(renames).toHaveLength(1);
     });
 
     it("clears pending enforcement when the channel is renamed to a compliant name", async () => {
@@ -1054,7 +1097,7 @@ describe("AdminBotService", () => {
       expect(renamed).toMatchObject({ ok: true, payload: { status: "compliant" } });
 
       const sweep = await service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z");
-      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renamed: 0 } });
+      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renames_proposed: 0 } });
     });
   });
 
