@@ -164,6 +164,7 @@ import {
   adminBotPaperflowEvidenceMinConfidence,
   adminBotPaperflowStageRegistry,
   adminBotPaperflowStages,
+  adminBotPaperflowSubjectId,
   isAdminBotPaperflowStage,
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
@@ -4059,10 +4060,11 @@ export class AdminBotService {
     const items: AdminBotPaperflowStageNudge[] = [];
 
     for (const paper of this.store.listPapers()) {
+      const evidence = this.store.listPaperflowEvidence(paper.id);
       const open = openPaperflowStage({
         paper,
         slots: this.store.listPaperSlots(paper.id),
-        evidence: this.store.listPaperflowEvidence(paper.id),
+        evidence,
         now,
       });
       if (!open) {
@@ -4072,6 +4074,24 @@ export class AdminBotService {
       const entry = recipient
         ? ledger.get(`paperflow_stage|${open.subjectId}|${recipient.member.id}`)
         : ledger.get(`paperflow_stage|${open.subjectId}`);
+      // The cadence belongs to the paper, not to the rung of the ladder it happens to be on. Each
+      // stage carries its own ledger row, so closing one opened the next with a fresh row and no
+      // history -- and the author who had just answered got a mail about the same paper the very
+      // next morning. Evidence counts as recently-heard-from for the same reason a nudge does:
+      // somebody who has just told us where the paper is has earned the same quiet a nudge buys.
+      const heardFrom = [
+        ...adminBotPaperflowStages.map((stage) => {
+          const key = `paperflow_stage|${adminBotPaperflowSubjectId(paper.id, stage)}`;
+          return (recipient ? ledger.get(`${key}|${recipient.member.id}`) : ledger.get(key))
+            ?.last_nudged_at;
+        }),
+        ...evidence.map((row) => row.recorded_at),
+      ]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => Date.parse(value))
+        .filter((value) => !Number.isNaN(value));
+      // -Infinity on a paper nobody has ever been asked about, which is due by definition.
+      const lastHeardFrom = Math.max(...heardFrom, Number.NEGATIVE_INFINITY);
       items.push({
         paper_id: paper.id,
         title: paper.title,
@@ -4093,7 +4113,9 @@ export class AdminBotService {
         ...(paper.venue ? { venue: paper.venue } : {}),
         ...(entry?.last_nudged_at ? { last_nudged_at: entry.last_nudged_at } : {}),
         nudge_count: entry?.nudge_count ?? 0,
-        due: isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS),
+        due:
+          isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS) &&
+          lastHeardFrom <= now.getTime() - PAPERFLOW_STAGE_NUDGE_INTERVAL_MS,
       });
     }
     return { items };

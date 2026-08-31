@@ -206,9 +206,45 @@ describe("recordPaperflowEvidence", () => {
       }),
     );
     unwrap(await target.sendPaperflowStageNudges("cron"));
-    const ledger = target.listNudgeLedgerForTest("paperflow_stage");
-    // The one mail that did go out was about the rebuttal window, not about reviews.
-    expect(ledger.map((entry) => entry.subject_id)).toEqual(["p1:rebuttal"]);
+    // Nothing at all this week -- not even about the rebuttal window the paper has just moved on
+    // to. The author answered today; the cadence is the paper's, not the rung's.
+    expect(target.listNudgeLedgerForTest("paperflow_stage")).toEqual([]);
+  });
+
+  // The complaint this came from: an author bcc'd the reviews, the stage closed, and the next
+  // morning's sweep mailed them about the rebuttal window on the same paper. Answering has to buy
+  // the same quiet that being asked does, or the reward for replying is another email.
+  it("does not ask the next question in the same week the answer arrived", () => {
+    const target = service();
+    seed(target);
+    unwrap(
+      target.recordPaperflowEvidence({
+        paperId: "p1",
+        stage: "reviews_out",
+        confidence: 0.95,
+        actor: "email_automation",
+      }),
+    );
+    const { items } = unwrap(target.collectPaperflowStageNudges());
+    expect(items[0]?.stage).toBe("rebuttal");
+    expect(items[0]?.due).toBe(false);
+  });
+
+  it("asks it once the paper has been quiet for the usual interval", () => {
+    const target = service();
+    seed(target);
+    unwrap(
+      target.recordPaperflowEvidence({
+        paperId: "p1",
+        stage: "reviews_out",
+        confidence: 0.95,
+        actor: "email_automation",
+      }),
+    );
+    const inEightDays = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString();
+    const { items } = unwrap(target.collectPaperflowStageNudges(inEightDays));
+    expect(items[0]?.stage).toBe("rebuttal");
+    expect(items[0]?.due).toBe(true);
   });
 
   it("refuses a low-confidence match rather than closing a stage nobody has seen", () => {
