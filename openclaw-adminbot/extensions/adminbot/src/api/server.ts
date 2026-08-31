@@ -89,7 +89,11 @@ import {
   type AdminBotOpenReviewWorkflow,
 } from "../workflows/papers/openreview-workflow.js";
 import { resolvePaperPdfSource } from "../workflows/papers/paper-pdf-source.js";
-import { buildVenueIndex, searchVenue } from "../workflows/papers/venue-index.js";
+import {
+  buildVenueIndex,
+  refreshVenueIndexIfChanged,
+  searchVenue,
+} from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import type {
   AdminBotReimbursementRequest,
@@ -1364,16 +1368,48 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
+    // `changed_only` is the scheduled pass: rebuild a venue only when its accepted-paper list has
+    // moved, which is how the index follows conference decisions instead of a calendar. Absent, or
+    // false, this is the Tasks & Tools button and rebuilds everything unconditionally -- somebody
+    // pressing it has a reason the count cannot see.
+    // ...OrEmpty because the button posts no body at all, and "no body" means the unconditional
+    // rebuild rather than a malformed request.
+    const indexBody = readRecord(await readJsonOrEmpty(req));
+    const changedOnly = indexBody.changed_only === true;
+    const storedCounts = new Map(
+      ctx.store.listVenueIndexStatuses().map((status) => [status.venue_id, status.paper_count]),
+    );
     const built: unknown[] = [];
+    const skipped: Array<{ venue_id: string; paper_count: number }> = [];
     const failed: Array<{ venue_id: string; reason: string }> = [];
     for (const source of sources) {
       try {
-        const { papers, result } = await buildVenueIndex(source, {
+        const deps = {
           readVenue,
           embed: ctx.embedder,
           embeddingModel: ctx.embeddingModel,
           now: () => new Date(),
-        });
+        };
+        if (changedOnly) {
+          const outcome = await refreshVenueIndexIfChanged(
+            source,
+            deps,
+            storedCounts.get(source.id),
+          );
+          if (!outcome.changed) {
+            skipped.push({ venue_id: outcome.venue_id, paper_count: outcome.paper_count });
+            continue;
+          }
+          ctx.store.replaceVenueIndex(
+            source.id,
+            outcome.papers,
+            outcome.result.indexed_at,
+            outcome.result.embedding_model,
+          );
+          built.push(outcome.result);
+          continue;
+        }
+        const { papers, result } = await buildVenueIndex(source, deps);
         // An empty venue is stored as empty rather than skipped: a conference whose decisions were
         // withdrawn should stop returning last year's papers.
         ctx.store.replaceVenueIndex(source.id, papers, result.indexed_at, result.embedding_model);
@@ -1392,15 +1428,21 @@ async function handleAuthenticatedRoute(
       timestamp: new Date().toISOString(),
       type: "venue_index.rebuilt",
       actor: principalActor(principal),
-      details: { built: built.length, failed: failed.length },
+      details: { built: built.length, skipped: skipped.length, failed: failed.length },
     });
-    sendJson(res, 200, { built, failed });
+    sendJson(res, 200, { built, skipped, failed });
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/cv/publish-digest") {
     // Same privileged gate as the scan it runs: the job reads every member's career history and
     // then writes it somewhere durable, which is strictly more than the scan alone does.
+    //
+    // Stays a button in Tasks & Tools rather than a cron entry, and deliberately. The digest is
+    // written to be read by a person at a moment they chose -- before a lab meeting, a funding
+    // round, a website refresh -- and its whole value is that the date on it means somebody just
+    // looked. A digest that rewrites itself every week is a document nobody opens, and it would
+    // spend a scan of every member's CV on producing it. Press it when the answer is wanted.
     if (!requirePrivileged(res, principal)) {
       return;
     }

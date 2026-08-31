@@ -89,6 +89,27 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-venue-index",
+      "description": "Rebuild a conference's paper index on the day its accepted list changes; embeds nothing when nothing moved",
+      "cron": "0 4 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-venue-index-cron.sh"
+      ],
+      "timeoutSeconds": 3600
+    },
+    {
+      "name": "adminbot-deadline-calendar",
+      "description": "Publish conference deadlines to the lab calendar, after the venue refresh they read",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-deadline-cron.sh",
+        "calendar-conferences"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-meeting-membership",
       "description": "Reconcile the standing invite against the roster and file the removals as proposals",
       "cron": "35 6 * * *",

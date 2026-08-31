@@ -47,7 +47,58 @@ export async function buildVenueIndex(
   source: AdminBotVenueSource,
   deps: VenueIndexDeps,
 ): Promise<{ papers: AdminBotVenuePaper[]; result: VenueIndexResult }> {
+  return embedFetchedPapers(source, await deps.readVenue(source.id), deps);
+}
+
+/**
+ * Rebuild a venue only when its accepted-paper list has actually moved.
+ *
+ * This is what makes the index track a conference's decisions rather than a calendar. Results do
+ * not land on a date anyone can put in a cron expression -- a NeurIPS or ICLR notification slips,
+ * and ARR runs on cycles rather than one release a year -- so the schedule cannot know when to
+ * rebuild. The venue itself does: a conference that has not decided yet answers with nothing (see
+ * buildVenueIndex), and the moment decisions are published the same call answers with thousands of
+ * papers.
+ *
+ * The asymmetry between the two halves of an index is what makes watching for that affordable.
+ * Fetching a venue is one API call; embedding it is ~85 seconds of the local model. So this always
+ * fetches, and embeds only when the count it got back disagrees with the count already stored --
+ * which covers the case this exists for (nothing -> decisions out), a venue that has never been
+ * indexed, and the later drift of camera-ready additions and withdrawals.
+ *
+ * `storedCount` is undefined for a venue with no index at all, which always rebuilds. Passing the
+ * count rather than the rows keeps the caller from loading a few thousand vectors to answer a
+ * question about their number.
+ *
+ * The one change it cannot see is a same-size swap -- one paper withdrawn and another added
+ * between two runs. That is rare, self-corrects on the next real change, and the Tasks & Tools
+ * button still forces a full rebuild for anyone who wants one now.
+ */
+export async function refreshVenueIndexIfChanged(
+  source: AdminBotVenueSource,
+  deps: VenueIndexDeps,
+  storedCount: number | undefined,
+): Promise<
+  | { changed: false; venue_id: string; label: string; paper_count: number }
+  | { changed: true; papers: AdminBotVenuePaper[]; result: VenueIndexResult }
+> {
   const fetched = await deps.readVenue(source.id);
+  if (storedCount !== undefined && fetched.length === storedCount) {
+    return {
+      changed: false,
+      venue_id: source.id,
+      label: source.label,
+      paper_count: fetched.length,
+    };
+  }
+  return { changed: true, ...(await embedFetchedPapers(source, fetched, deps)) };
+}
+
+async function embedFetchedPapers(
+  source: AdminBotVenueSource,
+  fetched: readonly OpenReviewPaper[],
+  deps: VenueIndexDeps,
+): Promise<{ papers: AdminBotVenuePaper[]; result: VenueIndexResult }> {
   const indexedAt = deps.now().toISOString();
   if (!fetched.length) {
     return {
