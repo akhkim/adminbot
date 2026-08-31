@@ -268,6 +268,17 @@ export const adminBotPortalAccessMemberTypes = [
   "coauthor-major",
 ] as const;
 
+/**
+ * The member types the lab chases.
+ *
+ * Not the same question as portal access, though it is nearly the same list. Alumni keep their
+ * portal -- they can read their own record -- but they are not chased in it, so this list is the
+ * portal-access one minus alumni. `full` covers the lab's own people; own-pace-advisee and
+ * coauthor-major are the two external levels doing enough of the work that the lab's reminders are
+ * about them too.
+ */
+export const adminBotNudgeableMemberTypes = ["full", "own-pace-advisee", "coauthor-major"] as const;
+
 /** The access levels row 7 leaves blank: on the roster, but with no portal to sign in to. */
 export const adminBotNoPortalAccessMemberTypes = [
   "slightly-better-than-emails",
@@ -278,6 +289,42 @@ export const adminBotNoPortalAccessMemberTypes = [
   "external-prof",
   "coauthor-discussant-or-designer",
 ] as const;
+
+/**
+ * Whether the roster says to chase this person: `true` on, `false` off, `undefined` cannot say.
+ *
+ * The one place the eligibility rule is written down, so the seeding pass is an application of it
+ * rather than a second copy. Three answers, because the roster genuinely has three states and
+ * collapsing the third would turn a gap in the spreadsheet into a decision about a person.
+ *
+ * Off wins over on. Somebody who has left is not chased whatever else they are, and neither is
+ * somebody whose access level has no portal to act on a nudge in -- an "alumni, coauthor-major"
+ * row is an alumnus who used to do a lot of the work, not a coauthor-major.
+ *
+ * A test-onboard batch counts as on by itself. The batch is the lab saying "we are onboarding this
+ * person", which is a stronger statement than the Member Type column, and that column is blank for
+ * 94 of the 200 rows -- including at least one active author holding a paper's venue cycle. Left
+ * to the type alone, the roster's own gaps would silence people the lab is actively working with.
+ */
+export function adminBotNudgeRosterDecision(member: {
+  status?: string;
+  member_type?: string;
+  test_onboard_batch?: number;
+}): boolean | undefined {
+  if (adminBotIsAlumniMember(member)) {
+    return false;
+  }
+  if (adminBotHasPortalAccess(member.member_type) === false) {
+    return false;
+  }
+  const tokens = adminBotMemberTypeTokens(member.member_type).filter(Boolean);
+  if (tokens.some((token) => (adminBotNudgeableMemberTypes as readonly string[]).includes(token))) {
+    return true;
+  }
+  return (adminBotTestOnboardBatches as readonly number[]).includes(member.test_onboard_batch ?? 0)
+    ? true
+    : undefined;
+}
 
 /**
  * Whether this person can sign in to the portal, or `undefined` when the roster cannot say.

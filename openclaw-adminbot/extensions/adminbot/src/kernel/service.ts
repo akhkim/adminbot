@@ -3,8 +3,8 @@ import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
-  adminBotHasPortalAccess,
   adminBotIsAlumniMember,
+  adminBotNudgeRosterDecision,
   adminBotReceivesNudges,
   isAdminBotFullMember,
   type AdminBotMandatoryProfileField,
@@ -5941,26 +5941,25 @@ export class AdminBotService {
       // sign in is asking for something they cannot give. Written as a stored `false` rather than
       // left absent because absent is "nobody has decided" -- and this is a decision, taken from
       // the access sheet, that no later import or seeding run should quietly reverse.
+      // The whole rule lives in adminBotNudgeRosterDecision; this loop only applies it and counts.
       // Alumni are written off the list even though row 7 gives them a portal: the portal is for
       // reading their own record, not for being chased in. sendMemberNudge refuses them outright
-      // regardless, so this is the checkbox telling the truth rather than the enforcement.
-      if (adminBotIsAlumniMember(member) || adminBotHasPortalAccess(member.member_type) === false) {
-        silenced.push(member.id);
-        if (!params.dryRun) {
-          this.store.saveLabMember({ ...member, receives_nudges: false, updated_at: now });
-        }
-        continue;
-      }
-      if (!isActiveRosterMember(member) || !adminBotIsFullMemberType(member.member_type)) {
-        // Everyone left: an alumnus, a coauthor-major, or one of the 94 rows with no member type.
-        // The sheet either does not answer for them or answers "portal, yes" without saying
-        // anything about mail, so nobody is written either way and they stay silent by default.
+      // regardless, so the stored `false` is the checkbox telling the truth rather than the
+      // enforcement.
+      const decision = adminBotNudgeRosterDecision(member);
+      if (decision === undefined) {
+        // The roster cannot answer: no member type, no batch, nothing disqualifying either. They
+        // stay silent by default, and a human decides rather than this recording a guess.
         undecided += 1;
         continue;
       }
-      added.push(member.id);
+      if (decision) {
+        added.push(member.id);
+      } else {
+        silenced.push(member.id);
+      }
       if (!params.dryRun) {
-        this.store.saveLabMember({ ...member, receives_nudges: true, updated_at: now });
+        this.store.saveLabMember({ ...member, receives_nudges: decision, updated_at: now });
       }
     }
     if (!params.dryRun && (added.length > 0 || silenced.length > 0)) {
