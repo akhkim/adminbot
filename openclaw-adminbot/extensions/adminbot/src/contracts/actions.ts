@@ -239,6 +239,21 @@ export function adminBotIsAlumniType(memberType: string | undefined): boolean {
 }
 
 /**
+ * Somebody who has left, however the roster happens to record it.
+ *
+ * Two places record it and they disagree in practice: `status` is the field the code was written
+ * against, but the roster was imported from a spreadsheet that spells it in `member_type`, and 22
+ * of the 24 alumni on the live roster carry the type with no status at all. Anything asking "has
+ * this person left" has to ask both, which is what this exists to make unmissable.
+ */
+export function adminBotIsAlumniMember(member: {
+  status?: string;
+  member_type?: string;
+}): boolean {
+  return member.status === "alumni" || adminBotIsAlumniType(member.member_type);
+}
+
+/**
  * Member types the lab has decided may sign in to the Control UI.
  *
  * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design

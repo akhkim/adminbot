@@ -2204,24 +2204,49 @@ describe("AdminBotService", () => {
       ).toBe(true);
     });
 
-    // Access is the union of somebody's types. An alumnus who also wrote a paper with us can sign
-    // in as an alumnus, so the coauthor-minor half must not silence them.
-    it("does not silence somebody one of whose levels does have the portal", () => {
+    // Access is the union of somebody's levels, but alumni are off the list regardless of which
+    // other levels they carry -- having left outranks having coauthored.
+    it("silences an alumnus whatever else they are", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
           id: "both",
           name: "Both",
-          member_type: "alumni, coauthor-minor",
+          member_type: "alumni, coauthor-major",
         }),
       );
       const result = unwrap(
         service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
       );
-      expect(result.silenced).toEqual([]);
-      expect(
-        unwrap(service.listLabMembers()).members[0]?.receives_nudges,
-      ).toBeUndefined();
+      expect(result.silenced).toEqual(["both"]);
+    });
+
+    // The rule predates the list and does not go through it: ticking somebody's box cannot start
+    // messaging an alumnus, on Slack or anywhere else.
+    it("refuses an alumnus even when somebody has put them on the list", async () => {
+      const service = labWith({
+        id: "gone",
+        name: "Gone",
+        slack_user_id: "U1",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      const result = await nudge(service, "gone");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([{ member_id: "gone", reason: "member is alumni" }]);
+    });
+
+    // The roster records having left in two fields and the imported rows use `member_type`. A
+    // check that reads only `status` sees none of the 22 alumni who carry the type alone.
+    it("refuses an alumnus recorded by status too", async () => {
+      const service = labWith({
+        id: "gone",
+        name: "Gone",
+        slack_user_id: "U1",
+        status: "alumni",
+        receives_nudges: true,
+      });
+      expect((await nudge(service, "gone")).created).toEqual([]);
     });
 
     // 94 of the 200 roster rows carry no member type. Reading that gap as "no access" would turn a

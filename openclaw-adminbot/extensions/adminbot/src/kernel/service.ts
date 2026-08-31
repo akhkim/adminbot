@@ -4,6 +4,7 @@ import {
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   adminBotHasPortalAccess,
+  adminBotIsAlumniMember,
   adminBotReceivesNudges,
   isAdminBotFullMember,
   type AdminBotMandatoryProfileField,
@@ -5940,7 +5941,10 @@ export class AdminBotService {
       // sign in is asking for something they cannot give. Written as a stored `false` rather than
       // left absent because absent is "nobody has decided" -- and this is a decision, taken from
       // the access sheet, that no later import or seeding run should quietly reverse.
-      if (adminBotHasPortalAccess(member.member_type) === false) {
+      // Alumni are written off the list even though row 7 gives them a portal: the portal is for
+      // reading their own record, not for being chased in. sendMemberNudge refuses them outright
+      // regardless, so this is the checkbox telling the truth rather than the enforcement.
+      if (adminBotIsAlumniMember(member) || adminBotHasPortalAccess(member.member_type) === false) {
         silenced.push(member.id);
         if (!params.dryRun) {
           this.store.saveLabMember({ ...member, receives_nudges: false, updated_at: now });
@@ -6719,6 +6723,14 @@ export class AdminBotService {
       // Ahead of the notification write on purpose. Somebody the lab has decided not to contact
       // does not get a portal notification about it either -- that is still AdminBot addressing
       // them, and it is what the dashboard would nag them with on their next sign-in.
+      // Alumni first, and ahead of the list rather than through it: somebody who has left is not
+      // chased, and that has been a rule of this system rather than a per-person choice since long
+      // before there was a list. The allowlist must not become a way to undo it by ticking a box --
+      // an admin who wants to reach an alumnus has their address, and this is not that path.
+      if (adminBotIsAlumniMember(member)) {
+        skipped.push({ member_id: memberId, reason: "member is alumni" });
+        continue;
+      }
       if (!adminBotReceivesNudges(member)) {
         skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
         continue;
