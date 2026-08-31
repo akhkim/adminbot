@@ -1140,12 +1140,20 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
   `;
 }
 
-// The Slack photo rules, the last automated check, and the polish controls that act on them.
+// The Slack photo rules and the polish controls that act on them.
 //
 // Its own section, directly after the record: the rules are reference a member reads once and the
 // polish controls are a real action, which is more than a card in the suggestions stack carries.
 // It sits after the fields rather than before them so the thing people came to this page to do is
 // still the first thing they meet.
+//
+// A note, not a warning. There is a photo review pass on the service
+// (`/profile-photo/review/run`) that can DM members whose photo misses the guidelines, and it is
+// deliberately left off the cron manifest: a headshot is not a deadline, and chasing people about
+// how they look is a worse trade than letting them read the rules when they are already on the
+// page that changes them. So a member meets these guidelines by visiting their own profile, and
+// the assessment block below renders only when a review actually ran -- its absence is the normal
+// case and says nothing, rather than reading as a check still pending.
 function renderPhotoCompliance(state: AppViewState, member: LabMember, props: ProfileProps) {
   const review = member.profile_photo_review;
   const assessment = review?.assessment;
@@ -1179,15 +1187,15 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
       ${assessment
         ? html`
             <p>
-              <strong>Latest check:</strong>
-              ${assessment.compliant ? "Compliant" : "Needs update"} (${assessment.source})
-              ${assessment.summary ? `- ${assessment.summary}` : ""}
+              <strong>Last look at your photo:</strong>
+              ${assessment.compliant ? "matches the guidelines" : "could be improved"}
+              (${assessment.source})${assessment.summary ? ` - ${assessment.summary}` : ""}
             </p>
             ${assessment.issues.length
-              ? html`<p><strong>Issues:</strong> ${assessment.issues.join(", ")}</p>`
+              ? html`<p><strong>What stood out:</strong> ${assessment.issues.join(", ")}</p>`
               : nothing}
           `
-        : html`<p>No automated check result is available yet.</p>`}
+        : nothing}
       <div class="profile__form-actions">
         <button
           type="button"

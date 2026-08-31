@@ -3403,6 +3403,15 @@ async function handleAuthenticatedRoute(
   if (req.method === "POST" && url.pathname === "/profile-photo/review/run") {
     // Recipients and message content are fully server-computed, same safety model as
     // /members/mandatory-fields-reminder/run.
+    //
+    // Deliberately absent from config/adminbot-cron.json, which is the one thing here that is a
+    // choice rather than an oversight. Every other server-computed reminder in that manifest
+    // chases something with a date attached; a profile photo has none, and a recurring DM about
+    // somebody's appearance is a worse trade than the rules simply being readable. They are: the
+    // same guidelines render on every member's own profile page (renderPhotoCompliance in
+    // ui/.../views/profile.ts), next to the polish controls that fix the photo. Run this by hand
+    // if the lab ever wants a one-off sweep before a website refresh; do not schedule it without
+    // deciding that trade again.
     if (!requirePrivileged(res, principal)) {
       return;
     }

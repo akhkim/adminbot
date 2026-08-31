@@ -426,6 +426,23 @@ describe("renderProfile onboarding suggestions", () => {
     expect(suggestions?.contains(guidelines) ?? false).toBe(false);
   });
 
+  // The guidelines are a note every member can read, not the result of a check that chases them:
+  // the review pass is deliberately unscheduled, so "no assessment" is the ordinary state and must
+  // not render as a verdict still pending.
+  it("reads as guidance for a member no photo review has ever looked at", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const guidelines = container.querySelector('[data-testid="profile-photo-guidelines"]')!;
+
+    // The rules themselves are always there to read.
+    expect(guidelines.querySelectorAll("li").length).toBeGreaterThanOrEqual(3);
+    expect(guidelines.textContent).toContain("Face clearly visible");
+    // ...and the polish control that acts on them.
+    expect(guidelines.querySelector("button")).not.toBeNull();
+    // No dangling pending-check line, and no verdict language.
+    expect(guidelines.textContent).not.toContain("No automated check");
+    expect(guidelines.textContent).not.toContain("Needs update");
+  });
+
   it("carries each step's own status, detail and link through from the checklist", () => {
     const member = createMember();
     const state = createState(member, {
