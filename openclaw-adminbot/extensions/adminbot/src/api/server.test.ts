@@ -3107,3 +3107,23 @@ describe("the member location timeline", () => {
     expect(body.drifts.map((drift) => drift.member_id)).toEqual(["ada"]);
   });
 });
+
+// The escalation queue is the one read that crosses member boundaries, so what it refuses matters
+// as much as what it returns.
+describe("GET /nudges/escalated", () => {
+  it("is admin-only, and stays separate from anybody's own notification stream", async () => {
+    const { baseUrl } = await startService();
+
+    const anonymous = await fetch(`${baseUrl}/nudges/escalated`);
+    expect(anonymous.status).toBe(401);
+
+    const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
+    expect(privileged.status).toBe(200);
+    await expect(privileged.json()).resolves.toEqual({ members: [] });
+
+    // /notifications is still nobody else's business, service token or not: this route exists
+    // because that one deliberately refuses, not as a way around it.
+    const stream = await fetch(`${baseUrl}/notifications`, { headers: serviceHeaders() });
+    expect(stream.status).toBe(401);
+  });
+});

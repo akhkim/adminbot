@@ -414,6 +414,12 @@ export const en: TranslationMap = {
   professor: {
     loading: "Reading…",
     more: "+{count} more",
+    escalated: {
+      title: "Waiting on a word from you",
+      items: "{count} things outstanding",
+      empty: "Nobody has ignored a nudge long enough to reach you.",
+      open: "Write to them",
+    },
     letters: {
       title: "Rec letter queue",
       schools: "{count} school(s)",

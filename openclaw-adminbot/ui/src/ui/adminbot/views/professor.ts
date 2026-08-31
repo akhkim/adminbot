@@ -16,7 +16,11 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type { LogisticsRequest, MemberProfileOverviewRow } from "../auth/session.ts";
+import type {
+  EscalatedNudgeRow,
+  LogisticsRequest,
+  MemberProfileOverviewRow,
+} from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 
 export type ProfessorViewProps = {
@@ -24,6 +28,15 @@ export type ProfessorViewProps = {
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
   profiles: MemberProfileOverviewRow[];
+  /**
+   * Nudges the lab already gave up on chasing automatically.
+   *
+   * The one section here that is not a view onto another page: every other queue links somewhere
+   * built for working through it, and this one has nowhere to go, because the next move is her
+   * writing to a person. Which is exactly why it never existed -- the escalation pass stamped
+   * these every weekday, said them once in Slack, and kept no list.
+   */
+  escalated: EscalatedNudgeRow[];
   onOpen: (tab: Tab) => void;
 };
 
@@ -249,6 +262,35 @@ export function renderProfessorView(props: ProfessorViewProps) {
   );
 
   const sections = [
+    {
+      settled: props.escalated.length === 0,
+      body: section({
+        id: "escalated",
+        title: t("professor.escalated.title"),
+        count: props.escalated.length,
+        // Announcements is where she writes to somebody, which is the whole point of an
+        // escalation: the automatic chasing is finished and it now wants a person.
+        tab: "adminbotAnnouncements",
+        linkLabel: t("professor.escalated.open"),
+        onOpen: props.onOpen,
+        body: rows(
+          props.escalated.map(
+            (row) => html`<li>
+              <strong>${row.name}</strong>
+              <span class="muted"
+                >${row.items.length === 1
+                  ? (row.items[0]?.title ?? "")
+                  : t("professor.escalated.items", { count: String(row.items.length) })}</span
+              >
+              ${row.escalatedAt
+                ? html`<span class="professor__when">${row.escalatedAt.slice(0, 10)}</span>`
+                : nothing}
+            </li>`,
+          ),
+          t("professor.escalated.empty"),
+        ),
+      }),
+    },
     {
       // A queue still loading is not an empty one, so it holds its place rather than sinking.
       settled: !props.requestsLoading && letters.length === 0,

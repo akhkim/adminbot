@@ -3206,6 +3206,7 @@ export function renderApp(state: AppViewState) {
               requestsLoading: state.adminBotLogisticsRequestsLoading,
               papers: state.adminBotData?.papers ?? [],
               profiles: state.adminBotProfileOverview ?? [],
+              escalated: state.adminBotEscalatedNudges ?? [],
               onOpen: (tab) => state.setTab(tab),
             })
           : nothing}

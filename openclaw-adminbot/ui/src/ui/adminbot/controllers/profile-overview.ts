@@ -6,10 +6,12 @@
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
+  fetchEscalatedNudges,
   fetchMemberProfileOverview,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
+  type EscalatedNudgeRow,
   type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
 } from "../auth/session.ts";
@@ -26,6 +28,8 @@ export type AdminBotProfileOverviewHost = {
   adminBotProfileOverviewLoadedAt: number | null;
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
+  /** Nudges raised to the head professor and still unanswered. Empty until the first read. */
+  adminBotEscalatedNudges: EscalatedNudgeRow[];
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -65,6 +69,12 @@ export async function loadAdminBotProfileOverview(
     host.adminBotProfileOverview = result.value.members;
     host.adminBotProfileOverviewFieldCount = result.value.mandatoryFieldCount;
     host.adminBotProfileAdoption = result.value.adoption;
+    // Loaded alongside rather than on its own: the escalation queue and the adoption columns are
+    // read by the same person on the same page, and a second spinner for four rows is worse than
+    // waiting for them together. A failure here does not blank the page it rides on -- the columns
+    // are the reason someone opened it, so the queue simply stays empty.
+    const escalated = await fetchEscalatedNudges(wire.token, wire.baseUrl);
+    host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
   } finally {
     host.adminBotProfileOverviewLoading = false;
   }

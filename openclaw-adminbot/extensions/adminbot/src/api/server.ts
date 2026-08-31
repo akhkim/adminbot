@@ -2444,6 +2444,16 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "GET" && url.pathname === "/nudges/escalated") {
+    // Crosses member boundaries, which `/notifications` below refuses to do, and stays honest
+    // about it by being narrow: only nudges the escalation pass already raised, never the rest of
+    // anyone's stream. Admin-only because it names who is behind on what.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listEscalatedNudges());
+    return;
+  }
   if (url.pathname === "/notifications") {
     // Strictly the caller's own. A notification is something the lab said to one person, and the
     // member id comes from the authenticated session rather than from a query parameter -- there is

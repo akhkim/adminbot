@@ -297,3 +297,117 @@ describe("which nudges are important enough to escalate", () => {
     );
   });
 });
+
+// The queue the escalation pass was always computing and never handing anybody. Until this
+// existed, `escalated_at` was written every weekday and read by nothing, so the professor's only
+// copy of the list was one Slack message she had to catch as it went past.
+describe("the escalation queue", () => {
+  async function nudgeMember(
+    service: AdminBotService,
+    memberId: string,
+    title: string,
+  ): Promise<void> {
+    unwrap(
+      await service.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: [memberId],
+          message: "Please take a look.",
+          title,
+          important: true,
+        },
+        "test",
+      ),
+    );
+  }
+
+  function age(service: AdminBotService, memberId: string, days: number): void {
+    for (const notification of unwrap(service.listMemberNotifications(memberId)).notifications) {
+      (
+        service as never as { store: { saveMemberNotification: (n: unknown) => void } }
+      ).store.saveMemberNotification({ ...notification, created_at: iso(days * DAY) });
+    }
+  }
+
+  it("is empty until something has actually been escalated", async () => {
+    const { service } = serviceWith();
+    await nudgeMember(service, "mei", "Submission ID missing");
+    // Filed, but neither old enough nor escalated yet.
+    expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
+
+    age(service, "mei", 6);
+    unwrap(await service.escalateStaleNudges("test"));
+
+    const queue = unwrap(service.listEscalatedNudges()).members;
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ member_id: "mei", name: "Mei Chen", slack_user_id: "U-MEI" });
+    expect(queue[0]?.notifications.map((entry) => entry.title)).toEqual(["Submission ID missing"]);
+  });
+
+  // One row per person, because the professor's next move is a message to a person about
+  // everything they are sitting on -- the same reason the escalation sends one DM per member.
+  it("groups a member's outstanding nudges into one row", async () => {
+    const { service } = serviceWith();
+    await nudgeMember(service, "mei", "First");
+    await nudgeMember(service, "mei", "Second");
+    age(service, "mei", 7);
+    unwrap(await service.escalateStaleNudges("test"));
+
+    const queue = unwrap(service.listEscalatedNudges()).members;
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.notifications.map((entry) => entry.title).toSorted()).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
+  // No second "handled" flag to forget: acknowledging the nudge is what clears it, through the
+  // path the member already uses.
+  it("drains when the member reads the nudge", async () => {
+    const { service } = serviceWith();
+    await nudgeMember(service, "mei", "Submission ID missing");
+    age(service, "mei", 6);
+    unwrap(await service.escalateStaleNudges("test"));
+    expect(unwrap(service.listEscalatedNudges()).members).toHaveLength(1);
+
+    unwrap(service.markMemberNotificationsRead("mei"));
+    expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
+  });
+
+  it("leaves out somebody who has since become alumni", async () => {
+    const { service } = serviceWith();
+    await nudgeMember(service, "mei", "Submission ID missing");
+    age(service, "mei", 6);
+    unwrap(await service.escalateStaleNudges("test"));
+    expect(unwrap(service.listEscalatedNudges()).members).toHaveLength(1);
+
+    unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", status: "alumni" } as never));
+    expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
+  });
+
+  // Oldest first: the queue is worked from the top, and the top should be whoever has been waiting
+  // longest rather than whoever was escalated most recently.
+  it("orders members by their oldest escalation", async () => {
+    const { service } = serviceWith();
+    unwrap(
+      service.upsertLabMember({
+        id: "ada",
+        name: "Ada Ng",
+        privilege_level: "member",
+        slack_user_id: "U-ADA",
+      } as never),
+    );
+    await nudgeMember(service, "mei", "Older");
+    age(service, "mei", 9);
+    unwrap(await service.escalateStaleNudges("test", { nowIso: iso(2 * DAY) }));
+
+    await nudgeMember(service, "ada", "Newer");
+    age(service, "ada", 9);
+    unwrap(await service.escalateStaleNudges("test"));
+
+    expect(unwrap(service.listEscalatedNudges()).members.map((row) => row.member_id)).toEqual([
+      "mei",
+      "ada",
+    ]);
+  });
+});

@@ -391,6 +391,15 @@ export type AdminBotServiceStore = {
   saveMemberNotification(notification: AdminBotMemberNotification): void;
   /** Newest first, one member's own. There is no all-members read: nothing needs one. */
   listMemberNotifications(memberId: string): AdminBotMemberNotification[];
+  /**
+   * Every escalated nudge still outstanding, across the whole roster, oldest first.
+   *
+   * The one read that deliberately crosses member boundaries, and narrow on purpose: an escalation
+   * is something the lab already decided to raise to the head professor, which is not the same as
+   * her being able to read anyone's notification stream. `/notifications` stays strictly the
+   * caller's own.
+   */
+  listEscalatedMemberNotifications(): AdminBotMemberNotification[];
   deleteMemberNotification(notificationId: string): boolean;
   saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
   getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
@@ -4943,6 +4952,66 @@ export class AdminBotService {
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  /**
+   * The escalation queue: every nudge that went unanswered long enough to be raised, and still is.
+   *
+   * escalateStaleNudges has been stamping `escalated_at` and sending one group DM per member since
+   * it was written, and nothing ever read those stamps back. So the pass computed exactly this list
+   * every weekday, said it once in Slack, and kept no record anybody could work through -- miss the
+   * message and the day's escalations were invisible.
+   *
+   * Grouped by member rather than listed flat, because that is the unit of the professor's actual
+   * next move: she writes to a person about everything they are sitting on, which is the same
+   * reason the escalation itself sends one DM per member however many items are overdue.
+   *
+   * Drains on its own. An entry is outstanding while it is escalated and unread, so a member
+   * acknowledging the nudge takes them off this list through the path they already use -- there is
+   * no second "handled" flag here to forget to set.
+   */
+  listEscalatedNudges(): AdminBotServiceResponse<{
+    members: Array<{
+      member_id: string;
+      name: string;
+      slack_user_id?: string;
+      /** Oldest escalation for this member, which is what the list is ordered by. */
+      escalated_at: string;
+      notifications: AdminBotMemberNotification[];
+    }>;
+  }> {
+    const byMember = new Map<string, AdminBotMemberNotification[]>();
+    for (const notification of this.store.listEscalatedMemberNotifications()) {
+      const existing = byMember.get(notification.member_id);
+      if (existing) {
+        existing.push(notification);
+      } else {
+        byMember.set(notification.member_id, [notification]);
+      }
+    }
+    const members = [...byMember.entries()]
+      .flatMap(([memberId, notifications]) => {
+        const member = this.store.getLabMember(memberId);
+        // A notification whose member is gone from the roster is not somebody to chase. It is left
+        // in place rather than deleted -- this is a read.
+        if (!member || member.status === "alumni") {
+          return [];
+        }
+        const escalatedAt = notifications
+          .map((notification) => notification.escalated_at ?? "")
+          .toSorted()[0];
+        return [
+          {
+            member_id: memberId,
+            name: member.name,
+            ...(member.slack_user_id ? { slack_user_id: member.slack_user_id } : {}),
+            escalated_at: escalatedAt ?? "",
+            notifications,
+          },
+        ];
+      })
+      .toSorted((left, right) => left.escalated_at.localeCompare(right.escalated_at));
+    return { ok: true, status: 200, payload: { members } };
   }
 
   /**
