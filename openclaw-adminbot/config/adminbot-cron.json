@@ -162,8 +162,8 @@
     },
     {
       "name": "adminbot-paperflow-nudges",
-      "description": "PaperFlow venue-stage nudges",
-      "cron": "0 9 * * 1-5",
+      "description": "PaperFlow venue-stage nudges, once a week",
+      "cron": "0 9 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-paperflow-nudge-cron.sh"

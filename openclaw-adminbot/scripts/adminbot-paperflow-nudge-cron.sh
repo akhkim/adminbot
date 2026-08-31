@@ -6,9 +6,11 @@
 # travel -- and asks them to bcc the bot mailbox when it lands. A bcc closes the stage (see the
 # paperflow_bcc branch in scripts/adminbot-email-automation.ts) and the chase stops.
 #
-# Daily is the right cadence for the *job* even though a stage is only asked about weekly: the
-# per-stage clock lives in adminbot_nudge_ledger, so running daily means a stage that came due
-# overnight goes out that morning rather than waiting for the next weekly tick.
+# Weekly, matching the cadence it enforces. It ran every weekday on the theory that the ledger is
+# the real clock and a daily job only lets a stage that came due overnight go out that morning --
+# true, but it meant five chances a week for a scheduling bug to become five emails, and a paper
+# whose stage closes on Tuesday was asked the next question on Wednesday. One tick a week is the
+# cadence the lab was told it would get.
 #
 # The service token is enough here, as it is for the mandatory-fields reminder: the route takes no
 # message and no recipient list, both are derived from the author list and the stage registry, so
