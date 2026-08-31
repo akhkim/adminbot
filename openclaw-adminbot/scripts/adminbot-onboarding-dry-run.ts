@@ -536,7 +536,16 @@ async function main(): Promise<void> {
           throw new Error("the DCS form is not wired into this script; use the tab instead");
         }
       },
-      ...(args.send && !args.noEmail
+      ...(args.noEmail
+        ? {
+            // --no-email, rehearsal or real: the mail is not sent either way, and the transcript
+            // has to say so. Reported before the send/redirect branches so a rehearsal with the
+            // flag reads exactly like the run it is rehearsing.
+            sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
+              performed.push(`Gmail: SKIPPED "${subject}" to ${to} (--no-email)`);
+            },
+          }
+        : args.send
         ? {
             // Wraps the real sender only to record it: without this the transcript of a live run
             // listed audits and invites and never said an email had gone out.
@@ -561,15 +570,7 @@ async function main(): Promise<void> {
               );
             },
           }
-        : args.send && args.noEmail
-          ? {
-              // --no-email: provisioning is real, the mail is not. For a batch whose Slack invites
-              // should land now and whose copy is still being read.
-              sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
-                performed.push(`Gmail: SKIPPED "${subject}" to ${to} (--no-email)`);
-              },
-            }
-          : {
+        : {
             // The one call that would actually reach a person. It records instead.
             //
             // The cc and the Reply-To are printed because they are the half of a send a reviewer
@@ -648,7 +649,9 @@ async function main(): Promise<void> {
       console.log(`  - ${step}`);
     }
     console.log(
-      `  - Audit: onboarding.guide_sent (template ${result.payload.template_id}, recipient ${request.email})`,
+      args.noEmail
+        ? `  - (no audit row: --no-email sent no guide)`
+        : `  - Audit: onboarding.guide_sent (template ${result.payload.template_id}, recipient ${request.email})`,
     );
     if (result.payload.dcs_form) {
       console.log(
