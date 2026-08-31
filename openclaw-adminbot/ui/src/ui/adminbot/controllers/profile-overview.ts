@@ -119,10 +119,10 @@ export async function remindAdminBotIncompleteProfiles(
 }
 
 /**
- * Put the lab's own people on the nudge list, for a lab that has never had one.
+ * Apply the lab's access design to the nudge list, for a lab that has never had one.
  *
  * Shares the reminder's busy flag and notice line: they are the two write buttons on this page and
- * only one of them should ever be in flight, since seeding changes who the reminder would reach.
+ * only one of them should ever be in flight, since this changes who the reminder would reach.
  */
 export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): Promise<void> {
   const wire = session(host);
@@ -139,9 +139,13 @@ export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): 
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
       return;
     }
-    host.adminBotProfileOverviewNotice = result.value.added
-      ? t("profileOverview.nudgeList.seeded", { count: String(result.value.added) })
-      : t("profileOverview.nudgeList.seededNone");
+    host.adminBotProfileOverviewNotice =
+      result.value.added || result.value.silenced
+        ? t("profileOverview.nudgeList.seeded", {
+            count: String(result.value.added),
+            silenced: String(result.value.silenced),
+          })
+        : t("profileOverview.nudgeList.seededNone");
     host.adminBotProfileOverviewLoadedAt = null;
   } finally {
     host.adminBotProfileOverviewReminding = false;

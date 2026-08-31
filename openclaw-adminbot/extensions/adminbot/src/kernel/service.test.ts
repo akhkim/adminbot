@@ -2180,6 +2180,65 @@ describe("AdminBotService", () => {
       expect((await nudge(service, "mei")).created).toEqual([]);
     });
 
+    // Row 7 of the access design sheet, applied: an access level with no portal is an access level
+    // that cannot act on a nudge, so those people are written *off* the list rather than left
+    // merely absent from it.
+    it("silences the access levels that have no portal to act in", () => {
+      const service = new AdminBotService();
+      for (const [id, type] of [
+        ["acq", "acquaintance"],
+        ["minor", "coauthor-minor"],
+        ["prof", "external-prof"],
+        ["seen-once", "interviewee"],
+      ] as const) {
+        unwrap(service.upsertLabMember({ id, name: id, member_type: type }));
+      }
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced.toSorted()).toEqual(["acq", "minor", "prof", "seen-once"]);
+      expect(
+        unwrap(service.listLabMembers()).members.every(
+          (member) => member.receives_nudges === false,
+        ),
+      ).toBe(true);
+    });
+
+    // Access is the union of somebody's types. An alumnus who also wrote a paper with us can sign
+    // in as an alumnus, so the coauthor-minor half must not silence them.
+    it("does not silence somebody one of whose levels does have the portal", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "both",
+          name: "Both",
+          member_type: "alumni, coauthor-minor",
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual([]);
+      expect(
+        unwrap(service.listLabMembers()).members[0]?.receives_nudges,
+      ).toBeUndefined();
+    });
+
+    // 94 of the 200 roster rows carry no member type. Reading that gap as "no access" would turn a
+    // hole in the spreadsheet into a decision about a person; they stay silent by default instead,
+    // which is the same outcome without the false record of a choice nobody made.
+    it("leaves a row the sheet cannot answer for undecided", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank Row" }));
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual([]);
+      expect(result.added).toEqual([]);
+      expect(result.undecided).toBe(1);
+      expect(unwrap(service.listLabMembers()).members[0]?.receives_nudges).toBeUndefined();
+    });
+
     // The one-time population. `full` is the criterion because it is what the spreadsheet already
     // carries for "this person is in the lab", and it is what the coauthors and blank rows fail.
     it("seeds the lab's own people and nobody else", () => {

@@ -238,6 +238,57 @@ export function adminBotIsAlumniType(memberType: string | undefined): boolean {
   return adminBotMemberTypeTokens(memberType).includes("alumni");
 }
 
+/**
+ * Member types the lab has decided may sign in to the Control UI.
+ *
+ * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design
+ * sheet in the lab's contact spreadsheet, which is where the access levels are actually decided.
+ * `full` is not on that sheet at all because the sheet describes external collaborators; a full
+ * member obviously has the portal.
+ */
+export const adminBotPortalAccessMemberTypes = [
+  "full",
+  "alumni",
+  "own-pace-advisee",
+  "coauthor-major",
+] as const;
+
+/** The access levels row 7 leaves blank: on the roster, but with no portal to sign in to. */
+export const adminBotNoPortalAccessMemberTypes = [
+  "slightly-better-than-emails",
+  "acquaintance",
+  "interviewee",
+  "coauthor-minor",
+  "disappearing-coauthor",
+  "external-prof",
+  "coauthor-discussant-or-designer",
+] as const;
+
+/**
+ * Whether this person can sign in to the portal, or `undefined` when the roster cannot say.
+ *
+ * Three states, not two, and the third one matters: 94 of the 200 roster rows carry no member type
+ * at all, and reading that absence as "no access" would turn a gap in the spreadsheet into a
+ * decision about a person. Unknown stays unknown and a human resolves it.
+ *
+ * Access is the union of somebody's types: "alumni, coauthor-minor" is an alumnus who also wrote a
+ * paper with us, and the alumnus half is what gets them in.
+ */
+export function adminBotHasPortalAccess(memberType: string | undefined): boolean | undefined {
+  const tokens = adminBotMemberTypeTokens(memberType).filter(Boolean);
+  if (tokens.length === 0) {
+    return undefined;
+  }
+  if (tokens.some((token) => (adminBotPortalAccessMemberTypes as readonly string[]).includes(token))) {
+    return true;
+  }
+  return tokens.every((token) =>
+    (adminBotNoPortalAccessMemberTypes as readonly string[]).includes(token),
+  )
+    ? false
+    : undefined;
+}
+
 function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
   return (memberType ?? "").split(",").map((part) => part.trim().toLowerCase());
 }

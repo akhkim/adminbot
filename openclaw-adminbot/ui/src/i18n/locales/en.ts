@@ -1527,12 +1527,11 @@ export const en: TranslationMap = {
     remindedNone:
       "Nobody was due a reminder — everyone incomplete was already nudged in the last few days.",
     nudgeList: {
-      seed: "Add full members to the nudge list",
+      seed: "Apply access levels to the nudge list",
       seedHint:
-        "AdminBot only writes to people on the nudge list. This adds everyone marked as a full member and leaves every choice you have already made alone.",
-      seeded: "Added {count} member(s) to the nudge list.",
-      seededNone:
-        "Nobody was added — every full member is already on the list or has been decided about.",
+        "AdminBot only writes to people on the nudge list. This adds everyone marked as a full member, takes off everyone whose access level has no portal to act in, and leaves every choice you have already made alone.",
+      seeded: "Added {count} member(s) to the nudge list and took {silenced} off it.",
+      seededNone: "Nothing changed — everyone the access levels can answer for is already decided.",
     },
     error: {
       signIn: "Sign in as an admin to read the profile overview.",

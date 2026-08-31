@@ -3,6 +3,7 @@ import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
+  adminBotHasPortalAccess,
   adminBotReceivesNudges,
   isAdminBotFullMember,
   type AdminBotMandatoryProfileField,
@@ -5915,19 +5916,42 @@ export class AdminBotService {
     members_scanned: number;
     members_added: number;
     added: string[];
+    /** Written off the list because their access level has no portal to act on a nudge in. */
+    members_silenced: number;
+    silenced: string[];
     /** Already decided either way, so left as they are. Reported so the count is explicable. */
     already_decided: number;
+    /** No member type on the roster, so the sheet cannot answer for them. Left for a human. */
+    undecided: number;
   }> {
     const members = this.store.listLabMembers();
     const now = new Date().toISOString();
     const added: string[] = [];
+    const silenced: string[] = [];
     let alreadyDecided = 0;
+    let undecided = 0;
     for (const member of members) {
       if (member.receives_nudges !== undefined) {
         alreadyDecided += 1;
         continue;
       }
+      // Off, explicitly, for anybody whose access level has no portal: every nudge AdminBot sends
+      // asks somebody to go and do something in the Control UI, so mailing a person who cannot
+      // sign in is asking for something they cannot give. Written as a stored `false` rather than
+      // left absent because absent is "nobody has decided" -- and this is a decision, taken from
+      // the access sheet, that no later import or seeding run should quietly reverse.
+      if (adminBotHasPortalAccess(member.member_type) === false) {
+        silenced.push(member.id);
+        if (!params.dryRun) {
+          this.store.saveLabMember({ ...member, receives_nudges: false, updated_at: now });
+        }
+        continue;
+      }
       if (!isActiveRosterMember(member) || !adminBotIsFullMemberType(member.member_type)) {
+        // Everyone left: an alumnus, a coauthor-major, or one of the 94 rows with no member type.
+        // The sheet either does not answer for them or answers "portal, yes" without saying
+        // anything about mail, so nobody is written either way and they stay silent by default.
+        undecided += 1;
         continue;
       }
       added.push(member.id);
@@ -5935,11 +5959,16 @@ export class AdminBotService {
         this.store.saveLabMember({ ...member, receives_nudges: true, updated_at: now });
       }
     }
-    if (!params.dryRun && added.length > 0) {
+    if (!params.dryRun && (added.length > 0 || silenced.length > 0)) {
       this.recordAudit({
         type: "nudge_list.seeded",
         actor: params.actor,
-        details: { members_added: added.length, member_ids: added },
+        details: {
+          members_added: added.length,
+          member_ids: added,
+          members_silenced: silenced.length,
+          silenced_member_ids: silenced,
+        },
       });
     }
     return {
@@ -5950,7 +5979,10 @@ export class AdminBotService {
         members_scanned: members.length,
         members_added: added.length,
         added,
+        members_silenced: silenced.length,
+        silenced,
         already_decided: alreadyDecided,
+        undecided,
       },
     };
   }
