@@ -20,6 +20,7 @@ import {
   applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   runAdminBotCvDigestJob,
+  runAdminBotChannelNamingJob,
   runAdminBotVenueIndexJob,
   searchAdminBotVenuePapers,
   cancelWorkshopNudgeRun,
@@ -3205,6 +3206,7 @@ export function renderApp(state: AppViewState) {
               requestsLoading: state.adminBotLogisticsRequestsLoading,
               papers: state.adminBotData?.papers ?? [],
               profiles: state.adminBotProfileOverview ?? [],
+              escalated: state.adminBotEscalatedNudges ?? [],
               onOpen: (tab) => state.setTab(tab),
             })
           : nothing}
@@ -3993,7 +3995,7 @@ export function renderApp(state: AppViewState) {
                     id: "venue-index",
                     name: "Conference paper index",
                     description:
-                      "Fetch every accepted paper from the configured conferences and index them, so members can search them on Find Interesting Papers. Takes a couple of minutes per conference.",
+                      "Rebuild the conference paper index from scratch. It already refreshes itself overnight whenever a conference's accepted list changes, so press this only to force a rebuild that nothing changed. Takes a couple of minutes per conference.",
                     status: state.adminBotVenueIndexJob.status,
                     ...(state.adminBotVenueIndexJob.detail
                       ? { detail: state.adminBotVenueIndexJob.detail }
@@ -4021,6 +4023,19 @@ export function renderApp(state: AppViewState) {
                       ? { finishedAtMs: state.adminBotCvDigestJob.finishedAtMs }
                       : {}),
                   },
+                  {
+                    id: "channel-naming",
+                    name: "Slack channel naming",
+                    description:
+                      "Find channels still breaking the naming policy 48 hours after their owner was reminded, and propose a rename for each. Renames nothing on its own — the proposals wait for you in Pending Actions.",
+                    status: state.adminBotChannelNamingJob.status,
+                    ...(state.adminBotChannelNamingJob.detail
+                      ? { detail: state.adminBotChannelNamingJob.detail }
+                      : {}),
+                    ...(state.adminBotChannelNamingJob.finishedAtMs
+                      ? { finishedAtMs: state.adminBotChannelNamingJob.finishedAtMs }
+                      : {}),
+                  },
                 ],
                 onRunCommandJob: (id) => {
                   if (id === "cv-digest") {
@@ -4028,6 +4043,9 @@ export function renderApp(state: AppViewState) {
                   }
                   if (id === "venue-index") {
                     void runAdminBotVenueIndexJob(state);
+                  }
+                  if (id === "channel-naming") {
+                    void runAdminBotChannelNamingJob(state);
                   }
                 },
                 loading: state.cronLoading,

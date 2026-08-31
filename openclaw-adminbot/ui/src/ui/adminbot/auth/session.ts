@@ -1621,6 +1621,40 @@ export async function sendWorkshopNudges(
 }
 
 /** Rebuilds every configured conference index (POST /venue-papers/index). Admin only. */
+/**
+ * Runs the Slack channel-naming sweep (POST /slack/channel-naming/sweep/run).
+ *
+ * Files a rename proposal for every channel still non-compliant 48 hours after its owner was
+ * reminded. It renames nothing itself -- the proposals wait on the Actions tab -- which is why
+ * this is safe to offer as a button an admin can press whenever they are tidying up.
+ */
+export async function runChannelNamingSweep(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    "/slack/channel-naming/sweep/run",
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 export async function rebuildVenueIndexes(
   sessionToken: string,
   baseUrl: string,
@@ -2967,6 +3001,71 @@ export async function fetchMemberProfileOverview(
       },
     },
   };
+}
+
+/** One person the head professor is being asked to chase, and everything they are sitting on. */
+export type EscalatedNudgeRow = {
+  memberId: string;
+  name: string;
+  slackUserId?: string;
+  /** When the oldest of these was raised. What the queue is ordered by. */
+  escalatedAt: string;
+  items: Array<{ id: string; title: string; body: string; createdAt: string; tab?: string }>;
+};
+
+/**
+ * The escalation queue (GET /nudges/escalated).
+ *
+ * A 404 is read as an empty queue rather than an error. This route is newer than the page that
+ * calls it, and the UI ships from Vercel on merge while the service waits for a run on the host --
+ * so a service that predates the route is the ordinary case for a while, and it should render as
+ * "nothing outstanding", not as a broken panel.
+ */
+export async function fetchEscalatedNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<EscalatedNudgeRow[]>> {
+  const result = await authedJson(baseUrl, "/nudges/escalated", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    members?: Array<{
+      member_id?: unknown;
+      name?: unknown;
+      slack_user_id?: unknown;
+      escalated_at?: unknown;
+      notifications?: Array<Record<string, unknown>>;
+    }>;
+  } | null;
+  const rows = (body?.members ?? []).flatMap((row) => {
+    const memberId = typeof row.member_id === "string" ? row.member_id : "";
+    if (!memberId) {
+      return [];
+    }
+    return [
+      {
+        memberId,
+        name: typeof row.name === "string" && row.name ? row.name : memberId,
+        ...(typeof row.slack_user_id === "string" ? { slackUserId: row.slack_user_id } : {}),
+        escalatedAt: typeof row.escalated_at === "string" ? row.escalated_at : "",
+        items: (row.notifications ?? []).map((entry) => ({
+          id: typeof entry.id === "string" ? entry.id : "",
+          title: typeof entry.title === "string" ? entry.title : "",
+          body: typeof entry.body === "string" ? entry.body : "",
+          createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
+          ...(typeof entry.tab === "string" ? { tab: entry.tab } : {}),
+        })),
+      },
+    ];
+  });
+  return { ok: true, value: rows };
 }
 
 /**

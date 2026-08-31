@@ -162,6 +162,98 @@ describe("POST /venue-papers/index", () => {
     expect(body.failed[0]?.reason).toContain("404");
   });
 
+  // `changed_only` is the scheduled watch: it follows a conference's decisions rather than a
+  // calendar, so what it must get right is spending the expensive half -- embedding -- only on the
+  // venue that actually moved.
+  describe("changed_only", () => {
+    async function withMovingVenue(initial: OpenReviewPaper[]) {
+      let current = initial;
+      const embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0]));
+      const { baseUrl, mock } = await startService({
+        venuePapersReader: async () => current,
+        embedder: embed,
+        embeddingModel: "test-model",
+      });
+      mock.service.updateSettings({
+        venue_sources: [{ id: "NeurIPS.cc/2026/Conference", label: "NeurIPS 2026" }],
+      });
+      const index = async (changedOnly: boolean) =>
+        (await (
+          await fetch(`${baseUrl}/venue-papers/index`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify(changedOnly ? { changed_only: true } : {}),
+          })
+        ).json()) as {
+          built: Array<{ venue_id: string; paper_count: number }>;
+          skipped: Array<{ venue_id: string; paper_count: number }>;
+          failed: unknown[];
+        };
+      return { index, embed, release: (papers: OpenReviewPaper[]) => (current = papers) };
+    }
+
+    // The scenario the job exists for: a conference with no decisions yet answers with nothing, and
+    // the morning they land it answers with papers.
+    it("rebuilds a venue on the day its results come out", async () => {
+      const { index, embed, release } = await withMovingVenue([]);
+
+      // Decisions are not out. The venue is read, found empty, and stored empty.
+      expect((await index(true)).built).toHaveLength(1);
+      const embedCallsBeforeResults = embed.mock.calls.length;
+
+      // Still not out the next morning: read again, nothing changed, nothing embedded.
+      const quiet = await index(true);
+      expect(quiet.built).toEqual([]);
+      expect(quiet.skipped).toEqual([
+        { venue_id: "NeurIPS.cc/2026/Conference", paper_count: 0 },
+      ]);
+      expect(embed.mock.calls).toHaveLength(embedCallsBeforeResults);
+
+      // Results land.
+      release([SAFETY, TRANSPORT]);
+      const afterResults = await index(true);
+      expect(afterResults.skipped).toEqual([]);
+      expect(afterResults.built[0]).toMatchObject({
+        venue_id: "NeurIPS.cc/2026/Conference",
+        paper_count: 2,
+      });
+      expect(embed.mock.calls.length).toBeGreaterThan(embedCallsBeforeResults);
+    });
+
+    it("embeds nothing on a morning when no conference has moved", async () => {
+      const { index, embed } = await withMovingVenue([SAFETY, TRANSPORT]);
+      await index(true);
+      const settled = embed.mock.calls.length;
+
+      const second = await index(true);
+      expect(second.built).toEqual([]);
+      expect(second.skipped[0]).toMatchObject({ paper_count: 2 });
+      expect(embed.mock.calls).toHaveLength(settled);
+    });
+
+    // Camera-ready additions and withdrawals move the count too, and should be picked up.
+    it("rebuilds when a venue's paper list grows after the first release", async () => {
+      const { index, release } = await withMovingVenue([SAFETY]);
+      await index(true);
+
+      release([SAFETY, TRANSPORT]);
+      expect((await index(true)).built[0]).toMatchObject({ paper_count: 2 });
+    });
+
+    // The Tasks & Tools button is the escape hatch for what a count cannot see, so it must never
+    // inherit the skip.
+    it("still rebuilds unconditionally without the flag", async () => {
+      const { index, embed } = await withMovingVenue([SAFETY, TRANSPORT]);
+      await index(true);
+      const settled = embed.mock.calls.length;
+
+      const forced = await index(false);
+      expect(forced.skipped).toEqual([]);
+      expect(forced.built[0]).toMatchObject({ paper_count: 2 });
+      expect(embed.mock.calls.length).toBeGreaterThan(settled);
+    });
+  });
+
   it("answers 503 naming the variables when OpenReview is not configured", async () => {
     const { baseUrl, mock } = await startService({ embedder: EMBEDDER, embeddingModel: "m" });
     mock.service.updateSettings({ venue_sources: [{ id: "v", label: "V" }] });

@@ -41,8 +41,8 @@ export const TAB_GROUPS = [
     ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
-  // job -- Nudges, Membership -- and the page names the surfaces inside it. Ten entries here read
-  // as ten unrelated tools; seven read as what an administrator actually does.
+  // job -- Nudges, Membership -- and the page names the surfaces inside it. A dozen entries here
+  // read as a dozen unrelated tools; eight read as what an administrator actually does.
   {
     label: "admin",
     tabs: [
@@ -51,9 +51,7 @@ export const TAB_GROUPS = [
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotRegistrations",
-      "adminbotBadges",
       "adminbotCalendar",
-      "adminbotGrantReport",
       // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
       // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
       // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
@@ -95,14 +93,24 @@ export const TAB_GROUPS = [
  * entries; requests, onboarding and profile completeness are three views of one person's arrival.
  */
 export const TAB_PAGES = [
-  // Where the lab stands, in its two halves. Profile Completeness is not a smaller version of
+  // Where the lab stands, in its three halves. Profile Completeness is not a smaller version of
   // Active Papers: it counts a member's own fields, their timeline entries and how many of their
   // papers carry an update they wrote themselves, while Active Papers is the pipeline across every
   // paper in the lab. Neither answers the other's question, and an administrator taking stock wants
   // both, so they sit on one page rather than two entries that look interchangeable and are not.
-  { page: "labOverview", tabs: ["adminbotPapers", "adminbotProfileOverview"] },
+  //
+  // The grant report is the third: it is that same standing written out for an outside reader,
+  // assembled from the papers and people the other two tabs count. Reached from its own sidebar
+  // entry it read as a separate tool; it is the export of this page.
+  {
+    page: "labOverview",
+    tabs: ["adminbotPapers", "adminbotProfileOverview", "adminbotGrantReport"],
+  },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
-  { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding"] },
+  // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
+  // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
+  // which put "award Ada a badge" a page away from the roster that says who Ada is.
+  { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding", "adminbotBadges"] },
 ] as const satisfies ReadonlyArray<{ page: string; tabs: readonly Tab[] }>;
 
 type TabPage = (typeof TAB_PAGES)[number];
@@ -309,6 +317,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/calendar": "adminbotCalendar",
   "/adminbot/conference-papers": "adminbotConferencePapers",
   "/adminbot/deadlines": "adminbotDeadlines",
+  "/adminbot/grant-report": "adminbotGrantReport",
   "/adminbot/meeting-requests": "adminbotMeetingRequests",
   "/adminbot/meetings": "adminbotMeetings",
   "/adminbot/members": "adminbotMembers",

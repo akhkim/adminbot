@@ -385,7 +385,9 @@ describe("AdminBotSqliteStore", () => {
       await second.service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z"),
     );
     expect(sweep.scanned).toBe(1);
-    expect(sweep.renamed).toBe(1);
+    // The record survived the restart, so the sweep can still act on it -- by filing a rename for
+    // an admin to approve, which is all it does now.
+    expect(sweep.renames_proposed).toBe(1);
     second.close();
   });
 

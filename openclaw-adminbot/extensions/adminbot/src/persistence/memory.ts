@@ -726,6 +726,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       );
   }
 
+  listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
+    return [...this.memberNotifications.values()]
+      .filter((notification) => notification.escalated_at && !notification.read_at)
+      .toSorted((left, right) =>
+        (left.escalated_at ?? "").localeCompare(right.escalated_at ?? ""),
+      );
+  }
+
   deleteMemberNotification(notificationId: string): boolean {
     return this.memberNotifications.delete(notificationId);
   }

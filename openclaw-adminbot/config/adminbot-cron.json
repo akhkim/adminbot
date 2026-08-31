@@ -89,6 +89,58 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-venue-index",
+      "description": "Rebuild a conference's paper index on the day its accepted list changes; embeds nothing when nothing moved",
+      "cron": "0 4 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-venue-index-cron.sh"
+      ],
+      "timeoutSeconds": 3600
+    },
+    {
+      "name": "adminbot-member-map",
+      "description": "Re-read Slack profile locations, the member map's top-priority source and the only one that cannot refresh itself",
+      "cron": "10 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-member-map-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-deadline-calendar",
+      "description": "Publish conference deadlines to the lab calendar, after the venue refresh they read",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-deadline-cron.sh",
+        "calendar-conferences"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-meeting-membership",
+      "description": "Reconcile the standing invite against the roster and file the removals as proposals",
+      "cron": "35 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-meeting-membership-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-deadline-reminders",
+      "description": "DM each author the deadlines their papers were matched to, after the match pass has run",
+      "cron": "30 7 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-deadline-cron.sh",
+        "reminders"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-graduations",
       "description": "Confirm finishing months, chase alumni transitions, and arrange the ceremony",
       "cron": "0 8 * * 1",

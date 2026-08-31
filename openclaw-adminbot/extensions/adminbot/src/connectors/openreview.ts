@@ -51,6 +51,19 @@ export function createAdminBotOpenReviewExecutor(
         args.push("--send");
       }
       await run(args, requireString(payload, "body"));
+      if (!options.send) {
+        // The bridge already said so -- without `--send` it answers
+        // `{"ok": true, "sent": false, "dry_run": true}` -- and this used to discard that and
+        // report success, so a reminder nobody received was stored as executed and audited as a
+        // delivery. The kill switch is a deliberate operating mode; claiming delivery inside it
+        // was not.
+        return {
+          handled: true,
+          delivered: false,
+          reason:
+            "composed and validated, but not delivered: ADMINBOT_OPENREVIEW_SEND is not set to 1",
+        };
+      }
       return { handled: true };
     },
   };

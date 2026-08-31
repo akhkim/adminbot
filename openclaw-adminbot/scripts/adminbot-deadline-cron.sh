@@ -24,6 +24,7 @@ Tasks:
   calendar-preview       Show what a full sync would change; writes nothing
   refresh-venues         Re-collect venues.json from OpenReview and regenerate the datasets
   refresh-matches        Map lab papers onto upcoming deadlines (writes matches.json)
+  reminders              DM each author the deadlines their confirmed matches are due at
   reminders-preview      Show which deadline reminders are due today; sends nothing
 EOF
 }
@@ -57,7 +58,7 @@ case "$task" in
   refresh-matches)
     exec "$PYTHON" "$REPO_ROOT/scripts/adminbot-deadline-match.py"
     ;;
-  reminders-preview)
+  reminders | reminders-preview)
     # The reminder pass reads matches.json, which the match step produces. Without it the script
     # dies on a bare KeyError traceback in the run summary, which says nothing about what to do.
     if [[ ! -f "$REPO_ROOT/extensions/adminbot/content/deadlines/matches.json" ]]; then
@@ -65,6 +66,15 @@ case "$task" in
       printf 'Run the "refresh deadline matches" tool first; it needs ADMINBOT_ONGOING_SHEET_ID\n' >&2
       printf 'and ADMINBOT_READY_SHEET_ID in %s.\n' "$ADMINBOT_ENV_FILE" >&2
       exit 1
+    fi
+    # Only `reminders` delivers. The human gate is upstream rather than here: the matcher
+    # auto-confirms an `ongoing` row it matched deterministically on Venue, while a fuzzy
+    # ready->workshop suggestion stays unconfirmed until somebody sets confirmed=true, and
+    # confirmed_papers() in the runner nudges nothing else. Recipients and wording are both
+    # derived -- the author list off the match, the text off dm-templates.json -- so there is no
+    # admin-composed content here for an approval step to protect.
+    if [[ "$task" == "reminders" ]]; then
+      exec "$PYTHON" "$REPO_ROOT/scripts/adminbot-deadline-reminders.py" --send
     fi
     exec "$PYTHON" "$REPO_ROOT/scripts/adminbot-deadline-reminders.py"
     ;;

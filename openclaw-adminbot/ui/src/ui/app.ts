@@ -29,6 +29,7 @@ import type {
   LabCalendar,
 } from "./adminbot/auth/session.ts";
 import type {
+  EscalatedNudgeRow,
   MemberProfileOverviewRow,
   PaperCycle,
   PaperNudgeBatch,
@@ -626,6 +627,7 @@ export class OpenClawApp extends LitElement {
   // signed-in member to be loaded. See the scope effect in app-render.
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.
@@ -715,6 +717,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;

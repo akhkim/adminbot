@@ -423,6 +423,14 @@ Alumni are left off both. Both Slack actions -- "Refresh from Slack"
 page's own toolbar; the console tab carries no chrome of its own around the
 iframe, so there is exactly one place to trigger either.
 
+Both also run on a schedule, so neither button is the only way the data stays
+current: `adminbot-member-directory` syncs ids and timezones at 05:40 and
+`adminbot-member-map` re-reads profile locations at 06:10. The buttons are for
+when you do not want to wait for tomorrow. The two are separate passes writing
+separate fields, which is easy to misread from their names -- the ID/timezone
+sync does not touch `slack_location`, and before the map pass was scheduled a
+stale Slack stamp could outrank a fresher roster location indefinitely.
+
 Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
 calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
 so timezones stay current for the calendar without an admin remembering to press
@@ -661,7 +669,10 @@ through to the next whenever it fails to resolve -- not only when it is empty.
    timezone, whose IANA name carries a city) and stamps it on the member as
    `slack_location`. A member Slack no longer knows about has their stamp
    cleared rather than left stale, so an old value cannot outrank a fresher
-   source forever.
+   source forever. That clearing only happens when the pass runs, which is why
+   it is scheduled daily (`adminbot-member-map`, 06:10) rather than left to the
+   button: this is the one source of the three that cannot refresh itself, and
+   it is the one the other two defer to.
 2. **Last-login location**, country-level only. Stamped automatically on every
    successful sign-in from the caller's IP (see "Login location" below) -- there
    is nothing to manually refresh here, it is already as current as their most

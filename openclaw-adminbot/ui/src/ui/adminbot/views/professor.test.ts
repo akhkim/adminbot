@@ -2,7 +2,11 @@
 // My Desk: what lands in each queue, and what does not.
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LogisticsRequest, MemberProfileOverviewRow } from "../auth/session.ts";
+import type {
+  EscalatedNudgeRow,
+  LogisticsRequest,
+  MemberProfileOverviewRow,
+} from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   incompleteProfiles,
@@ -64,6 +68,7 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       requestsLoading: false,
       papers: [],
       profiles: [],
+      escalated: [],
       onOpen: (tab) => opened.push(tab),
       ...overrides,
     }),
@@ -294,7 +299,87 @@ describe("renderProfessorView", () => {
     const order = [...container.querySelectorAll(".professor__section")].map((node) =>
       node.getAttribute("data-testid"),
     );
-    expect(order).toEqual(["professor-adoption", "professor-letters", "professor-drafts"]);
+    expect(order).toEqual([
+      "professor-adoption",
+      "professor-escalated",
+      "professor-letters",
+      "professor-drafts",
+    ]);
+  });
+
+  // The queue the escalation pass was always computing. It leads the page when it has anybody in
+  // it: everything else here is work she can schedule, and this is the part where the lab has
+  // already stopped chasing and is waiting on her.
+  describe("escalated nudges", () => {
+    const row = (overrides: Partial<EscalatedNudgeRow> = {}): EscalatedNudgeRow => ({
+      memberId: "mei",
+      name: "Mei Chen",
+      escalatedAt: "2026-08-20T09:00:00.000Z",
+      items: [
+        {
+          id: "n1",
+          title: "Submission ID missing",
+          body: "Still missing.",
+          createdAt: "2026-08-14T09:00:00.000Z",
+        },
+      ],
+      ...overrides,
+    });
+
+    it("names the person, what is outstanding, and when it was raised", () => {
+      const { container } = draw({ escalated: [row()] });
+      const section = container.querySelector('[data-testid="professor-escalated"]');
+      expect(section).not.toBeNull();
+      expect(section?.textContent).toContain("Mei Chen");
+      expect(section?.textContent).toContain("Submission ID missing");
+      expect(section?.textContent).toContain("2026-08-20");
+    });
+
+    it("counts a member's items instead of listing them all", () => {
+      const { container } = draw({
+        escalated: [
+          row({
+            items: [
+              { id: "n1", title: "First", body: "", createdAt: "2026-08-14T09:00:00.000Z" },
+              { id: "n2", title: "Second", body: "", createdAt: "2026-08-15T09:00:00.000Z" },
+            ],
+          }),
+        ],
+      });
+      const section = container.querySelector('[data-testid="professor-escalated"]');
+      expect(section?.textContent).toContain("2 things outstanding");
+    });
+
+    it("leads the page when somebody is waiting on her", () => {
+      const { container } = draw({ escalated: [row()] });
+      const order = [...container.querySelectorAll(".professor__section")].map((node) =>
+        node.getAttribute("data-testid"),
+      );
+      expect(order[0]).toBe("professor-escalated");
+    });
+
+    it("sinks below real work, and says so plainly, when nobody is waiting", () => {
+      const { container } = draw({
+        escalated: [],
+        profiles: [profile({ id: "a", missing_fields: ["office"] })],
+      });
+      const section = container.querySelector('[data-testid="professor-escalated"]');
+      expect(section?.textContent).toContain("Nobody has ignored a nudge long enough");
+      const order = [...container.querySelectorAll(".professor__section")].map((node) =>
+        node.getAttribute("data-testid"),
+      );
+      // Below the adoption columns, which do have somebody in them.
+      expect(order[0]).toBe("professor-adoption");
+      expect(order.indexOf("professor-escalated")).toBeGreaterThan(0);
+    });
+
+    it("sends her where she can write to them", () => {
+      const { container, opened } = draw({ escalated: [row()] });
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="professor-open-escalated"]')
+        ?.click();
+      expect(opened).toEqual(["adminbotAnnouncements"]);
+    });
   });
 
   it("holds a still-loading queue in place rather than sinking it as settled", () => {

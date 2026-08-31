@@ -2062,6 +2062,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
   }
 
+  // Filtered in JS rather than SQL: `escalated_at` and `read_at` live inside payload_json, and the
+  // escalated set is small by construction -- it is what one professor is expected to work through.
+  listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_member_notifications")
+      .all() as Array<{ payload_json: string }>;
+    return rows
+      .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
+      .filter((notification) => notification.escalated_at && !notification.read_at)
+      .toSorted((left, right) => (left.escalated_at ?? "").localeCompare(right.escalated_at ?? ""));
+  }
+
   deleteMemberNotification(notificationId: string): boolean {
     return (
       this.db.prepare("DELETE FROM adminbot_member_notifications WHERE id = ?").run(notificationId)

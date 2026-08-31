@@ -50,11 +50,18 @@ python3 scripts/adminbot-deadline-reminders.py --send     # actually DM
 Author→Slack ids resolve from the AdminBot roster
 (`GET $ADMINBOT_SERVICE_BASE_URL/lab/members` → `slack_user_id`).
 
-**Delivery mode.** Recommended: schedule the runner ~daily as an OpenClaw cron
-job (same pattern as `adminbot-paper-nudge-reminders.mjs`); the templated author
-DMs go out directly and the escalation digest goes to Zhijing. If you prefer a
-human gate on every send, route the runner's output through
-`adminbot_propose_slack_message` instead of `--send`.
+**Delivery mode.** Scheduled: `adminbot-deadline-reminders` runs the `reminders`
+task weekdays at 07:30, after the 06:20 match pass it reads
+(`config/adminbot-cron.json`). The templated author DMs go out directly and the
+escalation digest goes to Zhijing. There is no approval step in front of them
+because there is nothing composed to approve — recipients come off the matched
+author list and the wording off `dm-templates.json` — and the judgment call that
+does need a human is already upstream: only `confirmed` matches are ever nudged,
+and a fuzzy ready→workshop suggestion stays unconfirmed until somebody says so.
+
+If you would rather gate every send anyway, route the runner's output through
+`adminbot_propose_slack_message` instead of `--send`; keep the same schedule and
+the proposals land on the Actions tab.
 
 **OpenReview stop-condition.** Set `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD`
 (Zhijing enters these in the service secret store herself). When present, the

@@ -293,20 +293,26 @@ function renderFileForm(props: AdminBotMeetingsProps) {
     <details class="card adminbot-card adminbot-card--wide meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
       <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
-      <form @submit=${submit}>
-        <label>${t("adminbotMeetings.topic")} <input name="topic" required /></label>
-        <label>
-          ${t("adminbotMeetings.startedAt")}
+      <form class="adminbot-form" @submit=${submit}>
+        <label class="adminbot-form__field"
+          ><span>${t("adminbotMeetings.topic")}</span> <input name="topic" required
+        /></label>
+        <label class="adminbot-form__field">
+          <span>${t("adminbotMeetings.startedAt")}</span>
           <input name="started_at" type="datetime-local" required />
         </label>
-        <label>
-          ${t("adminbotMeetings.shareUrl")}
+        <label class="adminbot-form__field">
+          <span>${t("adminbotMeetings.shareUrl")}</span>
           <input name="share_url" type="url" required />
         </label>
-        <label>${t("adminbotMeetings.passcode")} <input name="passcode" /></label>
-        <button class="btn btn--sm" type="submit" ?disabled=${props.saving}>
-          ${t("adminbotMeetings.file")}
-        </button>
+        <label class="adminbot-form__field"
+          ><span>${t("adminbotMeetings.passcode")}</span> <input name="passcode"
+        /></label>
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit" ?disabled=${props.saving}>
+            ${t("adminbotMeetings.file")}
+          </button>
+        </div>
       </form>
     </details>
   `;

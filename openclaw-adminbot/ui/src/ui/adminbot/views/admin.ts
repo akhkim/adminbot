@@ -42,7 +42,7 @@ import type {
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
-import { isOptionalMemberField, PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
   PRE_REGISTRATION_VENUES,
@@ -289,11 +289,53 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
   if (!(form instanceof HTMLFormElement)) {
     return;
   }
+  const pending = memberAutosaveTimers.get(form);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    memberAutosaveTimers.delete(form);
+  }
+  if (!saveMemberForm(form, props)) {
+    return;
+  }
+  form.closest<HTMLElement>("[popover]")?.hidePopover();
+}
+
+// Debounced autosave for the edit-member popover: every change lands on the record without the
+// Save button. Keyed per form so two open popovers never flush each other, and deliberately not
+// wired to the add-member form — autosaving there would create a member from a half-typed id.
+const memberAutosaveTimers = new WeakMap<HTMLFormElement, ReturnType<typeof setTimeout>>();
+
+function queueMemberAutosave(event: Event, props: AdminBotProps): void {
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
+  const pending = memberAutosaveTimers.get(form);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+  }
+  memberAutosaveTimers.set(
+    form,
+    setTimeout(() => {
+      memberAutosaveTimers.delete(form);
+      saveMemberForm(form, props);
+    }, 800),
+  );
+}
+
+/**
+ * Read the member form and hand it to onSaveMember. Only the id is structurally required — it is
+ * the upsert key. Everything else may be blank: the service treats an omitted name as "keep the
+ * stored one" on an existing record, and a blank registry field (calendar email included) is
+ * simply left out of the patch, so an incomplete record saves as-is instead of being held
+ * hostage by its empty fields.
+ */
+function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
   const data = new FormData(form);
   const id = getFormValue(data, "id");
   const name = getFormValue(data, "name");
-  if (!id || !name) {
-    return;
+  if (!id) {
+    return false;
   }
   // notes is free prose. Each fact that used to be encoded into it as a "Label: value" line now
   // has a column and a registry field of its own, so writing them back here would recreate the
@@ -307,7 +349,7 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
   const emailEditable = emailInput instanceof HTMLInputElement && !emailInput.readOnly;
   props.onSaveMember({
     id,
-    name,
+    ...(name ? { name } : {}),
     ...(emailEditable && getFormValue(data, "email") ? { email: getFormValue(data, "email") } : {}),
     ...(getFormValue(data, "slackUserId")
       ? { slackUserId: getFormValue(data, "slackUserId") }
@@ -332,7 +374,7 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     profile: collectRegistryFields(data),
     ...(notes ? { notes } : {}),
   });
-  form.closest<HTMLElement>("[popover]")?.hidePopover();
+  return true;
 }
 
 // A subgroup only means something on an external collaborator, so the field follows the privilege
@@ -853,13 +895,12 @@ function renderRegistryField(
       // `list` is stored as an array and edited here as one comma-separated line, the same way the
       // old hand-written researchTopics/projects inputs did it. `phone` and `image` are single
       // stored strings, so a plain box is the honest control for both.
+      // No `required` marks here, even for fields the completion ledger calls mandatory: this is
+      // a roster editor, and an admin saving whatever they currently know beats a form that
+      // refuses the whole record over one empty box. The blanks still count against profile
+      // completion — being save-able and being chased are separate questions.
       default:
-        return html`<input
-          name=${field.key}
-          placeholder=${field.example}
-          .value=${value}
-          ?required=${!isOptionalMemberField(field)}
-        />`;
+        return html`<input name=${field.key} placeholder=${field.example} .value=${value} />`;
     }
   })();
   return html`<label class="adminbot-form__field">${label}${control}</label>`;
@@ -993,7 +1034,12 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
       </button>
       <div class="card-title">Edit member</div>
       <div class="card-sub">${member.name} · ${member.id}</div>
-      <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
+      <form
+        class="adminbot-form"
+        @submit=${(event: Event) => submitMemberForm(event, props)}
+        @input=${(event: Event) => queueMemberAutosave(event, props)}
+        @change=${(event: Event) => queueMemberAutosave(event, props)}
+      >
         ${renderMemberFormFields(member)}
         <div class="adminbot-form__actions">
           <button class="btn btn--sm primary" type="submit">Save member</button>
@@ -2569,7 +2615,7 @@ function renderAnnouncements(props: AdminBotProps) {
   const recipientCount = draft.selectedMemberIds.length;
   return html`
     <div class="adminbot-announce">
-      <div class="adminbot-announce__compose">
+      <div class="adminbot-form adminbot-announce__compose">
         <label class="adminbot-form__field">
           <span>Channel</span>
           <select
