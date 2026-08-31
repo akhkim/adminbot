@@ -543,6 +543,26 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ...(options.inviteToSlackConnect
         ? { inviteToSlackConnect: options.inviteToSlackConnect }
         : {}),
+      // Which address the reader's portal account is under. The guide goes to the address they
+      // read; the account is under the governed one on their roster row, and for anyone with a CS
+      // address those are different. Matched on every address the roster holds for them, because
+      // the guide is addressed to whichever one the composer picked.
+      portalLoginEmail: (recipientEmail: string) => {
+        const wanted = recipientEmail.trim().toLowerCase();
+        if (!wanted) {
+          return undefined;
+        }
+        const roster = service.listLabMembers();
+        if (!roster.ok) {
+          return undefined;
+        }
+        const member = roster.payload.members.find((entry) =>
+          [entry.email, entry.correspondence_email, entry.calendar_email]
+            .filter((address): address is string => Boolean(address))
+            .some((address) => address.trim().toLowerCase() === wanted),
+        );
+        return member?.email?.trim() || undefined;
+      },
       // Remembers each minted invite so a re-send hands out the same link rather than a second
       // invitation. The service owns the store, so the cache is wired here rather than reaching
       // into persistence from the sender.

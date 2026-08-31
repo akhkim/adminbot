@@ -177,6 +177,19 @@ export type AdminBotOnboardingSenderOptions = {
     }) => void;
   };
   now?: () => Date;
+  /**
+   * The address this person's portal account is under, given the address the mail is going to.
+   *
+   * They are different facts and the copy names the wrong one without this. A member's login is
+   * the governed `email` on their roster row -- ybilleter@cs.toronto.edu -- while the guide is
+   * sent to the address they actually read, ybilleter@ethz.ch. "Log into our lab portal using
+   * {member_email}" then named an address the portal has never heard of, and the reader's only
+   * way to find that out is a failed sign-in.
+   *
+   * Injected rather than looked up here because this module owns no store; the composition root
+   * hands it the roster the same way it hands over the WhatsApp number and the invite cache.
+   */
+  portalLoginEmail?: (recipientEmail: string) => string | undefined;
   sendEmail?: (params: {
     to: string;
     subject: string;
@@ -313,7 +326,11 @@ export function createAdminBotOnboardingSender(
       first_name: request.values?.first_name?.trim() || firstNameOf(name),
       // The address the mail is going to, for the copy that has to name it back to the reader
       // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
-      member_email: request.values?.member_email?.trim() || email,
+      // Explicit value first (an operator typing it in the tab), then the account address, then
+      // the recipient address as the last resort -- which is right for somebody whose account is
+      // under the address they are being written to, and was silently wrong for everyone else.
+      member_email:
+        request.values?.member_email?.trim() || options.portalLoginEmail?.(email) || email,
       zhijing_whatsapp:
         request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
     };
