@@ -119,7 +119,8 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   member: Parameters<typeof mock.service.upsertLabMember>[0],
 ) {
-  const result = mock.service.upsertLabMember(member);
+  // On the nudge list unless the case overrides it: these fixtures exist to receive nudges.
+  const result = mock.service.upsertLabMember({ receives_nudges: true, ...member });
   if (!result.ok) {
     throw new Error(result.error.message);
   }

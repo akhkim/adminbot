@@ -1526,6 +1526,14 @@ export const en: TranslationMap = {
     reminded: "Reminder sent to {count} member(s).",
     remindedNone:
       "Nobody was due a reminder — everyone incomplete was already nudged in the last few days.",
+    nudgeList: {
+      seed: "Add full members to the nudge list",
+      seedHint:
+        "AdminBot only writes to people on the nudge list. This adds everyone marked as a full member and leaves every choice you have already made alone.",
+      seeded: "Added {count} member(s) to the nudge list.",
+      seededNone:
+        "Nobody was added — every full member is already on the list or has been decided about.",
+    },
     error: {
       signIn: "Sign in as an admin to read the profile overview.",
       unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",

@@ -292,6 +292,27 @@ export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFiel
 export const adminBotAdminOwnedProfileFields = ["linkedin_urn"] as const;
 
 /**
+ * Whether AdminBot may send this person a nudge.
+ *
+ * An allowlist, and deliberately not a rule anything can infer. Eligibility used to be opt-*out*
+ * -- everyone on the roster minus explicit alumni and external -- and since almost every imported
+ * row has a blank status, 175 of 200 rows qualified. The roster is not a list of lab members: it
+ * carries coauthors at other institutions, people interviewed once, acquaintances and 92 rows with
+ * no member type at all, and all of them were being DMed and emailed. They are on the roster
+ * because the lab wants their record, which is a different question from whether the lab may write
+ * to them unprompted.
+ *
+ * So: off unless somebody turned it on. Absent reads as off, which means a newly imported row is
+ * silent until a human decides otherwise -- the failure mode of a missing flag is an unsent nudge
+ * rather than a stranger's inbox. It is enforced in sendMemberNudge, the one place every sweep and
+ * every hand-written nudge passes through, and it is kept off SELF_PROFILE_EDITABLE_FIELDS so
+ * nobody can add themselves.
+ */
+export function adminBotReceivesNudges(member: { receives_nudges?: boolean }): boolean {
+  return member.receives_nudges === true;
+}
+
+/**
  * The mandatory fields a reminder may actually chase a member about.
  *
  * `name` is off it because validateLabMember already refuses to store a member without one, so it
@@ -980,6 +1001,13 @@ export type AdminBotLabMemberInput = {
    * sets about themselves. See adminBotTestOnboardBatches.
    */
   test_onboard_batch?: number;
+  /**
+   * Whether AdminBot may send this person unsolicited mail at all. See adminBotReceivesNudges.
+   *
+   * Governance-owned and off unless an admin turns it on, which is the whole point: it is a list
+   * the lab adds to, not a property of the record that some import can set.
+   */
+  receives_nudges?: boolean;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -1678,6 +1706,7 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.published"
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
+    | "nudge_list.seeded"
     // One pass over the back catalogue, linking printed author names to the people they name.
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.

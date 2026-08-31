@@ -45,7 +45,9 @@ function serviceWith(
       })
     : new AdminBotService();
   for (const member of members) {
-    unwrap(service.upsertLabMember(member as never));
+    // Opted onto the nudge list unless a case says otherwise -- the overview reads every active
+    // member, but only somebody on the list can actually be sent the reminder it counts.
+    unwrap(service.upsertLabMember({ receives_nudges: true, ...member } as never));
   }
   return service;
 }

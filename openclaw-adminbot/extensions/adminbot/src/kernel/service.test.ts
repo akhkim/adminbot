@@ -18,6 +18,9 @@ function unwrap<T>(
 
 function completeMember(fields: { id: string; privilege_level: string }) {
   return {
+    // On the nudge list: these fixtures exist to be chased, and the list is opt-in (see
+    // adminBotReceivesNudges). A member without it is silent by design, which is a different test.
+    receives_nudges: true,
     name: `Complete ${fields.id}`,
     slack_user_id: `U-${fields.id}`,
     calendar_email: "complete@gmail.com",
@@ -47,6 +50,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // batch 1, not a full member -- addressable by batch alone.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "batched",
         name: "Batched Person",
         slack_user_id: "U1",
@@ -58,6 +62,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // full in the spreadsheet's own column, no batch -- batch 3 by the rule.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "full",
         name: "Full Member",
         slack_user_id: "U2",
@@ -71,6 +76,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // never addressed.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "untouched",
         name: "Visiting Professor",
         slack_user_id: "U3",
@@ -219,6 +225,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // "full, coauthor-minor" is full; "alumni, coauthor-major" is not.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "alum",
         name: "Former Member",
         slack_user_id: "U8",
@@ -239,6 +246,7 @@ describe("AdminBotService pre-registration nudges", () => {
     const service = lab();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "left-but-batched",
         name: "Left But Batched",
         slack_user_id: "U7",
@@ -258,6 +266,7 @@ describe("AdminBotService pre-registration nudges", () => {
     const service = lab();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "pi",
         name: "The PI",
         slack_user_id: "U9",
@@ -315,7 +324,7 @@ describe("AdminBotService paper coauthors", () => {
       ["andrew-kim", "Andrew Kim", "akim@cs.toronto.edu"],
       ["zhijing-jin", "Zhijing Jin", "zjin@cs.toronto.edu"],
     ] as const) {
-      unwrap(service.upsertLabMember({ id, name, email, privilege_level: "member" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id, name, email, privilege_level: "member" }));
     }
     return service;
   }
@@ -363,7 +372,7 @@ describe("AdminBotService paper coauthors", () => {
       service.upsertOwnPaper("andrew-kim", { id: "adminbot", title: "AdminBot v2" }),
     ).toMatchObject({ ok: true });
     // Somebody who is not on it still cannot.
-    unwrap(service.upsertLabMember({ id: "stranger", name: "Stranger" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "stranger", name: "Stranger" }));
     expect(service.upsertOwnPaper("stranger", { id: "adminbot", title: "Mine now" })).toMatchObject(
       { ok: false },
     );
@@ -403,8 +412,8 @@ describe("AdminBotService paper coauthors", () => {
 
   it("does not put a paper on the page of somebody who merely shares a name", () => {
     const service = lab();
-    unwrap(service.upsertLabMember({ id: "wei-one", name: "Wei Chen" }));
-    unwrap(service.upsertLabMember({ id: "wei-two", name: "Wei Chen" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "wei-one", name: "Wei Chen" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "wei-two", name: "Wei Chen" }));
     unwrap(
       service.upsertOwnPaper("joeun-yook", {
         id: "ambiguous",
@@ -451,8 +460,8 @@ describe("AdminBotService weekly updates", () => {
   function labWithPaper() {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", slack_user_id: "U1" }));
-    unwrap(service.upsertLabMember({ id: "rahul", name: "Rahul Shrestha", slack_user_id: "U2" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada Lovelace", slack_user_id: "U1" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "rahul", name: "Rahul Shrestha", slack_user_id: "U2" }));
     unwrap(
       service.upsertPaper({
         id: "paper",
@@ -643,6 +652,7 @@ describe("AdminBotService member merge", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "terry-jingchen-zhang",
         name: "Terry Jingchen Zhang",
         email: "tzkpgc@gmail.com",
@@ -654,6 +664,7 @@ describe("AdminBotService member merge", () => {
     );
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "terry-zhang",
         name: "Terry Zhang",
         email: "zjingchen@cs.toronto.edu",
@@ -668,7 +679,7 @@ describe("AdminBotService member merge", () => {
 
   it("pairs the two halves up without pairing distinct people", () => {
     const service = twoHalves();
-    unwrap(service.upsertLabMember({ id: "someone-else", name: "Ada Lovelace" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "someone-else", name: "Ada Lovelace" }));
     const { pairs } = unwrap(service.listDuplicateMembers());
     expect(pairs).toHaveLength(1);
     expect([pairs[0]?.left.id, pairs[0]?.right.id].toSorted()).toEqual([
@@ -1183,6 +1194,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const member = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "zhijing",
         name: "Zhijing",
         email: "zhijing@cs.toronto.edu",
@@ -1225,6 +1237,7 @@ describe("AdminBotService", () => {
 
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-availability",
         name: "Invalid Availability",
         availability: [
@@ -1236,18 +1249,20 @@ describe("AdminBotService", () => {
     // of "PhD student" made those counts lie.
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-role",
         name: "Invalid Role",
         role: "Chief Scientist",
       }),
     ).toMatchObject({ ok: false, status: 400 });
     expect(
-      service.upsertLabMember({ id: "vocab-role", name: "Vocab Role", role: "PhD Student" }).ok,
+      service.upsertLabMember({ receives_nudges: true, id: "vocab-role", name: "Vocab Role", role: "PhD Student" }).ok,
     ).toBe(true);
     // A role nobody has recorded yet is different from a wrong one.
-    expect(service.upsertLabMember({ id: "no-role", name: "No Role", role: "" }).ok).toBe(true);
+    expect(service.upsertLabMember({ receives_nudges: true, id: "no-role", name: "No Role", role: "" }).ok).toBe(true);
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-hours",
         name: "Invalid Hours",
         hours_per_week: 169,
@@ -1255,6 +1270,7 @@ describe("AdminBotService", () => {
     ).toMatchObject({ ok: false, status: 400 });
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-status",
         name: "Invalid Status",
         status: "away" as never,
@@ -1266,6 +1282,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const collaborator = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "sub",
         name: "Sub",
         privilege_level: "external_collaborator",
@@ -1276,13 +1293,13 @@ describe("AdminBotService", () => {
 
     // The stored level is enough: an edit that does not resend privilege_level still validates.
     expect(
-      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", collaborator_subgroup: "alumni" }))
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sub", name: "Sub", collaborator_subgroup: "alumni" }))
         .collaborator_subgroup,
     ).toBe("alumni");
 
     // A promotion drops the subgroup rather than leaving a stale one on the record.
     expect(
-      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", privilege_level: "member" }))
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sub", name: "Sub", privilege_level: "member" }))
         .collaborator_subgroup,
     ).toBeUndefined();
 
@@ -1310,6 +1327,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "self-edit",
         name: "Self Edit",
         email: "self-edit@cs.toronto.edu",
@@ -1341,6 +1359,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "photo",
         name: "Photo Member",
         email: "photo@cs.toronto.edu",
@@ -1385,6 +1404,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "urn-member",
         name: "URN Member",
         email: "urn-member@cs.toronto.edu",
@@ -1404,6 +1424,7 @@ describe("AdminBotService", () => {
 
     const byAdmin = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "urn-member",
         name: "URN Member",
         email: "urn-member@cs.toronto.edu",
@@ -1416,7 +1437,7 @@ describe("AdminBotService", () => {
 
   it("lets a member self-edit availability and time off, and validates both", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "sched", name: "Sched", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("sched", {
@@ -1462,7 +1483,7 @@ describe("AdminBotService", () => {
   // corrected later because nobody knows which one was meant -- so the pair is all-or-nothing.
   it("takes an exact cutoff on a milestone only as a time and a zone together", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "clock", name: "Clock", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "clock", name: "Clock", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("clock", {
@@ -1493,7 +1514,7 @@ describe("AdminBotService", () => {
   it("accepts board-linked milestones, refreshes their copy and rejects unknown ids", () => {
     const service = new AdminBotService();
     const deadline = DEADLINE_VENUES.find((entry) => entry.link)!;
-    unwrap(service.upsertLabMember({ id: "linked", name: "Linked", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "linked", name: "Linked", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("linked", {
@@ -1526,7 +1547,7 @@ describe("AdminBotService", () => {
   // and no admin could plan against.
   it("takes hours on a partial time-off row and refuses them on a whole-day one", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "hours", name: "Hours", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "hours", name: "Hours", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("hours", {
@@ -1574,7 +1595,7 @@ describe("AdminBotService", () => {
 
   it("lets a member self-edit milestones, links and the non-Jinesis time-off kinds", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "plan", name: "Plan", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "plan", name: "Plan", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("plan", {
@@ -1652,7 +1673,7 @@ describe("AdminBotService", () => {
 
   it("restricts the availability doc link to https Google Docs or Drive hosts", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "doc", name: "Doc", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "doc", name: "Doc", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("doc", {
@@ -1686,7 +1707,7 @@ describe("AdminBotService", () => {
 
   it("saves an OpenReview id shaped like a real tilde id and rejects everything else", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "or", name: "OR", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "or", name: "OR", privilege_level: "member" }));
 
     const saved = unwrap(service.updateOwnProfile("or", { openreview_id: "~Jane_Doe1" }));
     expect(saved.openreview_id).toBe("~Jane_Doe1");
@@ -1708,7 +1729,7 @@ describe("AdminBotService", () => {
 
   it("validates each social link against its own platform's URL shape", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "social", name: "Social", privilege_level: "member" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "social", name: "Social", privilege_level: "member" }));
 
     const saved = unwrap(
       service.updateOwnProfile("social", {
@@ -1752,6 +1773,7 @@ describe("AdminBotService", () => {
 
     const student = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "student",
         name: "Student",
         privilege_level: "member",
@@ -1762,6 +1784,7 @@ describe("AdminBotService", () => {
 
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "wrong-domain",
         name: "Wrong Domain",
         privilege_level: "member",
@@ -1772,6 +1795,7 @@ describe("AdminBotService", () => {
     // The whole point of external_collaborator is people outside the department directory.
     const collaborator = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "collab",
         name: "Collaborator",
         privilege_level: "external_collaborator",
@@ -1785,6 +1809,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "resave",
         name: "Resave",
         privilege_level: "member",
@@ -1803,6 +1828,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "cal",
         name: "Cal",
         privilege_level: "member",
@@ -1828,7 +1854,7 @@ describe("AdminBotService", () => {
     try {
       vi.setSystemTime(new Date("2026-08-01T00:00:00Z"));
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "stamp", name: "Stamp", privilege_level: "member" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "stamp", name: "Stamp", privilege_level: "member" }));
 
       const first = unwrap(
         service.updateOwnProfile("stamp", {
@@ -1867,6 +1893,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const member = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "unspecified-member",
         name: "Unspecified Member",
       }),
@@ -2057,8 +2084,8 @@ describe("AdminBotService", () => {
   it("sends a member nudge over Slack immediately (no approval step), skipping members without a slack_user_id", async () => {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
-    unwrap(service.upsertLabMember({ id: "no-slack", name: "No Slack" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "no-slack", name: "No Slack" }));
 
     const result = unwrap(
       await service.sendMemberNudge(
@@ -2092,11 +2119,135 @@ describe("AdminBotService", () => {
     expect(service.listAuditEvents().map((event) => event.type)).toContain("member_nudge.sent");
   });
 
+  // The allowlist. The roster is not a list of lab members -- it carries coauthors at other
+  // institutions, people interviewed once, and 92 rows with no member type at all, and every one of
+  // them was being DMed because eligibility was opt-out. Checked here rather than in the sweeps
+  // because here is the one place all fifteen of them pass through.
+  describe("nudge list", () => {
+    async function nudge(service: AdminBotService, id: string) {
+      return unwrap(
+        await service.sendMemberNudge(
+          { channel: "slack", recipient_member_ids: [id], message: "Ping." },
+          "admin-1",
+        ),
+      );
+    }
+
+    function labWith(member: Record<string, unknown>): AdminBotService {
+      const service = new AdminBotService(undefined, {
+        executor: { execute: vi.fn(async () => ({ handled: true })) },
+      });
+      unwrap(service.upsertLabMember(member as never));
+      return service;
+    }
+
+    it("says nothing to somebody nobody put on it", async () => {
+      const service = labWith({ id: "guest", name: "Guest Coauthor", slack_user_id: "U1" });
+      const result = await nudge(service, "guest");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([
+        { member_id: "guest", reason: "member is not on the nudge list" },
+      ]);
+    });
+
+    // Not even the in-app copy. A portal notification is still AdminBot addressing somebody, and
+    // the dashboard would nag them with it on their next sign-in.
+    it("files no notification for somebody it may not write to", async () => {
+      const service = labWith({ id: "guest", name: "Guest Coauthor", slack_user_id: "U1" });
+      await nudge(service, "guest");
+      expect(unwrap(service.listMemberNotifications("guest")).notifications).toEqual([]);
+    });
+
+    it("sends to somebody the lab added", async () => {
+      const service = labWith({
+        id: "mei",
+        name: "Mei Chen",
+        slack_user_id: "U1",
+        receives_nudges: true,
+      });
+      expect((await nudge(service, "mei")).created).toHaveLength(1);
+    });
+
+    // Off the list is a decision, not a gap: an admin who removed somebody must not have them
+    // quietly restored by anything that writes the record afterwards.
+    it("treats an explicit false as off", async () => {
+      const service = labWith({
+        id: "mei",
+        name: "Mei Chen",
+        slack_user_id: "U1",
+        receives_nudges: false,
+      });
+      expect((await nudge(service, "mei")).created).toEqual([]);
+    });
+
+    // The one-time population. `full` is the criterion because it is what the spreadsheet already
+    // carries for "this person is in the lab", and it is what the coauthors and blank rows fail.
+    it("seeds the lab's own people and nobody else", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      unwrap(
+        service.upsertLabMember({ id: "kai", name: "Kai Ito", member_type: "full, coauthor-major" }),
+      );
+      unwrap(service.upsertLabMember({ id: "guest", name: "Guest", member_type: "coauthor-major" }));
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank Row" }));
+      unwrap(
+        service.upsertLabMember({ id: "gone", name: "Gone", member_type: "full", status: "alumni" }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added.toSorted()).toEqual(["kai", "mei"]);
+      expect(service.listAuditEvents().map((event) => event.type)).toContain("nudge_list.seeded");
+    });
+
+    it("reports without writing when it is only asked to simulate", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      expect(
+        unwrap(service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: true })).added,
+      ).toEqual(["mei"]);
+      expect(
+        unwrap(service.listLabMembers()).members.find((member) => member.id === "mei")
+          ?.receives_nudges,
+      ).toBeUndefined();
+    });
+
+    // Safe to run twice: it fills in the absence of a decision and never overrides one, so an
+    // admin who took somebody off the list does not get them back on the next run.
+    it("leaves a decision already made alone", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "removed",
+          name: "Removed",
+          member_type: "full",
+          receives_nudges: false,
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added).toEqual([]);
+      expect(result.already_decided).toBe(1);
+    });
+
+    it("refuses to let a member add themselves", () => {
+      const service = labWith({ id: "guest", name: "Guest", slack_user_id: "U1" });
+      const result = service.updateOwnProfile("guest", { receives_nudges: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe(
+          "receives_nudges cannot be changed from a self profile update",
+        );
+      }
+    });
+  });
+
   it("sends a member nudge over email, requiring a subject and skipping members without an email", async () => {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "e1", name: "Has Email", email: "e1@example.test" }));
-    unwrap(service.upsertLabMember({ id: "e2", name: "No Email" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "e1", name: "Has Email", email: "e1@example.test" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "e2", name: "No Email" }));
 
     const missingSubject = await service.sendMemberNudge(
       { channel: "email", recipient_member_ids: ["e1"], message: "hi" },
@@ -2134,7 +2285,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService(undefined, {
       executor: { execute: vi.fn(async () => ({ handled: false })) },
     });
-    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
 
     const result = unwrap(
       await service.sendMemberNudge(
@@ -2272,7 +2423,7 @@ describe("AdminBotService", () => {
   // checklist stayed permanently unfinished and could not drive a reminder.
   describe("onboarding step tracking", () => {
     function seed(service: AdminBotService, id: string, extra: Record<string, unknown> = {}) {
-      return unwrap(service.upsertLabMember({ id, name: id, slack_user_id: `U-${id}`, ...extra }));
+      return unwrap(service.upsertLabMember({ receives_nudges: true, id, name: id, slack_user_id: `U-${id}`, ...extra }));
     }
 
     it("starts every member with the LinkedIn step outstanding", () => {
@@ -2322,7 +2473,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       seed(service, "sam");
       unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
-      const edited = unwrap(service.upsertLabMember({ id: "sam", name: "Sam Student" }));
+      const edited = unwrap(service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam Student" }));
       expect(edited.onboarding?.steps.find((step) => step.id === "linkedin")?.status).toBe(
         "complete",
       );
@@ -2360,9 +2511,9 @@ describe("AdminBotService", () => {
     it("nudges each outstanding member once, with the step's own links", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "kai", name: "Kai", slack_user_id: "U2" }));
-      unwrap(service.upsertLabMember({ id: "done", name: "Done", slack_user_id: "U3" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "kai", name: "Kai", slack_user_id: "U2" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "done", name: "Done", slack_user_id: "U3" }));
       unwrap(service.setOnboardingStep("done", "linkedin", true, "done"));
 
       const result = unwrap(
@@ -2381,7 +2532,7 @@ describe("AdminBotService", () => {
     it("sends nothing when everyone has already done the step", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam", slack_user_id: "U1" }));
       unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
 
       expect(
@@ -2392,8 +2543,8 @@ describe("AdminBotService", () => {
     it("skips members with no route on the chosen channel instead of failing the batch", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "noslack", name: "No Slack" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "noslack", name: "No Slack" }));
 
       const result = unwrap(
         await service.nudgeOnboardingStep({ step_id: "linkedin", channel: "slack" }, "admin-1"),
@@ -2405,7 +2556,7 @@ describe("AdminBotService", () => {
     it("carries a subject on the email channel and honours an override message", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", email: "sam@example.com" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam", email: "sam@example.com" }));
 
       const result = unwrap(
         await service.nudgeOnboardingStep(
@@ -2424,6 +2575,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           notes: "Joined month: 2026-03\nWhatsApp: +1 555 0100\nPrefers async check-ins.",
@@ -2445,6 +2597,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           location: "Toronto",
@@ -2465,6 +2618,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           notes: "Research interests: reasoning, alignment",
@@ -2481,7 +2635,7 @@ describe("AdminBotService", () => {
 
     it("is a no-op on a second run", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Joined month: 2026-03" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "m1", name: "Ada", notes: "Joined month: 2026-03" }));
 
       unwrap(service.migrateMemberNotesToFields("admin"));
       const second = unwrap(service.migrateMemberNotesToFields("admin"));
@@ -2494,7 +2648,7 @@ describe("AdminBotService", () => {
 
     it("leaves a member with only free-text notes completely alone", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Just a note." }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "m1", name: "Ada", notes: "Just a note." }));
 
       const result = unwrap(service.migrateMemberNotesToFields("admin"));
 
@@ -2602,9 +2756,9 @@ describe("AdminBotService", () => {
 
     it("stamps counts onto the linked members it measured", async () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "quiet", name: "Quiet", slack_user_id: "U2" }));
-      unwrap(service.upsertLabMember({ id: "unlinked", name: "Unlinked" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "quiet", name: "Quiet", slack_user_id: "U2" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "unlinked", name: "Unlinked" }));
 
       const result = unwrap(
         await service.refreshMemberDirectoryFromSlack(
@@ -2634,7 +2788,7 @@ describe("AdminBotService", () => {
     // whole lab inactive on one bad night.
     it("leaves the previous reading alone for a member it could not measure", async () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "chatty", name: "Chatty", slack_user_id: "U1" }));
       unwrap(
         await service.refreshMemberDirectoryFromSlack(
           { fetchSlackMessageCounts: async () => new Map([["U1", 5]]) },
@@ -2660,6 +2814,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           name: "Ada Lovelace",
           privilege_level: "admin",
@@ -2673,6 +2828,7 @@ describe("AdminBotService", () => {
       const service = seeded();
       const saved = unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           availability: [
             { start: "2026-04-01", end: "2026-04-30", hours_per_week: 10, project: "Writing" },
@@ -2688,6 +2844,7 @@ describe("AdminBotService", () => {
       const service = seeded();
       const saved = unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           time_off: [
             { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
@@ -2702,7 +2859,7 @@ describe("AdminBotService", () => {
     // never as a thrown TypeError.
     it("refuses a new member with no name, without throwing", () => {
       const service = new AdminBotService();
-      const result = service.upsertLabMember({ id: "ghost", availability: [] } as never);
+      const result = service.upsertLabMember({ receives_nudges: true, id: "ghost", availability: [] } as never);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.status).toBe(400);
@@ -2712,7 +2869,7 @@ describe("AdminBotService", () => {
 
     it("still refuses a patch that blanks the name outright", () => {
       const service = seeded();
-      const result = service.upsertLabMember({ id: "ada", name: "   " } as never);
+      const result = service.upsertLabMember({ receives_nudges: true, id: "ada", name: "   " } as never);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toBe("member name is required");
@@ -2725,6 +2882,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank",
           name: "Blank",
           privilege_level: "member",
@@ -2733,6 +2891,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           privilege_level: "member",
@@ -2750,7 +2909,7 @@ describe("AdminBotService", () => {
           openreview_id: "~Full_Member1",
         }),
       );
-      unwrap(service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "gone", name: "Gone", status: "alumni" }));
 
       const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
       expect(result.members.map((member) => member.id)).toEqual(["blank"]);
@@ -2777,7 +2936,7 @@ describe("AdminBotService", () => {
     // renders an admin-owned control disabled.
     it("chases exactly the fields the page marks required and lets a member fill in", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "blank", name: "Blank", privilege_level: "member" }));
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
       expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
@@ -2790,6 +2949,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "done",
           name: "Done",
           privilege_level: "member",
@@ -2814,6 +2974,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank1",
           name: "Blank One",
           slack_user_id: "U1",
@@ -2821,6 +2982,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank2",
           name: "Blank Two",
           slack_user_id: "U2",
@@ -2828,6 +2990,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           calendar_email: "full@gmail.com",
@@ -2887,6 +3050,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "both",
           name: "Both",
           slack_user_id: "U9",
@@ -2910,7 +3074,7 @@ describe("AdminBotService", () => {
           completeMember({ id: "nearly", slack_user_id: "U7", privilege_level: "member" }),
         ),
       );
-      unwrap(service.upsertLabMember({ id: "nearly", whatsapp: "" } as never));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "nearly", whatsapp: "" } as never));
       const result = unwrap(
         await service.sendMandatoryFieldsReminders("cron", { include: "profile" }),
       );
@@ -2925,6 +3089,7 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember(completeMember({ id: "planner", privilege_level: "member" })));
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank",
           name: "Blank",
           slack_user_id: "U8",
@@ -2959,7 +3124,7 @@ describe("AdminBotService", () => {
     it("leaves a member alone for three days after reminding them", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "blank1", name: "Blank One", slack_user_id: "U1" }));
 
       const first = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(first.created).toHaveLength(1);
@@ -2973,7 +3138,7 @@ describe("AdminBotService", () => {
     it("reminds again once the window has passed", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "blank1", name: "Blank One", slack_user_id: "U1" }));
 
       unwrap(await service.sendMandatoryFieldsReminders("cron"));
       // Four days on, the same still-incomplete profile is fair game again.
@@ -2991,6 +3156,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           calendar_email: "full@gmail.com",
@@ -3030,6 +3196,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor, reviewSlackProfilePhoto });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "bad",
           name: "Needs Update",
           status: "active",
@@ -3038,6 +3205,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "good",
           name: "Compliant",
           status: "part_time",
@@ -3046,6 +3214,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "skip",
           name: "Alumni",
           status: "alumni",
@@ -3076,6 +3245,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor, polishSlackProfilePhoto });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "sam",
           name: "Sam",
           slack_user_id: "U-SAM",
@@ -3101,6 +3271,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "unlinked",
           name: "Unlinked",
           email: "unlinked@cs.toronto.edu",
@@ -3108,6 +3279,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "already-linked",
           name: "Already Linked",
           email: "already@cs.toronto.edu",
@@ -3139,6 +3311,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           slack_user_id: "U1",
@@ -3164,6 +3337,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "stale-tz",
           name: "Stale Timezone",
           email: "stale@cs.toronto.edu",
@@ -3173,6 +3347,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "no-slack-tz",
           name: "No Slack Timezone",
           email: "noslacktz@cs.toronto.edu",
@@ -3204,6 +3379,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "no-slack",
           name: "No Slack",
           email: "noslack@cs.toronto.edu",

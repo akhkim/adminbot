@@ -21,6 +21,7 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
   });
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "zhijing",
       name: "Zhijing Jin",
       privilege_level: "admin",
@@ -29,6 +30,7 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       privilege_level: "member",

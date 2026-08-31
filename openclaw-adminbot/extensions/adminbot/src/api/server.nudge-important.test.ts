@@ -9,6 +9,7 @@ describe("POST /nudges/send", () => {
       executor: { execute: async () => ({ handled: true }) },
     });
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       privilege_level: "member",

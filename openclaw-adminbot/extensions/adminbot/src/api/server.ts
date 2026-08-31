@@ -3350,6 +3350,24 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/nudge-list/seed") {
+    // Rewrites stored member records and decides who AdminBot may write to, so it takes a genuine
+    // admin member session rather than the shared service principal -- the same rule that keeps
+    // `receives_nudges` off the service principal's whitelisted profile write. It simulates unless
+    // the body says otherwise.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.seedNudgeListFromMemberTypes({
+        actor: principalActor(principal),
+        dryRun: body.dry_run !== false,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/notes/migrate") {
     // Rewrites stored member records, so it takes a genuine admin session rather than the shared
     // service principal: unlike the cron-driven routes, the caller chooses when this happens.

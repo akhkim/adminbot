@@ -3,6 +3,7 @@ import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
+  adminBotReceivesNudges,
   isAdminBotFullMember,
   type AdminBotMandatoryProfileField,
   type AdminBotProfileReminderScope,
@@ -5895,6 +5896,65 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Put the lab's own people on the nudge list, once, and leave every decision already made alone.
+   *
+   * The allowlist starts empty, which is the only honest default for a list whose point is that
+   * somebody chose each name -- but an empty list also means the lab's real members stop being
+   * chased, so there has to be a first population and this is it. `full` is the criterion because
+   * it is the one the spreadsheet already carries for "this person is in the lab", and it is the
+   * distinction the 124 coauthors, acquaintances and blank rows fail.
+   *
+   * Only members whose flag has never been set are touched. That is what makes it safe to run
+   * twice: an admin who removed somebody stays removed, because `false` is a decision and this
+   * only fills in the absence of one. It never removes anybody -- taking somebody off the list is
+   * an admin editing a record, not a sweep.
+   */
+  seedNudgeListFromMemberTypes(params: { actor: string; dryRun: boolean }): AdminBotServiceResponse<{
+    dry_run: boolean;
+    members_scanned: number;
+    members_added: number;
+    added: string[];
+    /** Already decided either way, so left as they are. Reported so the count is explicable. */
+    already_decided: number;
+  }> {
+    const members = this.store.listLabMembers();
+    const now = new Date().toISOString();
+    const added: string[] = [];
+    let alreadyDecided = 0;
+    for (const member of members) {
+      if (member.receives_nudges !== undefined) {
+        alreadyDecided += 1;
+        continue;
+      }
+      if (!isActiveRosterMember(member) || !adminBotIsFullMemberType(member.member_type)) {
+        continue;
+      }
+      added.push(member.id);
+      if (!params.dryRun) {
+        this.store.saveLabMember({ ...member, receives_nudges: true, updated_at: now });
+      }
+    }
+    if (!params.dryRun && added.length > 0) {
+      this.recordAudit({
+        type: "nudge_list.seeded",
+        actor: params.actor,
+        details: { members_added: added.length, member_ids: added },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        dry_run: params.dryRun,
+        members_scanned: members.length,
+        members_added: added.length,
+        added,
+        already_decided: alreadyDecided,
+      },
+    };
+  }
+
   migrateMemberNotesToFields(actor: string): AdminBotServiceResponse<{
     membersScanned: number;
     membersUpdated: number;
@@ -6617,6 +6677,18 @@ export class AdminBotService {
       const member = this.store.getLabMember(memberId);
       if (!member) {
         skipped.push({ member_id: memberId, reason: "member not found" });
+        continue;
+      }
+      // The allowlist, checked here because here is the only place every nudge passes: fifteen
+      // sweeps, the escalation pass and the admin's own hand-written nudge all funnel through this
+      // loop. Gating it in the sweeps instead would mean the next sweep somebody writes is a new
+      // way to mail a stranger.
+      //
+      // Ahead of the notification write on purpose. Somebody the lab has decided not to contact
+      // does not get a portal notification about it either -- that is still AdminBot addressing
+      // them, and it is what the dashboard would nag them with on their next sign-in.
+      if (!adminBotReceivesNudges(member)) {
+        skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
         continue;
       }
       // Filed before the send, and kept whatever the send does. Slack is where the lab talks, but
@@ -7974,6 +8046,9 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   // Decide who the batch sweeps address, so they are not facts a member states about themselves.
   "test_onboard_batch",
   "member_type",
+  // The nudge allowlist. Refused loudly rather than dropped quietly: a member who could add
+  // themselves would make the list something other than what the lab put on it.
+  "receives_nudges",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -8340,6 +8415,12 @@ function validateLabMember(
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";
+  }
+  // Typed rather than coerced. An admin who sends "true" or 1 would otherwise store a value that
+  // adminBotReceivesNudges reads as off, and the symptom would be a member who is on the list
+  // according to the record and silent according to the sweeps.
+  if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
+    return "member receives_nudges must be true or false";
   }
   const emailError = validateCsEmail(member.email, privilegeLevel, existingEmail);
   if (emailError) {

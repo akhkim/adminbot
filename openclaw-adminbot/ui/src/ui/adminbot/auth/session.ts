@@ -3487,6 +3487,34 @@ export async function runPaperSlotReminder(
   };
 }
 
+/**
+ * Populates the nudge list from the roster's own member types, once.
+ *
+ * Server-computed like the reminder above: this sends no names. It only ever adds people already
+ * marked as full lab members and never overrides a decision an admin has made, so pressing it
+ * twice is the same as pressing it once.
+ */
+export async function seedNudgeList(
+  sessionToken: string,
+  baseUrl: string,
+  dryRun: boolean,
+): Promise<AuthResult<{ added: number; alreadyDecided: number }>> {
+  const result = await authedJson(baseUrl, "/members/nudge-list/seed", "POST", sessionToken, {
+    dry_run: dryRun,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { members_added?: number; already_decided?: number } | undefined;
+  return {
+    ok: true,
+    value: { added: body?.members_added ?? 0, alreadyDecided: body?.already_decided ?? 0 },
+  };
+}
+
 /** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
 export async function runMandatoryFieldsReminder(
   sessionToken: string,

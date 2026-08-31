@@ -28,6 +28,7 @@ function serviceWithMei() {
   });
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       privilege_level: "trial",
@@ -55,7 +56,7 @@ describe("a change of standing re-opens the checklist", () => {
     acknowledgeEverything(service, "mei");
     expect(meiOnboarding(service).steps.every((step) => step.status === "complete")).toBe(true);
 
-    unwrap(service.upsertLabMember({ id: "mei", privilege_level: "member" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", privilege_level: "member" } as never));
 
     const after = meiOnboarding(service);
     const reopened = after.steps.filter((step) => step.status !== "complete").map((s) => s.id);
@@ -70,7 +71,7 @@ describe("a change of standing re-opens the checklist", () => {
     const { service } = serviceWithMei();
     acknowledgeEverything(service, "mei");
     const before = meiOnboarding(service).opened_at;
-    unwrap(service.upsertLabMember({ id: "mei", status: "part_time" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", status: "part_time" } as never));
     const after = meiOnboarding(service);
     expect(after.reason).toBe("status_change");
     expect(after.opened_at).not.toBe(before);
@@ -83,7 +84,7 @@ describe("a change of standing re-opens the checklist", () => {
     // record would read every save that omits `status` as a status change.
     const { service } = serviceWithMei();
     acknowledgeEverything(service, "mei");
-    unwrap(service.upsertLabMember({ id: "mei", timezone: "Europe/Zurich" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", timezone: "Europe/Zurich" } as never));
     expect(meiOnboarding(service).steps.every((step) => step.status === "complete")).toBe(true);
   });
 });
@@ -132,13 +133,13 @@ describe("chasing an open checklist", () => {
     expect(unwrap(await service.chaseOpenOnboarding("cron")).nudged).toEqual([]);
 
     const { service: gone } = serviceWithMei();
-    gone.upsertLabMember({ id: "mei", status: "alumni" } as never);
+    gone.upsertLabMember({ receives_nudges: true, id: "mei", status: "alumni" } as never);
     expect(unwrap(await gone.chaseOpenOnboarding("cron")).nudged).toEqual([]);
   });
 
   it("files a notification even when the member has no Slack account", async () => {
     const { service } = serviceWithMei();
-    unwrap(service.upsertLabMember({ id: "ben", name: "Ben Nevis", status: "active" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "ben", name: "Ben Nevis", status: "active" } as never));
     const member = unwrap(service.listLabMembers()).members.find((m) => m.id === "ben")!;
     (service as never as { store: { saveLabMember: (m: unknown) => void } }).store.saveLabMember({
       ...member,

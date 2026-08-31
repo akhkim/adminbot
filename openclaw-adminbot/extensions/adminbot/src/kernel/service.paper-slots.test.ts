@@ -28,6 +28,7 @@ function serviceWithDelivery(): AdminBotService {
 function seed(service: AdminBotService): void {
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "ada",
       name: "Ada Lovelace",
       privilege_level: "member",
@@ -36,6 +37,7 @@ function seed(service: AdminBotService): void {
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "bob",
       name: "Bob Coauthor",
       privilege_level: "member",
@@ -91,6 +93,7 @@ describe("setPaperSlot", () => {
     seed(service);
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "eve",
         name: "Eve Outsider",
         privilege_level: "member",
@@ -216,6 +219,7 @@ describe("collectPaperNudgeBatches", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "ada",
         name: "Ada Lovelace",
         privilege_level: "member",

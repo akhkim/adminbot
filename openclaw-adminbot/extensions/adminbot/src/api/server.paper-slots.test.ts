@@ -90,7 +90,11 @@ async function startLab(): Promise<{ baseUrl: string; sent: string[][] }> {
     { id: "bob", name: "Bob Coauthor", privilege_level: "member", slack_user_id: "U-BOB" },
     { id: "zhijing", name: "Zhijing Jin", privilege_level: "admin", slack_user_id: "U-ZJ" },
   ]) {
-    const result = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    // On the nudge list: the list is opt-in, and these three exist to be chased about slots.
+    const result = mock.service.upsertLabMember({
+      receives_nudges: true,
+      ...member,
+    } as AdminBotLabMemberInput);
     if (!result.ok) {
       throw new Error(`seed ${member.id}: ${result.error.message}`);
     }
@@ -131,6 +135,7 @@ async function call(
 async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   const mock = mockFor(baseUrl);
   const seeded = mock.service.upsertLabMember({
+    receives_nudges: true,
     id: "zhijing",
     name: "Zhijing Jin",
     email: "zhijing@cs.toronto.edu",
@@ -430,6 +435,7 @@ describe("the global nudge, end to end", () => {
   it("says up front that somebody cannot be reached", async () => {
     const { baseUrl } = await startLab();
     mockFor(baseUrl).service.upsertLabMember({
+      receives_nudges: true,
       id: "ada",
       name: "Ada Lovelace",
       privilege_level: "member",

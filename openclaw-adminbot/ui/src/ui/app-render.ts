@@ -84,6 +84,7 @@ import {
 import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
+  seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import {
   clearLogisticsDraft,
@@ -3229,6 +3230,9 @@ export function renderApp(state: AppViewState) {
                 void remindAdminBotIncompleteProfiles(state, scope).finally(() =>
                   requestHostUpdate?.(),
                 );
+              },
+              onSeedNudgeList: () => {
+                void seedAdminBotNudgeList(state).finally(() => requestHostUpdate?.());
               },
               // The follow-up to a thin row is a look at the person, which is Lab Members' job.
               onOpenMember: (memberId: string) => {

@@ -85,6 +85,9 @@ function mockFor(baseUrl: string): ReturnType<typeof createAdminBotMockService> 
 
 function seedMember(baseUrl: string, id: string, body: Record<string, unknown>): void {
   const result = mockFor(baseUrl).service.upsertLabMember({
+    // Seeded onto the nudge list unless the case says otherwise: the list is opt-in, and a fixture
+    // that is not on it can never be mailed. See adminBotReceivesNudges.
+    receives_nudges: true,
     ...(body as AdminBotLabMemberInput),
     id,
   });

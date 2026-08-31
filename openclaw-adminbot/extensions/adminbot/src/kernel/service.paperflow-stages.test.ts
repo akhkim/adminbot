@@ -30,6 +30,7 @@ function service(overrides: { botEmail?: string; priority?: string } = {}): Admi
 function seed(target: AdminBotService): void {
   unwrap(
     target.upsertLabMember({
+      receives_nudges: true,
       id: "max",
       name: "Maximilian Mordig",
       privilege_level: "external_collaborator",
@@ -38,6 +39,7 @@ function seed(target: AdminBotService): void {
   );
   unwrap(
     target.upsertLabMember({
+      receives_nudges: true,
       id: "rahul",
       name: "Rahul Babu Shrestha",
       privilege_level: "member",
@@ -148,6 +150,7 @@ describe("sendPaperflowStageNudges", () => {
     seed(target);
     unwrap(
       target.upsertLabMember({
+        receives_nudges: true,
         id: "ada",
         name: "Ada Lovelace",
         privilege_level: "member",
