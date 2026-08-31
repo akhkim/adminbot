@@ -75,3 +75,39 @@ describe("the address the guide names for signing in", () => {
     expect(sent[0]?.body).toContain("using typed@cs.toronto.edu");
   });
 });
+
+// Slack delivers a Connect invite directly, returning an id and no shareable url, when the address
+// already has an account -- which is every alumnus already in the workspace. That is a sent
+// invitation, and the copy says so rather than the send refusing.
+describe("a Slack invite that comes back without a url", () => {
+  it("sends, with the sentence that is actually true", async () => {
+    const sent: Array<{ body: string }> = [];
+    const send = createAdminBotOnboardingSender({
+      // The alumni copy names both, and the composer refuses a template whose deployment tokens
+      // are unset -- so they are supplied here rather than read off whatever ran the test.
+      env: {
+        ADMINBOT_SLACK_INVITE_URL: "https://join.slack.com/t/jinesis/shared_invite/test",
+        ADMINBOT_DASHBOARD_URL: "https://admin.example.test",
+        ADMINBOT_CONTACT_EMAILS: "akim@cs.toronto.edu",
+      },
+      provisionDriveWorkspace: async () => ({
+        folderId: "f",
+        link: "https://drive.test/f",
+      }),
+      inviteToSlackConnect: async () => ({ url: "" }),
+      sendEmail: async ({ body }) => {
+        sent.push({ body });
+      },
+    });
+    const result = await send({
+      template_id: "alumni",
+      name: "Yuen Chen",
+      email: "yuenc2@illinois.edu",
+      slack_channel_id: "C09MANEUPPZ",
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(sent[0]?.body).toContain(
+      "check your inbox for the Slack invitation",
+    );
+  });
+});

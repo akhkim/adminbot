@@ -142,15 +142,29 @@ async function realSlackInviter(params: {
     .split(/\r?\n/u)
     .findLast((entry) => entry.trim().length > 0);
   const payload = line
-    ? (JSON.parse(line) as { ok?: boolean; url?: string; error?: string })
+    ? (JSON.parse(line) as { ok?: boolean; url?: string; invite_id?: string; error?: string })
     : undefined;
-  if (!payload?.ok || !payload.url) {
+  if (!payload?.ok) {
+    // Everything stderr said, minus node's own trailer. Reporting only the last line meant the
+    // reason was almost always replaced by "(Use `node --trace-warnings ...`)", which named the
+    // one thing that was not the problem.
+    const detail = stderr
+      .trim()
+      .split(/\r?\n/u)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry && !entry.startsWith("(Use `node --trace-warnings"))
+      .slice(-5)
+      .join(" | ");
     throw new Error(
-      payload?.error ??
-        `the invite script returned no result: ${stderr.trim().split("\n").at(-1) ?? ""}`,
+      payload?.error ?? `the invite script returned no result: ${detail || "(no stderr)"}`,
     );
   }
-  return { url: payload.url };
+  // An empty url with an invite id is a sent invitation, not a failure: Slack delivers it directly
+  // when the address already has an account, which is every alumnus already in the workspace. The
+  // script says so and the sender copes -- its copy becomes "check your inbox for the Slack
+  // invitation" -- and this wrapper used to reject it on the way past, turning a delivered invite
+  // into a 502 that stopped the mail.
+  return { url: payload.url ?? "" };
 }
 
 const execFile = promisify(execFileCallback);
