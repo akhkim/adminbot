@@ -40,6 +40,14 @@ type PlannedSend = AdminBotOnboardingSendRequest & {
   slack_project_channels?: readonly string[];
   /** The matrix row whose follow-up access this send implies, when the person is external. */
   subgroup?: AdminBotExternalCollaboratorSubgroup;
+  /**
+   * Which cohort of the plan file this came from ("direct_matching", "test_onboard_3", ...).
+   *
+   * Carried so --group can select one. The cohorts are sent on different days and under different
+   * rules -- the applicants go out as a batch, the onboarding guides wait on a person reading
+   * them -- and --only matches names, which the composed applicant rows do not have.
+   */
+  group?: string;
   /** Free-text reminder of why this send is shaped the way it is; printed, never sent. */
   note?: string;
 };
@@ -52,6 +60,7 @@ export type Args = {
   receipts?: string;
   noEmail: boolean;
   redirectTo?: string;
+  groups: readonly string[];
 };
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -62,7 +71,7 @@ export function parseArgs(argv: readonly string[]): Args {
   const plan = valueOf("--plan");
   if (!plan) {
     throw new Error(
-      "usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight] [--only <names>] [--no-email] [--redirect-to <address>] [--send --yes] [--receipts <file>]",
+      "usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight] [--group <cohorts>] [--only <names>] [--no-email] [--redirect-to <address>] [--send --yes] [--receipts <file>]",
     );
   }
   const send = argv.includes("--send");
@@ -88,6 +97,10 @@ export function parseArgs(argv: readonly string[]): Args {
     noEmail,
     ...(redirectTo ? { redirectTo } : {}),
     only: (valueOf("--only") ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    groups: (valueOf("--group") ?? "")
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean),
@@ -389,6 +402,7 @@ export function loadPlan(planPath: string): {
         continue;
       }
       sends.push({
+        group,
         template_id: templateId,
         name,
         email,
@@ -424,14 +438,28 @@ async function main(): Promise<void> {
   if (skipped.length > 0) {
     console.log("");
   }
+  const byGroup =
+    args.groups.length === 0
+      ? all
+      : all.filter((entry) => entry.group && args.groups.includes(entry.group));
+  if (byGroup.length === 0 && args.groups.length > 0) {
+    const available = [...new Set(all.map((entry) => entry.group).filter(Boolean))];
+    throw new Error(
+      `--group matched nothing in ${planPath}; it has: ${available.join(", ") || "(no groups: this is a flat plan)"}`,
+    );
+  }
   const plan =
     args.only.length === 0
-      ? all
-      : all.filter((entry) =>
+      ? byGroup
+      : byGroup.filter((entry) =>
           args.only.some((needle) => entry.name.toLowerCase().includes(needle.toLowerCase())),
         );
   if (plan.length === 0) {
     throw new Error(`--only matched nothing in ${planPath}`);
+  }
+  if (args.groups.length > 0) {
+    console.log(`cohort: ${args.groups.join(", ")} — ${plan.length} of ${all.length} send(s)`);
+    console.log("");
   }
   if (args.send) {
     if (args.noEmail) {
@@ -459,7 +487,7 @@ async function main(): Promise<void> {
   // tab does. Keep the file: it is the only evidence this batch went out.
   const receipts: Record<string, unknown>[] = [];
   for (const [index, planned] of plan.entries()) {
-    const { subgroup, note, ...request } = planned;
+    const { subgroup, note, group: _group, ...request } = planned;
     const performed: string[] = [];
     // Under --send the recorders are replaced one for one by the real thing: the default
     // `sendEmail` (gog), and the same out-of-process invite script the service spawns. Everything

@@ -40,6 +40,17 @@ describe("parseArgs", () => {
     ).toThrow(/needs an address/u);
   });
 
+  it("reads the cohort filter off the argv", () => {
+    expect(
+      parseArgs(["--plan", "p.json", "--group", "direct_matching"]).groups,
+    ).toEqual(["direct_matching"]);
+    expect(parseArgs(["--plan", "p.json", "--group", "a,b"]).groups).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(parseArgs(["--plan", "p.json"]).groups).toEqual([]);
+  });
+
   it("reads both modes off the argv", () => {
     expect(parseArgs(["--plan", "p.json", "--no-email"]).noEmail).toBe(true);
     expect(
@@ -118,6 +129,24 @@ describe("loadPlan", () => {
     expect(sends.map((entry) => entry.email)).toEqual(["c@example.test"]);
     expect(skipped).toEqual([
       { name: "Emile", email: "e@example.test", reason: "confirm the pairing" },
+    ]);
+  });
+
+  // The cohorts go out on different days and under different rules -- the applicants as a batch,
+  // the onboarding guides once somebody has read them -- so each entry remembers which list it
+  // came from. --only cannot do this: it matches names, and the composed applicant rows have none.
+  it("remembers which cohort each send came from", () => {
+    const file = planFile({
+      direct_matching: [
+        { name: "A", email: "a@example.test", template_id: "t", needs: [] },
+      ],
+      test_onboard_3: [
+        { name: "B", email: "b@example.test", template_id: "t", needs: [] },
+      ],
+    });
+    expect(loadPlan(file).sends.map((entry) => entry.group)).toEqual([
+      "direct_matching",
+      "test_onboard_3",
     ]);
   });
 
