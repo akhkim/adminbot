@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  adminBotMandatoryProfileFields,
+  adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
 } from "../contracts/actions.js";
@@ -2764,7 +2764,6 @@ describe("AdminBotService", () => {
           "joined_month",
           "github_url",
           "linkedin_url",
-          "linkedin_urn",
           "cv_url",
           "intake_form_url",
           "openreview_id",
@@ -2773,14 +2772,41 @@ describe("AdminBotService", () => {
     });
 
     // The reminder and the profile page's required marks are one list now. Chasing a field the
-    // page calls optional is the bug this pins shut; `name` is the sole documented exception,
-    // because validateLabMember refuses a nameless member outright.
-    it("chases exactly the fields the profile page marks required, less name", () => {
+    // page calls optional is the bug this pins shut; `name` and the admin-owned fields are the
+    // documented exceptions -- validateLabMember refuses a nameless member outright, and the page
+    // renders an admin-owned control disabled.
+    it("chases exactly the fields the page marks required and lets a member fill in", () => {
       const service = new AdminBotService();
       unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(adminBotMandatoryProfileFields.filter((field) => field !== "name"));
+      expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
+    });
+
+    // The bug this pins shut: `linkedin_urn` is required of the record but only the lab can look it
+    // up, so a member whose own page read 100% complete was chased for it every three days with a
+    // message they could do nothing about. Nine people on the live roster were in that state.
+    it("leaves alone a member whose only blank is one the lab owes", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "done",
+          name: "Done",
+          privilege_level: "member",
+          calendar_email: "done@cs.toronto.edu",
+          location: "Toronto",
+          research_topics: ["nlp"],
+          correspondence_email: "done@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/done",
+          linkedin_url: "https://www.linkedin.com/in/done",
+          cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/done/viewform",
+          openreview_id: "~Done_Member1",
+        }),
+      );
+      expect(unwrap(service.listMembersWithIncompleteMandatoryFields()).members).toEqual([]);
     });
 
     it("sends one Slack reminder per member with an incomplete profile", async () => {
@@ -2870,8 +2896,27 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing one or more required fields");
+      expect(message).toContain("missing 11 required fields");
       expect(message).toContain("Your timeline is empty");
+    });
+
+    // The message names this member's own gap, not the lab-wide checklist. Telling somebody who is
+    // short one field about eleven others is what made these reminders read as untargeted noise.
+    it("names only the fields the recipient is actually missing", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember(
+          completeMember({ id: "nearly", slack_user_id: "U7", privilege_level: "member" }),
+        ),
+      );
+      unwrap(service.upsertLabMember({ id: "nearly", whatsapp: "" } as never));
+      const result = unwrap(
+        await service.sendMandatoryFieldsReminders("cron", { include: "profile" }),
+      );
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("missing one required field — WhatsApp.");
+      expect(message).not.toContain("Calendar email");
     });
 
     it("chases only the gap the caller asked for, and only the people it named", async () => {

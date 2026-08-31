@@ -4,6 +4,7 @@ import {
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   isAdminBotFullMember,
+  type AdminBotMandatoryProfileField,
   type AdminBotProfileReminderScope,
 } from "../contracts/actions.js";
 import type {
@@ -69,7 +70,7 @@ import {
   adminBotOnboardingRepeatChaseDays,
   adminBotExternalCollaboratorSubgroups,
   adminBotMandatoryProfileFieldLabels,
-  adminBotMandatoryProfileFields,
+  adminBotMemberAnswerableProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
   ADMINBOT_DEADLINE_TIME_PATTERN,
@@ -6196,34 +6197,38 @@ export class AdminBotService {
     if (due.length === 0) {
       return { ok: true, status: 200, payload: { created: [], skipped: [] } };
     }
-    // Grouped by the message they get rather than sent one request per person: three shapes at
-    // most, and everybody in a group is owed exactly the same sentence. A member missing both is
-    // told both in one message -- two separate nudges about the same page reads as a system that
-    // does not know what it already sent.
-    const groups = new Map<string, string[]>();
+    // Grouped by the message they get rather than sent one request per person: everybody in a group
+    // is owed exactly the same sentence, so they can share one send. The key is the gap itself now
+    // that the text names it -- people missing the same fields still batch, and nobody is told about
+    // a field somebody else is missing. A member missing both halves is told both in one message;
+    // two separate nudges about the same page reads as a system that does not know what it already
+    // sent.
+    const groups = new Map<string, { missingFields: string[]; timeline: boolean; ids: string[] }>();
     for (const row of due) {
-      const needsProfile = include !== "timeline" && row.missing_fields.length > 0;
-      const needsTimeline = include !== "profile" && row.timeline_short;
-      const key = `${needsProfile ? "p" : ""}${needsTimeline ? "t" : ""}`;
-      groups.set(key, [...(groups.get(key) ?? []), row.id]);
+      const missingFields = include !== "timeline" ? row.missing_fields : [];
+      const timeline = include !== "profile" && row.timeline_short;
+      const key = `${missingFields.join(",")}|${timeline}`;
+      const group = groups.get(key) ?? { missingFields, timeline, ids: [] };
+      group.ids.push(row.id);
+      groups.set(key, group);
     }
     const created: AdminBotMemberNudgeResult["created"] = [];
     const skipped: AdminBotMemberNudgeResult["skipped"] = [];
     const notified: string[] = [];
-    for (const [key, recipients] of groups) {
+    for (const { missingFields, timeline, ids: recipients } of groups.values()) {
+      const needsProfile = missingFields.length > 0;
       const result = await this.sendMemberNudge(
         {
           channel: "slack",
           recipient_member_ids: recipients,
-          message: buildProfileReminderMessage({
-            profile: key.includes("p"),
-            timeline: key.includes("t"),
-          }),
+          message: buildProfileReminderMessage({ missingFields, timeline }),
           kind: "profile",
-          title: key.includes("p")
-            ? "Your profile is missing required fields"
+          title: needsProfile
+            ? missingFields.length === 1
+              ? "Your profile is missing a required field"
+              : "Your profile is missing required fields"
             : "Your term timeline is empty",
-          tab: key.includes("p") ? "profile" : "adminbotTimeAvailability",
+          tab: needsProfile ? "profile" : "adminbotTimeAvailability",
           // Important: both halves are things only the member can do, and everything downstream --
           // scheduling, travel, the calendar's timezones -- is planned from them.
           important: true,
@@ -8086,12 +8091,12 @@ function isAdminBotReimbursementState(
 }
 
 // The one list, shared with the Control UI through the contracts module so the reminder can never
-// chase a field the profile page calls optional. See adminBotMandatoryProfileFields.
+// chase a field the profile page calls optional -- or one it calls required but will not let the
+// member type. See adminBotMemberAnswerableProfileFields for what each exclusion is for.
 //
-// name is dropped here even though the page marks it required: validateLabMember already refuses to
-// store a member with no name, so it can never actually be the reason a stored record is
-// incomplete.
-const MANDATORY_PROFILE_FIELDS = adminBotMandatoryProfileFields.filter((key) => key !== "name");
+// Both sides used to drop exactly one field and drop a *different* one, so the two counts agreed at
+// twelve while the two sets did not, and nothing in either page's arithmetic could show it.
+const MANDATORY_PROFILE_FIELDS = adminBotMemberAnswerableProfileFields;
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
     const value = member[key];
@@ -8144,18 +8149,6 @@ function byProfileProgress(
   return left.name.localeCompare(right.name);
 }
 
-// One shared, deterministic reminder rather than a message per missing field: the whole point of
-// this reminder is that nobody composes it, so its content can never be attacker- or
-// agent-controlled. Listing exactly which lab-wide fields are still checked (not each member's own
-// missing subset) keeps the message identical for every recipient, which is what lets it go out
-// through a single sendMemberNudge call instead of one per person.
-/**
- * The reminder, in the shape of whatever this person is actually missing.
- *
- * One message rather than two when both are outstanding: they are two halves of the same page, and
- * a member who gets one nudge about their profile and another about their timeline reads a system
- * that does not know what it already sent.
- */
 /**
  * The ask, urgent, with the reason attached to it.
  *
@@ -8207,15 +8200,35 @@ function buildRegistrationUpdateMessage(params: { venue: string; unregistered: n
   ].join("\n");
 }
 
-function buildProfileReminderMessage(needs: { profile: boolean; timeline: boolean }): string {
+/**
+ * The reminder, in the shape of whatever this person is actually missing.
+ *
+ * Their own missing subset, not the lab-wide list. Naming every checked field made a member who was
+ * short one item read a message about eleven others, which is how a reminder teaches people that it
+ * is not about them -- and it hid the linkedin_urn bug for as long as it ran, because a complete
+ * profile and a nearly complete one got the identical sentence.
+ *
+ * Still nobody's prose: the field names come from adminBotMandatoryProfileFieldLabels and the only
+ * caller-supplied part is *which* of those fixed labels appear, so the text remains impossible for
+ * a member or an agent to steer.
+ *
+ * One message rather than two when both halves are outstanding: they are two halves of the same
+ * page, and a member who gets one nudge about their profile and another about their timeline reads
+ * a system that does not know what it already sent.
+ */
+function buildProfileReminderMessage(needs: { missingFields: string[]; timeline: boolean }): string {
   const lines: string[] = [];
-  if (needs.profile) {
-    const fields = MANDATORY_PROFILE_FIELDS.map(
-      (key) => adminBotMandatoryProfileFieldLabels[key],
-    ).join(", ");
+  if (needs.missingFields.length > 0) {
+    const fields = needs.missingFields
+      .map((key) => adminBotMandatoryProfileFieldLabels[key as AdminBotMandatoryProfileField] ?? key)
+      .join(", ");
+    const count =
+      needs.missingFields.length === 1
+        ? "one required field"
+        : `${needs.missingFields.length} required fields`;
     lines.push(
-      `Quick reminder: your AdminBot profile is missing one or more required fields (${fields}).`,
-      "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
+      `Quick reminder: your AdminBot profile is missing ${count} — ${fields}.`,
+      "Open your profile page in the Control UI and fill them in — it saves as you type.",
     );
   }
   if (needs.timeline) {

@@ -21,7 +21,8 @@ import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-st
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
 import {
   AdminBotEmailModel,
-  gmailOneHourQuery,
+  GMAIL_SCAN_DEFAULT_LOOKBACK_MS,
+  gmailScanQuery,
   type EmailReplyPurpose,
   type ModelClassification,
   type ModelEmailDraft,
@@ -152,6 +153,10 @@ export type EmailAutomationSummary = {
   needs_review: number;
   skipped: number;
   errors: string[];
+  /** Where this pass started reading, so a run that caught up says so in its own output. */
+  scanned_since?: string;
+  /** Where the watermark now stands. Absent when a failure held it back. */
+  scanned_through?: string;
 };
 
 type GuidedDraftRequest = {
@@ -344,7 +349,11 @@ async function draftGuidedEmail(
   }
   return draft;
 }
-class StateStore {
+/**
+ * Exported for the watermark tests. Whether the mailbox scan resumes is the difference between a
+ * missed hour and a message nobody ever reads, so it is worth pinning without a Gmail account.
+ */
+export class StateStore {
   readonly db: DatabaseSync;
 
   constructor(databasePath: string) {
@@ -380,11 +389,65 @@ class StateStore {
         status TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS adminbot_email_scan (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        scanned_through TEXT NOT NULL
+      );
     `);
   }
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * How far the mailbox has been read, as a point this pass may resume from.
+   *
+   * Undefined on a mailbox this box has never scanned, which the caller turns into the default
+   * one-hour window rather than a first run that reads the whole archive.
+   */
+  scannedThrough(): Date | undefined {
+    const row = this.db
+      .prepare("SELECT scanned_through FROM adminbot_email_scan WHERE id = 1")
+      .get() as { scanned_through?: string } | undefined;
+    const at = row?.scanned_through ? Date.parse(row.scanned_through) : Number.NaN;
+    return Number.isNaN(at) ? undefined : new Date(at);
+  }
+
+  /**
+   * Move the watermark forward, never back.
+   *
+   * Only advanced by a pass that finished with nothing failed: a failure means some message in that
+   * window has not been dealt with, and moving the mark past it is the silent drop this watermark
+   * exists to stop. Monotonic because two passes overlapping -- a manual run beside the cron --
+   * must not rewind the mailbox.
+   */
+  markScannedThrough(at: Date): void {
+    const current = this.scannedThrough();
+    if (current && current.getTime() >= at.getTime()) {
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_email_scan (id, scanned_through) VALUES (1, ?)
+         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through`,
+      )
+      .run(at.toISOString());
+  }
+
+  /**
+   * Whether this message has already reached a terminal state.
+   *
+   * Asked before the classifier rather than only inside `begin`, which is where the same question
+   * used to be settled: the window can now overlap by design, so a message already dealt with must
+   * cost a row lookup and not a 122B model call. `processing` and `failed` are deliberately not
+   * settled -- both are retried, exactly as `begin` has always allowed.
+   */
+  isSettled(messageId: string): boolean {
+    const row = this.db
+      .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .get(messageId) as { status?: string } | undefined;
+    return row?.status === "completed" || row?.status === "needs_review";
   }
 
   getOnboarding(
@@ -486,14 +549,14 @@ class GoogleClient {
     return [...args, "--account", botEmail(), "--json", "--no-input"];
   }
 
-  async search(): Promise<EmailMessage[]> {
+  async search(since: Date): Promise<EmailMessage[]> {
     const result = await command(
       GOG,
       this.args([
         "gmail",
         "messages",
         "search",
-        gmailOneHourQuery(),
+        gmailScanQuery(since),
         "--max",
         "100",
         "--full",
@@ -1239,9 +1302,15 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     skipped: 0,
     errors: [],
   };
+  const runStart = new Date();
+  // Where this pass starts reading: the watermark when there is one, an hour back when there is
+  // not. gmailScanQuery clamps how far back a long outage may reach.
+  const since =
+    state.scannedThrough() ?? new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
   try {
-    const messages = await google.search();
+    const messages = await google.search(since);
     summary.found = messages.length;
+    summary.scanned_since = since.toISOString();
     // Nothing to file if nothing arrived, and an empty hour is most hours -- so the label check
     // is skipped rather than run on a pass that will not use it.
     if (messages.length > 0) {
@@ -1261,6 +1330,14 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       }
     };
     for (const message of messages) {
+      // Already dealt with on an earlier pass. The window overlaps on purpose now, so this is the
+      // common case for most of what a resumed scan returns -- and it has to cost a row lookup
+      // rather than a classification, or a catching-up pass would re-bill the model for a week of
+      // settled mail.
+      if (state.isSettled(message.id)) {
+        summary.skipped += 1;
+        continue;
+      }
       // Deterministic branch first: a recording notice is machine-readable and must never reach
       // the classifier, which would file it as unknown and park it for a human.
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
@@ -1333,6 +1410,14 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           await file(message.id, "failed");
         }
       }
+    }
+    // Only a pass that dealt with everything it found may move the watermark. A failure left in the
+    // window is a message that still has to be seen again, and advancing past it is exactly the
+    // silent drop this is here to stop. The mark is the moment the scan *started*, so mail that
+    // landed while the pass was running is read by the next one rather than skipped.
+    if (summary.failed === 0) {
+      state.markScannedThrough(runStart);
+      summary.scanned_through = runStart.toISOString();
     }
   } finally {
     state.close();

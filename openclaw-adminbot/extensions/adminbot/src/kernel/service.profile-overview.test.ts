@@ -54,11 +54,12 @@ describe("listMemberProfileOverview", () => {
   it("carries the denominator so no client has to count the mandatory fields itself", () => {
     const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
     const overview = unwrap(service.listMemberProfileOverview());
-    // Deliberately not `adminBotMandatoryProfileFields.length`: the service does not check `name`,
-    // because a member cannot be created without one, so the honest denominator is one smaller.
-    // A client counting the exported list would show everybody stuck one field short forever --
-    // which is exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(12);
+    // Deliberately not `adminBotMandatoryProfileFields.length`: the service checks neither `name`,
+    // because a member cannot be created without one, nor the admin-owned fields, because the
+    // member's own page will not let them type those -- so the honest denominator is two smaller.
+    // A client counting the exported list would show everybody stuck short forever, which is
+    // exactly why the count is carried rather than derived.
+    expect(overview.mandatory_field_count).toBe(11);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });

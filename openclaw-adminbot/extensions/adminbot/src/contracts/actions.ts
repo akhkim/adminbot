@@ -276,6 +276,34 @@ export const adminBotMandatoryProfileFields = [
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
 
+/**
+ * Mandatory fields whose answer only the lab can give.
+ *
+ * Required *of the record* and asked for on the admin editor, but never of the member: the profile
+ * page renders these disabled, so a member who has filled in every box they can see still has one
+ * of them blank. Chasing somebody for a field their own page will not let them type is a reminder
+ * they cannot act on, and this list is what keeps every reader agreeing on that.
+ *
+ * It is a list rather than a flag on the UI's field table because the reminder runs in the service,
+ * which cannot see that table. They disagreed: the page dropped `linkedin_urn` from its completion
+ * ledger and the reminder did not, so 173 of 174 active members read as complete on their own page
+ * and were chased every three days anyway -- nine of them for that field alone.
+ */
+export const adminBotAdminOwnedProfileFields = ["linkedin_urn"] as const;
+
+/**
+ * The mandatory fields a reminder may actually chase a member about.
+ *
+ * `name` is off it because validateLabMember already refuses to store a member without one, so it
+ * can never be the reason a stored record is incomplete; the admin-owned fields are off it because
+ * the member cannot answer them. What is left is the set the profile page marks required *and*
+ * lets the member fill in, which is the only set a nudge can honestly ask for.
+ */
+export const adminBotMemberAnswerableProfileFields = adminBotMandatoryProfileFields.filter(
+  (key): key is AdminBotMandatoryProfileField =>
+    key !== "name" && !(adminBotAdminOwnedProfileFields as readonly string[]).includes(key),
+);
+
 /** How many entries a member has on their Time Availability page, by list. */
 export type AdminBotMemberTimelineCounts = {
   availability: number;
