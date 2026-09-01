@@ -10876,7 +10876,7 @@
         ${unit(p.d, "days")}<span class="sep">:</span>${unit(pad(p.h), "hrs")}<span class="sep">:</span>${unit(pad(p.m), "min")}<span class="sep">:</span>${unit(pad(p.s), "sec")}
       </div>`
           : ""
-      }<div class="hlinks">${deadlineChangeNote(next)}${staleNote(next)}${historyNote(next)}${sourceLinks(next)}</div>`;
+      }<div class="hlinks">${staleNote(next)}${historyNote(next)}${sourceLinks(next)}</div>`;
     } else {
       delete hero.dataset.entryType;
       delete hero.dataset.archivalStatus;
@@ -10982,10 +10982,6 @@
         : "Updated";
     return `${label}: ${dates.map(fmtAoeDateTimeText).join(" → ")}`;
   }
-  function deadlineChangeNote(x) {
-    const change = deadlineChangeText(x);
-    return change ? `<span class="cnote"><strong>${esc(change)}</strong></span>` : "";
-  }
   function staleNote(x) {
     return x.stale ? `<span class="cnote">Source not observed in the latest sweep.</span>` : "";
   }
@@ -11010,7 +11006,6 @@
       <div class="cgroup" title="${esc(x.venue_group)} · ${esc(cap(x.deadline_label))}"><span class="cgroup-name">${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">${esc(cap(x.deadline_label))}</span></div>
       ${classificationLabels(x)}
       <div class="cdl">${fmtAoeDateTime(x.deadline_aoe)}</div>
-      ${deadlineChangeNote(x)}
       <div class="ccd"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</div>
       ${notif}${staleNote(x)}${historyNote(x)}${sourceLinks(x)}
     </div>`;
@@ -11029,7 +11024,7 @@
           ? `<a href="${esc(call)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>`
           : esc(x.name);
         const actions = sourceLinks(x);
-        return `<tr data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${u.cvar}"><td class="tcd">${fmtAoeDateTime(x.deadline_aoe)}${deadlineChangeNote(x)}</td>
+        return `<tr data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${u.cvar}"><td class="tcd">${fmtAoeDateTime(x.deadline_aoe)}</td>
       <td class="tcd countdown"${period === "upcoming" ? ` data-t="${x._sub}"` : ""}>${period === "past" ? "passed" : `${p.d}d ${pad(p.h)}:${pad(p.m)}:${pad(p.s)}`}</td>
       <td class="name"><span class="dot" style="--u:${u.cvar}"></span>${title}</td>
       <td class="meta"><span class="labels"><span class="badge">${type}</span>${classificationLabels(x)}</span></td><td class="meta">${esc(x.venue_group)}</td><td>${x.stale ? `<span class="cnote" title="Source not observed in the latest sweep.">stale</span>` : ""}${historyNote(x)}${actions}</td></tr>`;

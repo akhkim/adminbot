@@ -111,10 +111,11 @@ Both show the next deadline, aggregate counts, venue filters, search, and card, 
 views. The Control UI renders the board natively in its normal document flow; it does not embed the served
 page, so desktop and mobile retain one vertical scrolling surface.
 
-Every deadline date has the same compact history-icon position in the hero, card, grouped, and table
-views. The icon is disabled and gray when no history exists. An extended deadline uses a blue icon;
-opening it shows every recovered former date in sequence, or explains that the source did not expose
-the earlier value. The current date and time keep their normal text color.
+In the Control UI, every deadline date has the same compact history-icon position in the featured
+deadline panel and the card, grouped, and table views. The icon is disabled and gray when no history
+exists. An extended deadline uses a blue icon; opening it shows every recovered former date in
+sequence, or explains that the source did not expose the earlier value. The current date and time
+keep their normal text color.
 
 The served page is implemented by:
 
