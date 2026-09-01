@@ -271,3 +271,25 @@ describe("attendance nudge panel", () => {
     expect(container.querySelector("[data-testid='meetings-nudge-send']")).toBeNull();
   });
 });
+
+describe("the recordings archive panel", () => {
+  // This tab only lists meetings AdminBot has a summary for. Somebody looking for one it has no row
+  // for was given no indication the videos existed anywhere.
+  it("points at the share channel even when nothing is listed", () => {
+    const container = renderView({ meetings: [] });
+    const panel = container.querySelector('[data-testid="meetings-archive"]');
+    expect(panel?.textContent).toContain("#jinesis-share");
+  });
+
+  it("links out to the unlisted playlist, in a new tab", () => {
+    const container = renderView({ meetings: [] });
+    const link = container.querySelector<HTMLAnchorElement>(
+      '[data-testid="meetings-playlist-link"]',
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "https://www.youtube.com/playlist?list=PLtVBX_ld338VkH1UzdXs03LTKZp8-FBDL",
+    );
+    // It leaves the app, so it opens in a new tab and does not hand the opener over with it.
+    expect(link?.getAttribute("rel")).toContain("noopener");
+  });
+});

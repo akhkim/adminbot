@@ -293,6 +293,61 @@ export function workshopNudgeInputsFromAdminBot(params: {
   };
 }
 
+/** One conference an admin may narrow a pass to, with how many open workshops it still has. */
+export type WorkshopConferenceOption = {
+  key: string;
+  label: string;
+  workshop_count: number;
+};
+
+/**
+ * The conferences a pass could be limited to: the parents of every workshop still open.
+ *
+ * Derived from the same profiles the pass itself works from, so the list can never offer a
+ * conference the matcher would then find nothing for. Cheap -- it reads the generated dataset and
+ * makes no model calls -- which is what lets the picker be populated on page open.
+ */
+export function workshopConferenceOptions(
+  records: readonly DeadlineWorkshopRecord[],
+  now = new Date(),
+): WorkshopConferenceOption[] {
+  const byKey = new Map<string, WorkshopConferenceOption>();
+  for (const profile of workshopProfilesFromDeadlines(records, now)) {
+    const key = profile.parent_conference_key?.trim();
+    if (!key) {
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.workshop_count += 1;
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      label: profile.parent_conference?.trim() || key,
+      workshop_count: 1,
+    });
+  }
+  // Most workshops first: the conference with the most open calls is the one an admin narrowing a
+  // pass is usually reaching for, and the tail is alphabetical so the order is stable between reads.
+  return [...byKey.values()].toSorted(
+    (left, right) =>
+      right.workshop_count - left.workshop_count || left.label.localeCompare(right.label),
+  );
+}
+
+/** Narrow profiles to one conference. An unknown or blank key leaves the list untouched. */
+export function workshopProfilesForConference(
+  profiles: readonly WorkshopProfile[],
+  conferenceKey: string | undefined,
+): WorkshopProfile[] {
+  const key = conferenceKey?.trim();
+  if (!key) {
+    return [...profiles];
+  }
+  return profiles.filter((profile) => profile.parent_conference_key?.trim() === key);
+}
+
 export function workshopProfilesFromDeadlines(
   records: readonly DeadlineWorkshopRecord[],
   now = new Date(),

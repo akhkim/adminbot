@@ -30,6 +30,7 @@ import {
   type AdminBotBadgeNominationStatus,
 } from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
@@ -130,6 +131,7 @@ import {
   readWorkshopNudgeRun,
   sendWorkshopNudges,
   startWorkshopNudgeRun,
+  listWorkshopConferences,
 } from "./server.workshop-nudges.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -1301,6 +1303,18 @@ async function handleAuthenticatedRoute(
     return;
   }
 
+  // Cheap on purpose -- it reads the generated deadline dataset and makes no model calls -- so the
+  // page may ask for it on open, which is what lets the picker be populated before a pass is run.
+  if (req.method === "GET" && url.pathname === "/workshop-nudges/conferences") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendJson(res, 200, {
+      conferences: listWorkshopConferences(ctx.workshopNudgeNow()),
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/workshop-nudges/refresh") {
     if (!requireMemberPrivileged(res, principal)) {
       return;
@@ -1317,6 +1331,10 @@ async function handleAuthenticatedRoute(
           match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
           ...(refreshBody.force === true ? { force: true } : {}),
+          ...(typeof refreshBody.conference_key === "string" &&
+          refreshBody.conference_key.trim()
+            ? { conferenceKey: refreshBody.conference_key.trim() }
+            : {}),
           ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
         }),
       );
@@ -3480,6 +3498,42 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.chaseOpenOnboarding(principalActor(principal)));
+    return;
+  }
+  if (
+    req.method === "POST" &&
+    url.pathname === "/onboarding/alumni-slack-invites/run"
+  ) {
+    // Recipients are computed from the welcome's own audit row and the ledger, and the copy is a
+    // stored template, so nothing here is caller-supplied: requirePrivileged, like the other
+    // cron-triggered sweeps.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const due = service.dueAlumniSlackInvites();
+    const sent: Array<{ member_id: string; email: string }> = [];
+    const skipped: Array<{ member_id: string; reason: string }> = [];
+    for (const alumnus of due) {
+      // One at a time, and the ledger is stamped per success rather than at the end: a sweep that
+      // dies halfway must not re-invite everyone it already reached on its next run.
+      const result = await ctx.onboardingSender({
+        template_id: ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID,
+        name: alumnus.name,
+        email: alumnus.email,
+      });
+      if (!result.ok) {
+        skipped.push({ member_id: alumnus.member_id, reason: result.error.message });
+        continue;
+      }
+      service.markAlumniSlackInviteSent(alumnus.member_id);
+      sent.push({ member_id: alumnus.member_id, email: alumnus.email });
+    }
+    service.recordAlumniSlackInviteSweep({
+      actor: principalActor(principal),
+      sent: sent.length,
+      skipped: skipped.length,
+    });
+    sendJson(res, 200, { sent, skipped });
     return;
   }
   if (req.method === "POST" && url.pathname === "/nudges/escalate/run") {

@@ -1572,6 +1572,37 @@ export async function previewWorkshopNudges(
   return { ok: true, value: withWorkshopRunDefaults(result.body) };
 }
 
+export type WorkshopConferenceOption = {
+  key: string;
+  label: string;
+  workshop_count: number;
+};
+
+/**
+ * The conferences a pass may be narrowed to (GET /workshop-nudges/conferences).
+ *
+ * Cheap on the service side -- no model calls -- so the page asks on open. An older service has no
+ * such route; the caller treats that as "no picker" rather than as an error, so the tab keeps
+ * working against a deployment that has not been updated yet.
+ */
+export async function fetchWorkshopConferences(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<WorkshopConferenceOption[]>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/conferences", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const rows = (result.body as { conferences?: unknown } | null)?.conferences;
+  return {
+    ok: true,
+    value: Array.isArray(rows) ? (rows as WorkshopConferenceOption[]) : [],
+  };
+}
+
 /**
  * Ask for a fresh match (POST /workshop-nudges/refresh).
  *
@@ -1584,9 +1615,13 @@ export async function refreshWorkshopNudges(
   // `force` replaces a pass that still claims to be running. An older service ignores the field
   // and applies its own stall window, which is slower but not wrong.
   force = false,
+  // The conference the admin narrowed the pass to. An older service ignores the field and runs the
+  // whole open season, which is the pre-existing behaviour rather than a wrong one.
+  conferenceKey?: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {
     ...(force ? { force: true } : {}),
+    ...(conferenceKey?.trim() ? { conference_key: conferenceKey.trim() } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

@@ -11,7 +11,12 @@
 // account-approved email are wired.
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import {
+  adminBotExternalCollaboratorSubgroups,
+  type AdminBotExternalCollaboratorSubgroup,
+} from "../../contracts/actions.js";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
+import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
@@ -44,6 +49,19 @@ const GOG_TIMEOUT_MS = 45_000;
 const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
 
 const DCS_FORM_TEMPLATE_ID = "member";
+
+/**
+ * The mail whose Slack Connect invitation travels separately, and the template that carries it.
+ *
+ * The alumni mail follows the 2026-08-07 template doc, which points alumni at the workspace join
+ * link and carries no {slack_connect_link}. The invitation is still wanted; it just does not belong
+ * in that mail, and it does not go out with it either -- it follows ten days later, sent by the
+ * sweep behind /onboarding/alumni-slack-invites/run.
+ *
+ * Minted there rather than here on purpose. A Connect link goes stale in about a fortnight (see
+ * adminBotSlackConnectInviteIsFresh), so one minted at welcome time and mailed ten days later would
+ * reach the reader with days left on it. The delay is the whole reason the mint moved.
+ */
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /**
@@ -129,6 +147,15 @@ export type AdminBotOnboardingSendResult = {
   slack_connect_link?: string;
   /** One entry per channel from `slack_project_channels`, in the order they were requested. */
   project_channel_invites?: { channel: string; url: string }[];
+  /**
+   * The standing-channel invites this subgroup is owed by the access matrix. `configured: false`
+   * means the matrix grants them but no channel ids are set, so nobody was invited -- reported
+   * rather than swallowed, because "we thought they were in" is the failure this is fixing.
+   */
+  active_channel_invites?: {
+    configured: boolean;
+    invited: { channel: string; url: string }[];
+  };
 };
 
 export type AdminBotOnboardingSendFailure = {
@@ -206,6 +233,23 @@ export type AdminBotOnboardingSenderOptions = {
  * or the composition root may still override it per send.
  */
 export const ADMINBOT_ONBOARDING_CHANNEL_ENV = "ADMINBOT_ONBOARDING_CHANNEL_ID";
+
+/**
+ * The lab's two standing channels, comma-separated, for the subgroups the access matrix puts in
+ * them. Ids rather than names, because that is what the Slack API invites into.
+ */
+export const ADMINBOT_ACTIVE_CHANNELS_ENV = "ADMINBOT_ACTIVE_CHANNEL_IDS";
+
+/**
+ * The access-matrix row that puts somebody in #jinesis-active and #random-active.
+ *
+ * Read from the matrix rather than from a token in the copy. The Drive folder taught us what the
+ * other way costs: `{drive_folder_link}` was both the sentence and the trigger, so editing the copy
+ * silently changed who got provisioned. Access is a property of the subgroup, so it is decided by
+ * the table that describes the subgroup -- which also means this row stops being merely descriptive
+ * and starts doing something, which is the whole point.
+ */
+const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
 
 /** The production email sender, exported so a caller can wrap it and still report what it did. */
 export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
@@ -557,6 +601,69 @@ export function createAdminBotOnboardingSender(
       }
     }
 
+    // Standing-channel invites, from the access matrix rather than from the copy, and before the
+    // mail for the same reason the project ones are: both the coauthor-major and own-pace mails
+    // tell the reader their channel invitations are on the way, so a Slack refusal has to stop the
+    // send while that promise can still be withheld.
+    let activeChannelInvites:
+      | { configured: boolean; invited: { channel: string; url: string }[] }
+      | undefined;
+    const subgroup = (
+      adminBotExternalCollaboratorSubgroups as readonly string[]
+    ).includes(template.id)
+      ? (template.id as AdminBotExternalCollaboratorSubgroup)
+      : undefined;
+    const owedActiveChannels =
+      subgroup !== undefined &&
+      collaboratorSubgroupAccess(subgroup).some(
+        (grant) => grant.item === ACTIVE_CHANNELS_ACCESS_ITEM,
+      );
+    if (owedActiveChannels) {
+      const channels = [
+        ...new Set(
+          (configuredEnvValue(env[ADMINBOT_ACTIVE_CHANNELS_ENV]) ?? "")
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (channels.length === 0) {
+        // Not fatal. A deployment that has never set the variable would otherwise be unable to
+        // onboard these two subgroups at all, which is a worse failure than an uninvited member --
+        // and the operator sees `configured: false` on every such send rather than nothing.
+        activeChannelInvites = { configured: false, invited: [] };
+      } else {
+        if (!options.inviteToSlackConnect) {
+          return {
+            ok: false,
+            error: {
+              status: 501,
+              message: "Slack Connect invites are not configured",
+            },
+          };
+        }
+        const invited: { channel: string; url: string }[] = [];
+        for (const channel of channels) {
+          try {
+            const invite = await options.inviteToSlackConnect({
+              email,
+              channelId: channel,
+            });
+            invited.push({ channel, url: invite.url });
+          } catch (error) {
+            return {
+              ok: false,
+              error: {
+                status: 502,
+                message: `could not invite ${email} to ${channel}: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            };
+          }
+        }
+        activeChannelInvites = { configured: true, invited };
+      }
+    }
+
     const composed = composeOnboardingGuide(
       template.id,
       values,
@@ -631,6 +738,9 @@ export function createAdminBotOnboardingSender(
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
         ...(projectInvites.length > 0
           ? { project_channel_invites: projectInvites }
+          : {}),
+        ...(activeChannelInvites
+          ? { active_channel_invites: activeChannelInvites }
           : {}),
         ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },

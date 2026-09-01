@@ -13,11 +13,13 @@
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
+  adminBotMemberFieldVisibility,
   adminBotSlackActivityOf,
   adminBotSlackActivityThreshold,
   adminBotSlackActivityWindowDays,
+  adminBotTimelineEntryTarget,
+  isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import { adminBotMemberFieldVisibility } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -628,16 +630,26 @@ const PHONE_CODE_SUFFIX = "__dial";
 // regardless (a form is a UI convenience, never the trust boundary), but the earlier and more
 // specific the feedback, the less a bad save ever gets that far.
 function renderFieldInput(field: EditableField, currentValue: string) {
-  // An admin-owned answer is shown, never offered for editing. `disabled` also keeps the key out
-  // of the form's own collection, so an autosave cannot carry a value the service would drop.
+  // An admin-owned answer the member may still supply. It was `disabled`, which is why this is
+  // worth explaining: a disabled input cannot be focused, selected, or pasted into, so a member
+  // who had looked their URN up in the collector tool the field's own help text points them at had
+  // nowhere to put it -- and could not copy the stored one out either. Read-only would fix the
+  // copy half and not the paste half, so it is an ordinary input.
+  //
+  // What has *not* changed is who is chased for it. The field stays on
+  // adminBotAdminOwnedProfileFields, so it is still outside the reminder's set and outside the
+  // completion denominator. One member of 199 has a URN; counting it would drop fifty profiles off
+  // 100% overnight and chase every one of them for a value they have never heard of, which is the
+  // incident that list exists to prevent.
   if (field.adminOnly) {
     return html`
       <input
         class="input"
         name=${field.key}
         type="text"
+        maxlength=${SHORT_TEXT_MAX_LENGTH}
+        placeholder=${ifDefined(exampleFor(field))}
         .value=${currentValue}
-        disabled
         data-testid=${`profile-admin-only-${field.key}`}
       />
     `;
@@ -891,7 +903,22 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
 // The ticks are decoration to a screen reader on purpose. The accessible read is the same
 // "{count} of {total}" sentence the bar used to carry, and the fields themselves -- with their
 // required marks -- are the real interface for acting on it.
-function renderCompletionLedger(member: LabMember) {
+/**
+ * Whether the lab is still waiting on this member's term timeline.
+ *
+ * The same rule the service's reminder applies (membersNeedingProfileAttention), read here so the
+ * page cannot claim somebody is finished while the sweep still has a reason to write to them.
+ */
+function timelineStillShort(member: LabMember): boolean {
+  const entries =
+    (member.availability?.length ?? 0) +
+    (member.time_off?.length ?? 0) +
+    (member.milestones?.length ?? 0) +
+    (member.trips?.length ?? 0);
+  return isAdminBotFullMember(member as never) && entries < adminBotTimelineEntryTarget;
+}
+
+function renderCompletionLedger(member: LabMember, state?: AppViewState) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
   const total = requiredFieldCount();
   const done = total - blanks.size;
@@ -933,6 +960,20 @@ function renderCompletionLedger(member: LabMember) {
         )}
       </div>
     </div>
+    ${percent === 100 && timelineStillShort(member)
+      ? html`<p class="profile__completeness-pending" data-testid="profile-timeline-pending">
+          ${t("profile.completeness.timelinePending")}
+          ${state
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                @click=${() => state.setTab("adminbotTimeAvailability")}
+              >
+                ${t("profile.completeness.timelineAction")}
+              </button>`
+            : nothing}
+        </p>`
+      : nothing}
   `;
 }
 
@@ -1014,6 +1055,29 @@ function renderBadges(state: AppViewState, member: LabMember) {
         </span>`,
       )}
     </div>
+  `;
+}
+
+/**
+ * The member's own badges, as a section rather than a strip of chips in the header.
+ *
+ * They were rendered inline beside the name, which made them decoration: the hover popover carrying
+ * the category, the description and the criteria link was the only way to read what a badge
+ * actually meant, and a popover is not something anyone opens for each of five chips. The admin
+ * badges tab has always shown the full picture; this is the same thing scoped to one person, and it
+ * sits directly above the nomination form so "what I have" and "what I could ask for" read as one
+ * subject rather than two halves at opposite ends of the page.
+ *
+ * Not duplicated back into the header. Stating the same fact twice on one page is how the two
+ * copies eventually disagree.
+ */
+function renderBadgesSection(state: AppViewState, member: LabMember) {
+  return html`
+    <section class="profile__section" data-testid="profile-badges-section">
+      <h2 class="profile__section-title">${t("profile.badges.title")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.subtitle")}</p>
+      ${renderBadges(state, member)}
+    </section>
   `;
 }
 
@@ -1311,22 +1375,10 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
   // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
   // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
   // read past it. It lives with the links now, where a permanent destination belongs.
-  const topics = (member.research_topics ?? []).join(" ").toLowerCase();
-  if (
-    !coveredByOnboarding.includes("gpu") &&
-    !topics.includes("gpu") &&
-    !String(member.notes ?? "")
-      .toLowerCase()
-      .includes("gpu")
-  ) {
-    otherSuggestions.push({
-      id: "gpu",
-      title: t("profile.suggestions.gpuTitle"),
-      body: t("profile.suggestions.gpuBody"),
-      label: t("profile.suggestions.gpuLink"),
-      href: "https://github.com/akhkim/openclaw-adminbot-lab#gpu-onboarding",
-    });
-  }
+  // No GPU card. Cluster access is granted on the admin side, so a member could not act on this
+  // one even when it was right -- and it was shown to anyone whose topics and notes did not happen
+  // to contain the string "gpu", which is most of the lab. A suggestion nobody can complete is how
+  // a stack that means "still outstanding" gets read past.
   if (blanks.has("personal_website") && !coveredByOnboarding.includes("website")) {
     otherSuggestions.push({
       id: "website",
@@ -1513,12 +1565,12 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
             ${renderSlackActivity(member)}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>
-          ${renderLinks(member)} ${renderBadges(state, member)}
+          ${renderLinks(member)}
         </div>
-        ${renderCompletionLedger(member)}
+        ${renderCompletionLedger(member, state)}
       </header>
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgeSelfNomination(state, member, props)}
+      ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
       ${renderSuggestions(state, member)}
     </div>
   `;

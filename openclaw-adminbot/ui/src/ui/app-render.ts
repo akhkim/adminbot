@@ -25,7 +25,9 @@ import {
   searchAdminBotVenuePapers,
   cancelWorkshopNudgeRun,
   loadWorkshopNudgePreview,
+  loadWorkshopConferences,
   refreshWorkshopNudgePreview,
+  setWorkshopConference,
   setWorkshopNudgeRecipients,
   setAdminBotVenue,
   setAdminBotVenueInterests,
@@ -1763,6 +1765,10 @@ export function renderApp(state: AppViewState) {
     !state.adminBotWorkshopNudges.error
   ) {
     void loadWorkshopNudgePreview(state).finally(() => requestHostUpdate?.());
+    // The picker's options, on the same visit and under the same guard. Cheap on the service side
+    // -- it reads the generated deadline dataset and makes no model calls -- so it rides along with
+    // the stored answer rather than waiting for the admin to reach for the dropdown.
+    void loadWorkshopConferences(state).finally(() => requestHostUpdate?.());
   }
 
   // Which request form the sidebar asked for. The three tabs are one view with the picker taken
@@ -3841,6 +3847,7 @@ export function renderApp(state: AppViewState) {
                 onSetRecipients: (memberIds, selected) =>
                   setWorkshopNudgeRecipients(state, memberIds, selected),
                 onViewChange: (patch) => updateWorkshopNudgeView(state, patch),
+                onConferenceChange: (key) => setWorkshopConference(state, key),
                 onSend: () => void sendWorkshopNudgeSelection(state),
               }),
             )

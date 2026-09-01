@@ -104,12 +104,52 @@ function draw(
     onToggleRecipient: vi.fn(),
     onSetRecipients: vi.fn(),
     onViewChange: vi.fn(),
+    onConferenceChange: vi.fn(),
     onSend: vi.fn(),
     ...handlers,
   };
   render(renderWorkshopNudges(props), container);
   return { container, props };
 }
+
+describe("the conference picker", () => {
+  const conferences = [
+    { key: "emnlp-2035", label: "EMNLP 2035", workshop_count: 4 },
+    { key: "iclr-2035", label: "ICLR 2035", workshop_count: 1 },
+  ];
+
+  it("offers every open workshop plus each conference, and reports a pick", () => {
+    const onConferenceChange = vi.fn();
+    const { container } = draw(
+      { ...createEmptyWorkshopNudgeReviewState(), conferences },
+      { onConferenceChange },
+    );
+    const picker = container.querySelector<HTMLSelectElement>(
+      "[data-testid='workshop-nudges-conference']",
+    );
+    expect([...(picker?.options ?? [])].map((option) => option.value)).toEqual([
+      "",
+      "emnlp-2035",
+      "iclr-2035",
+    ]);
+    // The count is what tells an admin how much a narrowed pass is worth running.
+    expect(picker?.textContent).toContain("EMNLP 2035 (4)");
+
+    picker!.value = "iclr-2035";
+    picker!.dispatchEvent(new Event("change"));
+    expect(onConferenceChange).toHaveBeenCalledWith("iclr-2035");
+  });
+
+  // A service too old to have the route returns no list. An empty dropdown would read as "no
+  // conferences have workshops"; no dropdown reads as "this deployment cannot narrow", which is
+  // the truth, and the pass still runs over everything.
+  it("is absent when the service offered no list", () => {
+    const { container } = draw(createEmptyWorkshopNudgeReviewState());
+    expect(
+      container.querySelector("[data-testid='workshop-nudges-conference']"),
+    ).toBeNull();
+  });
+});
 
 describe("renderWorkshopNudges", () => {
   it("opens a recipient detail with evidence and the exact server text", () => {

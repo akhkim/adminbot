@@ -150,7 +150,31 @@ export const adminBotNudgeDomains = [
   // is already hearing from AdminBot about handovers.
   "graduation",
   "profile_field",
+  // The Slack Connect invitation an alumnus gets ten days after their welcome. In the ledger for
+  // the same reason as the rest -- and because the ledger is what stops a sweep that runs nightly
+  // from minting a second invitation every night for the same person.
+  "alumni_slack_invite",
 ] as const;
+
+/**
+ * How long after the alumni welcome the Slack Connect invitation follows.
+ *
+ * Not immediate. The welcome is a lot to take in at once, and the invitation is the half that asks
+ * for an action; separating them by a week and a half gives it its own arrival. Comfortably inside
+ * the fortnight a Connect link stays fresh, which is why the link is minted when this fires rather
+ * than when the welcome went out.
+ */
+export const adminBotAlumniSlackInviteDelayDays = 10;
+
+/**
+ * The alumni welcome, and the invitation that follows it ten days later.
+ *
+ * Here rather than beside the templates because both the sender and the service need them, and the
+ * sender already imports from the service -- naming them there and reading them back would be an
+ * import cycle. Contracts is the layer both sides may depend on.
+ */
+export const ADMINBOT_ALUMNI_TEMPLATE_ID = "alumni";
+export const ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID = "alumni_slack_connect";
 
 export type AdminBotNudgeDomain = (typeof adminBotNudgeDomains)[number];
 

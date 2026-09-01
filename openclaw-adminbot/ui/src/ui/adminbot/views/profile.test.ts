@@ -553,14 +553,18 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 
   // The member cannot type a URN in; all they need is whether the lab has one yet, and the
   // collector link while it does not.
-  it("shows the URN as a state the member reads rather than a value they edit", () => {
+  // Editable now: it was disabled, which cannot be focused, selected or pasted into, so the member
+  // could neither follow the field's own "look it up and paste it here" instruction nor copy the
+  // stored one out. The status line beside it stays, because "on file or not" is still the thing
+  // the member is checking when they look.
+  it("shows the URN as an editable value with its on-file state beside it", () => {
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
     );
-    expect(filled.querySelector<HTMLInputElement>('input[name="linkedin_urn"]')?.disabled).toBe(
-      true,
-    );
+    const input = filled.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
+    expect(input?.disabled).toBe(false);
+    expect(input?.value).toBe("ACoAAB1234567");
     expect(filled.querySelector('[data-testid="profile-urn-status"]')?.textContent?.trim()).toBe(
       "On file",
     );
@@ -975,7 +979,9 @@ describe("renderProfile visual structure", () => {
     expect(badges).not.toContain("Postdoc");
   });
 
-  it("shows badges and a completeness indicator in the identity header", () => {
+  // Badges moved out of the header into a section of their own, next to the nomination form. The
+  // header keeps the completeness ring, which is the one thing it still states about the record.
+  it("shows a completeness indicator in the header and badges in their own section", () => {
     // A badge is something the record earns, so the fixture has to earn one: authorship of a paper
     // it submitted. (Role is not a badge -- see the test above.)
     const member = createMember();
@@ -989,8 +995,17 @@ describe("renderProfile visual structure", () => {
 
     const hero = container.querySelector(".profile__hero")!;
     expect(hero).not.toBeNull();
-    expect(hero.querySelector('[data-testid="profile-badges"]')).not.toBeNull();
+    expect(hero.querySelector('[data-testid="profile-badges"]')).toBeNull();
     expect(hero.querySelector(".profile__completeness-percent")?.textContent).toMatch(/^\d+%$/);
+
+    const section = container.querySelector('[data-testid="profile-badges-section"]');
+    expect(section).not.toBeNull();
+    expect(section?.querySelector('[data-testid="profile-badges"]')).not.toBeNull();
+    // Immediately above the nomination form: "what I have" and "what I could ask for" are one
+    // subject, and they used to sit at opposite ends of the page.
+    expect(section?.nextElementSibling?.getAttribute("data-testid")).toBe(
+      "profile-badge-nominations",
+    );
   });
 
   it("shows admin-managed badges ahead of computed badges and renders the self-nomination form", () => {
@@ -1086,5 +1101,34 @@ describe("renderProfile visual structure", () => {
     expect(basics.querySelector('input[name="email"]')).toBeNull();
     expect(basics.querySelector(".profile-field--locked")).toBeNull();
     expect(basics.querySelector(".profile__managed")).toBeNull();
+  });
+});
+
+describe("the LinkedIn URN", () => {
+  // It was a disabled input, which cannot be focused, selected or pasted into -- so a member who
+  // had looked theirs up in the collector tool the help text points at had nowhere to put it, and
+  // could not copy the stored one out either.
+  it("is typable and pasteable rather than disabled", () => {
+    const container = renderPage(
+      createState(createMember({ linkedin_urn: "ACoAAB1234567" })),
+      () => {},
+    );
+    const input = container.querySelector<HTMLInputElement>(
+      "[data-testid='profile-admin-only-linkedin_urn']",
+    );
+    expect(input).not.toBeNull();
+    expect(input?.disabled).toBe(false);
+    expect(input?.readOnly).toBe(false);
+    expect(input?.value).toBe("ACoAAB1234567");
+  });
+
+  // Editable is a separate question from chased. One member of 199 has a URN, so counting it would
+  // drop fifty profiles off 100% and nudge every one of them for a field nobody has heard of.
+  it("stays out of the completion ledger and carries no mandatory dot", () => {
+    const container = renderPage(createState(createMember()), () => {});
+    const field = container
+      .querySelector("[data-testid='profile-admin-only-linkedin_urn']")
+      ?.closest("label");
+    expect(field?.querySelector(".profile__mandatory")).toBeNull();
   });
 });

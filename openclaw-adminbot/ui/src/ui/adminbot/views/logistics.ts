@@ -30,6 +30,7 @@ import {
   APPLICATION_STATUS_SUGGESTIONS,
   LETTER_STATUS_LIST_ID,
   LETTER_STATUS_SUGGESTIONS,
+  MEETING_SHEET_URL,
   SCHOOL_FIELDS,
   SIGNATURE_FORM_URL,
   TEMPLATE_FOLDER_URL,
@@ -1043,13 +1044,52 @@ function renderLettersRequest(props: LettersProps) {
 }
 
 // The same container shape again for Book Meeting: one table, then Save and Submit.
+/**
+ * The meeting tab, which no longer collects anything.
+ *
+ * Requests are filed on the contact spreadsheet's own tab, so this points at it rather than
+ * duplicating four columns into the service -- the same trade the signature form made, and the
+ * reason both look alike. Column D is called out here rather than only on the sheet: it is the one
+ * field a member can leave blank and not discover until their call never gets scheduled, and the
+ * sheet's own header cannot say "mandatory" loudly enough to fix that.
+ */
 function renderMeetingRequest(props: MeetingProps) {
+  // The table is kept for one case only, exactly as the signature upload is: a request that was
+  // already submitted and is being corrected. Those rows are stored in the service, and dropping
+  // the editor would strand the member with a sent request they can no longer fix. Nothing new is
+  // ever created through it -- the tab only reaches this branch from "edit" on an existing request.
+  if (props.editing) {
+    return html`
+      <div
+        class="card adminbot-card adminbot-card--wide logistics-request"
+        data-testid="logistics-meeting-request"
+      >
+        ${renderMeetingSection(props)} ${renderRequestActions(props)}
+      </div>
+    `;
+  }
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-meeting-request"
     >
-      ${renderMeetingSection(props)} ${renderRequestActions(props)}
+      <section class="logistics-request__section">
+        <h3 class="card-title">${t("logistics.meeting.title")}</h3>
+        <p class="card-sub">${t("logistics.meeting.sub")}</p>
+        <p class="logistics-meeting__mandatory" data-testid="logistics-meeting-mandatory">
+          <strong>${t("logistics.meeting.mandatory")}</strong>
+        </p>
+        <a
+          class="btn primary logistics-signature__link"
+          href=${MEETING_SHEET_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          data-testid="logistics-meeting-sheet-link"
+        >
+          ${t("logistics.meeting.openSheet")}
+          <span aria-hidden="true">${icons.externalLink}</span>
+        </a>
+      </section>
     </div>
   `;
 }

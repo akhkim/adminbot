@@ -211,6 +211,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-alumni-slack-invites",
+      "description": "Send the alumni Slack Connect invitation ten days after their welcome",
+      "cron": "10 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-alumni-slack-invites-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-thesis-milestones",
       "description": "Guidebook nudge before a thesis deadline, grading reminder five days after",
       "cron": "50 9 * * 1-5",

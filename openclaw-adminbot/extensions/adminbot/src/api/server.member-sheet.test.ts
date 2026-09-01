@@ -28,6 +28,11 @@ const ROWS = [
   ["Yuen Chen", "yuenc2@illinois.edu", "yuenc2@cs.toronto.edu", "alumni", ""],
   ["Rauno Arike", "", "rauno.arike@gmail.com", "coauthor-discussant-or-designer", ""],
   ["Korinna Fragkia", "", "korinna@cmu.edu", "coauthor-minor"],
+  // Row 5: a type whose template still needs a value only a human can give. The alumni and
+  // coauthor-minor mails no longer have one -- everything they interpolate is either derived from
+  // the row or configured for the deployment -- so the "ask for it, do not guess" path needs a
+  // template that genuinely has an outstanding token.
+  ["Van Bui", "", "van.bui@example.com", "disappearing-coauthor"],
 ];
 
 function source(rows: string[][] = ROWS): MemberSheetSource & { read: ReturnType<typeof vi.fn> } {
@@ -275,7 +280,18 @@ describe("onboarding from the roster", () => {
     const result = await onboardFromMemberSheet(
       service,
       source(),
-      { sheet_rows: [4], values: { "4": { project_or_context: "alg-circuit" } } },
+      // `what_to_expect_link` rides along because coauthor_minor now requires it: the 2026-08-07
+      // template doc added a "Rough Expectation Doc" step, and the send refuses rather than mail a
+      // sentence pointing at nothing.
+      {
+        sheet_rows: [4],
+        values: {
+          "4": {
+            project_or_context: "alg-circuit",
+            what_to_expect_link: "https://docs.example/what-to-expect",
+          },
+        },
+      },
       "andrew",
       env,
     );
@@ -292,7 +308,7 @@ describe("onboarding from the roster", () => {
     const result = await onboardFromMemberSheet(
       service,
       source(),
-      { sheet_rows: [2] },
+      { sheet_rows: [5] },
       "andrew",
       env,
     );
@@ -300,7 +316,7 @@ describe("onboarding from the roster", () => {
       throw new Error(result.error.message);
     }
     expect(result.created).toEqual([]);
-    expect(result.skipped[0]!.missing).toContain("slack_connect_link");
+    expect(result.skipped[0]!.missing).toContain("project_or_context");
     expect(proposals).toHaveLength(0);
   });
 

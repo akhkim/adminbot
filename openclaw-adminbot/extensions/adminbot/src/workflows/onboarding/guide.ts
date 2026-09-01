@@ -56,6 +56,14 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
     varName: "ADMINBOT_SEEDED_PORTAL_PASSWORD",
     fallback: ADMINBOT_SEEDED_PORTAL_PASSWORD,
   },
+  // The "Jinesis What to Expect" handbook the coauthor-minor mail points at. One document for the
+  // whole lab, like the portal address above, so it is configured here rather than retyped per
+  // send -- a link an operator has to paste is a link that eventually goes out wrong or blank.
+  what_to_expect_link: {
+    varName: "ADMINBOT_WHAT_TO_EXPECT_URL",
+    fallback:
+      "https://docs.google.com/document/d/1wKAZCWfyXypKvP9hG7XUcDsdVqD3TqLDES-lQJL48UY/edit?usp=drive_link",
+  },
 } as const;
 
 /**

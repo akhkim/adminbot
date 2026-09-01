@@ -1347,6 +1347,17 @@ export type AdminBotSettingsInput = {
   // config rather than a repo constant: it is a real phone number, so it never belongs in the
   // source tree, and /settings is admin-gated on read as well as write.
   head_professor_whatsapp?: string;
+  /**
+   * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
+   *
+   * Separate from `head_professor_member_id` because the two answer different questions. The head
+   * professor is who an unanswered nudge escalates *towards*; the lab manager is who does the
+   * resulting work. Routing the second to the first is how the professor ended up being DMed about
+   * every finishing month in the lab, which is administration rather than escalation.
+   *
+   * Absent falls back to the Slack-linked admins, minus the head professor.
+   */
+  lab_manager_member_id?: string;
   applicant_sheet_id?: string;
   /**
    * When the weekly group meeting is, for the reminders that are aimed at it.
@@ -1373,6 +1384,17 @@ export type AdminBotSettings = {
   cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
+  /**
+   * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
+   *
+   * Separate from `head_professor_member_id` because the two answer different questions. The head
+   * professor is who an unanswered nudge escalates *towards*; the lab manager is who does the
+   * resulting work. Routing the second to the first is how the professor ended up being DMed about
+   * every finishing month in the lab, which is administration rather than escalation.
+   *
+   * Absent falls back to the Slack-linked admins, minus the head professor.
+   */
+  lab_manager_member_id?: string;
   applicant_sheet_id?: string;
   /** See the note on AdminBotSettingsInput. Defaults live in contracts/group-meeting.ts. */
   group_meeting_weekday?: number;
@@ -1505,6 +1527,35 @@ export type AdminBotPaperAuthorLink = {
   email?: string;
 };
 
+/** Slack's own rule, which is why the alias is stored in this shape rather than converted later. */
+export const adminBotPaperAliasMaxLength = 24;
+
+/**
+ * The alias as it will be stored, or null when the text cannot be one.
+ *
+ * Lowercased and hyphen-joined because `proj-<alias>` has to be a legal Slack channel name the
+ * moment it is read off the record. Refusing here rather than silently rewriting is deliberate for
+ * the one case that matters: "CAIS" becomes "cais", which is the same name; "C.A.I.S. v2" becoming
+ * "c-a-i-s-v2" is not, and an author who typed the second should be told rather than discover what
+ * the lab called their channel afterwards.
+ */
+export function adminBotNormalizePaperAlias(raw: string | undefined): string | null {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.toLowerCase().replace(/\s+/gu, "-");
+  if (!/^[a-z0-9][a-z0-9-]*$/u.test(normalized)) {
+    return null;
+  }
+  return normalized.length <= adminBotPaperAliasMaxLength ? normalized : null;
+}
+
+/** The Slack channel a project's alias names. One function, so nothing spells it by hand. */
+export function adminBotProjectChannelName(alias: string): string {
+  return `proj-${alias}`;
+}
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -1534,6 +1585,28 @@ export type AdminBotPaperRecordInput = {
    * unlinked entries.
    */
   author_links?: AdminBotPaperAuthorLink[];
+  /**
+   * The short name the lab calls this project: "CAIS" for Causal AI Scientist.
+   *
+   * Distinct from `id`, which is slugged from the title and is consequently long, ugly and tied to
+   * a title that changes ("a-causal-framework-to-quantify-the-robustness-of..."). The alias is
+   * chosen by a person, stays put, and is what the project is called out loud.
+   *
+   * Stored lowercase and channel-safe because its first real use is naming the project's Slack
+   * channel `proj-<alias>`: Slack refuses uppercase, spaces and most punctuation, and a name that
+   * has to be transformed at the point of creation is a name nobody can predict from the record.
+   * Validated on write (adminBotNormalizePaperAlias) rather than at the point of use, so the
+   * channel name is knowable the moment the project exists.
+   */
+  alias?: string;
+  /**
+   * When work on the project actually started, as YYYY-MM-DD.
+   *
+   * Asked at creation rather than inferred from the record's own timestamps: a paper is routinely
+   * filed here weeks after the work began, and "when did this start" is a question about the
+   * project, not about when somebody got round to typing it in.
+   */
+  started_on?: string;
   /**
    * People asked to read and comment on the draft, as names. Distinct from `authors`: a feedback
    * giver has not signed the paper and may never appear on it, and distinct from the social
@@ -1839,6 +1912,7 @@ export type AdminBotAuditEvent = {
     // One author's account of one week. The prose stays out of `details` -- see the service.
     | "paper_weekly_update.saved"
     | "paper_weekly_updates.nudged"
+    | "alumni_slack_invites.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
@@ -2161,7 +2235,14 @@ export type AdminBotMemberNotificationKind =
   | "meeting_attendance"
   | "nudge"
   | "paper_slot"
+  /** The mandatory-fields / timeline reminder. Retracted once the member closes the gap. */
   | "profile"
+  /**
+   * The headshot reminder. Its own kind rather than `profile` because the two settle on different
+   * evidence: filling in a blank field cannot make a photo compliant, and sharing a kind meant the
+   * profile retraction would have marked an outstanding photo nudge as dealt with.
+   */
+  | "profile_photo"
   | "workshop";
 
 export type AdminBotMemberNotification = {

@@ -21,7 +21,9 @@ import {
   loadStoredMemberSession,
   cancelWorkshopNudges,
   previewWorkshopNudges,
+  fetchWorkshopConferences,
   refreshWorkshopNudges,
+  type WorkshopConferenceOption,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
   saveOwnPaper,
@@ -299,6 +301,10 @@ export type WorkshopNudgeReviewState = {
    * writes its answer. Opening the page reads that answer.
    */
   run: WorkshopNudgeRunView | null;
+  /** Conferences a pass may be narrowed to. Empty until the picker's options have loaded. */
+  conferences: WorkshopConferenceOption[];
+  /** Which one the admin picked. Empty string is "every open workshop", the default. */
+  conferenceKey: string;
 };
 
 export type WorkshopNudgeRunView = {
@@ -336,6 +342,8 @@ export function createEmptyWorkshopNudgeReviewState(): WorkshopNudgeReviewState 
     error: null,
     result: null,
     run: null,
+    conferences: [],
+    conferenceKey: "",
     selectedRecipientIds: [],
     view: {
       tab: "recipients",
@@ -368,6 +376,7 @@ export type AdminBotSettings = {
   paper_escalation_business_days: number;
   cv_recency_window_months: number;
   head_professor_member_id?: string;
+  lab_manager_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
@@ -434,6 +443,10 @@ export type AdminBotPaperSaveInput = {
   authorRoles?: string;
   /** The author list as people. Sent whole; the service regenerates `authors` from it. */
   authorLinks?: Array<{ name: string; member_id?: string; email?: string }>;
+  /** The project's short name, which becomes its Slack channel `proj-<alias>`. */
+  alias?: string;
+  /** When work started, YYYY-MM-DD. Asked at creation; a paper is often filed weeks later. */
+  startedOn?: string;
   /**
    * Where the paper is aimed. This is the record's own `venue` field, not `artifacts.conference`:
    * `venue` is what the stage nudges quote and the deadline board matches on, and having two
@@ -494,6 +507,7 @@ export type AdminBotSettingsSaveInput = {
   meeting_minimum_minutes?: number;
   cv_recency_window_months?: number;
   head_professor_member_id?: string;
+  lab_manager_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
@@ -1402,6 +1416,25 @@ const WORKSHOP_RUN_POLL_MS = 5_000;
  * one cheap request, and producing a new one is thousands of model calls. Opening the page must
  * never do the second by accident.
  */
+export async function loadWorkshopConferences(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const result = await fetchWorkshopConferences(session.sessionToken, session.baseUrl);
+  // Silent on failure, and specifically on a 404 from a service too old to have the route: the
+  // picker is an optional narrowing of a pass that already works without it, so a missing list
+  // leaves the admin with "every open workshop" rather than with an error over a working tab.
+  host.adminBotWorkshopNudges = {
+    ...host.adminBotWorkshopNudges,
+    conferences: result.ok ? result.value : [],
+  };
+}
+
+export function setWorkshopConference(host: AdminBotHost, key: string): void {
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, conferenceKey: key };
+}
+
 export async function refreshWorkshopNudgePreview(
   host: AdminBotHost,
   // Set when the administrator is deliberately replacing a pass that still says it is running,
@@ -1417,7 +1450,12 @@ export async function refreshWorkshopNudgePreview(
     return;
   }
   host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
-  const started = await refreshWorkshopNudges(session.sessionToken, session.baseUrl, force);
+  const started = await refreshWorkshopNudges(
+    session.sessionToken,
+    session.baseUrl,
+    force,
+    host.adminBotWorkshopNudges.conferenceKey,
+  );
   if (!started.ok) {
     host.adminBotWorkshopNudges = {
       ...host.adminBotWorkshopNudges,
@@ -2207,6 +2245,8 @@ export async function saveAdminBotPaper(
   const details = {
     ...(paper.feedbackGivers === undefined ? {} : { feedback_givers: paper.feedbackGivers }),
     ...(paper.authorRoles === undefined ? {} : { author_roles: paper.authorRoles }),
+    ...(paper.alias === undefined ? {} : { alias: paper.alias }),
+    ...(paper.startedOn === undefined ? {} : { started_on: paper.startedOn }),
     ...(paper.authorLinks === undefined ? {} : { author_links: paper.authorLinks }),
     ...(paper.venue === undefined ? {} : { venue: paper.venue }),
   };

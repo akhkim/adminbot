@@ -38,8 +38,25 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
       slack_user_id: "U-MEI",
     } as never),
   );
+  // The desk that tracks the chore. The professor still does the grading; they are simply not the
+  // person AdminBot DMs about it.
+  unwrap(
+    service.upsertLabMember({
+      receives_nudges: true,
+      id: "andrew",
+      name: "Andrew Kim",
+      privilege_level: "admin",
+      status: "active",
+      slack_user_id: "U-AK",
+    } as never),
+  );
   if (options.headProfessor !== false) {
-    unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+    unwrap(
+      service.updateSettings({
+        head_professor_member_id: "zhijing",
+        lab_manager_member_id: "andrew",
+      } as never),
+    );
   }
   return service;
 }
@@ -70,17 +87,19 @@ describe("sweepThesisMilestones", () => {
     expect(notificationsFor(service, "zhijing")).toEqual([]);
   });
 
-  it("asks the head professor to grade it five days after", async () => {
+  it("asks the lab manager to chase the grading five days after", async () => {
     const service = serviceWith();
     setThesis(service, onDay(-6));
     const result = unwrap(await service.sweepThesisMilestones("cron", { nowIso: NOW }));
 
     expect(result.grading).toEqual([{ member_id: "mei", date: onDay(-6), days_since: 6 }]);
-    const told = notificationsFor(service, "zhijing");
+    const told = notificationsFor(service, "andrew");
     expect(told[0]?.title).toBe("A thesis is ready to grade");
     expect(told[0]?.body).toContain("Mei Chen");
-    // Addressed to her about them: a student who has just submitted does not need to watch their
-    // supervisor being reminded to mark it.
+    // Not the professor, even though the grading is theirs. AdminBot does not chase the PI.
+    expect(notificationsFor(service, "zhijing")).toEqual([]);
+    // And not the student: somebody who has just submitted does not need to watch their supervisor
+    // being reminded to mark it.
     expect(notificationsFor(service, "mei")).toEqual([]);
   });
 
@@ -112,14 +131,27 @@ describe("sweepThesisMilestones", () => {
     expect(late.grading).toHaveLength(1);
   });
 
-  it("reports rather than guesses when no head professor is configured", async () => {
+  it("falls back to the Slack-linked admins when no lab manager is configured", async () => {
     const service = serviceWith({ headProfessor: false });
     setThesis(service, onDay(-6));
     const result = unwrap(await service.sweepThesisMilestones("cron", { nowIso: NOW }));
     expect(result.grading).toHaveLength(1);
+    // A thesis waiting to be marked is worth saying to somebody rather than nobody.
+    expect(notificationsFor(service, "andrew")[0]?.title).toBe("A thesis is ready to grade");
+  });
+
+  it("reports rather than guesses when no admin can be reminded", async () => {
+    const service = serviceWith({ headProfessor: false });
+    // Every admin off Slack: the sweep has a chore and nowhere to put it, and says so.
+    for (const id of ["zhijing", "andrew"]) {
+      unwrap(service.upsertLabMember({ id, slack_user_id: "" } as never));
+    }
+    setThesis(service, onDay(-6));
+    const result = unwrap(await service.sweepThesisMilestones("cron", { nowIso: NOW }));
+    expect(result.grading).toHaveLength(1);
     expect(result.skipped).toContainEqual({
-      member_id: "head_professor",
-      reason: "no head professor is configured to remind",
+      member_id: "lab_manager",
+      reason: "no admin with a linked Slack account to remind",
     });
   });
 

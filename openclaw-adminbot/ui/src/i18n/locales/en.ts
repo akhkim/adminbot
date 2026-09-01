@@ -1149,6 +1149,11 @@ export const en: TranslationMap = {
         "This checklist stays here until you acknowledge it, whether or not every step is done.",
       acknowledge: "I have read the onboarding checklist",
     },
+    nextDeadlines: {
+      title: "Next deadlines",
+      open: "Open the deadline board",
+      yours: "yours",
+    },
     mandatoryFields: {
       title: "Your profile is missing required fields",
       summary: "{count} required field is still blank.",
@@ -1193,6 +1198,11 @@ export const en: TranslationMap = {
     },
   },
   adminbotMeetings: {
+    archive: {
+      title: "Where recordings live",
+      sub: "This tab lists the meetings AdminBot has a summary for. The videos themselves are posted in {channel}, and collected in an unlisted YouTube playlist.",
+      playlist: "Open the recordings playlist",
+    },
     actionItems: "Action items",
     attendance: "Attendance",
     decisions: "Decisions",
@@ -1367,6 +1377,8 @@ export const en: TranslationMap = {
       partialHint:
         "Recorded as reduced availability. The hours you give here are stacked on your chart alongside your Jinesis work, so the two are read against the same week.",
       submit: "Add commitment",
+      edit: "Edit",
+      editTitle: "Edit this commitment",
       addCommitment: "Add commitment",
       hide: "Hide",
       saving: "Saving\u2026",
@@ -1682,7 +1694,10 @@ export const en: TranslationMap = {
     },
     meeting: {
       title: "Meetings to book",
-      sub: "One row per call. Soonest-submitted first is how these get scheduled, so the time you asked is stamped for you.",
+      sub: "Meeting requests are filed on the lab contact spreadsheet now. Add a row on the Meeting Requests tab.",
+      openSheet: "Open the meeting requests tab",
+      // The one thing a member can leave blank and not find out until nobody schedules their call.
+      mandatory: "Column D is mandatory — a row without it cannot be scheduled.",
       submitted: "Submitted",
       notSubmitted: "Not yet",
       purpose: "What the call is for",
@@ -1846,6 +1861,8 @@ export const en: TranslationMap = {
       failed: "Couldn't save",
     },
     badges: {
+      title: "Badges",
+      subtitle: "What the lab has recognised so far. Hover a badge for what it means.",
       empty: "No badges yet, they arrive as you finish onboarding and ship work.",
       onboarded: "Onboarded",
       profileComplete: "Profile complete",
@@ -1873,6 +1890,12 @@ export const en: TranslationMap = {
     completeness: {
       label: "Complete",
       hint: "Share of required fields you've filled in.",
+      // Shown only at 100%, and only while the timeline half is still short. The ring counts
+      // fields, but the lab's reminder chases fields *and* the term timeline -- so without this a
+      // finished profile reads as "nothing left to do" and the next reminder looks like a bug.
+      timelinePending:
+        "Your fields are all in. The lab also asks for your term timeline — add when you are working, when you are away, and the deadlines you are aiming at, or reminders will keep coming.",
+      timelineAction: "Open Time Availability",
     },
     groups: {
       account: "Account",
@@ -1900,9 +1923,6 @@ export const en: TranslationMap = {
     },
     suggestions: {
       title: "Onboarding steps",
-      gpuTitle: "Get GPU access",
-      gpuBody: "You have not recorded compute access yet. The guidebook walks through the request.",
-      gpuLink: "Guidebook: GPU onboarding",
       websiteTitle: "Add your website",
       websiteBody: "Lab pages link to member sites. Yours is blank.",
       websiteLink: "Guidebook: member pages",

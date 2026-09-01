@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
+import { findOwnMember } from "./profile.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -156,26 +157,44 @@ describe("renderDashboard", () => {
     ).toContain("Nothing is blocked.");
   });
 
-  it("uses the complete public deadline board instead of a dashboard-only summary", async () => {
+  // The whole board used to render here, which made the dashboard mostly a second copy of the
+  // Deadlines tab. It is a two-row glance now, and the board is a click away.
+  it("shows a two-row deadline glance rather than the whole board", () => {
     const container = renderPage(createState(), "member");
-    document.body.append(container);
-    const board = container.querySelector("adminbot-deadlines-view") as HTMLElement & {
-      updateComplete: Promise<unknown>;
-    };
-    await board.updateComplete;
-
-    expect(container.querySelector("adminbot-deadline-summary")).toBeNull();
-    expect(container.querySelector('[data-testid="dashboard-deadlines"]')).not.toBeNull();
-    expect(board.querySelector('.deadline-board__search input[type="search"]')).not.toBeNull();
-    expect(board.querySelector('[data-testid="deadline-group-all"]')).not.toBeNull();
+    expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
+    const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
+    expect(widget).not.toBeNull();
+    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
     expect(
-      [...board.querySelectorAll<HTMLElement>(".deadline-group")].reduce(
-        (total, group) => total + Number(group.dataset.count),
-        0,
-      ),
-    ).toBeGreaterThan(100);
-    expect(board.textContent).toContain("Past and upcoming conference & workshop deadlines.");
-    container.remove();
+      container.querySelector('[data-testid="dashboard-next-deadlines-open"]'),
+    ).not.toBeNull();
+  });
+
+  // The member's own dated milestones are the ones they plan around, so a glance that showed only
+  // the public board could say "nothing for weeks" to somebody with a submission on Friday.
+  it("merges the member's own milestones into the glance, soonest first", () => {
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const state = createState({
+      memberId: "ada",
+      adminBotData: {
+        proposals: [],
+        members: [
+          {
+            id: "ada",
+            name: "Ada Lovelace",
+            milestones: [{ date: soon, label: "Thesis draft" }],
+          },
+        ],
+      },
+    } as unknown as Partial<AppViewState>);
+    expect(findOwnMember(state)?.milestones).toHaveLength(1);
+    const container = renderPage(state, "member");
+    const rows = [
+      ...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline"),
+    ];
+    // Tomorrow beats every conference in the bundled snapshot, so it leads.
+    expect(rows[0]?.textContent).toContain("Thesis draft");
+    expect(rows[0]?.textContent).toContain("yours");
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),

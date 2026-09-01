@@ -6,8 +6,11 @@ import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import type { WorkshopMatcher } from "../workflows/papers/workshop-nudges.js";
 import {
   matchWorkshopNudges,
+  workshopConferenceOptions,
   workshopNudgeInputsFromAdminBot,
+  workshopProfilesForConference,
   workshopProfilesFromDeadlines,
+  type WorkshopConferenceOption,
   type WorkshopNudgeCoverage,
   type WorkshopNudgeResult,
 } from "../workflows/papers/workshop-nudges.js";
@@ -20,6 +23,13 @@ export type WorkshopNudgePreview = Omit<WorkshopNudgeResult, "recipients"> & {
     }
   >;
   coverage: WorkshopNudgeCoverage;
+  /**
+   * The conference this pass was limited to, when the admin picked one. Carried on the preview so
+   * a stored answer says what it covers -- without it, a narrowed run and a whole-season one look
+   * identical on the page, and the narrow one reads as a matcher that missed most of the workshops.
+   */
+  conference_key?: string;
+  conference_label?: string;
 };
 
 export type WorkshopNudgeSendResult = {
@@ -196,6 +206,8 @@ export function startWorkshopNudgeRun(params: {
    * progress count they have watched sit still: this is them saying they already know.
    */
   force?: boolean;
+  /** Narrow this pass to one parent conference. Blank means the whole open season. */
+  conferenceKey?: string;
 }): WorkshopNudgeRunView {
   const existing = params.service.latestWorkshopMatchRun();
   if (existing?.status === "running") {
@@ -258,6 +270,9 @@ export function startWorkshopNudgeRun(params: {
         service: params.service,
         match: params.match,
         now: params.now,
+        ...(params.conferenceKey?.trim()
+          ? { conferenceKey: params.conferenceKey.trim() }
+          : {}),
         signal: controller.signal,
         onProgress: (done, total, failed, detail) => {
           progress = { done, total, failed: failed ?? 0, detail: detail ?? progress.detail };
@@ -306,20 +321,37 @@ export function startWorkshopNudgeRun(params: {
   return readWorkshopNudgeRun(params.service);
 }
 
+/** The conferences a pass may be narrowed to. Cheap: no model calls, so a page open may ask. */
+export function listWorkshopConferences(now: Date): WorkshopConferenceOption[] {
+  return workshopConferenceOptions(DEADLINE_VENUES, now);
+}
+
 export async function previewWorkshopNudges(params: {
   service: AdminBotService;
   match: WorkshopMatcher;
   now: Date;
+  /** Narrow the pass to one parent conference. Blank or unknown means the whole open season. */
+  conferenceKey?: string;
   onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
   signal?: AbortSignal;
 }): Promise<WorkshopNudgePreview> {
   const papers = servicePayload(params.service.listPapers()).papers;
   const members = servicePayload(params.service.listLabMembers()).members;
   const attendees = servicePayload(params.service.listConferenceAttendance()).attendees;
-  const workshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now);
-  if (!workshops.length) {
+  const allWorkshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now);
+  if (!allWorkshops.length) {
     throw new Error("no upcoming workshop profiles are available");
   }
+  const conferenceKey = params.conferenceKey?.trim();
+  const workshops = workshopProfilesForConference(allWorkshops, conferenceKey);
+  // Refused rather than silently widened. An admin who picked a conference and got the whole season
+  // back would read every other conference's workshops as the matcher ignoring them.
+  if (conferenceKey && !workshops.length) {
+    throw new Error(`no upcoming workshops are available for ${conferenceKey}`);
+  }
+  const conferenceLabel = conferenceKey
+    ? (workshops[0]?.parent_conference?.trim() || conferenceKey)
+    : undefined;
   const source = workshopNudgeInputsFromAdminBot({ papers, members, attendees, workshops });
   const matched = await matchWorkshopNudges({
     papers: source.papers,
@@ -356,6 +388,8 @@ export async function previewWorkshopNudges(params: {
       };
     }),
     coverage: source.coverage,
+    ...(conferenceKey ? { conference_key: conferenceKey } : {}),
+    ...(conferenceLabel ? { conference_label: conferenceLabel } : {}),
   };
 }
 

@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   adminBotIsAlumniMember,
+  adminBotNormalizePaperAlias,
+  adminBotPaperAliasMaxLength,
   adminBotNudgeRosterDecision,
   adminBotReceivesNudges,
   isAdminBotFullMember,
@@ -141,6 +144,8 @@ import {
   adminBotNudgeDomains,
   adminBotReimbursementStates,
   type AdminBotConferenceAttendeeRecord,
+  ADMINBOT_ALUMNI_TEMPLATE_ID,
+  adminBotAlumniSlackInviteDelayDays,
   type AdminBotNudgeDomain,
   type AdminBotNudgeLedgerRecord,
   type AdminBotPaperReimbursementRecord,
@@ -1684,6 +1689,7 @@ export class AdminBotService {
     const current = this.resolveSettings();
     const headProfessorMemberId = normalizeOptionalString(settings.head_professor_member_id);
     const headProfessorWhatsapp = normalizeOptionalString(settings.head_professor_whatsapp);
+    const labManagerMemberId = normalizeOptionalString(settings.lab_manager_member_id);
     const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
@@ -1701,6 +1707,7 @@ export class AdminBotService {
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
+      ...(labManagerMemberId ? { lab_manager_member_id: labManagerMemberId } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
       // The meeting the pre-meeting reminders are aimed at. These were declared on the settings
@@ -1724,6 +1731,9 @@ export class AdminBotService {
     if (settings.head_professor_member_id !== undefined && !headProfessorMemberId) {
       delete next.head_professor_member_id;
     }
+    if (settings.lab_manager_member_id !== undefined && !labManagerMemberId) {
+      delete next.lab_manager_member_id;
+    }
     if (settings.applicant_sheet_id !== undefined && !applicantSheetId) {
       delete next.applicant_sheet_id;
     }
@@ -1737,6 +1747,7 @@ export class AdminBotService {
         paper_escalation_business_days: next.paper_escalation_business_days,
         cv_recency_window_months: next.cv_recency_window_months,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
+        has_lab_manager_member_id: Boolean(next.lab_manager_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
         ...(next.applicant_last_reviewed_at
           ? { applicant_last_reviewed_at: next.applicant_last_reviewed_at }
@@ -2888,7 +2899,51 @@ export class AdminBotService {
       id: memberId,
       privilege_level: existing.privilege_level,
     };
-    return this.upsertLabMember(merged, { source: "member", actor: memberId });
+    const saved = this.upsertLabMember(merged, { source: "member", actor: memberId });
+    // The member has just answered; anything still chasing them for an answer they have now given
+    // is noise. Retracted here rather than only on the next sweep so the bell, the dashboard card
+    // and the toast all go quiet on the save that fixed them, which is when the member is looking.
+    if (saved.ok) {
+      this.retractSettledProfileNudges(memberId);
+    }
+    return saved;
+  }
+
+  /**
+   * Close out profile reminders the member has since acted on.
+   *
+   * A notification is a point-in-time copy of a sentence, not a live view of the gap that produced
+   * it, and nothing used to take one back. So a member who filled in the last blank kept the unread
+   * copy forever: the bell stayed lit, the dashboard card stayed up, `popNotification` re-toasted it
+   * on every new session, and -- because profile reminders are filed `important` -- escalateStaleNudges
+   * eventually group-DMed the head professor to chase somebody who had already done it. That is the
+   * "my profile says 100% and it still tells me it is incomplete" report, and the 100% was right.
+   *
+   * Marked read rather than deleted. Read is the watermark every one of those readers already
+   * honours, and the member keeps the record of what they were asked and when -- which is the half
+   * of a notification log that is worth keeping.
+   */
+  private retractSettledProfileNudges(memberId: string): void {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return;
+    }
+    // Both halves, because one message can carry both and it is filed once. Still-outstanding gaps
+    // leave their notification alone: this retracts what is settled, it does not mark things read.
+    const stillMissing = missingMandatoryProfileFields(member).length > 0;
+    const stillShort =
+      isAdminBotFullMember(member) &&
+      countTimelineEntries(member).total < adminBotTimelineEntryTarget;
+    if (stillMissing || stillShort) {
+      return;
+    }
+    const readAt = new Date().toISOString();
+    for (const notification of this.store.listMemberNotifications(memberId)) {
+      if (notification.kind !== "profile" || notification.read_at) {
+        continue;
+      }
+      this.store.saveMemberNotification({ ...notification, read_at: readAt });
+    }
   }
 
   // Creates or edits a paper on behalf of the member themselves, so authors can file and maintain
@@ -3060,6 +3115,16 @@ export class AdminBotService {
         });
         return { author_links: links, authors: authorNamesFromLinks(links) };
       })(),
+      // Stored in the shape the Slack channel name is read off directly, so `proj-<alias>` is
+      // knowable from the record without transforming it at the point of use. validatePaper has
+      // already refused anything this cannot normalize, so the fallback here only ever handles the
+      // deliberate clear ("" removes the alias).
+      ...(paper.alias === undefined
+        ? {}
+        : { alias: adminBotNormalizePaperAlias(paper.alias) ?? undefined }),
+      ...(paper.started_on === undefined
+        ? {}
+        : { started_on: String(paper.started_on).trim() || undefined }),
       ...(paper.feedback_givers === undefined
         ? {}
         : { feedback_givers: normalizeNameList(paper.feedback_givers) }),
@@ -5926,6 +5991,7 @@ export class AdminBotService {
     undecided: number;
   }> {
     const members = this.store.listLabMembers();
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
     const now = new Date().toISOString();
     const added: string[] = [];
     const silenced: string[] = [];
@@ -5934,6 +6000,20 @@ export class AdminBotService {
     for (const member of members) {
       if (member.receives_nudges !== undefined) {
         alreadyDecided += 1;
+        continue;
+      }
+      // The head professor is written off the list rather than onto it, whatever the sheet says.
+      // They are typed `full` like everyone else in the lab, so the member-type rule below would
+      // opt them in -- and it did: the weekly paper-update sweep names every paper they coauthor,
+      // which for a PI is every paper, so one Sunday pass produces a DM and a portal toast listing
+      // the entire lab's output. Every nudge asks the recipient to go and do something about work
+      // they owe, and the professor owes none of it; the escalation path runs towards them, not at
+      // them. Stored as `false` rather than left absent so a later seeding run cannot re-add them.
+      if (headProfessorId && member.id === headProfessorId) {
+        silenced.push(member.id);
+        if (!params.dryRun) {
+          this.store.saveLabMember({ ...member, receives_nudges: false, updated_at: now });
+        }
         continue;
       }
       // Off, explicitly, for anybody whose access level has no portal: every nudge AdminBot sends
@@ -6297,6 +6377,13 @@ export class AdminBotService {
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const include = options.include ?? "both";
     const chosen = options.recipientIds?.length ? new Set(options.recipientIds) : undefined;
+    // Take back what is already settled before deciding who to chase. A member can close their gap
+    // without touching their own profile page -- an admin fills in a field, a trip lands on the
+    // timeline -- and the reminder they were sent last week is still sitting unread until somebody
+    // says otherwise. See retractSettledProfileNudges.
+    for (const member of this.store.listLabMembers()) {
+      this.retractSettledProfileNudges(member.id);
+    }
     const attention = this.membersNeedingProfileAttention().filter((row) => {
       if (chosen && !chosen.has(row.id)) {
         return false;
@@ -6405,6 +6492,116 @@ export class AdminBotService {
       .filter((row) => row.missing_fields.length > 0 || row.timeline_short);
   }
 
+  /**
+   * Alumni whose Slack Connect invitation is now due, and who has not had one.
+   *
+   * Due-ness is read off the welcome's own audit row rather than a queue table: the welcome already
+   * writes `onboarding.guide_sent`, so the date it went out is recorded, and a second store to keep
+   * in step with it would only be a way for the two to disagree. The ledger records the invitation
+   * once it goes, which is what stops a nightly sweep minting a fresh Connect link every night for
+   * somebody who already has one.
+   *
+   * Matched on the recipient address the welcome was actually sent to, including the alternates on
+   * a member's record: alumni are mailed at whichever address they still read, which is routinely
+   * not the institutional one their record is keyed by.
+   */
+  dueAlumniSlackInvites(options: { nowIso?: string } = {}): Array<{
+    member_id: string;
+    name: string;
+    email: string;
+    welcomed_at: string;
+  }> {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const cutoff =
+      now.getTime() - adminBotAlumniSlackInviteDelayDays * 24 * 60 * 60 * 1000;
+    const byAddress = new Map<string, AdminBotLabMember>();
+    for (const member of this.store.listLabMembers()) {
+      for (const address of [
+        member.email,
+        member.correspondence_email,
+        member.calendar_email,
+      ]) {
+        const key = address?.trim().toLowerCase();
+        if (key) {
+          byAddress.set(key, member);
+        }
+      }
+    }
+    const ledger = this.nudgeLedgerIndex();
+    const due = new Map<string, { member_id: string; name: string; email: string; welcomed_at: string }>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "onboarding.guide_sent") {
+        continue;
+      }
+      const details = event.details as
+        | { template_id?: unknown; recipient?: unknown; sent?: unknown }
+        | undefined;
+      if (
+        !details ||
+        details.template_id !== ADMINBOT_ALUMNI_TEMPLATE_ID ||
+        details.sent !== true ||
+        typeof details.recipient !== "string"
+      ) {
+        continue;
+      }
+      const welcomedAt = Date.parse(event.timestamp);
+      if (!Number.isFinite(welcomedAt) || welcomedAt > cutoff) {
+        continue;
+      }
+      const member = byAddress.get(details.recipient.trim().toLowerCase());
+      // A welcome to somebody the roster cannot name is left alone rather than guessed at: the
+      // invitation needs a member to file the ledger against, and inventing one is worse than an
+      // admin sending it by hand.
+      if (!member || adminBotIsAlumniMember(member) === false) {
+        continue;
+      }
+      if (this.hasNudgeBeenSaid(ledger, "alumni_slack_invite", member.id)) {
+        continue;
+      }
+      // Oldest welcome wins when somebody was mailed twice: the delay is measured from the first
+      // time they heard from us, not the most recent correction.
+      const existing = due.get(member.id);
+      if (!existing || Date.parse(existing.welcomed_at) > welcomedAt) {
+        due.set(member.id, {
+          member_id: member.id,
+          name: member.name,
+          email: details.recipient.trim(),
+          welcomed_at: event.timestamp,
+        });
+      }
+    }
+    return [...due.values()].toSorted((left, right) =>
+      left.welcomed_at.localeCompare(right.welcomed_at),
+    );
+  }
+
+  /** The sweep's own row, so a run that sent nothing is still distinguishable from one that never ran. */
+  recordAlumniSlackInviteSweep(params: {
+    actor: string;
+    sent: number;
+    skipped: number;
+  }): void {
+    this.recordAudit({
+      type: "alumni_slack_invites.swept",
+      actor: params.actor,
+      details: {
+        after_days: adminBotAlumniSlackInviteDelayDays,
+        sent: params.sent,
+        skipped: params.skipped,
+      },
+    });
+  }
+
+  /** Record that an alumnus has had their Slack Connect invitation, so no later sweep re-sends it. */
+  markAlumniSlackInviteSent(memberId: string, nowIso?: string): void {
+    this.markNudgeSaid(
+      "alumni_slack_invite",
+      memberId,
+      memberId,
+      nowIso ?? new Date().toISOString(),
+    );
+  }
+
   /** Epoch millis of the last mandatory-fields reminder each member received. */
   private lastMandatoryFieldsReminderByMember(): Map<string, number> {
     const latest = new Map<string, number>();
@@ -6473,7 +6670,7 @@ export class AdminBotService {
             channel: "slack",
             recipient_member_ids: nonCompliantMemberIds,
             message: buildProfilePhotoGuidelineMessage(),
-            kind: "profile",
+            kind: "profile_photo",
             title: "Your profile photo needs replacing",
             tab: "profile",
             // Not important: nothing downstream is blocked on it, and a group DM about somebody's
@@ -6708,6 +6905,17 @@ export class AdminBotService {
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const nowIso = new Date().toISOString();
+    const headProfessorMemberId = this.resolveSettings().head_professor_member_id?.trim();
+    // Every nudge asks the member to go and do something in the portal, and until now none of them
+    // said where the portal is. A member who has not bookmarked it -- which is most of them, most
+    // of the time -- got "open your profile page in the Control UI" and no way to act on it without
+    // asking somebody for the address. Appended once, here, rather than written into fifteen
+    // different message builders: this is the one funnel they all pass through.
+    //
+    // On the outbound copy only. The stored notification is read *inside* the portal, where a link
+    // telling the reader where they already are is noise.
+    const portalUrl = resolveAdminBotControlUiUrl();
+    const outboundMessage = `${message}\n\n${portalUrl}`;
     for (const memberId of request.recipient_member_ids) {
       const member = this.store.getLabMember(memberId);
       if (!member) {
@@ -6728,6 +6936,18 @@ export class AdminBotService {
       // an admin who wants to reach an alumnus has their address, and this is not that path.
       if (adminBotIsAlumniMember(member)) {
         skipped.push({ member_id: memberId, reason: "member is alumni" });
+        continue;
+      }
+      // The head professor, ahead of the allowlist for the same reason alumni are. `receives_nudges`
+      // is a per-person choice an admin makes, but "AdminBot does not chase the PI" is a property of
+      // the system: the escalation path runs towards them, so a sweep that DMs them is the lab
+      // nagging the person the nagging is supposed to reach. It was a per-person choice for exactly
+      // one release, and seedNudgeListFromMemberTypes promptly ticked the box -- the professor is
+      // typed `full` like everybody else -- which put the entire lab's paper list in their Slack
+      // and a toast on their dashboard. Enforced here rather than trusted to the stored flag so no
+      // future import, seeding run or hand edit can turn it back on by accident.
+      if (headProfessorMemberId && member.id === headProfessorMemberId) {
+        skipped.push({ member_id: memberId, reason: "member is the head professor" });
         continue;
       }
       if (!adminBotReceivesNudges(member)) {
@@ -6765,7 +6985,7 @@ export class AdminBotService {
                   tool: "message",
                   action: "send",
                   target: member.slack_user_id,
-                  message,
+                  message: outboundMessage,
                 },
                 undo_plan: "Send a Slack follow-up correcting or retracting the message.",
               }
@@ -6783,7 +7003,7 @@ export class AdminBotService {
                   channel: "email",
                   to: member.email,
                   subject: request.subject?.trim(),
-                  body: message,
+                  body: outboundMessage,
                 },
                 undo_plan: "Send an email follow-up correcting or retracting the message.",
               }
@@ -6903,7 +7123,7 @@ export class AdminBotService {
     // The transition list and the ceremony both go to the admins. Resolved once: an installation
     // with no head professor set still has admins on the roster, and silently saying nothing about
     // people who have left is the worse failure.
-    const recipients = this.graduationAdminRecipients();
+    const recipients = this.adminNoticeRecipients();
     if (dueTransitions.length) {
       if (!recipients.length) {
         skipped.push({ member_id: "admins", reason: "no admin has a linked Slack account" });
@@ -6988,21 +7208,32 @@ export class AdminBotService {
   }
 
   /**
-   * Who hears about people leaving.
+   * Who hears about the lab's administrative chores: departures, theses waiting to be graded.
    *
-   * The head professor when one is configured, and every Slack-linked admin otherwise. Not both:
-   * a lab whose professor is also its only admin would otherwise get each message twice.
+   * The lab manager when one is configured, and every other Slack-linked admin otherwise. Not the
+   * head professor either way: a finishing month that has passed is administration, and the
+   * professor is the person an ignored nudge escalates *towards* rather than the person who files
+   * the paperwork. Routing it to them made AdminBot mail the professor about every departure in
+   * the lab, which is the nagging `escalateStaleNudges` is careful to avoid.
+   *
+   * Not both branches at once: a lab whose manager is also its only other admin would otherwise
+   * get each message twice.
    */
-  private graduationAdminRecipients(): string[] {
-    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
-    if (headProfessorId && this.store.getLabMember(headProfessorId)?.slack_user_id) {
-      return [headProfessorId];
+  private adminNoticeRecipients(): string[] {
+    const settings = this.resolveSettings();
+    const headProfessorId = settings.head_professor_member_id?.trim();
+    const labManagerId = settings.lab_manager_member_id?.trim();
+    if (labManagerId && this.store.getLabMember(labManagerId)?.slack_user_id) {
+      return [labManagerId];
     }
     return this.store
       .listLabMembers()
       .filter(
         (member) =>
-          member.privilege_level === "admin" && member.slack_user_id && member.status !== "alumni",
+          member.privilege_level === "admin" &&
+          member.slack_user_id &&
+          member.status !== "alumni" &&
+          member.id !== headProfessorId,
       )
       .map((member) => member.id);
   }
@@ -7094,17 +7325,21 @@ export class AdminBotService {
     }
 
     if (gradingDue.length) {
-      const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
-      if (!headProfessorId) {
+      // The lab manager, not the professor who will actually do the grading. The reminder still
+      // exists to get a thesis graded, but AdminBot chasing the PI directly is the thing this
+      // system does not do -- the desk that tracks the chore is the one that can act on a list of
+      // them, and it is a person the escalation path is allowed to reach.
+      const recipients = this.adminNoticeRecipients();
+      if (!recipients.length) {
         skipped.push({
-          member_id: "head_professor",
-          reason: "no head professor is configured to remind",
+          member_id: "lab_manager",
+          reason: "no admin with a linked Slack account to remind",
         });
       } else {
         const sent = await this.sendMemberNudge(
           {
             channel: "slack",
-            recipient_member_ids: [headProfessorId],
+            recipient_member_ids: recipients,
             message: buildThesisGradingMessage(gradingDue),
             kind: "nudge",
             title: gradingDue.length === 1 ? "A thesis is ready to grade" : "Theses ready to grade",
@@ -7112,11 +7347,13 @@ export class AdminBotService {
           },
           actor,
         );
+        // One ledger row per thesis, stamped against the desk that was asked. The key is the
+        // subject, so stamping it once per recipient would be the same row rewritten.
         for (const action of gradingDue) {
-          remember(`thesis|grading|${action.member_id}|${action.date}`, headProfessorId);
+          remember(`thesis|grading|${action.member_id}|${action.date}`, recipients[0] ?? "");
         }
         if (!sent.ok) {
-          skipped.push({ member_id: headProfessorId, reason: sent.error.message });
+          skipped.push({ member_id: recipients[0] ?? "lab_manager", reason: sent.error.message });
         } else {
           skipped.push(...sent.payload.skipped);
         }
@@ -8053,9 +8290,16 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "cv_url",
   "intake_form_url",
   "linkedin_url",
-  // linkedin_urn is deliberately absent: LinkedIn publishes no vanity-URL-to-URN mapping, so the
-  // lab looks the value up and an admin writes it. A self update that carries one is dropped here,
-  // which is what makes the disabled control on the profile page an actual rule rather than a hint.
+  // LinkedIn publishes no vanity-URL-to-URN mapping, so this is a value somebody has to look up --
+  // but the member can look it up as easily as an admin, and the field's own help text has always
+  // told them to, pointing at the collector tool that reads it off their own account. The control
+  // was disabled and self updates carrying a URN were dropped here, so that instruction could not
+  // be followed. Both halves are fixed: the member may now paste one in.
+  //
+  // Still absent from the reminder's set (adminBotAdminOwnedProfileFields), which is a separate
+  // question from who may write it: one member of 199 has a URN, and chasing the rest for it would
+  // be fifty nudges about a field nobody has heard of.
+  "linkedin_urn",
   "twitter_url",
   "github_url",
   "scholar_url",
@@ -8102,6 +8346,11 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
 // link (conference and topic live there too).
 const OWN_PAPER_EDITABLE_FIELDS = [
   "title",
+  // The project's short name and when it started. Both are the author's own answers about their
+  // own project, and both are asked for at creation, so they have to be writable by the member
+  // filing it -- a field the create form collects and the service drops is the worst of both.
+  "alias",
+  "started_on",
   "authors",
   "current_step",
   "artifacts",
@@ -9176,6 +9425,20 @@ function validatePaper(paper: AdminBotPaperRecordInput): string | undefined {
   }
   if (paper.author_links !== undefined && !Array.isArray(paper.author_links)) {
     return "author links must be a list";
+  }
+  // Refused rather than rewritten. The alias becomes the project's Slack channel name, so an
+  // author who typed something that cannot be one has to be told now -- not discover afterwards
+  // what the lab called their channel. Blank is fine: the alias is optional on an existing paper,
+  // and only the creation form insists on one.
+  if (paper.alias !== undefined && String(paper.alias).trim()) {
+    if (!adminBotNormalizePaperAlias(paper.alias)) {
+      return `paper alias must be letters, digits and hyphens, ${adminBotPaperAliasMaxLength} characters or fewer`;
+    }
+  }
+  if (paper.started_on !== undefined && String(paper.started_on).trim()) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(paper.started_on).trim())) {
+      return "project start date must look like 2026-09-01";
+    }
   }
   if (paper.feedback_givers && !Array.isArray(paper.feedback_givers)) {
     return "feedback givers must be a list of names";

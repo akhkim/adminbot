@@ -415,6 +415,17 @@
   height: 0.875em;
 }
 
+/* Above the link rather than below it, and given a band of its own: it is a condition on the thing
+   the button is about to open, so a member who reads only far enough to click has still read it. */
+.logistics-meeting__mandatory {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-1, 6px);
+  background: var(--panel-alt);
+  font-size: 0.875rem;
+}
+
 /* The admin band above the templates, and the request list it opens. */
 
 .logistics-admin__heading {

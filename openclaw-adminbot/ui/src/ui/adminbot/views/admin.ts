@@ -524,6 +524,7 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
       ? { meeting_minimum_minutes: meetingFloor }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
+    lab_manager_member_id: getFormValue(data, "labManagerMemberId"),
     head_professor_whatsapp: getFormValue(data, "headProfessorWhatsapp"),
     applicant_sheet_id: getFormValue(data, "applicantSheetId"),
     applicant_last_reviewed_at: getFormValue(data, "applicantLastReviewedAt"),
@@ -592,6 +593,10 @@ function renderSettings(
                 name="headProfessorWhatsapp"
                 .value=${settings.head_professor_whatsapp ?? ""}
               />
+            </label>
+            <label class="adminbot-form__field">
+              <span>Lab manager member id</span>
+              <input name="labManagerMemberId" .value=${settings.lab_manager_member_id ?? ""} />
             </label>
             <label class="adminbot-form__field">
               <span>Applicant response sheet id</span>

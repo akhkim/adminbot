@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  workshopConferenceOptions,
+  workshopProfilesForConference,
   buildWorkshopNudgeDraft,
   matchWorkshopNudges,
   workshopNudgeInputsFromAdminBot,
@@ -78,6 +80,28 @@ function stubMatcher(scores: Record<string, number> = {}): WorkshopMatcher {
 }
 
 describe("workshop nudge matching", () => {
+  /** A minimal open workshop row, enough for the conference picker's arithmetic. */
+  const row = (
+    id: string,
+    venueId: string,
+    venueGroup: string,
+    venueFamily: string,
+    parentKey: string,
+  ) => ({
+    id,
+    venue_id: venueId,
+    name: `${id} (${venueGroup})`,
+    entry_type: "workshop" as const,
+    venue_group: venueGroup,
+    venue_family: venueFamily,
+    deadline_label: "direct submission",
+    deadline_aoe: "2035-08-01 23:59:59",
+    submission_type: "direct" as const,
+    topic_profile: ["topic"],
+    parent_conference_key: parentKey,
+    conference_location: "Test City",
+  });
+
   it("ranks across every paper per recipient and caps at three distinct workshops", async () => {
     const result = await matchWorkshopNudges({
       papers: [paper("p-1", "member-1"), paper("p-2", "member-1")],
@@ -235,6 +259,47 @@ describe("workshop nudge matching", () => {
     expect(first.recipients[0]?.recommendations.map((entry) => entry.workshop.workshop_id)).toEqual(
       ["strong", "attended"],
     );
+  });
+
+  // A row per conference the admin can narrow a pass to, counted so the picker can say how much
+  // each one is worth running.
+  it("offers each parent conference once, most workshops first", () => {
+    const rows = [
+      row("a", "EMNLP/2035/Workshop/A", "EMNLP 2035 Workshops", "EMNLP", "emnlp-2035"),
+      row("b", "EMNLP/2035/Workshop/B", "EMNLP 2035 Workshops", "EMNLP", "emnlp-2035"),
+      row("c", "ICLR/2035/Workshop/C", "ICLR 2035 Workshops", "ICLR", "iclr-2035"),
+    ];
+    const options = workshopConferenceOptions(rows, new Date("2035-01-01T00:00:00Z"));
+    expect(options.map((option) => [option.key, option.workshop_count])).toEqual([
+      ["emnlp-2035", 2],
+      ["iclr-2035", 1],
+    ]);
+    expect(options[0]?.label).toBe("EMNLP 2035");
+  });
+
+  // A closed workshop is not something to narrow to, so it must not appear in the picker either.
+  it("leaves a conference out once its workshops have closed", () => {
+    const rows = [
+      {
+        ...row("old", "X/2020/Workshop/O", "X 2020 Workshops", "X", "x-2020"),
+        deadline_aoe: "2020-08-01 23:59:59",
+      },
+    ];
+    expect(workshopConferenceOptions(rows, new Date("2035-01-01T00:00:00Z"))).toEqual([]);
+  });
+
+  it("narrows profiles to the chosen conference, and leaves them alone without one", () => {
+    const rows = [
+      row("a", "EMNLP/2035/Workshop/A", "EMNLP 2035 Workshops", "EMNLP", "emnlp-2035"),
+      row("c", "ICLR/2035/Workshop/C", "ICLR 2035 Workshops", "ICLR", "iclr-2035"),
+    ];
+    const profiles = workshopProfilesFromDeadlines(rows, new Date("2035-01-01T00:00:00Z"));
+    expect(
+      workshopProfilesForConference(profiles, "iclr-2035").map((p) => p.workshop_id),
+    ).toEqual(["ICLR/2035/Workshop/C"]);
+    // No pick is every open workshop, which is what the pass did before the picker existed.
+    expect(workshopProfilesForConference(profiles, "")).toHaveLength(2);
+    expect(workshopProfilesForConference(profiles, undefined)).toHaveLength(2);
   });
 
   it("builds profiles from current workshop rows and merges submission routes", () => {

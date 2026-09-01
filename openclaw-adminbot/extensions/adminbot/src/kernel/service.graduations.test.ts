@@ -37,8 +37,25 @@ function serviceWith(options: { headProfessor?: boolean } = {}) {
       slack_user_id: "U-MEI",
     } as never),
   );
+  // The desk the lab's chores land on. Separate from the professor on purpose: the sweep's notices
+  // are administration, and AdminBot does not chase the PI.
+  unwrap(
+    service.upsertLabMember({
+      receives_nudges: true,
+      id: "andrew",
+      name: "Andrew Kim",
+      privilege_level: "admin",
+      status: "active",
+      slack_user_id: "U-AK",
+    } as never),
+  );
   if (options.headProfessor !== false) {
-    unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+    unwrap(
+      service.updateSettings({
+        head_professor_member_id: "zhijing",
+        lab_manager_member_id: "andrew",
+      } as never),
+    );
   }
   return service;
 }
@@ -67,13 +84,15 @@ describe("sweepGraduations", () => {
     expect(told(service, "zhijing")).toEqual([]);
   });
 
-  it("asks the admins once the month has passed, and does not set the status itself", async () => {
+  it("asks the lab manager once the month has passed, and does not set the status itself", async () => {
     const service = serviceWith();
     setMonth(service, "2026-04");
     const result = unwrap(await service.sweepGraduations("cron", { nowIso: NOW }));
 
     expect(result.transitions).toEqual([{ member_id: "mei", month: "2026-04" }]);
-    expect(told(service, "zhijing")[0]?.body).toContain("Mei Chen");
+    expect(told(service, "andrew")[0]?.body).toContain("Mei Chen");
+    // Not the professor. A finishing month that has passed is paperwork, not an escalation.
+    expect(told(service, "zhijing")).toEqual([]);
     // Flipping a status has access consequences; a sweep asks, it does not perform.
     expect(memberById(service, "mei")?.status).toBe("active");
     expect(told(service, "mei")).toEqual([]);
@@ -106,7 +125,7 @@ describe("sweepGraduations", () => {
       await service.sweepGraduations("cron", { nowIso: "2026-04-01T09:00:00Z" }),
     );
     expect(result.ceremony).toEqual({ year: 2026, graduates: 1 });
-    const ceremonyNote = told(service, "zhijing").find((entry) =>
+    const ceremonyNote = told(service, "andrew").find((entry) =>
       entry.title.includes("graduation ceremony"),
     );
     expect(ceremonyNote?.body).toContain("Mei Chen");
@@ -118,16 +137,17 @@ describe("sweepGraduations", () => {
     );
     expect(again.ceremony).toBeUndefined();
     expect(
-      told(service, "zhijing").filter((entry) => entry.title.includes("graduation ceremony")),
+      told(service, "andrew").filter((entry) => entry.title.includes("graduation ceremony")),
     ).toHaveLength(1);
   });
 
-  it("falls back to the admins when no head professor is configured", async () => {
+  it("falls back to the admins when no lab manager is configured", async () => {
     const service = serviceWith({ headProfessor: false });
     setMonth(service, "2026-04");
     unwrap(await service.sweepGraduations("cron", { nowIso: NOW }));
     // Saying nothing about somebody who has left is the worse failure.
     expect(told(service, "zhijing")[0]?.body).toContain("Mei Chen");
+    expect(told(service, "andrew")[0]?.body).toContain("Mei Chen");
   });
 
   it("does nothing for a roster with no finishing months on it", async () => {

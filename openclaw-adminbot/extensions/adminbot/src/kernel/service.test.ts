@@ -3,6 +3,7 @@ import {
   adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
+  adminBotProjectChannelName,
 } from "../contracts/actions.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { AdminBotService, payloadHash } from "./service.js";
@@ -1400,7 +1401,10 @@ describe("AdminBotService", () => {
   // The URN is looked up by the lab, not typed by the member, so a self update carrying one is
   // dropped like any other non-whitelisted key -- the disabled control on the profile page is the
   // label for this rule, never the rule itself.
-  it("ignores a linkedin_urn sent through a self profile update, but lets an admin set it", () => {
+  // It used to be dropped from a self update, which made the profile page's disabled control a
+  // rule rather than a hint. Both are gone: the field's own help text tells the member to look
+  // their URN up in the collector tool and paste it here, and now they can.
+  it("takes a linkedin_urn a member pasted in, and still lets an admin set it", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
@@ -1418,8 +1422,7 @@ describe("AdminBotService", () => {
         role: "Postdoc",
       }),
     );
-    expect(selfEdited.linkedin_urn ?? "").toBe("");
-    // The rest of the same update still lands: the key is dropped, the request is not refused.
+    expect(selfEdited.linkedin_urn).toBe("ACoAAB7654321");
     expect(selfEdited.role).toBe("Postdoc");
 
     const byAdmin = unwrap(
@@ -1433,6 +1436,56 @@ describe("AdminBotService", () => {
       }),
     );
     expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
+  });
+
+  // The alias becomes the project's Slack channel `proj-<alias>`, so it is stored in the shape that
+  // name is read off directly rather than transformed at the point of use.
+  it("stores a paper alias lowercased, and its start date, from a member write", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+      }),
+    );
+    const saved = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "causal-ai-scientist",
+        title: "Causal AI Scientist",
+        authors: ["Ada Lovelace"],
+        alias: "CAIS",
+        started_on: "2026-01-15",
+      } as never),
+    );
+    expect(saved.alias).toBe("cais");
+    expect(saved.started_on).toBe("2026-01-15");
+    expect(adminBotProjectChannelName(saved.alias!)).toBe("proj-cais");
+  });
+
+  // Refused, not rewritten: "C.A.I.S. v2" would become "c-a-i-s-v2", which is a different name, and
+  // an author should not discover what their channel was called after the fact.
+  it("refuses an alias Slack could not take, and a malformed start date", () => {
+    const service = new AdminBotService();
+    const base = {
+      id: "p1",
+      title: "A paper",
+      authors: ["Ada Lovelace"],
+      current_step: "brainstorming_docs",
+    };
+    const badAlias = service.upsertPaper({ ...base, alias: "C.A.I.S. v2" } as never);
+    expect(badAlias.ok).toBe(false);
+    if (!badAlias.ok) {
+      expect(badAlias.error.message).toContain("letters, digits and hyphens");
+    }
+    const badDate = service.upsertPaper({ ...base, started_on: "15/01/2026" } as never);
+    expect(badDate.ok).toBe(false);
+    if (!badDate.ok) {
+      expect(badDate.error.message).toContain("2026-09-01");
+    }
+    // Absent stays fine: the alias is only insisted on by the creation form.
+    expect(service.upsertPaper(base as never).ok).toBe(true);
   });
 
   it("lets a member self-edit availability and time off, and validates both", () => {
@@ -2108,7 +2161,10 @@ describe("AdminBotService", () => {
       proposed_payload: {
         channel: "slack",
         target: "U1",
-        message: "Reminder: submit your progress update.",
+        // The portal address is appended to every outbound nudge -- see sendMemberNudge. Members
+        // are being asked to go and do something there, and most have not bookmarked it.
+        message:
+          "Reminder: submit your progress update.\n\nhttps://jinesis-admin.vercel.app",
       },
     });
     expect(executor.execute).toHaveBeenCalledTimes(1);
@@ -2202,6 +2258,227 @@ describe("AdminBotService", () => {
           (member) => member.receives_nudges === false,
         ),
       ).toBe(true);
+    });
+
+    // Ten days after the welcome, not with it. The delay is measured off the welcome's own audit
+    // row, so there is no queue table to fall out of step with it.
+    it("holds an alumnus's Slack invitation until the tenth day", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: true,
+      });
+
+      const day = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      expect(
+        service.dueAlumniSlackInvites({
+          nowIso: new Date(now + 9 * day).toISOString(),
+        }),
+      ).toEqual([]);
+
+      const due = service.dueAlumniSlackInvites({
+        nowIso: new Date(now + 11 * day).toISOString(),
+      });
+      expect(due.map((entry) => entry.member_id)).toEqual(["yuen"]);
+      expect(due[0]?.email).toBe("yuen@example.com");
+    });
+
+    // The ledger is what stops a nightly sweep minting a fresh Connect link every night for the
+    // same person -- the failure mode a delayed send invites that an immediate one does not.
+    it("stops offering one once it has been sent", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: true,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toHaveLength(1);
+
+      service.markAlumniSlackInviteSent("yuen");
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toEqual([]);
+    });
+
+    // Alumni are mailed at whichever address they still read, which is routinely not the one their
+    // record is keyed by. Matching only on the primary would leave those invitations unsent.
+    it("finds the member behind the address the welcome actually went to", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@cs.toronto.edu",
+        correspondence_email: "yuenc2@illinois.edu",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuenc2@illinois.edu",
+        sent: true,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(
+        service.dueAlumniSlackInvites({ nowIso: later }).map((e) => e.member_id),
+      ).toEqual(["yuen"]);
+    });
+
+    // A welcome that never left is not a welcome, so nothing follows it.
+    it("ignores a welcome the send could not deliver", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: false,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toEqual([]);
+    });
+
+    // Ayush's report: "profile shows 100% but it keeps messaging about incompleteness". The 100% was
+    // right. A notification is a point-in-time copy, and nothing used to take one back, so the copy
+    // sent before the blanks were filled stayed unread forever -- lighting the bell, re-toasting on
+    // every session, and eventually escalating to the professor about work already done.
+    it("takes back a profile reminder once the member has closed the gap", async () => {
+      const service = labWith({
+        id: "ayush",
+        name: "Ayush Nangia",
+        slack_user_id: "U-AY",
+        receives_nudges: true,
+        member_type: "full",
+        status: "active",
+      });
+      const outstanding = unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["ayush"],
+            message: "Your profile is missing required fields.",
+            kind: "profile",
+            title: "Your profile is missing required fields",
+            important: true,
+          },
+          "cron",
+        ),
+      );
+      expect(outstanding.created).toHaveLength(1);
+      expect(unwrap(service.listMemberNotifications("ayush")).notifications[0]?.read_at).toBeUndefined();
+
+      // Every mandatory field, and enough timeline for the second half of the rule.
+      unwrap(
+        service.updateOwnProfile("ayush", {
+          calendar_email: "ayush@lab.test",
+          location: "Toronto",
+          research_topics: ["causality"],
+          correspondence_email: "ayush@lab.test",
+          whatsapp: "+1 555 0100",
+          joined_month: "2026-01",
+          github_url: "https://github.com/ayush",
+          linkedin_url: "https://linkedin.com/in/ayush",
+          cv_url: "https://example.test/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQL/viewform",
+          openreview_id: "~Ayush_Nangia1",
+          trips: [{ city: "Toronto", start: "2026-09-01", end: "2026-09-05" }],
+          milestones: [{ date: "2026-10-01", label: "Thesis draft" }],
+        } as never),
+      );
+
+      const after = unwrap(service.listMemberNotifications("ayush")).notifications;
+      expect(after[0]?.read_at).toBeTruthy();
+    });
+
+    // The headshot reminder settles on different evidence, so filling in a blank field must not
+    // mark it dealt with. It is why the two carry different kinds.
+    it("leaves a photo reminder alone when the fields are filled in", async () => {
+      const service = labWith({
+        id: "ayush",
+        name: "Ayush Nangia",
+        slack_user_id: "U-AY",
+        receives_nudges: true,
+        member_type: "full",
+        status: "active",
+      });
+      unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["ayush"],
+            message: "Your profile photo needs replacing.",
+            kind: "profile_photo",
+            title: "Your profile photo needs replacing",
+          },
+          "cron",
+        ),
+      );
+      unwrap(service.updateOwnProfile("ayush", { location: "Toronto" } as never));
+      const after = unwrap(service.listMemberNotifications("ayush")).notifications;
+      expect(after[0]?.kind).toBe("profile_photo");
+      expect(after[0]?.read_at).toBeUndefined();
+    });
+
+    // The bug this rule exists for. The professor is typed `full` on the sheet like everybody else
+    // in the lab, so the member-type rule opted them in -- and the first Sunday pass afterwards
+    // named every paper they coauthor, which for a PI is every paper in the lab, as a Slack DM and
+    // a dashboard toast.
+    it("silences the head professor even though the sheet types them full", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({ id: "zhijing", name: "Zhijing Jin", member_type: "full" }),
+      );
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual(["zhijing"]);
+      expect(result.added).toEqual(["mei"]);
+      // Stored as a decision, so a second run cannot read the absence as "nobody has chosen yet".
+      const stored = unwrap(service.listLabMembers()).members;
+      expect(stored.find((member) => member.id === "zhijing")?.receives_nudges).toBe(false);
+    });
+
+    // Belt and braces to the seeding rule above: the flag is a per-person choice an admin makes,
+    // but "AdminBot does not chase the PI" is a property of the system, so a hand edit or a stale
+    // import that ticks the box still cannot produce a message.
+    it("refuses the head professor even when somebody has put them on the list", async () => {
+      const service = labWith({
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U-ZJ",
+        receives_nudges: true,
+      });
+      unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+
+      const result = await nudge(service, "zhijing");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([
+        { member_id: "zhijing", reason: "member is the head professor" },
+      ]);
+      // And no portal notification either: the toast is AdminBot addressing them just the same.
+      expect(unwrap(service.listMemberNotifications("zhijing")).notifications).toEqual([]);
     });
 
     // Access is the union of somebody's levels, but alumni are off the list regardless of which
@@ -2402,7 +2679,7 @@ describe("AdminBotService", () => {
         channel: "email",
         to: "e1@example.test",
         subject: "Schedule change",
-        body: "Announcement: lab meeting moved to Friday.",
+        body: "Announcement: lab meeting moved to Friday.\n\nhttps://jinesis-admin.vercel.app",
       },
     });
     expect(result.skipped).toEqual([{ member_id: "e2", reason: "member has no email" }]);

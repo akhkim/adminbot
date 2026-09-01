@@ -22,6 +22,8 @@ export type WorkshopNudgesProps = {
   onToggleRecipient: (memberId: string) => void;
   onSetRecipients: (memberIds: string[], selected: boolean) => void;
   onViewChange: (patch: WorkshopNudgeViewPatch) => void;
+  /** Narrow the next pass to one conference. Empty string means every open workshop. */
+  onConferenceChange: (key: string) => void;
   onSend: () => void;
 };
 
@@ -55,6 +57,7 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
         ? html`<div class="card adminbot-card adminbot-card--wide workshop-nudges__empty">
             <strong>No recommendations yet</strong>
             <span class="muted">Find workshop matches for the current papers.</span>
+            ${renderConferencePicker(props)}
             <button
               class="btn primary"
               type="button"
@@ -132,11 +135,46 @@ function renderRunProgress(props: WorkshopNudgesProps) {
   </div>`;
 }
 
+/**
+ * Which conference the next pass covers.
+ *
+ * Rendered only when the service offered a list: an older one has no such route, and an empty
+ * picker would read as "no conferences have workshops" rather than "this deployment cannot narrow".
+ * The default is every open workshop, which is what the pass did before this existed.
+ */
+function renderConferencePicker(props: WorkshopNudgesProps) {
+  const options = props.state.conferences;
+  if (options.length === 0) {
+    return nothing;
+  }
+  return html`<label class="workshop-nudges__conference">
+    <span class="muted">Limit to</span>
+    <select
+      data-testid="workshop-nudges-conference"
+      ?disabled=${props.state.loading || props.state.sending}
+      .value=${props.state.conferenceKey}
+      @change=${(event: Event) =>
+        props.onConferenceChange((event.currentTarget as HTMLSelectElement).value)}
+    >
+      <option value="">Every open workshop</option>
+      ${options.map(
+        (option) => html`<option value=${option.key}>
+          ${option.label} (${option.workshop_count})
+        </option>`,
+      )}
+    </select>
+  </label>`;
+}
+
 function renderResultActions(props: WorkshopNudgesProps, result: WorkshopNudgeResult) {
   return html`<div class="workshop-nudges__result-actions">
     <span class="muted">
       Updated <time datetime=${result.generated_at}>${dateTimeLabel(result.generated_at)}</time>
+      ${result.conference_label
+        ? html`· limited to <strong>${result.conference_label}</strong>`
+        : nothing}
     </span>
+    ${renderConferencePicker(props)}
     <button
       class="btn"
       type="button"

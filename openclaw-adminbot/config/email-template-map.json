@@ -60,6 +60,7 @@
   },
 
   "codeOnly": {
+    "alumni_slack_connect": "The Slack Connect invitation an alumnus gets ten days after their welcome. Not a doc section: the 2026-08-07 doc puts a standing invitation inside the alumni mail, and this is the per-person invite that mail no longer carries, sent on its own so the link is minted fresh when it goes out.",
     "interviewee": "Subgroup follow-up after a conversation. Written in code before the doc existed; no section covers it yet.",
     "slightly_better_than_emails": "Subgroup onboarding for the lightest collaboration tier. No doc section yet.",
     "member": "Full-member onboarding. The doc covers the external tiers; the internal welcome has never been in it.",

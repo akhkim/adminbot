@@ -99,11 +99,20 @@ describe("a Slack invite that comes back without a url", () => {
         sent.push({ body });
       },
     });
+    // Not `alumni`: since the 2026-08-07 doc that mail invites through the workspace link and
+    // mints no Connect invite, so it cannot exercise the empty-url fallback any more.
     const result = await send({
-      template_id: "alumni",
+      template_id: "slightly_better_than_emails",
       name: "Yuen Chen",
       email: "yuenc2@illinois.edu",
       slack_channel_id: "C09MANEUPPZ",
+      values: {
+        contact_name: "Zhijing",
+        deliverable: "the eval table",
+        project_channel_or_meeting: "#proj-causal",
+        project_or_context: "the causal eval",
+        timeline: "two weeks",
+      },
     });
     expect(result.ok, JSON.stringify(result)).toBe(true);
     expect(sent[0]?.body).toContain(

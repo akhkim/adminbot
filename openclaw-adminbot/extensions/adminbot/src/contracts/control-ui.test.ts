@@ -35,13 +35,17 @@ describe("resolveAdminBotControlUiUrl", () => {
 });
 
 describe("buildPasswordResetUrl", () => {
-  it("puts the token on the Control UI root, where the confirm step lives", () => {
+  // Its own path, not the root. Both reach the same form -- the Control UI is a single-page app and
+  // every path rewrites to index.html -- but the root spends a beat as the landing page first, so a
+  // member following a reset link watched the marketing page and a sign-in form go by before the
+  // form they were sent to appeared. Jordan reported it as the link going to the wrong place.
+  it("puts the token on a reset path of its own, not the Control UI root", () => {
     expect(
       buildPasswordResetUrl({
         token: "abc-123",
         controlUiUrl: "https://ui.example.com",
       }),
-    ).toBe("https://ui.example.com/?passwordReset=abc-123");
+    ).toBe("https://ui.example.com/reset-password?passwordReset=abc-123");
   });
 
   // The service host used to travel in the link as `adminBotUrl`. It no longer does: the Control

@@ -179,6 +179,16 @@ export type TimeAvailabilityDraft = {
   wholeDay: boolean;
   note: string;
   link: string;
+  /**
+   * Which stored row this draft is rewriting, or null when it is a new one.
+   *
+   * The index is into the list the draft's own category writes to -- `availability` for Jinesis
+   * work, `time_off` for everything else -- because that is the list draftToPatch rebuilds. Editing
+   * used to mean removing the row and typing it again from scratch, which for a project whose dates
+   * moved by a week meant re-entering the project, the hours, the note and the link to change one
+   * date.
+   */
+  editingIndex: number | null;
 };
 
 export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
@@ -191,6 +201,7 @@ export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
   wholeDay: true,
   note: "",
   link: "",
+  editingIndex: null,
 };
 
 export type MilestoneDraft = {
@@ -848,42 +859,45 @@ export function draftToPatch(
 ): SchedulePatch {
   const note = draft.note.trim();
   const link = draft.link.trim();
+  const at = draft.editingIndex;
+  // Replace in place when the draft came from a row, append when it did not. Splicing rather than
+  // filter-then-push so an edited commitment keeps its position in the list: these are read as a
+  // schedule, and a row that jumped to the bottom every time its dates were corrected would make
+  // the list order meaningless.
+  const put = <T>(rows: T[], row: T): T[] =>
+    at !== null && at >= 0 && at < rows.length
+      ? rows.map((existingRow, index) => (index === at ? row : existingRow))
+      : [...rows, row];
   if (draft.category === "jinesis") {
     const project = draft.project.trim();
     return {
-      availability: [
-        ...existing.availability,
-        {
-          start: draft.start,
-          end: draft.end,
-          hours_per_week: Number(draft.hoursPerWeek),
-          ...(project ? { project } : {}),
-          ...(note ? { note } : {}),
-          ...(link ? { link } : {}),
-        },
-      ],
+      availability: put(existing.availability, {
+        start: draft.start,
+        end: draft.end,
+        hours_per_week: Number(draft.hoursPerWeek),
+        ...(project ? { project } : {}),
+        ...(note ? { note } : {}),
+        ...(link ? { link } : {}),
+      }),
     };
   }
   const label = draft.customLabel.trim();
   return {
-    time_off: [
-      ...existing.timeOff,
-      {
-        start: draft.start,
-        end: draft.end,
-        kind: draft.category,
+    time_off: put(existing.timeOff, {
+      start: draft.start,
+      end: draft.end,
+      kind: draft.category,
         // Whole day off unless the member says otherwise -- see TimeAvailabilityDraft.wholeDay.
         // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
         // never subtracted, because no stored figure says by how much.
-        availability: draft.wholeDay ? "none" : "partial",
-        // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
-        // would be a second answer to a question already settled.
-        ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
-        ...(label ? { label } : {}),
-        ...(note ? { note } : {}),
-        ...(link ? { link } : {}),
-      },
-    ],
+      availability: draft.wholeDay ? "none" : "partial",
+      // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
+      // would be a second answer to a question already settled.
+      ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
+      ...(label ? { label } : {}),
+      ...(note ? { note } : {}),
+      ...(link ? { link } : {}),
+    }),
   };
 }
 
@@ -927,7 +941,9 @@ function renderCommitmentForm(form: CommitmentFormProps) {
 
   return html`
     <section class="adminbot-time-availability__editor" data-testid=${testId}>
-      <div class="card-title">${t(titleKey)}</div>
+      <div class="card-title">
+        ${draft.editingIndex !== null ? t("adminbotTimeAvailability.form.editTitle") : t(titleKey)}
+      </div>
       <form
         class="adminbot-form adminbot-time-availability__form"
         @submit=${(event: Event) => {
@@ -936,6 +952,9 @@ function renderCommitmentForm(form: CommitmentFormProps) {
             return;
           }
           props.onSaveSchedule(props.selectedMemberId, draftToPatch(draft, existing));
+          // Back to an empty add form. Leaving the row loaded would make the next submit rewrite
+          // the same commitment, which is the opposite of what an empty-looking form implies.
+          onDraftChange({ ...EMPTY_TIME_AVAILABILITY_DRAFT, category: draft.category });
         }}
       >
         ${head({ draft, update, field })}
@@ -968,6 +987,18 @@ function renderCommitmentForm(form: CommitmentFormProps) {
                 >${error}</span
               >`
             : nothing}
+          ${draft.editingIndex !== null
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                data-testid=${`${testId}-cancel`}
+                ?disabled=${props.saving}
+                @click=${() =>
+                  onDraftChange({ ...EMPTY_TIME_AVAILABILITY_DRAFT, category: draft.category })}
+              >
+                ${t("common.cancel")}
+              </button>`
+            : nothing}
           <button
             type="submit"
             class="btn primary"
@@ -976,7 +1007,9 @@ function renderCommitmentForm(form: CommitmentFormProps) {
           >
             ${props.saving
               ? t("adminbotTimeAvailability.form.saving")
-              : t("adminbotTimeAvailability.form.submit")}
+              : draft.editingIndex !== null
+                ? t("common.save")
+                : t("adminbotTimeAvailability.form.submit")}
           </button>
         </div>
       </form>
@@ -1675,6 +1708,28 @@ function renderJinesisTable(
                 <td>${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}</td>
                 <td>
                   ${renderLink(row?.link)}
+                  ${editable && row
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
+                        data-testid=${`time-availability-commitment-edit-${task.key}`}
+                        ?disabled=${props.saving}
+                        @click=${() =>
+                          props.onDraftChange({
+                            ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                            category: "jinesis",
+                            project: row.project ?? "",
+                            start: row.start,
+                            end: row.end,
+                            hoursPerWeek: String(row.hours_per_week ?? ""),
+                            note: row.note ?? "",
+                            link: row.link ?? "",
+                            editingIndex: rows.indexOf(row),
+                          })}
+                      >
+                        ${t("adminbotTimeAvailability.form.edit")}
+                      </button>`
+                    : nothing}
                   ${editable
                     ? html`<button
                         type="button"

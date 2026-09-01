@@ -13,6 +13,7 @@
 // polls here: the list is fetched once when the tab opens, so the DOM is a safe place for the two
 // fields of an admin's recovery form.
 import { html, nothing } from "lit";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { t } from "../../../i18n/index.ts";
 import type {
   MeetingAttendanceNudgePreview,
@@ -407,10 +408,52 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
   `;
 }
 
+/**
+ * Where recordings live outside this tab.
+ *
+ * This page lists the meetings AdminBot has summaries for. It is not the whole archive: the videos
+ * themselves sit in an unlisted YouTube playlist, and #jinesis-share is where they are posted and
+ * talked about. Somebody looking for a meeting this tab has no row for was, until now, given no
+ * indication either exists.
+ *
+ * The playlist link renders only when a URL is set. An empty href is a link that looks live and
+ * goes nowhere, so the guard stays even now that there is one -- it is what keeps a deployment
+ * that blanks this constant from shipping a dead button.
+ *
+ * Unlisted, not private: the link is the access control, which is why it lives here rather than
+ * behind a lookup. Anyone who can read this tab is already a signed-in member.
+ */
+const MEETING_PLAYLIST_URL =
+  "https://www.youtube.com/playlist?list=PLtVBX_ld338VkH1UzdXs03LTKZp8-FBDL";
+const MEETING_SHARE_CHANNEL = "#jinesis-share";
+
+function renderArchiveLinks() {
+  return html`
+    <aside class="meetings__archive" data-testid="meetings-archive">
+      <h3 class="card-title">${t("adminbotMeetings.archive.title")}</h3>
+      <p class="card-sub">
+        ${t("adminbotMeetings.archive.sub", { channel: MEETING_SHARE_CHANNEL })}
+      </p>
+      ${MEETING_PLAYLIST_URL
+        ? html`<a
+            class="btn btn--sm"
+            href=${MEETING_PLAYLIST_URL}
+            target=${EXTERNAL_LINK_TARGET}
+            rel=${buildExternalLinkRel()}
+            data-testid="meetings-playlist-link"
+          >
+            ${t("adminbotMeetings.archive.playlist")}
+          </a>`
+        : nothing}
+    </aside>
+  `;
+}
+
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
+      ${renderArchiveLinks()}
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.meetings.length === 0

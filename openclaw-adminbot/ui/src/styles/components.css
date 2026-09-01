@@ -10638,11 +10638,16 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--text);
 }
 
+/* Tightened deliberately. This panel sits above the timeline the page is actually about, so every
+   row of it is a row of chart the member has to scroll past; with a full personal list plus the
+   lab's conferences it was taking most of a screen to say four dates. The density is the whole
+   change -- the three-row tile below is left alone, because those rows are what stopped the link
+   and the remove button drawing on top of each other and the AoE clock being clipped. */
 .adminbot-time-availability__deadlines {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
@@ -10657,13 +10662,13 @@ details[open] > .ov-expandable-toggle::after {
    ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
   grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
    be read before the list rather than after it. */
 .adminbot-time-availability__deadline-hint {
-  margin: 0 0 var(--space-3);
+  margin: 0;
   font-size: var(--control-ui-text-sm);
   color: var(--muted);
 }
@@ -10685,8 +10690,8 @@ details[open] > .ov-expandable-toggle::after {
    same cell, so they drew on top of each other. */
 .adminbot-time-availability__deadline-list li {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
@@ -10697,6 +10702,9 @@ details[open] > .ov-expandable-toggle::after {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
+     the button's height the row was mostly empty space above the name. */
+  min-height: 0;
 }
 
 .adminbot-time-availability__deadline-actions {
@@ -10728,7 +10736,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__deadline-label {
   min-width: 0;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -10790,6 +10798,13 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__deadline-list li[data-own="true"] {
   border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
   background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
+}
+
+/* Shrunk with the tile: at the shared button padding these two set the row height for every
+   deadline, including the ones with no button at all next to them. */
+.adminbot-time-availability__deadline-actions .btn {
+  padding-block: 2px;
+  line-height: 1.2;
 }
 
 .adminbot-time-availability__deadline-list li .btn {

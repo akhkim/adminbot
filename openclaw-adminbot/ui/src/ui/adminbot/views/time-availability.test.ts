@@ -580,6 +580,54 @@ describe("draftToPatch", () => {
     ]);
   });
 
+  // Angelo's report: changing a project's dates meant removing the row and typing the whole thing
+  // in again. An editing draft rewrites the row it came from instead of appending a second one.
+  it("rewrites the row an editing draft came from, in place", () => {
+    const existing = {
+      availability: [
+        { start: "2026-01-01", end: "2026-02-01", hours_per_week: 10, project: "Atlas" },
+        { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20, project: "Borealis" },
+      ],
+      timeOff: [],
+    };
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        // The dates are what moved; everything else is carried over from the row.
+        start: "2026-01-08",
+        end: "2026-02-14",
+        hoursPerWeek: "10",
+        editingIndex: 0,
+      },
+      existing,
+    );
+    expect(patch.availability).toEqual([
+      { start: "2026-01-08", end: "2026-02-14", hours_per_week: 10, project: "Atlas" },
+      // Untouched, and still second: an edited row keeps its place in the schedule.
+      { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20, project: "Borealis" },
+    ]);
+  });
+
+  // An index that no longer addresses a row (the list changed underneath the form) appends rather
+  // than throwing away the member's typing or overwriting whatever now sits at that position.
+  it("appends when the editing index is out of range", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hoursPerWeek: "20",
+        editingIndex: 7,
+      },
+      empty,
+    );
+    expect(patch.availability).toHaveLength(1);
+  });
+
   // Everything that is not Jinesis work is time away, and defaults to a whole day off.
   it("writes any other category to time off as a whole day off", () => {
     const patch = draftToPatch(

@@ -21,7 +21,7 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { nextStepFor } from "../next-step.ts";
-import { renderDeadlines } from "./deadlines.ts";
+import { aoeDateTimeLabel, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
@@ -364,6 +364,90 @@ function renderWorkSummary(state: AppViewState) {
  * The dashboard: what is waiting on the viewer, a summary of their projects and papers, and the
  * complete public deadline board.
  */
+/** How many deadlines the dashboard shows. Two is a glance; the board is one click away. */
+const DASHBOARD_DEADLINE_COUNT = 2;
+
+type NextDeadline = { key: string; label: string; instant: number; mine: boolean };
+
+/**
+ * The next two deadlines, across both lists the member is actually working to.
+ *
+ * A union rather than the public board alone. The board answers "what is the field doing"; a
+ * member's own dated milestones -- a thesis draft, a committee date, a conference they added to
+ * their own panel -- are the ones they plan around, and a summary that showed only the public half
+ * could say "nothing for six weeks" to somebody with a submission on Friday.
+ *
+ * Two, and no more. The whole board used to render here, which made the dashboard mostly a copy of
+ * the Deadlines tab: the same rows, one scroll further down, on a page whose job is to say what is
+ * waiting on *you*. It is a glance now, and it links to the board rather than reproducing it.
+ */
+function nextDeadlines(state: AppViewState): NextDeadline[] {
+  const now = Date.now();
+  const rows: NextDeadline[] = upcomingMajorDeadlines(now, DASHBOARD_DEADLINE_COUNT).map(
+    (entry) => ({
+      key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
+      label: entry.venue.name,
+      instant: entry.instant,
+      mine: false,
+    }),
+  );
+  const member = findOwnMember(state);
+  for (const milestone of member?.milestones ?? []) {
+    const date = String(milestone.date ?? "").trim();
+    if (!date) {
+      continue;
+    }
+    // Midday rather than midnight: a whole-day milestone has no clock on it, and parsing it as
+    // UTC midnight prints as the day before for every reader west of Greenwich.
+    const instant = Date.parse(`${date}T12:00:00Z`);
+    if (!Number.isFinite(instant) || instant < now) {
+      continue;
+    }
+    rows.push({
+      key: `mine:${date}:${milestone.label ?? ""}`,
+      label: String(milestone.label ?? "").trim() || date,
+      instant,
+      mine: true,
+    });
+  }
+  return rows
+    .toSorted((left, right) => left.instant - right.instant)
+    .slice(0, DASHBOARD_DEADLINE_COUNT);
+}
+
+function renderNextDeadlines(state: AppViewState) {
+  const rows = nextDeadlines(state);
+  if (rows.length === 0) {
+    return nothing;
+  }
+  return html`<section class="dashboard__next-deadlines" data-testid="dashboard-next-deadlines">
+    <div class="dashboard__next-deadlines-head">
+      <h3 class="card-title">${t("dashboard.nextDeadlines.title")}</h3>
+      <button
+        type="button"
+        class="dashboard__next-deadlines-open"
+        data-testid="dashboard-next-deadlines-open"
+        @click=${() => state.setTab("adminbotDeadlines")}
+      >
+        ${t("dashboard.nextDeadlines.open")}
+      </button>
+    </div>
+    <ul class="dashboard__next-deadlines-list">
+      ${rows.map(
+        (row) => html`<li class="dashboard__next-deadline">
+          <span class="dashboard__next-deadline-name">${row.label}</span>
+          ${row.mine
+            ? html`<span class="dashboard__next-deadline-tag"
+                >${t("dashboard.nextDeadlines.yours")}</span
+              >`
+            : nothing}
+          <span class="muted">${aoeDateTimeLabel(new Date(row.instant).toISOString())}</span>
+        </li>`,
+      )}
+    </ul>
+  </section>`;
+}
+
 /**
  * The warning across the top of the page: what has been asked of this member and not answered.
  *
@@ -429,9 +513,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
-      <div class="dashboard__deadlines" data-testid="dashboard-deadlines">
-        ${renderDeadlines({ role, memberId: state.memberId, settings: state.settings })}
-      </div>
+      ${renderNextDeadlines(state)}
     </div>
   `;
 }

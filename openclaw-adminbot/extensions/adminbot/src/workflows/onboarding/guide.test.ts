@@ -33,9 +33,20 @@ describe("onboarding template copy", () => {
   it("has no hard wrapping inside a paragraph or bullet", () => {
     for (const template of ADMINBOT_ONBOARDING_TEMPLATES) {
       const lines = template.body.split("\n");
+      // Where the closing signature starts. Everything below it is exempt: a signature is genuinely
+      // several short lines ("Admin Team" / the lab / the university), and stacking them is what the
+      // 2026-08-07 template doc asks for. That is not the failure this rule is about -- rule 3
+      // guards against a *sentence* broken at ~70 characters, and renderParagraph joins a block's
+      // lines with <br />, so the breaks in a signature survive delivery intact.
+      const signOff = lines.findLastIndex((line) =>
+        /^(?:Warmly|Best regards|Best|Sincerely|Cheers|Thank you),$/u.test(line.trim()),
+      );
       lines.forEach((line, index) => {
         const next = lines[index + 1];
         if (!line.trim() || !next?.trim()) {
+          return;
+        }
+        if (signOff >= 0 && index >= signOff) {
           return;
         }
         // Bullets nest by two-space indent, so "is this a list line" is asked after trimming.
@@ -115,12 +126,13 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    // The setup mail hands over a portal sign-in and points at the Drive practice guide; the
-    // project itself and who supervises the work are in the norms mail that follows it. The
-    // password is not on this list -- it is the same seeded string for everyone, so it is a
-    // configured deployment token rather than a field.
-    expect(result.missing).toContain("drive_guide_link");
+    // The setup mail hands over a portal sign-in; the project itself and who supervises the work
+    // are in the norms mail that follows it. Neither the password nor the portal address is on
+    // this list -- they are the same for everyone, so they are configured deployment tokens rather
+    // than fields somebody retypes.
+    expect(result.missing).toContain("member_email");
     expect(result.missing).not.toContain("portal_password");
+    expect(result.missing).not.toContain("dashboard_url");
   });
 
   // The mail's whole job here is to tell the reader what to type the first time they sign in, so
@@ -140,7 +152,8 @@ describe("composeOnboardingGuide", () => {
     if (!result.ok) {
       return;
     }
-    expect(result.guide.body).toContain("password jinesis");
+    // The doc quotes the seeded password, so the rendered sentence reads: the password "jinesis".
+    expect(result.guide.body).toContain('the password "jinesis"');
     expect(result.guide.body).not.toMatch(/\{[a-z_]+\}/u);
   });
 
@@ -315,6 +328,18 @@ describe("driveWorkspaceFolderName", () => {
   });
 });
 
+// The Slack Connect vehicle for these tests. `alumni` used to play this part; it no longer carries
+// {slack_connect_link} -- the 2026-08-07 template doc invites alumni through the workspace link
+// instead -- so the tests moved to a template that still mints one.
+const SBTE_VALUES = {
+  contact_name: "Zhijing",
+  deliverable: "the eval table",
+  project_channel_or_meeting: "#proj-causal",
+  project_or_context: "the causal eval",
+  sender_name: "Zhijing",
+  timeline: "two weeks",
+} as const;
+
 describe("onboarding sender", () => {
   it("asks for every missing value at once, before provisioning anything", async () => {
     const provisionDriveWorkspace = vi.fn();
@@ -322,7 +347,7 @@ describe("onboarding sender", () => {
     const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
 
     const result = await send({
-      template_id: "coauthor_major",
+      template_id: "interviewee",
       name: "Ada Lovelace",
       email: "ada@example.com",
     });
@@ -332,11 +357,13 @@ describe("onboarding sender", () => {
       return;
     }
     expect(result.error.status).toBe(422);
-    // `drive_folder_link` is not on this list: it is provisioned by the send rather than typed.
-    // `member_email` is not either -- it defaults to the address being written to. Nor is
-    // `portal_password`, which is the same seeded value for every account and is filled in.
-    expect(result.error.missing).toEqual(expect.arrayContaining(["drive_guide_link"]));
-    expect(result.error.missing).not.toContain("portal_password");
+    // Both hand-typed tokens at once, rather than one round trip each. `drive_folder_link` and
+    // `slack_connect_link` are not on this list: the send provisions those rather than asking.
+    expect(result.error.missing).toEqual(
+      expect.arrayContaining(["project_or_context", "sender_name"]),
+    );
+    expect(result.error.missing).not.toContain("drive_folder_link");
+    expect(result.error.missing).not.toContain("slack_connect_link");
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
@@ -661,10 +688,10 @@ describe("onboarding sender", () => {
     });
 
     const result = await send({
-      template_id: "alumni",
+      template_id: "slightly_better_than_emails",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      values: { sender_name: "Zhijing" },
+      values: SBTE_VALUES,
     });
 
     expect(result.ok).toBe(true);
@@ -689,10 +716,10 @@ describe("onboarding sender", () => {
     });
 
     const result = await send({
-      template_id: "alumni",
+      template_id: "slightly_better_than_emails",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      values: { sender_name: "Zhijing" },
+      values: SBTE_VALUES,
     });
 
     expect(result.ok).toBe(false);
@@ -736,6 +763,213 @@ describe("onboarding sender", () => {
   });
 });
 
+describe("standing-channel invites", () => {
+  const CHANNELS = { ADMINBOT_ACTIVE_CHANNEL_IDS: "C_JINESIS,C_RANDOM" };
+
+  // The access matrix has always said coauthor-major and own-pace belong in #jinesis-active and
+  // #random-active. Nothing acted on that row, so the mail told them their invitations were on the
+  // way and no invitation was ever sent.
+  it("invites coauthor-major to both standing channels", async () => {
+    const inviteToSlackConnect = vi
+      .fn()
+      .mockResolvedValue({ url: "https://slack.example/i" });
+    const send = createAdminBotOnboardingSender({
+      env: { ...ENV, ...CHANNELS },
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await send({
+      template_id: "coauthor_major",
+      name: "Yann Billeter",
+      email: "yann@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(
+      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
+    ).toEqual(["C_JINESIS", "C_RANDOM"]);
+    expect(result.payload.active_channel_invites?.configured).toBe(true);
+    expect(result.payload.active_channel_invites?.invited).toHaveLength(2);
+  });
+
+  it("invites own-pace advisees too", async () => {
+    const inviteToSlackConnect = vi
+      .fn()
+      .mockResolvedValue({ url: "https://slack.example/i" });
+    const send = createAdminBotOnboardingSender({
+      env: { ...ENV, ...CHANNELS },
+      inviteToSlackConnect,
+      provisionDriveWorkspace: vi
+        .fn()
+        .mockResolvedValue({ link: "https://drive.example/f" }),
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await send({
+      template_id: "own_pace_advisee",
+      name: "Mariana Silva",
+      email: "mariana@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.active_channel_invites?.invited).toHaveLength(2);
+  });
+
+  // A subgroup the matrix does not put in those channels is left alone.
+  it("leaves coauthor-minor out of them", async () => {
+    const inviteToSlackConnect = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: { ...ENV, ...CHANNELS },
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await send({
+      template_id: "coauthor_minor",
+      name: "Korinna Fragkia",
+      email: "korinna@example.com",
+      values: { project_or_context: "alg-circuit" },
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(inviteToSlackConnect).not.toHaveBeenCalled();
+    expect(result.payload.active_channel_invites).toBeUndefined();
+  });
+
+  // Reported, not swallowed: "we thought they were in" is the failure being fixed here.
+  it("says so when the channels are owed but not configured", async () => {
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn(),
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await send({
+      template_id: "coauthor_major",
+      name: "Yann Billeter",
+      email: "yann@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.active_channel_invites).toEqual({
+      configured: false,
+      invited: [],
+    });
+  });
+
+  // Before the mail, so the promise can still be withheld: both mails say the invitations are on
+  // their way, and one that says so after Slack refused is a lie the recipient acts on.
+  it("stops the send, unsent, when Slack refuses one of them", async () => {
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: { ...ENV, ...CHANNELS },
+      inviteToSlackConnect: vi
+        .fn()
+        .mockRejectedValue(new Error("An API error occurred: not_in_channel")),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "coauthor_major",
+      name: "Yann Billeter",
+      email: "yann@example.com",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.message).toContain("not_in_channel");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("the alumni Slack Connect invitation", () => {
+  // It follows ten days later, from the sweep behind /onboarding/alumni-slack-invites/run. The
+  // welcome sends one email and mints nothing: a Connect link goes stale in about a fortnight, so
+  // one minted now and mailed on day ten would arrive with days left on it.
+  it("is not sent with the welcome, and mints no link", async () => {
+    const sent: { subject: string; body: string }[] = [];
+    const inviteToSlackConnect = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect,
+      sendEmail: async ({ subject, body }) => {
+        sent.push({ subject, body });
+      },
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Yuen Chen",
+      email: "yuen@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subject).toBe("Staying Connected with the Jinesis Lab");
+    expect(inviteToSlackConnect).not.toHaveBeenCalled();
+  });
+
+  // And the welcome no longer depends on Slack at all, so an outage cannot hold it up.
+  it("sends the welcome even with no Slack invite path configured", async () => {
+    const sent: string[] = [];
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail: async ({ subject }) => {
+        sent.push(subject);
+      },
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Yuen Chen",
+      email: "yuen@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(sent).toEqual(["Staying Connected with the Jinesis Lab"]);
+  });
+
+  // The invitation itself still composes and still carries a real link when the sweep sends it.
+  it("composes with the minted link when the sweep sends it", async () => {
+    const sent: { subject: string; body: string }[] = [];
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi
+        .fn()
+        .mockResolvedValue({ url: "https://slack.example/connect" }),
+      sendEmail: async ({ subject, body }) => {
+        sent.push({ subject, body });
+      },
+    });
+
+    const result = await send({
+      template_id: "alumni_slack_connect",
+      name: "Yuen Chen",
+      email: "yuen@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(sent[0]?.subject).toBe("Your Slack invitation from the Jinesis Lab");
+    expect(sent[0]?.body).toContain("https://slack.example/connect");
+    expect(sent[0]?.body).not.toMatch(/\{[a-z_]+\}/u);
+  });
+});
+
 describe("reusing a Slack Connect invite", () => {
   const CHANNEL_ENV = { ...ENV, ADMINBOT_ONBOARDING_CHANNEL_ID: "C0EXAMPLE" };
 
@@ -769,7 +1003,12 @@ describe("reusing a Slack Connect invite", () => {
       sendEmail: vi.fn().mockResolvedValue(undefined),
       slackConnectInviteCache: inviteCache,
       now: () => now,
-    })({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
+    })({
+      template_id: "slightly_better_than_emails",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: SBTE_VALUES,
+    });
   }
 
   // Minting one per send filled the recipient's inbox with a fresh Slack invitation every time a
@@ -840,8 +1079,18 @@ describe("reusing a Slack Connect invite", () => {
       inviteToSlackConnect,
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
-    await send({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
-    await send({ template_id: "alumni", name: "Ada Lovelace", email: "ada@example.com" });
+    await send({
+      template_id: "slightly_better_than_emails",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: SBTE_VALUES,
+    });
+    await send({
+      template_id: "slightly_better_than_emails",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: SBTE_VALUES,
+    });
     expect(inviteToSlackConnect).toHaveBeenCalledTimes(2);
   });
 });

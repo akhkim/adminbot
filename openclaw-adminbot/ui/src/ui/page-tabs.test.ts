@@ -54,14 +54,21 @@ describe("renderPageTabs", () => {
     expect(setTab).toHaveBeenCalledWith("adminbotOnboarding");
   });
 
-  it("puts the two halves of where the lab stands on one page", () => {
+  // Three parts now, not two: the grant report joined the group, and it belongs there for the same
+  // reason the other two do -- it is another read of where the lab stands, not its own destination.
+  it("puts the parts of where the lab stands on one page", () => {
     const container = draw(renderPageTabs(createState("adminbotProfileOverview"), "admin"));
     const tabs = [...container.querySelectorAll<HTMLAnchorElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
       "Active Papers",
       "Profile Completeness",
+      "Grant Report",
     ]);
-    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual(["/papers", "/profile-overview"]);
+    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
+      "/papers",
+      "/profile-overview",
+      "/grant-report",
+    ]);
   });
 
   it("draws nothing for a tab that stands alone", () => {

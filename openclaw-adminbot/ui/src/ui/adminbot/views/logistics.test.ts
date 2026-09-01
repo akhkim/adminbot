@@ -38,6 +38,7 @@ type DrawOptions = {
   submitBlocked?: SubmitBlock | null;
   hasContent?: boolean;
   editing?: boolean;
+  meetingEditing?: boolean;
   template?: LogisticsTemplate;
   signatureFiles?: File[];
   attachments?: File[];
@@ -216,6 +217,10 @@ function draw(options: DrawOptions = {}): Drawn {
         ...submitProps(options, () => {
           meetingSubmits += 1;
         }),
+        // Same shape as the signature form above, and for the same reason: meeting requests are
+        // filed on the contact spreadsheet now, so the table only renders on the correction path.
+        // Tests covering the link pass `meetingEditing: false`.
+        editing: options.meetingEditing ?? true,
       },
       letters: {
         schools: options.schools ?? [],
@@ -526,7 +531,9 @@ describe("request actions", () => {
 
   // Read off Book Meeting rather than the signature form: the signature card only renders a form
   // while correcting an already-sent request, and a correction relabels these very buttons.
-  it("puts Discard, Save and Submit at the bottom of the shared container", () => {
+  // The meeting table now renders only on the correction path, so its actions say so: a request
+  // reached through "edit" is being re-sent, not sent.
+  it("puts Discard, Save and the send action at the bottom of the shared container", () => {
     const { container } = draw({ template: "bookMeeting" });
     const request = container.querySelector<HTMLElement>(
       "[data-testid='logistics-meeting-request']",
@@ -538,7 +545,7 @@ describe("request actions", () => {
     expect(actionButtons(container).map((button) => button.textContent?.trim())).toEqual([
       "Discard",
       "Save",
-      "Submit",
+      "Send the correction",
     ]);
   });
 
@@ -1319,8 +1326,32 @@ describe("correcting a request already sent", () => {
     expect(drawn.cancelledEdits).toBe(1);
   });
 
+  it("points a new meeting request at the contact spreadsheet tab, not at a form", () => {
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
+    const link = container.querySelector<HTMLAnchorElement>(
+      "[data-testid='logistics-meeting-sheet-link']",
+    );
+    // The gid is the tab. Without it the workbook opens on whichever sheet was last viewed, which
+    // for a member following this link is somebody else's.
+    expect(link?.getAttribute("href")).toBe(
+      "https://docs.google.com/spreadsheets/d/1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68/edit?gid=1633153118#gid=1633153118",
+    );
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+    // No table to fill in on this path.
+    expect(container.querySelector("[data-testid='logistics-meeting']")).toBeNull();
+  });
+
+  // The one field somebody can leave blank and not find out until their call never gets scheduled.
+  it("says column D is mandatory before the member opens the sheet", () => {
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
+    expect(
+      container.querySelector("[data-testid='logistics-meeting-mandatory']")?.textContent,
+    ).toContain("Column D is mandatory");
+  });
+
   it("says nothing about correcting on a form holding a new request", () => {
-    const { container } = draw({ template: "bookMeeting" });
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
     expect(container.querySelector("[data-testid='logistics-editing']")).toBeNull();
   });
 });

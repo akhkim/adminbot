@@ -21,6 +21,10 @@
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
+import {
+  adminBotNormalizePaperAlias,
+  adminBotPaperAliasMaxLength,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -1392,8 +1396,15 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
       class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const data = new FormData(form);
         const title = draft.trim();
-        if (!title) {
+        const alias = adminBotNormalizePaperAlias(String(data.get("alias") ?? "")) ?? "";
+        const startedOn = String(data.get("started_on") ?? "").trim();
+        // Both are asked for rather than optional: the alias is what the project's Slack channel
+        // gets named after, and a start date filled in later is a guess. The submit refuses rather
+        // than filing a project that has to be chased for them afterwards.
+        if (!title || !alias || !startedOn) {
           return;
         }
         const rows = currentTargets();
@@ -1407,6 +1418,8 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
             .replace(/(^-|-$)/gu, "")
             .slice(0, 60),
           title,
+          alias,
+          startedOn,
           authors: member?.name?.trim() ? [member.name.trim()] : [],
           currentStep: paperSteps[0],
           // Every target, each with its own odds -- the shape venue-targets.ts already stores.
@@ -1443,6 +1456,38 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
             state.myWorkProjectDraft = (event.target as HTMLInputElement).value;
           }}
         />
+      </label>
+
+      <label class="register__field">
+        <span class="register__label">Short name</span>
+        <input
+          class="input"
+          name="alias"
+          required
+          maxlength=${adminBotPaperAliasMaxLength}
+          placeholder="ex. CAIS"
+          data-testid="my-work-add-alias"
+        />
+        <!-- Said here rather than only in a validation message: the name becomes a channel other
+             people have to recognise, so what it will look like belongs next to the box. -->
+        <span class="register__hint">
+          What the lab calls this project out loud — CAIS for Causal AI Scientist. Its Slack channel
+          will be #proj-cais. Letters, digits and hyphens.
+        </span>
+      </label>
+
+      <label class="register__field">
+        <span class="register__label">Started on</span>
+        <input
+          class="input"
+          name="started_on"
+          type="date"
+          required
+          data-testid="my-work-add-started-on"
+        />
+        <span class="register__hint">
+          When work actually began, which is often well before the paper is filed here.
+        </span>
       </label>
 
       <!-- One row per venue the paper is aimed at, each with its own odds.

@@ -427,8 +427,11 @@ describe("target venue", () => {
       String(year + 1),
       String(year + 2),
     ]);
+    // Three groups, not two: workshops are their own, because "is this archival" is a question the
+    // CFP answers per workshop rather than something the catalog can state for the venue. The
+    // ICLR-workshop assertion below has always depended on that group existing.
     const groups = [...(venue?.querySelectorAll("optgroup") ?? [])].map((group) => group.label);
-    expect(groups).toEqual(["Archival", "Non-archival"]);
+    expect(groups).toEqual(["Archival", "Non-archival", "Workshops (check the CFP)"]);
     expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("EMNLP-main");
     expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("ICLR-workshop");
   });
@@ -490,6 +493,63 @@ describe("target venue", () => {
     expect(order).toEqual(["register-venue-0", "register-venue-year-0", "register-venue-odds-0"]);
   });
 
+  /**
+   * Fill the two answers the create form insists on.
+   *
+   * The alias becomes the project's Slack channel and the start date is a fact about the project
+   * rather than about when it was typed in, so the form refuses without them -- these tests are
+   * about venue rows, and would otherwise be blocked by a rule they are not testing.
+   */
+  function fillProjectBasics(container: Element) {
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-alias"]',
+    );
+    const started = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-started-on"]',
+    );
+    alias!.value = "cais";
+    started!.value = "2026-01-15";
+  }
+
+  // The alias is what the project's Slack channel gets named after, so it is collected when the
+  // project is created rather than chased for afterwards.
+  it("files the alias lowercased and the start date as typed", () => {
+    const { container, saved } = draw({ projectDraft: "Causal AI Scientist" });
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-alias"]',
+    );
+    const started = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-started-on"]',
+    );
+    // Typed the way a person says it; stored the way Slack needs it.
+    alias!.value = "CAIS";
+    started!.value = "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved.at(-1)?.alias).toBe("cais");
+    expect(saved.at(-1)?.startedOn).toBe("2026-01-15");
+  });
+
+  // Both are conditions on creating the project, not fields to fill in later: a start date typed a
+  // month afterwards is a guess, and a project with no alias has no channel name.
+  it("refuses to file a project with no alias or no start date", () => {
+    const { container, saved } = draw({ projectDraft: "Causal AI Scientist" });
+    const form = container.querySelector<HTMLFormElement>("#my-work-add-form");
+    form?.dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(saved).toHaveLength(0);
+
+    // An alias Slack could not take is refused rather than quietly rewritten -- an author should
+    // not discover what their channel was called afterwards.
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value =
+      "C.A.I.S. v2";
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    form?.dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(saved).toHaveLength(0);
+  });
+
   it("registers a paper against the venue and year picked on the row", () => {
     const { container, saved, state } = draw({ projectDraft: "Causal abstraction" });
     const form = container.querySelector<HTMLFormElement>("#my-work-add-form");
@@ -498,6 +558,7 @@ describe("target venue", () => {
       '[data-testid="register-venue-year-0"]',
     );
     expect(venue).not.toBeNull();
+    fillProjectBasics(container);
     // The rows report through change into view state rather than through FormData, so that adding
     // a second venue does not lose what was typed into the first.
     yearSelect!.value = String(year + 1);
@@ -523,6 +584,7 @@ describe("target venue", () => {
     container.querySelector<HTMLButtonElement>('[data-testid="register-venue-add"]')?.click();
     expect(state.myWorkProjectVenues).toHaveLength(2);
 
+    fillProjectBasics(container);
     // Submitted straight from state rather than after a re-render: the handlers read live state,
     // so a form that has not been redrawn still files what was actually picked.
     container

@@ -1,7 +1,7 @@
 // Control UI tests cover channels behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelsStatusSnapshot } from "../types.ts";
-import { loadChannels, waitWhatsAppLogin, type ChannelsState } from "./channels.ts";
+import { loadChannels, type ChannelsState } from "./channels.ts";
 
 function createDeferred<T>() {
   let resolve: ((value: T) => void) | undefined;
@@ -52,34 +52,10 @@ function requireClientRequest(state: ChannelsState) {
   return vi.mocked(request);
 }
 
-describe("channels controller WhatsApp wait", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("passes the currently displayed QR and replaces it when the login QR rotates", async () => {
-    const state = createState();
-    const request = requireClientRequest(state);
-    request.mockResolvedValueOnce({
-      connected: false,
-      message: "QR refreshed. Scan the latest code in WhatsApp → Linked Devices.",
-      qrDataUrl: "data:image/png;base64,next-qr",
-    });
-
-    await waitWhatsAppLogin(state);
-
-    expect(request).toHaveBeenCalledWith("web.login.wait", {
-      timeoutMs: 120000,
-      currentQrDataUrl: "data:image/png;base64,current-qr",
-    });
-    expect(state.whatsappLoginMessage).toBe(
-      "QR refreshed. Scan the latest code in WhatsApp → Linked Devices.",
-    );
-    expect(state.whatsappLoginConnected).toBe(false);
-    expect(state.whatsappLoginQrDataUrl).toBe("data:image/png;base64,next-qr");
-    expect(state.whatsappBusy).toBe(false);
-  });
-});
+// The WhatsApp login describe that stood here is gone with the surface it covered. The channel
+// config cards for the plugins the deep clean removed were taken out in the dead-surface cleanup,
+// and `waitWhatsAppLogin` went with them -- the test outlived the function by importing a name
+// channels.ts no longer exports, so it failed on the call rather than on any behaviour.
 
 describe("loadChannels", () => {
   it("keeps a stale slow probe from replacing a newer non-probe snapshot", async () => {

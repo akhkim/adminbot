@@ -1,5 +1,6 @@
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
+import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/contracts/control-ui.js";
 import { t } from "../i18n/index.ts";
 import {
   loadAdminBot,
@@ -326,6 +327,21 @@ export function applySettingsFromUrl(host: SettingsHost) {
     }
     params.delete("passwordReset");
     hashParams.delete("passwordReset");
+    shouldCleanUrl = true;
+  }
+
+  // /reset-password, the path reset emails now point at. The token above is what actually opens the
+  // confirm form; this handles the rest of the journey -- a link opened twice, or after the token
+  // expired, lands on "ask me for a new one" rather than on the landing page with no explanation of
+  // why the member is looking at it. Checked after the token so a good link still wins the mode.
+  if (
+    typeof window !== "undefined" &&
+    window.location?.pathname?.replace(/\/+$/, "") === ADMINBOT_PASSWORD_RESET_PATH
+  ) {
+    host.authGateVisible = true;
+    if (!host.passwordResetToken) {
+      host.loginMode = "reset-request";
+    }
     shouldCleanUrl = true;
   }
 
