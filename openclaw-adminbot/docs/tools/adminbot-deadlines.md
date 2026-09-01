@@ -12,10 +12,33 @@ Three outputs share one dataset (`extensions/adminbot/content/deadlines/venues.j
 
 ```bash
 python3 scripts/adminbot-deadline-collect.py          # -> venues.json
+python3 scripts/adminbot-deadline-collect.py --force-refresh
 python3 scripts/adminbot-deadline-match.py \           # -> matches.json
     --ongoing-csv /path/Paper_submissions.csv \
     --ready-csv   /path/Formatted_Papers.csv
 ```
+
+The ordinary collector is the routine path. It reuses fresh source observations and re-reads a
+workshop daily only within three days of its deadline; other workshop pages wait a fortnight. Use
+`--force-refresh` for a deliberate full-source audit. Official pages are fetched concurrently, and
+public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
+a second bounded pool.
+
+Generated JSON and TypeScript projections must not be edited by hand. If a broken collector run has
+contaminated append-only state, regenerate against a known-clean committed dataset:
+
+```bash
+python3 scripts/adminbot-deadline-collect.py \
+  --force-refresh \
+  --baseline-git-ref=HEAD
+```
+
+The collector reconciles a route-specific official CFP deadline, an explicit OpenReview final-paper
+summary, and the live OpenReview submission cutoff. It records which source won and retains a
+disagreement rather than hiding it. Source-explicit old dates and deterministically discoverable
+GitHub Pages revisions form an old-to-new extension chain. If a page says “extended” but publishes
+no recoverable former date, the record says that the prior value is unavailable; the collector does
+not invent one.
 
 On Aurora, export the two sheets first with the authenticated `gog`/`gws`
 account (the same one used elsewhere), then pass them as `--ongoing-csv` /
@@ -87,6 +110,12 @@ the public response.
 Both show the next deadline, aggregate counts, venue filters, search, and card, grouped, and table
 views. The Control UI renders the board natively in its normal document flow; it does not embed the served
 page, so desktop and mobile retain one vertical scrolling surface.
+
+In the Control UI, every deadline date has the same compact history-icon position in the featured
+deadline panel and the card, grouped, and table views. The icon is disabled and gray when no history
+exists. An extended deadline uses a blue icon; opening it shows every recovered former date in
+sequence, or explains that the source did not expose the earlier value. The current date and time
+keep their normal text color.
 
 The served page is implemented by:
 

@@ -4,7 +4,8 @@
 
 import { DEFAULT_ADMINBOT_CONTROL_UI_URL } from "../../contracts/control-ui.js";
 
-const TEMPLATE = `<title>Jinesis Deadlines</title>
+const TEMPLATE = `<meta charset="utf-8" />
+<title>Jinesis Deadlines</title>
 <style>
   :root {
     --bg: #0b0f1a;
@@ -22,6 +23,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     --warn: #eab54a;
     --serious: #f5883e;
     --crit: #f2606a;
+    --classification-primary: #c084fc;
+    --classification-secondary: #d6b46b;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
     --radius: 14px;
@@ -237,6 +240,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   #archival-status {
     width: 220px;
   }
+  #priority {
+    width: 170px;
+  }
   .search::placeholder {
     color: var(--muted);
   }
@@ -371,6 +377,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     white-space: nowrap;
   }
   .badge,
+  .priority,
   .archival {
     display: inline-flex;
     align-items: center;
@@ -389,6 +396,16 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     border-color: color-mix(in srgb, var(--ink) 55%, var(--border));
     background: color-mix(in srgb, var(--ink) 10%, transparent);
     color: var(--ink);
+  }
+  .priority[data-priority="primary"] {
+    border-color: var(--classification-primary);
+    background: color-mix(in srgb, var(--classification-primary) 14%, transparent);
+    color: var(--classification-primary);
+  }
+  .priority[data-priority="secondary"] {
+    border-color: var(--classification-secondary);
+    background: color-mix(in srgb, var(--classification-secondary) 10%, transparent);
+    color: var(--classification-secondary);
   }
   .archival {
     background: var(--surface-2);
@@ -873,11 +890,18 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         <option value="mixed">Archival + non-archival</option>
         <option value="unknown">Archival status unknown</option>
       </select>
+      <select class="search filter" id="priority" aria-label="Filter by priority">
+        <option value="all">All priorities</option>
+        <option value="primary">Primary priority</option>
+        <option value="secondary">Secondary priority</option>
+        <option value="standard">Standard priority</option>
+      </select>
       <div class="chips" id="chips" role="group" aria-label="Filter by venue"></div>
     </div>
 
     <details class="archival-guide">
-      <summary>What archival status means</summary>
+      <summary>What priority and archival status mean</summary>
+      <p>Primary and Secondary are the lab's venue priorities. Archival status is a separate publication-policy classification.</p>
       <p>Workshop status follows its own CFP or an official parent policy. A workshop can offer archival, non-archival, or separate archival and non-archival routes.</p>
       <dl>
         <div>
@@ -957,33 +981,6 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     x._notif = x.notification_aoe ? aoeToUTC(x.notification_aoe) : null;
   });
   DATA.sort((a, b) => a._sub - b._sub);
-  // Collapse a conference into the ARR cycle it submits through. NAACL 2027 and the ARR October
-  // 2026 cycle are one deadline at one instant, and two countdowns to it read as two tasks.
-  // Mirrors mergeArrSubmissionDuplicates() in the Control UI board; matched on entry type plus
-  // instant, so an unpaired cycle is left alone and a future pairing needs no code change.
-  (function mergeArrDuplicates() {
-    const byInstant = new Map();
-    DATA.forEach((x) => {
-      if (x.entry_type !== "arr_direct_submission") return;
-      const bucket = byInstant.get(x._sub);
-      if (bucket) bucket.push(x);
-      else byInstant.set(x._sub, [x]);
-    });
-    const dropped = new Set();
-    byInstant.forEach((bucket) => {
-      if (bucket.length < 2) return;
-      // The named venue wins: the bare cycle cannot know whether the venue archives, so it is
-      // recorded as unknown.
-      const survivor = bucket.find((x) => x.archival_status !== "unknown") || bucket[0];
-      const absorbed = bucket.filter((x) => x !== survivor);
-      const via = absorbed.map((x) => (x.venue_group || "").trim()).filter(Boolean);
-      absorbed.forEach((x) => dropped.add(x));
-      if (via.length) survivor.name = survivor.name + " · via " + via.join(", ");
-    });
-    for (let i = DATA.length - 1; i >= 0; i -= 1) {
-      if (dropped.has(DATA[i])) DATA.splice(i, 1);
-    }
-  })();
 
   const MONTHS = [
     "Jan",
@@ -1055,6 +1052,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     period = "upcoming",
     entryType = "all",
     archivalStatus = "all",
+    priority = "all",
     query = "",
     renderedAoeDay = "";
   const expandedGroups = new Set();
@@ -1078,12 +1076,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     }
     const groups = [
       ...new Map(
-        // Chip text matches the group heading; the id stays the raw venue_group, which is what
-        // filtering compares against.
-        entries.map((x) => [
-          x.venue_group,
-          { id: x.venue_group, label: workshopGroupLabel(x.venue_group) },
-        ]),
+        entries.map((x) => [x.venue_group, { id: x.venue_group, label: x.venue_group }]),
       ).values(),
     ];
     chips.replaceChildren();
@@ -1103,6 +1096,10 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   });
   document.getElementById("archival-status").addEventListener("change", (e) => {
     archivalStatus = e.target.value;
+    render();
+  });
+  document.getElementById("priority").addEventListener("change", (e) => {
+    priority = e.target.value;
     render();
   });
   function setView(v) {
@@ -1130,11 +1127,13 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   function matching(now, overrides = {}) {
     const selectedEntryType = overrides.entryType ?? entryType;
     const selectedArchivalStatus = overrides.archivalStatus ?? archivalStatus;
+    const selectedPriority = overrides.priority ?? priority;
     return DATA.filter(
       (x) =>
         (period === "upcoming" ? x._sub > now : x._sub <= now) &&
         (selectedEntryType === "all" || x.entry_type === selectedEntryType) &&
         (selectedArchivalStatus === "all" || x.archival_status === selectedArchivalStatus) &&
+        (selectedPriority === "all" || x.venue_priority === selectedPriority) &&
         (!query ||
           (
             x.name +
@@ -1157,6 +1156,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     [
       ["entry-type", "entryType"],
       ["archival-status", "archivalStatus"],
+      ["priority", "priority"],
     ].forEach(([id, key]) => {
       const select = document.getElementById(id);
       [...select.options].forEach((option) => {
@@ -1195,13 +1195,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     document.getElementById("s-7-label").textContent = \`\${direction} within 7 days\`;
     document.getElementById("s-30-label").textContent = \`\${direction} within 30 days\`;
 
-    // Never lead with a workshop: they outnumber everything else, so the nearest deadline is
-    // nearly always one, and an archival conference closing the same week gets buried.
-    // Mirrors headlineDeadlineEntry() in the Control UI board.
-    const next =
-      list.find((x) => x.archival_status === "archival" && x.entry_type !== "workshop") ||
-      list.find((x) => x.entry_type !== "workshop") ||
-      list[0];
+    const next = list[0];
     if (next) {
       const u = urgencyLabel(next._sub, now);
       hero.dataset.entryType = next.entry_type;
@@ -1262,6 +1256,14 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
   function entryTypeLabel(x) {
     return ENTRY_TYPE_LABELS[x.entry_type] || ENTRY_TYPE_LABELS.other;
   }
+  function priorityLabel(x) {
+    if (x.venue_priority === "primary") {
+      return '<span class="priority" data-priority="primary">Primary</span>';
+    }
+    return x.venue_priority === "secondary"
+      ? '<span class="priority" data-priority="secondary">Secondary</span>'
+      : "";
+  }
   function archivalLabel(x) {
     if (x.archival_status === "unknown") {
       return '<span class="archival" data-archival="unknown">Archival status not established</span>';
@@ -1273,7 +1275,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     return \`<span class="archival" data-archival="\${esc(x.archival_status)}">\${label}</span>\`;
   }
   function classificationLabels(x) {
-    const labels = archivalLabel(x);
+    const labels = priorityLabel(x) + archivalLabel(x);
     return labels ? \`<span class="classification">\${labels}</span>\` : "";
   }
   function titleUrl(x) {
@@ -1306,6 +1308,20 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           .join("")}</ul></details>\`
       : "";
   }
+  function deadlineChangeText(x) {
+    const dates = (x.revisions || [])
+      .map((revision) => revision.deadline_aoe)
+      .filter((deadline, index, revisions) => deadline !== revisions[index - 1]);
+    if (dates.at(-1) !== x.deadline_aoe) dates.push(x.deadline_aoe);
+    if (dates.length < 2) return "";
+    const changes = dates.slice(1).map((deadline, index) => deadline.localeCompare(dates[index]));
+    const label = changes.every((change) => change > 0)
+      ? "Extended"
+      : changes.every((change) => change < 0)
+        ? "Corrected"
+        : "Updated";
+    return \`\${label}: \${dates.map(fmtAoeDateTimeText).join(" → ")}\`;
+  }
   function staleNote(x) {
     return x.stale ? \`<span class="cnote">Source not observed in the latest sweep.</span>\` : "";
   }
@@ -1327,7 +1343,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         return \`<div class="card" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}">
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
       <div class="cname">\${title}</div>
-      <div class="cgroup" title="\${esc(workshopGroupLabel(x.venue_group))} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
+      <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       \${classificationLabels(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
@@ -1355,18 +1371,8 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       })
       .join("");
   }
-  // Mirrors workshopGroupLabel() in the Control UI board (ui/src/ui/adminbot/views/deadlines.ts).
-  // Both surfaces render the same dataset, so the wording has to match.
-  function workshopGroupLabel(venueGroup) {
-    const trimmed = (venueGroup || "").trim();
-    const parent = trimmed.replace(/\\s+workshops$/iu, "").trim();
-    return parent && parent !== trimmed ? \`Workshops of \${parent}\` : trimmed;
-  }
-  // Only workshops bundle. A conference's dates (ICLR's abstract and full paper) are planned
-  // around separately, and a group of one is a card wearing a disclosure triangle.
   function groupEntries(list) {
     const groups = new Map();
-    const ordered = [];
     list.forEach((entry) => {
       const id = entry.venue_group.trim();
       const kind =
@@ -1379,41 +1385,22 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
               : entry.archival_status === "mixed"
                 ? "mixed"
                 : "unknown";
-      const makeSections = () => {
-        const sections = { archival: [], nonArchival: [], mixed: [], unknown: [], other: [] };
-        sections[kind].push(entry);
-        return sections;
-      };
-      if (entry.entry_type !== "workshop") {
-        ordered.push({
-          id: id + "::" + (entry.id || entry.name) + "::" + entry._sub,
-          label: id,
-          entries: [entry],
-          sections: makeSections(),
-          standalone: true,
-        });
-        return;
-      }
       const current = groups.get(id);
       if (current) {
         current.entries.push(entry);
         current.sections[kind].push(entry);
       } else {
-        const created = {
+        const sections = { archival: [], nonArchival: [], mixed: [], unknown: [], other: [] };
+        sections[kind].push(entry);
+        groups.set(id, {
           id,
-          label: workshopGroupLabel(id),
+          label: id,
           entries: [entry],
-          sections: makeSections(),
-          standalone: false,
-        };
-        groups.set(id, created);
-        ordered.push(created);
+          sections,
+        });
       }
     });
-    groups.forEach((group) => {
-      if (group.entries.length === 1) group.standalone = true;
-    });
-    return ordered;
+    return [...groups.values()];
   }
   function groupRowTitle(entry, conference) {
     const stage = cap(entry.deadline_label);
@@ -1445,12 +1432,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
           : esc(title.name);
         const actions = sourceLinks(x);
-        const earlier = (x.revisions || []).slice(0, -1);
         const detail = [
           x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
-          earlier.length
-            ? \`Previously \${earlier.map((revision) => \`\${fmtAoeDateTimeText(revision.deadline_aoe)} (\${cap(revision.deadline_label || "deadline")})\`).join(", ")}\`
-            : "",
+          deadlineChangeText(x),
           x.stale ? "Source not observed in the latest sweep" : "",
         ]
           .filter(Boolean)
@@ -1463,10 +1447,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         </div>\`;
       })
       .join("");
-    // No label means a standalone card: same rows, without the section heading.
-    return label
-      ? \`<section class="deadline-group__section"><p class="deadline-group__section-head"><strong>\${label}</strong><span>\${entries.length}</span></p>\${rows}</section>\`
-      : \`<section class="deadline-group__section">\${rows}</section>\`;
+    return \`<section class="deadline-group__section"><p class="deadline-group__section-head"><strong>\${label}</strong><span>\${entries.length}</span></p>\${rows}</section>\`;
   }
   function renderGroups(list, now) {
     groupList.innerHTML = groupEntries(list)
@@ -1476,9 +1457,6 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           period === "past"
             ? { txt: "passed", cvar: "var(--muted)" }
             : urgencyLabel(first._sub, now);
-        if (group.standalone) {
-          return \`<section class="deadline-group deadline-group--standalone" data-count="1" data-standalone="true" style="--u:\${firstUrgency.cvar}">\${renderGroupSection("", group.entries, group, now)}</section>\`;
-        }
         const firstParts = parts(first._sub - now);
         const open = expandedGroups.has(group.id);
         const panelId = \`deadline-group-panel-\${index}\`;
@@ -1557,7 +1535,8 @@ export function renderDeadlinesWebUi(
   items: readonly unknown[],
   options: { proposalUrl?: string } = {},
 ): string {
-  const proposalUrl = options.proposalUrl ?? `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/deadlines`;
+  const proposalUrl = options.proposalUrl ??
+    `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/adminbot/deadlines`;
   return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items)).replace(
     "__DEADLINE_PROPOSAL_URL__",
     escapeAttribute(proposalUrl),

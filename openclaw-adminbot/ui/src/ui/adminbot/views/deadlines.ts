@@ -7,6 +7,7 @@
 
 import { html, nothing, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { icons } from "../../icons.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
 import {
@@ -358,7 +359,55 @@ export function workshopSourceLinks(venue: DeadlineVenue): {
 }
 
 export function priorDeadlineRevisions(venue: DeadlineVenue) {
-  return venue.revisions.slice(0, -1);
+  const revisions = venue.revisions.reduce<DeadlineVenue["revisions"]>((deduplicated, revision) => {
+    const previous = deduplicated.at(-1);
+    if (previous?.deadline_aoe.slice(0, 16) === revision.deadline_aoe.slice(0, 16)) {
+      deduplicated[deduplicated.length - 1] = revision;
+    } else {
+      deduplicated.push(revision);
+    }
+    return deduplicated;
+  }, []);
+  if (revisions.at(-1)?.deadline_aoe.slice(0, 16) === venue.deadline_aoe.slice(0, 16)) {
+    revisions.pop();
+  }
+  return revisions;
+}
+
+export type DeadlineChangeSummary = {
+  kind: "extended" | "corrected" | "updated";
+  label: "Extended" | "Corrected" | "Updated";
+  changeCount: number;
+  dates: string[];
+};
+
+export function deadlineChangeSummary(venue: DeadlineVenue): DeadlineChangeSummary | null {
+  const dates = venue.revisions
+    .map((revision) => revision.deadline_aoe)
+    .filter(
+      (deadline, index, revisions) => deadline.slice(0, 16) !== revisions[index - 1]?.slice(0, 16),
+    );
+  if (dates.at(-1)?.slice(0, 16) !== venue.deadline_aoe.slice(0, 16)) {
+    dates.push(venue.deadline_aoe);
+  }
+  if (dates.length < 2) {
+    return null;
+  }
+  const changes = dates.slice(1).map((deadline, index) => {
+    return aoeInstantMs(deadline) - aoeInstantMs(dates[index]!);
+  });
+  if (changes.every((change) => change > 0)) {
+    return { kind: "extended", label: "Extended", changeCount: changes.length, dates };
+  }
+  if (changes.every((change) => change < 0)) {
+    return { kind: "corrected", label: "Corrected", changeCount: changes.length, dates };
+  }
+  return { kind: "updated", label: "Updated", changeCount: changes.length, dates };
+}
+
+export function deadlineChangeLabel(venue: DeadlineVenue): string {
+  const change = deadlineChangeSummary(venue);
+  return change ? `${change.label}: ${change.dates.map(aoeDateTimeLabel).join(" → ")}` : "";
 }
 
 function renderDeadlineTitle(venue: DeadlineVenue, label = venue.name) {
@@ -444,8 +493,8 @@ function renderAoeDateTime(aoe: string) {
   const label = aoeDateTimeLabel(aoe);
   const separator = label.indexOf(" · ");
   return separator < 0
-    ? label
-    : html`${label.slice(0, separator)}
+    ? html`<span class="deadline-date">${label}</span>`
+    : html`<span class="deadline-date">${label.slice(0, separator)}</span>
         <span class="deadline-time">${label.slice(separator)}</span>`;
 }
 
@@ -1113,17 +1162,23 @@ class AdminbotDeadlinesView extends LitElement {
         data-entry-type=${entry.venue.entry_type}
         data-archival-status=${entry.venue.archival_status}
         data-venue-priority=${entry.venue.venue_priority}
+        data-change=${deadlineChangeSummary(entry.venue)?.kind ?? nothing}
         data-urgency=${urgency(entry, this.now)}
         data-period=${this.period}
       >
         <p class="deadline-board__eyebrow">${lead} deadline · ${entry.venue.venue_group}</p>
         <h2 class="deadline-board__hero-name">${renderDeadlineTitle(entry.venue)}</h2>
-        <p class="deadline-board__hero-meta">
-          ${capitalize(entry.venue.deadline_label)} · ${renderAoeDateTime(entry.venue.deadline_aoe)}
-          ·
-          <span class="deadline-board__hero-urgency">${urgencyLabel(entry, this.now)}</span>
-          ${renderClassification(entry.venue)}
-        </p>
+        <div class="deadline-board__hero-meta-row">
+          <div class="deadline-board__hero-meta">
+            ${capitalize(entry.venue.deadline_label)} ·
+            <time class="deadline-board__hero-date" datetime=${entry.venue.deadline_aoe}
+              >${renderAoeDateTime(entry.venue.deadline_aoe)}</time
+            >
+            ${this.renderHistory(entry.venue, "hero")} ·
+            <span class="deadline-board__hero-urgency">${urgencyLabel(entry, this.now)}</span>
+            ${renderClassification(entry.venue)}
+          </div>
+        </div>
         ${this.period === "upcoming"
           ? html`<div
               class="deadline-board__hero-countdown"
@@ -1337,28 +1392,67 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderHistory(venue: DeadlineVenue) {
+  private renderHistory(venue: DeadlineVenue, placement: "hero" | "card" | "group" | "table") {
     const previous = priorDeadlineRevisions(venue);
-    return previous.length
-      ? html`<details class="deadline-card__note deadline-card__history">
-          <summary>Deadline history (${previous.length})</summary>
-          <ul>
-            ${previous.map(
-              (revision) => html`<li>
-                ${renderAoeDateTime(revision.deadline_aoe)} ·
-                ${capitalize(revision.deadline_label || "deadline")} · recorded
-                ${revision.observed_at.slice(0, 10)}
-                ${revision.link
-                  ? html` ·
-                      <a href=${revision.link} target="_blank" rel="noopener noreferrer"
-                        >source ↗</a
-                      >`
-                  : nothing}
-              </li>`,
-            )}
-          </ul>
-        </details>`
-      : nothing;
+    const change = deadlineChangeSummary(venue);
+    const extended = venue.deadline_extended || change?.kind === "extended";
+    const available = previous.length > 0 || extended;
+    const historyId = `deadline-history-${placement}-${venue.id.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
+    const anchorName = `--${historyId}`;
+    const countLabel = previous.length
+      ? `Deadline history (${previous.length})`
+      : extended
+        ? "Extended deadline; earlier date unavailable"
+        : "No deadline history";
+    return html`<span
+      class="deadline-card__note deadline-card__history"
+      data-change=${extended ? "extended" : (change?.kind ?? "history")}
+    >
+      <button
+        type="button"
+        class="btn btn--icon deadline-card__history-trigger"
+        popovertarget=${available ? historyId : nothing}
+        aria-haspopup=${available ? "dialog" : nothing}
+        aria-label=${countLabel}
+        data-tooltip=${countLabel}
+        style=${`anchor-name: ${anchorName}`}
+        ?disabled=${!available}
+      >
+        ${icons.history}
+      </button>
+      ${available
+        ? html`<div
+            id=${historyId}
+            class="deadline-card__history-panel"
+            popover="auto"
+            role="dialog"
+            aria-label=${`Deadline history for ${venue.name}`}
+            style=${`position-anchor: ${anchorName}`}
+          >
+            <strong>Deadline history</strong>
+            ${previous.length
+              ? html`<ul>
+                  ${previous.map(
+                    (revision) => html`<li>
+                      ${renderAoeDateTime(revision.deadline_aoe)} ·
+                      ${capitalize(revision.deadline_label || "deadline")} · recorded
+                      ${revision.observed_at.slice(0, 10)}
+                      ${revision.link
+                        ? html` ·
+                            <a href=${revision.link} target="_blank" rel="noopener noreferrer"
+                              >source ↗</a
+                            >`
+                        : nothing}
+                    </li>`,
+                  )}
+                </ul>`
+              : html`<p>
+                  The official source marks this deadline as extended, but does not publish the
+                  earlier date.
+                </p>`}
+          </div>`
+        : nothing}
+    </span>`;
   }
 
   private renderStale(venue: DeadlineVenue) {
@@ -1392,9 +1486,12 @@ class AdminbotDeadlinesView extends LitElement {
           <span class="deadline-card__stage">${capitalize(venue.deadline_label)}</span>
         </p>
         ${renderClassification(venue)}
-        <time class="deadline-card__date" datetime=${venue.deadline_aoe}>
-          ${renderAoeDateTime(venue.deadline_aoe)}
-        </time>
+        <span class="deadline-card__date-row">
+          <time class="deadline-card__date" datetime=${venue.deadline_aoe}>
+            ${renderAoeDateTime(venue.deadline_aoe)}
+          </time>
+          ${this.renderHistory(venue, "card")}
+        </span>
         <p class="deadline-card__countdown">
           ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
         </p>
@@ -1403,7 +1500,7 @@ class AdminbotDeadlinesView extends LitElement {
               Accept/reject: ${aoeDateLabel(venue.notification_aoe)} AoE
             </p>`
           : nothing}
-        ${this.renderStale(venue)} ${this.renderHistory(venue)} ${this.renderSourceActions(venue)}
+        ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
     `;
   }
@@ -1412,16 +1509,16 @@ class AdminbotDeadlinesView extends LitElement {
     const workshop = workshopSourceLinks(venue);
     if (!workshop) {
       return venue.link
-        ? html`<span class="deadline-card__actions"
-            ><a
+        ? html`<span class="deadline-card__actions">
+            <a
               class="deadline-card__source deadline-card__source--button"
               href=${venue.link}
               target="_blank"
               rel="noopener noreferrer"
               aria-label=${`Official site for ${venue.name}`}
               >Official site ↗</a
-            ></span
-          >`
+            >
+          </span>`
         : nothing;
     }
     return html`<span class="deadline-card__actions">
@@ -1463,8 +1560,8 @@ class AdminbotDeadlinesView extends LitElement {
             </tr>
           </thead>
           <tbody>
-            ${entries.map(
-              (entry) => html`
+            ${entries.map((entry) => {
+              return html`
                 <tr
                   data-entry-type=${entry.venue.entry_type}
                   data-archival-status=${entry.venue.archival_status}
@@ -1473,7 +1570,10 @@ class AdminbotDeadlinesView extends LitElement {
                   data-period=${this.period}
                 >
                   <td class="deadline-table__date">
-                    ${renderAoeDateTime(entry.venue.deadline_aoe)}
+                    <span class="deadline-table__date-row">
+                      ${renderAoeDateTime(entry.venue.deadline_aoe)}
+                      ${this.renderHistory(entry.venue, "table")}
+                    </span>
                   </td>
                   <td class="deadline-table__countdown">
                     ${this.period === "past" ? "passed" : countdownLabel(entry.instant - this.now)}
@@ -1496,11 +1596,11 @@ class AdminbotDeadlinesView extends LitElement {
                           >stale</span
                         >`
                       : nothing}
-                    ${this.renderHistory(entry.venue)} ${this.renderSourceActions(entry.venue)}
+                    ${this.renderSourceActions(entry.venue)}
                   </td>
                 </tr>
-              `,
-            )}
+              `;
+            })}
           </tbody>
         </table>
       </div>
@@ -1510,17 +1610,9 @@ class AdminbotDeadlinesView extends LitElement {
   private renderGroupRow(entry: DeadlineBoardEntry, conference: string) {
     const { venue, instant } = entry;
     const title = groupRowTitle(venue, conference);
-    const history = priorDeadlineRevisions(venue);
+    const change = deadlineChangeSummary(venue);
     const details = [
       venue.notification_aoe ? `Accept/reject ${aoeDateLabel(venue.notification_aoe)} AoE` : "",
-      history.length
-        ? `Previously ${history
-            .map(
-              (revision) =>
-                `${aoeDateTimeLabel(revision.deadline_aoe)} (${capitalize(revision.deadline_label || "deadline")})`,
-            )
-            .join(", ")}`
-        : "",
       venue.stale ? "Source not observed in the latest sweep" : "",
     ]
       .filter(Boolean)
@@ -1532,15 +1624,19 @@ class AdminbotDeadlinesView extends LitElement {
         data-entry-type=${venue.entry_type}
         data-archival-status=${venue.archival_status}
         data-venue-priority=${venue.venue_priority}
+        data-change=${change?.kind ?? nothing}
         data-urgency=${urgency(entry, this.now)}
         data-period=${this.period}
       >
         <span class="deadline-group__row-countdown">
           ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
         </span>
-        <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>
-          ${renderAoeDateTime(venue.deadline_aoe)}
-        </time>
+        <span class="deadline-group__row-date-wrap">
+          <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>
+            ${renderAoeDateTime(venue.deadline_aoe)}
+          </time>
+          ${this.renderHistory(venue, "group")}
+        </span>
         <div class="deadline-group__row-main">
           <h3 class="deadline-group__row-name">${renderDeadlineTitle(venue, title.name)}</h3>
           <p class="deadline-group__row-note">

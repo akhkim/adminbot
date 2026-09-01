@@ -4653,9 +4653,20 @@ adminbot-deadlines-view {
 }
 
 .deadline-board__hero-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
   margin: 0;
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
+}
+
+.deadline-board__hero-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .deadline-board__hero-urgency {
@@ -5023,12 +5034,17 @@ adminbot-deadlines-view {
 }
 
 .deadline-group__row-date {
-  grid-area: date;
-  color: var(--muted);
   font-family: var(--mono);
   font-size: var(--control-ui-text-sm);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.deadline-group__row-date-wrap {
+  display: inline-flex;
+  grid-area: date;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .deadline-group__row .deadline-card__actions {
@@ -5227,10 +5243,24 @@ adminbot-deadlines-view {
 }
 
 .deadline-card__date {
-  margin-top: var(--space-2);
-  color: var(--muted-strong);
+  margin: 0;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+}
+
+.deadline-card__date-row,
+.deadline-table__date-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.deadline-card__date-row {
+  margin-top: var(--space-2);
+}
+
+.deadline-date {
+  color: var(--text);
 }
 
 .deadline-time {
@@ -5252,6 +5282,73 @@ adminbot-deadlines-view {
   gap: var(--space-1);
   margin-top: auto;
   padding-top: var(--space-3);
+}
+
+.deadline-card__history {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.btn.deadline-card__history-trigger {
+  width: 1.5rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  min-height: 1.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+}
+
+.btn.deadline-card__history-trigger svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.deadline-card__history[data-change="extended"] .deadline-card__history-trigger:not(:disabled) {
+  color: var(--accent);
+}
+
+.deadline-card__history[data-change="extended"] .deadline-card__history-trigger:hover,
+.deadline-card__history[data-change="extended"] .deadline-card__history-trigger:focus-visible {
+  color: var(--accent-hover);
+}
+
+.deadline-card__history-panel[popover] {
+  position: fixed;
+  position-area: block-start span-inline-end;
+  width: max-content;
+  max-width: min(32rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(24rem, calc(100vh - 2 * var(--space-4)));
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+  color: var(--popover-foreground);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.deadline-card__history-panel ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.deadline-card__history-panel p {
+  margin: var(--space-2) 0 0;
+  color: var(--muted-foreground);
+}
+
+.deadline-card__history-panel li + li {
+  margin-top: var(--space-2);
+}
+
+.deadline-card__history-panel a {
+  color: var(--accent);
 }
 
 .deadline-card__source {
@@ -5342,7 +5439,6 @@ adminbot-deadlines-view {
 }
 
 .deadline-table__date {
-  color: var(--text) !important;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
