@@ -7927,6 +7927,31 @@ adminbot-deadlines-view {
   text-decoration: underline;
 }
 
+.bell__panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bell__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bell__close:hover,
+.bell__close:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 /* Long histories scroll inside the panel rather than pushing it off the screen. */
 .bell__list {
   display: flex;

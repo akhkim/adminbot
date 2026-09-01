@@ -211,7 +211,7 @@ export default defineToolPlugin({
       name: "adminbot_suggest_calendar_change",
       label: "AdminBot suggest calendar change",
       description:
-        "Create a calendar proposal from explicit fields or extract its summary and date range from a Google Docs URL, Gmail message id, or Gmail query. A Google Calendar URL selects the writable destination calendar.",
+        "Create a pending calendar proposal from explicit fields or extract its summary and date range from a Google Docs URL, Gmail message id, or Gmail query. This tool never schedules or changes an event; report success only as proposed and awaiting approval. A Google Calendar URL selects the writable destination calendar.",
       optional: true,
       parameters: Type.Object({
         changeType: Type.Unsafe<"tentative_hold" | "send_invite" | "reschedule" | "cancel">({

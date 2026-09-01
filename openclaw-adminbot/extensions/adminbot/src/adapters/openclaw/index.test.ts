@@ -66,7 +66,7 @@ describe("AdminBot tool handlers", () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
 
-    await tools.suggestCalendarChange({
+    const result = await tools.suggestCalendarChange({
       changeType: "send_invite",
       summary: "Invite candidate to interview",
       attendees: ["candidate@example.test"],
@@ -83,6 +83,14 @@ describe("AdminBot tool handlers", () => {
       expect.objectContaining({
         type: "calendar.send_invite",
         risk_tier: "T3",
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        outcome: "proposal_created",
+        approval_status: "pending",
+        external_mutation_performed: false,
+        user_message: expect.stringContaining("not been scheduled"),
       }),
     );
   });

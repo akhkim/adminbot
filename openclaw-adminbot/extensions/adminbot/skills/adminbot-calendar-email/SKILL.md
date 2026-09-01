@@ -16,6 +16,10 @@ Use `adminbot_suggest_calendar_change` for:
 - reschedule,
 - cancel.
 
+The tool only creates a proposal. It does not schedule, invite, reschedule, or cancel anything.
+After it succeeds, say that the change is pending approval and explicitly say that the calendar
+has not changed yet. Never describe a proposal result as a scheduled meeting.
+
 The tool can resolve calendar details directly from trusted Google sources:
 
 - For a Google Docs URL, pass it as `sourceUrl`. The tool reads the document

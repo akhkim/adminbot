@@ -215,6 +215,74 @@ describe("AdminBotSqliteStore", () => {
     second.close();
   });
 
+  it("claims an idempotency key across concurrent sqlite service instances", async () => {
+    const databasePath = tempDbPath();
+    let releaseExecutor!: () => void;
+    const executorGate = new Promise<void>((resolve) => {
+      releaseExecutor = resolve;
+    });
+    let executorCalls = 0;
+    const executor = {
+      execute: async () => {
+        executorCalls += 1;
+        await executorGate;
+        return { handled: true };
+      },
+    };
+    const first = createAdminBotSqliteService({ databasePath, executor });
+    const firstProposal = unwrap(
+      first.service.createProposal({
+        type: "calendar.create_tentative_hold",
+        summary: "Hold first interview slot",
+      }),
+    );
+    const secondProposal = unwrap(
+      first.service.createProposal({
+        type: "calendar.create_tentative_hold",
+        summary: "Hold second interview slot",
+      }),
+    );
+    for (const proposal of [firstProposal, secondProposal]) {
+      unwrap(
+        first.service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "andrew",
+        }),
+      );
+    }
+
+    const second = createAdminBotSqliteService({ databasePath, executor });
+    const executing = first.service.execute(firstProposal.id, {
+      dry_run: false,
+      idempotency_key: "shared-hold-key",
+    });
+    const blocked = await second.service.execute(secondProposal.id, {
+      dry_run: false,
+      idempotency_key: "shared-hold-key",
+    });
+    expect(blocked).toMatchObject({
+      ok: false,
+      status: 409,
+      error: { message: expect.stringContaining("already in progress") },
+    });
+    expect(executorCalls).toBe(1);
+
+    releaseExecutor();
+    const result = unwrap(await executing);
+    expect(
+      unwrap(
+        await second.service.execute(secondProposal.id, {
+          dry_run: false,
+          idempotency_key: "shared-hold-key",
+        }),
+      ),
+    ).toEqual(result);
+    expect(executorCalls).toBe(1);
+    first.close();
+    second.close();
+  });
+
   it("prunes audit events when retention is configured", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({

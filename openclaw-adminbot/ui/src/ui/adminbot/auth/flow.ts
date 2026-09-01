@@ -2,7 +2,7 @@ import { t } from "../../../i18n/index.ts";
 import { resolveAdvertisedGatewayUrl } from "../../advertised-gateway-url.ts";
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "../../device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
-import { clearSignedOutView } from "../../signed-out-view.ts";
+import { clearSignedOutView, goToSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
@@ -233,8 +233,8 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
 // is the whole point — no member ever has to hold (or paste) the shared gateway secret.
 //
 // Returns false whenever the token can't be minted (insecure context with no crypto.subtle, an
-// AdminBot that predates the route, or a gateway with no shared secret to bind to) so the caller
-// falls back to the token the session handed it instead of leaving the user stranded offline.
+// AdminBot that predates the route, or a gateway with no shared secret to bind to). The caller then
+// fails closed rather than handing a browser the service-wide gateway credential.
 async function ensureMemberDeviceToken(
   host: MemberAuthHost,
   sessionToken: string,
@@ -270,15 +270,20 @@ async function ensureMemberDeviceToken(
   }
 }
 
-// Applies the gateway settings a signed-in member connects with. The shared gateway token from the
-// session is only injected when this browser could not get a device token of its own — otherwise
-// settings.token stays empty, which is what makes the client authenticate as the device.
+// Applies the gateway settings a signed-in member connects with. A member session is never allowed
+// to carry the shared gateway secret: if device-token issuance is unavailable, fail closed instead
+// of turning every browser session into a copy of the server credential.
 async function connectAsMember(
   host: MemberAuthHost,
-  session: { session_token?: string; gateway?: { url?: string; token?: string } },
+  session: { session_token?: string; gateway?: { url?: string } },
   sessionToken: string,
 ) {
   const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
+  if (!hasDeviceToken) {
+    host.memberFormError =
+      "This browser could not obtain its device credential. Try signing in again or contact an administrator.";
+    return;
+  }
   host.applySettings({
     ...host.settings,
     gatewayUrl: resolveAdvertisedGatewayUrl({
@@ -286,7 +291,7 @@ async function connectAsMember(
       current: host.settings.gatewayUrl,
       ...(typeof window === "undefined" ? {} : { pageHref: window.location?.href }),
     }),
-    token: hasDeviceToken ? "" : (session.gateway?.token ?? host.settings.token),
+    token: "",
   });
   host.connect();
 }
@@ -584,11 +589,8 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
 // revoked, the shared secret rotated so the issuer stamp is stale, or the token was never minted.
 // The member is still signed in, which is the one credential that can produce a new one.
 //
-// Minting a replacement comes first: it keeps the member off the shared gateway secret, which is
-// the whole point of per-device tokens. The session's shared token is the fallback for a service
-// that cannot mint (no issuer configured, or a build predating the route) -- the gateway then
-// re-pairs the device and returns a device token in its hello, so the browser still ends up
-// device-bound.
+// Minting a replacement is the only recovery path. Falling back to the shared gateway secret
+// would put a server-wide bearer credential back into a member-facing response.
 //
 // Returns true when the caller should reconnect.
 export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Promise<boolean> {
@@ -603,16 +605,7 @@ export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Prom
     host.applySettings({ ...host.settings, token: "" });
     return true;
   }
-  const result = await fetchMemberSession(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  const gatewayToken = result.ok ? result.value.gateway?.token : undefined;
-  if (!gatewayToken) {
-    return false;
-  }
-  host.applySettings({ ...host.settings, token: gatewayToken });
-  return true;
+  return false;
 }
 
 // Signing out must also drop the device's gateway token: it outlives the member session otherwise,
@@ -683,7 +676,11 @@ export async function submitChangePassword(host: MemberAuthHost): Promise<void> 
     host.changePasswordCurrent = "";
     host.changePasswordNew = "";
     host.changePasswordConfirm = "";
-    host.changePasswordNotice = t("login.member.changePassword.success");
+    await signOutMember(host);
+    host.loginMode = "signin";
+    host.memberFormError = null;
+    host.passwordResetDone = true;
+    goToSignedOutView(host, "login");
   } finally {
     host.changePasswordBusy = false;
   }

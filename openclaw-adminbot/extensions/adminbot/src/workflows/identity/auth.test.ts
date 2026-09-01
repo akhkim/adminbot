@@ -25,7 +25,6 @@ const GATEWAY_URL = "ws://127.0.0.1:18789";
 function setup(
   options: {
     now?: () => Date;
-    gatewayToken?: string;
     gatewayUrl?: string | null;
     submitDcsForm?: (params: {
       firstName: string;
@@ -39,6 +38,7 @@ function setup(
       token: string;
       expiresInMinutes: number;
     }) => Promise<void>;
+    sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -53,12 +53,14 @@ function setup(
       return result.payload;
     },
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
-    ...(options.gatewayToken ? { gatewayToken: options.gatewayToken } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.submitDcsForm ? { submitDcsForm: options.submitDcsForm } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
     ...(options.sendPasswordResetEmail
       ? { sendPasswordResetEmail: options.sendPasswordResetEmail }
+      : {}),
+    ...(options.sendAccountApprovedEmail
+      ? { sendAccountApprovedEmail: options.sendAccountApprovedEmail }
       : {}),
   });
   return { store, auth };
@@ -108,6 +110,26 @@ describe("hashPassword / verifyPassword", () => {
 });
 
 describe("AdminBotAuthService claim/login flow", () => {
+  it("retries transient account-approval email failures", async () => {
+    const sendAccountApprovedEmail = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValue(undefined);
+    const { store, auth } = setup({ sendAccountApprovedEmail });
+    store.saveLabMember(member("ada", "ada@example.com"));
+    auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
+
+    auth.approveRegistration(pendingIdForMember(auth, "ada"), "admin");
+
+    await vi.waitFor(() => expect(sendAccountApprovedEmail).toHaveBeenCalledTimes(2));
+    expect(store.listAuditEvents(20)).toContainEqual(
+      expect.objectContaining({
+        type: "auth.approval_email_sent",
+        details: expect.objectContaining({ attempts: 2 }),
+      }),
+    );
+  });
+
   it("claim queues a pending registration without a session or credential", () => {
     const { store, auth } = setup();
     store.saveLabMember(member("ada", "ada@example.com"));
@@ -148,7 +170,7 @@ describe("AdminBotAuthService claim/login flow", () => {
   });
 
   it("approves a claim, then login succeeds with a session and gateway", () => {
-    const { store, auth } = setup({ gatewayToken: "gw-token" });
+    const { store, auth } = setup();
     store.saveLabMember(member("ada", "ada@example.com"));
     auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
 
@@ -166,15 +188,14 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
     expect(login.payload.member.id).toBe("ada");
     expect(login.payload.session_token).toBeTruthy();
-    expect(login.payload.gateway).toEqual({ url: GATEWAY_URL, token: "gw-token" });
+    expect(login.payload.gateway).toEqual({ url: GATEWAY_URL });
     expect(auth.resolveSession(login.payload.session_token)?.member.id).toBe("ada");
   });
 
   // The service cannot know how a given browser reaches the gateway, so with no URL configured it
-  // advertises only the token and the client keeps the URL it already connects with. Advertising a
-  // loopback guess instead pointed every remote member at their own machine on sign-in.
+  // omits gateway configuration and the client keeps the URL it already connects with.
   it("omits the gateway url when none is configured", () => {
-    const { store, auth } = setup({ gatewayToken: "gw-token", gatewayUrl: null });
+    const { store, auth } = setup({ gatewayUrl: null });
     store.saveLabMember(member("ada", "ada@example.com"));
     auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
     auth.approveRegistration(pendingIdForMember(auth, "ada"), "admin-1");
@@ -184,9 +205,9 @@ describe("AdminBotAuthService claim/login flow", () => {
     if (!login.ok) {
       return;
     }
-    expect(login.payload.gateway).toEqual({ token: "gw-token" });
+    expect(login.payload.gateway).toBeUndefined();
     const principal = auth.resolveSession(login.payload.session_token);
-    expect(principal && auth.sessionView(principal).gateway).toEqual({ token: "gw-token" });
+    expect(principal && auth.sessionView(principal).gateway).toBeUndefined();
   });
 
   it("signup approval mints a plain member and enables login", () => {
@@ -550,11 +571,17 @@ describe("AdminBotAuthService claim/login flow", () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");
 
+    const existingLogin = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    if (!existingLogin.ok) {
+      throw new Error("login failed");
+    }
+    const oldToken = existingLogin.payload.session_token;
     const badChange = auth.changePassword("ada", "wrong", "newpassword123");
     expect(badChange.ok).toBe(false);
 
     const change = auth.changePassword("ada", "correcthorse", "newpassword123");
     expect(change.ok).toBe(true);
+    expect(auth.resolveSession(oldToken)).toBeUndefined();
     expect(auth.login({ email: "ada@example.com", password: "newpassword123" }).ok).toBe(true);
     expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(false);
   });
@@ -568,19 +595,19 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
     const token = login.payload.session_token;
 
-    const changed = auth.changeEmail("ada", "New.Ada@Example.com", "correcthorse");
+    const changed = auth.changeEmail("ada", "New.Ada@cs.toronto.edu", "correcthorse");
     expect(changed.ok).toBe(true);
     if (changed.ok) {
-      expect(changed.payload.email).toBe("new.ada@example.com");
+      expect(changed.payload.email).toBe("new.ada@cs.toronto.edu");
     }
     // Both the credential row and the member record carry the normalized email.
-    expect(store.getCredentialByMemberId("ada")?.email).toBe("new.ada@example.com");
-    expect(store.getLabMember("ada")?.email).toBe("new.ada@example.com");
+    expect(store.getCredentialByMemberId("ada")?.email).toBe("new.ada@cs.toronto.edu");
+    expect(store.getLabMember("ada")?.email).toBe("new.ada@cs.toronto.edu");
     // Existing session survives the change.
     expect(auth.resolveSession(token)?.member.id).toBe("ada");
 
     // New email logs in; the old email no longer resolves.
-    expect(auth.login({ email: "new.ada@example.com", password: "correcthorse" }).ok).toBe(true);
+    expect(auth.login({ email: "new.ada@cs.toronto.edu", password: "correcthorse" }).ok).toBe(true);
     const old = auth.login({ email: "ada@example.com", password: "correcthorse" });
     expect(old.ok).toBe(false);
     if (!old.ok) {
@@ -611,11 +638,30 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
   });
 
+  it("rejects external email changes for full members but permits external collaborators", () => {
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const fullMember = auth.changeEmail("ada", "ada@gmail.com", "correcthorse");
+    expect(fullMember).toMatchObject({ ok: false, status: 400 });
+
+    store.saveLabMember(
+      member("ada", "ada@example.com", {
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "visitor",
+      }),
+    );
+    const collaborator = auth.changeEmail("ada", "ada@gmail.com", "correcthorse");
+    expect(collaborator).toMatchObject({
+      ok: true,
+      payload: { email: "ada@gmail.com" },
+    });
+  });
+
   it("rejects an email colliding with another credential", () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");
-    claimAndApprove(store, auth, "bob", "bob@example.com");
-    const result = auth.changeEmail("ada", "bob@example.com", "correcthorse");
+    claimAndApprove(store, auth, "bob", "bob@cs.toronto.edu");
+    const result = auth.changeEmail("ada", "bob@cs.toronto.edu", "correcthorse");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(409);
@@ -628,8 +674,8 @@ describe("AdminBotAuthService claim/login flow", () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");
     store.saveLabMember(member("cid", "cid@example.com"));
-    auth.claim({ member_id: "cid", email: "pending@example.com", password: "correcthorse" });
-    const result = auth.changeEmail("ada", "pending@example.com", "correcthorse");
+    auth.claim({ member_id: "cid", email: "pending@cs.toronto.edu", password: "correcthorse" });
+    const result = auth.changeEmail("ada", "pending@cs.toronto.edu", "correcthorse");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(409);

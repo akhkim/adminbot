@@ -55,23 +55,15 @@ import {
   upcomingMajorDeadlines,
   urgencyOf,
 } from "../data/deadline-time.ts";
-import {
-  AOE_TIMEZONE,
-  localTimezone,
-  timezoneOptions,
-} from "../data/timezones.ts";
+import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import {
-  renderTrips,
-  renderWhereStrip,
-  type TripDraft,
-} from "./time-availability.trips.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
 } from "./time-allocation-chart.ts";
+import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -179,6 +171,8 @@ export type TimeAvailabilityDraft = {
   wholeDay: boolean;
   note: string;
   link: string;
+  /** Index of the stored row being changed. Omitted when the form is adding a new row. */
+  editingIndex?: number;
 };
 
 export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
@@ -382,7 +376,6 @@ function hoursOver(weeklyHours: number, days: number): number {
   return (weeklyHours * days) / 7;
 }
 
-
 /**
  * A bar's total, plus the share of the member's capacity it uses when they have declared one.
  *
@@ -562,7 +555,10 @@ function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
  * gaps between commitments, and a bar of nothing is not worth an axis slot.
  */
 /** The bins a range covers, starting from today. */
-export function rangeBins(range: TimeAvailabilityRange, now: number): Array<{
+export function rangeBins(
+  range: TimeAvailabilityRange,
+  now: number,
+): Array<{
   startMs: number;
   endMs: number;
   label: string;
@@ -684,8 +680,6 @@ export function allocationBins(
     };
   });
 }
-
-
 
 /**
  * The chart.
@@ -850,40 +844,43 @@ export function draftToPatch(
   const link = draft.link.trim();
   if (draft.category === "jinesis") {
     const project = draft.project.trim();
+    const row: AvailabilityRow = {
+      start: draft.start,
+      end: draft.end,
+      hours_per_week: Number(draft.hoursPerWeek),
+      ...(project ? { project } : {}),
+      ...(note ? { note } : {}),
+      ...(link ? { link } : {}),
+    };
+    const availability = [...existing.availability];
+    if (draft.editingIndex !== undefined && availability[draft.editingIndex]) {
+      availability[draft.editingIndex] = row;
+    } else {
+      availability.push(row);
+    }
     return {
-      availability: [
-        ...existing.availability,
-        {
-          start: draft.start,
-          end: draft.end,
-          hours_per_week: Number(draft.hoursPerWeek),
-          ...(project ? { project } : {}),
-          ...(note ? { note } : {}),
-          ...(link ? { link } : {}),
-        },
-      ],
+      availability,
     };
   }
   const label = draft.customLabel.trim();
+  const row: TimeOffRow = {
+    start: draft.start,
+    end: draft.end,
+    kind: draft.category,
+    availability: draft.wholeDay ? "none" : "partial",
+    ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
+    ...(label ? { label } : {}),
+    ...(note ? { note } : {}),
+    ...(link ? { link } : {}),
+  };
+  const timeOff = [...existing.timeOff];
+  if (draft.editingIndex !== undefined && timeOff[draft.editingIndex]) {
+    timeOff[draft.editingIndex] = row;
+  } else {
+    timeOff.push(row);
+  }
   return {
-    time_off: [
-      ...existing.timeOff,
-      {
-        start: draft.start,
-        end: draft.end,
-        kind: draft.category,
-        // Whole day off unless the member says otherwise -- see TimeAvailabilityDraft.wholeDay.
-        // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
-        // never subtracted, because no stored figure says by how much.
-        availability: draft.wholeDay ? "none" : "partial",
-        // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
-        // would be a second answer to a question already settled.
-        ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
-        ...(label ? { label } : {}),
-        ...(note ? { note } : {}),
-        ...(link ? { link } : {}),
-      },
-    ],
+    time_off: timeOff,
   };
 }
 
@@ -907,6 +904,7 @@ type CommitmentFormProps = {
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
   testId: string;
   titleKey: string;
+  editTitleKey: string;
   head: (helpers: {
     draft: TimeAvailabilityDraft;
     update: (patch: Partial<TimeAvailabilityDraft>) => void;
@@ -918,7 +916,9 @@ type CommitmentFormProps = {
 };
 
 function renderCommitmentForm(form: CommitmentFormProps) {
-  const { props, existing, draft, onDraftChange, testId, titleKey, head, footer } = form;
+  const { props, existing, draft, onDraftChange, testId, titleKey, editTitleKey, head, footer } =
+    form;
+  const editing = draft.editingIndex !== undefined;
   const error = draftError(draft);
   const touched = Boolean(draft.start || draft.end || draft.hoursPerWeek || draft.customLabel);
   const update = (patch: Partial<TimeAvailabilityDraft>) => onDraftChange({ ...draft, ...patch });
@@ -927,7 +927,7 @@ function renderCommitmentForm(form: CommitmentFormProps) {
 
   return html`
     <section class="adminbot-time-availability__editor" data-testid=${testId}>
-      <div class="card-title">${t(titleKey)}</div>
+      <div class="card-title">${t(editing ? editTitleKey : titleKey)}</div>
       <form
         class="adminbot-form adminbot-time-availability__form"
         @submit=${(event: Event) => {
@@ -968,6 +968,20 @@ function renderCommitmentForm(form: CommitmentFormProps) {
                 >${error}</span
               >`
             : nothing}
+          ${editing
+            ? html`<button
+                type="button"
+                class="btn secondary"
+                data-testid=${`${testId}-cancel`}
+                @click=${() =>
+                  onDraftChange({
+                    ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                    category: draft.category === "jinesis" ? "jinesis" : "vacation",
+                  })}
+              >
+                ${t("adminbotTimeAvailability.form.cancel")}
+              </button>`
+            : nothing}
           <button
             type="submit"
             class="btn primary"
@@ -976,7 +990,11 @@ function renderCommitmentForm(form: CommitmentFormProps) {
           >
             ${props.saving
               ? t("adminbotTimeAvailability.form.saving")
-              : t("adminbotTimeAvailability.form.submit")}
+              : t(
+                  editing
+                    ? "adminbotTimeAvailability.form.saveChanges"
+                    : "adminbotTimeAvailability.form.submit",
+                )}
           </button>
         </div>
       </form>
@@ -997,6 +1015,7 @@ function renderJinesisEditor(
     onDraftChange: (draft) => props.onDraftChange({ ...draft, category: "jinesis" }),
     testId: "time-availability-editor",
     titleKey: "adminbotTimeAvailability.form.jinesisTitle",
+    editTitleKey: "adminbotTimeAvailability.form.editJinesisTitle",
     head: ({ draft, field }) => html`
       <label class="adminbot-form__field">
         <span>${t("adminbotTimeAvailability.form.project")}</span>
@@ -1039,6 +1058,7 @@ function renderTimeAwayEditor(
     onDraftChange: props.onAwayDraftChange,
     testId: "time-away-editor",
     titleKey: "adminbotTimeAvailability.form.awayTitle",
+    editTitleKey: "adminbotTimeAvailability.form.editAwayTitle",
     head: ({ draft, update, field }) => html`
       <label class="adminbot-form__field">
         <span>${t("adminbotTimeAvailability.form.category")}</span>
@@ -1201,7 +1221,10 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
     });
 
   return html`
-    <section class="adminbot-time-availability__editor" data-testid="time-availability-milestone-editor">
+    <section
+      class="adminbot-time-availability__editor"
+      data-testid="time-availability-milestone-editor"
+    >
       <div class="card-title">${t("adminbotTimeAvailability.form.milestoneTitle")}</div>
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.formHint")}
@@ -1441,62 +1464,63 @@ function renderAddDeadline(
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.addConferenceHint")}
       </p>
-    <form
-      class="adminbot-form adminbot-time-availability__deadline-form"
-      data-testid="time-availability-add-deadline"
-      @submit=${(event: Event) => {
-        event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const select = form.querySelector("select");
-        const picked = options.find((entry) => entry.venue.deadline_id === select?.value);
-        if (!picked) {
-          return;
-        }
-        const { venue } = picked;
-        props.onSaveSchedule(props.selectedMemberId, {
-          milestones: [
-            ...milestones,
-            {
-              deadline_id: venue.deadline_id,
-              date: venue.deadline_aoe.slice(0, 10),
-              label: venue.name,
-              // The snapshot states every deadline in AoE, so the clock is copied across with the
-              // zone that makes it mean what the conference said.
-              time: venue.deadline_aoe.slice(11, 16),
-              timezone: AOE_TIMEZONE,
-              ...(venue.link ? { link: venue.link } : {}),
-            },
-          ],
-        });
-      }}
-    >
-      <label class="adminbot-form__field" for="time-availability-deadline-pick">
-        <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
-        <select
-          id="time-availability-deadline-pick"
-          data-testid="time-availability-deadline-pick"
-        >
-          ${options.map(
-            (entry) => html`
-              <option value=${entry.venue.deadline_id}>
-                ${entry.venue.name} · ${entry.venue.deadline_label} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
-      <div class="adminbot-time-availability__form-actions">
-        <button
-          type="submit"
-          class="btn primary"
-          data-testid="time-availability-deadline-add"
-          ?disabled=${props.saving}
-        >
-          <span aria-hidden="true">${icons.plus}</span>
-          ${t("adminbotTimeAvailability.milestones.submitConference")}
-        </button>
-      </div>
-    </form>
+      <form
+        class="adminbot-form adminbot-time-availability__deadline-form"
+        data-testid="time-availability-add-deadline"
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          const form = event.currentTarget as HTMLFormElement;
+          const select = form.querySelector("select");
+          const picked = options.find((entry) => entry.venue.deadline_id === select?.value);
+          if (!picked) {
+            return;
+          }
+          const { venue } = picked;
+          props.onSaveSchedule(props.selectedMemberId, {
+            milestones: [
+              ...milestones,
+              {
+                deadline_id: venue.deadline_id,
+                date: venue.deadline_aoe.slice(0, 10),
+                label: venue.name,
+                // The snapshot states every deadline in AoE, so the clock is copied across with the
+                // zone that makes it mean what the conference said.
+                time: venue.deadline_aoe.slice(11, 16),
+                timezone: AOE_TIMEZONE,
+                ...(venue.link ? { link: venue.link } : {}),
+              },
+            ],
+          });
+        }}
+      >
+        <label class="adminbot-form__field" for="time-availability-deadline-pick">
+          <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
+          <select
+            id="time-availability-deadline-pick"
+            data-testid="time-availability-deadline-pick"
+          >
+            ${options.map(
+              (entry) => html`
+                <option value=${entry.venue.deadline_id}>
+                  ${entry.venue.name} · ${entry.venue.deadline_label} ·
+                  ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
+                </option>
+              `,
+            )}
+          </select>
+        </label>
+        <div class="adminbot-time-availability__form-actions">
+          <button
+            type="submit"
+            class="btn primary"
+            data-testid="time-availability-deadline-add"
+            ?disabled=${props.saving}
+          >
+            <span aria-hidden="true">${icons.plus}</span>
+            ${t("adminbotTimeAvailability.milestones.submitConference")}
+          </button>
+        </div>
+      </form>
     </section>
   `;
 }
@@ -1582,34 +1606,36 @@ function renderBigDeadlines(
                        nobody's panel should edit everyone else's. Re-adding it from the picker
                        below brings it back as their own row. -->
                   ${editable
-                ? html`<button
-                    type="button"
-                    class="btn btn--sm"
-                    data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
-                    ?disabled=${props.saving}
-                    title=${row.own ? "" : t("adminbotTimeAvailability.milestones.removePresetHint")}
-                    @click=${() =>
-                      props.onSaveSchedule(
-                        props.selectedMemberId,
-                        row.own
-                          ? {
-                              milestones: milestones.filter((candidate) =>
-                                row.deadline_id
-                                  ? candidate.deadline_id !== row.deadline_id
-                                  : !(
-                                      candidate.date === row.date &&
-                                      candidate.label === row.label
-                                    ),
-                              ),
-                            }
-                          : { dismissed_deadlines: [...dismissed, row.label] },
-                      )}
-                  >
-                    ${row.own
-                      ? t("adminbotTimeAvailability.form.remove")
-                      : t("adminbotTimeAvailability.milestones.removePreset")}
-                  </button>`
-                : nothing}
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
+                        data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
+                        ?disabled=${props.saving}
+                        title=${row.own
+                          ? ""
+                          : t("adminbotTimeAvailability.milestones.removePresetHint")}
+                        @click=${() =>
+                          props.onSaveSchedule(
+                            props.selectedMemberId,
+                            row.own
+                              ? {
+                                  milestones: milestones.filter((candidate) =>
+                                    row.deadline_id
+                                      ? candidate.deadline_id !== row.deadline_id
+                                      : !(
+                                          candidate.date === row.date &&
+                                          candidate.label === row.label
+                                        ),
+                                  ),
+                                }
+                              : { dismissed_deadlines: [...dismissed, row.label] },
+                          )}
+                      >
+                        ${row.own
+                          ? t("adminbotTimeAvailability.form.remove")
+                          : t("adminbotTimeAvailability.milestones.removePreset")}
+                      </button>`
+                    : nothing}
                 </span>
               </div>
               <span class="adminbot-time-availability__deadline-label">${row.label}</span>
@@ -1661,6 +1687,7 @@ function renderJinesisTable(
                 candidate.end === task.end &&
                 taskName(candidate.project) === task.name,
             );
+            const rowIndex = row ? rows.indexOf(row) : -1;
             return html`
               <tr>
                 <td>
@@ -1672,30 +1699,54 @@ function renderJinesisTable(
                 </td>
                 <td>${tableDate(task.start)}</td>
                 <td>${tableDate(task.end)}</td>
-                <td>${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}</td>
+                <td>
+                  ${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}
+                </td>
                 <td>
                   ${renderLink(row?.link)}
-                  ${editable
+                  ${editable && row && rowIndex >= 0
                     ? html`<button
-                        type="button"
-                        class="btn btn--sm"
-                        ?disabled=${props.saving}
-                        @click=${() =>
-                          props.onSaveSchedule(props.selectedMemberId, {
-                            // Matched on the row's own identity, not on the derived task: two
-                            // commitments can share a project name and differ only by dates.
-                            availability: rows.filter(
-                              (candidate) =>
-                                !(
-                                  candidate.start === task.start &&
-                                  candidate.end === task.end &&
-                                  taskName(candidate.project) === task.name
-                                ),
-                            ),
-                          })}
-                      >
-                        ${t("adminbotTimeAvailability.form.remove")}
-                      </button>`
+                          type="button"
+                          class="btn btn--sm"
+                          data-testid="time-availability-jinesis-edit"
+                          ?disabled=${props.saving}
+                          @click=${() => {
+                            props.onDraftChange({
+                              ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                              category: "jinesis",
+                              project: row.project ?? "",
+                              start: row.start,
+                              end: row.end,
+                              hoursPerWeek: String(row.hours_per_week),
+                              note: row.note ?? "",
+                              link: row.link ?? "",
+                              editingIndex: rowIndex,
+                            });
+                            props.onActiveCommitmentChange("jinesis");
+                          }}
+                        >
+                          ${t("adminbotTimeAvailability.form.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--sm"
+                          ?disabled=${props.saving}
+                          @click=${() =>
+                            props.onSaveSchedule(props.selectedMemberId, {
+                              // Matched on the row's own identity, not on the derived task: two
+                              // commitments can share a project name and differ only by dates.
+                              availability: rows.filter(
+                                (candidate) =>
+                                  !(
+                                    candidate.start === task.start &&
+                                    candidate.end === task.end &&
+                                    taskName(candidate.project) === task.name
+                                  ),
+                              ),
+                            })}
+                        >
+                          ${t("adminbotTimeAvailability.form.remove")}
+                        </button>`
                     : nothing}
                 </td>
               </tr>
@@ -1728,7 +1779,7 @@ function renderOtherTable(
         </thead>
         <tbody>
           ${rows.map(
-            (row) => html`
+            (row, rowIndex) => html`
               <tr>
                 <td>
                   <i
@@ -1751,24 +1802,52 @@ function renderOtherTable(
                   ${renderLink(row.link)}
                   ${editable
                     ? html`<button
-                        type="button"
-                        class="btn btn--sm"
-                        ?disabled=${props.saving}
-                        @click=${() =>
-                          props.onSaveSchedule(props.selectedMemberId, {
-                            time_off: rows.filter(
-                              (candidate) =>
-                                !(
-                                  candidate.start === row.start &&
-                                  candidate.end === row.end &&
-                                  candidate.kind === row.kind &&
-                                  candidate.label === row.label
-                                ),
-                            ),
-                          })}
-                      >
-                        ${t("adminbotTimeAvailability.form.remove")}
-                      </button>`
+                          type="button"
+                          class="btn btn--sm"
+                          data-testid="time-availability-away-edit"
+                          ?disabled=${props.saving}
+                          @click=${() => {
+                            const kind = (
+                              TIME_AVAILABILITY_CATEGORIES as readonly string[]
+                            ).includes(row.kind ?? "")
+                              ? (row.kind as TimeAvailabilityCategory)
+                              : "other";
+                            props.onAwayDraftChange({
+                              ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                              category: kind === "jinesis" ? "other" : kind,
+                              customLabel: row.label ?? "",
+                              start: row.start,
+                              end: row.end,
+                              hoursPerWeek: row.hours_per_week ? String(row.hours_per_week) : "",
+                              wholeDay: row.availability !== "partial",
+                              note: row.note ?? "",
+                              link: row.link ?? "",
+                              editingIndex: rowIndex,
+                            });
+                            props.onActiveCommitmentChange("away");
+                          }}
+                        >
+                          ${t("adminbotTimeAvailability.form.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--sm"
+                          ?disabled=${props.saving}
+                          @click=${() =>
+                            props.onSaveSchedule(props.selectedMemberId, {
+                              time_off: rows.filter(
+                                (candidate) =>
+                                  !(
+                                    candidate.start === row.start &&
+                                    candidate.end === row.end &&
+                                    candidate.kind === row.kind &&
+                                    candidate.label === row.label
+                                  ),
+                              ),
+                            })}
+                        >
+                          ${t("adminbotTimeAvailability.form.remove")}
+                        </button>`
                     : nothing}
                 </td>
               </tr>
@@ -2003,8 +2082,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                                         ${props.tripDraft
                                           ? renderTrips({
                                               trips: storedTrips,
-                                              homeLocation:
-                                                selectedMember?.location ?? null,
+                                              homeLocation: selectedMember?.location ?? null,
                                               draft: props.tripDraft,
                                               onDraftChange: (draft) =>
                                                 props.onTripDraftChange?.(draft),
@@ -2058,8 +2136,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   editable,
                   saving: props.saving,
                   onSave: (trips) =>
-                    selectedMember &&
-                    props.onSaveSchedule(selectedMember.id, { trips }),
+                    selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
                 })
               : nothing}
           </div>`

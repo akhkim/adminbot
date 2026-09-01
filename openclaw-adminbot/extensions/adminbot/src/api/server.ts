@@ -472,7 +472,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, serviceOptions(options));
   }
-  const gatewayToken = trimmedEnv(options.gatewayToken ?? process.env.OPENCLAW_GATEWAY_TOKEN);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -510,7 +509,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
       return submitDcsForm ? { submitDcsForm } : {};
     })(),
-    ...(gatewayToken ? { gatewayToken } : {}),
     ...(gatewayUrl ? { gatewayUrl } : {}),
     // An explicitly injected geolocator wins (tests and the host inject their own);
     // otherwise build the IPinfo Lite one when a token is configured. With neither, the
@@ -708,7 +706,10 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: AdminBotRouteContext) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins);
+  if (!applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins)) {
+    sendJson(res, 403, { error: { message: "origin is not allowed" } });
+    return;
+  }
   if (req.method === "OPTIONS") {
     // CORS preflight: headers already set by applyCors; body-less 204.
     res.statusCode = 204;
@@ -923,6 +924,9 @@ async function handleAuthRoute(
       asString(body.current_password),
       asString(body.new_password),
     );
+    if (result.ok) {
+      clearSessionCookie(res);
+    }
     sendAuthResult(res, result);
     return;
   }
@@ -2137,7 +2141,8 @@ async function handleAuthenticatedRoute(
     }
     const rawStatus = url.searchParams.get("status");
     const status =
-      rawStatus && adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
+      rawStatus &&
+      adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
         ? (rawStatus as AdminBotBadgeNominationStatus)
         : undefined;
     const isAdmin = principal.member.privilege_level === "admin";
@@ -3545,7 +3550,12 @@ async function handleAuthenticatedRoute(
     }
     const actionId = decodeURIComponent(remove[1]);
     const body = (await readJson(req)) as AdminBotRemovePendingRequest;
-    sendServiceResult(res, service.removePending(actionId, body));
+    // The note is client-authored; the actor is not. Keeping the two separate prevents an admin
+    // from forging another member's identity in the immutable proposal audit trail.
+    sendServiceResult(
+      res,
+      service.removePending(actionId, { ...body, actor: principal.member.id }),
+    );
     return;
   }
   const approve = /^\/approvals\/([^/]+)\/approve$/u.exec(url.pathname);
@@ -3876,10 +3886,10 @@ function applyCors(
   // Origins already reported, so the warning fires once each rather than once per request. Held by
   // the service rather than the module so two services in one process cannot silence each other.
   refusedOrigins: Set<string>,
-): void {
+): boolean {
   const origin = req.headers.origin;
   if (typeof origin !== "string") {
-    return;
+    return true;
   }
   if (!allowedOrigins.has(origin)) {
     // A refused origin is otherwise completely silent: the service answers normally, the browser
@@ -3895,12 +3905,13 @@ function applyCors(
         }`,
       );
     }
-    return;
+    return false;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  return true;
 }
 
 function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>): void {

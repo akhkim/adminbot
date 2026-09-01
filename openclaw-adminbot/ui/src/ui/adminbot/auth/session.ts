@@ -251,23 +251,20 @@ export type MemberGateway = {
   // Optional: the service omits it unless an operator configured one, because it cannot know how
   // this browser reaches the gateway. See resolveAdvertisedGatewayUrl.
   url?: string;
-  // The OpenClaw gateway token for the WS connection. Never persist to
-  // localStorage — it flows only into sessionStorage-scoped token plumbing.
-  token: string;
 };
 
 export type MemberSession = {
   session_token: string;
   expires_at: string;
   member: LabMember;
-  gateway: MemberGateway;
+  gateway?: MemberGateway;
 };
 
 // Session view returned by GET /auth/session (no session_token echoed back).
 export type MemberSessionInfo = {
   expires_at: string;
   member: LabMember;
-  gateway: MemberGateway;
+  gateway?: MemberGateway;
 };
 
 // Unclaimed roster entry surfaced in the claim picker (GET /auth/roster).
@@ -991,10 +988,16 @@ export async function previewOnboardFromMemberSheet(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<MemberSheetOnboardPreview>> {
-  const result = await authedJson(baseUrl, "/membership/sheet/onboard/preview", "POST", sessionToken, {
-    sheet_rows: sheetRows,
-    ...(Object.keys(values).length > 0 ? { values } : {}),
-  });
+  const result = await authedJson(
+    baseUrl,
+    "/membership/sheet/onboard/preview",
+    "POST",
+    sessionToken,
+    {
+      sheet_rows: sheetRows,
+      ...(Object.keys(values).length > 0 ? { values } : {}),
+    },
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }

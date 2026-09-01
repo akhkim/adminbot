@@ -8,7 +8,7 @@ import type {
   AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
-import { adminBotMemberRoles } from "../../contracts/actions.js";
+import { adminBotEmailAllowedForPrivilege, adminBotMemberRoles } from "../../contracts/actions.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 
@@ -43,12 +43,13 @@ const PASSWORD_RESET_TOKEN_BYTES = 32;
 // Sliding-window brute-force guard: at most this many failures per key inside the window.
 const RATE_LIMIT_MAX_FAILURES = 10;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const APPROVAL_EMAIL_MAX_ATTEMPTS = 3;
 
 export type AdminBotAuthSessionPayload = {
   session_token: string;
   expires_at: string;
   member: AdminBotLabMember;
-  gateway?: { url?: string; token: string };
+  gateway?: { url: string };
 };
 
 // GET /auth/session view: same as the login payload minus the raw token, which is never echoed
@@ -56,7 +57,7 @@ export type AdminBotAuthSessionPayload = {
 export type AdminBotAuthSessionView = {
   expires_at: string;
   member: AdminBotLabMember;
-  gateway?: { url?: string; token: string };
+  gateway?: { url: string };
 };
 
 export type AdminBotMemberPrincipal = {
@@ -121,7 +122,6 @@ export type AdminBotAuthServiceOptions = {
   ) => Promise<
     { country?: string; continent?: string; city?: string; timezone?: string } | undefined
   >;
-  gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -187,7 +187,6 @@ export class AdminBotAuthService {
   ) => Promise<
     { country?: string; continent?: string; city?: string; timezone?: string } | undefined
   >;
-  private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => Date;
@@ -203,7 +202,6 @@ export class AdminBotAuthService {
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
-    this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.now = options.now ?? (() => new Date());
@@ -447,11 +445,15 @@ export class AdminBotAuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
     }
+    const nowIso = this.now().toISOString();
     this.store.saveCredential({
       ...credential,
       password_scrypt: hashPassword(newPassword),
-      updated_at: this.now().toISOString(),
+      updated_at: nowIso,
     });
+    // A password change is a containment action as well as a credential update. Keeping an older
+    // session alive lets whoever stole it ignore the new password entirely.
+    this.store.revokeSessionsForMember(memberId, nowIso);
     this.audit("auth.password_changed", memberId, {});
     return { ok: true, status: 200, payload: { changed: true } };
   }
@@ -585,6 +587,13 @@ export class AdminBotAuthService {
     if (!isValidEmail(email)) {
       return authError(400, "invalid email");
     }
+    const member = this.store.getLabMember(memberId);
+    if (member && !adminBotEmailAllowedForPrivilege(email, member.privilege_level)) {
+      return authError(
+        400,
+        "login email must be a @cs.toronto.edu address (external collaborators are exempt)",
+      );
+    }
     // Generic 409 for any other credential or pending registration holding the email so a caller
     // cannot probe which addresses exist. Re-using the member's own current email is a no-op.
     const existing = this.store.getCredentialByEmail(email);
@@ -594,7 +603,6 @@ export class AdminBotAuthService {
     }
     const nowIso = this.now().toISOString();
     this.store.updateCredentialEmail(memberId, email, nowIso);
-    const member = this.store.getLabMember(memberId);
     if (member) {
       // Keep the member record's email in sync with the login identifier.
       this.store.saveLabMember({ ...member, email, updated_at: nowIso });
@@ -640,24 +648,48 @@ export class AdminBotAuthService {
   }
 
   // Fire-and-forget, same reasoning as the calendar invite: the approval is already recorded, so a
-  // failed mail is audited for follow-up rather than rolled back. The member's name comes from the
-  // roster record the approval just created/claimed, so the mail can greet them properly.
+  // failed mail is audited for follow-up rather than rolled back. Short transient failures are
+  // retried because this message is the member's only guaranteed delivery of the dashboard URL.
   private notifyAccountApproved(email: string, memberId: string, decidedBy: string): void {
     if (!this.sendAccountApprovedEmail) {
       return;
     }
     const name = this.store.getLabMember(memberId)?.name;
-    void this.sendAccountApprovedEmail({ email, ...(name ? { name } : {}) })
-      .then(() => {
-        this.audit("auth.approval_email_sent", decidedBy, { member_id: memberId, email });
+    void this.sendAccountApprovedWithRetry({ email, ...(name ? { name } : {}) })
+      .then((attempts) => {
+        this.audit("auth.approval_email_sent", decidedBy, {
+          member_id: memberId,
+          email,
+          attempts,
+        });
       })
       .catch((error: unknown) => {
         this.audit("auth.approval_email_failed", decidedBy, {
           member_id: memberId,
           email,
+          attempts: APPROVAL_EMAIL_MAX_ATTEMPTS,
           error: error instanceof Error ? error.message : String(error),
         });
       });
+  }
+
+  private async sendAccountApprovedWithRetry(params: {
+    email: string;
+    name?: string;
+  }): Promise<number> {
+    if (!this.sendAccountApprovedEmail) {
+      return 0;
+    }
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= APPROVAL_EMAIL_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await this.sendAccountApprovedEmail(params);
+        return attempt;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
   }
 
   // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
@@ -761,7 +793,7 @@ export class AdminBotAuthService {
     return {
       expires_at: principal.session.expires_at,
       member: principal.member,
-      ...(this.gateway() ? { gateway: this.gateway() } : {}),
+      ...(this.gatewayUrl ? { gateway: { url: this.gatewayUrl } } : {}),
     };
   }
 
@@ -782,20 +814,9 @@ export class AdminBotAuthService {
         session_token: rawToken,
         expires_at: expiresIso,
         member,
-        ...(this.gateway() ? { gateway: this.gateway() } : {}),
+        ...(this.gatewayUrl ? { gateway: { url: this.gatewayUrl } } : {}),
       },
     };
-  }
-
-  // The URL is omitted unless an operator configured one. This service knows its own gateway
-  // token; it does not know how a given browser reaches the gateway, and a browser on another host
-  // cannot use a loopback address. Omitting lets the client keep the URL it was already configured
-  // with (which is how it reached the sign-in form in the first place).
-  private gateway(): { url?: string; token: string } | undefined {
-    if (!this.gatewayToken) {
-      return undefined;
-    }
-    return { ...(this.gatewayUrl ? { url: this.gatewayUrl } : {}), token: this.gatewayToken };
   }
 
   private checkRateLimit(
