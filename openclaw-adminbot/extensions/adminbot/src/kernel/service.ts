@@ -1876,21 +1876,7 @@ export class AdminBotService {
       delete stored.availability_notes;
     }
     this.store.saveLabMember(stored);
-    if (missingMandatoryProfileFields(stored).length === 0) {
-      // Notifications are durable by design, but a completion reminder is state-dependent rather
-      // than historical. Remove both current and legacy titles as soon as the last member-owned
-      // field is filled so the dashboard cannot keep contradicting its own 100% ledger.
-      const resolvedTitles = new Set([
-        "Your profile is missing a required field",
-        "Your profile is missing required fields",
-        "Your profile needs some info",
-      ]);
-      for (const notification of this.store.listMemberNotifications(stored.id)) {
-        if (notification.kind === "profile" && resolvedTitles.has(notification.title)) {
-          this.store.deleteMemberNotification(notification.id);
-        }
-      }
-    }
+    this.clearResolvedProfileNotifications(stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -5019,14 +5005,33 @@ export class AdminBotService {
   listMemberNotifications(
     memberId: string,
   ): AdminBotServiceResponse<{ notifications: AdminBotMemberNotification[] }> {
-    if (!this.store.getLabMember(memberId)) {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
       return serviceError(404, `unknown member ${memberId}`);
     }
+    // A complete member may already have had a durable warning before this reconciliation shipped.
+    // Clear it on the first read as well as on the last profile save, so deployment heals existing
+    // rows without asking everybody at 100% to edit and save an arbitrary field again.
+    this.clearResolvedProfileNotifications(member);
     return {
       ok: true,
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  private clearResolvedProfileNotifications(member: AdminBotLabMember): void {
+    if (missingMandatoryProfileFields(member).length > 0) {
+      return;
+    }
+    for (const notification of this.store.listMemberNotifications(member.id)) {
+      if (
+        notification.kind === "profile" &&
+        RESOLVED_PROFILE_NOTIFICATION_TITLES.has(notification.title)
+      ) {
+        this.store.deleteMemberNotification(notification.id);
+      }
+    }
   }
 
   /**
@@ -6372,31 +6377,35 @@ export class AdminBotService {
     // a field somebody else is missing. A member missing both halves is told both in one message;
     // two separate nudges about the same page reads as a system that does not know what it already
     // sent.
-    const groups = new Map<string, { missingFields: string[]; timeline: boolean; ids: string[] }>();
+    const groups = new Map<
+      string,
+      { missingFields: string[]; timelineEntries?: number; ids: string[] }
+    >();
     for (const row of due) {
       const missingFields = include !== "timeline" ? row.missing_fields : [];
       const timeline = include !== "profile" && row.timeline_short;
-      const key = `${missingFields.join(",")}|${timeline}`;
-      const group = groups.get(key) ?? { missingFields, timeline, ids: [] };
+      const timelineEntries = timeline ? row.timeline_entries : undefined;
+      const key = `${missingFields.join(",")}|${timelineEntries ?? "complete"}`;
+      const group = groups.get(key) ?? { missingFields, timelineEntries, ids: [] };
       group.ids.push(row.id);
       groups.set(key, group);
     }
     const created: AdminBotMemberNudgeResult["created"] = [];
     const skipped: AdminBotMemberNudgeResult["skipped"] = [];
     const notified: string[] = [];
-    for (const { missingFields, timeline, ids: recipients } of groups.values()) {
+    for (const { missingFields, timelineEntries, ids: recipients } of groups.values()) {
       const needsProfile = missingFields.length > 0;
       const result = await this.sendMemberNudge(
         {
           channel: "slack",
           recipient_member_ids: recipients,
-          message: buildProfileReminderMessage({ missingFields, timeline }),
+          message: buildProfileReminderMessage({ missingFields, timelineEntries }),
           kind: "profile",
           title: needsProfile
             ? missingFields.length === 1
               ? "Your profile is missing a required field"
               : "Your profile is missing required fields"
-            : "Your term timeline is empty",
+            : "Your profile is complete — add your term timeline",
           tab: needsProfile ? "profile" : "adminbotTimeAvailability",
           // Important: both halves are things only the member can do, and everything downstream --
           // scheduling, travel, the calendar's timezones -- is planned from them.
@@ -6442,18 +6451,22 @@ export class AdminBotService {
     name: string;
     missing_fields: string[];
     timeline_short: boolean;
+    timeline_entries: number;
   }> {
     return this.store
       .listLabMembers()
       .filter(isActiveRosterMember)
-      .map((member) => ({
-        id: member.id,
-        name: member.name,
-        missing_fields: missingMandatoryProfileFields(member),
-        timeline_short:
-          isAdminBotFullMember(member) &&
-          countTimelineEntries(member).total < adminBotTimelineEntryTarget,
-      }))
+      .map((member) => {
+        const timelineEntries = countTimelineEntries(member).total;
+        return {
+          id: member.id,
+          name: member.name,
+          missing_fields: missingMandatoryProfileFields(member),
+          timeline_short:
+            isAdminBotFullMember(member) && timelineEntries < adminBotTimelineEntryTarget,
+          timeline_entries: timelineEntries,
+        };
+      })
       .filter((row) => row.missing_fields.length > 0 || row.timeline_short);
   }
 
@@ -8256,6 +8269,11 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
+  "Your profile is missing a required field",
+  "Your profile is missing required fields",
+  "Your profile needs some info",
+]);
 
 // The same idea one level down: a *slot* is left alone for three days after it was nudged about.
 // Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
@@ -8410,7 +8428,7 @@ function buildRegistrationUpdateMessage(params: { venue: string; unregistered: n
  */
 function buildProfileReminderMessage(needs: {
   missingFields: string[];
-  timeline: boolean;
+  timelineEntries?: number;
 }): string {
   const lines: string[] = [];
   if (needs.missingFields.length > 0) {
@@ -8428,18 +8446,23 @@ function buildProfileReminderMessage(needs: {
       "Open your profile page in the Control UI and fill them in — it saves as you type.",
     );
   }
-  if (needs.timeline) {
+  if (needs.timelineEntries !== undefined) {
     if (lines.length > 0) {
       lines.push("");
+    } else {
+      lines.push("Your required profile fields are complete.", "");
     }
+    const remaining = Math.max(0, adminBotTimelineEntryTarget - needs.timelineEntries);
+    const remainingLabel = remaining === 1 ? "entry" : "entries";
     lines.push(
-      "Your timeline is empty. Add when you are working, when you are away, and the milestones " +
-        "you are aiming at, on the Time Availability page.",
+      `Your term timeline has ${needs.timelineEntries} of ${adminBotTimelineEntryTarget} needed entries. ` +
+        `Add ${remaining} more ${remainingLabel} on the Time Availability page: when you are ` +
+        "working, when you are away, or a milestone you are aiming at.",
       "It is what the lab plans deadlines and meetings around — without it, nobody can tell " +
         "whether you are free next month.",
     );
   }
-  lines.push("", "Already done? You'll stop getting this once it is filled in.");
+  lines.push("", "Already done? Refresh AdminBot after the change is saved.");
   return lines.join("\n");
 }
 

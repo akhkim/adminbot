@@ -3545,7 +3545,7 @@ async function handleAuthenticatedRoute(
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
   if (req.method === "POST" && remove?.[1]) {
-    if (!requireMemberPrivileged(res, principal)) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
       return;
     }
     const actionId = decodeURIComponent(remove[1]);

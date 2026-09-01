@@ -4,6 +4,7 @@ import {
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
 } from "../contracts/actions.js";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
@@ -16,7 +17,11 @@ function unwrap<T>(
   return result.payload;
 }
 
-function completeMember(fields: { id: string; privilege_level: string }) {
+function completeMember(
+  fields: { id: string; privilege_level: string } & Partial<
+    Parameters<AdminBotService["upsertLabMember"]>[0]
+  >,
+) {
   return {
     // On the nudge list: these fixtures exist to be chased, and the list is opt-in (see
     // adminBotReceivesNudges). A member without it is silent by design, which is a different test.
@@ -3428,6 +3433,24 @@ describe("AdminBotService", () => {
       ).toEqual([]);
     });
 
+    it("reconciles a legacy incomplete-profile notification when a complete member next reads it", () => {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store);
+      unwrap(
+        service.upsertLabMember(completeMember({ id: "already-done", privilege_level: "member" })),
+      );
+      store.saveMemberNotification({
+        id: "legacy-profile-warning",
+        member_id: "already-done",
+        kind: "profile",
+        title: "Your profile needs some info",
+        body: "Old warning",
+        created_at: "2026-08-01T00:00:00.000Z",
+      });
+
+      expect(unwrap(service.listMemberNotifications("already-done")).notifications).toEqual([]);
+    });
+
     it("sends one Slack reminder per member with an incomplete profile", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
@@ -3489,8 +3512,31 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("Your timeline is empty");
+      expect(message).toContain("Your required profile fields are complete");
+      expect(message).toContain("Your term timeline has 0 of 2 needed entries");
       expect(message).not.toContain("missing one or more required fields");
+      expect(unwrap(service.listMemberNotifications("planner")).notifications[0]?.title).toBe(
+        "Your profile is complete — add your term timeline",
+      );
+    });
+
+    it("states the exact remaining timeline target when one entry is already saved", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember(
+          completeMember({
+            id: "one-entry",
+            privilege_level: "member",
+            availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 20 }],
+          }),
+        ),
+      );
+
+      const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("Your term timeline has 1 of 2 needed entries");
+      expect(message).toContain("Add 1 more entry");
     });
 
     it("does not ask a collaborator when they are working", async () => {
@@ -3520,7 +3566,7 @@ describe("AdminBotService", () => {
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
       expect(message).toContain("missing 11 required fields");
-      expect(message).toContain("Your timeline is empty");
+      expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
     // The message names this member's own gap, not the lab-wide checklist. Telling somebody who is
