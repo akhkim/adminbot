@@ -4,7 +4,8 @@
 
 import { DEFAULT_ADMINBOT_CONTROL_UI_URL } from "../../contracts/control-ui.js";
 
-const TEMPLATE = `<title>Jinesis Deadlines</title>
+const TEMPLATE = `<meta charset="utf-8" />
+<title>Jinesis Deadlines</title>
 <style>
   :root {
     --bg: #0b0f1a;
@@ -1222,7 +1223,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         \${unit(p.d, "days")}<span class="sep">:</span>\${unit(pad(p.h), "hrs")}<span class="sep">:</span>\${unit(pad(p.m), "min")}<span class="sep">:</span>\${unit(pad(p.s), "sec")}
       </div>\`
           : ""
-      }<div class="hlinks">\${staleNote(next)}\${historyNote(next)}\${sourceLinks(next)}</div>\`;
+      }<div class="hlinks">\${deadlineChangeNote(next)}\${staleNote(next)}\${historyNote(next)}\${sourceLinks(next)}</div>\`;
     } else {
       delete hero.dataset.entryType;
       delete hero.dataset.archivalStatus;
@@ -1306,6 +1307,24 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           .join("")}</ul></details>\`
       : "";
   }
+  function deadlineChangeText(x) {
+    const dates = (x.revisions || [])
+      .map((revision) => revision.deadline_aoe)
+      .filter((deadline, index, revisions) => deadline !== revisions[index - 1]);
+    if (dates.at(-1) !== x.deadline_aoe) dates.push(x.deadline_aoe);
+    if (dates.length < 2) return "";
+    const changes = dates.slice(1).map((deadline, index) => deadline.localeCompare(dates[index]));
+    const label = changes.every((change) => change > 0)
+      ? "Extended"
+      : changes.every((change) => change < 0)
+        ? "Corrected"
+        : "Updated";
+    return \`\${label}: \${dates.map(fmtAoeDateTimeText).join(" → ")}\`;
+  }
+  function deadlineChangeNote(x) {
+    const change = deadlineChangeText(x);
+    return change ? \`<span class="cnote"><strong>\${esc(change)}</strong></span>\` : "";
+  }
   function staleNote(x) {
     return x.stale ? \`<span class="cnote">Source not observed in the latest sweep.</span>\` : "";
   }
@@ -1330,6 +1349,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       <div class="cgroup" title="\${esc(workshopGroupLabel(x.venue_group))} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       \${classificationLabels(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
+      \${deadlineChangeNote(x)}
       <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
       \${notif}\${staleNote(x)}\${historyNote(x)}\${sourceLinks(x)}
     </div>\`;
@@ -1348,7 +1368,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(x.name)}</a>\`
           : esc(x.name);
         const actions = sourceLinks(x);
-        return \`<tr data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
+        return \`<tr data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}\${deadlineChangeNote(x)}</td>
       <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
       <td class="meta"><span class="labels"><span class="badge">\${type}</span>\${classificationLabels(x)}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${x.stale ? \`<span class="cnote" title="Source not observed in the latest sweep.">stale</span>\` : ""}\${historyNote(x)}\${actions}</td></tr>\`;
@@ -1445,12 +1465,9 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
           ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
           : esc(title.name);
         const actions = sourceLinks(x);
-        const earlier = (x.revisions || []).slice(0, -1);
         const detail = [
           x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
-          earlier.length
-            ? \`Previously \${earlier.map((revision) => \`\${fmtAoeDateTimeText(revision.deadline_aoe)} (\${cap(revision.deadline_label || "deadline")})\`).join(", ")}\`
-            : "",
+          deadlineChangeText(x),
           x.stale ? "Source not observed in the latest sweep" : "",
         ]
           .filter(Boolean)

@@ -11,6 +11,8 @@ import type { DeadlineVenue } from "../data/deadlines.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
+  deadlineChangeLabel,
+  deadlineChangeSummary,
   entriesForDeadlinePeriod,
   filterDeadlineBoardEntries,
   groupDeadlineBoardEntries,
@@ -206,7 +208,80 @@ describe("deadline board model", () => {
       { observed_at: "2026-08-01T00:00:00Z", deadline_aoe: "2026-09-24 23:59:59" },
       { observed_at: "2026-08-02T00:00:00Z", deadline_aoe: "2026-09-25 23:59:59" },
     ];
-    expect(priorDeadlineRevisions({ revisions } as DeadlineVenue)).toEqual([revisions[0]]);
+    expect(
+      priorDeadlineRevisions({
+        deadline_aoe: "2026-09-25 23:59:00",
+        revisions,
+      } as DeadlineVenue),
+    ).toEqual([revisions[0]]);
+  });
+
+  it("ignores seconds-only source corrections in visible history", () => {
+    const venue = {
+      deadline_aoe: "2026-09-15 23:59:00",
+      revisions: [
+        { observed_at: "2026-08-01T00:00:00Z", deadline_aoe: "2026-09-15 23:59:32" },
+        { observed_at: "2026-09-01T00:00:00Z", deadline_aoe: "2026-09-15 23:59:00" },
+      ],
+    } as DeadlineVenue;
+    expect(priorDeadlineRevisions(venue)).toEqual([]);
+    expect(deadlineChangeSummary(venue)).toBeNull();
+  });
+
+  it("shows the previous and current date for extensions and corrections", () => {
+    const extended = {
+      deadline_aoe: "2026-09-05 23:59:00",
+      revisions: [
+        { observed_at: "2026-08-24T00:00:00Z", deadline_aoe: "2026-08-29 23:59:59" },
+        { observed_at: "2026-09-01T00:00:00Z", deadline_aoe: "2026-09-05 23:59:00" },
+      ],
+    } as DeadlineVenue;
+    expect(deadlineChangeLabel(extended)).toBe(
+      "Extended: Aug 29, 2026 · 23:59 AoE → Sep 5, 2026 · 23:59 AoE",
+    );
+    expect(
+      deadlineChangeLabel({
+        ...extended,
+        deadline_aoe: "2026-09-12 23:59:00",
+        revisions: [
+          extended.revisions[0]!,
+          extended.revisions[1]!,
+          {
+            observed_at: "2026-09-02T00:00:00Z",
+            deadline_aoe: "2026-09-12 23:59:00",
+          },
+        ],
+      }),
+    ).toBe(
+      "Extended: Aug 29, 2026 · 23:59 AoE → Sep 5, 2026 · 23:59 AoE → Sep 12, 2026 · 23:59 AoE",
+    );
+    expect(
+      deadlineChangeSummary({
+        ...extended,
+        deadline_aoe: "2026-09-12 23:59:00",
+        revisions: [
+          extended.revisions[0]!,
+          extended.revisions[1]!,
+          {
+            observed_at: "2026-09-02T00:00:00Z",
+            deadline_aoe: "2026-09-12 23:59:00",
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "extended", label: "Extended", changeCount: 2 });
+    expect(
+      deadlineChangeLabel({
+        ...extended,
+        deadline_aoe: "2026-08-28 00:00:00",
+        revisions: [
+          extended.revisions[0]!,
+          {
+            observed_at: "2026-09-01T00:00:00Z",
+            deadline_aoe: "2026-08-28 00:00:00",
+          },
+        ],
+      }),
+    ).toBe("Corrected: Aug 29, 2026 · 23:59 AoE → Aug 28, 2026 · 00:00 AoE");
   });
 
   it("labels publication policy without reference to venue priority", () => {
@@ -729,12 +804,66 @@ describe("renderDeadlines", () => {
     const cards = [...container.querySelectorAll(".deadline-card")];
     expect(cards).toHaveLength(1);
     expect(cards[0].querySelector(".deadline-card__name")?.textContent).toContain("IMPACT-SPEECH");
+    expect(cards[0].querySelector(".deadline-card__change")).toBeNull();
+    expect(
+      cards[0].querySelector(".deadline-card__date-row > .deadline-card__history"),
+    ).not.toBeNull();
+    expect(cards[0].querySelector(".deadline-card__date .deadline-date")).not.toBeNull();
+    expect(cards[0].querySelector(".deadline-card__date .deadline-time")).not.toBeNull();
+    const historyTrigger = cards[0].querySelector<HTMLButtonElement>(
+      ".deadline-card__history-trigger",
+    );
+    expect(historyTrigger?.tagName).toBe("BUTTON");
+    expect(historyTrigger?.textContent?.trim()).toBe("");
+    expect(historyTrigger?.querySelector("svg")).not.toBeNull();
+    expect(historyTrigger?.classList.contains("btn--icon")).toBe(true);
+    expect(historyTrigger?.getAttribute("aria-haspopup")).toBe("dialog");
+    const historyCount = cards[0].querySelectorAll(".deadline-card__history-panel li").length;
+    expect(historyCount).toBeGreaterThan(0);
+    expect(historyTrigger?.getAttribute("data-tooltip")).toBe(`Deadline history (${historyCount})`);
+    expect(historyTrigger?.getAttribute("popovertarget")).toMatch(/^deadline-history-/u);
+    expect(historyTrigger?.closest(".deadline-card__history")?.getAttribute("data-change")).toBe(
+      "extended",
+    );
+    const hero = container.querySelector(".deadline-board__hero");
+    expect(hero?.getAttribute("data-change")).toBe("extended");
+    expect(hero?.querySelector(".deadline-card__change")).toBeNull();
+    expect(
+      hero?.querySelector(".deadline-board__hero-date + .deadline-card__history"),
+    ).not.toBeNull();
+    expect(hero?.querySelector(".deadline-board__hero-date .deadline-date")?.textContent).toContain(
+      "Sep 1, 2026",
+    );
+    expect(hero?.querySelector(".deadline-board__hero-date .deadline-time")?.textContent).toContain(
+      "11:59 AoE",
+    );
+    buttonNamed(container, "Table").click();
+    await settle(container);
+    expect(container.querySelector(".deadline-table__change")).toBeNull();
+    expect(
+      container.querySelector(".deadline-table__date-row > .deadline-card__history"),
+    ).not.toBeNull();
+    expect(container.querySelector(".deadline-table__date .deadline-date")).not.toBeNull();
+    expect(container.querySelector(".deadline-table__date .deadline-time")).not.toBeNull();
+    buttonNamed(container, "Groups").click();
+    await settle(container);
+    const groupRow = container.querySelector(".deadline-group__row");
+    expect(groupRow?.getAttribute("data-change")).toBe("extended");
+    expect(groupRow?.querySelector(".deadline-group__row-detail")?.textContent).toBe(
+      "ARR commitment",
+    );
+    expect(
+      groupRow?.querySelector(".deadline-group__row-date-wrap > .deadline-card__history"),
+    ).not.toBeNull();
+    expect(groupRow?.querySelector(".deadline-group__row-date .deadline-date")).not.toBeNull();
+    expect(groupRow?.querySelector(".deadline-group__row-date .deadline-time")).not.toBeNull();
+    expect(groupRow?.querySelector(".deadline-change__badge")).toBeNull();
     expect(buttonNamed(container, "All 1")).toBeDefined();
     const stats = [...container.querySelectorAll(".deadline-board__stats > div")];
     expect(stats[0]?.querySelector("dt")?.textContent).toBe("Matching deadlines");
     expect(stats[0]?.querySelector("dd")?.textContent).toBe("1");
     expect(stats[1]?.querySelector("dt")?.textContent).toBe("Due today");
-    expect(stats[1]?.querySelector("dd")?.textContent).toBe("1");
+    expect(stats[1]?.querySelector("dd")?.textContent).toBe("0");
   });
 
   it("updates groups, summary, and the active group for combined filters", async () => {
@@ -803,7 +932,7 @@ describe("renderDeadlines", () => {
         .map((element) => element.className),
     ).toEqual([
       "deadline-group__row-countdown",
-      "deadline-group__row-date",
+      "deadline-group__row-date-wrap",
       "deadline-group__row-main",
     ]);
     expect(

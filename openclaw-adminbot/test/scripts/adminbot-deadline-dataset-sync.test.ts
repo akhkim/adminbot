@@ -23,7 +23,7 @@ const venuesDoc = JSON.parse(
 
 describe("AdminBot deadline dataset generation", () => {
   it("keeps venues.json self-consistent", () => {
-    expect(venuesDoc.history_version).toBe(1);
+    expect(venuesDoc.history_version).toBe(4);
     expect(venuesDoc.items).not.toHaveLength(0);
     expect(venuesDoc.count).toBe(venuesDoc.items.length);
   });
@@ -58,15 +58,68 @@ describe("AdminBot deadline dataset generation", () => {
 
   it("retains a real changed deadline without treating source-link updates as revisions", () => {
     const revised = venuesDoc.items.filter((item) => item.revisions.length > 1);
-    expect(revised).toHaveLength(1);
-    expect(revised[0]).toMatchObject({
+    const mint = revised.find((item) => item.id === "emnlp2026_ws_MINT_ARR_Commitment");
+    expect(mint).toMatchObject({
       id: "emnlp2026_ws_MINT_ARR_Commitment",
       deadline_aoe: "2026-08-31 23:59:00",
     });
-    expect(revised[0]?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
+    expect(mint?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
       "2026-08-24 23:59:00",
       "2026-08-31 23:59:00",
     ]);
+
+    const neurips = venuesDoc.items.filter((item) => item.id.startsWith("neurips2026_ws_"));
+    const stale = neurips
+      .filter((item) => item.stale)
+      .map((item) => item.id)
+      .toSorted();
+    expect(neurips).toHaveLength(119);
+    expect(stale).toEqual(["neurips2026_ws_ML4PS"]);
+    expect(
+      neurips.filter((item) => item.source_checked_at === "2026-09-01T00:00:00Z"),
+    ).toHaveLength(118);
+
+    const changedNeurips = neurips.filter((item) => item.revisions.length > 1);
+    for (const item of changedNeurips) {
+      expect(item.deadline_extended).toBe(true);
+      expect(item.deadline_history_status).toBe("source_history");
+      const minuteKeys = item.revisions.map((revision) => revision.deadline_aoe.slice(0, 16));
+      expect(minuteKeys).toEqual(minuteKeys.toSorted());
+      expect(item.revisions.at(-1)?.deadline_aoe).toBe(item.deadline_aoe);
+    }
+
+    const ai4good = neurips.find((item) => item.id === "neurips2026_ws_AI4GOOD");
+    expect(ai4good).toMatchObject({
+      deadline_aoe: "2026-09-01 23:59:00",
+      deadline_extended: true,
+      deadline_history_status: "source_history",
+      deadline_source_kind: "official",
+    });
+    expect(ai4good?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
+      "2026-08-29 23:59:00",
+      "2026-09-01 23:59:00",
+    ]);
+
+    expect(neurips.find((item) => item.id === "neurips2026_ws_AutoMLR")).toMatchObject({
+      deadline_aoe: "2026-09-05 23:59:00",
+      deadline_source_status: "openreview_final_submission",
+    });
+    expect(neurips.find((item) => item.id === "neurips2026_ws_FLLMPT")).toMatchObject({
+      deadline_aoe: "2026-09-12 11:00:00",
+      deadline_source_kind: "official",
+    });
+    expect(neurips.find((item) => item.id === "neurips2026_ws_VERICODEGEN")).toMatchObject({
+      deadline_aoe: "2026-09-13 23:59:00",
+    });
+    expect(neurips.find((item) => item.id === "neurips2026_ws_BabyVLM")).toMatchObject({
+      deadline_aoe: "2026-09-07 16:00:00",
+      deadline_source_status: "official_date_conflicts_with_openreview",
+      deadline_extended: true,
+    });
+    expect(neurips.find((item) => item.id === "neurips2026_ws_InfPriv_Fast_Track")).toMatchObject({
+      deadline_aoe: "2026-09-25 23:59:00",
+      deadline_source_kind: "official",
+    });
   });
 
   it("keeps both generated datasets in step with venues.json", () => {
@@ -120,8 +173,12 @@ describe("AdminBot deadline dataset generation", () => {
     for (const workshop of workshops) {
       expect(workshop.cfp_url || workshop.homepage_url).toMatch(/^https?:\/\//u);
       expect(workshop.openreview_url).toMatch(/^https:\/\/openreview\.net\/group\?id=/u);
-      expect(workshop.source_url).toBe(workshop.openreview_url);
+      expect(workshop.source_url).toMatch(/^https?:\/\//u);
       expect(workshop.source_checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00Z$/u);
+      expect(["official", "openreview", "openreview_group", ""]).toContain(
+        workshop.deadline_source_kind,
+      );
+      expect(typeof workshop.deadline_extended).toBe("boolean");
     }
   });
 
