@@ -118,12 +118,28 @@ function readInvitePayload(
  * added somebody to the channel it found and removed them from a different one -- because the two
  * lookups disagreed about archived channels, say -- is worse than either failing outright.
  */
+/**
+ * A Slack conversation id, as opposed to a channel name.
+ *
+ * C is a public channel, G a private one, D a DM. Names cannot take this shape -- Slack channel
+ * names are lowercase -- so there is no value that could be read as either.
+ */
+const SLACK_CONVERSATION_ID = /^[CGD][A-Z0-9]{7,}$/u;
+
 async function resolveChannelId(
   token: string,
   channelName: string,
   fetchImpl: SlackAdminFetch,
 ): Promise<string> {
   const wanted = channelName.replace(/^#/u, "");
+  // Already an id: hand it back rather than searching the directory for a channel *named*
+  // "C0A06H6K6DV", which is what a configured id used to do -- and since these invites run before
+  // the mail, that lookup failing refused the whole send. Both forms are legitimate config: the
+  // city sweep names its channels, and a fixed channel is more safely pinned by id, which survives
+  // a rename.
+  if (SLACK_CONVERSATION_ID.test(wanted)) {
+    return wanted;
+  }
   let cursor: string | undefined;
   let channelId: string | undefined;
   do {

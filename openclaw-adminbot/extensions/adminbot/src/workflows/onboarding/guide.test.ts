@@ -766,6 +766,53 @@ describe("onboarding sender", () => {
 describe("standing-channel invites", () => {
   const CHANNELS = { ADMINBOT_ACTIVE_CHANNEL_IDS: "C_JINESIS,C_RANDOM" };
 
+  // How the lab actually writes them down: one variable per channel, holding a real Slack id.
+  it("reads a channel per variable, and takes ids as they are", async () => {
+    const inviteToSlackConnect = vi
+      .fn()
+      .mockResolvedValue({ url: "https://slack.example/i" });
+    const send = createAdminBotOnboardingSender({
+      env: {
+        ...ENV,
+        JINESIS_ACTIVE_ID: "C0A06H6K6DV",
+        RANDOM_ACTIVE_ID: "C0ALDF1FGKT",
+      },
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await send({
+      template_id: "coauthor_major",
+      name: "Yann Billeter",
+      email: "yann@example.com",
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(
+      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
+    ).toEqual(["C0A06H6K6DV", "C0ALDF1FGKT"]);
+  });
+
+  // The combined form still wins when a deployment set it, so neither shape is a breaking change.
+  it("prefers the combined list when both are configured", async () => {
+    const inviteToSlackConnect = vi
+      .fn()
+      .mockResolvedValue({ url: "https://slack.example/i" });
+    const send = createAdminBotOnboardingSender({
+      env: { ...ENV, ...CHANNELS, JINESIS_ACTIVE_ID: "C0A06H6K6DV" },
+      inviteToSlackConnect,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    await send({
+      template_id: "coauthor_major",
+      name: "Yann Billeter",
+      email: "yann@example.com",
+    });
+    expect(
+      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
+    ).toEqual(["C_JINESIS", "C_RANDOM"]);
+  });
+
   // The access matrix has always said coauthor-major and own-pace belong in #jinesis-active and
   // #random-active. Nothing acted on that row, so the mail told them their invitations were on the
   // way and no invitation was ever sent.

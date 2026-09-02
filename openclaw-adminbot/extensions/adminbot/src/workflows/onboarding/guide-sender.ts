@@ -235,10 +235,32 @@ export type AdminBotOnboardingSenderOptions = {
 export const ADMINBOT_ONBOARDING_CHANNEL_ENV = "ADMINBOT_ONBOARDING_CHANNEL_ID";
 
 /**
- * The lab's two standing channels, comma-separated, for the subgroups the access matrix puts in
- * them. Ids rather than names, because that is what the Slack API invites into.
+ * The lab's two standing channels, for the subgroups the access matrix puts in them.
+ *
+ * Configured one variable per channel, because that is how they are actually written down and
+ * because a named variable says which channel is missing when one of them is. The combined
+ * comma-separated form is still read first, for a deployment that set it that way.
+ *
+ * Either an id or a name works: the connector passes an id straight through and looks a name up.
+ * An id is the safer thing to pin, since it survives the channel being renamed.
  */
 export const ADMINBOT_ACTIVE_CHANNELS_ENV = "ADMINBOT_ACTIVE_CHANNEL_IDS";
+const ADMINBOT_ACTIVE_CHANNEL_ENVS = [
+  ["JINESIS_ACTIVE_ID", "ADMINBOT_JINESIS_ACTIVE_ID"],
+  ["RANDOM_ACTIVE_ID", "ADMINBOT_RANDOM_ACTIVE_ID"],
+] as const;
+
+/** The standing channels this deployment is configured with, in order, deduped. */
+export function resolveActiveChannels(env: NodeJS.ProcessEnv): string[] {
+  const combined = (configuredEnvValue(env[ADMINBOT_ACTIVE_CHANNELS_ENV]) ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const named = ADMINBOT_ACTIVE_CHANNEL_ENVS.map((names) =>
+    names.map((name) => configuredEnvValue(env[name])?.trim()).find(Boolean),
+  ).filter((entry): entry is string => Boolean(entry));
+  return [...new Set(combined.length > 0 ? combined : named)];
+}
 
 /**
  * The access-matrix row that puts somebody in #jinesis-active and #random-active.
@@ -619,14 +641,7 @@ export function createAdminBotOnboardingSender(
         (grant) => grant.item === ACTIVE_CHANNELS_ACCESS_ITEM,
       );
     if (owedActiveChannels) {
-      const channels = [
-        ...new Set(
-          (configuredEnvValue(env[ADMINBOT_ACTIVE_CHANNELS_ENV]) ?? "")
-            .split(",")
-            .map((entry) => entry.trim())
-            .filter(Boolean),
-        ),
-      ];
+      const channels = resolveActiveChannels(env);
       if (channels.length === 0) {
         // Not fatal. A deployment that has never set the variable would otherwise be unable to
         // onboard these two subgroups at all, which is a worse failure than an uninvited member --
