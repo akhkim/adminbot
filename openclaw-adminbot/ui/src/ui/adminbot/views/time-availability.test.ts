@@ -226,6 +226,50 @@ describe("renderAdminBotTimeAvailability", () => {
     });
   });
 
+  it("opens the editor when a stored commitment is edited", () => {
+    // The regression: the tables render above the editor stack, and the stack is collapsed until
+    // `activeCommitmentType` is set -- which is its state on load. An Edit button that only loaded
+    // the draft filled in a form that was not on the page, so the press looked like it did nothing.
+    const onDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      activeCommitmentType: null,
+      onDraftChange,
+      onActiveCommitmentChange,
+    });
+    const edit = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="time-availability-commitment-edit-"]',
+    );
+    expect(edit).not.toBeNull();
+    edit?.click();
+
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    expect(onDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "jinesis",
+      project: "Alignment",
+      start: "2026-03-02",
+      end: "2026-03-15",
+      hoursPerWeek: "20",
+      // The index is what makes this replace the stored row instead of appending a copy.
+      editingIndex: 0,
+    });
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+
+  it("re-opens the Jinesis tab when the editor was left on another one", () => {
+    // Loading a Jinesis draft while the away form is on screen is the same failure wearing a
+    // different hat: the draft lands somewhere the member cannot see it.
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      activeCommitmentType: "away",
+      onActiveCommitmentChange,
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+      ?.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+
   it("does not submit an invalid draft", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({
@@ -788,6 +832,87 @@ describe("the split tables and the deadline panel", () => {
       ],
       milestones: [{ date: "2027-06-12", label: "Graduation" }],
     });
+
+  it("loads a non-Jinesis commitment into the away editor and opens it", () => {
+    const onAwayDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      members: [scheduled()],
+      activeCommitmentType: null,
+      onAwayDraftChange,
+      onActiveCommitmentChange,
+    });
+    const edit = container.querySelector<HTMLButtonElement>(
+      '[data-testid="time-availability-away-edit-0"]',
+    );
+    expect(edit).not.toBeNull();
+    edit?.click();
+
+    expect(onAwayDraftChange).toHaveBeenCalledTimes(1);
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "vacation",
+      start: "2026-12-24",
+      end: "2027-01-02",
+      // "none" on the row is the whole-day answer, and it carries no hours to load back.
+      wholeDay: true,
+      hoursPerWeek: "",
+      // Into `time_off`, so submitting replaces this row rather than appending a copy.
+      editingIndex: 0,
+    });
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("away");
+  });
+
+  it("carries a partial row's hours back into the away editor", () => {
+    const onAwayDraftChange = vi.fn();
+    const container = renderView({
+      members: [
+        member({
+          time_off: [
+            {
+              start: "2026-05-01",
+              end: "2026-05-31",
+              kind: "course_load",
+              label: "Compilers",
+              availability: "partial",
+              hours_per_week: 12,
+              note: "evenings",
+            },
+          ],
+        }),
+      ],
+      onAwayDraftChange,
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')
+      ?.click();
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "course_load",
+      customLabel: "Compilers",
+      wholeDay: false,
+      hoursPerWeek: "12",
+      note: "evenings",
+      editingIndex: 0,
+    });
+  });
+
+  it("loads a kind the dropdown does not know as 'other' rather than dropping it", () => {
+    // `kind` is free text on the record and the form's dropdown is a closed enum, so a stored row
+    // can name something the form cannot select. Falling back to "other" -- the category the custom
+    // label belongs to -- keeps the row editable; picking the first enum value would silently
+    // retype somebody's internship as a holiday.
+    const onAwayDraftChange = vi.fn();
+    renderView({
+      members: [
+        member({
+          time_off: [
+            { start: "2026-07-01", end: "2026-07-10", kind: "sabbatical", availability: "none" },
+          ],
+        }),
+      ],
+      onAwayDraftChange,
+    }).querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')?.click();
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({ category: "other" });
+  });
 
   it("separates Jinesis commitments from everything else", () => {
     const container = renderView({ members: [scheduled()] });

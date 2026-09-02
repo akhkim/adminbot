@@ -787,6 +787,151 @@ describe("AdminBotService member merge", () => {
   });
 });
 
+describe("AdminBotService member deletion", () => {
+  function roster() {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "andrew-kim",
+        name: "Andrew Kim",
+        email: "akim@cs.toronto.edu",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "zhijing-jin",
+        name: "Zhijing Jin",
+        email: "zhijing@cs.toronto.edu",
+      }),
+    );
+    // The import artefacts: a name and nothing to reach them by.
+    unwrap(service.upsertLabMember({ id: "ghost-row", name: "Ghost Row" }));
+    // Reachable at one address each, and so not address-less.
+    unwrap(
+      service.upsertLabMember({
+        id: "calendar-only",
+        name: "Calendar Only",
+        calendar_email: "calendar-only@gmail.com",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        id: "correspondence-only",
+        name: "Correspondence Only",
+        correspondence_email: "corr@gmail.com",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "zhijing-jin" }));
+    return { service, store };
+  }
+
+  const ids = (service: AdminBotService) =>
+    unwrap(service.listLabMembers()).members.map((member) => member.id);
+
+  it("deletes a member and the rows that named them", () => {
+    const { service, store } = roster();
+    store.saveMemberNotification({
+      id: "notif_ghost",
+      member_id: "ghost-row",
+      kind: "profile",
+      title: "Your profile is missing required fields",
+      body: "...",
+      created_at: "2026-08-27T09:20:00.000Z",
+    });
+    expect(store.listMemberNotifications("ghost-row")).toHaveLength(1);
+
+    const result = unwrap(
+      service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" }),
+    );
+    expect(result.deleted_id).toBe("ghost-row");
+    expect(result.removed).toMatchObject({ member_notifications: 1 });
+    expect(ids(service)).not.toContain("ghost-row");
+    expect(store.listMemberNotifications("ghost-row")).toHaveLength(0);
+  });
+
+  it("refuses to delete the actor, the head professor, or somebody who does not exist", () => {
+    const { service } = roster();
+    expect(
+      service.deleteLabMember({ memberId: "andrew-kim", actorId: "andrew-kim" }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.deleteLabMember({ memberId: "zhijing-jin", actorId: "andrew-kim" }),
+    ).toMatchObject({ ok: false, status: 409 });
+    expect(service.deleteLabMember({ memberId: "nobody", actorId: "andrew-kim" })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
+  it("records the whole deleted record in the audit, because a delete has no undo", () => {
+    const { service } = roster();
+    unwrap(service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" }));
+    const event = service.listAuditEvents().find((entry) => entry.type === "lab_member.deleted");
+    expect(event?.actor).toBe("andrew-kim");
+    expect((event?.details as { deleted_record?: { name?: string } })?.deleted_record).toMatchObject(
+      { name: "Ghost Row" },
+    );
+  });
+
+  it("counts any of the three addresses as reachable, so only the truly address-less are listed", () => {
+    const { service } = roster();
+    const { deletable } = unwrap(service.listMembersWithoutEmail("andrew-kim"));
+    expect(deletable.map((row) => row.id)).toEqual(["ghost-row"]);
+  });
+
+  it("previews by default and deletes nobody until asked", () => {
+    const { service } = roster();
+    const preview = unwrap(service.deleteMembersWithoutEmail({ actorId: "andrew-kim" }));
+    expect(preview.dry_run).toBe(true);
+    expect(preview.deleted.map((row) => row.id)).toEqual(["ghost-row"]);
+    expect(ids(service)).toContain("ghost-row");
+
+    const done = unwrap(
+      service.deleteMembersWithoutEmail({ actorId: "andrew-kim", dryRun: false }),
+    );
+    expect(done.dry_run).toBe(false);
+    expect(done.deleted.map((row) => row.id)).toEqual(["ghost-row"]);
+    expect(ids(service)).not.toContain("ghost-row");
+    // The reachable rows are untouched, whichever of the three addresses reaches them.
+    expect(ids(service)).toEqual(
+      expect.arrayContaining(["calendar-only", "correspondence-only"]),
+    );
+  });
+
+  it("never bulk-deletes an account somebody can still sign in to", () => {
+    const { service, store } = roster();
+    // The shared `admin` login: no address on the roster row, but a working credential.
+    store.saveCredential({
+      member_id: "ghost-row",
+      email: "admin",
+      password_scrypt: "scrypt$16384$8$1$salt$hash",
+      claimed_at: "2026-08-21T07:35:21.366Z",
+      updated_at: "2026-08-21T07:35:21.366Z",
+    });
+    const preview = unwrap(service.listMembersWithoutEmail("andrew-kim"));
+    expect(preview.deletable.map((row) => row.id)).not.toContain("ghost-row");
+    expect(preview.blocked.map((row) => row.id)).toContain("ghost-row");
+
+    const done = unwrap(
+      service.deleteMembersWithoutEmail({ actorId: "andrew-kim", dryRun: false }),
+    );
+    expect(done.deleted).toHaveLength(0);
+    expect(ids(service)).toContain("ghost-row");
+
+    // A named delete still refuses, and only `force` takes it.
+    expect(
+      service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" }),
+    ).toMatchObject({ ok: false, status: 409 });
+    unwrap(
+      service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim", force: true }),
+    );
+    expect(ids(service)).not.toContain("ghost-row");
+  });
+});
+
 describe("AdminBotService", () => {
   it("keeps a gated action pending until an allowed role approves the payload hash", () => {
     const service = new AdminBotService();

@@ -436,6 +436,67 @@ export function adminBotReceivesNudges(member: { receives_nudges?: boolean }): b
 }
 
 /**
+ * The member types the dormant-account and onboarding follow-up sweeps chase.
+ *
+ * **This list is the knob.** Adding `"alumni"`, `"own-pace-advisee"` or `"coauthor-major"` here is
+ * the whole change needed to bring those groups into both sweeps -- nothing else reads a member
+ * type to decide who is chased, and the sweeps' tests assert against this constant rather than
+ * against a hardcoded "full".
+ *
+ * Matched against `member_type`, not `privilege_level`. The two answer different questions and the
+ * lab has been bitten by the confusion twice already: almost every imported row defaults to
+ * `privilege_level: member`, which is why the nudge allowlist and the Vector sponsor roster both
+ * moved onto this column.
+ */
+export const adminBotDormantChaseMemberTypes: readonly string[] = ["full"];
+
+/**
+ * How often a member who has never signed in is reminded.
+ *
+ * The same three days as the mandatory-fields sweep, deliberately: a member who has never been
+ * here is usually short of profile fields too, and two sweeps on different clocks would take turns
+ * messaging them.
+ */
+export const adminBotDormantChaseIntervalDays = 3;
+
+/**
+ * The onboarding follow-up ladder, measured from the day the welcome email went out.
+ *
+ * Three named steps rather than a loop with a counter, because the lab chose these gaps and each
+ * one means something: five business days is long enough that a member who started on a Thursday
+ * is not chased over their first weekend; three days is a reminder; and the escalation after five
+ * more is the point where AdminBot stops asking and a person does.
+ *
+ * `firstChaseBusinessDays` skips weekends -- the welcome is work mail and the clock on it should
+ * be a working one. The two later gaps are calendar days, which is how the lab stated them.
+ */
+export const adminBotOnboardingFollowUpPlan = {
+  firstChaseBusinessDays: 5,
+  secondChaseDays: 3,
+  escalateAfterDays: 5,
+} as const;
+
+/**
+ * Whether a member holds any of these types.
+ *
+ * `member_type` is free text holding a comma-separated list, because somebody can be more than one
+ * thing ("alumni, coauthor-major"). Splitting on the comma rather than substring-matching is what
+ * keeps `coauthor-major` from also selecting a `coauthor-minor` row.
+ */
+export function adminBotHasMemberType(
+  member: { member_type?: string },
+  types: readonly string[],
+): boolean {
+  const held = new Set(
+    String(member.member_type ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return types.some((type) => held.has(type.toLowerCase()));
+}
+
+/**
  * The mandatory fields a reminder may actually chase a member about.
  *
  * `name` is off it because validateLabMember already refuses to store a member without one, so it
@@ -469,6 +530,15 @@ export type AdminBotMemberProfileOverviewRow = {
   name: string;
   status?: string;
   privilege_level: AdminBotPrivilegeLevel;
+  /**
+   * The lab's own statement of what this person is: `full`, `alumni`, `coauthor-major` and so on,
+   * as a comma-separated list because somebody can be more than one ("alumni, coauthor-major").
+   *
+   * Carried so the overview can be filtered by it. `privilege_level` cannot answer the same
+   * question -- almost every imported row defaults to `member`, which is why the nudge allowlist
+   * and the Vector roster both moved off it and onto this column.
+   */
+  member_type?: string;
   missing_fields: string[];
   filled_field_count: number;
   timeline: AdminBotMemberTimelineCounts;
@@ -1907,6 +1977,8 @@ export type AdminBotAuditEvent = {
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.
     | "lab_member.merged"
+    | "lab_member.deleted"
+    | "lab_members.purged_without_email"
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"
@@ -1931,6 +2003,7 @@ export type AdminBotAuditEvent = {
     | "prereg.nudged"
     | "paper.deleted"
     | "onboarding.guide_sent"
+    | "members.disengagement_swept"
     | "settings.updated"
     // What somebody thought of one surface. Carries the rating, never the comment -- a comment can
     // name a person, and the audit log is read by more people than the feedback table is.

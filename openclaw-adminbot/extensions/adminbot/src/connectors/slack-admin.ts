@@ -132,22 +132,40 @@ function readInvitePayload(
  */
 const SLACK_CONVERSATION_ID = /^[CGD][A-Z0-9]{7,}$/u;
 
-async function resolveChannelId(
+/**
+ * Every open public channel in the workspace, by name.
+ *
+ * Exported because two callers need the same walk: `resolveChannelId` looks one up, and the
+ * project form asks for the whole set so it can tell somebody their alias does not match any
+ * channel *before* they file a project under a name nobody will find.
+ *
+ * Public and unarchived only, which is the same slice `resolveChannelId` has always searched. A
+ * private channel the bot cannot see is not a name the lab can be asked to match: the answer
+ * "there is no such channel" would be wrong, and wrong in the direction that blocks a legitimate
+ * project.
+ *
+ * Paginated to exhaustion rather than capped. A cap would silently answer "no such channel" for
+ * every channel past the limit, which is the one failure this must not have.
+ */
+export async function listSlackChannelNames(
   token: string,
-  channelName: string,
   fetchImpl: SlackAdminFetch,
-): Promise<string> {
-  const wanted = channelName.replace(/^#/u, "");
-  // Already an id: hand it back rather than searching the directory for a channel *named*
-  // "C0A06H6K6DV", which is what a configured id used to do -- and since these invites run before
-  // the mail, that lookup failing refused the whole send. Both forms are legitimate config: the
-  // city sweep names its channels, and a fixed channel is more safely pinned by id, which survives
-  // a rename.
-  if (SLACK_CONVERSATION_ID.test(wanted)) {
-    return wanted;
+): Promise<string[]> {
+  const names: string[] = [];
+  for await (const channel of walkPublicChannels(token, fetchImpl)) {
+    if (channel.name) {
+      names.push(channel.name);
+    }
   }
+  return names;
+}
+
+/** The shared pagination walk. One loop, so a lookup and a listing cannot disagree about scope. */
+async function* walkPublicChannels(
+  token: string,
+  fetchImpl: SlackAdminFetch,
+): AsyncGenerator<{ id?: string; name?: string }> {
   let cursor: string | undefined;
-  let channelId: string | undefined;
   do {
     const params = new URLSearchParams({
       types: "public_channel",
@@ -164,9 +182,39 @@ async function resolveChannelId(
       const detail = payload?.error?.trim() || response.statusText || "unknown error";
       throw new Error(`Slack channel lookup failed ${response.status}: ${detail}`);
     }
-    channelId = payload.channels?.find((channel) => channel.name === wanted)?.id;
+    for (const channel of payload.channels ?? []) {
+      yield channel;
+    }
     cursor = payload.response_metadata?.next_cursor?.trim() || undefined;
-  } while (!channelId && cursor);
+  } while (cursor);
+}
+
+/** The env read, exported so a caller outside the executor can fail the same way it does. */
+export function adminBotSlackBotToken(env: NodeJS.ProcessEnv): string {
+  return resolveSlackBotToken(env);
+}
+
+async function resolveChannelId(
+  token: string,
+  channelName: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<string> {
+  const wanted = channelName.replace(/^#/u, "");
+  // Already an id: hand it back rather than searching the directory for a channel *named*
+  // "C0A06H6K6DV", which is what a configured id used to do -- and since these invites run before
+  // the mail, that lookup failing refused the whole send. Both forms are legitimate config: the
+  // city sweep names its channels, and a fixed channel is more safely pinned by id, which survives
+  // a rename.
+  if (SLACK_CONVERSATION_ID.test(wanted)) {
+    return wanted;
+  }
+  let channelId: string | undefined;
+  for await (const channel of walkPublicChannels(token, fetchImpl)) {
+    if (channel.name === wanted) {
+      channelId = channel.id;
+      break;
+    }
+  }
   if (!channelId) {
     // Refused rather than created. Opening a channel is a decision about the workspace's shape, and
     // a sweep that quietly makes rooms is how a directory fills with them.
@@ -304,8 +352,13 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   const userIds = Array.isArray(raw)
     ? [...new Set(raw.filter((id): id is string => typeof id === "string" && Boolean(id.trim())))]
     : [];
-  if (userIds.length < 2) {
-    throw new Error("member_nudge.escalate requires at least two Slack user ids");
+  // One is now legitimate. This used to demand two, guarding against the escalation quietly
+  // becoming a private message *to the professor* with the member not in the room. That failure is
+  // gone by construction: the professor is no longer a recipient at all -- their copy is the
+  // escalation queue on their own page -- so the only person this can reach is the member it is
+  // about, which is the direction the old rule was protecting.
+  if (userIds.length < 1) {
+    throw new Error("member_nudge.escalate requires at least one Slack user id");
   }
   return {
     user_ids: userIds,

@@ -43,6 +43,8 @@ import {
   createEmptyVenuePapersState,
   createEmptyWorkshopNudgeReviewState,
   type AdminBotCvDigestJobState,
+  EMPTY_SLACK_CHANNEL_CHECK,
+  type SlackChannelCheck,
   type AdminBotVenuePapersState,
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
@@ -98,7 +100,10 @@ import {
   type PaperOverviewFilter,
 } from "./adminbot/views/paper-overview.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
-import type { ProfileOverviewFilter } from "./adminbot/views/profile-overview.ts";
+import {
+  EMPTY_PROFILE_OVERVIEW_FILTER,
+  type ProfileOverviewFilter,
+} from "./adminbot/views/profile-overview.ts";
 import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
@@ -640,10 +645,7 @@ export class OpenClawApp extends LitElement {
   // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string }> = {};
   @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
-    gap: "any",
-    membership: "everyone",
-    search: "",
-    activity: "any",
+    ...EMPTY_PROFILE_OVERVIEW_FILTER,
   };
   // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
   // moving, and "every paper" is one click away for the times it is not.
@@ -721,6 +723,8 @@ export class OpenClawApp extends LitElement {
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
+  @state() myWorkProjectAlias = "";
+  @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
   @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};

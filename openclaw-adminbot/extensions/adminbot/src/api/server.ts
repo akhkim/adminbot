@@ -283,6 +283,11 @@ export type AdminBotMockServiceOptions = {
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  // Every open public channel name in the workspace, for the project form's "this channel already
+  // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
+  // concern, and left unset the route answers 503 so the form can say the check is unavailable
+  // rather than quietly passing an alias nobody verified.
+  fetchSlackChannelNames?: () => Promise<string[]>;
   // Coarsely geolocates a login's source IP so the roster can show where an account last signed
   // in from. Injected because reaching a public geolocation API is a composition-layer concern,
   // same as the Slack reads above. Left unset, the login path simply skips the stamp — and when
@@ -369,6 +374,36 @@ function isAnonymousRoute(method: string | undefined, pathname: string): boolean
 // caps are per-IP and generous enough that a real claimant filling one packet never notices; they
 // exist to stop the open endpoint being used as free inference against the local model.
 const ANONYMOUS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * How long the workspace's channel names are reused before Slack is asked again.
+ *
+ * Channels are created a handful of times a month and the caller is a form somebody is typing
+ * into, so the walk -- which is paginated and can be several round-trips on a large workspace --
+ * must not run per keystroke. Five minutes is long enough that filling in a form costs one call
+ * and short enough that a channel made a moment ago shows up while the person is still at the
+ * desk they made it from.
+ */
+const SLACK_CHANNEL_CACHE_MS = 5 * 60 * 1000;
+
+let slackChannelCache: { at: number; names: string[] } | undefined;
+
+/**
+ * The cached channel-name read.
+ *
+ * A failure is deliberately not cached: the next press should retry rather than repeat an error
+ * for five minutes, because the usual cause is a token or a scope somebody is in the middle of
+ * fixing.
+ */
+async function readSlackChannelNames(fetchNames: () => Promise<string[]>): Promise<string[]> {
+  const now = Date.now();
+  if (slackChannelCache && now - slackChannelCache.at < SLACK_CHANNEL_CACHE_MS) {
+    return slackChannelCache.names;
+  }
+  const names = await fetchNames();
+  slackChannelCache = { at: now, names };
+  return names;
+}
 const ANONYMOUS_RATE_LIMIT_MAX_REQUESTS = 60;
 const ANONYMOUS_RATE_LIMIT_MAX_TRACKED_IPS = 10_000;
 
@@ -431,6 +466,7 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
@@ -637,6 +673,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       : {}),
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
+      : {}),
+    ...(options.fetchSlackChannelNames
+      ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
     // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
     // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
@@ -2277,6 +2316,83 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "GET" && url.pathname === "/slack/channels") {
+    // Names only -- no ids, no membership, no topics. The one caller is the project form asking
+    // "is there already a channel called this", and a route that returned the workspace's shape
+    // would be a directory export behind a question about one string.
+    //
+    // Any signed-in member may ask. Filing a project is a member action, so refusing the check to
+    // the person doing it would leave exactly them unable to get the alias right.
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    if (!ctx.fetchSlackChannelNames) {
+      // 503 and not an empty list. An empty list reads as "no channel matches", which would tell
+      // somebody their correct alias is wrong -- the failure this check exists to prevent.
+      sendJson(res, 503, {
+        error: { message: "slack channel lookup is not configured on this deployment" },
+      });
+      return;
+    }
+    try {
+      const channels = await readSlackChannelNames(ctx.fetchSlackChannelNames);
+      sendJson(res, 200, { channels });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : "slack channel lookup failed" },
+      });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/members/without-email") {
+    // The preview behind the purge, and admin-only for the same reason the profile overview is:
+    // it is everybody's contactability at once, which is a governance read rather than a member
+    // answering "can the lab reach me".
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(res, service.listMembersWithoutEmail(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/lab/members/without-email/purge") {
+    // Deletes people, so it takes a genuine admin member session and never the shared service
+    // principal -- the same line the merge draws, for a stronger reason: a merge keeps the history
+    // under the survivor and this keeps nothing. There is deliberately no cron caller.
+    //
+    // `dry_run` defaults to true in the service, so a body-less POST previews rather than deletes:
+    // the destructive reading of an ambiguous request is the wrong default.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.deleteMembersWithoutEmail({
+        actorId: principal.member.id,
+        dryRun: body?.dry_run !== false,
+      }),
+    );
+    return;
+  }
+  const labMemberDelete = /^\/lab\/members\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && labMemberDelete?.[1]) {
+    // Same gate as the merge, and the id comes from the path rather than a body so a mistyped
+    // request 404s instead of deleting somebody adjacent.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.deleteLabMember({
+        memberId: decodeURIComponent(labMemberDelete[1]),
+        actorId: principal.member.id,
+        force: body?.force === true,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/feedback") {
     // Any authenticated principal may leave feedback -- no privilege check, because a rating is
     // the one write in this service that a plain member is *more* entitled to than an admin. It
@@ -3492,6 +3608,19 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.syncCityChannels(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/disengagement/run") {
+    // Who is chased comes from the roster's member types and each member's own login history, and
+    // the text is fixed -- nothing here is caller-composed -- so this takes requirePrivileged like
+    // the other cron-triggered sweeps rather than a genuine admin session.
+    //
+    // The escalation step writes to the professor's desk rather than sending anything new, which
+    // is the same reasoning: it moves an existing notification, it does not compose a message.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.chaseDisengagedMembers(principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/onboarding/chase/run") {

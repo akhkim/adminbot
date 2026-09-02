@@ -13,6 +13,7 @@ import {
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   ADMINBOT_REC_LETTER_CHANNEL,
+  adminBotDormantChaseMemberTypes,
   adminBotIsAlumniMember,
   adminBotProjectChannelName,
   adminBotLogisticsSettledStatuses,
@@ -233,6 +234,12 @@ import {
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
 import {
+  dormantChaseDue,
+  isChaseableMember,
+  planOnboardingFollowUp,
+  type OnboardingFollowUpStep,
+} from "../workflows/members/onboarding-followup.js";
+import {
   detectLocationDrift,
   isNewObservation,
   latestBySource,
@@ -352,6 +359,16 @@ export type AdminBotServiceStore = {
    * never having been asked.
    */
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number>;
+  /**
+   * Deletes every record that names one member, returning what went per table.
+   *
+   * The delete-side counterpart to `reassignMemberReferences`, and a separate list on purpose: a
+   * merge repoints a person's rows at whoever they turned out to be, so the tables it walks are
+   * the ones whose rows still mean something under a new owner. A delete has no survivor, so it
+   * also has to take the rows a merge deliberately leaves alone -- the notifications, feedback,
+   * weekly updates and submission keys that belong to nobody once the member is gone.
+   */
+  purgeMemberReferences(memberId: string): Record<string, number>;
   // Returns the events actually inserted. A change already on record is ignored rather than
   // re-dated, so re-scanning cannot make an old move look like it just happened.
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
@@ -931,6 +948,51 @@ export function buildOnboardingChaseMessage(params: {
   ].join("\n");
 }
 
+/**
+ * The onboarding ladder's two Slack reminders.
+ *
+ * The second says it is the second. A follow-up that reads identically to the message three days
+ * before it is how somebody learns the sender is not keeping track, and the point of naming it is
+ * that the *next* thing that happens is a person -- which the second message says out loud, so the
+ * escalation is never a surprise.
+ *
+ * Neither message asks for anything the welcome did not already ask for. It names the one action
+ * that clears it (sign in), because a reminder that re-explains onboarding is a second onboarding
+ * email nobody asked for.
+ */
+export function buildOnboardingFollowUpMessage(params: {
+  step: "first_reminder" | "second_reminder";
+  days: number;
+}): string {
+  if (params.step === "first_reminder") {
+    return [
+      `Your onboarding email went out ${params.days} days ago and the portal has not seen you yet.`,
+      "",
+      "Signing in once is all this needs — it is what unlocks your profile, your papers and the calendar.",
+    ].join("\n");
+  }
+  return [
+    `Still nothing on your account ${params.days} days after your onboarding email — this is the second reminder.`,
+    "",
+    "Signing in once clears it. If something is in the way (no access, wrong address, wrong person), say so here and I will sort it out rather than keep asking.",
+  ].join("\n");
+}
+
+/**
+ * The standing reminder for an account nobody has ever opened.
+ *
+ * Deliberately not the onboarding copy. This one goes to people whose welcome was months ago, and
+ * a message saying "your onboarding email went out 90 days ago" reads as an accusation rather than
+ * as an offer.
+ */
+export function buildDormantAccountMessage(): string {
+  return [
+    "Your AdminBot account is set up but has never been signed into.",
+    "",
+    "One sign-in is all it takes, and it is what puts your profile, papers and deadlines in front of you. If you cannot get in, reply here.",
+  ].join("\n");
+}
+
 export function buildNudgeEscalationMessage(params: {
   memberName: string;
   professorName: string;
@@ -940,7 +1002,10 @@ export function buildNudgeEscalationMessage(params: {
   const first = params.memberName.trim().split(/\s+/u)[0] || params.memberName;
   const list = params.outstanding.map((title) => `• ${title}`).join("\n");
   return [
-    `Hi ${first} — these have been outstanding for ${params.days} days, so I have added ${params.professorName} here:`,
+    // Says where it has gone rather than pretending the professor is reading this thread. They are
+    // not in the DM any more -- it is on their page -- and a message claiming an audience that is
+    // not here is the kind of small lie that makes the rest of the sentence untrustworthy.
+    `Hi ${first} — these have been outstanding for ${params.days} days, so they are now on ${params.professorName}'s list:`,
     "",
     list,
     "",
@@ -2804,6 +2869,199 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { member: merged, conflicts, moved } };
+  }
+
+  /**
+   * Remove one member's record and everything that named them.
+   *
+   * Distinct from a merge, which is the right tool whenever the person still exists somewhere on
+   * the roster: a merge keeps their history under the surviving id, and this does not keep it at
+   * all. So this is for rows that should never have been people -- an import artefact, a test row,
+   * a duplicate with nothing worth folding in -- and the audit line carries the whole record
+   * because, exactly as with a merge, there is no undo and an id alone would not be enough to put
+   * back what went.
+   *
+   * Three refusals, none of them overridable:
+   *
+   * `self` -- an admin deleting their own record signs themselves out of the tool they are holding
+   * and leaves the lab one admin short, and the recovery for it is a database edit.
+   *
+   * `head professor` -- the escalation path terminates at them (see escalateStaleNudges, which
+   * 409s without one), so deleting them silently breaks every important nudge in the system rather
+   * than failing anywhere visible.
+   *
+   * `sign-in credential` -- an account somebody can still log into is an account somebody is still
+   * using, whatever the roster says about them. This is the one refusal a caller can lift, with
+   * `force`, because an admin retiring a real departed account is the case it would otherwise
+   * block; lifting it is recorded in the audit line.
+   */
+  deleteLabMember(params: {
+    memberId: string;
+    actorId: string;
+    force?: boolean;
+  }): AdminBotServiceResponse<{
+    deleted_id: string;
+    deleted_name: string;
+    removed: Record<string, number>;
+  }> {
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const refusal = this.refuseMemberDeletion(member, params.actorId, params.force === true);
+    if (refusal) {
+      return serviceError(refusal.status, refusal.message);
+    }
+    const now = new Date().toISOString();
+    const hadCredential = Boolean(this.store.getCredentialByMemberId(member.id));
+    // Sessions first and through the revoke path rather than the purge, so a signed-in browser
+    // stops working by the route that records that it did -- same order as the merge.
+    this.store.revokeSessionsForMember(member.id, now);
+    const removed = this.store.purgeMemberReferences(member.id);
+    this.store.deleteLabMember(member.id);
+    this.recordAudit({
+      type: "lab_member.deleted",
+      actor: params.actorId,
+      details: {
+        member_id: member.id,
+        removed,
+        forced: params.force === true,
+        had_credential: hadCredential,
+        // The whole record, for the same reason the merge keeps one: this has no undo.
+        deleted_record: member,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { deleted_id: member.id, deleted_name: member.name, removed },
+    };
+  }
+
+  /**
+   * The shared refusal, so the single delete and the bulk purge cannot drift apart on who is safe
+   * to remove. Returns the reason, or undefined when the member may go.
+   */
+  private refuseMemberDeletion(
+    member: AdminBotLabMember,
+    actorId: string,
+    force: boolean,
+  ): { status: number; message: string } | undefined {
+    if (member.id === actorId) {
+      return { status: 400, message: "an admin cannot delete their own member record" };
+    }
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (headProfessorId && member.id === headProfessorId) {
+      return {
+        status: 409,
+        message: "the head professor cannot be deleted while nudge escalation points at them",
+      };
+    }
+    if (!force && this.store.getCredentialByMemberId(member.id)) {
+      return {
+        status: 409,
+        message:
+          "this member has a sign-in credential; delete it deliberately with force if the account is genuinely retired",
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * The roster rows carrying no address of any kind, and whether each may be deleted.
+   *
+   * "No email" means all three columns blank *and* no alternates: `email` is the identity the lab
+   * keys a person by, but a bulk-imported row routinely has only a `correspondence_email` or a
+   * `calendar_email`, and treating those rows as address-less would delete people the lab can
+   * still write to. Checked against the same trio `sendMemberNudge` would try, so "we cannot reach
+   * this person" and "this row is a candidate" are the same question.
+   *
+   * A read, so it is safe to call from the page that offers the delete -- the preview and the
+   * purge run the same walk, and the purge takes nothing from the caller but the confirmation.
+   */
+  listMembersWithoutEmail(actorId: string): AdminBotServiceResponse<{
+    deletable: Array<{ id: string; name: string; attached_rows: number }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+  }> {
+    const deletable: Array<{ id: string; name: string; attached_rows: number }> = [];
+    const blocked: Array<{ id: string; name: string; reason: string }> = [];
+    for (const member of this.store.listLabMembers()) {
+      if (memberHasAnyEmail(member)) {
+        continue;
+      }
+      const refusal = this.refuseMemberDeletion(member, actorId, false);
+      if (refusal) {
+        blocked.push({ id: member.id, name: member.name, reason: refusal.message });
+        continue;
+      }
+      deletable.push({
+        id: member.id,
+        name: member.name,
+        // Counted from the notification table alone rather than every owned table: it is the one
+        // that accumulates on a row nobody has ever signed into, so it is what an admin is
+        // actually deciding to throw away.
+        attached_rows: this.store.listMemberNotifications(member.id).length,
+      });
+    }
+    return { ok: true, status: 200, payload: { deletable, blocked } };
+  }
+
+  /**
+   * Delete every member the lab has no address for.
+   *
+   * Never forces. The single delete takes `force` because an admin naming one person has looked at
+   * that person; a sweep has not, and a credentialed row is exactly the one this must not take --
+   * on this roster the row with no email and a password is the shared `admin` login, which a bulk
+   * "delete everyone we cannot email" would otherwise remove. Those come back in `blocked` for an
+   * admin to handle one at a time.
+   *
+   * `dryRun` is the default. This is not undoable and it is not small, so the caller has to ask
+   * for the write explicitly.
+   */
+  deleteMembersWithoutEmail(params: { actorId: string; dryRun?: boolean }): AdminBotServiceResponse<{
+    deleted: Array<{ id: string; name: string }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+    removed: Record<string, number>;
+    dry_run: boolean;
+  }> {
+    const dryRun = params.dryRun !== false;
+    const listed = this.listMembersWithoutEmail(params.actorId);
+    if (!listed.ok) {
+      return listed;
+    }
+    const { deletable, blocked } = listed.payload;
+    const deleted: Array<{ id: string; name: string }> = [];
+    const removed: Record<string, number> = {};
+    if (!dryRun) {
+      for (const candidate of deletable) {
+        // Through the single delete rather than around it, so the guards are re-checked against
+        // the state this loop is leaving behind rather than the snapshot it started from.
+        const result = this.deleteLabMember({ memberId: candidate.id, actorId: params.actorId });
+        if (!result.ok) {
+          blocked.push({ id: candidate.id, name: candidate.name, reason: result.error.message });
+          continue;
+        }
+        deleted.push({ id: candidate.id, name: candidate.name });
+        for (const [key, count] of Object.entries(result.payload.removed)) {
+          removed[key] = (removed[key] ?? 0) + count;
+        }
+      }
+      this.recordAudit({
+        type: "lab_members.purged_without_email",
+        actor: params.actorId,
+        details: { deleted: deleted.length, blocked: blocked.length, removed },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        deleted: dryRun ? deletable.map(({ id, name }) => ({ id, name })) : deleted,
+        blocked,
+        removed,
+        dry_run: dryRun,
+      },
+    };
   }
 
   /**
@@ -6240,6 +6498,7 @@ export class AdminBotService {
           id: member.id,
           name: member.name,
           ...(member.status ? { status: member.status } : {}),
+          ...(member.member_type ? { member_type: member.member_type } : {}),
           privilege_level: member.privilege_level,
           missing_fields: missing,
           filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
@@ -8217,6 +8476,241 @@ export class AdminBotService {
   }
 
   /**
+   * Every member's most recent onboarding welcome, by member id.
+   *
+   * Read off `onboarding.guide_sent` rather than a queue table, the same way the alumni Slack
+   * invitation reads it: the send already records who was written to and when, and a second store
+   * to keep in step with it would only be a way for the two to disagree.
+   *
+   * Matched on the address the guide actually went to, across every field a member may carry one
+   * on -- a welcome is routinely sent to the correspondence address while the roster is keyed by
+   * the institutional one. A recipient the roster cannot name is skipped rather than guessed at.
+   */
+  private latestOnboardingWelcomeByMember(): Map<string, string> {
+    const byAddress = new Map<string, string>();
+    for (const member of this.store.listLabMembers()) {
+      for (const address of [member.email, member.correspondence_email, member.calendar_email]) {
+        const key = address?.trim().toLowerCase();
+        if (key) {
+          byAddress.set(key, member.id);
+        }
+      }
+    }
+    const latest = new Map<string, string>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "onboarding.guide_sent") {
+        continue;
+      }
+      const details = event.details as { recipient?: unknown; sent?: unknown } | undefined;
+      if (!details || details.sent !== true || typeof details.recipient !== "string") {
+        continue;
+      }
+      const memberId = byAddress.get(details.recipient.trim().toLowerCase());
+      if (!memberId) {
+        continue;
+      }
+      // The most recent welcome wins: somebody re-onboarded after a standing change is chased about
+      // that cycle, not about the one from their first year.
+      const existing = latest.get(memberId);
+      if (!existing || event.timestamp > existing) {
+        latest.set(memberId, event.timestamp);
+      }
+    }
+    return latest;
+  }
+
+  /**
+   * When this member last signed in, from whichever record still has it.
+   *
+   * `last_login_at` is a single field on the roster row and a bulk write can erase it -- it has
+   * been erased on this roster -- so an absent one is checked against the login-event table before
+   * it is believed. The fallback only runs for members whose field is empty, which is exactly the
+   * set about to be chased, so the cost lands where the answer matters.
+   */
+  private lastLoginOf(member: AdminBotLabMember): string | undefined {
+    const stored = member.last_login_at?.trim();
+    if (stored) {
+      return stored;
+    }
+    return this.store.listLoginEvents(member.id, 1)[0]?.at;
+  }
+
+  /**
+   * The disengagement sweep: people who never arrived, and the ladder for people just invited.
+   *
+   * One pass rather than two crons, because the two rules overlap on exactly the people they are
+   * both about. A member welcomed last week has never signed in, so a standing "you have never
+   * signed in" reminder and the onboarding ladder would both fire on them, three days apart,
+   * saying the same thing in different words. The ladder owns anybody it is still running for and
+   * the standing reminder stands aside -- which is a decision the two sweeps can only make
+   * together, and is why `dormantChaseDue` takes a `laddered` flag rather than working it out.
+   *
+   * Who is chased at all comes from `adminBotDormantChaseMemberTypes`, which is one line to widen
+   * when alumni, own-pace advisees and major coauthors are brought in.
+   *
+   * Server-computed like the other sweeps -- nothing about who is chased or what is said comes
+   * from the caller -- so cron can run it under the service principal.
+   */
+  async chaseDisengagedMembers(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days: number }>;
+      escalated: Array<{ member_id: string; notifications: number }>;
+      dormant: string[];
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const welcomes = this.latestOnboardingWelcomeByMember();
+    const ledger = this.nudgeLedgerIndex();
+    const reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days: number }> = [];
+    const escalated: Array<{ member_id: string; notifications: number }> = [];
+    const dormant: string[] = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const stamps: Array<{ domain: AdminBotNudgeDomain; subjectId: string; memberId: string }> = [];
+
+    for (const member of this.store.listLabMembers()) {
+      if (!isChaseableMember(member)) {
+        continue;
+      }
+      const lastLoginAt = this.lastLoginOf(member);
+      const lastEditAt = lastSelfEditAt(member);
+      const welcomedAt = welcomes.get(member.id);
+      let laddered = false;
+
+      if (welcomedAt) {
+        const entry = ledger.get(`onboarding_followup|${member.id}|${member.id}`);
+        const decision = planOnboardingFollowUp({
+          welcomedAt,
+          ...(lastLoginAt ? { lastLoginAt } : {}),
+          ...(lastEditAt ? { lastSelfEditAt: lastEditAt } : {}),
+          sentCount: entry?.nudge_count ?? 0,
+          ...(entry?.last_nudged_at ? { lastNudgedAt: entry.last_nudged_at } : {}),
+          now,
+        });
+        // "Still running" is due-now or not-yet, but not finished and not engaged: those two mean
+        // the ladder has let go, and the standing reminder may take the member back.
+        laddered = decision.due || decision.reason === "too_soon";
+        if (decision.due && decision.step === "escalate") {
+          // Narrowed inside `decision.due` rather than across it: the reminder branch below needs
+          // the step to exclude "escalate", and a compound condition does not carry that.
+          const raised = this.escalateOnboardingFollowUp(member.id, nowIso);
+          escalated.push({ member_id: member.id, notifications: raised });
+          stamps.push({
+            domain: "onboarding_followup",
+            subjectId: member.id,
+            memberId: member.id,
+          });
+        } else if (decision.due && decision.step !== "escalate") {
+          const days = daysBetween(welcomedAt, now);
+          const sent = await this.sendMemberNudge(
+            {
+              channel: "slack",
+              recipient_member_ids: [member.id],
+              message: buildOnboardingFollowUpMessage({ step: decision.step, days }),
+              kind: "nudge",
+              title:
+                decision.step === "first_reminder"
+                  ? "Your AdminBot account is waiting for you"
+                  : "Second reminder: your AdminBot account",
+              tab: "myOnboarding",
+              // Important, so the escalation pass can see these on the professor's desk. That is
+              // the whole shape of this ladder: two asks, then a person.
+              important: true,
+            },
+            actor,
+          );
+          if (!sent.ok) {
+            skipped.push({ member_id: member.id, reason: sent.error.message });
+            continue;
+          }
+          skipped.push(...sent.payload.skipped);
+          // Stamped whether or not Slack took it, for the reason chaseOpenOnboarding gives: the
+          // notification was filed either way, and a member with no linked Slack must not be
+          // re-chased every night because the DM never landed.
+          reminded.push({ member_id: member.id, step: decision.step, days });
+          stamps.push({
+            domain: "onboarding_followup",
+            subjectId: member.id,
+            memberId: member.id,
+          });
+          continue;
+        }
+      }
+
+      const dormantEntry = ledger.get(`dormant_account|${member.id}|${member.id}`);
+      if (
+        dormantChaseDue({
+          ...(lastLoginAt ? { lastLoginAt } : {}),
+          ...(dormantEntry?.last_nudged_at ? { lastNudgedAt: dormantEntry.last_nudged_at } : {}),
+          now,
+          laddered,
+        })
+      ) {
+        const sent = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [member.id],
+            message: buildDormantAccountMessage(),
+            kind: "nudge",
+            title: "You have never signed in to AdminBot",
+            tab: "myOnboarding",
+          },
+          actor,
+        );
+        if (!sent.ok) {
+          skipped.push({ member_id: member.id, reason: sent.error.message });
+          continue;
+        }
+        skipped.push(...sent.payload.skipped);
+        dormant.push(member.id);
+        stamps.push({ domain: "dormant_account", subjectId: member.id, memberId: member.id });
+      }
+    }
+
+    this.stampNudgeLedger(stamps, nowIso);
+    this.recordAudit({
+      type: "members.disengagement_swept",
+      actor,
+      details: {
+        reminded: reminded.length,
+        escalated: escalated.length,
+        dormant: dormant.length,
+        skipped: skipped.length,
+        member_types: [...adminBotDormantChaseMemberTypes],
+      },
+    });
+    return { ok: true, status: 200, payload: { reminded, escalated, dormant, skipped } };
+  }
+
+  /**
+   * Put this member's onboarding reminders on the professor's desk.
+   *
+   * Stamps `escalated_at` on the notifications the ladder already filed, which is the same channel
+   * `escalateStaleNudges` uses and the one `listEscalatedNudges` reads -- so these arrive on the
+   * page the professor already works through, grouped by member, with the reminder's own title as
+   * the line item. A second queue would have been a second place to forget to look.
+   *
+   * Only unread, un-escalated ones: a member who has already answered is not raised, and nothing
+   * is raised twice.
+   */
+  private escalateOnboardingFollowUp(memberId: string, nowIso: string): number {
+    const due = this.store
+      .listMemberNotifications(memberId)
+      .filter(
+        (notification) =>
+          notification.important && !notification.read_at && !notification.escalated_at,
+      );
+    for (const notification of due) {
+      this.store.saveMemberNotification({ ...notification, escalated_at: nowIso });
+    }
+    return due.length;
+  }
+
+  /**
    * Chases the members whose checklist is still open, on its own clock.
    *
    * The cycle is what makes this measurable. A checklist opens at registration or when somebody's
@@ -8344,8 +8838,12 @@ export class AdminBotService {
       return serviceError(409, "no head professor is configured to escalate to");
     }
     const headProfessor = this.store.getLabMember(headProfessorId);
-    if (!headProfessor?.slack_user_id) {
-      return serviceError(409, "the configured head professor has no linked Slack account");
+    // A roster row, but no longer a Slack account. This used to refuse the whole pass unless the
+    // professor had a linked Slack, because the escalation opened a DM with them in it. It no
+    // longer does -- their copy is the queue on their own page -- so requiring a Slack account
+    // would now stop every member's escalation over a channel nothing sends to.
+    if (!headProfessor) {
+      return serviceError(409, "the configured head professor is not on the roster");
     }
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
     const nowIso = now.toISOString();
@@ -8389,21 +8887,30 @@ export class AdminBotService {
         outstanding: due.map((notification) => notification.title),
         days: adminBotNudgeEscalateAfterDays,
       });
+      // The member, and only the member. This used to open a three-way DM with the head professor
+      // in it, on the reasoning that a private complaint is how somebody finds out weeks later they
+      // were being discussed. That reasoning still holds -- and is still satisfied, because the
+      // member is told here in as many words that it has gone to the professor.
+      //
+      // What changed is the professor's copy. AdminBot sends the PI nothing: their queue is the
+      // escalation list on their own page (see listEscalatedNudges), which `stampFirst` above has
+      // already written to. A DM as well would be the same item said twice to the one person who
+      // cannot act on it by replying.
       const proposed = this.createProposal({
         type: "member_nudge.escalate",
-        summary: `Ask ${headProfessor.name} to chase ${member.name}: ${truncateForSummary(message)}`,
+        summary: `Tell ${member.name} their overdue nudges are now with ${headProfessor.name}: ${truncateForSummary(message)}`,
         target: {
           service: "slack",
           channel: "slack",
-          target: `${member.slack_user_id},${headProfessor.slack_user_id}`,
+          target: member.slack_user_id,
           recipientMemberId: member.id,
         },
         proposed_payload: {
           channel: "slack",
-          user_ids: [member.slack_user_id, headProfessor.slack_user_id],
+          user_ids: [member.slack_user_id],
           message,
         },
-        undo_plan: "Send a follow-up in the same group DM saying it is handled.",
+        undo_plan: "Send a follow-up in the same DM saying it is handled.",
       });
       // Stamped before the send, and left stamped either way. See the header.
       stampFirst();
@@ -9107,6 +9614,20 @@ function isAdminBotReimbursementState(
 const PROJECT_CHANNEL_ACCESS_ITEM = "project_channel";
 
 const MANDATORY_PROFILE_FIELDS = adminBotMemberAnswerableProfileFields;
+/**
+ * Whether the lab holds any address at all for this member.
+ *
+ * All three columns, because they are three different addresses rather than a preference order:
+ * `email` is the login identity, `calendar_email` is the Google account invites go to, and
+ * `correspondence_email` is where outreach is written. A bulk-imported row routinely carries only
+ * the last of these, and treating it as unreachable would delete somebody the lab mails weekly.
+ */
+function memberHasAnyEmail(member: AdminBotLabMember): boolean {
+  return [member.email, member.calendar_email, member.correspondence_email].some(
+    (value) => typeof value === "string" && value.trim() !== "",
+  );
+}
+
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
     const value = member[key];

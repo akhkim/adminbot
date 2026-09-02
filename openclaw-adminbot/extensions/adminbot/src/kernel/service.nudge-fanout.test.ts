@@ -13,7 +13,14 @@ function unwrap<T>(
 
 type Sent = { type: string; payload: Record<string, unknown> };
 
-function serviceWith(options: { headProfessor?: boolean; slackForMei?: boolean } = {}) {
+function serviceWith(
+  options: {
+    headProfessor?: boolean;
+    slackForMei?: boolean;
+    /** `null` leaves the professor without a linked Slack account. */
+    headProfessorSlack?: null;
+  } = {},
+) {
   const sent: Sent[] = [];
   const service = new AdminBotService(undefined, {
     executor: {
@@ -35,7 +42,7 @@ function serviceWith(options: { headProfessor?: boolean; slackForMei?: boolean }
       id: "zhijing",
       name: "Zhijing Jin",
       privilege_level: "admin",
-      slack_user_id: "U-ZJ",
+      ...(options.headProfessorSlack === null ? {} : { slack_user_id: "U-ZJ" }),
     } as never),
   );
   unwrap(
@@ -140,7 +147,7 @@ describe("escalating to the head professor", () => {
     }
   }
 
-  it("opens a three-way DM once something important has waited five days", async () => {
+  it("tells the member once something important has waited five days, and nobody else", async () => {
     const { service, sent } = serviceWith();
     await nudge(service);
     ageNotifications(service, 6);
@@ -150,10 +157,42 @@ describe("escalating to the head professor", () => {
       expect.objectContaining({ member_id: "mei", title: "Submission ID missing" }),
     ]);
     const dm = sent.find((entry) => entry.type === "member_nudge.escalate");
-    // The member is in the room. An escalation that became a private message about them is the
-    // failure this shape exists to avoid.
-    expect(dm?.payload.user_ids).toEqual(["U-MEI", "U-ZJ"]);
+    // The member, and only the member. The head professor is not a recipient of anything AdminBot
+    // sends: their copy is the escalation queue on their own page. The member is still told in as
+    // many words that it has gone there, so this is not a private complaint about them.
+    expect(dm?.payload.user_ids).toEqual(["U-MEI"]);
     expect(String(dm?.payload.message)).toContain("Submission ID missing");
+    expect(String(dm?.payload.message)).toContain("list");
+  });
+
+  it("sends the head professor nothing at all", async () => {
+    const { service, sent } = serviceWith();
+    await nudge(service);
+    ageNotifications(service, 6);
+    unwrap(await service.escalateStaleNudges("test"));
+
+    // No Slack payload names them...
+    for (const entry of sent) {
+      const ids = (entry.payload as { user_ids?: unknown }).user_ids;
+      if (Array.isArray(ids)) {
+        expect(ids).not.toContain("U-ZJ");
+      }
+      expect(JSON.stringify(entry.payload)).not.toContain("U-ZJ");
+    }
+    // ...and no portal notification is filed against them either. `sendMemberNudge` refuses the
+    // head professor ahead of the notification write, so this holds for every sweep, not just this
+    // one -- see the guard there.
+    expect(unwrap(service.listMemberNotifications("zhijing")).notifications).toEqual([]);
+  });
+
+  it("still escalates when the head professor has no Slack account", async () => {
+    // Nothing is sent to them any more, so a missing Slack link must not stop every other member's
+    // escalation. It used to 409 the whole pass.
+    const { service } = serviceWith({ headProfessorSlack: null });
+    await nudge(service);
+    ageNotifications(service, 6);
+    const result = unwrap(await service.escalateStaleNudges("test"));
+    expect(result.escalated).toHaveLength(1);
   });
 
   it("escalates once, however often the sweep runs", async () => {

@@ -559,6 +559,8 @@ whether somebody was ever told.
 | Nudge                          | Runs                | Channel        | Escalates |
 | ------------------------------ | ------------------- | -------------- | --------- |
 | Setup checklist still open     | 10 days, then 60    | Slack          | no        |
+| Onboarding follow-up           | 5 business days, +3 | Slack          | **yes**   |
+| Never signed in                | every 3 days        | Slack          | no        |
 | Thesis deadline approaching    | 14 days before      | Slack          | no        |
 | Thesis ready to grade          | 5 days after        | Slack          | no        |
 | Finishing month approaching    | 2 months before     | Slack          | no        |
@@ -575,17 +577,61 @@ whether somebody was ever told.
 | Workshop matches               | admin presses Nudge | Slack          | no        |
 | Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
 
-The three that escalate are the three where nobody finding out costs something that cannot be
+### The onboarding follow-up ladder
+
+The onboarding email itself is sent by hand. What follows it is not:
+
+1. **Five business days** after the welcome, if the member has neither signed in nor edited
+   anything, a Slack reminder. Business days, so somebody welcomed on a Thursday is not chased over
+   their first weekend.
+2. **Three days later**, a second reminder, which says it is the second and says the next thing that
+   happens is a person.
+3. **Five days after that**, both reminders land on the professor's page under that member's name,
+   and AdminBot stops asking.
+
+Any sign of life ends it at any step -- a sign-in or an edit the member made themselves. The
+escalation writes `escalated_at` on the notifications the ladder already filed, so it arrives in the
+queue the professor's page already reads rather than in a second list to remember to check.
+
+Running alongside it is a standing reminder for anyone who has **never signed in at all**, every
+three days. It stands aside while the ladder owns a member, so a newly welcomed member is never
+chased twice in the same week about the same thing in different words.
+
+Both are driven by `adminBotDormantChaseMemberTypes` in `contracts/actions.ts`, which is `["full"]`
+today. Adding `"alumni"`, `"own-pace-advisee"` or `"coauthor-major"` to that array is the whole
+change needed to bring those groups in -- nothing else reads a member type to decide who is chased.
+Alumni are refused separately and always, so adding `"alumni"` there will mean "an alumnus still
+holding a lab role", never "chase people who have left".
+
+Both run from `scripts/adminbot-disengagement-cron.sh`, which is safe to run daily: the cadences
+live in the service, so a doubled crontab cannot turn either into a daily nag.
+
+The four that escalate are the four where nobody finding out costs something that cannot be
 recovered later: a missing submission link when the deadline does not move, a blank profile or
-timeline that everything downstream is planned from, and a paper the group meeting cannot plan
-around because nobody registered it. The rest are worth saying and worth reading, and a sweep that
+timeline that everything downstream is planned from, a paper the group meeting cannot plan around
+because nobody registered it, and a member who never arrived at all -- who is the one case where
+the thing that has gone wrong is invisible from every other page, because somebody who has never
+signed in generates no rows anywhere. The rest are worth saying and worth reading, and a sweep that
 pulled the head professor into every unanswered one would train everybody to ignore the ones that
 matter.
 
-An important nudge that is still unread after
-`adminBotNudgeEscalateAfterDays` (five) opens a three-way Slack DM -- AdminBot, the head professor
-and the member -- with everything of theirs that is overdue in one message. It escalates once, and
-the member is in the room: the point is the thing getting done, not a report about them.
+The onboarding ladder escalates on its own schedule rather than through
+`adminBotNudgeEscalateAfterDays`: it has already asked twice on a clock the lab chose, so the
+generic five-days-unread rule would only ask a third time before doing the same thing.
+
+An important nudge that is still unread after `adminBotNudgeEscalateAfterDays` (five) is stamped
+`escalated_at` and appears on the professor's page, under that member's name, with everything of
+theirs that is overdue. The member gets one Slack DM saying it has gone there. It escalates once.
+
+**AdminBot sends the PI nothing.** Not a Slack DM, not a portal notification, not a dashboard
+warning -- their entire queue is the escalation list on their own page. Two rules keep it that way:
+`sendMemberNudge` refuses the head professor ahead of the notification write, which covers every
+sweep because that function is the only place a notification is ever created; and the escalation,
+which used to open a three-way DM with them in it, now writes only to the desk.
+
+The member is still told, and told where it went, so this is not a private complaint about them --
+which was the reason the three-way DM existed. What changed is that the professor reading it in a
+DM was the same item said twice to the one person who cannot act on it by replying.
 
 `POST /nudges/send` -- the one route where the text and the recipients come from a browser --
 deliberately drops `important`. The reason the escalation can auto-execute is that nothing but a

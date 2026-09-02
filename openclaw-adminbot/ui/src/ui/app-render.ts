@@ -43,6 +43,10 @@ import {
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   mergeAdminBotMembers,
+  loadSlackChannelNames,
+  EMPTY_SLACK_CHANNEL_CHECK,
+  deleteAdminBotMember,
+  purgeAdminBotMembersWithoutEmail,
   saveAdminBotMember,
   saveAdminBotOwnProfile,
   saveAdminBotOwnSchedule,
@@ -919,6 +923,17 @@ function paperWorkspaceProps(
     // paper, an author only one they wrote -- so this does not try to guess which is which.
     onDeletePaper: (paper) => {
       void deleteAdminBotPaper(state, paper).finally(() => requestHostUpdate?.());
+    },
+    channelCheck: state.myWorkChannelCheck,
+    // Ticking loads the workspace's channel names; unticking drops them, so the next tick asks
+    // again rather than judging an alias against a list from an hour ago.
+    onChannelCheckToggle: (enabled) => {
+      if (!enabled) {
+        state.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
+        requestHostUpdate?.();
+        return;
+      }
+      void loadSlackChannelNames(state).finally(() => requestHostUpdate?.());
     },
   };
 }
@@ -3729,6 +3744,9 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),
+              onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
+              onPurgeMembersWithoutEmail: (dryRun) =>
+                void purgeAdminBotMembersWithoutEmail(state, { dryRun }),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
               // The checklist itself lives at the bottom of the profile page instead of in a

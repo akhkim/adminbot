@@ -54,6 +54,8 @@ type DrawOptions = {
   onDeletePaper?: boolean;
   title?: string;
   projectDraft?: string | null;
+  /** Omitted by default, so the checkbox's absence without a check state is the tested default. */
+  channelCheck?: import("../controllers/admin.ts").SlackChannelCheck;
   overview?: PaperSlotOverviewRow[];
   slots?: Record<string, PaperCycle>;
   openIds?: string[];
@@ -69,6 +71,7 @@ type DrawOptions = {
 };
 
 function draw(options: DrawOptions = {}) {
+  const channelToggles: boolean[] = [];
   // Every draw starts from an empty document. Containers used to pile up in `document.body`, and
   // an `#id` selector resolves through the document's id map before it checks containment -- so a
   // second card carrying the same id as an earlier test's found the earlier element, failed the
@@ -92,6 +95,7 @@ function draw(options: DrawOptions = {}) {
       settings: { adminBotUrl: "https://admin.safe.eu" },
       myWorkBlockerDraft: null,
       myWorkProjectDraft: options.projectDraft ?? null,
+      myWorkProjectAlias: "",
       myWorkProjectVenues: [],
     } as unknown as AppViewState);
   const props: MyWorkProps = {
@@ -100,6 +104,12 @@ function draw(options: DrawOptions = {}) {
       ? { onDeletePaper: (record: AdminBotPaperRecord) => deleted.push(record.id) }
       : {}),
     ...(options.scopedPapers ? { papers: options.scopedPapers } : {}),
+    ...(options.channelCheck
+      ? {
+          channelCheck: options.channelCheck,
+          onChannelCheckToggle: (enabled: boolean) => channelToggles.push(enabled),
+        }
+      : {}),
     ...(options.title ? { title: options.title } : {}),
     overview: options.overview ?? [overviewRow()],
     slots: options.slots ?? {},
@@ -129,7 +139,7 @@ function draw(options: DrawOptions = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges, reviews, picked, saved, state, deleted };
+  return { container, toggled, nudges, reviews, picked, saved, state, deleted, channelToggles, rerender: () => render(renderMyWork(state, props), container) };
 }
 
 describe("renderMyWork", () => {
@@ -548,6 +558,109 @@ describe("target venue", () => {
       "2026-01-15";
     form?.dispatchEvent(new Event("submit", { cancelable: true }));
     expect(saved).toHaveLength(0);
+  });
+
+  describe("the Slack channel already-exists check", () => {
+    const check = (over: Partial<import("../controllers/admin.ts").SlackChannelCheck> = {}) => ({
+      enabled: false,
+      channels: null,
+      loading: false,
+      error: null,
+      ...over,
+    });
+    const typeAlias = (container: HTMLElement, value: string, rerender: () => void) => {
+      const input = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!;
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      rerender();
+    };
+
+    it("is not offered when the page has no way to answer it", () => {
+      const { container } = draw({ projectDraft: "Causal abstraction" });
+      expect(container.querySelector('[data-testid="my-work-channel-exists"]')).toBeNull();
+    });
+
+    it("reports the tick so the channel names can be loaded", () => {
+      const { container, channelToggles } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check(),
+      });
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-channel-exists"]')!.click();
+      expect(channelToggles).toEqual([true]);
+    });
+
+    it("confirms an alias that matches a real channel", () => {
+      const { container, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais", "random-active"] }),
+      });
+      typeAlias(container, "CAIS", rerender);
+      expect(container.querySelector('[data-testid="my-work-channel-check-ok"]')).not.toBeNull();
+    });
+
+    it("refuses a submit whose alias names no channel, and says what is near it", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "cais2", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      const mismatch = container.querySelector('[data-testid="my-work-channel-check-mismatch"]');
+      expect(mismatch?.textContent).toContain("proj-cais");
+
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(0);
+    });
+
+    it("files the project when the box is ticked and the channel is there", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "cais", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+      expect(saved[0]?.alias).toBe("cais");
+    });
+
+    it("never blocks a submit when the lookup could not run", () => {
+      // The failure this must not have: refusing a correct alias because Slack was unreachable.
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: null, error: "Slack is unreachable." }),
+      });
+      typeAlias(container, "cais", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      expect(
+        container.querySelector('[data-testid="my-work-channel-check-unavailable"]')?.textContent,
+      ).toContain("still file");
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+    });
+
+    it("checks nothing while the box is unticked", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: false, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "brand-new", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+    });
   });
 
   it("registers a paper against the venue and year picked on the row", () => {

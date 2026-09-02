@@ -1666,6 +1666,30 @@ function renderBigDeadlines(
   `;
 }
 
+/**
+ * Open the editor stack on the tab that can service a draft, and scroll it into view.
+ *
+ * The stack is collapsed until something asks for it -- `activeCommitmentType` is null on load, and
+ * while it is null the tab shows only an "Add commitment" button. The tables that carry the Edit
+ * buttons render *above* that, so a button which only sets a draft fills in a form that is not on
+ * the page. That is what "Edit does nothing" was: the draft was landing correctly every time, in an
+ * editor nobody could see.
+ *
+ * The scroll waits a frame because the picker does not exist in the DOM until the type is set;
+ * querying for it in the same turn finds nothing.
+ */
+function revealCommitmentEditor(
+  props: AdminBotTimeAvailabilityProps,
+  type: "jinesis" | "away" | "milestone" | "trip",
+): void {
+  props.onActiveCommitmentChange(type);
+  requestAnimationFrame(() => {
+    document
+      .querySelector(".adminbot-time-availability__commitment-picker")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 function renderJinesisTable(
   tasks: readonly TimeAllocationTask[],
   rows: AvailabilityRow[],
@@ -1714,7 +1738,7 @@ function renderJinesisTable(
                         class="btn btn--sm"
                         data-testid=${`time-availability-commitment-edit-${task.key}`}
                         ?disabled=${props.saving}
-                        @click=${() =>
+                        @click=${() => {
                           props.onDraftChange({
                             ...EMPTY_TIME_AVAILABILITY_DRAFT,
                             category: "jinesis",
@@ -1725,7 +1749,13 @@ function renderJinesisTable(
                             note: row.note ?? "",
                             link: row.link ?? "",
                             editingIndex: rows.indexOf(row),
-                          })}
+                          });
+                          // Without this the draft is loaded into a collapsed editor, and the
+                          // press looks like it did nothing. It also re-opens the stack on the
+                          // Jinesis tab when it was left on another one, so the form on screen is
+                          // the one holding the draft just set.
+                          revealCommitmentEditor(props, "jinesis");
+                        }}
                       >
                         ${t("adminbotTimeAvailability.form.edit")}
                       </button>`
@@ -1804,6 +1834,46 @@ function renderOtherTable(
                 </td>
                 <td>
                   ${renderLink(row.link)}
+                  ${editable
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
+                        data-testid=${`time-availability-away-edit-${rows.indexOf(row)}`}
+                        ?disabled=${props.saving}
+                        @click=${() => {
+                          props.onAwayDraftChange({
+                            ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                            // `kind` is stored as free text, and the form's dropdown is a closed
+                            // enum. Anything the enum does not cover loads as "other", which is
+                            // the row the custom label belongs to -- so an unrecognised kind is
+                            // still editable instead of silently becoming a holiday.
+                            category: (TIME_AVAILABILITY_CATEGORIES as readonly string[]).includes(
+                              row.kind ?? "",
+                            )
+                              ? (row.kind as TimeAvailabilityCategory)
+                              : "other",
+                            customLabel: row.label ?? "",
+                            start: row.start,
+                            end: row.end,
+                            // "none" is the whole-day answer; only a partial row stores hours, so
+                            // only a partial row has any to load back into the form.
+                            wholeDay: row.availability !== "partial",
+                            hoursPerWeek:
+                              row.availability === "partial"
+                                ? String(row.hours_per_week ?? "")
+                                : "",
+                            note: row.note ?? "",
+                            link: row.link ?? "",
+                            // Into `time_off`, which is the list this table renders and the one
+                            // draftToPatch rebuilds for a non-Jinesis draft.
+                            editingIndex: rows.indexOf(row),
+                          });
+                          revealCommitmentEditor(props, "away");
+                        }}
+                      >
+                        ${t("adminbotTimeAvailability.form.edit")}
+                      </button>`
+                    : nothing}
                   ${editable
                     ? html`<button
                         type="button"
@@ -2090,14 +2160,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                         <button
                           type="button"
                           class="btn primary adminbot-time-availability__add-commitment"
-                          @click=${() => {
-                            props.onActiveCommitmentChange("jinesis");
-                            requestAnimationFrame(() => {
-                              document
-                                .querySelector(".adminbot-time-availability__commitment-picker")
-                                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            });
-                          }}
+                          @click=${() => revealCommitmentEditor(props, "jinesis")}
                         >
                           ${t("adminbotTimeAvailability.form.addCommitment")}
                         </button>

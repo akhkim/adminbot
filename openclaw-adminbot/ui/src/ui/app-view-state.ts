@@ -589,6 +589,8 @@ export type AppViewState = {
   myWorkBlockers: import("./adminbot/views/my-work.ts").Blocker[];
   // Non-null while the "add a project" field is open; holds what has been typed.
   myWorkProjectDraft: string | null;
+  myWorkProjectAlias: string;
+  myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
   myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;
   // Which profile section is in edit mode, if any.
