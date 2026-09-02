@@ -127,6 +127,9 @@ describe("vectorSponsorRoster", () => {
     return {
       name: overrides.id,
       privilege_level: "member",
+      // The sheet selects on member_type now, not privilege_level: privilege says what somebody may
+      // do, and nearly every imported row defaults to `member`.
+      member_type: "full",
       access: [],
       created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-01T00:00:00.000Z",
@@ -134,7 +137,7 @@ describe("vectorSponsorRoster", () => {
     };
   }
 
-  it("carries full members, admins, and coauthor_major collaborators", () => {
+  it("carries full members, admins, and coauthor-major collaborators", () => {
     const roster = vectorSponsorRoster([
       member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
       member({ id: "zed", name: "Zed", privilege_level: "admin", email: "zed@utoronto.ca" }),
@@ -142,6 +145,7 @@ describe("vectorSponsorRoster", () => {
         id: "cora",
         name: "Cora",
         privilege_level: "external_collaborator",
+        member_type: "coauthor-major",
         collaborator_subgroup: "coauthor_major",
         email: "cora@example.edu",
       }),
@@ -155,21 +159,31 @@ describe("vectorSponsorRoster", () => {
     expect(roster.missing_email).toEqual([]);
   });
 
-  it("leaves off trials and every collaborator subgroup below coauthor_major", () => {
+  it("leaves off trials and every collaborator subgroup below coauthor-major", () => {
     const roster = vectorSponsorRoster([
-      member({ id: "tri", privilege_level: "trial", email: "tri@utoronto.ca" }),
+      member({
+        id: "tri",
+        privilege_level: "trial",
+        member_type: "interviewee",
+        email: "tri@utoronto.ca",
+      }),
       member({
         id: "minor",
         privilege_level: "external_collaborator",
+        member_type: "coauthor-minor",
         collaborator_subgroup: "coauthor_minor",
         email: "minor@example.edu",
       }),
       member({
         id: "prof",
         privilege_level: "external_collaborator",
+        member_type: "external-prof",
         collaborator_subgroup: "external_prof",
         email: "prof@example.edu",
       }),
+      // Neither the type column nor anything else names this one, which is the case that used to
+      // put most of the roster on the sheet: an imported row whose privilege defaulted to `member`.
+      member({ id: "blank", member_type: "", email: "blank@utoronto.ca" }),
     ]);
 
     expect(roster.entries).toEqual([]);

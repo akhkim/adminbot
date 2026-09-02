@@ -1,7 +1,7 @@
+import { adminBotIsAlumniMember } from "../../contracts/actions.js";
 import type {
   AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMember,
-  AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
 
 // The document the `yes_separate` follow-up email tells the person to read; the skill's
@@ -307,11 +307,16 @@ export function collaboratorSubgroupAccess(
   return grants;
 }
 
-// The `vector_roster_share` row is the one item whose population crosses both axes: the sponsor
-// sheet carries internal lab members by privilege level plus external collaborators in the
-// coauthor_major subgroup. Admins are on it because they are lab people who hold Vector accounts —
-// leaving them off would have the sponsor read their absence as "remove this account".
-const VECTOR_ROSTER_PRIVILEGE_LEVELS: readonly AdminBotPrivilegeLevel[] = ["member", "admin"];
+/**
+ * Who the sponsor sheet is for: the lab's full members and its major coauthors.
+ *
+ * Read from the member-type column, which is the lab's own statement of who is in the lab. It used
+ * to select on `privilege_level` being member or admin, and that is a different question --
+ * privilege says what somebody may *do*, and almost every imported row defaults to `member`. The
+ * sheet carried 184 people where this rule finds 62, which is the same mistake the nudge allowlist
+ * made and for the same reason: the roster is not a list of lab members.
+ */
+const VECTOR_ROSTER_MEMBER_TYPES = ["full", "coauthor-major"] as const;
 
 export type AdminBotVectorRosterEntry = {
   id: string;
@@ -327,21 +332,47 @@ export type AdminBotVectorRoster = {
 };
 
 /**
+ * The address to put on the sheet: the institutional one when the person has it.
+ *
+ * The sponsor reads this against university accounts, so a @cs.toronto.edu address is the one that
+ * means something to him; a personal or other-institution address is what somebody without a DCS
+ * account is reachable at, and is better than an empty cell. Every field a member may carry an
+ * address on is considered, because the cs address is not always the one filed as primary.
+ */
+function vectorRosterEmail(member: AdminBotLabMember): string | undefined {
+  const candidates = [member.email, member.correspondence_email, member.calendar_email]
+    .map((entry) => entry?.trim())
+    .filter((entry): entry is string => Boolean(entry));
+  return (
+    candidates.find((entry) => entry.toLowerCase().endsWith("@cs.toronto.edu")) ?? candidates[0]
+  );
+}
+
+/**
  * Who belongs on the Vector sponsor sheet: name and institutional email only, nothing else about
  * the person. Sorted by name then id so the shared sheet does not churn between refreshes.
+ *
+ * Alumni are excluded outright, ahead of the type check rather than through it. Somebody who has
+ * left keeps `privilege_level: member` and often keeps `full` in their member type too, so nothing
+ * ever took them off -- twenty-two of them were on the sheet, which is the sponsor being told to
+ * keep twenty-two accounts that should have been closed. Leaving is the fact that decides this, and
+ * it outranks whatever the type column still says.
  */
 export function vectorSponsorRoster(members: readonly AdminBotLabMember[]): AdminBotVectorRoster {
   const entries: AdminBotVectorRosterEntry[] = [];
   const missingEmail: string[] = [];
   for (const member of members) {
-    const onRoster =
-      VECTOR_ROSTER_PRIVILEGE_LEVELS.includes(member.privilege_level) ||
-      (member.privilege_level === "external_collaborator" &&
-        member.collaborator_subgroup === "coauthor_major");
-    if (!onRoster) {
+    if (adminBotIsAlumniMember(member)) {
       continue;
     }
-    const email = member.email?.trim();
+    const types = String(member.member_type ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+    if (!types.some((type) => (VECTOR_ROSTER_MEMBER_TYPES as readonly string[]).includes(type))) {
+      continue;
+    }
+    const email = vectorRosterEmail(member);
     if (!email) {
       missingEmail.push(member.id);
       continue;
