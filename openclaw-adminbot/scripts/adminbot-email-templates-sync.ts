@@ -23,6 +23,7 @@
  * (extensions/adminbot/src/guidebook/sync.ts), so it needs no credential of its own.
  */
 import { execFile } from "node:child_process";
+import { isMainModule } from "./lib/is-main-module.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -396,7 +397,7 @@ export async function main(argv: string[]): Promise<number> {
   return drift.length === 0 ? 0 : 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

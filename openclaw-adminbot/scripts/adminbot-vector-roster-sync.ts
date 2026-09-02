@@ -9,6 +9,7 @@
 // Membership is not decided here: `vectorSponsorRoster` owns that rule so the sheet and the access
 // matrix can never disagree about who belongs on it.
 import { execFile as execFileCallback } from "node:child_process";
+import { isMainModule } from "./lib/is-main-module.mjs";
 import { promisify } from "node:util";
 import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotLabMember } from "../extensions/adminbot/src/contracts/actions.js";
@@ -127,7 +128,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((error: unknown) => {
     const cause = error instanceof Error && error.cause ? ` (${String(error.cause)})` : "";
     console.error(`${error instanceof Error ? error.message : String(error)}${cause}`);

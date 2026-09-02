@@ -1,6 +1,7 @@
 #!/usr/bin/env -S node --import tsx
 
 import { execFile } from "node:child_process";
+import { isMainModule } from "./lib/is-main-module.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1424,7 +1425,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   }
   return summary;
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   void runEmailAutomation()
     .then((summary) => {
       console.log(JSON.stringify(summary));

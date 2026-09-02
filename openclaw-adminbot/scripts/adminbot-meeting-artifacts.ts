@@ -13,6 +13,7 @@
  * and a JSON summary on stdout so a failed pass shows red in the Cron tab with a reason.
  */
 import { execFile } from "node:child_process";
+import { isMainModule } from "./lib/is-main-module.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -289,7 +290,7 @@ async function attachTranscript(
   return true;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   void runMeetingArtifactPass()
     .then((summary) => {
       console.log(JSON.stringify(summary));
