@@ -121,6 +121,7 @@ class AdminbotOpportunitiesView extends LitElement {
   private form = EMPTY_FORM();
   private deadlineTba = false;
   private pendingDeleteId: string | null = null;
+  private editingId: string | null = null;
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -140,6 +141,7 @@ class AdminbotOpportunitiesView extends LitElement {
 
   private closeForm(): void {
     this.formOpen = false;
+    this.editingId = null;
     this.requestUpdate();
   }
 
@@ -158,12 +160,9 @@ class AdminbotOpportunitiesView extends LitElement {
 
   private submitForm(): void {
     const name = this.form.name.trim();
-    if (!name) {
-      return;
-    }
-    const opp: Opportunity = {
+    if (!name) return;
+    const cleaned = {
       ...this.form,
-      id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name,
       org: this.form.org?.trim() || undefined,
       deadline_aoe: this.form.deadline_aoe?.trim() || "",
@@ -172,8 +171,16 @@ class AdminbotOpportunitiesView extends LitElement {
       note: this.form.note?.trim() || undefined,
       application_window: this.form.application_window?.trim() || undefined,
     };
+    if (this.editingId) {
+      deleteCustomOpportunity(this.editingId);
+    }
+    const opp: Opportunity = {
+      ...cleaned,
+      id: this.editingId || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    };
     saveCustomOpportunity(opp);
     this.formOpen = false;
+    this.editingId = null;
     this.requestUpdate();
   }
 
@@ -195,6 +202,17 @@ class AdminbotOpportunitiesView extends LitElement {
     this.requestUpdate();
   }
 
+  private editOpp(id: string): void {
+    const all = allOpportunities();
+    const opp = all.find((o) => o.id === id);
+    if (!opp) return;
+    this.editingId = id;
+    this.form = { ...opp };
+    this.deadlineTba = !opp.deadline_aoe;
+    this.formOpen = true;
+    this.requestUpdate();
+  }
+
   private renderForm() {
     if (!this.formOpen) {
       return nothing;
@@ -209,7 +227,7 @@ class AdminbotOpportunitiesView extends LitElement {
             this.submitForm();
           }}
         >
-          <h3 class="opp-form-title">Add Opportunity</h3>
+          <h3 class="opp-form-title">${this.editingId ? "Edit" : "Add"} Opportunity</h3>
 
           <label class="opp-form-field">
             <span class="opp-form-label">Name *</span>
@@ -317,7 +335,7 @@ class AdminbotOpportunitiesView extends LitElement {
               Cancel
             </button>
             <button type="submit" class="opp-form-btn opp-form-btn--primary">
-              Add
+              ${this.editingId ? "Confirm" : "Add"}
             </button>
           </div>
         </form>
@@ -394,12 +412,14 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
         </div>
-          ${custom
-            ? html`<button
-                class="opp-delete"
-                @click=${() => this.deleteOpp(item.id)}
-              >&times;</button>`
-            : nothing}
+        ${custom
+          ? html`<div class="opp-actions">
+              <button class="opp-edit" @click=${() => this.editOpp(item.id)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <button class="opp-delete" @click=${() => this.deleteOpp(item.id)}>&times;</button>
+            </div>`
+          : nothing}
       </div>
     `;
   }
@@ -516,7 +536,7 @@ class AdminbotOpportunitiesView extends LitElement {
         }
         .opp-delete {
           background: none;
-          border: 1px solid transparent;
+          border: none;
           border-radius: 6px;
           color: #f87171;
           font-size: 18px;
@@ -524,12 +544,33 @@ class AdminbotOpportunitiesView extends LitElement {
           cursor: pointer;
           padding: 2px 6px;
           align-self: start;
-          transition: color 0.12s, border-color 0.12s, background 0.12s;
+          transition: color 0.12s;
         }
         .opp-delete:hover {
-          color: #fff;
-          background: #ef4444;
-          border-color: #ef4444;
+          color: #ef4444;
+        }
+        .opp-actions {
+          display: flex;
+          gap: 4px;
+          align-self: start;
+        }
+        .opp-edit {
+          background: none;
+          border: none;
+          border-radius: 6px;
+          color: var(--text-muted, #66799a);
+          cursor: pointer;
+          padding: 2px 6px;
+          display: flex;
+          align-items: center;
+          transition: color 0.12s;
+        }
+        .opp-edit svg {
+          width: 14px;
+          height: 14px;
+        }
+        .opp-edit:hover {
+          color: var(--accent, #4f8cff);
         }
         .opp-fab {
           width: 48px;
