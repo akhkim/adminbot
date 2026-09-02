@@ -39,9 +39,13 @@ import { listCoreRuntimePostBuildOutputs, runRuntimePostBuild } from "./runtime-
 export { isBuildRelevantRunNodePath, isRestartRelevantRunNodePath, runNodeWatchedPaths };
 
 const buildScript = "scripts/tsdown-build.mjs";
-const bundledPluginAssetsScript = "scripts/bundled-plugin-assets.mjs";
 const compilerArgs = [buildScript, "--no-clean"];
-const bundledPluginAssetBuildArgs = [bundledPluginAssetsScript, "--phase", "build"];
+// No bundled-plugin-asset phase. It dispatched to scripts/bundled-plugin-assets.mjs, which only
+// ran commands a bundled plugin declared under `openclaw.assetScripts`; the one plugin that ever
+// declared them (canvas) is not part of this fork, so the phase was already a no-op before the
+// deep clean removed the script. `pnpm build` had its invocation removed for exactly that reason
+// (see the note in scripts/build-all.mjs) and this one was missed, so any command that triggered a
+// stale-dist rebuild through run-node died on MODULE_NOT_FOUND instead of building.
 
 const runtimePostBuildWatchedPaths = [
   "scripts/copy-bundled-plugin-metadata.mjs",
@@ -1488,27 +1492,11 @@ export async function runNodeMain(params = {}) {
         `Building TypeScript (dist is stale: ${lockedBuildRequirement.reason} - ${formatBuildReason(lockedBuildRequirement.reason)}).`,
         deps,
       );
-      logRunner("Building bundled plugin assets.", deps);
       const buildCmd = deps.execPath;
       const compileExitCode = await withRunNodeProgress(
         deps,
         "Building local CLI artifacts",
         async () => {
-          const assetBuild = deps.spawn(buildCmd, bundledPluginAssetBuildArgs, {
-            cwd: deps.cwd,
-            env: deps.env,
-            stdio: ["inherit", "pipe", "pipe"],
-          });
-          pipeSpawnedOutput(assetBuild, deps, { stdoutTarget: "stderr" });
-          const assetBuildRes = await waitForSpawnedProcess(assetBuild, deps);
-          const assetBuildInterruptedExitCode = getInterruptedSpawnExitCode(assetBuildRes);
-          if (assetBuildInterruptedExitCode !== null) {
-            return assetBuildInterruptedExitCode;
-          }
-          if (assetBuildRes.exitCode !== 0 && assetBuildRes.exitCode !== null) {
-            return assetBuildRes.exitCode;
-          }
-
           const build = deps.spawn(buildCmd, compilerArgs, {
             cwd: deps.cwd,
             env: {
