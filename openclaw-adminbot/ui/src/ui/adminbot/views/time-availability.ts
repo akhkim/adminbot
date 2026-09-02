@@ -1714,7 +1714,10 @@ function renderJinesisTable(
                         class="btn btn--sm"
                         data-testid=${`time-availability-commitment-edit-${task.key}`}
                         ?disabled=${props.saving}
-                        @click=${() =>
+                        @click=${() => {
+                          // The forms are collapsed behind the commitment picker. Loading the
+                          // draft alone leaves it invisible and makes this button appear inert.
+                          props.onActiveCommitmentChange("jinesis");
                           props.onDraftChange({
                             ...EMPTY_TIME_AVAILABILITY_DRAFT,
                             category: "jinesis",
@@ -1725,7 +1728,13 @@ function renderJinesisTable(
                             note: row.note ?? "",
                             link: row.link ?? "",
                             editingIndex: rows.indexOf(row),
-                          })}
+                          });
+                          requestAnimationFrame(() => {
+                            document
+                              .querySelector(".adminbot-time-availability__commitment-picker")
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          });
+                        }}
                       >
                         ${t("adminbotTimeAvailability.form.edit")}
                       </button>`

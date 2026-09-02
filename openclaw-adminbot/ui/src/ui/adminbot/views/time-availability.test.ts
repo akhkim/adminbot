@@ -196,6 +196,27 @@ describe("renderAdminBotTimeAvailability", () => {
     ).toBeNull();
   });
 
+  it("opens the editor and loads the stored commitment when Edit is clicked", () => {
+    const onActiveCommitmentChange = vi.fn();
+    const onDraftChange = vi.fn();
+    const container = renderView({ onActiveCommitmentChange, onDraftChange });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+      ?.click();
+
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+    expect(onDraftChange).toHaveBeenCalledWith({
+      ...EMPTY_TIME_AVAILABILITY_DRAFT,
+      category: "jinesis",
+      project: "Alignment",
+      start: "2026-03-02",
+      end: "2026-03-15",
+      hoursPerWeek: "20",
+      editingIndex: 0,
+    });
+  });
+
   it("appends the drafted commitment to the existing rows on submit", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({
