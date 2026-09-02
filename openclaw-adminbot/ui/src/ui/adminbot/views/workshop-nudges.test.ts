@@ -112,6 +112,46 @@ function draw(
   return { container, props };
 }
 
+describe("what Send reports", () => {
+  // The reported bug: Send finished instantly, said nothing, and sent nothing. The outcome was
+  // written to adminBotNotice, which the admin view renders and this one never has.
+  it("names each skip reason rather than only counting them", () => {
+    const { container } = draw({
+      ...createEmptyWorkshopNudgeReviewState(),
+      sendResult: {
+        created: 1,
+        skipped: [
+          { member_id: "a", reason: "member is not on the nudge list" },
+          { member_id: "b", reason: "member is not on the nudge list" },
+          { member_id: "c", reason: "member has no slack_user_id" },
+        ],
+      },
+    });
+    const panel = container.querySelector('[data-testid="workshop-nudges-send-result"]');
+    expect(panel?.textContent).toContain("Sent 1 workshop nudge, skipped 3.");
+    // Two different problems with two different fixes, so both are named and counted.
+    expect(panel?.textContent).toContain("member is not on the nudge list");
+    expect(panel?.textContent).toContain("member has no slack_user_id");
+  });
+
+  it("says so plainly when everything went", () => {
+    const { container } = draw({
+      ...createEmptyWorkshopNudgeReviewState(),
+      sendResult: { created: 2, skipped: [] },
+    });
+    const panel = container.querySelector('[data-testid="workshop-nudges-send-result"]');
+    expect(panel?.textContent).toContain("Sent 2 workshop nudges.");
+    expect(panel?.querySelector("ul")).toBeNull();
+  });
+
+  it("shows nothing before a send", () => {
+    const { container } = draw(createEmptyWorkshopNudgeReviewState());
+    expect(
+      container.querySelector('[data-testid="workshop-nudges-send-result"]'),
+    ).toBeNull();
+  });
+});
+
 describe("the conference picker", () => {
   const conferences = [
     { key: "emnlp-2035", label: "EMNLP 2035", workshop_count: 4 },

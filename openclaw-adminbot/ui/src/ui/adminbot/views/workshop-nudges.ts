@@ -68,6 +68,7 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
             </button>
           </div>`
         : nothing}
+      ${renderSendResult(props)}
       ${result
         ? html`${renderResultActions(props, result)} ${renderSummary(result)}
           ${renderQueue(props, result, selectedCount)}`
@@ -164,6 +165,44 @@ function renderConferencePicker(props: WorkshopNudgesProps) {
       )}
     </select>
   </label>`;
+}
+
+/**
+ * What the last Send actually did.
+ *
+ * Every skip carries its own reason and they are shown, not counted: "member is not on the nudge
+ * list" and "member has no slack_user_id" are different problems with different fixes, and a
+ * summary line saying "12 skipped" sends somebody to the audit log to find out which.
+ */
+function renderSendResult(props: WorkshopNudgesProps) {
+  const sent = props.state.sendResult;
+  if (!sent) {
+    return nothing;
+  }
+  const reasons = [...new Set(sent.skipped.map((entry) => entry.reason))];
+  return html`<div
+    class="workshop-nudges__send-result ${sent.skipped.length ? "is-warning" : "is-success"}"
+    role="status"
+    data-testid="workshop-nudges-send-result"
+  >
+    <strong>
+      Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
+        ? `, skipped ${sent.skipped.length}`
+        : ""}.
+    </strong>
+    ${reasons.length
+      ? html`<ul class="workshop-nudges__send-reasons">
+          ${reasons.map(
+            (reason) => html`<li>
+              ${reason}
+              <span class="muted"
+                >(${sent.skipped.filter((entry) => entry.reason === reason).length})</span
+              >
+            </li>`,
+          )}
+        </ul>`
+      : nothing}
+  </div>`;
 }
 
 function renderResultActions(props: WorkshopNudgesProps, result: WorkshopNudgeResult) {

@@ -301,6 +301,15 @@ export type WorkshopNudgeReviewState = {
    * writes its answer. Opening the page reads that answer.
    */
   run: WorkshopNudgeRunView | null;
+  /**
+   * What the last Send did, shown on this tab.
+   *
+   * It used to report only through `adminBotNotice`, which the admin view renders and this one
+   * never has -- so a send that skipped every recipient finished instantly, said nothing, and sent
+   * nothing. "Sent 0, skipped 12: member is not on the nudge list" is the whole diagnosis, and it
+   * was being written to a field nobody on this page reads.
+   */
+  sendResult: { created: number; skipped: Array<{ member_id: string; reason: string }> } | null;
   /** Conferences a pass may be narrowed to. Empty until the picker's options have loaded. */
   conferences: WorkshopConferenceOption[];
   /** Which one the admin picked. Empty string is "every open workshop", the default. */
@@ -342,6 +351,7 @@ export function createEmptyWorkshopNudgeReviewState(): WorkshopNudgeReviewState 
     error: null,
     result: null,
     run: null,
+    sendResult: null,
     conferences: [],
     conferenceKey: "",
     selectedRecipientIds: [],
@@ -1607,7 +1617,7 @@ export async function sendWorkshopNudgeSelection(host: AdminBotHost): Promise<vo
     host.adminBotWorkshopNudges = { ...current, error: "Select at least one recipient." };
     return;
   }
-  host.adminBotWorkshopNudges = { ...current, sending: true, error: null };
+  host.adminBotWorkshopNudges = { ...current, sending: true, error: null, sendResult: null };
   try {
     const result = await sendWorkshopNudges(
       current.selectedRecipientIds,
@@ -1636,7 +1646,10 @@ export async function sendWorkshopNudgeSelection(host: AdminBotHost): Promise<vo
     host.adminBotWorkshopNudges = {
       ...host.adminBotWorkshopNudges,
       sending: false,
-      selectedRecipientIds: [],
+      // Only clear the ticks for recipients that actually went. A skipped one stays selected, so
+      // pressing Nudge again after fixing the cause retries exactly those.
+      selectedRecipientIds: value.skipped.map((entry) => entry.member_id),
+      sendResult: { created: value.created.length, skipped: value.skipped },
     };
   } catch (error) {
     host.adminBotWorkshopNudges = {
