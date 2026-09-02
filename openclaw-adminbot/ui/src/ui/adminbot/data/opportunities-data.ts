@@ -40,6 +40,8 @@ export type Opportunity = {
   // their own eligibility rather than having the lab decide it for them.
   eligibility?: string;
   note?: string;
+  // Free-text application window, e.g. "Sep 1 – Oct 15, 2026".
+  application_window?: string;
 };
 
 export const OPPORTUNITIES: Opportunity[] = [
@@ -81,3 +83,37 @@ export const OPPORTUNITIES: Opportunity[] = [
     note: "Host institution and application window change each year.",
   },
 ];
+
+// ---------------------------------------------------------------------------
+// User-added opportunities (persisted in localStorage, merged at read time)
+// ---------------------------------------------------------------------------
+
+const STORAGE_KEY = "openclaw.adminbot.opportunities.custom.v1";
+
+function readCustomOpportunities(): Opportunity[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Opportunity[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomOpportunity(opp: Opportunity): void {
+  const existing = readCustomOpportunities();
+  existing.push(opp);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+}
+
+export function deleteCustomOpportunity(id: string): void {
+  const existing = readCustomOpportunities().filter((o) => o.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+}
+
+export function isCustomOpportunity(id: string): boolean {
+  return id.startsWith("custom_");
+}
+
+export function allOpportunities(): Opportunity[] {
+  return [...OPPORTUNITIES, ...readCustomOpportunities()];
+}

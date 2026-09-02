@@ -365,7 +365,11 @@ describe("renderProfile mandatory fields", () => {
       expect(Boolean(dot && opt)).toBe(false);
     }
     const answeredMandatory = rows.filter(
-      (row) => !row.querySelector(".profile__mandatory") && !row.querySelector(".profile__optional"),
+      (row) =>
+        !row.querySelector(".profile__mandatory") &&
+        !row.querySelector(".profile__optional") &&
+        !row.querySelector(".profile__project-chips") &&
+        !row.querySelector(".profile__project-empty"),
     );
     for (const row of answeredMandatory) {
       expect(row.querySelector<HTMLInputElement>("[name]")?.value).toBeTruthy();
@@ -931,7 +935,7 @@ describe("renderProfile visual structure", () => {
 
   // The one field on the page a member may want to think before answering, and the one the lab
   // hides from every other reader. It comes last so nobody meets it on the way to a phone number.
-  it("puts medical conditions in the last group on the page", () => {
+  it("puts personal circumstances in the last group on the page", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());

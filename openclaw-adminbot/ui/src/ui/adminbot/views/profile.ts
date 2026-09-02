@@ -24,6 +24,9 @@ import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
+import type { Tab } from "../../navigation.ts";
+import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
+import { ownPapers } from "./my-work.ts";
 import type {
   AssignedBadge,
   BadgeDefinition,
@@ -52,6 +55,7 @@ export type ProfileProps = {
   onPolishPhoto?: () => void;
   onApplyPolishedPhoto?: (variantId: string) => void;
   onSubmitBadgeNomination?: (badgeId: string, evidence: string) => void;
+  onNavigateToTab?: (tab: Tab) => void;
 };
 
 const EDITABLE_FIELDS = PROFILE_FIELDS;
@@ -629,6 +633,43 @@ const PHONE_CODE_SUFFIX = "__dial";
 // can't hold letters, a date input can't hold "next Tuesday". The server re-validates all of it
 // regardless (a form is a UI convenience, never the trust boundary), but the earlier and more
 // specific the feedback, the less a bad save ever gets that far.
+
+const PROJECT_CHIPS_MAX_VISIBLE = 4;
+
+function renderProjectChips(
+  state: AppViewState,
+  props: ProfileProps,
+): ReturnType<typeof html> {
+  const papers = ownPapers(state);
+  if (papers.length === 0) {
+    return html`<span class="profile__project-empty">${t("profile.basics.noProjects")}</span>`;
+  }
+  const visible = papers.slice(0, PROJECT_CHIPS_MAX_VISIBLE);
+  const overflow = papers.length - PROJECT_CHIPS_MAX_VISIBLE;
+  return html`
+    <div class="profile__project-chips">
+      ${visible.map(
+        (paper) => html`
+          <button
+            type="button"
+            class="profile__project-chip"
+            @click=${(e: Event) => {
+              e.preventDefault();
+              void toggleAdminBotPaperCard(state, paper.id);
+              props.onNavigateToTab?.("myWork");
+            }}
+          >
+            ${paper.alias || paper.title}
+          </button>
+        `,
+      )}
+      ${overflow > 0
+        ? html`<span class="profile__project-overflow">+${overflow} more</span>`
+        : nothing}
+    </div>
+  `;
+}
+
 function renderFieldInput(field: EditableField, currentValue: string) {
   // An admin-owned answer the member may still supply. It was `disabled`, which is why this is
   // worth explaining: a disabled input cannot be focused, selected, or pasted into, so a member
@@ -841,28 +882,42 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
               <div class="profile__field-grid">
                 ${group.fields.map(
                   (field) => html`
-                    <label class="profile__form-row">
-                      <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(
-                          field,
-                          displayValue(member, field),
-                        )}${renderFieldHelp(field)}
-                        ${field.adminOnly
-                          ? html`<span class="profile__optional"
-                              >${t("profile.basics.adminFilled")}</span
-                            >`
-                          : isOptionalMemberField(field)
-                            ? html`<span class="profile__optional"
-                                >${t("profile.basics.optional")}</span
-                              >`
-                            : nothing}
-                      </span>
-                      ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
-                      ${renderFieldHint(field)} ${renderFieldVisibility(field)}
-                      ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
-                      ${renderAccountCheckStatus(state, field)}
-                    </label>
+                    ${field.key === "projects"
+                      ? html`
+                          <div class="profile__form-row">
+                            <span class="profile__form-label">
+                              ${labelFor(field.key)}${renderMandatoryMark(
+                                field,
+                                displayValue(member, field),
+                              )}${renderFieldHelp(field)}
+                            </span>
+                            ${renderProjectChips(state, props)}
+                          </div>
+                        `
+                      : html`
+                          <label class="profile__form-row">
+                            <span class="profile__form-label">
+                              ${labelFor(field.key)}${renderMandatoryMark(
+                                field,
+                                displayValue(member, field),
+                              )}${renderFieldHelp(field)}
+                              ${field.adminOnly
+                                ? html`<span class="profile__optional"
+                                    >${t("profile.basics.adminFilled")}</span
+                                  >`
+                                : isOptionalMemberField(field)
+                                  ? html`<span class="profile__optional"
+                                      >${t("profile.basics.optional")}</span
+                                    >`
+                                  : nothing}
+                            </span>
+                            ${renderFieldInput(field, displayValue(member, field))}
+                            ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
+                            ${renderFieldHint(field)} ${renderFieldVisibility(field)}
+                            ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
+                            ${renderAccountCheckStatus(state, field)}
+                          </label>
+                        `}
                   `,
                 )}
               </div>

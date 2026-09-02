@@ -3199,6 +3199,7 @@ export function renderApp(state: AppViewState) {
                   void applyAdminBotOwnProfilePhoto(state, variantId),
                 onSubmitBadgeNomination: (badgeId, evidence) =>
                   void submitOwnBadgeNomination(state, badgeId, evidence),
+                onNavigateToTab: (tab) => state.setTab(tab),
               })}
               <!-- Back on this page, but folded away. It is required reading somebody walks once,
                    on a page they edit every week: open, it ended the page in a wall of steps they
