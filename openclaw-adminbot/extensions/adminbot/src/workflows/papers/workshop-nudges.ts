@@ -213,7 +213,13 @@ export function workshopNudgeInputsFromAdminBot(params: {
   members: readonly AdminBotLabMember[];
   attendees: readonly AdminBotConferenceAttendeeRecord[];
   workshops: readonly WorkshopProfile[];
+  /**
+   * `head_professor_member_id` from settings. Required to exclude the PI, because the `role` check
+   * below cannot do it: see the comment there.
+   */
+  headProfessorMemberId?: string;
 }): WorkshopNudgeNativeInputs {
+  const headProfessorMemberId = params.headProfessorMemberId?.trim();
   const activeMembers = params.members.filter(
     (member) =>
       isAdminBotFullMember(member) &&
@@ -224,6 +230,16 @@ export function workshopNudgeInputsFromAdminBot(params: {
       !adminBotIsAlumniType(member.member_type) &&
       // Professors get the papers, not the nudges: a workshop-submission prompt is a thing the
       // lab asks of whoever is doing the submitting, and it is not the professor.
+      //
+      // By id first, because the role check underneath it has never excluded anybody. `role` is
+      // free text imported from the roster sheet, and not one of the lab's 200 members has a value
+      // containing "professor" -- the PI's is empty. So she read as an ordinary `full` member,
+      // matched on the papers she supervises (which is most of them), and led the workshop nudge
+      // list. `head_professor_member_id` is the field that actually answers "who is the PI", and it
+      // is what every other sweep gates on.
+      member.id !== headProfessorMemberId &&
+      // Kept as the secondary signal: a visiting or second professor has no settings field naming
+      // them, so a filled-in role is still the only thing that can exclude them here.
       (member.role ?? "").trim().toLowerCase() !== "professor",
   );
   const membersById = new Map(activeMembers.map((member) => [member.id, member]));

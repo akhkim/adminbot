@@ -352,7 +352,16 @@ export async function previewWorkshopNudges(params: {
   const conferenceLabel = conferenceKey
     ? (workshops[0]?.parent_conference?.trim() || conferenceKey)
     : undefined;
-  const source = workshopNudgeInputsFromAdminBot({ papers, members, attendees, workshops });
+  const headProfessorMemberId = servicePayload(
+    params.service.getSettings(),
+  ).head_professor_member_id;
+  const source = workshopNudgeInputsFromAdminBot({
+    papers,
+    members,
+    attendees,
+    workshops,
+    headProfessorMemberId,
+  });
   const matched = await matchWorkshopNudges({
     papers: source.papers,
     workshops,

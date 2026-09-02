@@ -534,6 +534,56 @@ describe("workshop nudge matching", () => {
     ).not.toContain("gone");
   });
 
+  // The regression this exists for: the sweep excluded professors by a free-text `role` field, and
+  // in the live roster not one of 200 members has a value containing "professor" -- the PI's is
+  // empty. She read as an ordinary full member, matched on the papers she supervises (most of
+  // them), and led the workshop nudge list. The test above only passed because it filled in the
+  // role that production never sets, so it asserted the check worked on data shaped to make it
+  // work. This one leaves the role blank, the way the roster does.
+  it("excludes the head professor by id, not by a role field the roster leaves blank", () => {
+    const member = (id: string, name: string): AdminBotLabMember =>
+      ({
+        id,
+        name,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: "member",
+        access: [],
+        status: "active",
+        member_type: "full",
+        created_at: "2035-01-01T00:00:00Z",
+        updated_at: "2035-01-01T00:00:00Z",
+      }) as AdminBotLabMember;
+    const paper = (id: string, authorId: string, authorName: string) =>
+      ({
+        id,
+        title: `Paper ${id}`,
+        authors: [authorName],
+        author_links: [{ name: authorName, member_id: authorId }],
+        current_step: "brainstorming_docs",
+        created_at: "2035-01-01T00:00:00Z",
+        updated_at: "2035-02-01T00:00:00Z",
+      }) as AdminBotPaperRecord;
+    const members = [member("zhijing-jin", "Zhijing Jin"), member("ada", "Ada")];
+    const papers = [
+      paper("supervised", "zhijing-jin", "Zhijing Jin"),
+      paper("ada-led", "ada", "Ada"),
+    ];
+    const workshops = [profile("meta", "neurips-2035")];
+
+    const gated = workshopNudgeInputsFromAdminBot({
+      members,
+      papers,
+      attendees: [],
+      workshops,
+      headProfessorMemberId: "zhijing-jin",
+    });
+    expect(gated.papers.map((entry) => entry.recipient_member_id).filter(Boolean)).toEqual(["ada"]);
+
+    // And without the setting she is back in it, which is what prod was doing.
+    const ungated = workshopNudgeInputsFromAdminBot({ members, papers, attendees: [], workshops });
+    expect(ungated.papers.map((entry) => entry.recipient_member_id)).toContain("zhijing-jin");
+  });
+
   it("judges a co-authored paper once and recommends it to every author", async () => {
     const seen: string[][] = [];
     const result = await matchWorkshopNudges({
