@@ -1348,8 +1348,11 @@ async function handleAuthenticatedRoute(
   }
 
   if (req.method === "POST" && url.pathname === "/workshop-nudges/send") {
-    // Pressing Nudge is the approval. The request carries only a narrowing recipient list; current
-    // papers, recommendations and exact messages are recomputed here before any proposal exists.
+    // Pressing Nudge is the approval, and what it approves is the text the administrator was
+    // looking at: the messages come from the stored pass, not from a fresh match. Recomputing here
+    // meant a Send request that ran the whole cross-product inline -- a Cloudflare 524 at a hundred
+    // seconds -- and could send a draft nobody had read, since the matcher is a language model.
+    // The request still carries only a narrowing recipient list.
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
@@ -3534,6 +3537,16 @@ async function handleAuthenticatedRoute(
       skipped: skipped.length,
     });
     sendJson(res, 200, { sent, skipped });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/logistics/rec-letter-channel/run") {
+    // Membership is computed from the request log and the clock, so nothing here is caller-supplied:
+    // requirePrivileged like the other cron-triggered sweeps. Removals are proposals rather than
+    // actions, so this route cannot take anybody out of a channel on its own.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.syncRecLetterChannel(principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/nudges/escalate/run") {

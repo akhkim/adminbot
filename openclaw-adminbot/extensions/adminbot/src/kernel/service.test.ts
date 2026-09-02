@@ -6,7 +6,7 @@ import {
   adminBotProjectChannelName,
 } from "../contracts/actions.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
-import { AdminBotService, payloadHash } from "./service.js";
+import { AdminBotMemoryStore, AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
   result: { ok: true; payload: T } | { ok: false; error: { message: string } },
@@ -1436,6 +1436,131 @@ describe("AdminBotService", () => {
       }),
     );
     expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
+  });
+
+  describe("the recommendation-letter help channel", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const iso = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY).toISOString();
+
+    /**
+     * Requests are seeded through the store rather than through submitLogisticsRequest, because the
+     * whole point of these tests is *when* a request settled, and setLogisticsRequestStatus stamps
+     * `updated_at` with the wall clock. The store is the one place a chosen timestamp can go.
+     */
+    function labWithLetters(
+      requests: Array<{ status: string; updated_at: string }>,
+      member: Record<string, unknown> = {},
+    ) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada Lovelace",
+          privilege_level: "member",
+          slack_user_id: "U-ADA",
+          ...member,
+        } as never),
+      );
+      for (const [index, request] of requests.entries()) {
+        store.saveLogisticsRequest({
+          id: `logreq_${index}`,
+          kind: "recommendation_letters",
+          member_id: "ada",
+          member_name: "Ada Lovelace",
+          status: request.status,
+          submitted_at: request.updated_at,
+          updated_at: request.updated_at,
+        } as never);
+      }
+      return { service, store };
+    }
+
+    it("puts anybody with an open letter request in the channel", () => {
+      const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(roster.remove).toEqual([]);
+    });
+
+    // The subtlety the window exists for. A season runs about two months across different school
+    // deadlines, so one request closes while another is still open; reading the earliest settled
+    // date would drop somebody in the middle of their own season.
+    it("keeps somebody whose season is still running, however old their first close", () => {
+      const { service } = labWithLetters([
+        { status: "completed", updated_at: iso(-200) },
+        { status: "submitted", updated_at: iso(-1) },
+      ]);
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(roster.remove).toEqual([]);
+    });
+
+    it("measures the window from the most recently settled request", () => {
+      const { service } = labWithLetters([
+        { status: "completed", updated_at: iso(-200) },
+        { status: "completed", updated_at: iso(-60) },
+      ]);
+      // Sixty days on from the latest close: inside the ninety-day window, so nothing happens.
+      expect(service.recLetterChannelRoster().remove).toEqual([]);
+      expect(service.recLetterChannelRoster().add).toEqual([]);
+
+      const later = new Date(Date.now() + 31 * DAY).toISOString();
+      expect(
+        service.recLetterChannelRoster({ nowIso: later }).remove.map((row) => row.member_id),
+      ).toEqual(["ada"]);
+    });
+
+    it("skips a member with no Slack account rather than proposing anything", () => {
+      const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }], {
+        slack_user_id: "",
+      });
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add).toEqual([]);
+      expect(roster.skipped[0]?.reason).toContain("slack_user_id");
+    });
+
+    // Invites go out; removals wait for a person. An unwanted invite is noise somebody can leave; a
+    // wrong removal takes away a conversation they were in and is noticed only by its absence.
+    it("executes invites but only proposes removals", async () => {
+      const { service, store } = labWithLetters([
+        { status: "submitted", updated_at: iso(-1) },
+        { status: "completed", updated_at: iso(-200) },
+      ]);
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          privilege_level: "member",
+          slack_user_id: "U-MEI",
+        } as never),
+      );
+      store.saveLogisticsRequest({
+        id: "logreq_old",
+        kind: "recommendation_letters",
+        member_id: "mei",
+        member_name: "Mei Chen",
+        status: "completed",
+        submitted_at: iso(-260),
+        updated_at: iso(-200),
+      } as never);
+
+      const result = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(result.channel).toBe("help-rec-letter-request");
+      expect(result.invited.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(result.removal_proposals.map((row) => row.member_id)).toEqual(["mei"]);
+
+      const removal = store.listProposalsByType("slack.remove_from_channel")[0];
+      expect(removal).toBeDefined();
+      expect(removal?.status).not.toBe("executed");
+      expect(removal?.approval_requirement?.requires_approval).toBe(true);
+      // And the invite really did go, so the asymmetry is between the two and not a dead sweep.
+      expect(store.listProposalsByType("slack.invite_to_channel")[0]?.status).toBe("executed");
+    });
   });
 
   // The alias becomes the project's Slack channel `proj-<alias>`, so it is stored in the shape that

@@ -221,6 +221,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-rec-letter-channel",
+      "description": "Keep #help-rec-letter-request in step with open letter requests",
+      "cron": "20 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-channel-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-thesis-milestones",
       "description": "Guidebook nudge before a thesis deadline, grading reminder five days after",
       "cron": "50 9 * * 1-5",

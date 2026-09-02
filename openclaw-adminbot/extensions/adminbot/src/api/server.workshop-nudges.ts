@@ -393,6 +393,18 @@ export async function previewWorkshopNudges(params: {
   };
 }
 
+/**
+ * Send the recommendations an administrator picked, from the pass they were looking at.
+ *
+ * Reads the stored run rather than recomputing. This used to call previewWorkshopNudges, which is
+ * the whole cross-product match -- thousands of model calls, tens of minutes -- inside the request
+ * that Send makes. Behind Cloudflare that is a 524 at a hundred seconds, so Send simply never
+ * worked on a lab-sized roster; the same mistake was fixed in the preview route and left here.
+ *
+ * Correctness, not only cost. The matcher is a language model and its output is not deterministic,
+ * so a recomputed draft is not necessarily the draft that was reviewed. Pressing Nudge is an
+ * approval of specific text, and it has to send that text.
+ */
 export async function sendWorkshopNudges(params: {
   service: AdminBotService;
   match: WorkshopMatcher;
@@ -400,7 +412,17 @@ export async function sendWorkshopNudges(params: {
   actor: string;
   recipientMemberIds: readonly string[];
 }): Promise<WorkshopNudgeSendResult> {
-  const preview = await previewWorkshopNudges(params);
+  const stored = readWorkshopNudgeRun(params.service, params.now);
+  const preview = stored.preview;
+  if (!preview) {
+    // Refused rather than quietly starting one. A pass is tens of minutes; an administrator who
+    // pressed Nudge is not waiting for one, and silently running it is what produced the timeout.
+    throw new Error(
+      stored.status === "running"
+        ? "a workshop match is still running; wait for it to finish before sending"
+        : "no workshop recommendations have been produced yet; run a match first",
+    );
+  }
   const recipients = new Map(
     preview.recipients.map((recipient) => [recipient.recipient_member_id, recipient]),
   );
@@ -436,6 +458,8 @@ export async function sendWorkshopNudges(params: {
     created.push(...sent.payload.created.map((proposal) => sentProposal(memberId, proposal)));
     skipped.push(...sent.payload.skipped);
   }
+  // The pass these drafts came from, not the moment Send was pressed: what the reader wants to know
+  // is which answer went out.
   return { recomputed_at: preview.generated_at, created, skipped };
 }
 

@@ -4,7 +4,10 @@ import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
+  ADMINBOT_REC_LETTER_CHANNEL,
   adminBotIsAlumniMember,
+  adminBotLogisticsSettledStatuses,
+  adminBotRecLetterChannelRetentionDays,
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
   adminBotNudgeRosterDecision,
@@ -785,6 +788,12 @@ const DEFAULT_ACTION_POLICIES = {
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.
   "slack.invite_to_channel": autoPolicy("T1"),
+  // Not auto-approved, unlike the invite above, and the asymmetry is the point. An unwanted invite
+  // is noise somebody can leave; an unwanted removal takes a conversation away from someone who was
+  // part of it, and they find out by noticing a room is gone. The sweep that drives this reads a
+  // three-month-old settled date, so a wrong answer is silent until it has already happened -- an
+  // admin sees the name before anyone is removed.
+  "slack.remove_from_channel": approvalPolicy("T3", ["admin"]),
   // Routine cycle reminders auto-send for the same reason member_nudge.send does: the
   // run route is admin-gated, the recipients are the venue's own committee groups, and
   // the cadence fires each milestone at most once.
@@ -7500,6 +7509,191 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: { surface: params.surface, ...plan, proposal_id: proposed.payload.id },
+    };
+  }
+
+  /**
+   * Who belongs in the recommendation-letter help channel right now, and who no longer does.
+   *
+   * In: anybody with a letter request the lab has not finished with. Out: anybody whose letters
+   * have all been settled for longer than the retention window.
+   *
+   * The window is measured from the *latest* settled request, not the first, and that is the whole
+   * subtlety. An application season runs about two months across different school deadlines, so a
+   * member routinely has one request closed in November and another still open in January. Reading
+   * the earliest settled date would take them out of the channel halfway through their own season,
+   * which is exactly when they need it. Any unsettled request keeps them in regardless of how old
+   * their others are.
+   *
+   * Computed, never stored: membership is a function of the request log and the clock, so there is
+   * no second list to fall out of step with it. That also makes the sweep idempotent -- Slack's own
+   * already_in_channel and not_in_channel are treated as success by the connector.
+   */
+  recLetterChannelRoster(options: { nowIso?: string } = {}): {
+    add: Array<{ member_id: string; member_name: string; slack_user_id: string }>;
+    remove: Array<{
+      member_id: string;
+      member_name: string;
+      slack_user_id: string;
+      settled_at: string;
+    }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  } {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const cutoff =
+      now.getTime() - adminBotRecLetterChannelRetentionDays * 24 * 60 * 60 * 1000;
+    const settled = new Set<string>(adminBotLogisticsSettledStatuses);
+
+    /** Per member: is anything still open, and when did the most recent one settle. */
+    const state = new Map<string, { open: boolean; lastSettled: number }>();
+    for (const request of this.store.listLogisticsRequests()) {
+      if (request.kind !== "recommendation_letters") {
+        continue;
+      }
+      const entry = state.get(request.member_id) ?? { open: false, lastSettled: 0 };
+      if (settled.has(request.status)) {
+        // `updated_at` is when it reached that status, which is the moment the lab finished with
+        // it. `submitted_at` would start the clock when the member asked, which is backwards.
+        const at = Date.parse(request.updated_at);
+        if (Number.isFinite(at) && at > entry.lastSettled) {
+          entry.lastSettled = at;
+        }
+      } else {
+        entry.open = true;
+      }
+      state.set(request.member_id, entry);
+    }
+
+    const add: Array<{ member_id: string; member_name: string; slack_user_id: string }> = [];
+    const remove: Array<{
+      member_id: string;
+      member_name: string;
+      slack_user_id: string;
+      settled_at: string;
+    }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    for (const [memberId, entry] of state) {
+      const member = this.store.getLabMember(memberId);
+      if (!member) {
+        skipped.push({ member_id: memberId, reason: "member not found" });
+        continue;
+      }
+      if (!member.slack_user_id?.trim()) {
+        // Nothing to do either way: they cannot be put in a channel or taken out of one.
+        skipped.push({ member_id: memberId, reason: "member has no slack_user_id" });
+        continue;
+      }
+      const row = {
+        member_id: memberId,
+        member_name: member.name,
+        slack_user_id: member.slack_user_id.trim(),
+      };
+      if (entry.open) {
+        add.push(row);
+      } else if (entry.lastSettled > 0 && entry.lastSettled <= cutoff) {
+        remove.push({ ...row, settled_at: new Date(entry.lastSettled).toISOString() });
+      }
+    }
+    const byName = <T extends { member_name: string }>(left: T, right: T) =>
+      left.member_name.localeCompare(right.member_name);
+    return { add: add.toSorted(byName), remove: remove.toSorted(byName), skipped };
+  }
+
+  /**
+   * Put the letter-request channel's membership where recLetterChannelRoster says it should be.
+   *
+   * Invites auto-execute; removals are proposed and wait for an admin. That asymmetry is
+   * deliberate and matches the policy table: an unwanted invite is noise somebody can leave, while
+   * a removal takes a conversation away from someone who was in it, decided by a three-month-old
+   * timestamp they cannot see. A wrong invite is visible immediately; a wrong removal is noticed
+   * when a room quietly stops being there.
+   */
+  async syncRecLetterChannel(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      channel: string;
+      invited: Array<{ member_id: string; proposal_id: string }>;
+      removal_proposals: Array<{ member_id: string; proposal_id: string; settled_at: string }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const roster = this.recLetterChannelRoster(options);
+    const channel = ADMINBOT_REC_LETTER_CHANNEL;
+    const invited: Array<{ member_id: string; proposal_id: string }> = [];
+    const removalProposals: Array<{
+      member_id: string;
+      proposal_id: string;
+      settled_at: string;
+    }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [...roster.skipped];
+
+    for (const person of roster.add) {
+      const proposed = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${person.member_name} to #${channel} (letter request open)`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: person.member_id,
+        },
+        proposed_payload: { channel, user_id: person.slack_user_id },
+        undo_plan: "Leave the channel, or have an admin remove the member from it.",
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: person.member_id, reason: proposed.error.message });
+        continue;
+      }
+      const executed = await this.execute(proposed.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        skipped.push({ member_id: person.member_id, reason: executed.error.message });
+        continue;
+      }
+      invited.push({ member_id: person.member_id, proposal_id: proposed.payload.id });
+    }
+
+    for (const person of roster.remove) {
+      // Proposed only. Nothing here executes it -- see the header and the policy table.
+      const proposed = this.createProposal({
+        type: "slack.remove_from_channel",
+        summary: `Remove ${person.member_name} from #${channel} (letters settled ${person.settled_at.slice(0, 10)})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: person.member_id,
+        },
+        proposed_payload: { channel, user_id: person.slack_user_id },
+        undo_plan: "Invite the member back to the channel.",
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: person.member_id, reason: proposed.error.message });
+        continue;
+      }
+      removalProposals.push({
+        member_id: person.member_id,
+        proposal_id: proposed.payload.id,
+        settled_at: person.settled_at,
+      });
+    }
+
+    this.recordAudit({
+      type: "rec_letter_channel.swept",
+      actor,
+      details: {
+        channel,
+        retention_days: adminBotRecLetterChannelRetentionDays,
+        invited: invited.length,
+        removals_proposed: removalProposals.length,
+        skipped: skipped.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { channel, invited, removal_proposals: removalProposals, skipped },
     };
   }
 

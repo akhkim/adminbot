@@ -220,7 +220,11 @@ describe("workshop nudge HTTP flow", () => {
     });
   });
 
-  it("recomputes current messages on Nudge and sends one member_nudge.send", async () => {
+  // Send delivers the pass the administrator was looking at, not a fresh one. Recomputing here ran
+  // the whole cross-product inside the Send request -- a Cloudflare 524 at a hundred seconds -- and
+  // could put out a draft nobody had read, since the matcher is a language model and its output is
+  // not deterministic.
+  it("sends the reviewed draft, not a recomputed one, as one member_nudge.send", async () => {
     const executed: AdminBotStoredProposal[] = [];
     const { baseUrl, mock } = await startService(executed);
     const headers = await adminHeaders(baseUrl, mock);
@@ -236,6 +240,8 @@ describe("workshop nudge HTTP flow", () => {
     const preview = await runAndRead(baseUrl, headers);
     expect(JSON.stringify(await preview.json())).toContain("Old meta agents title");
 
+    // A paper added after the pass. It must not appear in what goes out: the administrator approved
+    // the earlier answer, and this one has never been on screen.
     seedPaper(mock, "Current meta agents title");
     const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
       method: "POST",
@@ -254,9 +260,40 @@ describe("workshop nudge HTTP flow", () => {
     expect(executed[0]?.type).toBe("member_nudge.send");
     expect(executed[0]?.proposed_payload).toMatchObject({
       target: "U-MIRA",
-      message: expect.stringContaining("Current meta agents title"),
+      message: expect.stringContaining("Old meta agents title"),
     });
+    expect(JSON.stringify(executed[0]?.proposed_payload)).not.toContain(
+      "Current meta agents title",
+    );
+    // Still true, and still the point of the route taking only a recipient list: the browser cannot
+    // choose the text.
     expect(JSON.stringify(executed[0]?.proposed_payload)).not.toContain("browser-controlled");
+  });
+
+  // Refused rather than quietly starting a pass. One is tens of minutes; an administrator pressing
+  // Nudge is not waiting for it, and starting one silently is what produced the timeout.
+  it("refuses to send when no pass has produced recommendations yet", async () => {
+    const executed: AdminBotStoredProposal[] = [];
+    const { baseUrl, mock } = await startService(executed);
+    const headers = await adminHeaders(baseUrl, mock);
+    seedMember(mock, {
+      id: "member-1",
+      name: "Mira Member",
+      email: "mira@cs.toronto.edu",
+      slack_user_id: "U-MIRA",
+      privilege_level: "member",
+      status: "active",
+    });
+    seedPaper(mock, "Never matched");
+
+    const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ recipient_member_ids: ["member-1"] }),
+    });
+    expect(response.status).not.toBe(200);
+    expect(JSON.stringify(await response.json())).toContain("run a match first");
+    expect(executed).toHaveLength(0);
   });
 
   it("reports a missing Slack identity and refuses both routes to the service principal", async () => {

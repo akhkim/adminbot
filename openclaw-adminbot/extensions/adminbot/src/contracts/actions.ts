@@ -43,6 +43,12 @@ export const adminBotActionTypes = [
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
   "slack.invite_to_channel",
+  // Takes one member back out of one public channel. Its own type rather than a flag on the invite
+  // for the same reason the invite is its own type -- "who did AdminBot remove from where, and
+  // when" is the question somebody asks after finding a room gone from their sidebar -- and
+  // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
+  // somebody losing a conversation they were part of.
+  "slack.remove_from_channel",
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
@@ -1913,6 +1919,7 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_update.saved"
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
+    | "rec_letter_channel.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
@@ -2333,6 +2340,21 @@ export const adminBotLogisticsSettledStatuses = [
   "declined",
   "withdrawn",
 ] as const satisfies readonly AdminBotLogisticsRequestStatus[];
+
+/**
+ * How long somebody stays in the recommendation-letter help channel after their last letter is
+ * settled.
+ *
+ * Three months, measured from the most recent settled request rather than the first. An application
+ * season runs roughly two months across different school deadlines, so a member routinely has one
+ * request closed while another is still open; a shorter window, or one measured from the earliest
+ * close, would take them out of the channel in the middle of their own season. The extra month past
+ * a two-month season is the margin for a late deadline or a school that comes back with questions.
+ */
+export const adminBotRecLetterChannelRetentionDays = 90;
+
+/** The channel the letter-request sweep manages. A name, because that is what the connector takes. */
+export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letter-request";
 
 /**
  * A file travelling with a request, bytes and all.

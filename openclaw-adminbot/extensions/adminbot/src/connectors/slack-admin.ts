@@ -57,6 +57,12 @@ export function createAdminBotSlackAdminExecutor(
         await inviteToSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
+      if (proposal.type === "slack.remove_from_channel") {
+        const payload = readInvitePayload(proposal, "slack.remove_from_channel");
+        const token = resolveSlackBotToken(env);
+        await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
+        return { handled: true };
+      }
       if (proposal.type === "member_nudge.escalate") {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
@@ -75,13 +81,18 @@ export function createAdminBotSlackAdminExecutor(
  * quietly became a private message to the professor is the failure mode this whole shape exists to
  * avoid -- the member has to be in the room.
  */
-function readInvitePayload(proposal: AdminBotStoredProposal): {
+function readInvitePayload(
+  proposal: AdminBotStoredProposal,
+  // Shared by the invite and the removal, which carry the same two fields. Named so the refusal
+  // says which one was malformed rather than always blaming the invite.
+  typeName = "slack.invite_to_channel",
+): {
   channel: string;
   user_id: string;
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("slack.invite_to_channel requires an object proposed_payload");
+    throw new Error(`${typeName} requires an object proposed_payload`);
   }
   const record = payload as Record<string, unknown>;
   return {
@@ -100,12 +111,18 @@ function readInvitePayload(proposal: AdminBotStoredProposal): {
  * Already-in-channel is not an error. The sweep is idempotent by design and a member who joined on
  * their own before AdminBot got to them is the success case, not a failure to report.
  */
-async function inviteToSlackChannel(
+/**
+ * The id behind a channel name, which is what every conversations.* call actually takes.
+ *
+ * Extracted so the invite and the removal resolve names the same way. They have to: a sweep that
+ * added somebody to the channel it found and removed them from a different one -- because the two
+ * lookups disagreed about archived channels, say -- is worse than either failing outright.
+ */
+async function resolveChannelId(
   token: string,
   channelName: string,
-  userId: string,
   fetchImpl: SlackAdminFetch,
-): Promise<void> {
+): Promise<string> {
   const wanted = channelName.replace(/^#/u, "");
   let cursor: string | undefined;
   let channelId: string | undefined;
@@ -133,6 +150,16 @@ async function inviteToSlackChannel(
     // a sweep that quietly makes rooms is how a directory fills with them.
     throw new Error(`Slack has no open channel named #${wanted}`);
   }
+  return channelId;
+}
+
+async function inviteToSlackChannel(
+  token: string,
+  channelName: string,
+  userId: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const channelId = await resolveChannelId(token, channelName, fetchImpl);
   const invite = await fetchImpl("https://slack.com/api/conversations.invite", {
     method: "POST",
     headers: {
@@ -148,6 +175,43 @@ async function inviteToSlackChannel(
   if (!invite.ok || !invitePayload?.ok) {
     const detail = invitePayload?.error?.trim() || invite.statusText || "unknown error";
     throw new Error(`Slack channel invite failed ${invite.status}: ${detail}`);
+  }
+}
+
+/**
+ * Takes one member back out of one public channel.
+ *
+ * `not_in_channel` is not an error, for the same reason `already_in_channel` is not one above: the
+ * sweep is idempotent by design, and somebody who left of their own accord has already reached the
+ * state this is asking for. Treating it as a failure would make every later run of the sweep
+ * report a problem that no longer exists.
+ *
+ * `cant_kick_self` is left as an error deliberately. It means the bot was asked to remove itself,
+ * which is never something a roster sweep should be doing and is worth surfacing rather than
+ * swallowing alongside the benign cases.
+ */
+async function removeFromSlackChannel(
+  token: string,
+  channelName: string,
+  userId: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const channelId = await resolveChannelId(token, channelName, fetchImpl);
+  const removal = await fetchImpl("https://slack.com/api/conversations.kick", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ channel: channelId, user: userId }),
+  });
+  const removalPayload = parseSlackJson<SlackRenameResponse>(await removal.text());
+  if (removalPayload?.error === "not_in_channel") {
+    return;
+  }
+  if (!removal.ok || !removalPayload?.ok) {
+    const detail = removalPayload?.error?.trim() || removal.statusText || "unknown error";
+    throw new Error(`Slack channel removal failed ${removal.status}: ${detail}`);
   }
 }
 
