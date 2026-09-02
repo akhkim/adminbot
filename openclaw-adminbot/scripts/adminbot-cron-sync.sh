@@ -19,7 +19,27 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$REPO_ROOT/config/adminbot-cron.json"
-OPENCLAW="${OPENCLAW_BIN:-pnpm openclaw}"
+
+# Aurora keeps node and pnpm in ~/.local/bin, which a non-interactive ssh shell does not put on
+# PATH. Every remote block in aurora-adminbot-host.sh exports this for the same reason; this script
+# is meant to be runnable there too and was not, so it failed on every job with "pnpm: command not
+# found" -- twenty-eight times, having already printed what it was about to do.
+export PATH="$HOME/.local/bin:$PATH"
+
+# `pnpm openclaw` goes through scripts/run-node.mjs, which rebuilds a stale dist before running --
+# what you want on a working copy. A deployed release has no pnpm and needs no rebuild, so it falls
+# back to the built entry point, which is the same one aurora-adminbot-host.sh invokes remotely.
+if [[ -n "${OPENCLAW_BIN:-}" ]]; then
+  OPENCLAW="$OPENCLAW_BIN"
+elif command -v pnpm >/dev/null 2>&1; then
+  OPENCLAW="pnpm openclaw"
+elif [[ -f "$REPO_ROOT/openclaw.mjs" ]]; then
+  OPENCLAW="node $REPO_ROOT/openclaw.mjs"
+else
+  printf 'adminbot-cron-sync: no pnpm on PATH and no %s/openclaw.mjs; set OPENCLAW_BIN\n' \
+    "$REPO_ROOT" >&2
+  exit 1
+fi
 DRY_RUN=0
 ONLY=""
 
