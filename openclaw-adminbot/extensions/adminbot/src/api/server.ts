@@ -3539,6 +3539,15 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, { sent, skipped });
     return;
   }
+  if (req.method === "POST" && url.pathname === "/papers/project-channels/run") {
+    // Channels and members are computed from the papers' own aliases and the access matrix, so
+    // nothing here is caller-supplied: requirePrivileged like the other cron-triggered sweeps.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.syncProjectChannels(principalActor(principal)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/logistics/rec-letter-channel/run") {
     // Membership is computed from the request log and the clock, so nothing here is caller-supplied:
     // requirePrivileged like the other cron-triggered sweeps. Removals are proposals rather than

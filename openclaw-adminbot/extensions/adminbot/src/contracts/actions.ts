@@ -49,6 +49,10 @@ export const adminBotActionTypes = [
   // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
   // somebody losing a conversation they were part of.
   "slack.remove_from_channel",
+  // Opens one project channel. Its own type because creating a room is a decision about the shape
+  // of the workspace, not a membership change, and the audit log has to be able to answer "who
+  // opened this, and why" -- which for a `proj-` channel is "a project was created with that alias".
+  "slack.create_channel",
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
@@ -1920,6 +1924,7 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    | "project_channels.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"

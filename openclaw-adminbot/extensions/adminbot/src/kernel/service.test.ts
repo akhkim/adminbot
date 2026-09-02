@@ -1438,6 +1438,104 @@ describe("AdminBotService", () => {
     expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
   });
 
+  describe("per-project Slack channels", () => {
+    function labWithProject(
+      authors: Array<{ id: string; subgroup?: string; slack?: string; member_type?: string }>,
+      paper: Record<string, unknown> = {},
+    ) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const author of authors) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            id: author.id,
+            name: author.id,
+            privilege_level: "external_collaborator",
+            ...(author.subgroup ? { collaborator_subgroup: author.subgroup } : {}),
+            ...(author.member_type ? { member_type: author.member_type } : {}),
+            ...(author.slack === undefined ? { slack_user_id: `U-${author.id}` } : {}),
+          } as never),
+        );
+      }
+      unwrap(
+        service.upsertPaper({
+          id: "p1",
+          title: "Causal AI Scientist",
+          alias: "CAIS",
+          current_step: "brainstorming_docs",
+          authors: authors.map((a) => a.id),
+          author_links: authors.map((a) => ({ name: a.id, member_id: a.id })),
+          ...paper,
+        } as never),
+      );
+      return { service, store };
+    }
+
+    // The channel name comes from the alias somebody chose, so it is knowable from the record --
+    // no directory lookup, and it does not change when the title does.
+    it("names the channel from the project alias", () => {
+      const { service } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }]);
+      const roster = service.projectChannelRoster();
+      expect(roster).toHaveLength(1);
+      expect(roster[0]?.channel).toBe("proj-cais");
+      expect(roster[0]?.members.map((m) => m.member_id)).toEqual(["kim"]);
+    });
+
+    // The access matrix decides: coauthor-minor, coauthor-major and discussant/designer, nobody else.
+    it("invites the subgroups the matrix names and no others", () => {
+      const { service } = labWithProject([
+        { id: "major", subgroup: "coauthor_major" },
+        { id: "minor", subgroup: "coauthor_minor" },
+        { id: "designer", subgroup: "coauthor_discussant_designer" },
+        { id: "prof", subgroup: "external_prof" },
+        { id: "acq", subgroup: "acquaintance" },
+      ]);
+      expect(service.projectChannelRoster()[0]?.members.map((m) => m.member_id)).toEqual([
+        "designer",
+        "major",
+        "minor",
+      ]);
+    });
+
+    // A slugged title would be long, wrong the moment the title changed, and not what anyone calls
+    // the project. No alias, no channel.
+    it("skips a project with no alias rather than guessing one", () => {
+      const { service } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }], {
+        alias: undefined,
+      });
+      expect(service.projectChannelRoster()).toEqual([]);
+    });
+
+    it("leaves alumni out, and reports somebody with no Slack account", () => {
+      const { service } = labWithProject([
+        { id: "gone", subgroup: "coauthor_major", member_type: "alumni" },
+        { id: "noslack", subgroup: "coauthor_major", slack: "" },
+        { id: "here", subgroup: "coauthor_major" },
+      ]);
+      const row = service.projectChannelRoster()[0];
+      expect(row?.members.map((m) => m.member_id)).toEqual(["here"]);
+      expect(row?.skipped.map((s) => s.member_id)).toEqual(["noslack"]);
+    });
+
+    // Create first and every time: Slack's own name_taken is what says it already exists, which is
+    // why this needs no directory of what channels there are.
+    it("opens the channel, then invites into it", async () => {
+      const { service, store } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }]);
+      const result = unwrap(await service.syncProjectChannels("cron"));
+
+      expect(result.channels).toEqual([
+        { channel: "proj-cais", paper_id: "p1", invited: ["kim"] },
+      ]);
+      const created = store.listProposalsByType("slack.create_channel")[0];
+      expect(created?.proposed_payload).toMatchObject({ name: "proj-cais" });
+      expect(created?.status).toBe("executed");
+      expect(store.listProposalsByType("slack.invite_to_channel")[0]?.status).toBe("executed");
+    });
+  });
+
   describe("the recommendation-letter help channel", () => {
     const DAY = 24 * 60 * 60 * 1000;
     const iso = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY).toISOString();

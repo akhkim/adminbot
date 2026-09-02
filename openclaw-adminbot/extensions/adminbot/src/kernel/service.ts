@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   ADMINBOT_REC_LETTER_CHANNEL,
   adminBotIsAlumniMember,
+  adminBotProjectChannelName,
   adminBotLogisticsSettledStatuses,
   adminBotRecLetterChannelRetentionDays,
   adminBotNormalizePaperAlias,
@@ -794,6 +796,11 @@ const DEFAULT_ACTION_POLICIES = {
   // three-month-old settled date, so a wrong answer is silent until it has already happened -- an
   // admin sees the name before anyone is removed.
   "slack.remove_from_channel": approvalPolicy("T3", ["admin"]),
+  // Auto, unlike the removal above, and bounded structurally rather than by policy: the connector
+  // refuses any name that is not `proj-<alias>`, so the worst this can do is open a project channel
+  // for a project that exists. Gating it on approval instead would stall every new project behind
+  // somebody pressing a button, which is the opposite of what "or creating it" asked for.
+  "slack.create_channel": autoPolicy("T1"),
   // Routine cycle reminders auto-send for the same reason member_nudge.send does: the
   // run route is admin-gated, the recipients are the venue's own committee groups, and
   // the cadence fires each milestone at most once.
@@ -7697,6 +7704,177 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Which project channel each collaborator is owed, from the papers they are on.
+   *
+   * The channel name comes from the project's alias -- the short name a person chose when the
+   * project was created -- so `proj-cais` is knowable from the record without asking Slack what
+   * exists. A paper with no alias is skipped rather than guessed at: a channel named from a slugged
+   * title would be long, ugly, and wrong the moment the title changed.
+   *
+   * Who is owed one is the access matrix's `project_channel` row: the external subgroups the lab
+   * chats to about a specific project. Full members are not enumerated here -- the row is from the
+   * external-collaborator design sheet, and they are in project channels by other means.
+   */
+  projectChannelRoster(): Array<{
+    channel: string;
+    paper_id: string;
+    paper_title: string;
+    members: Array<{ member_id: string; member_name: string; slack_user_id: string }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  }> {
+    const owed = new Set(
+      adminBotExternalCollaboratorSubgroups.filter((subgroup) =>
+        collaboratorSubgroupAccess(subgroup).some(
+          (grant) => grant.item === PROJECT_CHANNEL_ACCESS_ITEM,
+        ),
+      ),
+    );
+    const rows: Array<{
+      channel: string;
+      paper_id: string;
+      paper_title: string;
+      members: Array<{ member_id: string; member_name: string; slack_user_id: string }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }> = [];
+    for (const paper of this.store.listPapers()) {
+      const alias = adminBotNormalizePaperAlias(paper.alias);
+      if (!alias) {
+        continue;
+      }
+      const members: Array<{
+        member_id: string;
+        member_name: string;
+        slack_user_id: string;
+      }> = [];
+      const skipped: AdminBotMemberNudgeSkip[] = [];
+      const seen = new Set<string>();
+      for (const link of paper.author_links ?? []) {
+        const memberId = link.member_id?.trim();
+        if (!memberId || seen.has(memberId)) {
+          continue;
+        }
+        seen.add(memberId);
+        const member = this.store.getLabMember(memberId);
+        if (!member) {
+          continue;
+        }
+        const subgroup = member.collaborator_subgroup;
+        if (!subgroup || !owed.has(subgroup)) {
+          continue;
+        }
+        // Alumni are not chased into a project's room, for the same reason they are not chased
+        // anywhere else: having left outranks having coauthored.
+        if (adminBotIsAlumniMember(member)) {
+          continue;
+        }
+        if (!member.slack_user_id?.trim()) {
+          skipped.push({ member_id: memberId, reason: "member has no slack_user_id" });
+          continue;
+        }
+        members.push({
+          member_id: memberId,
+          member_name: member.name,
+          slack_user_id: member.slack_user_id.trim(),
+        });
+      }
+      if (members.length === 0 && skipped.length === 0) {
+        // Nothing to open a channel for. A project whose only collaborators are full members does
+        // not need one created on their behalf.
+        continue;
+      }
+      rows.push({
+        channel: adminBotProjectChannelName(alias),
+        paper_id: paper.id,
+        paper_title: paper.title,
+        members: members.toSorted((left, right) =>
+          left.member_name.localeCompare(right.member_name),
+        ),
+        skipped,
+      });
+    }
+    return rows.toSorted((left, right) => left.channel.localeCompare(right.channel));
+  }
+
+  /**
+   * Open each project's channel and put its collaborators in it.
+   *
+   * The create runs first and every time, because Slack's own `name_taken` is what tells us the
+   * channel already exists -- there is no channel directory to consult, and asking Slack to ensure
+   * a name exists is cheaper and more honest than keeping a second list of what we think does.
+   */
+  async syncProjectChannels(
+    actor: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      channels: Array<{ channel: string; paper_id: string; invited: string[] }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const roster = this.projectChannelRoster();
+    const channels: Array<{ channel: string; paper_id: string; invited: string[] }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    for (const row of roster) {
+      skipped.push(...row.skipped);
+      const created = this.createProposal({
+        type: "slack.create_channel",
+        summary: `Open #${row.channel} for ${row.paper_title}`,
+        target: { service: "slack", channel: "slack", target: row.channel },
+        proposed_payload: { name: row.channel },
+        undo_plan: "Archive the channel in Slack.",
+      });
+      if (!created.ok) {
+        skipped.push({ member_id: row.paper_id, reason: created.error.message });
+        continue;
+      }
+      const opened = await this.execute(created.payload.id, { dry_run: false });
+      if (!opened.ok) {
+        // Without the room there is nowhere to invite anyone, so this paper is left for the next
+        // run rather than half-done.
+        skipped.push({ member_id: row.paper_id, reason: opened.error.message });
+        continue;
+      }
+      const invited: string[] = [];
+      for (const member of row.members) {
+        const proposed = this.createProposal({
+          type: "slack.invite_to_channel",
+          summary: `Add ${member.member_name} to #${row.channel} (${row.paper_title})`,
+          target: {
+            service: "slack",
+            channel: "slack",
+            target: row.channel,
+            recipientMemberId: member.member_id,
+          },
+          proposed_payload: { channel: row.channel, user_id: member.slack_user_id },
+          undo_plan: "Leave the channel, or have an admin remove the member from it.",
+        });
+        if (!proposed.ok) {
+          skipped.push({ member_id: member.member_id, reason: proposed.error.message });
+          continue;
+        }
+        const executed = await this.execute(proposed.payload.id, { dry_run: false });
+        if (!executed.ok) {
+          skipped.push({ member_id: member.member_id, reason: executed.error.message });
+          continue;
+        }
+        invited.push(member.member_id);
+      }
+      channels.push({ channel: row.channel, paper_id: row.paper_id, invited });
+    }
+
+    this.recordAudit({
+      type: "project_channels.swept",
+      actor,
+      details: {
+        channels: channels.length,
+        invited: channels.reduce((total, row) => total + row.invited.length, 0),
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { channels, skipped } };
+  }
+
   async syncCityChannels(
     actor: string,
     options: { nowIso?: string } = {},
@@ -8679,6 +8857,9 @@ function isAdminBotReimbursementState(
 //
 // Both sides used to drop exactly one field and drop a *different* one, so the two counts agreed at
 // twelve while the two sets did not, and nothing in either page's arithmetic could show it.
+/** The access-matrix row that puts a collaborator in a project's own channel. */
+const PROJECT_CHANNEL_ACCESS_ITEM = "project_channel";
+
 const MANDATORY_PROFILE_FIELDS = adminBotMemberAnswerableProfileFields;
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {

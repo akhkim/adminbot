@@ -138,6 +138,40 @@ describe("createAdminBotSlackAdminExecutor", () => {
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("conversations.list");
   });
 
+  // name_taken is success. It is what lets the sweep say "there should be a channel called this"
+  // every run without first asking Slack what exists.
+  it("treats an existing project channel as created", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => '{"ok":false,"error":"name_taken"}',
+    });
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl,
+    });
+
+    await expect(
+      executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+    ).resolves.toEqual({ handled: true });
+  });
+
+  // The whole safety story for auto-approving creation: the action cannot open a room that is not
+  // a project channel, however it is called, so a bug upstream cannot reshape the workspace.
+  it("refuses to open anything that is not a proj- channel", async () => {
+    const fetchImpl = vi.fn();
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl,
+    });
+
+    await expect(
+      executor.execute(proposal("slack.create_channel", { name: "lab-secret" })),
+    ).rejects.toThrow(/only proj-<alias> channels/u);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("returns handled:false for unrelated action types", async () => {
     const fetchImpl = vi.fn();
     const executor = createAdminBotSlackAdminExecutor({

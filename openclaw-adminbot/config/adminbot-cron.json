@@ -221,6 +221,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-project-channels",
+      "description": "Open #proj-<alias> for each project and invite its external collaborators",
+      "cron": "30 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-project-channels-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-rec-letter-channel",
       "description": "Keep #help-rec-letter-request in step with open letter requests",
       "cron": "20 10 * * 1-5",

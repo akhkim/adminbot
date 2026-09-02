@@ -57,6 +57,12 @@ export function createAdminBotSlackAdminExecutor(
         await inviteToSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
+      if (proposal.type === "slack.create_channel") {
+        const payload = readCreatePayload(proposal);
+        const token = resolveSlackBotToken(env);
+        await createSlackChannel(token, payload.name, fetchImpl);
+        return { handled: true };
+      }
       if (proposal.type === "slack.remove_from_channel") {
         const payload = readInvitePayload(proposal, "slack.remove_from_channel");
         const token = resolveSlackBotToken(env);
@@ -191,6 +197,61 @@ async function inviteToSlackChannel(
   if (!invite.ok || !invitePayload?.ok) {
     const detail = invitePayload?.error?.trim() || invite.statusText || "unknown error";
     throw new Error(`Slack channel invite failed ${invite.status}: ${detail}`);
+  }
+}
+
+/**
+ * The channel a create proposal may open.
+ *
+ * Only `proj-<alias>`. This is the whole safety story for auto-approving creation: the action
+ * cannot open a `lab-`, `group-` or arbitrarily named room however it is called, so the worst a bug
+ * upstream can do is create a project channel for a project. The shape matches the alias rule in
+ * contracts/actions.ts, which is what generated the name.
+ */
+const PROJECT_CHANNEL_NAME = /^proj-[a-z0-9][a-z0-9-]*$/u;
+
+function readCreatePayload(proposal: AdminBotStoredProposal): { name: string } {
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("slack.create_channel requires an object proposed_payload");
+  }
+  const name = requireString(payload as Record<string, unknown>, "name").replace(/^#/u, "");
+  if (!PROJECT_CHANNEL_NAME.test(name)) {
+    throw new Error(
+      `slack.create_channel refuses ${name}: only proj-<alias> channels may be opened this way`,
+    );
+  }
+  return { name };
+}
+
+/**
+ * Opens one project channel, or accepts that it is already open.
+ *
+ * `name_taken` is success, not failure, and that is what lets this run without first asking Slack
+ * what exists: the sweep says "there should be a channel called this" every time it runs, and Slack
+ * decides whether that means creating one. It is the same idempotence `already_in_channel` gives
+ * the invite, and it is why no channel directory is needed to make project channels work.
+ */
+async function createSlackChannel(
+  token: string,
+  name: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const response = await fetchImpl("https://slack.com/api/conversations.create", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ name, is_private: false }),
+  });
+  const payload = parseSlackJson<SlackRenameResponse>(await response.text());
+  if (payload?.error === "name_taken") {
+    return;
+  }
+  if (!response.ok || !payload?.ok) {
+    const detail = payload?.error?.trim() || response.statusText || "unknown error";
+    throw new Error(`Slack channel create failed ${response.status}: ${detail}`);
   }
 }
 
