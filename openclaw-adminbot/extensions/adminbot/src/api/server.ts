@@ -62,7 +62,7 @@ import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
-import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
@@ -1872,7 +1872,15 @@ async function handleAuthenticatedRoute(
     }
     const body = readRecord(await readJson(req));
     const summary = asString(body.summary);
-    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    const timezone = normalizeCalendarTimezone(asString(body.timezone) || ctx.labCalendar.timezone);
+    if (!timezone) {
+      sendJson(res, 400, {
+        error: {
+          message: "timezone must be an IANA name such as America/Toronto; use Etc/GMT+12 for AoE",
+        },
+      });
+      return;
+    }
     // The draft carries a wall-clock time ("2026-09-01T13:00"), which is not RFC3339 and which
     // Google rejects outright as `400 badRequest`. Resolve it against the calendar's zone first.
     const from = toAbsoluteRfc3339(asString(body.start), timezone);
@@ -1911,7 +1919,15 @@ async function handleAuthenticatedRoute(
     const eventId = decodeURIComponent(calendarEvent[1]);
     const body = readRecord(await readJson(req));
     const summary = asString(body.summary);
-    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    const timezone = normalizeCalendarTimezone(asString(body.timezone) || ctx.labCalendar.timezone);
+    if (!timezone) {
+      sendJson(res, 400, {
+        error: {
+          message: "timezone must be an IANA name such as America/Toronto; use Etc/GMT+12 for AoE",
+        },
+      });
+      return;
+    }
     const from = toAbsoluteRfc3339(asString(body.start), timezone);
     const to = toAbsoluteRfc3339(asString(body.end), timezone);
     if (!summary || !from || !to) {
@@ -1979,7 +1995,17 @@ async function handleAuthenticatedRoute(
       return;
     }
     try {
-      const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+      const requestedTimezone = asString(body.timezone) || ctx.labCalendar.timezone;
+      const timezone = normalizeCalendarTimezone(requestedTimezone);
+      if (!timezone) {
+        sendJson(res, 400, {
+          error: {
+            message:
+              "timezone must be an IANA name such as America/Toronto; use Etc/GMT+12 for AoE",
+          },
+        });
+        return;
+      }
       const now = asString(body.now);
       // An `editing` block turns the same route into "apply this instruction to that event". The
       // caller sends what the event currently says; nothing is read back from Google here, so the

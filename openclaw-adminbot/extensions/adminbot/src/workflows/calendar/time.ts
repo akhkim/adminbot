@@ -15,6 +15,39 @@
 const ZONELESS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/u;
 const HAS_OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/u;
 const MINUTE_MS = 60_000;
+const AOE_TIMEZONE = "Etc/GMT+12";
+
+/**
+ * A time zone at an input boundary, reduced to the IANA name `Intl` accepts.
+ *
+ * AoE is routinely written as prose in conference material and model output. That prose is a
+ * display label, not a time-zone identifier, but it has one unambiguous meaning. Accept the small
+ * set of labels AdminBot itself shows and keep every stored or executed value canonical.
+ */
+export function normalizeCalendarTimezone(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const readable = trimmed
+    .toLocaleLowerCase("en-US")
+    .replace(/[‐‑‒–—−]/gu, "-")
+    .replace(/\s+/gu, " ");
+  if (
+    readable === "aoe" ||
+    readable === "aoe (utc-12)" ||
+    readable === "aoe - anywhere on earth (utc-12)" ||
+    readable === "anywhere on earth (utc-12)" ||
+    readable === "anywhere on earth (aoe, utc-12)"
+  ) {
+    return AOE_TIMEZONE;
+  }
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: trimmed }).resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The offset, in minutes, that `zone` is from UTC at a given instant.
@@ -94,15 +127,24 @@ export function toAbsoluteRfc3339(value: string, zone: string): string | undefin
   if (!match) {
     return undefined;
   }
+  const timezone = normalizeCalendarTimezone(zone);
+  if (!timezone) {
+    return undefined;
+  }
   const [, year, month, day, hour, minute, second] = match;
-  const instant = resolveZonedTime(
-    Number(year),
-    Number(month),
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second ?? "0"),
-    zone,
-  );
+  let instant: number;
+  try {
+    instant = resolveZonedTime(
+      Number(year),
+      Number(month),
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second ?? "0"),
+      timezone,
+    );
+  } catch {
+    return undefined;
+  }
   return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined;
 }

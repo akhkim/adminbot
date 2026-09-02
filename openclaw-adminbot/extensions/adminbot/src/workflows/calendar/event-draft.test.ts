@@ -77,6 +77,34 @@ describe("parseEventDraft", () => {
     expect(result.draft.timezone).toBe("America/Toronto");
   });
 
+  it("does not let a model-invented display label override the trusted operator zone", () => {
+    const result = parseEventDraft(
+      JSON.stringify({
+        summary: "Deadline check-in",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+        timezone: "Anywhere on Earth (AoE, UTC−12)",
+      }),
+      "America/Toronto",
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      draft: { timezone: "America/Toronto" },
+    });
+  });
+
+  it("canonicalizes an operator-provided AoE display label", () => {
+    const result = parseEventDraft(good, "Anywhere on Earth (AoE, UTC−12)");
+    expect(result).toMatchObject({ ok: true, draft: { timezone: "Etc/GMT+12" } });
+  });
+
+  it("refuses an invalid operator timezone before returning a draft", () => {
+    expect(parseEventDraft(good, "Toronto-ish")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("valid IANA"),
+    });
+  });
+
   // Models fence JSON even when told not to.
   it("reads a draft the model wrapped in prose or a code fence", () => {
     expect(parseEventDraft("Sure! ```json\n" + good + "\n```").ok).toBe(true);

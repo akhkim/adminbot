@@ -30,6 +30,15 @@ describe("deadline proposal validation", () => {
     });
   });
 
+  it("stores the human-readable AoE label as its IANA value", () => {
+    expect(
+      validateDeadlineProposal(input({ timezone: "Anywhere on Earth (AoE, UTC−12)" })),
+    ).toMatchObject({
+      ok: true,
+      value: { timezone: "Etc/GMT+12" },
+    });
+  });
+
   it("rejects invalid dates, time zones, and URLs", () => {
     expect(
       validateDeadlineProposal(
