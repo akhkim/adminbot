@@ -1544,6 +1544,118 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("themed meeting invites", () => {
+    const MEETINGS = [{ event_id: "e1", summary: "Theme: Causal Inference" }];
+
+    function labWith(members: Array<Record<string, unknown>>) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const member of members) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            privilege_level: "external_collaborator",
+            ...member,
+          } as never),
+        );
+      }
+      return { service, store };
+    }
+
+    // The channel is the source of truth for who attends: whoever the lab put in the room. That
+    // picks up somebody added by hand, and does not re-invite somebody who left.
+    it("invites the calendar address of whoever is in the meeting channel", async () => {
+      const { service, store } = labWith([
+        {
+          id: "ada",
+          name: "Ada",
+          slack_user_id: "U-ADA",
+          email: "ada@cs.toronto.edu",
+          calendar_email: "ada.personal@gmail.com",
+        },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      // The calendar address, not the institutional one: a Google invite has to reach the account
+      // the person keeps their calendar in.
+      expect(result.invited).toEqual([
+        { event_id: "e1", channel: "meeting-causal-inference", attendees: ["ada.personal@gmail.com"] },
+      ]);
+      const proposal = store.listProposalsByType("calendar.add_attendees")[0];
+      expect(proposal?.proposed_payload).toMatchObject({
+        calendar_id: "cal-1",
+        event_id: "e1",
+        attendees: ["ada.personal@gmail.com"],
+      });
+      // T3 in the policy table: an admin approves before anybody lands on a recurring invite.
+      expect(proposal?.status).not.toBe("executed");
+    });
+
+    it("reports somebody with no calendar address rather than guessing one", async () => {
+      const { service } = labWith([
+        { id: "ada", name: "Ada", slack_user_id: "U-ADA", email: "ada@cs.toronto.edu" },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped[0]?.reason).toContain("calendar_email");
+    });
+
+    // Guests and the bot itself are in channels and are not on the roster. Not an error.
+    it("passes over channel members the roster does not know, and alumni", async () => {
+      const { service } = labWith([
+        {
+          id: "gone",
+          name: "Gone",
+          slack_user_id: "U-GONE",
+          member_type: "alumni",
+          calendar_email: "gone@x.test",
+        },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [
+            { channel: "meeting-causal-inference", slack_user_ids: ["U-GONE", "U-STRANGER"] },
+          ],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("refuses to choose when one channel matches two meetings", async () => {
+      const { service } = labWith([
+        { id: "ada", name: "Ada", slack_user_id: "U-ADA", calendar_email: "ada@x.test" },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: [
+            { event_id: "a", summary: "Theme: Causal Inference" },
+            { event_id: "b", summary: "Theme: Causal Inference (bi-weekly)" },
+          ],
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped[0]?.reason).toContain("matches 2 themed meetings");
+    });
+  });
+
   describe("per-project Slack channels", () => {
     function labWithProject(
       authors: Array<{ id: string; subgroup?: string; slack?: string; member_type?: string }>,

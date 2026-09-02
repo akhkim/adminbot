@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  matchThemedMeetings,
   matchTopicChannels,
   memberTopicVocabulary,
+  themeOfEvent,
   topicOfChannel,
   topicTokens,
 } from "./topic-channels.js";
@@ -137,5 +139,44 @@ describe("matchTopicChannels", () => {
 
   it("matches nobody when the lab knows nothing about what they work on", () => {
     expect(matchTopicChannels({ member: member(), papers: [], channels })).toEqual([]);
+  });
+});
+
+describe("themed meetings", () => {
+  const meetings = [
+    { event_id: "e1", summary: "Theme: Causal Inference and Agents" },
+    { event_id: "e2", summary: "Theme: Mechanism Design" },
+    { event_id: "e3", summary: "Lab meeting" },
+  ];
+
+  it("reads the theme off a Theme: title, and nothing else", () => {
+    expect(themeOfEvent("Theme: Causal Inference")).toBe("Causal Inference");
+    expect(themeOfEvent("theme:  Mechanism Design ")).toBe("Mechanism Design");
+    expect(themeOfEvent("Lab meeting")).toBeNull();
+    expect(themeOfEvent("Theme:")).toBeNull();
+  });
+
+  // The channel's topic must be fully inside the event's theme, not the reverse: a meeting may be
+  // broader than its channel, but a channel must not claim a meeting it only partly matches.
+  it("matches a channel to the meeting whose theme covers its topic", () => {
+    expect(matchThemedMeetings("meeting-causal-inference", meetings)).toEqual([
+      { event_id: "e1", summary: "Theme: Causal Inference and Agents" },
+    ]);
+  });
+
+  it("ignores events that are not themed meetings, and channels that are not meeting channels", () => {
+    expect(matchThemedMeetings("meeting-nothing-here", meetings)).toEqual([]);
+    expect(matchThemedMeetings("discussion-causal-inference", meetings)).toEqual([]);
+    expect(matchThemedMeetings("proj-cais", meetings)).toEqual([]);
+  });
+
+  // Two events answering to one channel is a calendar problem the lab should see, so both come
+  // back and the caller reports rather than picking one.
+  it("returns every match when a channel matches more than one meeting", () => {
+    const duplicated = [
+      { event_id: "a", summary: "Theme: Mechanism Design" },
+      { event_id: "b", summary: "Theme: Mechanism Design (bi-weekly)" },
+    ];
+    expect(matchThemedMeetings("meeting-mechanism-design", duplicated)).toHaveLength(2);
   });
 });

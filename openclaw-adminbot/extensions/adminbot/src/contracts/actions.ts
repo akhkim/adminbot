@@ -1926,6 +1926,7 @@ export type AdminBotAuditEvent = {
     | "rec_letter_channel.swept"
     | "project_channels.swept"
     | "topic_channels.swept"
+    | "themed_meeting_invites.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"

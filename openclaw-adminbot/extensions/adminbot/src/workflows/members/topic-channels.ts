@@ -137,3 +137,52 @@ export function matchTopicChannels(params: {
   }
   return [...new Set(matched)].toSorted((left, right) => left.localeCompare(right));
 }
+
+/** The prefix every themed meeting's title carries. */
+export const ADMINBOT_THEMED_MEETING_PREFIX = "theme:";
+
+/** The theme a Wednesday event's title carries, or null when it is not one of ours. */
+export function themeOfEvent(summary: string): string | null {
+  const title = String(summary ?? "").trim();
+  if (!title.toLowerCase().startsWith(ADMINBOT_THEMED_MEETING_PREFIX)) {
+    return null;
+  }
+  const theme = title.slice(ADMINBOT_THEMED_MEETING_PREFIX.length).trim();
+  return theme || null;
+}
+
+export type AdminBotThemedMeeting = { event_id: string; summary: string };
+
+/**
+ * Which themed meeting a #meeting-xxx channel belongs to.
+ *
+ * The channel's topic has to be fully present in the event's theme, not the reverse: "Theme: Causal
+ * Inference and Agents" is the meeting for #meeting-causal-inference, while a channel about
+ * something broader than its meeting is not. Same asymmetry as the channel matcher, for the same
+ * reason -- the cost of a wrong match is a real person on a recurring invite they did not ask for.
+ *
+ * A channel matching several events returns them all rather than guessing; the caller reports that
+ * rather than picking one, because two events with the same theme is a calendar problem the lab
+ * should see.
+ */
+export function matchThemedMeetings(
+  channelName: string,
+  meetings: readonly AdminBotThemedMeeting[],
+): AdminBotThemedMeeting[] {
+  const parsed = topicOfChannel(channelName);
+  if (!parsed || parsed.prefix !== "meeting") {
+    return [];
+  }
+  const wanted = topicTokens(parsed.topic);
+  if (wanted.length === 0) {
+    return [];
+  }
+  return meetings.filter((meeting) => {
+    const theme = themeOfEvent(meeting.summary);
+    if (!theme) {
+      return false;
+    }
+    const have = new Set(topicTokens(theme));
+    return wanted.every((token) => have.has(token));
+  });
+}

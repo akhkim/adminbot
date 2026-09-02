@@ -3,6 +3,7 @@ import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
+  matchThemedMeetings,
   matchTopicChannels,
   topicOfChannel,
   type AdminBotTopicChannelPrefix,
@@ -8005,6 +8006,115 @@ export class AdminBotService {
       details: {
         channels_offered: known.length,
         invited: invited.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { invited, skipped } };
+  }
+
+  /**
+   * Put the people in each #meeting-xxx channel on that meeting's Wednesday invite.
+   *
+   * A channel sweep rather than a topic match: whoever is actually in the room is who attends, which
+   * is a fact the lab has already curated by adding them. The topic matcher decides who gets *into*
+   * the channel; this follows the channel, so somebody added by hand is picked up too and somebody
+   * who left the channel is not re-invited.
+   *
+   * The address is `calendar_email`, which is the field that exists for exactly this: a Google
+   * invite has to reach the account the person keeps their calendar in, which is routinely not the
+   * address the lab mails them at. Somebody without one is reported, not guessed at -- an invite to
+   * the wrong Google account is silently not seen.
+   *
+   * Attendees are added, never removed. Leaving a recurring meeting is the attendee's own decision
+   * and a sweep that undid it every night would be the lab overruling them once a day.
+   */
+  async syncThemedMeetingInvites(
+    actor: string,
+    params: {
+      meetings: ReadonlyArray<{ event_id: string; summary: string }>;
+      channels: ReadonlyArray<{ channel: string; slack_user_ids: readonly string[] }>;
+      calendarId: string;
+    },
+  ): Promise<
+    AdminBotServiceResponse<{
+      invited: Array<{ event_id: string; channel: string; attendees: string[] }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const bySlack = new Map<string, AdminBotLabMember>();
+    for (const member of this.store.listLabMembers()) {
+      const slack = member.slack_user_id?.trim();
+      if (slack) {
+        bySlack.set(slack, member);
+      }
+    }
+    const invited: Array<{ event_id: string; channel: string; attendees: string[] }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    for (const row of params.channels) {
+      const meetings = matchThemedMeetings(row.channel, params.meetings);
+      if (meetings.length === 0) {
+        continue;
+      }
+      if (meetings.length > 1) {
+        // Two events answering to one channel is a calendar the lab should look at, not something
+        // to resolve by picking the first.
+        skipped.push({
+          member_id: row.channel,
+          reason: `matches ${meetings.length} themed meetings: ${meetings.map((m) => m.summary).join("; ")}`,
+        });
+        continue;
+      }
+      const attendees: string[] = [];
+      for (const slackId of new Set(row.slack_user_ids)) {
+        const member = bySlack.get(slackId.trim());
+        if (!member) {
+          // Somebody in the channel who is not on the roster -- a guest, or the bot itself. Not an
+          // error, and not somebody the lab has an address for.
+          continue;
+        }
+        if (adminBotIsAlumniMember(member)) {
+          continue;
+        }
+        const email = member.calendar_email?.trim();
+        if (!email) {
+          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          continue;
+        }
+        attendees.push(email);
+      }
+      if (attendees.length === 0) {
+        continue;
+      }
+      const meeting = meetings[0] as { event_id: string; summary: string };
+      const proposed = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${attendees.length} from #${row.channel} to ${meeting.summary}`,
+        target: { service: "calendar", channel: "calendar", target: meeting.event_id },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: meeting.event_id,
+          attendees: [...new Set(attendees)].toSorted(),
+        },
+        undo_plan: "Remove the attendees with calendar.remove_attendees.",
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: row.channel, reason: proposed.error.message });
+        continue;
+      }
+      invited.push({
+        event_id: meeting.event_id,
+        channel: row.channel,
+        attendees: [...new Set(attendees)].toSorted(),
+      });
+    }
+
+    this.recordAudit({
+      type: "themed_meeting_invites.swept",
+      actor,
+      details: {
+        meetings: params.meetings.length,
+        proposed: invited.length,
         skipped: skipped.length,
       },
     });

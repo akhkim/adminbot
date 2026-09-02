@@ -3539,6 +3539,47 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, { sent, skipped });
     return;
   }
+  if (req.method === "POST" && url.pathname === "/calendar/themed-meeting-invites/run") {
+    // Same shape as the topic-channel sweep: the caller supplies facts it can see and the service
+    // has no client for -- which Wednesday events exist, and who is in each meeting channel -- and
+    // the service decides who that maps to and what address to use. No attendee is named by the
+    // caller; every one is resolved from the roster.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const meetings = Array.isArray(body.meetings)
+      ? body.meetings.flatMap((entry) => {
+          const row = readRecord(entry);
+          const eventId = asString(row.event_id);
+          const summary = asString(row.summary);
+          return eventId && summary ? [{ event_id: eventId, summary }] : [];
+        })
+      : [];
+    const channels = Array.isArray(body.channels)
+      ? body.channels.flatMap((entry) => {
+          const row = readRecord(entry);
+          const channel = asString(row.channel);
+          const ids = readStringList(row.slack_user_ids);
+          return channel ? [{ channel, slack_user_ids: ids }] : [];
+        })
+      : [];
+    if (meetings.length === 0 || channels.length === 0) {
+      sendJson(res, 400, {
+        error: { message: "meetings and channels must both be non-empty" },
+      });
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.syncThemedMeetingInvites(principalActor(principal), {
+        meetings,
+        channels,
+        calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/topic-channels/run") {
     // The channel list is caller-supplied, unlike every other sweep, and that is the one thing this
     // route takes: the service has no Slack client, and which channels exist is a fact about the
