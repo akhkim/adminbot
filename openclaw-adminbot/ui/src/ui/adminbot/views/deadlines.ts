@@ -23,12 +23,14 @@ import {
   aoeDateTimeLabel,
   aoeInstantMs,
   countdownLabel,
+  daysLeftLabel,
   MS_DAY,
   urgencyOf,
   type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
+import { renderAoeDateTime } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
 
 const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
@@ -478,24 +480,6 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
 
 function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
   return entry.instant <= now ? "passed" : urgencyOf(entry.instant, now);
-}
-
-function urgencyLabel(entry: DeadlineBoardEntry, now: number): string {
-  const diff = entry.instant - now;
-  if (diff <= 0) {
-    return "passed";
-  }
-  const days = Math.floor(diff / MS_DAY);
-  return days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} left`;
-}
-
-function renderAoeDateTime(aoe: string) {
-  const label = aoeDateTimeLabel(aoe);
-  const separator = label.indexOf(" · ");
-  return separator < 0
-    ? html`<span class="deadline-date">${label}</span>`
-    : html`<span class="deadline-date">${label.slice(0, separator)}</span>
-        <span class="deadline-time">${label.slice(separator)}</span>`;
 }
 
 function capitalize(value: string): string {
@@ -1175,7 +1159,7 @@ class AdminbotDeadlinesView extends LitElement {
               >${renderAoeDateTime(entry.venue.deadline_aoe)}</time
             >
             ${this.renderHistory(entry.venue, "hero")} ·
-            <span class="deadline-board__hero-urgency">${urgencyLabel(entry, this.now)}</span>
+            <span class="deadline-board__hero-urgency">${daysLeftLabel(entry.instant, this.now)}</span>
             ${renderClassification(entry.venue)}
           </div>
         </div>
@@ -1474,7 +1458,7 @@ class AdminbotDeadlinesView extends LitElement {
       >
         <div class="deadline-card__topline">
           <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-          <span class="deadline-card__urgency">${urgencyLabel(entry, this.now)}</span>
+          <span class="deadline-card__urgency">${daysLeftLabel(entry.instant, this.now)}</span>
         </div>
         <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
         <p

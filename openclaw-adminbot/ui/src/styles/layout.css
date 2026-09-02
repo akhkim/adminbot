@@ -1377,6 +1377,104 @@
   min-width: 0;
 }
 
+/* The two-row deadline widget. Same vocabulary as the board's rows -- a countdown carrying
+   --deadline-urgency, a mono tabular date, a 600-weight name -- one step down in scale, because
+   this is a glance on the way to the board rather than the board itself. The grid is the board's
+   minus its source column, which has nowhere to go in this width and says nothing at two rows. */
+.dashboard__next-deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard__next-deadlines-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dashboard__next-deadlines-head .card-title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+/* A link, not the full-width button it was: the board is where you go next, not the point. */
+.dashboard__next-deadlines-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+.dashboard__next-deadlines-open:hover {
+  text-decoration: underline;
+}
+
+.dashboard__next-deadlines-list {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  list-style: none;
+}
+
+.dashboard__next-deadline {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.dashboard__next-deadline + .dashboard__next-deadline {
+  border-top: 1px solid var(--border);
+}
+
+.dashboard__next-deadline-countdown {
+  color: var(--deadline-urgency);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dashboard__next-deadline-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Marks the rows that are the reader's own milestones rather than the lab's public dates. */
+.dashboard__next-deadline-tag {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+}
+
+.dashboard__next-deadline-date {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Heads the band that holds the work waiting on you, so it reads as a heading rather than as a
    caption in the type of a code sample. */
 .dashboard__section-title {

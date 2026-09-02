@@ -8,7 +8,20 @@ import { DEADLINE_VENUES, type DeadlineVenue } from "./deadlines.ts";
 
 export const MS_DAY = 86_400_000;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 // AoE (UTC-12): a wall-clock deadline maps to its UTC instant + 12h.
 export function aoeInstantMs(aoe: string): number {
@@ -57,6 +70,21 @@ const pad = (n: number): string => String(n).padStart(2, "0");
 
 // Remaining time as "Nd HH:MM:SS", including 0d on the final day so every board keeps one stable
 // shape as the deadline approaches.
+/**
+ * The same remaining time in words rather than as a clock: "3 days left", "today", "passed".
+ *
+ * Day granularity is what makes it safe on a surface that does not tick. The clock form above goes
+ * visibly stale the moment it stops updating; this one is still right an hour later.
+ */
+export function daysLeftLabel(instant: number, now: number): string {
+  const diff = instant - now;
+  if (diff <= 0) {
+    return "passed";
+  }
+  const days = Math.floor(diff / MS_DAY);
+  return days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} left`;
+}
+
 export function countdownLabel(ms: number): string {
   const left = Math.max(ms, 0);
   const d = Math.floor(left / MS_DAY);
@@ -134,7 +162,9 @@ export function allUpcomingConferences(
   options: { archivalOnly?: boolean } = {},
 ): DeadlineEntry[] {
   return DEADLINE_VENUES.filter(isMajorConference)
-    .filter((venue) => !options.archivalOnly || venue.archival_status === "archival")
+    .filter(
+      (venue) => !options.archivalOnly || venue.archival_status === "archival",
+    )
     .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
@@ -149,7 +179,10 @@ export function allUpcomingConferences(
  * they got.
  */
 export function allUpcomingVenues(now: number): DeadlineEntry[] {
-  return DEADLINE_VENUES.map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+  return DEADLINE_VENUES.map((venue) => ({
+    venue,
+    instant: aoeInstantMs(venue.deadline_aoe),
+  }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
 }

@@ -19,14 +19,21 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   } as unknown as AppViewState;
 }
 
-function renderPage(state: AppViewState, role: AccessRole = "admin"): HTMLElement {
+function renderPage(
+  state: AppViewState,
+  role: AccessRole = "admin",
+): HTMLElement {
   const container = document.createElement("div");
   render(renderDashboard(state, role), container);
   return container;
 }
 
 function attentionIds(container: HTMLElement): string[] {
-  return [...container.querySelectorAll<HTMLElement>('[data-testid^="dashboard-attention-"]')].map(
+  return [
+    ...container.querySelectorAll<HTMLElement>(
+      '[data-testid^="dashboard-attention-"]',
+    ),
+  ].map(
     (node) => node.dataset.testid?.replace("dashboard-attention-", "") ?? "",
   );
 }
@@ -59,7 +66,9 @@ describe("renderDashboard", () => {
         adminBotOnboardingAcknowledged: false,
       } as unknown as Partial<AppViewState>),
     );
-    expect(container.querySelector('[data-testid="dashboard-onboarding-warning"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="dashboard-onboarding-warning"]'),
+    ).toBeNull();
   });
 
   it("counts only pending queue rows", () => {
@@ -131,9 +140,13 @@ describe("renderDashboard", () => {
       } as unknown as Partial<AppViewState>),
       "member",
     );
-    expect(container.querySelector('[data-testid="dashboard-summary-profile"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="dashboard-summary-profile"]'),
+    ).toBeNull();
 
-    const work = container.querySelector('[data-testid="dashboard-summary-myWork"]');
+    const work = container.querySelector(
+      '[data-testid="dashboard-summary-myWork"]',
+    );
     expect(work?.textContent).toContain("1 project or paper");
     // The summary shows the same step name the work page and Active Papers use.
     expect(work?.textContent).toContain("Submission");
@@ -153,7 +166,8 @@ describe("renderDashboard", () => {
       "member",
     );
     expect(
-      container.querySelector('[data-testid="dashboard-summary-myWork"]')?.textContent,
+      container.querySelector('[data-testid="dashboard-summary-myWork"]')
+        ?.textContent,
     ).toContain("Nothing is blocked.");
   });
 
@@ -162,9 +176,13 @@ describe("renderDashboard", () => {
   it("shows a two-row deadline glance rather than the whole board", () => {
     const container = renderPage(createState(), "member");
     expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
-    const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
+    const widget = container.querySelector(
+      '[data-testid="dashboard-next-deadlines"]',
+    );
     expect(widget).not.toBeNull();
-    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
+    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(
+      2,
+    );
     expect(
       container.querySelector('[data-testid="dashboard-next-deadlines-open"]'),
     ).not.toBeNull();
@@ -173,7 +191,9 @@ describe("renderDashboard", () => {
   // The member's own dated milestones are the ones they plan around, so a glance that showed only
   // the public board could say "nothing for weeks" to somebody with a submission on Friday.
   it("merges the member's own milestones into the glance, soonest first", () => {
-    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
     const state = createState({
       memberId: "ada",
       adminBotData: {
@@ -195,6 +215,41 @@ describe("renderDashboard", () => {
     // Tomorrow beats every conference in the bundled snapshot, so it leads.
     expect(rows[0]?.textContent).toContain("Thesis draft");
     expect(rows[0]?.textContent).toContain("yours");
+  });
+
+  // The glance borrows the board's row vocabulary rather than inventing a second one: the urgency
+  // attribute is what resolves the countdown's color, so without it every row reads as plain text
+  // and a deadline tomorrow looks like one in March.
+  it("carries the board's urgency and countdown on each row", () => {
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const container = renderPage(
+      createState({
+        memberId: "ada",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "ada",
+              name: "Ada",
+              milestones: [{ date: soon, label: "Thesis" }],
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    const row = container.querySelector<HTMLElement>(
+      ".dashboard__next-deadline",
+    );
+    expect(row?.dataset.urgency).toBe("critical");
+    expect(
+      row?.querySelector(".dashboard__next-deadline-countdown")?.textContent,
+    ).toMatch(/day|today/u);
+    // The date splits the same way the board splits it, so the time reads as secondary.
+    expect(row?.querySelector(".deadline-date")).not.toBeNull();
+    expect(row?.querySelector(".deadline-time")).not.toBeNull();
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
@@ -230,7 +285,9 @@ describe("renderDashboard", () => {
     const container = renderPage(state, "member");
 
     const chips = [
-      ...container.querySelectorAll<HTMLButtonElement>('[data-testid^="dashboard-blank-"]'),
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid^="dashboard-blank-"]',
+      ),
     ];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.every((chip) => chip.tagName === "BUTTON")).toBe(true);
@@ -252,12 +309,14 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    const card = container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]')!;
+    const card = container.querySelector(
+      '[data-testid="dashboard-attention-mandatoryFields"]',
+    )!;
     const chips = card.querySelectorAll('[data-testid^="dashboard-blank-"]');
     expect(chips.length).toBe(5);
-    expect(card.querySelector(".dashboard-card__step--more")?.textContent?.trim()).toMatch(
-      /^\+\d+ more$/u,
-    );
+    expect(
+      card.querySelector(".dashboard-card__step--more")?.textContent?.trim(),
+    ).toMatch(/^\+\d+ more$/u);
   });
 
   // The URN is filled in by an admin, so chasing the member for it names a field whose control on
@@ -274,7 +333,9 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]'),
+    ).toBeNull();
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {
@@ -332,16 +393,24 @@ describe("notifications on the dashboard", () => {
     // A notification is the lab having decided to say something to this person, which outranks a
     // queue that is merely waiting.
     expect(attentionIds(container)[0]).toBe(`notification-${NOTIFICATION.id}`);
-    expect(container.textContent).toContain("missed the last 2 Monday meetings");
+    expect(container.textContent).toContain(
+      "missed the last 2 Monday meetings",
+    );
   });
 
   it("warns across the top, in the way, about what is still unanswered", () => {
     // The cards below already list every notification. The banner exists for the ones that were
     // already missed on Slack and in that list, so it must not be scrollable past.
-    const container = renderPage(createState({ adminBotNotifications: [NOTIFICATION] } as never));
-    const warning = container.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]');
+    const container = renderPage(
+      createState({ adminBotNotifications: [NOTIFICATION] } as never),
+    );
+    const warning = container.querySelector<HTMLElement>(
+      '[data-testid="dashboard-nudge-warning"]',
+    );
     expect(warning?.dataset.tone).toBe("info");
-    expect(warning?.textContent).toContain("Please join the next Monday meeting");
+    expect(warning?.textContent).toContain(
+      "Please join the next Monday meeting",
+    );
   });
 
   it("says louder that something important is outstanding, and louder still once escalated", () => {
@@ -351,7 +420,9 @@ describe("notifications on the dashboard", () => {
       } as never),
     );
     expect(
-      important.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]')?.dataset.tone,
+      important.querySelector<HTMLElement>(
+        '[data-testid="dashboard-nudge-warning"]',
+      )?.dataset.tone,
     ).toBe("warn");
 
     const escalated = renderPage(
@@ -368,35 +439,48 @@ describe("notifications on the dashboard", () => {
         ],
       } as never),
     );
-    const warning = escalated.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]');
+    const warning = escalated.querySelector<HTMLElement>(
+      '[data-testid="dashboard-nudge-warning"]',
+    );
     expect(warning?.dataset.tone).toBe("danger");
     // Once the professor is in a group DM about something, "you have unread reminders" is no
     // longer the news, so the escalated item is what the banner lists.
     expect(warning?.textContent).toContain("Submission ID missing");
-    expect(warning?.textContent).not.toContain("Please join the next Monday meeting");
+    expect(warning?.textContent).not.toContain(
+      "Please join the next Monday meeting",
+    );
   });
 
   it("does not warn about what has already been acknowledged", () => {
     const container = renderPage(
       createState({
-        adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
+        adminBotNotifications: [
+          { ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" },
+        ],
       } as never),
     );
-    expect(container.querySelector('[data-testid="dashboard-nudge-warning"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="dashboard-nudge-warning"]'),
+    ).toBeNull();
   });
 
   it("acknowledges every unread one at once from the banner", () => {
     const read: unknown[] = [];
     const container = renderPage(
       createState({
-        adminBotNotifications: [NOTIFICATION, { ...NOTIFICATION, id: "notif-2" }],
+        adminBotNotifications: [
+          NOTIFICATION,
+          { ...NOTIFICATION, id: "notif-2" },
+        ],
         markNotificationsRead: async (ids: string[]) => {
           read.push(ids);
         },
       } as never),
     );
     container
-      .querySelector<HTMLButtonElement>('[data-testid="dashboard-nudge-warning-ack"]')
+      .querySelector<HTMLButtonElement>(
+        '[data-testid="dashboard-nudge-warning-ack"]',
+      )
       ?.click();
     expect(read).toEqual([["notif-1", "notif-2"]]);
   });
@@ -405,10 +489,14 @@ describe("notifications on the dashboard", () => {
     // Read is "you have seen this", not "you have done it": the reminder stays until they turn up.
     const container = renderPage(
       createState({
-        adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
+        adminBotNotifications: [
+          { ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" },
+        ],
       } as never),
     );
-    expect(attentionIds(container)).toContain(`notification-${NOTIFICATION.id}`);
+    expect(attentionIds(container)).toContain(
+      `notification-${NOTIFICATION.id}`,
+    );
   });
 
   it("marks it read and opens the tab it names", () => {

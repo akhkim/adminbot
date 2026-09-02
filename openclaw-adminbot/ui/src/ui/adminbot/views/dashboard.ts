@@ -21,10 +21,20 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { nextStepFor } from "../next-step.ts";
-import { aoeDateTimeLabel, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import {
+  daysLeftLabel,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
+import { renderAoeDateTime } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
+import {
+  blankFields,
+  fieldLabel,
+  findOwnMember,
+  focusProfileField,
+} from "./profile.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.
@@ -94,11 +104,13 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
             </li>
           `,
         )}
-        ${hidden > 0
-          ? html`<li class="dashboard-card__step dashboard-card__step--more">
-              ${t("dashboard.more", { count: String(hidden) })}
-            </li>`
-          : nothing}
+        ${
+          hidden > 0
+            ? html`<li class="dashboard-card__step dashboard-card__step--more">
+                ${t("dashboard.more", { count: String(hidden) })}
+              </li>`
+            : nothing
+        }
       </ul>
     `,
   };
@@ -113,7 +125,10 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
  * member has seen it, not that they have done it, and an attendance reminder is worth keeping on
  * screen until they have actually turned up to a meeting.
  */
-function notificationItems(state: AppViewState, role: AccessRole): AttentionItem[] {
+function notificationItems(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem[] {
   if (role === "anonymous") {
     return [];
   }
@@ -133,7 +148,10 @@ function notificationItems(state: AppViewState, role: AccessRole): AttentionItem
   }));
 }
 
-function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
+function proposalsItem(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem | null {
   if (role !== "admin") {
     return null;
   }
@@ -154,7 +172,10 @@ function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | n
   };
 }
 
-function registrationsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
+function registrationsItem(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem | null {
   if (role !== "admin") {
     return null;
   }
@@ -184,7 +205,10 @@ function registrationsItem(state: AppViewState, role: AccessRole): AttentionItem
  * nobody navigates to is not a nudge. This is the alarm — computed from the dependency graph, so
  * it fires the moment a step becomes actionable rather than after a reminder window elapses.
  */
-function nextStepItem(state: AppViewState, role: AccessRole): AttentionItem | null {
+function nextStepItem(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem | null {
   if (role === "anonymous") {
     return null;
   }
@@ -215,11 +239,15 @@ function nextStepItem(state: AppViewState, role: AccessRole): AttentionItem | nu
     title: "Next steps are ready",
     summary,
     actionLabel: role === "admin" ? "Open Active Papers" : "Open my work",
-    onAction: () => state.setTab(role === "admin" ? "adminbotPapers" : "myWork"),
+    onAction: () =>
+      state.setTab(role === "admin" ? "adminbotPapers" : "myWork"),
   };
 }
 
-function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] {
+function attentionItems(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem[] {
   // Own-account work first: a person can always act on their own profile, whereas a queue may be
   // someone else's to clear. Onboarding itself is not in this stack -- it is the checklist at the
   // very bottom of the profile page, see renderOnboardingChecklist.
@@ -236,13 +264,20 @@ function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] 
 
 function renderAttentionCard(item: AttentionItem) {
   return html`
-    <article class="dashboard-card" data-testid=${`dashboard-attention-${item.id}`}>
+    <article
+      class="dashboard-card"
+      data-testid=${`dashboard-attention-${item.id}`}
+    >
       <div class="dashboard-card__body">
         <h3 class="dashboard-card__title">${item.title}</h3>
         <p class="dashboard-card__summary">${item.summary}</p>
         ${item.detail ?? nothing}
       </div>
-      <button type="button" class="btn primary dashboard-card__action" @click=${item.onAction}>
+      <button
+        type="button"
+        class="btn primary dashboard-card__action"
+        @click=${item.onAction}
+      >
         ${item.actionLabel}
       </button>
     </article>
@@ -255,17 +290,25 @@ function renderAttention(state: AppViewState, role: AccessRole) {
     <section class="dashboard__attention" data-testid="dashboard-attention">
       <h2 class="dashboard__section-title">
         ${t("dashboard.attention.title")}
-        ${items.length
-          ? html`<span
-              class="dashboard__count"
-              aria-label=${t("dashboard.attention.countLabel", { count: String(items.length) })}
-              >${items.length}</span
-            >`
-          : nothing}
+        ${
+          items.length
+            ? html`<span
+                class="dashboard__count"
+                aria-label=${t("dashboard.attention.countLabel", { count: String(items.length) })}
+                >${items.length}</span
+              >`
+            : nothing
+        }
       </h2>
-      ${items.length
-        ? html`<div class="dashboard__stack">${items.map(renderAttentionCard)}</div>`
-        : html`<p class="dashboard__empty">${t("dashboard.attention.empty")}</p>`}
+      ${
+        items.length
+          ? html`<div class="dashboard__stack">
+              ${items.map(renderAttentionCard)}
+            </div>`
+          : html`<p class="dashboard__empty">
+              ${t("dashboard.attention.empty")}
+            </p>`
+      }
     </section>
   `;
 }
@@ -283,7 +326,10 @@ function renderSummary(params: {
   open: string;
 }) {
   return html`
-    <article class="dashboard-summary" data-testid=${`dashboard-summary-${params.tab}`}>
+    <article
+      class="dashboard-summary"
+      data-testid=${`dashboard-summary-${params.tab}`}
+    >
       <h3 class="dashboard-summary__title">
         <span class="dashboard-summary__icon" aria-hidden="true">
           ${icons[iconForTab(params.tab)]}
@@ -320,7 +366,9 @@ function renderWorkSummary(state: AppViewState) {
     tab: "myWork",
     title: t("dashboard.workSummary.title"),
     headline: t(
-      items.length === 1 ? "dashboard.workSummary.counts" : "dashboard.workSummary.countsPlural",
+      items.length === 1
+        ? "dashboard.workSummary.counts"
+        : "dashboard.workSummary.countsPlural",
       { count: String(items.length) },
     ),
     detail: blockers
@@ -347,9 +395,14 @@ function renderWorkSummary(state: AppViewState) {
                   aria-valuemax="100"
                   aria-label=${t("dashboard.myWork.progressLabel", { title: paper.title })}
                 >
-                  <span class="dashboard-summary__bar-fill" style=${`width:${percent}%`}></span>
+                  <span
+                    class="dashboard-summary__bar-fill"
+                    style=${`width:${percent}%`}
+                  ></span>
                 </span>
-                <span class="dashboard-summary__row-step">${stepLabel(paper.current_step)}</span>
+                <span class="dashboard-summary__row-step"
+                  >${stepLabel(paper.current_step)}</span
+                >
               </li>
             `;
           })}
@@ -367,7 +420,12 @@ function renderWorkSummary(state: AppViewState) {
 /** How many deadlines the dashboard shows. Two is a glance; the board is one click away. */
 const DASHBOARD_DEADLINE_COUNT = 2;
 
-type NextDeadline = { key: string; label: string; instant: number; mine: boolean };
+type NextDeadline = {
+  key: string;
+  label: string;
+  instant: number;
+  mine: boolean;
+};
 
 /**
  * The next two deadlines, across both lists the member is actually working to.
@@ -383,14 +441,15 @@ type NextDeadline = { key: string; label: string; instant: number; mine: boolean
  */
 function nextDeadlines(state: AppViewState): NextDeadline[] {
   const now = Date.now();
-  const rows: NextDeadline[] = upcomingMajorDeadlines(now, DASHBOARD_DEADLINE_COUNT).map(
-    (entry) => ({
-      key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
-      label: entry.venue.name,
-      instant: entry.instant,
-      mine: false,
-    }),
-  );
+  const rows: NextDeadline[] = upcomingMajorDeadlines(
+    now,
+    DASHBOARD_DEADLINE_COUNT,
+  ).map((entry) => ({
+    key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
+    label: entry.venue.name,
+    instant: entry.instant,
+    mine: false,
+  }));
   const member = findOwnMember(state);
   for (const milestone of member?.milestones ?? []) {
     const date = String(milestone.date ?? "").trim();
@@ -420,7 +479,14 @@ function renderNextDeadlines(state: AppViewState) {
   if (rows.length === 0) {
     return nothing;
   }
-  return html`<section class="dashboard__next-deadlines" data-testid="dashboard-next-deadlines">
+  const now = Date.now();
+  // The board's own row vocabulary, two rows of it: countdown, name, date. The data-urgency
+  // attribute is what resolves the urgency color token, so "3 days left" is the same red here as
+  // it is on the board rather than a second scale that drifts from it.
+  return html`<section
+    class="dashboard__next-deadlines"
+    data-testid="dashboard-next-deadlines"
+  >
     <div class="dashboard__next-deadlines-head">
       <h3 class="card-title">${t("dashboard.nextDeadlines.title")}</h3>
       <button
@@ -432,19 +498,31 @@ function renderNextDeadlines(state: AppViewState) {
         ${t("dashboard.nextDeadlines.open")}
       </button>
     </div>
-    <ul class="dashboard__next-deadlines-list">
+    <ol class="dashboard__next-deadlines-list">
       ${rows.map(
-        (row) => html`<li class="dashboard__next-deadline">
-          <span class="dashboard__next-deadline-name">${row.label}</span>
-          ${row.mine
-            ? html`<span class="dashboard__next-deadline-tag"
-                >${t("dashboard.nextDeadlines.yours")}</span
-              >`
-            : nothing}
-          <span class="muted">${aoeDateTimeLabel(new Date(row.instant).toISOString())}</span>
-        </li>`,
+        (row) =>
+          html`<li
+            class="dashboard__next-deadline"
+            data-urgency=${urgencyOf(row.instant, now)}
+          >
+            <span class="dashboard__next-deadline-countdown"
+              >${daysLeftLabel(row.instant, now)}</span
+            >
+            <span class="dashboard__next-deadline-name">
+              ${row.label}${
+              row.mine
+                ? html`<span class="dashboard__next-deadline-tag"
+                    >${t("dashboard.nextDeadlines.yours")}</span
+                  >`
+                : nothing
+            }
+            </span>
+            <span class="dashboard__next-deadline-date">
+              ${renderAoeDateTime(new Date(row.instant).toISOString())}
+            </span>
+          </li>`,
       )}
-    </ul>
+    </ol>
   </section>`;
 }
 
@@ -477,7 +555,9 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
   const headline = escalated.length
     ? t("dashboard.nudgeWarning.escalated", { count: String(escalated.length) })
     : important.length
-      ? t("dashboard.nudgeWarning.important", { count: String(important.length) })
+      ? t("dashboard.nudgeWarning.important", {
+          count: String(important.length),
+        })
       : t("dashboard.nudgeWarning.unread", { count: String(unread.length) });
   return html`
     <section
@@ -510,7 +590,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
       ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
-          ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
+          ${renderWorkSummary(state)}
+          ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
       ${renderNextDeadlines(state)}
