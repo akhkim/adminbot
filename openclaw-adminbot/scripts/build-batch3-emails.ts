@@ -36,6 +36,19 @@ const HOLD_OPEN = "⸤";
 const HOLD_CLOSE = "⸥";
 
 type Person = {
+  /**
+   * Already mailed, so this draft is history rather than an instruction.
+   *
+   * The alumni and coauthor-major halves of this batch went out on 2026-08-29. Their drafts stay in
+   * the file because the batch is the unit somebody reads, but they are kept out of the list a
+   * sender works from: the one failure here that cannot be undone is a second welcome to somebody
+   * who already had one, and a list that mixes "send this" with "already sent" is how that happens.
+   *
+   * Not read from the audit log, which is the honest caveat. The snapshots on this box stop at
+   * 2026-08-27, three days before the send, so this records what the lab confirmed rather than what
+   * the tooling could prove.
+   */
+  sent_on?: string;
   sheet_row: number;
   name: string;
   first_name: string;
@@ -55,6 +68,7 @@ const PEOPLE: Person[] = [
   {
     sheet_row: 3,
     name: "Yuen Chen",
+    sent_on: "2026-08-29",
     first_name: "Yuen",
     email: "yuenc2@illinois.edu",
     other_addresses: ["yuenc2@cs.toronto.edu"],
@@ -64,6 +78,7 @@ const PEOPLE: Person[] = [
   {
     sheet_row: 11,
     name: "Isabel Dahlgren",
+    sent_on: "2026-08-29",
     first_name: "Isabel",
     email: "isabel.dahlgren@gmail.com",
     other_addresses: ["isabeld@cs.toronto.edu"],
@@ -73,6 +88,7 @@ const PEOPLE: Person[] = [
   {
     sheet_row: 85,
     name: "David Jenny",
+    sent_on: "2026-08-29",
     first_name: "David",
     email: "davjenny@cs.toronto.edu",
     other_addresses: ["davjenny@student.ethz.ch"],
@@ -85,6 +101,7 @@ const PEOPLE: Person[] = [
   {
     sheet_row: 68,
     name: "Yann Billeter",
+    sent_on: "2026-08-29",
     first_name: "Yann",
     email: "ybilleter@ethz.ch",
     other_addresses: ["ybilleter@cs.toronto.edu"],
@@ -95,6 +112,7 @@ const PEOPLE: Person[] = [
   {
     sheet_row: 69,
     name: "Kem Nguyen-Le",
+    sent_on: "2026-08-29",
     first_name: "Kem",
     email: "nlpa@umd.edu",
     template_id: "coauthor_major",
@@ -144,7 +162,7 @@ function templateFor(id: string): AdminBotOnboardingTemplate {
   return template;
 }
 
-const drafts = PEOPLE.map((person) => {
+const draftFor = (person: Person) => {
   const template = templateFor(person.template_id);
   const values: Record<string, string> = {
     first_name: person.first_name,
@@ -189,16 +207,28 @@ const drafts = PEOPLE.map((person) => {
     body: restore(result.guide.body),
     reply_to: REPLY_TO,
   };
-});
+};
+
+const outstanding = PEOPLE.filter((person) => !person.sent_on).map(draftFor);
+const alreadySent = PEOPLE.filter((person) => person.sent_on).map((person) => ({
+  ...draftFor(person),
+  sent_on: person.sent_on,
+}));
 
 const out = {
   generated_at: new Date().toISOString(),
   source:
     "20260807 _ AdminBot Email Templates.pdf, rendered through extensions/adminbot/src/workflows/onboarding/emails.ts",
   roster_source: "interview-emails.json (2026-08-29), test_onboard_3",
-  test_onboard_3: drafts,
+  /** What is still to go out. This is the list a sender should work from. */
+  test_onboard_3: outstanding,
+  /** Kept for the record, and deliberately not in the list above. See `sent_on` on Person. */
+  already_sent: alreadySent,
 };
 
 const target = process.argv[2] ?? "batch3-emails.json";
 writeFileSync(target, `${JSON.stringify(out, null, 2)}\n`);
-console.log(`wrote ${drafts.length} drafts to ${target}`);
+console.log(
+  `wrote ${outstanding.length} outstanding draft(s) to ${target}, ` +
+    `${alreadySent.length} already sent and held back`,
+);
