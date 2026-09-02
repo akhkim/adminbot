@@ -72,7 +72,15 @@ try:
 except json.JSONDecodeError:
     parsed = []
 rows = parsed.get("jobs", parsed) if isinstance(parsed, dict) else parsed
-known = {row.get("name") for row in rows if isinstance(row, dict)}
+# Name -> id. `cron edit` selects by id positionally, not by name: passing --name to it *renames*
+# the job, and without an id it refused every edit with "Missing required argument id". The store is
+# the only place the id exists, which is why the listing is read for more than a membership test.
+ids = {
+    row.get("name"): row.get("id")
+    for row in rows
+    if isinstance(row, dict) and row.get("name") and row.get("id")
+}
+known = set(ids)
 
 for job in manifest["jobs"]:
     name = job["name"]
@@ -82,9 +90,12 @@ for job in manifest["jobs"]:
     argv = [part.replace("scripts/", f"{repo_root}/scripts/", 1) if part.startswith("scripts/") else part
             for part in job["argv"]]
     verb = "edit" if name in known else "add"
-    args = [verb, "--name", name]
-    if verb == "add":
-        args += ["--description", job["description"]]
+    if verb == "edit":
+        # The id first, as the positional the command wants. `--name` is not repeated: it is what
+        # matched this job in the first place, and on edit it would only ever rename it to itself.
+        args = ["edit", ids[name]]
+    else:
+        args = ["add", "--name", name, "--description", job["description"]]
     args += [
         "--cron", job["cron"],
         "--command-argv", json.dumps(argv),
