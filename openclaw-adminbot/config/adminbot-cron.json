@@ -221,6 +221,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-topic-channels",
+      "description": "Invite collaborators into the #discussion-xxx and #meeting-xxx channels their work matches",
+      "cron": "40 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-topic-channels-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-project-channels",
       "description": "Open #proj-<alias> for each project and invite its external collaborators",
       "cron": "30 10 * * 1-5",

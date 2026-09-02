@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
+import {
+  matchTopicChannels,
+  topicOfChannel,
+  type AdminBotTopicChannelPrefix,
+} from "../workflows/members/topic-channels.js";
 import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
@@ -7873,6 +7879,136 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { channels, skipped } };
+  }
+
+  /**
+   * Who belongs in which topic channel, given the channels Slack actually has.
+   *
+   * The channel list is passed in rather than read here: the service has no Slack client, and the
+   * lab decides its topics by opening channels, so the list is a fact to be supplied rather than a
+   * decision to be made. Who matches is still computed here, from the member's stated interests and
+   * the projects they are on -- see matchTopicChannels for why the rule is a conservative one.
+   */
+  topicChannelRoster(channels: readonly string[]): Array<{
+    member_id: string;
+    member_name: string;
+    slack_user_id: string;
+    channels: string[];
+  }> {
+    const owedBy = new Map<AdminBotExternalCollaboratorSubgroup, Set<string>>();
+    for (const subgroup of adminBotExternalCollaboratorSubgroups) {
+      const granted = new Set(
+        collaboratorSubgroupAccess(subgroup)
+          .map((grant) => grant.item)
+          .filter((item) => item === "discussion_channel" || item === "weekly_meeting"),
+      );
+      owedBy.set(subgroup, granted);
+    }
+    const papers = this.store.listPapers();
+    const rows: Array<{
+      member_id: string;
+      member_name: string;
+      slack_user_id: string;
+      channels: string[];
+    }> = [];
+    for (const member of this.store.listLabMembers()) {
+      if (adminBotIsAlumniMember(member)) {
+        continue;
+      }
+      const slack = member.slack_user_id?.trim();
+      if (!slack) {
+        continue;
+      }
+      const granted = member.collaborator_subgroup
+        ? (owedBy.get(member.collaborator_subgroup) ?? new Set<string>())
+        : new Set<string>();
+      const prefixes: AdminBotTopicChannelPrefix[] = [];
+      if (granted.has("discussion_channel")) {
+        prefixes.push("discussion");
+      }
+      // The weekly-meeting row also carries the Wednesday calendar invite. Only its Slack half is
+      // acted on here; the calendar half is a separate connector path and is not wired yet.
+      if (granted.has("weekly_meeting")) {
+        prefixes.push("meeting");
+      }
+      if (prefixes.length === 0) {
+        continue;
+      }
+      const matched = prefixes.flatMap((prefix) =>
+        matchTopicChannels({ member, papers, channels, prefix }),
+      );
+      if (matched.length === 0) {
+        continue;
+      }
+      rows.push({
+        member_id: member.id,
+        member_name: member.name,
+        slack_user_id: slack,
+        channels: [...new Set(matched)].toSorted((left, right) => left.localeCompare(right)),
+      });
+    }
+    return rows.toSorted((left, right) => left.member_name.localeCompare(right.member_name));
+  }
+
+  /**
+   * Invite each collaborator into the topic channels they match.
+   *
+   * Idempotent through Slack rather than through a ledger: already_in_channel is success, so a
+   * member who is already there costs one API call and changes nothing. That is what makes it safe
+   * to run daily against a matcher whose answer can change when somebody edits their interests.
+   */
+  async syncTopicChannels(
+    actor: string,
+    channels: readonly string[],
+  ): Promise<
+    AdminBotServiceResponse<{
+      invited: Array<{ member_id: string; channel: string }>;
+      skipped: AdminBotMemberNudgeSkip[];
+    }>
+  > {
+    const known = channels
+      .map((channel) => channel.trim().replace(/^#/u, "").toLowerCase())
+      .filter((channel) => topicOfChannel(channel));
+    const invited: Array<{ member_id: string; channel: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+
+    for (const row of this.topicChannelRoster(known)) {
+      for (const channel of row.channels) {
+        const proposed = this.createProposal({
+          type: "slack.invite_to_channel",
+          summary: `Add ${row.member_name} to #${channel} (topic match)`,
+          target: {
+            service: "slack",
+            channel: "slack",
+            target: channel,
+            recipientMemberId: row.member_id,
+          },
+          proposed_payload: { channel, user_id: row.slack_user_id },
+          undo_plan: "Leave the channel, or have an admin remove the member from it.",
+        });
+        if (!proposed.ok) {
+          skipped.push({ member_id: row.member_id, reason: proposed.error.message });
+          continue;
+        }
+        const executed = await this.execute(proposed.payload.id, { dry_run: false });
+        if (!executed.ok) {
+          skipped.push({ member_id: row.member_id, reason: executed.error.message });
+          continue;
+        }
+        invited.push({ member_id: row.member_id, channel });
+      }
+    }
+
+    this.recordAudit({
+      type: "topic_channels.swept",
+      actor,
+      details: {
+        channels_offered: known.length,
+        invited: invited.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { invited, skipped } };
   }
 
   async syncCityChannels(

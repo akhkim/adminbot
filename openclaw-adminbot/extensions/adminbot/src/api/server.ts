@@ -3539,6 +3539,28 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, { sent, skipped });
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/topic-channels/run") {
+    // The channel list is caller-supplied, unlike every other sweep, and that is the one thing this
+    // route takes: the service has no Slack client, and which channels exist is a fact about the
+    // workspace rather than a decision. Who matches which of them is still computed here, from the
+    // roster and the papers -- the caller cannot name a person or choose a pairing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const channels = Array.isArray(body.channels)
+      ? body.channels.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    if (channels.length === 0) {
+      sendJson(res, 400, { error: { message: "channels must not be empty" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.syncTopicChannels(principalActor(principal), channels),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/papers/project-channels/run") {
     // Channels and members are computed from the papers' own aliases and the access matrix, so
     // nothing here is caller-supplied: requirePrivileged like the other cron-triggered sweeps.

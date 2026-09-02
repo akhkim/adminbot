@@ -1438,6 +1438,112 @@ describe("AdminBotService", () => {
     expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
   });
 
+  describe("topic channels", () => {
+    const CHANNELS = [
+      "discussion-causal-inference",
+      "discussion-mechanism-design",
+      "meeting-causal-inference",
+    ];
+
+    function labWith(members: Array<Record<string, unknown>>) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const member of members) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            privilege_level: "external_collaborator",
+            slack_user_id: `U-${member.id}`,
+            ...member,
+          } as never),
+        );
+      }
+      return { service, store };
+    }
+
+    // The matrix gives discussion channels to four subgroups and the weekly meeting to
+    // coauthor-major alone, so the same person matches different families by subgroup.
+    it("offers discussion channels widely and the meeting channel only to coauthor-major", () => {
+      const { service } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+        {
+          id: "minor",
+          name: "Minor",
+          collaborator_subgroup: "coauthor_minor",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const roster = service.topicChannelRoster(CHANNELS);
+      expect(roster.find((r) => r.member_id === "major")?.channels).toEqual([
+        "discussion-causal-inference",
+        "meeting-causal-inference",
+      ]);
+      // No meeting channel: the matrix does not give coauthor-minor the weekly meeting.
+      expect(roster.find((r) => r.member_id === "minor")?.channels).toEqual([
+        "discussion-causal-inference",
+      ]);
+    });
+
+    it("leaves out subgroups the matrix does not name, and alumni", () => {
+      const { service } = labWith([
+        {
+          id: "prof",
+          name: "Prof",
+          collaborator_subgroup: "external_prof",
+          research_topics: ["causal inference"],
+        },
+        {
+          id: "gone",
+          name: "Gone",
+          collaborator_subgroup: "coauthor_major",
+          member_type: "alumni",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      expect(service.topicChannelRoster(CHANNELS)).toEqual([]);
+    });
+
+    it("invites into each matched channel", async () => {
+      const { service, store } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const result = unwrap(await service.syncTopicChannels("cron", CHANNELS));
+      expect(result.invited).toEqual([
+        { member_id: "major", channel: "discussion-causal-inference" },
+        { member_id: "major", channel: "meeting-causal-inference" },
+      ]);
+      expect(store.listProposalsByType("slack.invite_to_channel")).toHaveLength(2);
+    });
+
+    // A caller could pass anything; only our two families are acted on.
+    it("ignores channels outside the topic families", async () => {
+      const { service } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const result = unwrap(
+        await service.syncTopicChannels("cron", ["proj-cais", "jinesis-active", "random-active"]),
+      );
+      expect(result.invited).toEqual([]);
+    });
+  });
+
   describe("per-project Slack channels", () => {
     function labWithProject(
       authors: Array<{ id: string; subgroup?: string; slack?: string; member_type?: string }>,
