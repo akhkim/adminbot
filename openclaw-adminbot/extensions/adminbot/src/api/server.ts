@@ -33,6 +33,10 @@ import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
+import {
+  isAdminBotOpportunityCategory,
+  type AdminBotOpportunityInput,
+} from "../contracts/opportunities.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
@@ -364,6 +368,10 @@ const ANONYMOUS_ROUTES = new Set([
   // and the only one that writes.
   "GET /venue-papers/sources",
   "POST /venue-papers/search",
+  // The Opportunities board, which the Control UI shows to visitors alongside Deadlines. Only
+  // approved entries reach an anonymous caller; the handler resolves that from the principal, so
+  // being on this list buys the read and nothing else. Every write below needs a member session.
+  "GET /opportunities",
 ]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
@@ -1158,6 +1166,27 @@ function approverIdentityFor(
   return {
     approver_role: principal.member.privilege_level,
     approver_id: principal.member.id,
+  };
+}
+
+/**
+ * Reads a submission off the wire, without deciding whether it is any good.
+ *
+ * Shape only: `validateAdminBotOpportunity` in the contract owns the rules, and both the member and
+ * the admin route reach it through the service, so there is one place where "what counts as a valid
+ * opportunity" is answered.
+ */
+function readOpportunity(body: Record<string, unknown>): Partial<AdminBotOpportunityInput> {
+  const category = body.category;
+  return {
+    name: asString(body.name),
+    ...(isAdminBotOpportunityCategory(category) ? { category } : {}),
+    deadline_aoe: asString(body.deadline_aoe),
+    org: asString(body.org),
+    link: asString(body.link),
+    eligibility: asString(body.eligibility),
+    note: asString(body.note),
+    application_window: asString(body.application_window),
   };
 }
 
@@ -2214,6 +2243,90 @@ async function handleAuthenticatedRoute(
       service.removeBadge(
         decodeURIComponent(removeBadge[1]!),
         decodeURIComponent(removeBadge[2]!),
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/opportunities") {
+    // Anonymous is a real case here, not a fallback: this tab renders for signed-out visitors.
+    sendServiceResult(
+      res,
+      service.listOpportunities(
+        principal.kind === "member"
+          ? {
+              memberId: principal.member.id,
+              isAdmin: principal.member.privilege_level === "admin",
+            }
+          : {},
+      ),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/opportunities") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(res, service.submitOpportunity(principal.member.id, readOpportunity(body)));
+    return;
+  }
+  const opportunityEntry = /^\/opportunities\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && opportunityEntry) {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.updateOpportunity(decodeURIComponent(opportunityEntry[1]!), readOpportunity(body), {
+        memberId: principal.member.id,
+        isAdmin: principal.member.privilege_level === "admin",
+      }),
+    );
+    return;
+  }
+  if (req.method === "DELETE" && opportunityEntry) {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.deleteOpportunity(decodeURIComponent(opportunityEntry[1]!), {
+        memberId: principal.member.id,
+        isAdmin: principal.member.privilege_level === "admin",
+      }),
+    );
+    return;
+  }
+  const approveOpportunity = /^\/opportunities\/([^/]+)\/approve$/u.exec(url.pathname);
+  if (req.method === "POST" && approveOpportunity) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideOpportunity(
+        decodeURIComponent(approveOpportunity[1]!),
+        "approved",
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  const rejectOpportunity = /^\/opportunities\/([^/]+)\/reject$/u.exec(url.pathname);
+  if (req.method === "POST" && rejectOpportunity) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideOpportunity(
+        decodeURIComponent(rejectOpportunity[1]!),
+        "rejected",
         principal.member.id,
       ),
     );

@@ -564,6 +564,15 @@ export type AdminBotPaperTimeline = {
 export type AdminBotPaperRecord = {
   id: string;
   title: string;
+  /**
+   * The short, stable handle for the paper, when it has one.
+   *
+   * The service has sent this all along (`alias` on the record contract); the mirror here simply
+   * never named it. It is what a compact surface should show -- a title runs to a line and a half
+   * and changes as the paper is rewritten, while the alias is picked once and names the Slack
+   * channel too.
+   */
+  alias?: string;
   /** In the order the paper prints them. Order decides who the PaperFlow stage nudges go to. */
   authors: string[];
   /** People asked to read the draft. Not authors, and not the social consent list. */
@@ -1215,8 +1224,7 @@ export async function runAdminBotChannelNamingJob(host: AdminBotHost): Promise<v
     if (!result.ok) {
       host.adminBotChannelNamingJob = {
         status: "error",
-        detail:
-          result.message?.trim() || cvErrorText(result.kind, "run the channel naming sweep"),
+        detail: result.message?.trim() || cvErrorText(result.kind, "run the channel naming sweep"),
         finishedAtMs: Date.now(),
       };
       return;
@@ -1994,7 +2002,12 @@ export async function loadSlackChannelNames(host: AdminBotHost): Promise<void> {
     };
     return;
   }
-  host.myWorkChannelCheck = { ...host.myWorkChannelCheck, enabled: true, loading: true, error: null };
+  host.myWorkChannelCheck = {
+    ...host.myWorkChannelCheck,
+    enabled: true,
+    loading: true,
+    error: null,
+  };
   const result = await fetchSlackChannelNames(
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),

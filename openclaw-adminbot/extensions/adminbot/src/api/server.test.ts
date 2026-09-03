@@ -2543,6 +2543,134 @@ describe("the calendar routes", () => {
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   }
 
+  // The board is a public tab, so "who may see what" is the whole point of these.
+  it("shows an anonymous visitor approved opportunities and nothing else", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+    const admin = await adminSession(baseUrl);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Pending program", category: "phd" }),
+    });
+    expect(submitted.status).toBe(201);
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    // Nothing is approved yet, so the public read is empty even though a row exists.
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [],
+    });
+
+    // The submitter still sees their own pending entry, so the tab does not look like it ate it.
+    await expect(
+      (await fetch(`${baseUrl}/opportunities`, { headers: member })).json(),
+    ).resolves.toMatchObject({ opportunities: [{ id: opportunity.id, status: "pending" }] });
+
+    expect(
+      (
+        await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+          method: "POST",
+          headers: admin,
+        })
+      ).status,
+    ).toBe(200);
+
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
+    });
+  });
+
+  it("refuses an anonymous write and a non-admin decision", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+
+    const anonymous = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Drive-by", category: "phd" }),
+    });
+    expect(anonymous.status).toBe(401);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Mine", category: "phd" }),
+    });
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    // A member cannot wave their own suggestion onto the public board.
+    const selfApprove = await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+      method: "POST",
+      headers: member,
+    });
+    expect(selfApprove.status).toBe(403);
+  });
+
+  it("lets a member edit and withdraw their own entry only while it is pending", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+    const admin = await adminSession(baseUrl);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Typo", category: "phd" }),
+    });
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    const edited = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "PUT",
+      headers: member,
+      body: JSON.stringify({ name: "Fixed", category: "internship" }),
+    });
+    expect(edited.status).toBe(200);
+    await expect(edited.json()).resolves.toMatchObject({
+      opportunity: { name: "Fixed", category: "internship" },
+    });
+
+    await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+      method: "POST",
+      headers: admin,
+    });
+
+    // Once it is on the board, changing the text under the decision is the lab's call.
+    const afterDecision = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "PUT",
+      headers: member,
+      body: JSON.stringify({ name: "Sneaky rewrite", category: "phd" }),
+    });
+    expect(afterDecision.status).toBe(409);
+
+    const removed = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "DELETE",
+      headers: admin,
+    });
+    expect(removed.status).toBe(200);
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [],
+    });
+  });
+
+  it("rejects a submission the contract will not accept", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+
+    for (const body of [
+      { name: "", category: "phd" },
+      { name: "No category", category: "not_a_category" },
+      { name: "Bad date", category: "phd", deadline_aoe: "2026-13-45 00:00:00" },
+      { name: "Bad link", category: "phd", link: "javascript:alert(1)" },
+    ]) {
+      const response = await fetch(`${baseUrl}/opportunities`, {
+        method: "POST",
+        headers: member,
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
   it("names the calendar it read alongside the events", async () => {
     const { baseUrl } = await startService({
       calendarEventsReader: async () => [

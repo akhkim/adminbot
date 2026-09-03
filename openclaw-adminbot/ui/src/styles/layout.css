@@ -3577,6 +3577,49 @@
   color: var(--danger-muted, var(--muted));
 }
 
+.profile__project-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.profile__project-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border);
+  background: var(--bg-muted, var(--bg));
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.profile__project-chip:hover {
+  background: var(--bg-accent, var(--bg-elevated));
+  border-color: var(--accent, var(--primary));
+}
+
+.profile__project-chip:focus-visible {
+  outline: 2px solid var(--accent, var(--primary));
+  outline-offset: 1px;
+}
+
+.profile__project-overflow {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+
+.profile__project-empty {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-style: italic;
+}
+
 .profile__toast {
   position: fixed;
   right: var(--space-5);

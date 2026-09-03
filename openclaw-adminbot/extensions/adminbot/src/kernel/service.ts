@@ -145,6 +145,13 @@ import {
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
 import {
+  validateAdminBotOpportunity,
+  type AdminBotOpportunity,
+  type AdminBotOpportunityInput,
+  type AdminBotOpportunityStatus,
+  type AdminBotOpportunityView,
+} from "../contracts/opportunities.js";
+import {
   adminBotAttendanceStates,
   adminBotAttendeeKey,
   adminBotNudgeDomains,
@@ -349,6 +356,13 @@ export type AdminBotServiceStore = {
   getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined;
   listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[];
   deleteBadgeAssignment(memberId: string, badgeId: string): boolean;
+  saveOpportunity(opportunity: AdminBotOpportunity): void;
+  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined;
+  listOpportunities(params?: {
+    memberId?: string;
+    status?: AdminBotOpportunityStatus;
+  }): AdminBotOpportunity[];
+  deleteOpportunity(opportunityId: string): boolean;
   saveBadgeNomination(nomination: AdminBotBadgeNomination): void;
   getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
   listBadgeNominations(params?: {
@@ -2266,6 +2280,164 @@ export class AdminBotService {
       return serviceError(500, "badge nomination could not be read back");
     }
     return { ok: true, status: 200, payload: { nomination: view } };
+  }
+
+  /**
+   * The board's member-contributed half.
+   *
+   * `approved` is what everybody sees, including a signed-out visitor -- the Opportunities tab is
+   * public. A member additionally sees their own submissions whatever state they are in, so a
+   * pending entry does not read as the tab having swallowed it. Nobody but an admin ever sees
+   * somebody else's pending or rejected row.
+   */
+  listOpportunities(viewer?: {
+    memberId?: string;
+    isAdmin?: boolean;
+  }): AdminBotServiceResponse<{ opportunities: AdminBotOpportunityView[] }> {
+    const all = this.store.listOpportunities();
+    const visible = all.filter((opportunity) => {
+      if (opportunity.status === "approved" || viewer?.isAdmin) {
+        return true;
+      }
+      return Boolean(viewer?.memberId && opportunity.submitted_by_member_id === viewer.memberId);
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { opportunities: visible.map((entry) => this.opportunityView(entry)) },
+    };
+  }
+
+  private opportunityView(opportunity: AdminBotOpportunity): AdminBotOpportunityView {
+    const name = opportunity.submitted_by_member_id
+      ? this.store.getLabMember(opportunity.submitted_by_member_id)?.name
+      : undefined;
+    return { ...opportunity, ...(name ? { submitted_by_name: name } : {}) };
+  }
+
+  submitOpportunity(
+    memberId: string,
+    input: Partial<AdminBotOpportunityInput>,
+  ): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const validated = validateAdminBotOpportunity(input);
+    if (!validated.ok) {
+      return serviceError(400, validated.error);
+    }
+    const now = new Date().toISOString();
+    const opportunity: AdminBotOpportunity = {
+      id: `opp_${randomUUID()}`,
+      ...validated.value,
+      deadline_aoe: validated.value.deadline_aoe ?? "",
+      status: "pending",
+      submitted_by_member_id: memberId,
+      created_at: now,
+      updated_at: now,
+    };
+    this.store.saveOpportunity(opportunity);
+    this.recordAudit({
+      type: "opportunity.submitted",
+      actor: memberId,
+      details: { opportunity_id: opportunity.id, name: opportunity.name },
+    });
+    return { ok: true, status: 201, payload: { opportunity: this.opportunityView(opportunity) } };
+  }
+
+  /**
+   * Edits an entry in place.
+   *
+   * A member may only touch their own, and only while it is still pending: once an admin has put it
+   * on the board, changing the text underneath that decision would make the review meaningless. An
+   * admin may edit any entry at any time, which is the path for fixing a typo in something already
+   * published.
+   */
+  updateOpportunity(
+    opportunityId: string,
+    input: Partial<AdminBotOpportunityInput>,
+    actor: { memberId: string; isAdmin?: boolean },
+  ): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView }> {
+    const existing = this.store.getOpportunity(opportunityId);
+    if (!existing) {
+      return serviceError(404, "opportunity not found");
+    }
+    const owns = existing.submitted_by_member_id === actor.memberId;
+    if (!actor.isAdmin && !owns) {
+      return serviceError(403, "not your opportunity");
+    }
+    if (!actor.isAdmin && existing.status !== "pending") {
+      return serviceError(409, "a reviewed opportunity can only be changed by an admin");
+    }
+    const validated = validateAdminBotOpportunity(input);
+    if (!validated.ok) {
+      return serviceError(400, validated.error);
+    }
+    const updated: AdminBotOpportunity = {
+      ...existing,
+      ...validated.value,
+      deadline_aoe: validated.value.deadline_aoe ?? "",
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveOpportunity(updated);
+    this.recordAudit({
+      type: "opportunity.updated",
+      actor: actor.memberId,
+      details: { opportunity_id: updated.id },
+    });
+    return { ok: true, status: 200, payload: { opportunity: this.opportunityView(updated) } };
+  }
+
+  decideOpportunity(
+    opportunityId: string,
+    decision: Extract<AdminBotOpportunityStatus, "approved" | "rejected">,
+    actor: string,
+  ): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView }> {
+    const existing = this.store.getOpportunity(opportunityId);
+    if (!existing) {
+      return serviceError(404, "opportunity not found");
+    }
+    const decided: AdminBotOpportunity = {
+      ...existing,
+      status: decision,
+      decided_at: new Date().toISOString(),
+      decided_by: actor,
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveOpportunity(decided);
+    this.recordAudit({
+      type: decision === "approved" ? "opportunity.approved" : "opportunity.rejected",
+      actor,
+      details: { opportunity_id: decided.id, member_id: decided.submitted_by_member_id },
+    });
+    return { ok: true, status: 200, payload: { opportunity: this.opportunityView(decided) } };
+  }
+
+  deleteOpportunity(
+    opportunityId: string,
+    actor: { memberId: string; isAdmin?: boolean },
+  ): AdminBotServiceResponse<{ deleted: true }> {
+    const existing = this.store.getOpportunity(opportunityId);
+    if (!existing) {
+      return serviceError(404, "opportunity not found");
+    }
+    const owns = existing.submitted_by_member_id === actor.memberId;
+    if (!actor.isAdmin && !owns) {
+      return serviceError(403, "not your opportunity");
+    }
+    // Same reasoning as the edit: withdrawing your own suggestion is yours to do until it is on the
+    // board, after which taking it down is the lab's call.
+    if (!actor.isAdmin && existing.status !== "pending") {
+      return serviceError(409, "a reviewed opportunity can only be removed by an admin");
+    }
+    this.store.deleteOpportunity(opportunityId);
+    this.recordAudit({
+      type: "opportunity.deleted",
+      actor: actor.memberId,
+      details: { opportunity_id: opportunityId },
+    });
+    return { ok: true, status: 200, payload: { deleted: true } };
   }
 
   decideBadgeNomination(

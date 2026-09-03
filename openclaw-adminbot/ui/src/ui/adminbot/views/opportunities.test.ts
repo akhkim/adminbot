@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Opportunity } from "../data/opportunities-data.ts";
+import type { AdminBotOpportunityView, Opportunity } from "../data/opportunities-data.ts";
 import { categoryCount, opportunityRows, renderOpportunities } from "./opportunities.ts";
 
 beforeEach(() => {
@@ -19,9 +19,16 @@ async function renderView(): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderOpportunities(), container);
-  await (
-    container.querySelector("adminbot-opportunities-view") as { updateComplete?: Promise<unknown> }
-  )?.updateComplete;
+  const element = container.querySelector("adminbot-opportunities-view") as {
+    updateComplete?: Promise<unknown>;
+  } | null;
+  await element?.updateComplete;
+  // The contributed half is fetched in connectedCallback, so the first paint predates it. Fake
+  // timers are in force, so drain microtasks by hand rather than waiting on a clock that is frozen.
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+  }
+  await element?.updateComplete;
   return container;
 }
 
@@ -111,5 +118,89 @@ describe("renderOpportunities", () => {
     expect(phdTab.getAttribute("aria-selected")).toBe("true");
     // No PhD entries are seeded yet, so the empty state is what should show.
     expect(container.textContent ?? "").toContain("Nothing listed here yet.");
+  });
+});
+
+// The board is a public tab, so who gets a control matters as much as what the control does. The
+// service re-checks all of it; these cover the half a visitor can see.
+describe("who may contribute", () => {
+  const SESSION_KEY = "openclaw.adminbot.session.v1";
+
+  afterEach(() => {
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  function signIn(): void {
+    window.localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ sessionToken: "tok", expiresAt: "2099-01-01T00:00:00.000Z" }),
+    );
+  }
+
+  function serveContributed(entries: AdminBotOpportunityView[]): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ opportunities: entries }), { status: 200 })),
+    );
+  }
+
+  const contributed = (
+    overrides: Partial<AdminBotOpportunityView> = {},
+  ): AdminBotOpportunityView => ({
+    id: "opp_1",
+    name: "Member Find",
+    category: "internship",
+    deadline_aoe: "",
+    status: "approved",
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  });
+
+  it("gives a signed-out visitor no add, edit or delete control", async () => {
+    serveContributed([contributed()]);
+    const container = await renderView();
+
+    expect(container.textContent ?? "").toContain("Member Find");
+    expect(container.querySelector(".opp-fab")).toBeNull();
+    expect(container.querySelector(".opp-actions")).toBeNull();
+  });
+
+  it("gives a signed-in member the add control and row actions", async () => {
+    signIn();
+    serveContributed([contributed()]);
+    const container = await renderView();
+
+    expect(container.querySelector(".opp-fab")).not.toBeNull();
+    expect(container.querySelector(".opp-actions")).not.toBeNull();
+  });
+
+  it("marks an entry still waiting on review, and never a bundled one", async () => {
+    signIn();
+    serveContributed([contributed({ status: "pending" })]);
+    const container = await renderView();
+
+    expect(container.querySelector(".opp-pending-tag")).not.toBeNull();
+    // The bundled snapshot has no review state and must not grow one.
+    const bundledRows = [...container.querySelectorAll(".opp-row")].filter(
+      (row) => !row.textContent?.includes("Member Find"),
+    );
+    for (const row of bundledRows) {
+      expect(row.querySelector(".opp-member-tag")).toBeNull();
+      expect(row.querySelector(".opp-actions")).toBeNull();
+    }
+  });
+
+  it("still shows the bundled half when the service cannot be reached", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const container = await renderView();
+
+    expect(container.querySelectorAll(".opp-row").length).toBeGreaterThan(0);
   });
 });

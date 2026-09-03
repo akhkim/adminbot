@@ -35,6 +35,7 @@ import type {
 } from "../contracts/badges.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -279,6 +280,23 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_badge_nominations(member_id, status, created_at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_status_idx
         ON adminbot_badge_nominations(status, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_opportunities (
+        id TEXT PRIMARY KEY,
+        submitted_by_member_id TEXT,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_opportunities_status_idx
+        ON adminbot_opportunities(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_opportunities_member_idx
+        ON adminbot_opportunities(submitted_by_member_id, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_papers (
         id TEXT PRIMARY KEY,
@@ -1197,6 +1215,83 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  saveOpportunity(opportunity: AdminBotOpportunity): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_opportunities (
+          id,
+          submitted_by_member_id,
+          category,
+          status,
+          created_at,
+          updated_at,
+          decided_at,
+          decided_by,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          submitted_by_member_id = excluded.submitted_by_member_id,
+          category = excluded.category,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        opportunity.id,
+        opportunity.submitted_by_member_id ?? null,
+        opportunity.category,
+        opportunity.status,
+        opportunity.created_at,
+        opportunity.updated_at,
+        opportunity.decided_at ?? null,
+        opportunity.decided_by ?? null,
+        JSON.stringify(opportunity),
+      );
+  }
+
+  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_opportunities WHERE id = ?")
+      .get(opportunityId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotOpportunity>(row.payload_json) : undefined;
+  }
+
+  listOpportunities(params?: {
+    memberId?: string;
+    status?: AdminBotOpportunityStatus;
+  }): AdminBotOpportunity[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.memberId) {
+      clauses.push("submitted_by_member_id = ?");
+      values.push(params.memberId);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_opportunities
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotOpportunity>(row.payload_json));
+  }
+
+  deleteOpportunity(opportunityId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_opportunities WHERE id = ?")
+      .run(opportunityId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
   getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined {
     const row = this.db
       .prepare("SELECT payload_json FROM adminbot_badge_nominations WHERE id = ?")
@@ -1254,6 +1349,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ["adminbot_login_events", "member_id"],
     ["adminbot_member_locations", "member_id"],
     ["adminbot_nudge_ledger", "member_id"],
+    ["adminbot_opportunities", "submitted_by_member_id"],
     ["adminbot_paper_conference_attendees", "member_id"],
     ["adminbot_paper_reimbursements", "member_id"],
     ["adminbot_paper_social_draft_consents", "member_id"],
@@ -1357,6 +1453,33 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         const changes = result.changes ?? 0;
         if (changes > 0) {
           removed[`${table}.${column}`] = (removed[`${table}.${column}`] ?? 0) + changes;
+        }
+      }
+      // Opportunities split on status rather than by table, so they cannot be expressed as either
+      // list above. An approved entry is on the board for the whole lab and outlives whoever
+      // suggested it: it keeps its row and loses the name. Anything never published goes.
+      {
+        const deleted = this.db
+          .prepare(
+            `DELETE FROM adminbot_opportunities
+              WHERE submitted_by_member_id = ? AND status <> 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((deleted.changes ?? 0) > 0) {
+          removed["adminbot_opportunities.submitted_by_member_id"] = deleted.changes ?? 0;
+        }
+        const cleared = this.db
+          .prepare(
+            `UPDATE adminbot_opportunities
+              SET submitted_by_member_id = NULL,
+                  payload_json = json_remove(payload_json, '$.submitted_by_member_id')
+              WHERE submitted_by_member_id = ? AND status = 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((cleared.changes ?? 0) > 0) {
+          removed["adminbot_opportunities.submitted_by_member_id"] =
+            (removed["adminbot_opportunities.submitted_by_member_id"] ?? 0) +
+            (cleared.changes ?? 0);
         }
       }
       for (const [table, column] of AdminBotSqliteStore.MEMBER_ATTRIBUTION_COLUMNS) {

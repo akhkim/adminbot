@@ -114,7 +114,7 @@ describe("titleForTab", () => {
       dashboard: "Dashboard",
       profile: "My Profile",
       myWork: "My Projects & Papers",
-      labSharing: "Lab Sharing",
+      labSharing: "Collaborate",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",

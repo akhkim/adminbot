@@ -37,6 +37,7 @@ import type {
 } from "../contracts/badges.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -70,6 +71,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly badgeDefinitions = new Map<string, AdminBotBadgeDefinition>();
   private readonly badgeAssignments = new Map<string, AdminBotBadgeAssignment>();
   private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
+  private readonly opportunities = new Map<string, AdminBotOpportunity>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
@@ -282,6 +284,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
   }
 
+  saveOpportunity(opportunity: AdminBotOpportunity): void {
+    this.opportunities.set(opportunity.id, opportunity);
+  }
+
+  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined {
+    return this.opportunities.get(opportunityId);
+  }
+
+  listOpportunities(params?: {
+    memberId?: string;
+    status?: AdminBotOpportunityStatus;
+  }): AdminBotOpportunity[] {
+    return [...this.opportunities.values()]
+      .filter(
+        (opportunity) =>
+          (!params?.memberId || opportunity.submitted_by_member_id === params.memberId) &&
+          (!params?.status || opportunity.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteOpportunity(opportunityId: string): boolean {
+    return this.opportunities.delete(opportunityId);
+  }
+
   deleteLabMember(memberId: string): boolean {
     return this.labMembers.delete(memberId);
   }
@@ -330,6 +357,25 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     purgeMap(this.paperReimbursements, "paper_reimbursements");
     purgeMap(this.badgeAssignments, "badge_assignments");
     purgeMap(this.badgeNominations, "badge_nominations");
+    {
+      let dropped = 0;
+      for (const [key, opportunity] of [...this.opportunities]) {
+        if (opportunity.submitted_by_member_id !== memberId) {
+          continue;
+        }
+        // An approved entry is on the board for the whole lab and is not this member's to take
+        // with them; it keeps its row and loses only the name attached to it. Anything never
+        // published goes with them.
+        if (opportunity.status === "approved") {
+          const { submitted_by_member_id: _purged, ...rest } = opportunity;
+          this.opportunities.set(key, rest);
+          continue;
+        }
+        this.opportunities.delete(key);
+        dropped += 1;
+      }
+      drop("opportunities", dropped);
+    }
     purgeMap(this.registrations, "account_registrations");
     purgeMap(this.passwordResets, "password_resets");
     // The rows a merge keeps and a delete cannot.
@@ -433,6 +479,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       badgeAssignmentKey(record.member_id, record.badge_id),
     );
     remap(this.badgeNominations, "badge_nominations", (key) => key);
+    for (const [key, opportunity] of [...this.opportunities]) {
+      if (opportunity.submitted_by_member_id !== fromMemberId) {
+        continue;
+      }
+      this.opportunities.set(key, { ...opportunity, submitted_by_member_id: toMemberId });
+      bump("opportunities");
+    }
     remap(this.registrations, "account_registrations", (key) => key);
     remap(this.passwordResets, "password_resets", (key) => key);
     // Sessions are not repointed -- see the note in the SQLite store; the service revokes the
