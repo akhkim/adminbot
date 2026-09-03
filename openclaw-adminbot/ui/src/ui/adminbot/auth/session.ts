@@ -700,6 +700,156 @@ export async function submitFeedback(
 }
 
 /**
+ * The workspace's open public channel names, for the project form's "already exists" check.
+ *
+ * A 503 is a configured-off deployment and is reported as its own kind, because the form has to
+ * say "the check is unavailable" rather than "no channel matches" -- telling somebody their
+ * correct alias is wrong is the one outcome this must never produce.
+ */
+export async function fetchSlackChannelNames(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ channels: string[] }> | { ok: false; kind: "unconfigured" }> {
+  const result = await authedJson(baseUrl, "/slack/channels", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 503) {
+    return { ok: false, kind: "unconfigured" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as { channels: string[] } };
+}
+
+/**
+ * Delete one roster row and everything that named it.
+ *
+ * Member session only, for a stronger version of the merge's reason: a merge keeps the person's
+ * history under the surviving id and this keeps none of it. `force` is the caller passing on an
+ * admin's explicit second decision about an account that can still be signed into -- never a
+ * retry the UI sends by itself when the first call comes back 409.
+ */
+export async function deleteLabMemberAsAdmin(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  options: { force?: boolean } = {},
+): Promise<
+  AuthResult<{ deleted_id: string; deleted_name: string; removed: Record<string, number> }>
+> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}`,
+    "DELETE",
+    sessionToken,
+    { force: options.force === true },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deleted_id: string;
+      deleted_name: string;
+      removed: Record<string, number>;
+    },
+  };
+}
+
+/**
+ * The roster rows the lab holds no address for, and which of them may go.
+ *
+ * A read, so the page can show the list before anybody presses anything. `blocked` is the half
+ * that matters on screen: it is where the shared `admin` login turns up, and an admin who cannot
+ * see why a row survived the purge will assume the purge is broken.
+ */
+export async function fetchMembersWithoutEmail(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<
+  AuthResult<{
+    deletable: Array<{ id: string; name: string; attached_rows: number }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+  }>
+> {
+  const result = await authedJson(baseUrl, "/lab/members/without-email", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deletable: Array<{ id: string; name: string; attached_rows: number }>;
+      blocked: Array<{ id: string; name: string; reason: string }>;
+    },
+  };
+}
+
+/**
+ * Delete every member the lab has no address for.
+ *
+ * `dryRun` defaults to true here as well as in the service, so a caller that forgets the argument
+ * previews rather than deletes -- the destructive reading of an ambiguous call is the wrong one to
+ * make twice.
+ */
+export async function purgeMembersWithoutEmailAsAdmin(
+  sessionToken: string,
+  baseUrl: string,
+  options: { dryRun?: boolean } = {},
+): Promise<
+  AuthResult<{
+    deleted: Array<{ id: string; name: string }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+    removed: Record<string, number>;
+    dry_run: boolean;
+  }>
+> {
+  const result = await authedJson(
+    baseUrl,
+    "/lab/members/without-email/purge",
+    "POST",
+    sessionToken,
+    { dry_run: options.dryRun !== false },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deleted: Array<{ id: string; name: string }>;
+      blocked: Array<{ id: string; name: string; reason: string }>;
+      removed: Record<string, number>;
+      dry_run: boolean;
+    },
+  };
+}
+
+/**
  * Fold one roster row into another.
  *
  * Member session only, like every other governance write: the service refuses this to the shared
@@ -2938,6 +3088,11 @@ export type MemberTimelineCounts = {
 };
 
 export type MemberProfileOverviewRow = {
+  /**
+   * What the lab calls this person: "full", "alumni", "coauthor-major", or a comma-separated
+   * combination. The axis the Lab Overview type filter reads; see the service's overview row.
+   */
+  member_type?: string;
   id: string;
   name: string;
   status?: string;

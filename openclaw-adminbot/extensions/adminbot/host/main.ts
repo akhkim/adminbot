@@ -26,7 +26,11 @@ import {
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
-import { createAdminBotSlackAdminExecutor } from "../src/connectors/slack-admin.js";
+import {
+  adminBotSlackBotToken,
+  createAdminBotSlackAdminExecutor,
+  listSlackChannelNames,
+} from "../src/connectors/slack-admin.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
 import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
@@ -842,6 +846,17 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
     resolveSlackUserIdsByEmail: createSlackDirectoryEmailResolver(repoRoot),
+    // Reads the workspace's public channel names for the project form's "already exists" check.
+    // Built here rather than in api/server.ts for the same reason the readers above are: reaching
+    // Slack is a composition-layer concern, and the token lives in this process's environment.
+    // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
+    // without a restart -- and one without it fails the call, which the route turns into a 503
+    // the form can explain rather than a silent pass.
+    fetchSlackChannelNames: () =>
+      listSlackChannelNames(
+        adminBotSlackBotToken(process.env),
+        globalThis.fetch as Parameters<typeof listSlackChannelNames>[1],
+      ),
     reviewSlackProfilePhoto: createSlackProfilePhotoReviewer(repoRoot),
     polishSlackProfilePhoto: createSlackProfilePhotoPolisher(repoRoot),
     // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with

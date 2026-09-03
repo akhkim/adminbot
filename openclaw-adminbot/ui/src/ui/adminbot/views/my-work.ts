@@ -24,6 +24,7 @@ import { ref } from "lit/directives/ref.js";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
+  adminBotProjectChannelName,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
@@ -48,6 +49,7 @@ import type {
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
+  SlackChannelCheck,
 } from "../controllers/admin.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
@@ -167,6 +169,16 @@ export type MyWorkProps = {
    * and a button that always 403s teaches people to distrust the page.
    */
   onDeletePaper?: (paper: AdminBotPaperRecord) => void;
+  /**
+   * What the form knows about the workspace's Slack channels, for the already-exists check.
+   *
+   * Absent hides the checkbox entirely rather than showing one that cannot answer: an affordance
+   * that never resolves is worse than none, because the member cannot tell "unchecked" from
+   * "checked and fine".
+   */
+  channelCheck?: SlackChannelCheck;
+  /** Ticking the box, which is what loads the channel names. */
+  onChannelCheckToggle?: (enabled: boolean) => void;
 };
 
 export type BlockerDraft = {
@@ -1365,6 +1377,113 @@ function defaultTarget(now = new Date()) {
 /** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
 const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
 
+/**
+ * Whether the alias contradicts a channel the member says already exists.
+ *
+ * Three states, and only one of them blocks:
+ *
+ *   - box unticked, or the channel list unavailable -> not a mismatch. A lookup that could not run
+ *     must never refuse a correct alias; the claim is simply unverified, which is where the form
+ *     was before this checkbox existed.
+ *   - box ticked and `#proj-<alias>` is in the workspace -> not a mismatch.
+ *   - box ticked and it is not -> a mismatch, and the submit stops.
+ */
+function channelMismatch(props: MyWorkProps, alias: string): boolean {
+  const check = props.channelCheck;
+  if (!check?.enabled || !check.channels) {
+    return false;
+  }
+  return !channelExists(check.channels, alias);
+}
+
+/** Slack channel names are lowercase, so the comparison is too. */
+function channelExists(channels: readonly string[], alias: string): boolean {
+  const wanted = adminBotProjectChannelName(alias).toLowerCase();
+  return channels.some((channel) => channel.replace(/^#/u, "").toLowerCase() === wanted);
+}
+
+/**
+ * Channels that look like near-misses for what was typed, so a mismatch is actionable.
+ *
+ * A bare "no channel matches" leaves the member guessing at a name they cannot see from here.
+ * Matching on the shared prefix is enough to surface the usual mistake -- `cais2` against
+ * `#proj-cais`, `causal-ai` against `#proj-cais` -- without listing a workspace at them.
+ */
+function nearbyChannels(channels: readonly string[], alias: string): string[] {
+  const wanted = alias.toLowerCase();
+  if (wanted.length < 2) {
+    return [];
+  }
+  return channels
+    .map((channel) => channel.replace(/^#/u, ""))
+    .filter((channel) => channel.startsWith("proj-"))
+    .filter((channel) => {
+      const suffix = channel.slice("proj-".length).toLowerCase();
+      return suffix.startsWith(wanted.slice(0, 3)) || wanted.startsWith(suffix.slice(0, 3));
+    })
+    .slice(0, 5);
+}
+
+/**
+ * The "this channel already exists" box, and the verdict once it is ticked.
+ *
+ * Rendered only when the page was given a channel-check state: without one the box could be ticked
+ * and never answer, which is worse than not offering it -- an unanswered check reads as a passed
+ * one.
+ */
+function renderChannelExistsCheck(props: MyWorkProps, state: AppViewState) {
+  const check = props.channelCheck;
+  if (!check || !props.onChannelCheckToggle) {
+    return nothing;
+  }
+  const alias = adminBotNormalizePaperAlias(state.myWorkProjectAlias) ?? "";
+  const verdict = (() => {
+    if (!check.enabled) {
+      return nothing;
+    }
+    if (check.loading) {
+      return html`<span class="register__hint">Reading the lab's Slack channels…</span>`;
+    }
+    if (check.error) {
+      // Not styled as an error on the field: the member has done nothing wrong, and the project can
+      // still be filed. It says what could not be done and leaves the decision with them.
+      return html`<span class="register__hint" data-testid="my-work-channel-check-unavailable"
+        >${check.error} You can still file the project — check the channel name by hand.</span
+      >`;
+    }
+    if (!check.channels || !alias) {
+      return nothing;
+    }
+    if (channelExists(check.channels, alias)) {
+      return html`<span class="register__hint" data-testid="my-work-channel-check-ok"
+        >Matches <code>#${adminBotProjectChannelName(alias)}</code> in Slack.</span
+      >`;
+    }
+    const nearby = nearbyChannels(check.channels, alias);
+    return html`<span class="register__error" data-testid="my-work-channel-check-mismatch">
+      No <code>#${adminBotProjectChannelName(alias)}</code> in Slack.
+      ${nearby.length
+        ? html`Did you mean ${nearby.map((channel) => html`<code>#${channel}</code> `)}?`
+        : html`Check the channel's exact name and use it as the alias.`}
+    </span>`;
+  })();
+  return html`
+    <div class="register__field">
+      <label class="my-work-add-form__checkbox">
+        <input
+          type="checkbox"
+          data-testid="my-work-channel-exists"
+          .checked=${check.enabled}
+          @change=${(event: Event) =>
+            props.onChannelCheckToggle?.((event.target as HTMLInputElement).checked)}
+        />
+        <span>This project already has a Slack channel</span>
+      </label>
+      ${verdict}
+    </div>
+  `;
+}
+
 function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
@@ -1407,6 +1526,13 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         if (!title || !alias || !startedOn) {
           return;
         }
+        // The already-exists box is a claim the member made; this is where it is checked. Only a
+        // *known* mismatch blocks -- if the channel list could not be read, the box is treated as
+        // unticked rather than as a failure, because refusing a correct alias over an unavailable
+        // lookup is worse than filing one nobody verified.
+        if (channelMismatch(props, alias)) {
+          return;
+        }
         const rows = currentTargets();
         const primary = rows[0] ?? { venueId: fallback.id, year: fallback.year, confidence: 50 };
         props.onSavePaper({
@@ -1437,7 +1563,9 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           confidence: String(primary.confidence),
         });
         state.myWorkProjectDraft = null;
+        state.myWorkProjectAlias = "";
         state.myWorkProjectVenues = [];
+        props.onChannelCheckToggle?.(false);
       }}
     >
       <div class="my-work-add-form__head">
@@ -1459,7 +1587,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
       </label>
 
       <label class="register__field">
-        <span class="register__label">Short name</span>
+        <span class="register__label">Alias</span>
         <input
           class="input"
           name="alias"
@@ -1467,14 +1595,28 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           maxlength=${adminBotPaperAliasMaxLength}
           placeholder="ex. CAIS"
           data-testid="my-work-add-alias"
+          .value=${state.myWorkProjectAlias}
+          @input=${(event: Event) => {
+            state.myWorkProjectAlias = (event.target as HTMLInputElement).value;
+          }}
         />
         <!-- Said here rather than only in a validation message: the name becomes a channel other
-             people have to recognise, so what it will look like belongs next to the box. -->
+             people have to recognise, so what it will look like belongs next to the box. The
+             already-exists rule is stated before the box is filled in for the same reason -- an
+             alias that disagrees with a live channel is not a validation error to discover on
+             submit, it is a channel nobody can find afterwards. -->
         <span class="register__hint">
           What the lab calls this project out loud — CAIS for Causal AI Scientist. Its Slack channel
           will be #proj-cais. Letters, digits and hyphens.
+          <strong
+            >If the project already has a Slack channel, the alias must be that channel's name
+            without the <code>proj-</code> prefix</strong
+          >
+          — #proj-cais means the alias is <code>cais</code>.
         </span>
       </label>
+
+      ${renderChannelExistsCheck(props, state)}
 
       <label class="register__field">
         <span class="register__label">Started on</span>

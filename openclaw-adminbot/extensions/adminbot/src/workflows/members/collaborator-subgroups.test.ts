@@ -54,7 +54,6 @@ describe("collaboratorSubgroupAccess", () => {
     ["own_pace_advisee", "adminbot_portal_access", "yes"],
     ["own_pace_advisee", "rec_letter_button", "yes"],
     ["own_pace_advisee", "what_to_expect_stories", "yes_separate"],
-    ["coauthor_discussant_designer", "active_channels", "yes"],
     ["coauthor_discussant_designer", "project_channel", "yes"],
     ["coauthor_minor", "slack_guest_space_check", "yes"],
     ["slightly_better_than_emails", "spreadsheet_basic", "yes"],
@@ -100,10 +99,15 @@ describe("collaboratorSubgroupAccess", () => {
     }
   });
 
-  it("puts only coauthor_major on the Vector sponsor roster row", () => {
+  it("puts coauthor_major and own_pace_advisee on the Vector sponsor roster row", () => {
+    // The matrix row, not the sheet that actually goes to the sponsor. `vectorSponsorRoster`
+    // selects on `member_type` and still carries only `full` and `coauthor-major` -- the sheet's
+    // own row text says so while its own-pace-advisee cell says otherwise, and that contradiction
+    // is unresolved. See the comment on the item in collaborator-subgroups.ts.
+    const onRow = new Set(["coauthor_major", "own_pace_advisee"]);
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const granted = grantedItems(subgroup).includes("vector_roster_share");
-      expect(granted).toBe(subgroup === "coauthor_major");
+      expect(granted).toBe(onRow.has(subgroup));
     }
   });
 

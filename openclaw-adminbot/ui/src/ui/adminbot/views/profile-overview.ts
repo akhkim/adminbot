@@ -16,6 +16,10 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import {
+  matchesMemberTypeFilter,
+  renderMemberTypeFilter,
+} from "../member-type-filter.ts";
 import type {
   MemberActivityCounts,
   MemberAdoptionSummary,
@@ -55,6 +59,11 @@ export type ProfileOverviewFilter = {
   /** Matches on name. Blank shows everyone the other filters left. */
   search: string;
   activity: ProfileOverviewActivity;
+  /**
+   * Roster member types to show, as a union. Empty means every type -- see
+   * matchesMemberTypeFilter for why the unset state must not hide the table.
+   */
+  memberTypes: string[];
 };
 
 export const EMPTY_PROFILE_OVERVIEW_FILTER: ProfileOverviewFilter = {
@@ -62,6 +71,7 @@ export const EMPTY_PROFILE_OVERVIEW_FILTER: ProfileOverviewFilter = {
   membership: "everyone",
   search: "",
   activity: "any",
+  memberTypes: [],
 };
 
 export type AdminBotProfileOverviewProps = {
@@ -111,6 +121,9 @@ export function filterOverviewRows(
       return false;
     }
     if (search && !row.name.toLocaleLowerCase().includes(search)) {
+      return false;
+    }
+    if (!matchesMemberTypeFilter(row.member_type, filter.memberTypes)) {
       return false;
     }
     if (filter.activity === "never" && row.last_login_at) {
@@ -531,6 +544,12 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                 )}
               </select>
             </label>
+            ${renderMemberTypeFilter({
+              selected: props.filter.memberTypes,
+              onChange: (memberTypes) => props.onFilterChange({ ...props.filter, memberTypes }),
+              testIdPrefix: "profile-overview",
+              label: t("profileOverview.filters.memberTypeLabel"),
+            })}
             <button
               class="btn btn--sm"
               type="button"

@@ -111,6 +111,14 @@ export type AdminBotProps = {
    * signed-in admin), which is what takes the panel off the page rather than a disabled button.
    */
   onMergeMembers?: (survivorId: string, duplicateId: string) => void;
+  /**
+   * Delete one roster row outright. Admin mode only, and absent means the affordance is not
+   * rendered at all rather than rendered disabled -- a delete button that cannot delete is a
+   * question the page cannot answer.
+   */
+  onDeleteMember?: (member: AdminBotLabMember) => void;
+  /** Preview (`dryRun`) or run the address-less purge. */
+  onPurgeMembersWithoutEmail?: (dryRun: boolean) => void;
   onSaveOwnProfile: (memberId: string, fields: MemberProfileUpdate) => void;
   // Reopens the post-login onboarding welcome screen on demand. Omitted (or a no-op) when the
   // signed-in member has no onboarding checklist to show.
@@ -1066,7 +1074,49 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
           <button class="btn btn--sm primary" type="submit">Save member</button>
         </div>
       </form>
+      ${renderDeleteMember(member, props)}
     </article>
+  `;
+}
+
+/**
+ * The delete, at the bottom of the edit card and styled as the danger it is.
+ *
+ * Inside the edit popover rather than on the roster row on purpose: a row is something an admin
+ * scans past, and a one-click delete sitting in a scannable list is a mis-click waiting to happen.
+ * Opening the record first means the person deleting it has already looked at who it is.
+ *
+ * The confirm names the id as well as the name, because on this roster the names repeat -- that is
+ * what the duplicates panel above exists for -- and "Delete Terry Zhang?" is not a question anyone
+ * can answer correctly when there are two of them.
+ */
+function renderDeleteMember(member: AdminBotLabMember, props: AdminBotProps) {
+  if (props.mode !== "admin" || !props.onDeleteMember) {
+    return nothing;
+  }
+  return html`
+    <p class="adminbot-form__danger">
+      <button
+        class="btn btn--sm danger"
+        type="button"
+        data-testid=${`member-delete-${member.id}`}
+        @click=${() => {
+          if (
+            globalThis.confirm?.(
+              `Delete "${member.name}" (${member.id})?\n\n` +
+                `Their roster row goes, along with every notification, badge, reimbursement and ` +
+                `nudge record that named them. Papers they are credited on stay, but stop naming ` +
+                `them.\n\nThis cannot be undone. To keep their history, merge them instead.`,
+            )
+          ) {
+            props.onDeleteMember?.(member);
+          }
+        }}
+      >
+        Delete member
+      </button>
+      <span class="muted">Removes the record entirely. Merge instead to keep their history.</span>
+    </p>
   `;
 }
 
@@ -1427,6 +1477,73 @@ function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMembe
  * what each half would bring, and an admin says which record survives. Two people really can
  * share a name, and only a human knows which of these is that.
  */
+/**
+ * The rows the lab holds no address for, and the offer to clear them out.
+ *
+ * Computed here from the roster the page already has rather than fetched, so the count is visible
+ * without pressing anything -- the panel is only worth its space when there is something in it,
+ * and a panel that had to be asked before it could say "nothing" would always be on screen.
+ *
+ * Preview first, and the two presses are deliberately not the same button: the service and the
+ * client both default to a dry run, and making "Preview" the wide one and "Delete" the narrow red
+ * one keeps that default visible on the page too. What the preview adds over this count is the
+ * `blocked` list -- the rows the purge will refuse, which this view cannot know about because
+ * whether somebody holds a sign-in credential is not on the roster record.
+ */
+function renderMembersWithoutEmail(props: AdminBotProps, members: AdminBotLabMember[]) {
+  if (props.mode !== "admin" || !props.onPurgeMembersWithoutEmail) {
+    return nothing;
+  }
+  const addressless = members.filter(
+    (member) =>
+      !member.email?.trim() &&
+      !member.calendar_email?.trim() &&
+      !member.correspondence_email?.trim(),
+  );
+  if (addressless.length === 0) {
+    return nothing;
+  }
+  return html`
+    <section class="adminbot-panel" data-testid="members-without-email">
+      <div class="card-title">${addressless.length} members with no email on file</div>
+      <p class="card-sub">
+        No address in any of the three fields, so AdminBot cannot write to them and they can never
+        finish a profile. Usually import artefacts. Preview first — an account that can still be
+        signed into is refused, and the preview is where it says so.
+      </p>
+      <p class="muted">${addressless.map((member) => member.name).join(", ")}</p>
+      <div class="adminbot-form__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="members-without-email-preview"
+          @click=${() => props.onPurgeMembersWithoutEmail?.(true)}
+        >
+          Preview
+        </button>
+        <button
+          class="btn btn--sm danger"
+          type="button"
+          data-testid="members-without-email-purge"
+          @click=${() => {
+            if (
+              globalThis.confirm?.(
+                `Delete ${addressless.length} member${addressless.length === 1 ? "" : "s"} with no email on file?\n\n` +
+                  `Anyone who can still sign in is kept and reported back. ` +
+                  `Everyone else goes, along with the rows that named them.\n\nThis cannot be undone.`,
+              )
+            ) {
+              props.onPurgeMembersWithoutEmail?.(false);
+            }
+          }}
+        >
+          Delete them
+        </button>
+      </div>
+    </section>
+  `;
+}
+
 function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   if (props.mode !== "admin" || !props.onMergeMembers) {
     return nothing;
@@ -1504,7 +1621,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   if (props.mode === "general") {
     return spreadsheet;
   }
-  return html`${renderDuplicateMembers(props, members)}${spreadsheet}
+  return html`${renderDuplicateMembers(props, members)}${renderMembersWithoutEmail(props, members)}${spreadsheet}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button
@@ -1745,10 +1862,17 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     })}`;
   }
 
+  // The roster's member types, for the type filter. Built here rather than inside the table
+  // because the table is folded out of papers and has no roster of its own -- an author link
+  // carries an id, and this is what turns that id back into what the lab calls the person.
+  const memberTypes = new Map(
+    props.data.members.map((member) => [member.id, member.member_type] as const),
+  );
   const table = renderPaperOverviewTable({
     rows,
     filter: props.paperFilter ?? EMPTY_PAPER_OVERVIEW_FILTER,
     onFilterChange: (filter) => props.onPaperFilter?.(filter),
+    memberTypeOf: (memberId) => (memberId ? memberTypes.get(memberId) : undefined),
     // The row is a summary; the paper's own card is the detail. Not the edit popover -- that is a
     // form over the record's raw fields, where the card is the paper as everyone else reads it.
     onOpenPaper: (paperId) => props.onOpenPaperCard?.(paperId),

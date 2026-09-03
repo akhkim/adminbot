@@ -215,6 +215,87 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(saved).toEqual([["terry-jingchen-zhang", "terry-zhang"]]);
   });
 
+  it("offers the address-less purge only when there is something in it, and previews without a confirm", () => {
+    const calls: boolean[] = [];
+    const reachable = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [member({ id: "pat", email: "pat@lab.co" })],
+          loadedAt: Date.now(),
+        },
+        onPurgeMembersWithoutEmail: (dryRun) => calls.push(dryRun),
+      }),
+    );
+    expect(reachable.querySelector('[data-testid="members-without-email"]')).toBeNull();
+
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [
+            member({ id: "pat", email: "pat@lab.co" }),
+            // Reachable at one address each, so neither is a candidate.
+            member({ id: "cal", email: undefined, calendar_email: "cal@lab.co" }),
+            member({ id: "corr", email: undefined, correspondence_email: "corr@lab.co" }),
+            member({ id: "ghost", name: "Ghost Row", email: undefined }),
+          ],
+          loadedAt: Date.now(),
+        },
+        onPurgeMembersWithoutEmail: (dryRun) => calls.push(dryRun),
+      }),
+    );
+    const panel = container.querySelector('[data-testid="members-without-email"]');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("1 members with no email on file");
+    expect(panel?.textContent).toContain("Ghost Row");
+
+    // Preview is a read, so it asks nothing.
+    globalThis.confirm = () => false;
+    panel
+      ?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-preview"]')
+      ?.click();
+    expect(calls).toEqual([true]);
+
+    // The delete does, and a refused confirm deletes nothing.
+    panel?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-purge"]')?.click();
+    expect(calls).toEqual([true]);
+
+    globalThis.confirm = () => true;
+    panel?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-purge"]')?.click();
+    expect(calls).toEqual([true, false]);
+  });
+
+  it("deletes a member from the edit card, and only on a confirmation", () => {
+    const deleted: string[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onDeleteMember: (target) => deleted.push(target.id),
+      }),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="member-delete-pat"]',
+    );
+    expect(button).not.toBeNull();
+
+    globalThis.confirm = () => false;
+    button?.click();
+    expect(deleted).toEqual([]);
+
+    globalThis.confirm = () => true;
+    button?.click();
+    expect(deleted).toEqual(["pat"]);
+  });
+
+  it("renders no delete affordance without a handler", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    expect(container.querySelector('[data-testid="member-delete-pat"]')).toBeNull();
+    expect(container.querySelector('[data-testid="members-without-email"]')).toBeNull();
+  });
+
   it("merges nothing without a confirmation", () => {
     const saved: Array<[string, string]> = [];
     const container = renderToDiv(

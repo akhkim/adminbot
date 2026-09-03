@@ -57,7 +57,12 @@ function build(params: {
   });
 }
 
-function draw(options: { rows: ReturnType<typeof build>; filter?: Partial<PaperOverviewFilter> }) {
+function draw(options: {
+  rows: ReturnType<typeof build>;
+  filter?: Partial<PaperOverviewFilter>;
+  /** memberId -> member_type, for the type filter. Omitted means no roster is available. */
+  memberTypes?: Record<string, string>;
+}) {
   const filters: PaperOverviewFilter[] = [];
   const opened: string[] = [];
   const container = document.createElement("div");
@@ -69,6 +74,9 @@ function draw(options: { rows: ReturnType<typeof build>; filter?: Partial<PaperO
       onFilterChange: (next) => filters.push(next),
       onOpenPaper: (id) => opened.push(id),
       stages: [{ value: "overleaf_writing", label: "Overleaf writing" }],
+      ...(options.memberTypes
+        ? { memberTypeOf: (memberId?: string) => (memberId ? options.memberTypes?.[memberId] : undefined) }
+        : {}),
     }),
     container,
   );
@@ -226,6 +234,82 @@ describe("filterPaperRows", () => {
       dormant: 1,
       withoutVenue: 1,
     });
+  });
+});
+
+describe("the member type filter", () => {
+  const roster = () =>
+    build({
+      papers: [
+        paper({
+          id: "p-full",
+          authors: ["Full Person"],
+          author_links: [{ name: "Full Person", member_id: "m-full" }],
+        }),
+        paper({
+          id: "p-alum",
+          authors: ["Alum Person"],
+          author_links: [{ name: "Alum Person", member_id: "m-alum" }],
+        }),
+        // Named on the paper but not linked to the roster, so there is no type to read.
+        paper({ id: "p-unlinked", authors: ["Unlinked Person"] }),
+      ],
+    });
+  const types = { "m-full": "full", "m-alum": "alumni, coauthor-major" };
+
+  it("shows everyone until a type is ticked", () => {
+    const { container } = draw({ rows: roster(), memberTypes: types });
+    expect(tableRows(container)).toHaveLength(3);
+  });
+
+  it("keeps only the people holding a ticked type", () => {
+    const { container } = draw({
+      rows: roster(),
+      memberTypes: types,
+      filter: { memberTypes: ["alumni"] },
+    });
+    const shown = tableRows(container);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.textContent).toContain("Alum Person");
+  });
+
+  it("matches a person who holds several types on any one of them", () => {
+    const { container } = draw({
+      rows: roster(),
+      memberTypes: types,
+      filter: { memberTypes: ["coauthor-major"] },
+    });
+    expect(tableRows(container)[0]?.textContent).toContain("Alum Person");
+  });
+
+  it("hides an author the roster cannot type, rather than showing them under every filter", () => {
+    // An unlinked author has no member id and so no type. They are not "all types" -- a filter
+    // asking for alumni should not return somebody the roster has never identified.
+    const { container } = draw({
+      rows: roster(),
+      memberTypes: types,
+      filter: { memberTypes: ["full"] },
+    });
+    const shown = tableRows(container);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.textContent).toContain("Full Person");
+  });
+
+  it("sends a ticked type through the filter rather than mutating the table", () => {
+    const drawn = draw({ rows: roster(), memberTypes: types });
+    drawn.container
+      .querySelector<HTMLInputElement>('[data-testid="paper-overview-type-alumni"]')
+      ?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(drawn.filters).toEqual([
+      { ...EMPTY_PAPER_OVERVIEW_FILTER, memberTypes: ["alumni"] },
+    ]);
+  });
+
+  it("shows every person when no roster lookup is supplied", () => {
+    // The table renders for callers with no roster to hand; an absent lookup must read as
+    // "unknown type", not as "filter everything out".
+    const { container } = draw({ rows: roster() });
+    expect(tableRows(container)).toHaveLength(3);
   });
 });
 

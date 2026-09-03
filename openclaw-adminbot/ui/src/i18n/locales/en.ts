@@ -1517,6 +1517,7 @@ export const en: TranslationMap = {
       searchLabel: "Search members by name",
       searchPlaceholder: "Search a name…",
       activityLabel: "Filter by whether they have ever signed in",
+      memberTypeLabel: "Filter by member type",
       any: "Anything outstanding",
       profile: "Missing profile fields",
       timeline: "No timeline",

@@ -1249,6 +1249,102 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ["adminbot_member_credentials", "member_id"],
   ];
 
+  /**
+   * Every table a delete must clear, which is the merge list plus the rows a merge keeps.
+   *
+   * The extras are the rows that only ever meant something as *this* member's: a notification is
+   * addressed to them, a feedback entry and a weekly update are authored by them, and a deadline
+   * submission key records which of them filed it. A merge leaves those alone because the survivor
+   * inherits them; a delete has nobody to inherit, so leaving them would strand rows pointing at
+   * an id the roster can no longer resolve -- the dashboard would render a notification for a
+   * member who is gone, and `listMemberProfileOverview` would count an author who does not exist.
+   *
+   * Sessions are still not here. They are revoked through `revokeSessionsForMember` before the
+   * purge runs, for the same reason a merge revokes rather than repoints: a session is a bearer of
+   * someone's identity, and it should stop working through the path that records that it did.
+   */
+  /**
+   * The rows a delete removes outright: they exist only because this member did.
+   *
+   * The merge list minus the three attribution columns below, plus the rows a merge keeps because
+   * a survivor inherits them. A notification is addressed to this member, a feedback entry and a
+   * weekly update are authored by them, an attendee row and a reimbursement are about them -- none
+   * of it means anything once they are gone, and leaving it strands rows naming an id the roster
+   * can no longer resolve.
+   *
+   * Sessions are not here. They are revoked through `revokeSessionsForMember` before the purge
+   * runs, for the reason the merge gives: a session should stop working through the path that
+   * records that it did.
+   */
+  private static readonly MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
+    ["adminbot_account_registrations", "member_id"],
+    ["adminbot_badge_assignments", "member_id"],
+    ["adminbot_badge_nominations", "member_id"],
+    ["adminbot_cv_changes", "member_id"],
+    ["adminbot_logistics_requests", "member_id"],
+    ["adminbot_login_events", "member_id"],
+    ["adminbot_member_locations", "member_id"],
+    ["adminbot_nudge_ledger", "member_id"],
+    ["adminbot_paper_conference_attendees", "member_id"],
+    ["adminbot_paper_reimbursements", "member_id"],
+    ["adminbot_paper_social_draft_consents", "member_id"],
+    ["adminbot_password_resets", "member_id"],
+    ["adminbot_update_events", "member_id"],
+    ["adminbot_update_events", "subject_member_id"],
+    ["adminbot_member_credentials", "member_id"],
+    ["adminbot_member_notifications", "member_id"],
+    ["adminbot_feedback", "member_id"],
+    ["adminbot_paper_weekly_updates", "member_id"],
+    ["adminbot_deadline_submission_keys", "submitter_member_id"],
+  ];
+
+  /**
+   * Columns that merely say *who* did something to a record the lab keeps anyway.
+   *
+   * Cleared rather than deleted, which is the whole difference between this and the list above: a
+   * paper slot is the paper's evidence and a social draft is the paper's copy. Deleting them
+   * because the person who filed them left would throw away the artifact to erase the signature --
+   * the lab would lose an arXiv link because an intern was removed from the roster. The row stays
+   * and the attribution goes.
+   */
+  private static readonly MEMBER_ATTRIBUTION_COLUMNS: ReadonlyArray<[string, string]> = [
+    ["adminbot_paper_slots", "provided_by_member_id"],
+    ["adminbot_paper_slots", "waived_by_member_id"],
+    ["adminbot_paper_social_drafts", "generated_by_member_id"],
+  ];
+
+  purgeMemberReferences(memberId: string): Record<string, number> {
+    const removed: Record<string, number> = {};
+    // One transaction, for the reason the merge gives: a half-purged member leaves rows naming an
+    // id nothing can resolve, which is worse than a member who is still there.
+    this.db.exec("BEGIN");
+    try {
+      for (const [table, column] of AdminBotSqliteStore.MEMBER_OWNED_COLUMNS) {
+        const result = this.db
+          .prepare(`DELETE FROM "${table}" WHERE ${column} = ?`)
+          .run(memberId) as { changes?: number };
+        const changes = result.changes ?? 0;
+        if (changes > 0) {
+          removed[`${table}.${column}`] = (removed[`${table}.${column}`] ?? 0) + changes;
+        }
+      }
+      for (const [table, column] of AdminBotSqliteStore.MEMBER_ATTRIBUTION_COLUMNS) {
+        const result = this.db
+          .prepare(`UPDATE "${table}" SET ${column} = NULL WHERE ${column} = ?`)
+          .run(memberId) as { changes?: number };
+        const changes = result.changes ?? 0;
+        if (changes > 0) {
+          removed[`${table}.${column}`] = (removed[`${table}.${column}`] ?? 0) + changes;
+        }
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return removed;
+  }
+
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
     const moved: Record<string, number> = {};
     // One transaction: a half-repointed member is worse than an unmerged one, because the rows

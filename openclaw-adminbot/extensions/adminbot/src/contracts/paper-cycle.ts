@@ -154,6 +154,13 @@ export const adminBotNudgeDomains = [
   // the same reason as the rest -- and because the ledger is what stops a sweep that runs nightly
   // from minting a second invitation every night for the same person.
   "alumni_slack_invite",
+  // A member who has never signed in, chased on its own clock. Same ledger as the rest so somebody
+  // dormant is not also being Slacked about a poster in the same hour.
+  "dormant_account",
+  // The ladder after a manual onboarding email: two Slack reminders, then the professor. Separate
+  // from `dormant_account` because it is a bounded sequence with an end, not a standing reminder --
+  // and while it is running it owns the member, so the two cannot both chase the same person.
+  "onboarding_followup",
 ] as const;
 
 /**

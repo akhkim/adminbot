@@ -39,6 +39,10 @@ import {
   updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
+  fetchSlackChannelNames,
+  deleteLabMemberAsAdmin,
+  fetchMembersWithoutEmail,
+  purgeMembersWithoutEmailAsAdmin,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
@@ -117,6 +121,11 @@ export type AdminBotLabMember = {
   cv_url?: string;
   calendar_email?: string;
   correspondence_email?: string;
+  // What the lab calls this person: "full", "alumni", "coauthor-major", and combinations of them
+  // as a comma-separated list. Free text on the record, and the axis the Lab Overview filters and
+  // the Vector roster select on -- `privilege_level` cannot stand in for it, because almost every
+  // imported row defaults to `member`.
+  member_type?: string;
   github_url?: string;
   joined_month?: string;
   whatsapp?: string;
@@ -706,6 +715,9 @@ export type AdminBotHost = {
   adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
   adminBotChannelNamingJob: AdminBotCvDigestJobState;
+  // What the "Add project" form knows about the workspace's Slack channels. Loaded only when a
+  // member ticks the already-exists box, because it is a walk over the whole workspace.
+  myWorkChannelCheck: SlackChannelCheck;
   // The viewer's own roster id, for prefilling their interests from their profile. Null under
   // break-glass gateway access, where there is no "me" to read topics from.
   memberId: string | null;
@@ -1940,6 +1952,225 @@ export async function mergeAdminBotMembers(
       : `Merged ${duplicateId} into ${survivorId}.`,
   };
   await loadAdminBot(host);
+}
+
+/** What the project form knows about the workspace's channels. */
+export type SlackChannelCheck = {
+  /** The member ticked "this channel already exists". */
+  enabled: boolean;
+  /** Channel names, once loaded. Null while unknown -- which is not the same as empty. */
+  channels: string[] | null;
+  loading: boolean;
+  /** Set when the check could not be made at all. The form then asks rather than asserts. */
+  error: string | null;
+};
+
+export const EMPTY_SLACK_CHANNEL_CHECK: SlackChannelCheck = {
+  enabled: false,
+  channels: null,
+  loading: false,
+  error: null,
+};
+
+/**
+ * Load the workspace's channel names so the project form can check an alias against them.
+ *
+ * Only ever called when somebody ticks the box, because it is a paginated walk over the whole
+ * workspace and most projects are new ones with no channel to match.
+ *
+ * Every failure leaves `channels` null rather than empty. The distinction is the whole point: an
+ * empty list would make the form tell a member with a perfectly good alias that no channel matches
+ * it, which is worse than not checking.
+ */
+export async function loadSlackChannelNames(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.myWorkChannelCheck = {
+      ...host.myWorkChannelCheck,
+      enabled: true,
+      channels: null,
+      loading: false,
+      error: "Sign in to check this against the lab's Slack channels.",
+    };
+    return;
+  }
+  host.myWorkChannelCheck = { ...host.myWorkChannelCheck, enabled: true, loading: true, error: null };
+  const result = await fetchSlackChannelNames(
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (result.ok) {
+    host.myWorkChannelCheck = {
+      enabled: true,
+      channels: result.value.channels,
+      loading: false,
+      error: null,
+    };
+    return;
+  }
+  host.myWorkChannelCheck = {
+    enabled: true,
+    channels: null,
+    loading: false,
+    error:
+      result.kind === "unconfigured"
+        ? "AdminBot cannot read Slack channels on this deployment, so the alias cannot be checked here."
+        : result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : ((result as { message?: string }).message ?? "Couldn't read the lab's Slack channels."),
+  };
+}
+
+/**
+ * Deletes one roster row outright.
+ *
+ * Member session only and no gateway-tool fallback, for the reason the merge gives -- with the
+ * difference that this keeps nothing, so the confirmation is the caller's job before it gets here.
+ *
+ * A 409 is surfaced as itself rather than retried with `force`. The service refuses an account
+ * somebody can still sign in to, and the whole value of that refusal is that clearing it is a
+ * second human decision; a UI that resent the call with force would have made the guard
+ * decorative.
+ */
+export async function deleteAdminBotMember(
+  host: AdminBotHost,
+  memberId: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to delete roster records.",
+    };
+    return;
+  }
+  const result = await deleteLabMemberAsAdmin(
+    memberId,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+    options,
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : (result.message ?? "Couldn't delete that record."),
+    };
+    return;
+  }
+  const removed = Object.values(result.value.removed ?? {}).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  host.adminBotNotice = {
+    kind: "success",
+    text: removed
+      ? `Deleted ${result.value.deleted_name}, and ${removed} row${removed === 1 ? "" : "s"} that named them.`
+      : `Deleted ${result.value.deleted_name}.`,
+  };
+  await loadAdminBot(host);
+}
+
+/**
+ * Loads the address-less roster rows so the page can show them before anything is deleted.
+ *
+ * Kept separate from the purge so the preview is a plain read: an admin looking at this list has
+ * not yet asked for anything to happen, and a preview that mutated to tell you what it would do
+ * is the thing this whole flow is built to avoid.
+ */
+export async function loadAdminBotMembersWithoutEmail(host: AdminBotHost): Promise<{
+  deletable: Array<{ id: string; name: string; attached_rows: number }>;
+  blocked: Array<{ id: string; name: string; reason: string }>;
+} | null> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to review roster records.",
+    };
+    return null;
+  }
+  const result = await fetchMembersWithoutEmail(
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : (result.message ?? "Couldn't read the roster."),
+    };
+    return null;
+  }
+  return result.value;
+}
+
+/**
+ * Deletes every member the lab holds no address for.
+ *
+ * `dryRun` is the default at all three layers -- here, in the client and in the service -- so the
+ * press that deletes is always the one that said so.
+ *
+ * The notice names the blocked rows rather than only the deleted ones. On this roster the row with
+ * no address and a working credential is the shared `admin` login, and an admin who is told "37
+ * deleted" without being told "1 kept, it can still sign in" has been given the wrong picture of
+ * what their roster now is.
+ */
+export async function purgeAdminBotMembersWithoutEmail(
+  host: AdminBotHost,
+  options: { dryRun?: boolean } = {},
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to delete roster records.",
+    };
+    return;
+  }
+  const dryRun = options.dryRun !== false;
+  const result = await purgeMembersWithoutEmailAsAdmin(
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+    { dryRun },
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : (result.message ?? "Couldn't delete those records."),
+    };
+    return;
+  }
+  const { deleted, blocked } = result.value;
+  const kept = blocked.length
+    ? ` ${blocked.length} kept: ${blocked.map((row) => `${row.name} (${row.reason})`).join("; ")}.`
+    : "";
+  host.adminBotNotice = {
+    kind: "success",
+    text: dryRun
+      ? `${deleted.length} member${deleted.length === 1 ? "" : "s"} have no email on file and would be deleted.${kept}`
+      : `Deleted ${deleted.length} member${deleted.length === 1 ? "" : "s"} with no email on file.${kept}`,
+  };
+  if (!dryRun) {
+    await loadAdminBot(host);
+  }
 }
 
 // Saves the signed-in member's own roster row from the Lab Members table. Uses the

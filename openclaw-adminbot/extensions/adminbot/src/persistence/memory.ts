@@ -339,6 +339,124 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   /**
+   * The in-memory mirror of the SQLite purge.
+   *
+   * Same list as the store's `MEMBER_OWNED_COLUMNS`: everything a merge would repoint, plus the
+   * rows a merge deliberately keeps because a survivor inherits them and a delete has nobody to.
+   * Sessions stay out here too -- the service revokes them before calling this.
+   */
+  purgeMemberReferences(memberId: string): Record<string, number> {
+    const removed: Record<string, number> = {};
+    const drop = (label: string, count: number) => {
+      if (count > 0) {
+        removed[label] = (removed[label] ?? 0) + count;
+      }
+    };
+    const purgeMap = <T extends { member_id?: string }>(
+      map: Map<string, T>,
+      label: string,
+    ) => {
+      let count = 0;
+      for (const [key, record] of [...map]) {
+        if (record.member_id === memberId) {
+          map.delete(key);
+          count += 1;
+        }
+      }
+      drop(label, count);
+    };
+    const purgeList = <T>(
+      list: T[],
+      label: string,
+      owned: (entry: T) => boolean,
+    ) => {
+      let count = 0;
+      for (let index = list.length - 1; index >= 0; index -= 1) {
+        const entry = list[index];
+        if (entry !== undefined && owned(entry)) {
+          list.splice(index, 1);
+          count += 1;
+        }
+      }
+      drop(label, count);
+    };
+
+    purgeMap(this.cvChanges, "cv_changes");
+    purgeMap(this.logisticsRequests, "logistics_requests");
+    purgeMap(this.nudgeLedger, "nudge_ledger");
+    purgeMap(this.socialConsents, "social_draft_consents");
+    purgeMap(this.conferenceAttendees, "conference_attendees");
+    purgeMap(this.paperReimbursements, "paper_reimbursements");
+    purgeMap(this.badgeAssignments, "badge_assignments");
+    purgeMap(this.badgeNominations, "badge_nominations");
+    purgeMap(this.registrations, "account_registrations");
+    purgeMap(this.passwordResets, "password_resets");
+    // The rows a merge keeps and a delete cannot.
+    purgeMap(this.memberNotifications, "member_notifications");
+    purgeMap(this.feedback, "feedback");
+    purgeMap(this.paperWeeklyUpdates, "paper_weekly_updates");
+
+    for (const [credentialMemberId, credential] of [
+      ...this.credentialsByMemberId,
+    ]) {
+      if (credentialMemberId !== memberId) {
+        continue;
+      }
+      this.credentialsByMemberId.delete(credentialMemberId);
+      this.credentialsByEmail.delete(credential.email);
+      drop("member_credentials", 1);
+    }
+    purgeList(
+      this.memberLocations,
+      "member_locations",
+      (entry) => entry.member_id === memberId,
+    );
+    purgeList(
+      this.loginEvents,
+      "login_events",
+      (entry) => entry.member_id === memberId,
+    );
+    // Either column makes the row this member's, unlike the merge, which repoints them
+    // independently: there is no survivor to attribute the other half to.
+    purgeList(
+      this.updateEvents,
+      "update_events",
+      (entry) =>
+        entry.member_id === memberId || entry.subject_member_id === memberId,
+    );
+    for (const [key, draft] of [...this.socialDrafts]) {
+      if (draft.generated_by_member_id === memberId) {
+        this.socialDrafts.set(key, {
+          ...draft,
+          generated_by_member_id: undefined,
+        });
+        drop("social_drafts.generated_by", 1);
+      }
+    }
+    for (const [key, slot] of [...this.paperSlots]) {
+      let updated = slot;
+      if (slot.provided_by_member_id === memberId) {
+        updated = { ...updated, provided_by_member_id: undefined };
+        drop("paper_slots.provided_by", 1);
+      }
+      if (slot.waived_by_member_id === memberId) {
+        updated = { ...updated, waived_by_member_id: undefined };
+        drop("paper_slots.waived_by", 1);
+      }
+      if (updated !== slot) {
+        this.paperSlots.set(key, updated);
+      }
+    }
+    for (const [key, submitter] of [...this.deadlineSubmissionActions]) {
+      if (submitter === memberId) {
+        this.deadlineSubmissionActions.delete(key);
+        drop("deadline_submission_keys", 1);
+      }
+    }
+    return removed;
+  }
+
+  /**
    * The in-memory mirror of the SQLite sweep.
    *
    * Every map here is keyed by something that includes the subject rather than the member, so a

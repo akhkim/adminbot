@@ -144,10 +144,12 @@ const ACCESS_ITEMS = [
     id: "active_channels",
     label: "#jinesis-active and #random-active",
     detail: "Add them to #jinesis-active and #random-active, both channels.",
+    // Discussant/designers are deliberately not here. The sheet leaves that cell blank, and this
+    // row grants two general channels rather than the per-topic and per-project rooms that
+    // subgroup does get -- see discussion_channel and project_channel.
     cells: {
       own_pace_advisee: "yes",
       coauthor_major: "yes",
-      coauthor_discussant_designer: "yes",
     },
   },
   {
@@ -183,10 +185,12 @@ const ACCESS_ITEMS = [
     label: "Project Google Drive folder",
     detail:
       "Has access to our project-related Google Drive folder (or create it if it does not exist).",
+    // Acquaintances are deliberately not here. The sheet leaves that cell blank, and this row is
+    // lab documents rather than a channel: an acquaintance is somebody the lab keeps an address
+    // for, which is a weaker relationship than everyone else granted this.
     cells: {
       interviewee: "yes",
       slightly_better_than_emails: "yes",
-      acquaintance: "yes",
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
@@ -263,7 +267,22 @@ const ACCESS_ITEMS = [
     label: "Vector sponsor roster share",
     detail:
       "On the constantly-updating name + institutional-email sheet auto-shared with our Vector sponsor contact, who reads it to decide whether to extend or remove an account. Full members are on it too, by privilege level rather than subgroup -- see vectorSponsorRoster.",
-    cells: { coauthor_major: "yes" },
+    // `own_pace_advisee` is what the sheet's cell says, and this row is the one place where the
+    // sheet contradicts itself: the row's own prose asks to share "our 'coauthor-major' and 'full
+    // members'", which is exactly what `VECTOR_ROSTER_MEMBER_TYPES` implements, while the
+    // own-pace-advisee column next to it is marked Y.
+    //
+    // The cell is transcribed here because that is what this table is -- the sheet's answer -- but
+    // the function is deliberately NOT changed to match, because the two are keyed on different
+    // fields and only one of them sends anything anywhere: this matrix reads
+    // `collaborator_subgroup`, which no roster row currently sets, while `vectorSponsorRoster`
+    // reads the `member_type` column and its output goes to somebody outside the lab. Widening it
+    // on the strength of a cell that argues with its own row would put two named people's
+    // addresses in front of a sponsor without anybody deciding to.
+    //
+    // So this is a live question, not a settled policy: if the lab means the cell, add
+    // "own-pace-advisee" to VECTOR_ROSTER_MEMBER_TYPES; if it means the prose, blank the cell.
+    cells: { coauthor_major: "yes", own_pace_advisee: "yes" },
   },
   {
     id: "city_dinner_invite",
@@ -282,6 +301,22 @@ const ACCESS_ITEMS = [
 ] as const satisfies readonly AccessItemDefinition[];
 
 export type AdminBotCollaboratorAccessItemId = (typeof ACCESS_ITEMS)[number]["id"];
+
+/**
+ * The whole matrix, rows included that grant nothing to anybody.
+ *
+ * `collaboratorSubgroupAccess` cannot answer for those: it reports what a subgroup is granted,
+ * so a row every subgroup is denied is invisible through it -- and "trusted for lab private
+ * info", which is exactly that row today, is the one whose disappearance would matter most.
+ * The conformance test compares this against the spreadsheet row for row, so an item that
+ * stops being denied to everyone has to show up as a diff rather than as nothing.
+ */
+export const adminBotCollaboratorAccessItems: readonly {
+  id: AdminBotCollaboratorAccessItemId;
+  label: string;
+  detail: string;
+  cells: Partial<Record<AdminBotExternalCollaboratorSubgroup, AdminBotCollaboratorGrantedCell>>;
+}[] = ACCESS_ITEMS;
 
 export type AdminBotCollaboratorGrant = {
   item: AdminBotCollaboratorAccessItemId;
