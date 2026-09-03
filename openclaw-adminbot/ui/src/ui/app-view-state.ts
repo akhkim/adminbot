@@ -116,13 +116,9 @@ export type AppViewState = {
   /** Text typed into the roster's search box; matched against every cell, client-side. */
   memberSheetFilter?: string;
   memberSheetSaveResult?: import("./adminbot/auth/session.ts").MemberSheetEditResult | null;
-  memberSheetOnboardResult?:
-    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
-    | null;
+  memberSheetOnboardResult?: import("./adminbot/auth/session.ts").MemberSheetOnboardResult | null;
   loadMemberSheet?: () => void | Promise<void>;
-  memberSheetOnboardPreview?:
-    | import("./adminbot/auth/session.ts").MemberSheetOnboardPreview
-    | null;
+  memberSheetOnboardPreview?: import("./adminbot/auth/session.ts").MemberSheetOnboardPreview | null;
   saveMemberSheetEdits?: () => void | Promise<void>;
   onboardSelectedMemberRows?: () => void | Promise<void>;
   previewOnboardSelectedRows?: () => void | Promise<void>;
@@ -590,6 +586,26 @@ export type AppViewState = {
   // Non-null while the "add a project" field is open; holds what has been typed.
   myWorkProjectDraft: string | null;
   myWorkProjectAlias: string;
+  /**
+   * Why the add-project form refused, or null.
+   *
+   * The form used to `return` out of submit on every one of these, which files nothing and says
+   * nothing: the member is left looking at a filled-in form and an unchanged page. Most often it
+   * was the alias -- an apostrophe or a colon carried over from the title cannot be a Slack
+   * channel name, so `adminBotNormalizePaperAlias` returns null and the submit gives up silently.
+   */
+  myWorkProjectError: string | null;
+  /**
+   * Per-paper drafts for the card's own "project details" editor, keyed by paper id.
+   *
+   * A title changes over a project's life -- that is the normal case, not an exception -- and until
+   * now the three answers the create form insists on could never be revised afterwards. Held per
+   * paper because several cards can be open at once.
+   */
+  myWorkProjectEdits: Record<
+    string,
+    { title: string; alias: string; startedOn: string; error: string | null }
+  >;
   myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
   myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;

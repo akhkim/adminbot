@@ -96,6 +96,8 @@ function draw(options: DrawOptions = {}) {
       myWorkBlockerDraft: null,
       myWorkProjectDraft: options.projectDraft ?? null,
       myWorkProjectAlias: "",
+      myWorkProjectError: null,
+      myWorkProjectEdits: {},
       myWorkProjectVenues: [],
     } as unknown as AppViewState);
   const props: MyWorkProps = {
@@ -139,7 +141,18 @@ function draw(options: DrawOptions = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges, reviews, picked, saved, state, deleted, channelToggles, rerender: () => render(renderMyWork(state, props), container) };
+  return {
+    container,
+    toggled,
+    nudges,
+    reviews,
+    picked,
+    saved,
+    state,
+    deleted,
+    channelToggles,
+    rerender: () => render(renderMyWork(state, props), container),
+  };
 }
 
 describe("renderMyWork", () => {
@@ -511,9 +524,7 @@ describe("target venue", () => {
    * about venue rows, and would otherwise be blocked by a rule they are not testing.
    */
   function fillProjectBasics(container: Element) {
-    const alias = container.querySelector<HTMLInputElement>(
-      '[data-testid="my-work-add-alias"]',
-    );
+    const alias = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]');
     const started = container.querySelector<HTMLInputElement>(
       '[data-testid="my-work-add-started-on"]',
     );
@@ -525,9 +536,7 @@ describe("target venue", () => {
   // project is created rather than chased for afterwards.
   it("files the alias lowercased and the start date as typed", () => {
     const { container, saved } = draw({ projectDraft: "Causal AI Scientist" });
-    const alias = container.querySelector<HTMLInputElement>(
-      '[data-testid="my-work-add-alias"]',
-    );
+    const alias = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]');
     const started = container.querySelector<HTMLInputElement>(
       '[data-testid="my-work-add-started-on"]',
     );
@@ -540,6 +549,59 @@ describe("target venue", () => {
 
     expect(saved.at(-1)?.alias).toBe("cais");
     expect(saved.at(-1)?.startedOn).toBe("2026-01-15");
+  });
+
+  // The reported bug: "if you try to add a new project where the title is the same as the short
+  // name, it fails and no project is created". The short name is the thing at fault, not the match
+  // -- copying the title into that box brings its punctuation and its length along, and neither can
+  // be a Slack channel name. What made it a bug rather than a validation message is that the submit
+  // handler returned without saying anything, so the member saw a filled-in form and no project.
+  it.each([
+    ["an apostrophe", "Bob's Project"],
+    ["a colon", "Agents: a survey"],
+    ["more than the alias limit", "A Very Long Project Title That Goes On"],
+  ])("says why it refused a short name carrying %s", (_label, text) => {
+    const { container, saved, rerender } = draw({ projectDraft: text });
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value = text;
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    const error = container.querySelector('[data-testid="my-work-add-error"]');
+    expect(error?.textContent ?? "").toContain("cannot be a Slack channel name");
+  });
+
+  // A title and a short name that happen to be the same word were never the problem, and still are
+  // not: the pair below is what the reporter thought they were hitting.
+  it("files a project whose title and short name are the same word", () => {
+    const { container, saved } = draw({ projectDraft: "CAIS" });
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value = "CAIS";
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved).toHaveLength(1);
+    expect(saved.at(-1)).toMatchObject({ title: "CAIS", alias: "cais", id: "cais" });
+    expect(container.querySelector('[data-testid="my-work-add-error"]')).toBeNull();
+  });
+
+  it("names the missing answer rather than doing nothing", () => {
+    const { container, saved, rerender } = draw({ projectDraft: "Causal AI Scientist" });
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-add-error"]')?.textContent ?? "",
+    ).toContain("short name");
   });
 
   // Both are conditions on creating the project, not fields to fill in later: a start date typed a
@@ -1008,5 +1070,95 @@ describe("hiding a paper from your own list", () => {
   it("offers no hidden line when nothing is hidden", () => {
     const { container } = draw({ papers: twoPapers() });
     expect(container.querySelector('[data-testid="my-work-hidden-line"]')).toBeNull();
+  });
+});
+
+// A project's title changes as the work finds its shape, and the three answers the create form
+// insists on used to be fixed from the moment it was filed. The service always allowed them
+// through OWN_PAPER_EDITABLE_FIELDS; there was simply nowhere to type them.
+describe("editing a project's own details", () => {
+  const openCard = () => draw({ openIds: ["p1"], papers: [paper()] });
+
+  it("saves a new title, short name and start date", () => {
+    const { container, saved, rerender } = openCard();
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "A better title";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-alias-p1"]',
+    )!;
+    alias.value = "Renamed";
+    alias.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "p1",
+      title: "A better title",
+      // Stored the way Slack needs it, the same as on the create form.
+      alias: "renamed",
+    });
+  });
+
+  it("refuses a short name Slack could not take, and says why", () => {
+    const { container, saved, rerender } = openCard();
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-alias-p1"]',
+    )!;
+    alias.value = "Bob's Project";
+    alias.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("cannot be a Slack channel name");
+  });
+
+  it("refuses an empty title", () => {
+    const { container, saved, rerender } = openCard();
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "   ";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("title");
+  });
+
+  // Nothing typed yet is nothing to save: the button would otherwise re-file the record unchanged.
+  it("keeps the save button inert until something changes", () => {
+    const { container, rerender } = openCard();
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')
+        ?.disabled,
+    ).toBe(true);
+
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "Changed";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')
+        ?.disabled,
+    ).toBe(false);
   });
 });

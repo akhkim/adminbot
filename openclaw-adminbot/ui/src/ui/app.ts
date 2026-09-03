@@ -81,6 +81,7 @@ import {
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
+import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -90,7 +91,6 @@ import {
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
-import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
@@ -306,9 +306,7 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
-  @state() memberSheet:
-    | import("./adminbot/auth/session.ts").MemberSheetView
-    | null = null;
+  @state() memberSheet: import("./adminbot/auth/session.ts").MemberSheetView | null = null;
   @state() memberSheetLoadedAt: number | null = null;
   @state() memberSheetBusy = false;
   @state() memberSheetError: string | null = null;
@@ -724,6 +722,11 @@ export class OpenClawApp extends LitElement {
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
   @state() myWorkProjectAlias = "";
+  @state() myWorkProjectError: string | null = null;
+  @state() myWorkProjectEdits: Record<
+    string,
+    { title: string; alias: string; startedOn: string; error: string | null }
+  > = {};
   @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
@@ -747,8 +750,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBadgeAssignRowId = "";
   @state() adminBotBadgeMemberQuery = "";
   @state() adminBotBadgeEditId = "";
-  @state() profileBadgeNominations: import("./adminbot/auth/session.ts").BadgeNominationView[] =
-    [];
+  @state() profileBadgeNominations: import("./adminbot/auth/session.ts").BadgeNominationView[] = [];
   @state() profileBadgeNominationsLoading = false;
   @state() profileBadgeNominationsLoadedAt: number | null = null;
   @state() profileBadgeNominationsError: BadgeLoadError | null = null;

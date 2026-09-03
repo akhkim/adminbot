@@ -573,6 +573,8 @@ export type AdminBotPaperRecord = {
    * channel too.
    */
   alias?: string;
+  /** When work actually began, YYYY-MM-DD. Asked at creation; editable from the card since. */
+  started_on?: string;
   /** In the order the paper prints them. Order decides who the PaperFlow stage nudges go to. */
   authors: string[];
   /** People asked to read the draft. Not authors, and not the social consent list. */
