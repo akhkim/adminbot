@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { toAbsoluteRfc3339 } from "./time.js";
+import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "./time.js";
+
+describe("normalizeCalendarTimezone", () => {
+  it.each([
+    "AoE",
+    "AoE (UTC-12)",
+    "AoE — Anywhere on Earth (UTC−12)",
+    "Anywhere on Earth (UTC−12)",
+    "Anywhere on Earth (AoE, UTC−12)",
+  ])("maps the display label %s to the AoE IANA zone", (label) => {
+    expect(normalizeCalendarTimezone(label)).toBe("Etc/GMT+12");
+  });
+
+  it("keeps valid IANA zones and rejects prose", () => {
+    expect(normalizeCalendarTimezone(" America/Toronto ")).toBe("America/Toronto");
+    expect(normalizeCalendarTimezone("Toronto-ish")).toBeUndefined();
+  });
+});
 
 describe("toAbsoluteRfc3339", () => {
   // The failure this exists for: the drafting model returns a zoneless wall-clock time, and the
@@ -14,6 +31,12 @@ describe("toAbsoluteRfc3339", () => {
   it("handles the same wall clock in a different zone", () => {
     expect(toAbsoluteRfc3339("2026-09-01T13:00", "Europe/Zurich")).toBe("2026-09-01T11:00:00.000Z");
     expect(toAbsoluteRfc3339("2026-09-01T13:00", "UTC")).toBe("2026-09-01T13:00:00.000Z");
+  });
+
+  it("accepts a human-readable AoE label without passing it to Intl", () => {
+    expect(toAbsoluteRfc3339("2026-09-01T13:00", "Anywhere on Earth (AoE, UTC−12)")).toBe(
+      "2026-09-02T01:00:00.000Z",
+    );
   });
 
   // Winter and summer differ by an hour, which is the whole reason this is not a fixed offset.
@@ -69,5 +92,9 @@ describe("toAbsoluteRfc3339", () => {
     ["a partial time", "2026-09-01T13"],
   ])("returns nothing for %s", (_label, value) => {
     expect(toAbsoluteRfc3339(value, "America/Toronto")).toBeUndefined();
+  });
+
+  it("returns nothing instead of throwing for an invalid time zone", () => {
+    expect(toAbsoluteRfc3339("2026-09-01T13:00", "not a timezone")).toBeUndefined();
   });
 });

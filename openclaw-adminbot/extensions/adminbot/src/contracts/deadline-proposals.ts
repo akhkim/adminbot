@@ -1,4 +1,4 @@
-import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 
 export const deadlineProposalEntryTypes = [
   "main_conference",
@@ -121,7 +121,7 @@ export function validateDeadlineProposalInput(
     entryType: input.entryType,
     deadlineDate: input.deadlineDate.trim(),
     deadlineTime: input.deadlineTime.trim(),
-    timezone: input.timezone.trim(),
+    timezone: normalizeCalendarTimezone(input.timezone) ?? input.timezone.trim(),
     homepageUrl: input.homepageUrl.trim(),
     cfpUrl: input.cfpUrl.trim(),
     openReviewUrl: input.openReviewUrl.trim(),

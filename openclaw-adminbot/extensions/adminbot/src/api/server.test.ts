@@ -2689,6 +2689,64 @@ describe("the calendar routes", () => {
     expect(executed[0]?.from).toBe("2026-08-18T13:00:00-04:00");
   });
 
+  it.each([
+    ["create", "/calendar/events"],
+    ["update", "/calendar/events/evt-9"],
+  ])("canonicalizes an AoE display label on calendar %s", async (_operation, route) => {
+    const executed: Array<Record<string, unknown>> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.proposed_payload as Record<string, unknown>);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "AoE deadline check-in",
+        start: "2026-09-01T13:00",
+        end: "2026-09-01T14:00",
+        timezone: "Anywhere on Earth (AoE, UTC−12)",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(executed[0]).toMatchObject({
+      from: "2026-09-02T01:00:00.000Z",
+      to: "2026-09-02T02:00:00.000Z",
+      timezone: "Etc/GMT+12",
+    });
+  });
+
+  it.each([
+    ["create", "/calendar/events"],
+    ["update", "/calendar/events/evt-9"],
+  ])("rejects an invalid timezone cleanly on calendar %s", async (_operation, route) => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Bad zone",
+        start: "2026-09-01T13:00",
+        end: "2026-09-01T14:00",
+        timezone: "Toronto-ish",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("IANA") },
+    });
+  });
+
   it("refuses a start it cannot read rather than sending it to Google", async () => {
     const { baseUrl } = await startService();
     const headers = await adminSession(baseUrl);
