@@ -1,13 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
-import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
-import {
-  matchThemedMeetings,
-  matchTopicChannels,
-  topicOfChannel,
-  type AdminBotTopicChannelPrefix,
-} from "../workflows/members/topic-channels.js";
 import {
   adminBotIsAlumniType,
   adminBotIsFullMemberType,
@@ -107,6 +99,21 @@ import {
   type AdminBotUpdateSubject,
 } from "../contracts/activity-log.js";
 import {
+  ADMINBOT_BADGE_CATEGORY_MAX,
+  ADMINBOT_BADGE_DESCRIPTION_MAX,
+  ADMINBOT_BADGE_EVIDENCE_MAX,
+  adminBotDefaultBadgeDefinitions,
+  normalizeBadgeFamilyKey,
+  type AdminBotAssignedBadge,
+  type AdminBotBadgeAssignment,
+  type AdminBotBadgeDefinition,
+  type AdminBotBadgeDefinitionInput,
+  type AdminBotBadgeNomination,
+  type AdminBotBadgeNominationStatus,
+  type AdminBotBadgeNominationView,
+} from "../contracts/badges.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
   validateDeadlineProposalInput,
@@ -124,20 +131,6 @@ import {
   type AdminBotFeedbackEntry,
   type AdminBotFeedbackSummary,
 } from "../contracts/feedback.js";
-import {
-  ADMINBOT_BADGE_CATEGORY_MAX,
-  ADMINBOT_BADGE_DESCRIPTION_MAX,
-  ADMINBOT_BADGE_EVIDENCE_MAX,
-  adminBotDefaultBadgeDefinitions,
-  normalizeBadgeFamilyKey,
-  type AdminBotAssignedBadge,
-  type AdminBotBadgeAssignment,
-  type AdminBotBadgeDefinition,
-  type AdminBotBadgeDefinitionInput,
-  type AdminBotBadgeNomination,
-  type AdminBotBadgeNominationStatus,
-  type AdminBotBadgeNominationView,
-} from "../contracts/badges.js";
 import {
   adminBotDefaultGroupMeeting,
   adminBotGroupMeetingNudgeWindowHours,
@@ -233,12 +226,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
-import {
-  dormantChaseDue,
-  isChaseableMember,
-  planOnboardingFollowUp,
-  type OnboardingFollowUpStep,
-} from "../workflows/members/onboarding-followup.js";
+import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   detectLocationDrift,
   isNewObservation,
@@ -247,6 +235,18 @@ import {
   selfReportedChange,
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import {
+  dormantChaseDue,
+  isChaseableMember,
+  planOnboardingFollowUp,
+  type OnboardingFollowUpStep,
+} from "../workflows/members/onboarding-followup.js";
+import {
+  matchThemedMeetings,
+  matchTopicChannels,
+  topicOfChannel,
+  type AdminBotTopicChannelPrefix,
+} from "../workflows/members/topic-channels.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -332,6 +332,13 @@ export type AdminBotServiceStore = {
   saveExecutionResult(result: AdminBotExecutionResult): void;
   getExecutionResult(actionId: string): AdminBotExecutionResult | undefined;
   getExecutionResultByIdempotencyKey(idempotencyKey: string): AdminBotExecutionResult | undefined;
+  claimExecution(
+    effectKey: string,
+    actionId: string,
+    claimedAt: string,
+    staleBefore: string,
+  ): boolean;
+  releaseExecutionClaim(effectKey: string, actionId: string): void;
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
@@ -1044,7 +1051,9 @@ export class AdminBotService {
         continue;
       }
       const familyKey =
-        seed.family_key ?? this.findExistingBadgeFamilyKey(seed.category, seed.name) ?? normalizeBadgeFamilyKey(seed.category, seed.name);
+        seed.family_key ??
+        this.findExistingBadgeFamilyKey(seed.category, seed.name) ??
+        normalizeBadgeFamilyKey(seed.category, seed.name);
       this.store.saveBadgeDefinition({
         id: seed.id,
         category: seed.category,
@@ -1072,8 +1081,9 @@ export class AdminBotService {
       )?.family_key;
   }
 
-  // One connector call may mutate an external service. Share it across concurrent retries so
-  // the durable idempotency record is written exactly once after the connector succeeds.
+  // One connector call may mutate an external service. The map key follows the external-effect
+  // identity when one was supplied; action ids alone do not serialize two proposals carrying the
+  // same idempotency key.
   private readonly executionsInFlight = new Map<
     string,
     Promise<AdminBotServiceResponse<AdminBotExecutionResult>>
@@ -1553,16 +1563,32 @@ export class AdminBotService {
     if (request.dry_run !== false) {
       return await this.executeOnce(actionId, request);
     }
-    const existing = this.executionsInFlight.get(actionId);
+    const idempotencyKey = request.idempotency_key?.trim();
+    const inFlightKey = idempotencyKey ? `idempotency:${idempotencyKey}` : `action:${actionId}`;
+    const existing = this.executionsInFlight.get(inFlightKey);
     if (existing) {
       return await existing;
     }
-    const pending = this.executeOnce(actionId, request).finally(() => {
-      if (this.executionsInFlight.get(actionId) === pending) {
-        this.executionsInFlight.delete(actionId);
+    const claimedAt = new Date().toISOString();
+    const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    if (!this.store.claimExecution(inFlightKey, actionId, claimedAt, staleBefore)) {
+      const replay = idempotencyKey
+        ? this.store.getExecutionResultByIdempotencyKey(idempotencyKey)
+        : this.store.getExecutionResult(actionId);
+      return replay
+        ? { ok: true, status: 200, payload: replay }
+        : serviceError(409, "an execution with this idempotency key is already in progress");
+    }
+    const normalizedRequest = idempotencyKey
+      ? { ...request, idempotency_key: idempotencyKey }
+      : request;
+    const pending = this.executeOnce(actionId, normalizedRequest).finally(() => {
+      if (this.executionsInFlight.get(inFlightKey) === pending) {
+        this.executionsInFlight.delete(inFlightKey);
       }
+      this.store.releaseExecutionClaim(inFlightKey, actionId);
     });
-    this.executionsInFlight.set(actionId, pending);
+    this.executionsInFlight.set(inFlightKey, pending);
     return await pending;
   }
 
@@ -1948,6 +1974,7 @@ export class AdminBotService {
       delete stored.availability_notes;
     }
     this.store.saveLabMember(stored);
+    this.clearResolvedProfileNotifications(stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -2136,7 +2163,9 @@ export class AdminBotService {
       source: "admin",
       ...(evidence ? { evidence } : {}),
     });
-    const assignment = this.assignedBadgesFor(memberId).find((entry) => entry.badge_id === badge.id);
+    const assignment = this.assignedBadgesFor(memberId).find(
+      (entry) => entry.badge_id === badge.id,
+    );
     this.recordAudit({
       type: "badge.assigned",
       actor,
@@ -2169,10 +2198,12 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { removed: true } };
   }
 
-  listBadgeNominations(params: {
-    memberId?: string;
-    status?: AdminBotBadgeNominationStatus;
-  } = {}): AdminBotServiceResponse<{ nominations: AdminBotBadgeNominationView[] }> {
+  listBadgeNominations(
+    params: {
+      memberId?: string;
+      status?: AdminBotBadgeNominationStatus;
+    } = {},
+  ): AdminBotServiceResponse<{ nominations: AdminBotBadgeNominationView[] }> {
     const nominations = this.store
       .listBadgeNominations(params)
       .map((nomination) => this.badgeNominationView(nomination))
@@ -2241,7 +2272,10 @@ export class AdminBotService {
     nominationId: string,
     decision: Extract<AdminBotBadgeNominationStatus, "approved" | "rejected">,
     actor: string,
-  ): AdminBotServiceResponse<{ nomination: AdminBotBadgeNominationView; assignment?: AdminBotAssignedBadge }> {
+  ): AdminBotServiceResponse<{
+    nomination: AdminBotBadgeNominationView;
+    assignment?: AdminBotAssignedBadge;
+  }> {
     const nomination = this.store.getBadgeNomination(nominationId);
     if (!nomination || nomination.status !== "pending") {
       return serviceError(404, "badge nomination not found");
@@ -2275,8 +2309,7 @@ export class AdminBotService {
       );
     }
     this.recordAudit({
-      type:
-        decision === "approved" ? "badge.nomination_approved" : "badge.nomination_rejected",
+      type: decision === "approved" ? "badge.nomination_approved" : "badge.nomination_rejected",
       actor,
       details: {
         nomination_id: nomination.id,
@@ -2322,11 +2355,12 @@ export class AdminBotService {
           },
         ];
       })
-      .toSorted((left, right) =>
-        left.sort_order - right.sort_order ||
-        left.category.localeCompare(right.category) ||
-        left.name.localeCompare(right.name) ||
-        (left.tier ?? "").localeCompare(right.tier ?? ""),
+      .toSorted(
+        (left, right) =>
+          left.sort_order - right.sort_order ||
+          left.category.localeCompare(right.category) ||
+          left.name.localeCompare(right.name) ||
+          (left.tier ?? "").localeCompare(right.tier ?? ""),
       );
   }
 
@@ -3018,7 +3052,10 @@ export class AdminBotService {
    * `dryRun` is the default. This is not undoable and it is not small, so the caller has to ask
    * for the write explicitly.
    */
-  deleteMembersWithoutEmail(params: { actorId: string; dryRun?: boolean }): AdminBotServiceResponse<{
+  deleteMembersWithoutEmail(params: {
+    actorId: string;
+    dryRun?: boolean;
+  }): AdminBotServiceResponse<{
     deleted: Array<{ id: string; name: string }>;
     blocked: Array<{ id: string; name: string; reason: string }>;
     removed: Record<string, number>;
@@ -5316,14 +5353,33 @@ export class AdminBotService {
   listMemberNotifications(
     memberId: string,
   ): AdminBotServiceResponse<{ notifications: AdminBotMemberNotification[] }> {
-    if (!this.store.getLabMember(memberId)) {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
       return serviceError(404, `unknown member ${memberId}`);
     }
+    // A complete member may already have had a durable warning before this reconciliation shipped.
+    // Clear it on the first read as well as on the last profile save, so deployment heals existing
+    // rows without asking everybody at 100% to edit and save an arbitrary field again.
+    this.clearResolvedProfileNotifications(member);
     return {
       ok: true,
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  private clearResolvedProfileNotifications(member: AdminBotLabMember): void {
+    if (missingMandatoryProfileFields(member).length > 0) {
+      return;
+    }
+    for (const notification of this.store.listMemberNotifications(member.id)) {
+      if (
+        notification.kind === "profile" &&
+        RESOLVED_PROFILE_NOTIFICATION_TITLES.has(notification.title)
+      ) {
+        this.store.deleteMemberNotification(notification.id);
+      }
+    }
   }
 
   /**
@@ -6258,7 +6314,10 @@ export class AdminBotService {
    * only fills in the absence of one. It never removes anybody -- taking somebody off the list is
    * an admin editing a record, not a sweep.
    */
-  seedNudgeListFromMemberTypes(params: { actor: string; dryRun: boolean }): AdminBotServiceResponse<{
+  seedNudgeListFromMemberTypes(params: {
+    actor: string;
+    dryRun: boolean;
+  }): AdminBotServiceResponse<{
     dry_run: boolean;
     members_scanned: number;
     members_added: number;
@@ -6689,31 +6748,35 @@ export class AdminBotService {
     // a field somebody else is missing. A member missing both halves is told both in one message;
     // two separate nudges about the same page reads as a system that does not know what it already
     // sent.
-    const groups = new Map<string, { missingFields: string[]; timeline: boolean; ids: string[] }>();
+    const groups = new Map<
+      string,
+      { missingFields: string[]; timelineEntries?: number; ids: string[] }
+    >();
     for (const row of due) {
       const missingFields = include !== "timeline" ? row.missing_fields : [];
       const timeline = include !== "profile" && row.timeline_short;
-      const key = `${missingFields.join(",")}|${timeline}`;
-      const group = groups.get(key) ?? { missingFields, timeline, ids: [] };
+      const timelineEntries = timeline ? row.timeline_entries : undefined;
+      const key = `${missingFields.join(",")}|${timelineEntries ?? "complete"}`;
+      const group = groups.get(key) ?? { missingFields, timelineEntries, ids: [] };
       group.ids.push(row.id);
       groups.set(key, group);
     }
     const created: AdminBotMemberNudgeResult["created"] = [];
     const skipped: AdminBotMemberNudgeResult["skipped"] = [];
     const notified: string[] = [];
-    for (const { missingFields, timeline, ids: recipients } of groups.values()) {
+    for (const { missingFields, timelineEntries, ids: recipients } of groups.values()) {
       const needsProfile = missingFields.length > 0;
       const result = await this.sendMemberNudge(
         {
           channel: "slack",
           recipient_member_ids: recipients,
-          message: buildProfileReminderMessage({ missingFields, timeline }),
+          message: buildProfileReminderMessage({ missingFields, timelineEntries }),
           kind: "profile",
           title: needsProfile
             ? missingFields.length === 1
               ? "Your profile is missing a required field"
               : "Your profile is missing required fields"
-            : "Your term timeline is empty",
+            : "Your profile is complete — add your term timeline",
           tab: needsProfile ? "profile" : "adminbotTimeAvailability",
           // Important: both halves are things only the member can do, and everything downstream --
           // scheduling, travel, the calendar's timezones -- is planned from them.
@@ -6759,18 +6822,22 @@ export class AdminBotService {
     name: string;
     missing_fields: string[];
     timeline_short: boolean;
+    timeline_entries: number;
   }> {
     return this.store
       .listLabMembers()
       .filter(isActiveRosterMember)
-      .map((member) => ({
-        id: member.id,
-        name: member.name,
-        missing_fields: missingMandatoryProfileFields(member),
-        timeline_short:
-          isAdminBotFullMember(member) &&
-          countTimelineEntries(member).total < adminBotTimelineEntryTarget,
-      }))
+      .map((member) => {
+        const timelineEntries = countTimelineEntries(member).total;
+        return {
+          id: member.id,
+          name: member.name,
+          missing_fields: missingMandatoryProfileFields(member),
+          timeline_short:
+            isAdminBotFullMember(member) && timelineEntries < adminBotTimelineEntryTarget,
+          timeline_entries: timelineEntries,
+        };
+      })
       .filter((row) => row.missing_fields.length > 0 || row.timeline_short);
   }
 
@@ -6794,15 +6861,10 @@ export class AdminBotService {
     welcomed_at: string;
   }> {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
-    const cutoff =
-      now.getTime() - adminBotAlumniSlackInviteDelayDays * 24 * 60 * 60 * 1000;
+    const cutoff = now.getTime() - adminBotAlumniSlackInviteDelayDays * 24 * 60 * 60 * 1000;
     const byAddress = new Map<string, AdminBotLabMember>();
     for (const member of this.store.listLabMembers()) {
-      for (const address of [
-        member.email,
-        member.correspondence_email,
-        member.calendar_email,
-      ]) {
+      for (const address of [member.email, member.correspondence_email, member.calendar_email]) {
         const key = address?.trim().toLowerCase();
         if (key) {
           byAddress.set(key, member);
@@ -6810,7 +6872,10 @@ export class AdminBotService {
       }
     }
     const ledger = this.nudgeLedgerIndex();
-    const due = new Map<string, { member_id: string; name: string; email: string; welcomed_at: string }>();
+    const due = new Map<
+      string,
+      { member_id: string; name: string; email: string; welcomed_at: string }
+    >();
     for (const event of this.store.listAuditEvents()) {
       if (event.type !== "onboarding.guide_sent") {
         continue;
@@ -6858,11 +6923,7 @@ export class AdminBotService {
   }
 
   /** The sweep's own row, so a run that sent nothing is still distinguishable from one that never ran. */
-  recordAlumniSlackInviteSweep(params: {
-    actor: string;
-    sent: number;
-    skipped: number;
-  }): void {
+  recordAlumniSlackInviteSweep(params: { actor: string; sent: number; skipped: number }): void {
     this.recordAudit({
       type: "alumni_slack_invites.swept",
       actor: params.actor,
@@ -7813,8 +7874,7 @@ export class AdminBotService {
     skipped: AdminBotMemberNudgeSkip[];
   } {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
-    const cutoff =
-      now.getTime() - adminBotRecLetterChannelRetentionDays * 24 * 60 * 60 * 1000;
+    const cutoff = now.getTime() - adminBotRecLetterChannelRetentionDays * 24 * 60 * 60 * 1000;
     const settled = new Set<string>(adminBotLogisticsSettledStatuses);
 
     /** Per member: is anything still open, and when did the most recent one settle. */
@@ -8069,9 +8129,7 @@ export class AdminBotService {
    * channel already exists -- there is no channel directory to consult, and asking Slack to ensure
    * a name exists is cheaper and more honest than keeping a second list of what we think does.
    */
-  async syncProjectChannels(
-    actor: string,
-  ): Promise<
+  async syncProjectChannels(actor: string): Promise<
     AdminBotServiceResponse<{
       channels: Array<{ channel: string; paper_id: string; invited: string[] }>;
       skipped: AdminBotMemberNudgeSkip[];
@@ -9578,6 +9636,11 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
+  "Your profile is missing a required field",
+  "Your profile is missing required fields",
+  "Your profile needs some info",
+]);
 
 // The same idea one level down: a *slot* is left alone for three days after it was nudged about.
 // Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
@@ -9747,11 +9810,16 @@ function buildRegistrationUpdateMessage(params: { venue: string; unregistered: n
  * page, and a member who gets one nudge about their profile and another about their timeline reads
  * a system that does not know what it already sent.
  */
-function buildProfileReminderMessage(needs: { missingFields: string[]; timeline: boolean }): string {
+function buildProfileReminderMessage(needs: {
+  missingFields: string[];
+  timelineEntries?: number;
+}): string {
   const lines: string[] = [];
   if (needs.missingFields.length > 0) {
     const fields = needs.missingFields
-      .map((key) => adminBotMandatoryProfileFieldLabels[key as AdminBotMandatoryProfileField] ?? key)
+      .map(
+        (key) => adminBotMandatoryProfileFieldLabels[key as AdminBotMandatoryProfileField] ?? key,
+      )
       .join(", ");
     const count =
       needs.missingFields.length === 1
@@ -9762,18 +9830,23 @@ function buildProfileReminderMessage(needs: { missingFields: string[]; timeline:
       "Open your profile page in the Control UI and fill them in — it saves as you type.",
     );
   }
-  if (needs.timeline) {
+  if (needs.timelineEntries !== undefined) {
     if (lines.length > 0) {
       lines.push("");
+    } else {
+      lines.push("Your required profile fields are complete.", "");
     }
+    const remaining = Math.max(0, adminBotTimelineEntryTarget - needs.timelineEntries);
+    const remainingLabel = remaining === 1 ? "entry" : "entries";
     lines.push(
-      "Your timeline is empty. Add when you are working, when you are away, and the milestones " +
-        "you are aiming at, on the Time Availability page.",
+      `Your term timeline has ${needs.timelineEntries} of ${adminBotTimelineEntryTarget} needed entries. ` +
+        `Add ${remaining} more ${remainingLabel} on the Time Availability page: when you are ` +
+        "working, when you are away, or a milestone you are aiming at.",
       "It is what the lab plans deadlines and meetings around — without it, nobody can tell " +
         "whether you are free next month.",
     );
   }
-  lines.push("", "Already done? You'll stop getting this once it is filled in.");
+  lines.push("", "Already done? Refresh AdminBot after the change is saved.");
   return lines.join("\n");
 }
 

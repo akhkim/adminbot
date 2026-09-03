@@ -256,10 +256,7 @@ export function adminBotIsAlumniType(memberType: string | undefined): boolean {
  * of the 24 alumni on the live roster carry the type with no status at all. Anything asking "has
  * this person left" has to ask both, which is what this exists to make unmissable.
  */
-export function adminBotIsAlumniMember(member: {
-  status?: string;
-  member_type?: string;
-}): boolean {
+export function adminBotIsAlumniMember(member: { status?: string; member_type?: string }): boolean {
   return member.status === "alumni" || adminBotIsAlumniType(member.member_type);
 }
 
@@ -351,7 +348,9 @@ export function adminBotHasPortalAccess(memberType: string | undefined): boolean
   if (tokens.length === 0) {
     return undefined;
   }
-  if (tokens.some((token) => (adminBotPortalAccessMemberTypes as readonly string[]).includes(token))) {
+  if (
+    tokens.some((token) => (adminBotPortalAccessMemberTypes as readonly string[]).includes(token))
+  ) {
     return true;
   }
   return tokens.every((token) =>

@@ -140,7 +140,7 @@ describe("renderPaperSlots", () => {
     it("names the one rung anybody can act on, and what the action is", async () => {
       const { container } = await draw([], false, { stages });
       const decision = container.querySelector('[data-testid="paper-stage-p1-decision"]');
-      expect(decision?.textContent).toContain("bcc us when it lands");
+      expect(decision?.textContent).toContain("forward the venue email when it lands");
     });
 
     it("offers no control at all: nothing a person does closes these", async () => {
@@ -215,7 +215,9 @@ describe("renderPaperSlots", () => {
       const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
-      container.querySelector<HTMLButtonElement>('[data-testid="paper-venue-remove-p1-0"]')?.click();
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="paper-venue-remove-p1-0"]')
+        ?.click();
       expect(saves[0]?.venue).toBe("");
     });
 

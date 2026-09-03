@@ -30,10 +30,10 @@ import {
   type AdminBotBadgeNominationStatus,
 } from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
-import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
+import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
   buildNewsletterDraft,
@@ -510,7 +510,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, serviceOptions(options));
   }
-  const gatewayToken = trimmedEnv(options.gatewayToken ?? process.env.OPENCLAW_GATEWAY_TOKEN);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -548,7 +547,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
       return submitDcsForm ? { submitDcsForm } : {};
     })(),
-    ...(gatewayToken ? { gatewayToken } : {}),
     ...(gatewayUrl ? { gatewayUrl } : {}),
     // An explicitly injected geolocator wins (tests and the host inject their own);
     // otherwise build the IPinfo Lite one when a token is configured. With neither, the
@@ -749,7 +747,10 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: AdminBotRouteContext) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins);
+  if (!applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins)) {
+    sendJson(res, 403, { error: { message: "origin is not allowed" } });
+    return;
+  }
   if (req.method === "OPTIONS") {
     // CORS preflight: headers already set by applyCors; body-less 204.
     res.statusCode = 204;
@@ -964,6 +965,9 @@ async function handleAuthRoute(
       asString(body.current_password),
       asString(body.new_password),
     );
+    if (result.ok) {
+      clearSessionCookie(res);
+    }
     sendAuthResult(res, result);
     return;
   }
@@ -1370,8 +1374,7 @@ async function handleAuthenticatedRoute(
           match: ctx.workshopMatcher,
           now: ctx.workshopNudgeNow(),
           ...(refreshBody.force === true ? { force: true } : {}),
-          ...(typeof refreshBody.conference_key === "string" &&
-          refreshBody.conference_key.trim()
+          ...(typeof refreshBody.conference_key === "string" && refreshBody.conference_key.trim()
             ? { conferenceKey: refreshBody.conference_key.trim() }
             : {}),
           ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
@@ -2223,7 +2226,8 @@ async function handleAuthenticatedRoute(
     }
     const rawStatus = url.searchParams.get("status");
     const status =
-      rawStatus && adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
+      rawStatus &&
+      adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
         ? (rawStatus as AdminBotBadgeNominationStatus)
         : undefined;
     const isAdmin = principal.member.privilege_level === "admin";
@@ -3670,10 +3674,7 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, await service.chaseOpenOnboarding(principalActor(principal)));
     return;
   }
-  if (
-    req.method === "POST" &&
-    url.pathname === "/onboarding/alumni-slack-invites/run"
-  ) {
+  if (req.method === "POST" && url.pathname === "/onboarding/alumni-slack-invites/run") {
     // Recipients are computed from the welcome's own audit row and the ledger, and the copy is a
     // stored template, so nothing here is caller-supplied: requirePrivileged, like the other
     // cron-triggered sweeps.
@@ -3763,10 +3764,7 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "channels must not be empty" } });
       return;
     }
-    sendServiceResult(
-      res,
-      await service.syncTopicChannels(principalActor(principal), channels),
-    );
+    sendServiceResult(res, await service.syncTopicChannels(principalActor(principal), channels));
     return;
   }
   if (req.method === "POST" && url.pathname === "/papers/project-channels/run") {
@@ -3846,12 +3844,17 @@ async function handleAuthenticatedRoute(
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
   if (req.method === "POST" && remove?.[1]) {
-    if (!requireMemberPrivileged(res, principal)) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
       return;
     }
     const actionId = decodeURIComponent(remove[1]);
     const body = (await readJson(req)) as AdminBotRemovePendingRequest;
-    sendServiceResult(res, service.removePending(actionId, body));
+    // The note is client-authored; the actor is not. Keeping the two separate prevents an admin
+    // from forging another member's identity in the immutable proposal audit trail.
+    sendServiceResult(
+      res,
+      service.removePending(actionId, { ...body, actor: principal.member.id }),
+    );
     return;
   }
   const approve = /^\/approvals\/([^/]+)\/approve$/u.exec(url.pathname);
@@ -4182,10 +4185,10 @@ function applyCors(
   // Origins already reported, so the warning fires once each rather than once per request. Held by
   // the service rather than the module so two services in one process cannot silence each other.
   refusedOrigins: Set<string>,
-): void {
+): boolean {
   const origin = req.headers.origin;
   if (typeof origin !== "string") {
-    return;
+    return true;
   }
   if (!allowedOrigins.has(origin)) {
     // A refused origin is otherwise completely silent: the service answers normally, the browser
@@ -4201,12 +4204,13 @@ function applyCors(
         }`,
       );
     }
-    return;
+    return false;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  return true;
 }
 
 function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>): void {

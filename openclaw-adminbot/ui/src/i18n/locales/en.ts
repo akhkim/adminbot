@@ -1367,9 +1367,11 @@ export const en: TranslationMap = {
       linkPlaceholder: "https://\u2026 class schedule, project board",
       note: "Note",
       jinesisTitle: "Add a Jinesis commitment",
+      editJinesisTitle: "Edit Jinesis commitment",
       milestoneTitle: "Add a big deadline",
       tripTitle: "Add a trip away from home",
       awayTitle: "Add something outside your Jinesis commitments",
+      editAwayTitle: "Edit commitment outside Jinesis",
       wholeDay: "Away the whole day",
       wholeDayHint:
         "Recorded as a whole day off, so it clears any Jinesis hours booked over these dates.",
@@ -1501,10 +1503,10 @@ export const en: TranslationMap = {
     },
     activity: {
       column: "Actually used it",
-      counts: "{logins} in · {edits} edits · {papers} papers",
+      counts: "{logins} sign-ins · {edits} profile saves · {papers} paper/slot edits",
       lastActive: "last active {day}",
       breakdown:
-        "{logins} sign-in(s), {edits} profile save(s), {papers} paper update(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
+        "{logins} sign-in(s), {edits} profile save(s), {papers} paper-record or presentation-slot edit(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
       summaryActive: "members have actually used AdminBot",
     },
     loading: "Reading profiles…",
@@ -2152,7 +2154,7 @@ export const en: TranslationMap = {
         sent: "If that email has an account, a reset link is on its way. The link expires in an hour.",
         confirmIntro: "Choose a new password for your account.",
         setPassword: "Set new password",
-        done: "Your password has been changed. Signp in with your new password.",
+        done: "Password updated. All sessions were signed out; sign in with your new password.",
         errorInvalidLink:
           "This reset link is invalid or has expired. Request a new one from the sign-in screen.",
         errorUnreachable: "Could not reach the AdminBot service. Try again in a moment.",
@@ -2169,7 +2171,8 @@ export const en: TranslationMap = {
         submit: "Update password",
         submitting: "Updating…",
         cancel: "Cancel",
-        success: "Password updated.",
+        success:
+          "Password updated. All sessions were signed out; sign in again with your new password.",
         errorRequired: "Enter your current and new password.",
         errorAuthFailed: "Your current password is incorrect.",
         errorRateLimited: "Too many attempts. Try again later.",

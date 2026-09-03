@@ -368,6 +368,22 @@ describe("applySettingsFromUrl", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("keeps a password-reset link on the signed-out login surface after stripping its token", () => {
+    setTestWindowUrl("https://control.example/?passwordReset=reset-token");
+    const host = createHost("overview") as SettingsHost & {
+      authGateVisible?: boolean;
+      loginMode?: string;
+      passwordResetToken?: string;
+    };
+
+    applySettingsFromUrl(host);
+
+    expect(host.passwordResetToken).toBe("reset-token");
+    expect(host.loginMode).toBe("reset-confirm");
+    expect(host.authGateVisible).toBe(true);
+    expect(window.location.search).toBe("?signedOut=login");
+  });
+
   it("hydrates native Mac app auth before the first connection", () => {
     setTestWindowUrl("https://control.example/ui/chat");
     (

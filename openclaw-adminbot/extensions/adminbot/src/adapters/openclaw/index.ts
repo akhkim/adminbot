@@ -1,5 +1,6 @@
 import { AdminBotClient, type AdminBotClientConfig, type FetchLike } from "../../api/client.js";
 import { readGogSheetRows } from "../../connectors/gog.js";
+import { createLinkedInDraftRunner } from "../../connectors/social-draft.js";
 import type {
   AdminBotActionProposal,
   AdminBotActionType,
@@ -26,7 +27,6 @@ import {
   buildPaperSocialPayload,
   type AdminBotSocialPlatform,
 } from "../../workflows/papers/social-posting.js";
-import { createLinkedInDraftRunner } from "../../connectors/social-draft.js";
 import type {
   AdminBotReimbursementMessage,
   AdminBotReimbursementReceipt,
@@ -380,7 +380,19 @@ export function createAdminBotToolHandlers(
         ...resolved,
         evidence: resolved.evidence,
       });
-      return await client.createProposal(calendarProposal(normalized), signal);
+      const proposal = await client.createProposal(calendarProposal(normalized), signal);
+      const proposalFields =
+        proposal && typeof proposal === "object" && !Array.isArray(proposal)
+          ? (proposal as Record<string, unknown>)
+          : { proposal };
+      return {
+        ...proposalFields,
+        outcome: "proposal_created",
+        approval_status: "pending",
+        external_mutation_performed: false,
+        user_message:
+          "Calendar change proposed for approval. It has not been scheduled or changed yet.",
+      };
     },
     proposeSlackMessage: (params: SlackMessageParams) =>
       client.createProposal(slackMessageProposal(params), signal),

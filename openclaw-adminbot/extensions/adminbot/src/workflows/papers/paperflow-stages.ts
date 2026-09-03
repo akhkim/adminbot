@@ -234,8 +234,8 @@ export function openPaperflowStage(params: {
  * Composed here rather than drafted by the model. Every other automated mail in this codebase
  * that carries a request goes through the model for warmth, but this one repeats on a fixed
  * cadence until it is answered, and a nudge whose wording drifts every fortnight reads as four
- * different people asking the same question. The bcc instruction in particular has to be
- * byte-identical every time, because it is the thing the author is being trained to do.
+ * different people asking the same question. The evidence-handoff instruction in particular has
+ * to be byte-identical every time, because it is the thing the author is being trained to do.
  */
 export function paperflowStageEmail(params: {
   paper: AdminBotPaperRecord;
@@ -250,6 +250,11 @@ export function paperflowStageEmail(params: {
   const venue = paper.venue?.trim() || paper.accepted_venue?.trim();
   const where = venue ? ` at ${venue}` : "";
   const askedBefore = (entry?.nudge_count ?? 0) > 0;
+  const evidenceInstruction = [
+    `When it lands, ${definition.handoffAsk} to ${botEmail} from an email address saved on your AdminBot profile.`,
+    "Do not only bcc the original venue message — that arrives from the venue and has to wait for manual review.",
+    `Once the forward is recorded, AdminBot marks ${definition.label.toLowerCase()} done on the paper and stops asking.`,
+  ].join(" ");
 
   const lines = [
     `Hi ${firstName},`,
@@ -258,14 +263,15 @@ export function paperflowStageEmail(params: {
     "",
     `This is about "${paper.title}"${where}.`,
     "",
-    // The instruction, and the reason for it in the same breath. "Because it stops these" is the
-    // only argument that actually gets people to bcc a robot.
-    `When it lands, ${definition.bccAsk} to ${botEmail}. That is all that is needed — AdminBot marks ${definition.label.toLowerCase()} done on the paper the moment the bcc arrives, and stops asking.`,
+    // The instruction matches the trusted-sender gate in the inbox processor. An original venue
+    // message keeps the venue as `From` even when the bot is bcc'd, so it is deliberately held for
+    // review. Forwarding from a profile address proves which lab member handed us the evidence.
+    evidenceInstruction,
   ];
   if (recipient.authorIndex > 0 || recipient.prioritized) {
     lines.push(
       "",
-      `You are getting this because you are the first lab member on the author list${recipient.prioritized ? " we route venue mail through" : ""}. If somebody else is handling the venue correspondence on this paper, forward this to them and bcc us on the reply.`,
+      `You are getting this because you are the first lab member on the author list${recipient.prioritized ? " we route venue mail through" : ""}. If somebody else is handling the venue correspondence on this paper, forward this reminder to them; they should send the venue evidence from an email address saved on their AdminBot profile.`,
     );
   }
   if (askedBefore) {

@@ -33,10 +33,10 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { MemberOption } from "./member-select.ts";
-import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
-import "./paper-slot-deck.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { MemberOption } from "./member-select.ts";
+import "./paper-slot-deck.ts";
+import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
 
 export type PaperDetailsProps = {
   authors: string[];
@@ -158,7 +158,6 @@ function statusPill(row: PaperSlotRow | undefined) {
       return html`<span class="paper-slot__pill">Missing</span>`;
   }
 }
-
 
 function renderInput(
   props: PaperSlotsProps,
@@ -502,7 +501,11 @@ function renderNameList(params: {
  * board -- the first item is the aim and the rest are fallbacks, so nothing downstream learns a
  * new shape.
  */
-function renderVenueList(paperId: string, stored: string, commit: (patch: { venue: string }) => void) {
+function renderVenueList(
+  paperId: string,
+  stored: string,
+  commit: (patch: { venue: string }) => void,
+) {
   const venues = stored
     .split(",")
     .map((part) => part.trim())
@@ -637,8 +640,11 @@ function renderDetails(props: PaperSlotsProps) {
       ...patch,
     });
   return html`
-    <details class="paper-slots__group paper-slots__group--branch paper-slots__details-group" open
-      data-testid=${`paper-details-${props.paperId}`}>
+    <details
+      class="paper-slots__group paper-slots__group--branch paper-slots__details-group"
+      open
+      data-testid=${`paper-details-${props.paperId}`}
+    >
       <summary class="paper-slots__group-head">
         <h4 class="paper-slots__group-title">
           <span class="paper-slots__group-icon" aria-hidden="true">${icons.user}</span>
@@ -650,71 +656,71 @@ function renderDetails(props: PaperSlotsProps) {
         <!-- The picker when the caller can supply the roster, the old text box otherwise (the admin
              grid and any surface that has not been given a member list yet). Both write the same
              record; only the picker records *who* each name is. -->
-      ${details.authorLinks && details.members
-        ? renderPaperCoauthors({
-            paperId: props.paperId,
-            links: details.authorLinks,
-            members: details.members,
-            draftEmail: details.coauthorDraft?.email ?? "",
-            draftName: details.coauthorDraft?.name ?? "",
-            onDraftChange: (draft) => details.onCoauthorDraftChange?.(draft),
-            ...(save ? { onChange: (authorLinks) => commit({ authorLinks }) } : {}),
-          })
-        : renderNameList({
-            id: `paper-authors-${props.paperId}`,
-            label: "Author list",
-            hint: "In the order the paper prints them. The first lab member on this list gets the venue-stage emails.",
-            values: details.authors,
-            placeholder: "Ada Lovelace, Rahul Babu Shrestha, Zhijing Jin",
-            ...(save ? { onChange: (authors: string[]) => commit({ authors }) } : {}),
-          })}
-      ${renderNameList({
-        id: `paper-feedback-givers-${props.paperId}`,
-        label: "Feedback givers",
-        hint: "People asked to read the draft. Not authors — this is who you showed it to.",
-        values: details.feedbackGivers,
-        placeholder: "Bernhard Schölkopf, Terry Zhang",
-        ...(save ? { onChange: (feedbackGivers: string[]) => commit({ feedbackGivers }) } : {}),
-      })}
-      <!-- A paragraph, not a field per author. Contributions do not divide cleanly by name, and
+        ${details.authorLinks && details.members
+          ? renderPaperCoauthors({
+              paperId: props.paperId,
+              links: details.authorLinks,
+              members: details.members,
+              draftEmail: details.coauthorDraft?.email ?? "",
+              draftName: details.coauthorDraft?.name ?? "",
+              onDraftChange: (draft) => details.onCoauthorDraftChange?.(draft),
+              ...(save ? { onChange: (authorLinks) => commit({ authorLinks }) } : {}),
+            })
+          : renderNameList({
+              id: `paper-authors-${props.paperId}`,
+              label: "Author list",
+              hint: "In the order the paper prints them. The first lab member on this list gets the venue-stage emails.",
+              values: details.authors,
+              placeholder: "Ada Lovelace, Rahul Babu Shrestha, Zhijing Jin",
+              ...(save ? { onChange: (authors: string[]) => commit({ authors }) } : {}),
+            })}
+        ${renderNameList({
+          id: `paper-feedback-givers-${props.paperId}`,
+          label: "Feedback givers",
+          hint: "People asked to read the draft. Not authors — this is who you showed it to.",
+          values: details.feedbackGivers,
+          placeholder: "Bernhard Schölkopf, Terry Zhang",
+          ...(save ? { onChange: (feedbackGivers: string[]) => commit({ feedbackGivers }) } : {}),
+        })}
+        <!-- A paragraph, not a field per author. Contributions do not divide cleanly by name, and
            what an author wants at submission time is a sentence they can paste into the
            contributions statement rather than a form they have to fill in twice. Commits on
            change (blur), like the venue box: a contributions paragraph is meaningless half-typed,
            and a save per keystroke would be a save per keystroke. -->
-      ${save
-        ? html`
-            <label class="paper-detail">
-              <span class="paper-detail__label">What each author does</span>
-              <textarea
-                class="input paper-detail__paragraph"
-                rows="3"
-                placeholder="Ada ran the experiments and wrote §4. Rahul built the dataset pipeline. Zhijing advised throughout."
-                data-testid=${`paper-author-roles-${props.paperId}`}
-                .value=${details.authorRoles}
-                @change=${(event: Event) =>
-                  commit({ authorRoles: (event.target as HTMLTextAreaElement).value.trim() })}
-              ></textarea>
-              <span class="paper-detail__hint">
-                Who did what on this paper, in your own words. This is what the contributions
-                statement gets written from — and what a coauthor reads when they want to know
-                whose section is whose.
-              </span>
-            </label>
-          `
-        : html`
-            <div class="paper-detail">
-              <span class="paper-detail__label">What each author does</span>
-              <p class="paper-detail__readonly">${details.authorRoles || "—"}</p>
-            </div>
-          `}
-      ${save
-        ? renderVenueList(props.paperId, details.venue, commit)
-        : html`
-            <div class="paper-detail">
-              <span class="paper-detail__label">Target conference</span>
-              <p class="paper-detail__readonly">${details.venue || "—"}</p>
-            </div>
-          `}
+        ${save
+          ? html`
+              <label class="paper-detail">
+                <span class="paper-detail__label">What each author does</span>
+                <textarea
+                  class="input paper-detail__paragraph"
+                  rows="3"
+                  placeholder="Ada ran the experiments and wrote §4. Rahul built the dataset pipeline. Zhijing advised throughout."
+                  data-testid=${`paper-author-roles-${props.paperId}`}
+                  .value=${details.authorRoles}
+                  @change=${(event: Event) =>
+                    commit({ authorRoles: (event.target as HTMLTextAreaElement).value.trim() })}
+                ></textarea>
+                <span class="paper-detail__hint">
+                  Who did what on this paper, in your own words. This is what the contributions
+                  statement gets written from — and what a coauthor reads when they want to know
+                  whose section is whose.
+                </span>
+              </label>
+            `
+          : html`
+              <div class="paper-detail">
+                <span class="paper-detail__label">What each author does</span>
+                <p class="paper-detail__readonly">${details.authorRoles || "—"}</p>
+              </div>
+            `}
+        ${save
+          ? renderVenueList(props.paperId, details.venue, commit)
+          : html`
+              <div class="paper-detail">
+                <span class="paper-detail__label">Target conference</span>
+                <p class="paper-detail__readonly">${details.venue || "—"}</p>
+              </div>
+            `}
       </div>
     </details>
   `;
@@ -724,7 +730,7 @@ function renderDetails(props: PaperSlotsProps) {
  * The venue ladder: what the venue has answered, and what it has not.
  *
  * Read-only, and it says so. There is no control here because there is nothing a person can do to
- * make reviews arrive -- the one action available is bcc'ing the mail when it lands, which is
+ * make reviews arrive -- the one action available is forwarding the mail when it lands, which is
  * what the waiting rung asks for. Showing it as a strip of states rather than a list of fields is
  * the whole point: it is a thing being watched, not a thing being filled in.
  */
@@ -737,7 +743,8 @@ function renderStages(props: PaperSlotsProps) {
     <div class="paper-stages" data-testid=${`paper-stages-${props.paperId}`}>
       <p class="paper-stages__lede">
         <span class="paper-stages__lede-icon" aria-hidden="true">${icons.radio}</span>
-        Tracked automatically — bcc AdminBot on the venue's mail and these close themselves.
+        Tracked automatically — forward venue mail to AdminBot from an email address saved on your
+        profile.
       </p>
       <ol class="paper-stages__list">
         ${stages.map(
@@ -757,7 +764,7 @@ function renderStages(props: PaperSlotsProps) {
                   >`
                 : stage.state === "waiting"
                   ? html`<span class="paper-stage__detail paper-stage__detail--waiting"
-                      >Waiting — bcc us when it lands</span
+                      >Waiting — forward the venue email when it lands</span
                     >`
                   : html`<span class="paper-stage__detail">Not yet</span>`}
             </li>
@@ -780,10 +787,7 @@ function topLevelSlots(branch: AdminBotPaperSlotBranch): AdminBotPaperSlot[] {
  * Group consecutive top-level slots that share a groupLabel into one card.
  * Slots without a groupLabel, or whose groupLabel differs from the previous slot, stand alone.
  */
-function renderGroupedSlots(
-  props: PaperSlotsProps,
-  slots: AdminBotPaperSlot[],
-): TemplateResult[] {
+function renderGroupedSlots(props: PaperSlotsProps, slots: AdminBotPaperSlot[]): TemplateResult[] {
   const items: TemplateResult[] = [];
   let i = 0;
   while (i < slots.length) {
@@ -809,9 +813,7 @@ function renderGroupedSlots(
             data-testid=${`paper-slot-row-${props.paperId}-${group[0]}`}
           >
             <div class="paper-slot__head">
-              <span class="paper-slot__label">
-                ${groupLabel}
-              </span>
+              <span class="paper-slot__label"> ${groupLabel} </span>
               ${statusPill(row0)}
             </div>
             <div class="paper-slot__children">

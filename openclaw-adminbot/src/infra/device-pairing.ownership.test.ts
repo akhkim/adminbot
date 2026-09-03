@@ -132,7 +132,7 @@ describe("device pairing ownerMemberId", () => {
     );
   });
 
-  test("ensureDeviceToken re-stamps a device's owner when a different member signs in on it", async () => {
+  test("ensureDeviceToken refuses to transfer a paired device to a different member", async () => {
     const baseDir = await makeDevicePairingDir();
     const request = await requestDevicePairing(
       {
@@ -153,7 +153,7 @@ describe("device pairing ownerMemberId", () => {
       "mem-first",
     );
 
-    await ensureDeviceToken({
+    const ensured = await ensureDeviceToken({
       deviceId: "device-shared-browser",
       role: "operator",
       scopes: ["operator.read"],
@@ -161,8 +161,9 @@ describe("device pairing ownerMemberId", () => {
       baseDir,
     });
 
+    expect(ensured).toBeNull();
     expect((await getPairedDevice("device-shared-browser", baseDir))?.ownerMemberId).toBe(
-      "mem-second",
+      "mem-first",
     );
   });
 });

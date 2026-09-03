@@ -2,14 +2,11 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
-
-// Where an approved member goes to sign in. Overridable so a different deployment (or a test) does
-// not have to patch code, but defaulted because the lab has exactly one dashboard.
-const DEFAULT_DASHBOARD_URL = "https://jinesis-admin.vercel.app";
 
 export const ACCOUNT_APPROVED_SUBJECT = "Your Jinesis Lab account is approved";
 
@@ -36,10 +33,7 @@ export function createAccountApprovedEmailRunner(
   } = {},
 ): AccountApprovedEmailRunner {
   const gog = resolveGogExecutable(options.env);
-  const dashboardUrl =
-    options.dashboardUrl?.trim() ||
-    (options.env ?? process.env).ADMINBOT_DASHBOARD_URL?.trim() ||
-    DEFAULT_DASHBOARD_URL;
+  const dashboardUrl = options.dashboardUrl?.trim() || resolveAdminBotControlUiUrl(options.env);
   return async ({ email, name }) => {
     const to = email.trim();
     if (!to) {

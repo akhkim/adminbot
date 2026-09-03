@@ -1,6 +1,6 @@
+import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/contracts/control-ui.js";
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
-import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/contracts/control-ui.js";
 import { t } from "../i18n/index.ts";
 import {
   loadAdminBot,
@@ -324,6 +324,11 @@ export function applySettingsFromUrl(host: SettingsHost) {
     if (token) {
       host.passwordResetToken = token;
       host.loginMode = "reset-confirm";
+      // The lifecycle synchronizes signed-out UI from the cleaned URL immediately after this pass.
+      // Keep the login surface in that URL or the reset state remains in memory behind the landing
+      // page, which looks like the link redirected to the wrong place.
+      host.authGateVisible = true;
+      params.set("signedOut", "login");
     }
     params.delete("passwordReset");
     hashParams.delete("passwordReset");

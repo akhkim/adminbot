@@ -478,7 +478,6 @@ describe("AdminBot mock service", () => {
     expect(submitted).toEqual([]);
   });
 
-
   it("does not email anyone when a registration is rejected", async () => {
     const sent: Array<{ email: string }> = [];
     const { baseUrl } = await startService({
@@ -576,7 +575,7 @@ describe("AdminBot mock service", () => {
     });
   });
 
-  it("includes the gateway payload only when a gateway token is configured", async () => {
+  it("never exposes the shared gateway token in a member login payload", async () => {
     const { baseUrl } = await startService({ gatewayToken: "gw-secret", gatewayUrl: "ws://x:1" });
     await seedMember(baseUrl, "gwm", { name: "GW", email: "gw@cs.toronto.edu" });
     await approveClaim(baseUrl, "gwm", "gw@cs.toronto.edu");
@@ -586,8 +585,8 @@ describe("AdminBot mock service", () => {
       headers: jsonHeaders(),
       body: JSON.stringify({ email: "gw@cs.toronto.edu", password: "correcthorse" }),
     });
-    const body = (await login.json()) as { gateway?: { url: string; token: string } };
-    expect(body.gateway).toEqual({ url: "ws://x:1", token: "gw-secret" });
+    const body = (await login.json()) as { gateway?: { url: string } };
+    expect(body.gateway).toEqual({ url: "ws://x:1" });
   });
 
   it("returns generic errors for unknown claims, collisions, and short passwords", async () => {
@@ -1424,9 +1423,7 @@ describe("AdminBot service-principal privilege scoping", () => {
   it("hides another member's schedule from a plain member, and shows it to an admin", async () => {
     const { baseUrl } = await startService();
     const schedule = {
-      availability: [
-        { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20 },
-      ],
+      availability: [{ start: "2026-03-02", end: "2026-03-15", hours_per_week: 20 }],
       time_off: [
         {
           start: "2026-04-01",
@@ -1471,12 +1468,7 @@ describe("AdminBot service-principal privilege scoping", () => {
     const adaToPeer = asPeer.find((member) => member.id === "ada")!;
     // Still on the roster -- this is a field rule, not a row rule.
     expect(adaToPeer.name).toBe("Ada");
-    for (const field of [
-      "availability",
-      "time_off",
-      "milestones",
-      "availability_notes",
-    ]) {
+    for (const field of ["availability", "time_off", "milestones", "availability_notes"]) {
       expect(field in adaToPeer).toBe(false);
     }
     // Their own schedule is still theirs to read.
@@ -1532,10 +1524,7 @@ describe("AdminBot service-principal privilege scoping", () => {
       body: JSON.stringify({ availability_notes: "   " }),
     });
     expect(cleared.status).toBe(200);
-    expect(
-      "availability_notes" in
-        ((await cleared.json()) as Record<string, unknown>),
-    ).toBe(false);
+    expect("availability_notes" in ((await cleared.json()) as Record<string, unknown>)).toBe(false);
   });
 
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
@@ -1590,7 +1579,11 @@ describe("AdminBot service-principal privilege scoping", () => {
       headers: serviceHeaders(),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { reviewed: number; non_compliant: number; nudges_created: number };
+    const body = (await res.json()) as {
+      reviewed: number;
+      non_compliant: number;
+      nudges_created: number;
+    };
     expect(body.reviewed).toBe(2);
     expect(body.non_compliant).toBe(1);
     expect(body.nudges_created).toBe(1);
@@ -1744,6 +1737,27 @@ describe("AdminBot service-principal privilege scoping", () => {
       expect.objectContaining({ approver_role: "admin", approver_id: "boss" }),
     ]);
     expect(body.status).toBe("approved");
+  });
+
+  it("records the remover from the session, not from the request body", async () => {
+    const { baseUrl, mock } = await startService();
+    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    const proposal = await proposeSlackMessage(baseUrl);
+
+    const res = await fetch(`${baseUrl}/proposals/${proposal.id}/remove`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: "somebody-else", note: "duplicate" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mock.service.listAuditEvents()).toContainEqual(
+      expect.objectContaining({
+        type: "proposal.removed",
+        actor: "boss",
+        details: expect.objectContaining({ note: "duplicate" }),
+      }),
+    );
   });
 });
 
@@ -2349,6 +2363,17 @@ describe("AdminBot device token issuance", () => {
 });
 
 describe("anonymous reimbursement access", () => {
+  it("rejects oversized JSON before the anonymous workflow handles it", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+    const res = await fetch(`${baseUrl}/reimbursements/converse`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ message: "x".repeat(1024 * 1024 + 1) }),
+    });
+
+    expect(res.status).toBe(413);
+  });
+
   const stubWorkflow = {
     converse: async () => ({
       assistant_message: "ok",
@@ -2469,6 +2494,29 @@ describe("cross-origin refusals", () => {
     expect(refusals).toHaveLength(1);
     expect(refusals[0]).toContain("http://admin.safe.eu");
     expect(refusals[0]).toContain("https://admin.safe.eu");
+  });
+
+  it("rejects a disallowed-origin mutation before dispatch", async () => {
+    const { baseUrl, mock } = await startService({
+      allowedOrigins: ["https://admin.safe.eu"],
+    });
+    const before = mock.service.listPending();
+    if (!before.ok) {
+      throw new Error("failed to read pending proposals");
+    }
+
+    const refused = await fetch(`${baseUrl}/proposals`, {
+      method: "POST",
+      headers: serviceHeaders({
+        Origin: "https://attacker.example",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify({ type: "email.send", summary: "must not be created" }),
+    });
+
+    expect(refused.status).toBe(403);
+    const after = mock.service.listPending();
+    expect(after.ok && after.payload.proposals).toHaveLength(before.payload.proposals.length);
   });
 });
 
@@ -2831,12 +2879,19 @@ describe("the meetings routes", () => {
     await memberToken(baseUrl, "ada", "Ada Attendee");
     fileMeeting(baseUrl, {
       attendees: [
-        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        {
+          member_id: "ada",
+          display_name: "Ada Attendee",
+          source: "participant_report",
+          present: true,
+        },
         { display_name: "Guest iPhone", source: "participant_report", present: true },
       ],
     });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
     expect(body.meetings[0]?.attendees).toHaveLength(2);
@@ -2851,12 +2906,19 @@ describe("the meetings routes", () => {
     seedMember(baseUrl, "bo", { name: "Bo Other", email: "bo@cs.toronto.edu" });
     fileMeeting(baseUrl, {
       attendees: [
-        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        {
+          member_id: "ada",
+          display_name: "Ada Attendee",
+          source: "participant_report",
+          present: true,
+        },
         { member_id: "bo", display_name: "Bo Other", source: "participant_report", present: true },
       ],
     });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       meetings: Array<{ attendees: Array<{ member_id?: string }>; attendee_count: number }>;
@@ -2934,7 +2996,9 @@ describe("the meetings routes", () => {
     fileMeeting(baseUrl, { id: "short", topic: "Room check", duration_minutes: 4 });
     fileMeeting(baseUrl, { id: "real", topic: "Weekly Lab Meeting", duration_minutes: 58 });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["real"]);
   });
@@ -2946,7 +3010,9 @@ describe("the meetings routes", () => {
     const token = await memberToken(baseUrl, "ada", "Ada Attendee");
     fileMeeting(baseUrl, { id: "unknown-length" });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["unknown-length"]);
   });
@@ -2963,7 +3029,9 @@ describe("the meetings routes", () => {
     });
     expect(settings.status).toBe(200);
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["short"]);
   });
@@ -3004,7 +3072,11 @@ describe("the meetings routes", () => {
     const res = await fetch(`${baseUrl}/meetings`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: "empty", topic: "Nothing", started_at: "2026-08-14T15:00:00.000Z" }),
+      body: JSON.stringify({
+        id: "empty",
+        topic: "Nothing",
+        started_at: "2026-08-14T15:00:00.000Z",
+      }),
     });
     expect(res.status).toBe(400);
   });
@@ -3157,8 +3229,11 @@ describe("the member location timeline", () => {
     observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
 
     expect(
-      (await fetch(`${baseUrl}/lab/location-drifts`, { headers: { Authorization: `Bearer ${member}` } }))
-        .status,
+      (
+        await fetch(`${baseUrl}/lab/location-drifts`, {
+          headers: { Authorization: `Bearer ${member}` },
+        })
+      ).status,
     ).toBe(403);
     const res = await fetch(`${baseUrl}/lab/location-drifts`, {
       headers: { Authorization: `Bearer ${admin}` },

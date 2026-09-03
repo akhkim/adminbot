@@ -530,6 +530,12 @@ function resolveApprovedTokenScopes(params: {
 }): string[] {
   const pendingScopes = resolveRoleScopedDeviceTokenScopes(params.role, params.pending.scopes);
   if (pendingScopes.length > 0) {
+    // A member-bound repair is an authorization decision for exactly the scopes in the request.
+    // Reusing or merging an older token here lets a previously privileged browser retain scopes
+    // after the member changes or the same member is downgraded.
+    if (params.pending.ownerMemberId) {
+      return pendingScopes;
+    }
     const approvedBaseline = resolveRoleScopedDeviceTokenScopes(
       params.role,
       params.existing?.approvedScopes ?? params.existing?.scopes,
@@ -707,12 +713,17 @@ export async function approveDevicePairing(
     }
     const now = Date.now();
     const existing = state.pairedByDeviceId[pending.deviceId];
-    const roles = mergeRoles(existing?.roles, existing?.role, pending.roles, pending.role);
-    const approvedScopes = mergeScopes(
-      existing?.approvedScopes ?? existing?.scopes,
-      pending.scopes,
-    );
-    const tokens = existing?.tokens ? { ...existing.tokens } : {};
+    const memberBound = Boolean(pending.ownerMemberId);
+    // A signed-in member repair replaces the prior identity/scope grant. General device-pairing
+    // repairs still merge roles for backwards compatibility, but an AdminBot browser must never
+    // inherit the previous member's tokens or approved-scope ceiling.
+    const roles = memberBound
+      ? requestedRoles
+      : mergeRoles(existing?.roles, existing?.role, pending.roles, pending.role);
+    const approvedScopes = memberBound
+      ? requestedScopes
+      : mergeScopes(existing?.approvedScopes ?? existing?.scopes, pending.scopes);
+    const tokens = memberBound ? {} : existing?.tokens ? { ...existing.tokens } : {};
     const nextTokenScopesByRole = new Map<string, string[]>();
     for (const roleForToken of requestedRoles) {
       const existingToken = tokens[roleForToken];
@@ -1082,7 +1093,16 @@ export async function ensureDeviceToken(params: {
       return null;
     }
     const { device, role, tokens, existing } = context;
-    if (params.ownerMemberId && device.ownerMemberId !== params.ownerMemberId) {
+    if (
+      params.ownerMemberId &&
+      device.ownerMemberId &&
+      device.ownerMemberId !== params.ownerMemberId
+    ) {
+      // Ownership changes require the pairing/repair path, which rotates credentials and rebuilds
+      // the approved-scope baseline from the newly authenticated member's privilege.
+      return null;
+    }
+    if (params.ownerMemberId && !device.ownerMemberId) {
       device.ownerMemberId = params.ownerMemberId;
       state.pairedByDeviceId[device.deviceId] = device;
       await persistState(state, params.baseDir, "paired");
@@ -1107,7 +1127,7 @@ export async function ensureDeviceToken(params: {
       if (
         existingWithinApproved &&
         issuerAllowsReuse &&
-        roleScopesAllow({ role, requestedScopes, allowedScopes: existing.scopes })
+        sameStringSet(normalizeDeviceAuthScopes(existing.scopes), requestedScopes)
       ) {
         return existing;
       }

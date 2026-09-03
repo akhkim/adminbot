@@ -2,6 +2,7 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 import {
   allocationBins,
   rangeBins,
@@ -15,7 +16,6 @@ import {
   type AdminBotTimeAvailabilityProps,
   type MilestoneDraft,
 } from "./time-availability.ts";
-import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 
 // 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -122,7 +122,9 @@ describe("allocationBins", () => {
   });
 
   it("counts only the days a commitment actually covers in the bin", () => {
-    const late = tasks([{ key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 }]);
+    const late = tasks([
+      { key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 },
+    ]);
     expect(allocationBins(late, [], "month", NOW)[0].total).toBeCloseTo((21 * 4) / 7, 5);
   });
 
@@ -193,7 +195,9 @@ describe("renderAdminBotTimeAvailability", () => {
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
   it("shows the add-commitment button on your own schedule and hides it on someone else's", () => {
-    expect(renderView().querySelector(".adminbot-time-availability__add-commitment")).not.toBeNull();
+    expect(
+      renderView().querySelector(".adminbot-time-availability__add-commitment"),
+    ).not.toBeNull();
     expect(
       renderView({ viewerMemberId: "someone-else" }).querySelector(
         ".adminbot-time-availability__add-commitment",
@@ -431,15 +435,11 @@ describe("the chart", () => {
   it("offers the member picker to an admin and not to a plain member", () => {
     const asAdmin = renderView({ viewerIsAdmin: true });
     expect(asAdmin.querySelector("adminbot-member-select")).not.toBeNull();
-    expect(
-      asAdmin.querySelector('[data-testid="time-availability-own-only"]'),
-    ).toBeNull();
+    expect(asAdmin.querySelector('[data-testid="time-availability-own-only"]')).toBeNull();
 
     const asMember = renderView();
     expect(asMember.querySelector("adminbot-member-select")).toBeNull();
-    expect(
-      asMember.querySelector('[data-testid="time-availability-own-only"]'),
-    ).not.toBeNull();
+    expect(asMember.querySelector('[data-testid="time-availability-own-only"]')).not.toBeNull();
   });
 
   it("shows a plain member only their own schedule, whoever else is on the roster", () => {
@@ -459,16 +459,9 @@ describe("the chart", () => {
   it("selects nothing when a non-admin's selection is not their own record", () => {
     const container = renderView({
       selectedMemberId: "other",
-      members: [
-        member(),
-        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
-      ],
+      members: [member(), member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>)],
     });
-    expect(
-      container.querySelector(
-        '[data-testid="time-availability-jinesis-table"]',
-      ),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-jinesis-table"]')).toBeNull();
   });
 
   // The rows say when and how much; this is the sentence that explains the ones that need one.
@@ -482,23 +475,19 @@ describe("the chart", () => {
       .querySelector<HTMLFormElement>(".adminbot-time-availability__notes-form")
       ?.requestSubmit();
     expect(onSaveSchedule).toHaveBeenCalledWith("m1", {
-      availability_notes:
-        "Carer on alternating weeks, so these hours are an average.",
+      availability_notes: "Carer on alternating weeks, so these hours are an average.",
     });
   });
 
   it("leaves the note save disabled until the text actually changes", () => {
     const stored = "Away most Fridays.";
     const unchanged = renderView({
-      members: [
-        member({ availability_notes: stored } as Partial<AdminBotLabMember>),
-      ],
+      members: [member({ availability_notes: stored } as Partial<AdminBotLabMember>)],
       notesDraft: stored,
     });
     expect(
-      unchanged.querySelector<HTMLButtonElement>(
-        '[data-testid="time-availability-notes-save"]',
-      )?.disabled,
+      unchanged.querySelector<HTMLButtonElement>('[data-testid="time-availability-notes-save"]')
+        ?.disabled,
     ).toBe(true);
   });
 
@@ -515,20 +504,15 @@ describe("the chart", () => {
       ],
     });
     expect(
-      withNote.querySelector('[data-testid="time-availability-notes-text"]')
-        ?.textContent,
+      withNote.querySelector('[data-testid="time-availability-notes-text"]')?.textContent,
     ).toContain("Visa interview may move.");
-    expect(
-      withNote.querySelector('[data-testid="time-availability-notes-input"]'),
-    ).toBeNull();
+    expect(withNote.querySelector('[data-testid="time-availability-notes-input"]')).toBeNull();
 
     const withoutNote = renderView({
       viewerIsAdmin: true,
       viewerMemberId: "admin",
     });
-    expect(
-      withoutNote.querySelector('[data-testid="time-availability-notes"]'),
-    ).toBeNull();
+    expect(withoutNote.querySelector('[data-testid="time-availability-notes"]')).toBeNull();
   });
 
   it("offers the three ranges and marks the active one", () => {
@@ -769,6 +753,30 @@ describe("draftToPatch", () => {
     );
     expect(patch.time_off).toHaveLength(2);
   });
+
+  it("replaces the selected commitment when editing dates", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        start: "2026-04-01",
+        end: "2026-07-31",
+        hoursPerWeek: "18",
+        editingIndex: 0,
+      },
+      {
+        availability: [
+          { start: "2026-03-01", end: "2026-06-30", project: "Atlas", hours_per_week: 20 },
+        ],
+        timeOff: [],
+      },
+    );
+
+    expect(patch.availability).toEqual([
+      { start: "2026-04-01", end: "2026-07-31", project: "Atlas", hours_per_week: 18 },
+    ]);
+  });
 });
 
 describe("draft validation for the new fields", () => {
@@ -943,7 +951,9 @@ describe("the split tables and the deadline panel", () => {
         }),
       ],
       onAwayDraftChange,
-    }).querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')?.click();
+    })
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')
+      ?.click();
     expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({ category: "other" });
   });
 
@@ -963,6 +973,27 @@ describe("the split tables and the deadline panel", () => {
     expect(
       container.querySelector('[data-testid="time-availability-jinesis-table"]')?.textContent,
     ).toContain("20 h");
+  });
+
+  it("opens an existing Jinesis row in the edit form", () => {
+    const onDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({ onDraftChange, onActiveCommitmentChange });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+      ?.click();
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project: "Alignment",
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hoursPerWeek: "20",
+        editingIndex: 0,
+      }),
+    );
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
   });
 
   // The member's own dates plus the four nearest archival conference deadlines. Archival because
@@ -1089,9 +1120,10 @@ describe("the split tables and the deadline panel", () => {
   });
 
   it("reminds the member on the add form that thesis deadlines belong here too", () => {
-    const editor = renderView({ members: [scheduled()], activeCommitmentType: "milestone" }).querySelector(
-      '[data-testid="time-availability-milestone-editor"]',
-    );
+    const editor = renderView({
+      members: [scheduled()],
+      activeCommitmentType: "milestone",
+    }).querySelector('[data-testid="time-availability-milestone-editor"]');
     expect(editor?.querySelector(".card-title")?.textContent).toContain("Add a big deadline");
     expect(editor?.textContent).toContain("thesis");
   });
@@ -1102,7 +1134,9 @@ describe("the split tables and the deadline panel", () => {
     const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
     const panel = renderView({
       members: [
-        member({ milestones: [{ date: soon, label: "Thesis proposal" }] } as Partial<AdminBotLabMember>),
+        member({
+          milestones: [{ date: soon, label: "Thesis proposal" }],
+        } as Partial<AdminBotLabMember>),
       ],
     }).querySelector('[data-testid="time-availability-deadlines"]')!;
     const own = [...panel.querySelectorAll("li")].find((row) =>
@@ -1316,7 +1350,9 @@ describe("the split tables and the deadline panel", () => {
 
   it("asks for a custom name only for the 'other' category", () => {
     expect(
-      renderView({ activeCommitmentType: "away" }).querySelector('[data-testid="time-availability-custom-label"]'),
+      renderView({ activeCommitmentType: "away" }).querySelector(
+        '[data-testid="time-availability-custom-label"]',
+      ),
     ).toBeNull();
     expect(
       renderView({
@@ -1345,7 +1381,9 @@ describe("the trips editor's place on the tab", () => {
     const view = renderView({
       viewerIsAdmin: true,
       viewerMemberId: "admin",
-      members: [member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] })],
+      members: [
+        member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] }),
+      ],
     });
     expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
     expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
@@ -1382,9 +1420,9 @@ describe("the where-strip under the chart", () => {
   }
 
   it("names a city per period, at the granularity the range switch chose", () => {
-    const cells = [
-      ...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell"),
-    ].map((cell) => cell.textContent?.replace(/\s+/gu, " ").trim());
+    const cells = [...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell")].map(
+      (cell) => cell.textContent?.replace(/\s+/gu, " ").trim(),
+    );
     // "year" is twelve monthly bins, anchored to the start of this month.
     expect(cells).toHaveLength(12);
     expect(cells[0]).toContain("Berlin");

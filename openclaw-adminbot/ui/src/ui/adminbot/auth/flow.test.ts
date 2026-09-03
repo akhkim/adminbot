@@ -34,6 +34,16 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+function mockLoginAndDevice(body: unknown) {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input) =>
+      String(input).includes("/auth/device-token")
+        ? jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] })
+        : jsonResponse(200, body),
+    );
+}
+
 function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
   return {
     settings: { adminBotUrl: BASE_URL } as unknown as UiSettings,
@@ -90,14 +100,12 @@ describe("gateway URL on sign-in", () => {
 
   it("keeps the configured URL when the service advertises loopback", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
 
     await submitMemberAuth(host);
 
@@ -108,14 +116,11 @@ describe("gateway URL on sign-in", () => {
 
   it("keeps the configured URL when the service omits one", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+    });
 
     await submitMemberAuth(host);
 
@@ -126,14 +131,12 @@ describe("gateway URL on sign-in", () => {
 
   it("adopts a routable URL the service does advertise", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { url: "wss://moved.example.ts.net", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+      gateway: { url: "wss://moved.example.ts.net" },
+    });
 
     await submitMemberAuth(host);
 
@@ -146,14 +149,12 @@ describe("gateway URL on sign-in", () => {
 describe("memberPrivilegeLevel wiring", () => {
   it("applyMemberSession persists privilege on signin success", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat", privilege_level: "admin" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat", privilege_level: "admin" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
     await submitMemberAuth(host);
     expect(host.memberPrivilegeLevel).toBe("admin");
     expect(host.connect).toHaveBeenCalled();
@@ -392,7 +393,7 @@ describe("device-bound gateway token", () => {
     session_token: "sess",
     expires_at: "2026-08-01T00:00:00Z",
     member: { id: "pat", privilege_level: "member" },
-    gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+    gateway: { url: "ws://127.0.0.1:18789" },
   };
 
   it("stores the minted token and keeps the shared gateway token out of settings", async () => {
@@ -416,7 +417,7 @@ describe("device-bound gateway token", () => {
     );
   });
 
-  it("falls back to the session's gateway token when the service cannot mint one", async () => {
+  it("fails closed when the service cannot mint a device token", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     routedFetch({
       "/auth/login": () => jsonResponse(200, loginBody),
@@ -425,10 +426,9 @@ describe("device-bound gateway token", () => {
 
     await submitMemberAuth(host);
 
-    expect(host.applySettings).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "shared-gw-token" }),
-    );
-    expect(host.connect).toHaveBeenCalled();
+    expect(host.applySettings).not.toHaveBeenCalled();
+    expect(host.connect).not.toHaveBeenCalled();
+    expect(host.memberFormError).toContain("device credential");
   });
 
   it("signing out clears the device's gateway token", async () => {
@@ -439,7 +439,7 @@ describe("device-bound gateway token", () => {
         jsonResponse(200, {
           expires_at: "2026-08-01T00:00:00Z",
           member: { id: "pat", privilege_level: "member" },
-          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+          gateway: { url: "ws://127.0.0.1:18789" },
         }),
       "/auth/device-token": () =>
         jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }),
@@ -458,8 +458,8 @@ describe("device-bound gateway token", () => {
 
 // A connect the gateway refuses for want of an acceptable credential — the device token was
 // rejected (rotated shared secret, device no longer paired, revoked token) or none was ever minted
-// — must not strand a signed-in member. Recovery re-mints first so the member stays off the shared
-// gateway secret, and only falls back to the session's shared token when minting is unavailable.
+// — must not strand a signed-in member. Recovery re-mints the device credential and fails closed
+// when minting is unavailable, so a browser is never handed the shared gateway secret.
 describe("recoverFromRejectedDeviceToken", () => {
   it("re-mints the device token rather than handing the member the shared secret", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
@@ -471,7 +471,7 @@ describe("recoverFromRejectedDeviceToken", () => {
         return jsonResponse(200, {
           expires_at: "2026-08-01T00:00:00Z",
           member: { id: "pat", privilege_level: "member" },
-          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+          gateway: { url: "ws://127.0.0.1:18789" },
         });
       }
       if (url.includes("/auth/device-token")) {
@@ -496,7 +496,7 @@ describe("recoverFromRejectedDeviceToken", () => {
     expect(host.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ token: "" }));
   });
 
-  it("falls back to the session's gateway token when the service cannot mint", async () => {
+  it("fails closed when the service cannot mint a replacement", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
     const host = makeHost();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
@@ -507,14 +507,12 @@ describe("recoverFromRejectedDeviceToken", () => {
       return jsonResponse(200, {
         expires_at: "2026-08-01T00:00:00Z",
         member: { id: "pat", privilege_level: "member" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+        gateway: { url: "ws://127.0.0.1:18789" },
       });
     });
 
-    expect(await recoverFromRejectedDeviceToken(host)).toBe(true);
-    expect(host.applySettings).toHaveBeenLastCalledWith(
-      expect.objectContaining({ token: "shared-gw-token" }),
-    );
+    expect(await recoverFromRejectedDeviceToken(host)).toBe(false);
+    expect(host.applySettings).not.toHaveBeenCalled();
   });
 
   it("declines when no member is signed in", async () => {
@@ -595,14 +593,12 @@ describe("device-token recovery latch", () => {
   it("re-arms recovery when a member signs in", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     host.deviceTokenRecoveryAttempted = true;
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat", privilege_level: "member" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat", privilege_level: "member" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
 
     await submitMemberAuth(host);
 

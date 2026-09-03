@@ -4,12 +4,6 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
-  AdminBotBadgeAssignment,
-  AdminBotBadgeDefinition,
-  AdminBotBadgeNomination,
-  AdminBotBadgeNominationStatus,
-} from "../contracts/badges.js";
-import type {
   AdminBotAccountRegistration,
   AdminBotCvChangeEvent,
   AdminBotVenueIndexStatus,
@@ -33,6 +27,12 @@ import type {
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
 import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotBadgeAssignment,
+  AdminBotBadgeDefinition,
+  AdminBotBadgeNomination,
+  AdminBotBadgeNominationStatus,
+} from "../contracts/badges.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
@@ -147,6 +147,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         dry_run INTEGER NOT NULL,
         executed_at TEXT NOT NULL,
         result_json TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS adminbot_execution_claims (
+        effect_key TEXT PRIMARY KEY,
+        action_id TEXT NOT NULL,
+        claimed_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS adminbot_audit_events (
@@ -638,9 +644,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private migrateWorkshopMatchRuns(): void {
     const columns = new Set(
       (
-        this.db
-          .prepare("PRAGMA table_info(adminbot_workshop_match_runs)")
-          .all() as Array<{ name: string }>
+        this.db.prepare("PRAGMA table_info(adminbot_workshop_match_runs)").all() as Array<{
+          name: string;
+        }>
       ).map((row) => row.name),
     );
     if (!columns.has("progress_at")) {
@@ -960,6 +966,31 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .prepare("SELECT result_json FROM adminbot_executions WHERE idempotency_key = ?")
       .get(idempotencyKey) as { result_json?: string } | undefined;
     return row?.result_json ? parseJson<AdminBotExecutionResult>(row.result_json) : undefined;
+  }
+
+  claimExecution(
+    effectKey: string,
+    actionId: string,
+    claimedAt: string,
+    staleBefore: string,
+  ): boolean {
+    this.db
+      .prepare("DELETE FROM adminbot_execution_claims WHERE effect_key = ? AND claimed_at < ?")
+      .run(effectKey, staleBefore);
+    const result = this.db
+      .prepare(
+        `INSERT INTO adminbot_execution_claims (effect_key, action_id, claimed_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(effect_key) DO NOTHING`,
+      )
+      .run(effectKey, actionId, claimedAt);
+    return result.changes === 1;
+  }
+
+  releaseExecutionClaim(effectKey: string, actionId: string): void {
+    this.db
+      .prepare("DELETE FROM adminbot_execution_claims WHERE effect_key = ? AND action_id = ?")
+      .run(effectKey, actionId);
   }
 
   saveLabMember(member: AdminBotLabMember): void {

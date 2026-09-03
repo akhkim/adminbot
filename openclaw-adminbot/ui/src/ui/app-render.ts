@@ -93,6 +93,19 @@ import {
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import {
+  assignAdminBadge,
+  decideAdminBadgeNomination,
+  loadAdminBadgeNominations,
+  loadBadgeDefinitions,
+  loadProfileBadgeNominations,
+  removeAdminBadge,
+  saveAdminBadgeDefinition,
+  shouldLoadAdminBadgeNominations,
+  shouldLoadBadgeDefinitions,
+  shouldLoadProfileBadgeNominations,
+  submitOwnBadgeNomination,
+} from "./adminbot/data/badges.ts";
+import {
   clearLogisticsDraft,
   createFactRow,
   createSchoolRow,
@@ -106,6 +119,7 @@ import {
   saveAdminBotLogisticsDraft,
   saveAdminBotMeetingDraft,
 } from "./adminbot/data/logistics-draft.ts";
+import "./components/feedback-widget.ts";
 import {
   describeSubmitBlock,
   filesToAttachments,
@@ -122,20 +136,6 @@ import {
   type MeetingFormState,
   type SignatureFormState,
 } from "./adminbot/data/logistics-requests.ts";
-import "./components/feedback-widget.ts";
-import {
-  assignAdminBadge,
-  decideAdminBadgeNomination,
-  loadAdminBadgeNominations,
-  loadBadgeDefinitions,
-  loadProfileBadgeNominations,
-  removeAdminBadge,
-  saveAdminBadgeDefinition,
-  shouldLoadAdminBadgeNominations,
-  shouldLoadBadgeDefinitions,
-  shouldLoadProfileBadgeNominations,
-  submitOwnBadgeNomination,
-} from "./adminbot/data/badges.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
@@ -1677,16 +1677,28 @@ function renderNudgeBell(state: AppViewState) {
   if (alerts.length === 0) {
     return nothing;
   }
+  const close = () => {
+    state.nudgeBellOpen = false;
+    queueMicrotask(() => {
+      document.querySelector<HTMLButtonElement>('[data-testid="nudge-bell"]')?.focus();
+    });
+  };
   return html`
-    <div class="bell">
+    <div
+      class="bell"
+      @keydown=${(event: KeyboardEvent) => {
+        if (open && event.key === "Escape") {
+          event.preventDefault();
+          close();
+        }
+      }}
+    >
       ${open
         ? html`<button
             type="button"
             class="bell__scrim"
             aria-label="Close notifications"
-            @click=${() => {
-              state.nudgeBellOpen = false;
-            }}
+            @click=${close}
           ></button>`
         : nothing}
       <button
@@ -1712,18 +1724,29 @@ function renderNudgeBell(state: AppViewState) {
             <div class="bell__panel" data-testid="nudge-bell-panel">
               <div class="bell__panel-head">
                 <span>Notifications</span>
-                ${unread > 0
-                  ? html`<button
-                      type="button"
-                      class="bell__mark"
-                      data-testid="nudge-mark-all"
-                      @click=${() => {
-                        void markAdminBotNudgesSeen(state);
-                      }}
-                    >
-                      Mark all as read
-                    </button>`
-                  : nothing}
+                <div class="bell__panel-actions">
+                  ${unread > 0
+                    ? html`<button
+                        type="button"
+                        class="bell__mark"
+                        data-testid="nudge-mark-all"
+                        @click=${() => {
+                          void markAdminBotNudgesSeen(state);
+                        }}
+                      >
+                        Mark all as read
+                      </button>`
+                    : nothing}
+                  <button
+                    type="button"
+                    class="bell__close"
+                    data-testid="nudge-bell-close"
+                    aria-label="Close notifications"
+                    @click=${close}
+                  >
+                    ${icons.x}
+                  </button>
+                </div>
               </div>
               <div class="bell__list">
                 ${alerts.map(
@@ -3562,6 +3585,11 @@ export function renderApp(state: AppViewState) {
                     } else if (patch.milestones) {
                       state.adminBotMilestoneDraft = {
                         ...EMPTY_MILESTONE_DRAFT,
+                      };
+                    } else if (patch.time_off) {
+                      state.adminBotTimeAwayDraft = {
+                        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                        category: "vacation",
                       };
                     } else {
                       state.adminBotTimeAvailabilityDraft = {
