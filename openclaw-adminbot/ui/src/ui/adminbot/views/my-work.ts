@@ -36,6 +36,7 @@ import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
+import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -524,38 +525,145 @@ function overviewFor(props: MyWorkProps, paperId: string): PaperSlotOverviewRow 
  * somebody scanning five papers is actually looking for.
  */
 /**
- * The project's own answers, editable after the fact.
+ * One autosave timer per project card.
  *
- * Title, short name and start date are collected when the project is filed and, until now, were
- * fixed from that moment. A title is the one most likely to be wrong later -- work gets renamed as
- * it finds its shape -- and the service has always allowed all three through
- * OWN_PAPER_EDITABLE_FIELDS, so the only thing missing was somewhere to type them.
+ * Keyed by paper id rather than a single module timer like the profile's basics form, because
+ * several cards can be open at once: a shared timer would let a pause in one card commit another
+ * card's half-typed draft.
+ */
+const detailsSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * What was last written for each card, so the same values are not written twice.
  *
- * The short name is checked here with the same rule the create form uses, because it still names
- * the Slack channel. Renaming it does not rename an existing channel, which is why the hint says
- * so rather than leaving the member to find out.
+ * Autosave and the blur commit can both come due for one edit: the debounce fires, and a moment
+ * later the member tabs away while the record they just saved is still in flight, so `dirty` is
+ * still true. Without this the second one repeats the first.
+ */
+const detailsLastSaved = new Map<string, string>();
+
+function detailsSignature(draft: ProjectDetailsDraft): string {
+  return JSON.stringify([draft.title.trim(), draft.alias.trim(), draft.startedOn.trim()]);
+}
+
+type ProjectDetailsDraft = {
+  title: string;
+  alias: string;
+  startedOn: string;
+  error: string | null;
+};
+
+/**
+ * Why this draft cannot be written yet, or null.
+ *
+ * Autosave needs this in a way the profile's basics form does not. That form writes whatever is in
+ * it and lets the server judge, which is fine when every field is free text. Here a title cannot be
+ * empty and the short name has to be a legal Slack channel, so an unguarded autosave would fire a
+ * doomed request every time the member paused mid-word -- and answer them with an error about a
+ * value they were still in the middle of typing.
+ */
+function detailsRefusal(draft: ProjectDetailsDraft): string | null {
+  if (!draft.title.trim()) {
+    return "Give the project a title.";
+  }
+  // Blank clears the alias, which the record allows; anything else has to be a name Slack would
+  // take.
+  const aliasTyped = draft.alias.trim();
+  const aliasProblem = aliasTyped ? aliasRefusal(aliasTyped) : null;
+  if (aliasProblem) {
+    return aliasProblem;
+  }
+  const startedOn = draft.startedOn.trim();
+  if (startedOn && !/^\d{4}-\d{2}-\d{2}$/u.test(startedOn)) {
+    return "The start date must look like 2026-09-01.";
+  }
+  return null;
+}
+
+/**
+ * The project's own answers, editable after the fact, and saved the way the profile page saves.
+ *
+ * Autosave commits a beat after typing stops, or immediately when focus leaves the panel -- the
+ * same contract the profile's basics form makes. Two differences, both forced by this form rather
+ * than chosen:
+ *
+ *   - A draft that cannot be written is held, not sent (see detailsRefusal). The pending timer is
+ *     cancelled outright, so a half-typed short name never becomes a request.
+ *   - The draft outlives its own commit. These inputs are bound to state rather than read off the
+ *     DOM, so dropping the draft the moment a save fires would snap the box back to the stored
+ *     value while the member was still typing in it. It stops differing from what is stored once
+ *     the record comes back instead.
  */
 function renderProjectDetails(
   state: AppViewState,
   props: MyWorkProps,
   paper: AdminBotPaperRecord,
 ): unknown {
-  const edits = state.myWorkProjectEdits ?? {};
-  const stored = {
+  const stored: ProjectDetailsDraft = {
     title: paper.title ?? "",
     alias: paper.alias ?? "",
     startedOn: paper.started_on ?? "",
-    error: null as string | null,
+    error: null,
   };
-  const draft = edits[paper.id] ?? stored;
-  const patch = (fields: Partial<typeof stored>): void => {
+  const draft = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+  const setTimer = (next: ReturnType<typeof setTimeout> | undefined): void => {
+    if (next) {
+      detailsSaveTimers.set(paper.id, next);
+    } else {
+      detailsSaveTimers.delete(paper.id);
+    }
+  };
+  const patch = (fields: Partial<ProjectDetailsDraft>): void => {
     // Spreading undefined in an object literal contributes nothing, so this is safe against the
     // partial state doubles the view is rendered with in tests.
+    const current = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
     state.myWorkProjectEdits = {
       ...state.myWorkProjectEdits,
-      [paper.id]: { ...draft, ...fields },
+      [paper.id]: { ...current, ...fields },
     };
     props.onRerender?.();
+  };
+  // Reads the draft at fire time rather than closing over the one this render saw: the timer
+  // outlives the render that set it, and the whole point is to commit what was typed since.
+  const commit = (options: { force?: boolean } = {}): void => {
+    const live = (state.myWorkProjectEdits ?? {})[paper.id];
+    if (!live) {
+      return;
+    }
+    const refusal = detailsRefusal(live);
+    if (refusal) {
+      patch({ error: refusal });
+      return;
+    }
+    // Only the automatic paths are deduplicated. A press of the button is a deliberate act and
+    // always writes: a save that failed leaves the signature recorded, and suppressing the retry
+    // would turn the button into exactly the silent no-op it exists to avoid.
+    const signature = detailsSignature(live);
+    if (!options.force && signature === detailsLastSaved.get(paper.id)) {
+      return;
+    }
+    detailsLastSaved.set(paper.id, signature);
+    const aliasTyped = live.alias.trim();
+    props.onSavePaper({
+      id: paper.id,
+      title: live.title.trim(),
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      alias: aliasTyped ? (adminBotNormalizePaperAlias(aliasTyped) ?? "") : "",
+      startedOn: live.startedOn.trim(),
+    });
+    patch({ error: null });
+  };
+  const edited = (fields: Partial<ProjectDetailsDraft>): void => {
+    patch({ ...fields, error: null });
+    const live = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+    if (detailsRefusal(live)) {
+      // Held rather than queued. The message waits for the member to stop or leave, so they are not
+      // told off for a short name they are three characters into typing.
+      cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+      return;
+    }
+    scheduleAutosave(detailsSaveTimers.get(paper.id), setTimer, commit);
   };
   const dirty =
     draft.title !== stored.title ||
@@ -564,110 +672,104 @@ function renderProjectDetails(
   return html`
     <details class="my-work-details" data-testid=${`my-work-details-${paper.id}`}>
       <summary>Project details</summary>
-      <div class="my-work-details__grid">
-        <label class="my-work-details__field">
-          <span>Title</span>
-          <input
-            class="input"
-            data-testid=${`my-work-details-title-${paper.id}`}
-            .value=${draft.title}
-            @input=${(event: Event) =>
-              patch({ title: (event.target as HTMLInputElement).value, error: null })}
-          />
-        </label>
-        <label class="my-work-details__field">
-          <span>Short name</span>
-          <input
-            class="input"
-            maxlength=${adminBotPaperAliasMaxLength}
-            data-testid=${`my-work-details-alias-${paper.id}`}
-            .value=${draft.alias}
-            @input=${(event: Event) =>
-              patch({ alias: (event.target as HTMLInputElement).value, error: null })}
-          />
-          <span class="register__hint">
-            Names the Slack channel for a project that does not have one yet. Renaming it here does
-            not rename a channel that already exists.
-          </span>
-        </label>
-        <label class="my-work-details__field">
-          <span>Started on</span>
-          <input
-            class="input"
-            type="date"
-            data-testid=${`my-work-details-started-${paper.id}`}
-            .value=${draft.startedOn}
-            @input=${(event: Event) =>
-              patch({ startedOn: (event.target as HTMLInputElement).value, error: null })}
-          />
-        </label>
-      </div>
-      ${draft.error
-        ? html`<p
-            class="my-work-add-form__error"
-            role="alert"
-            data-testid=${`my-work-details-error-${paper.id}`}
-          >
-            ${draft.error}
-          </p>`
-        : nothing}
-      <div class="my-work-details__actions">
-        <button
-          type="button"
-          class="btn btn--sm"
-          ?disabled=${!dirty}
-          data-testid=${`my-work-details-save-${paper.id}`}
-          @click=${() => {
-            const title = draft.title.trim();
-            if (!title) {
-              patch({ error: "Give the project a title." });
-              return;
-            }
-            // Blank clears the alias, which the record allows; anything else has to be a name
-            // Slack would take.
-            const aliasTyped = draft.alias.trim();
-            const aliasProblem = aliasTyped ? aliasRefusal(aliasTyped) : null;
-            if (aliasProblem) {
-              patch({ error: aliasProblem });
-              return;
-            }
-            const startedOn = draft.startedOn.trim();
-            if (startedOn && !/^\d{4}-\d{2}-\d{2}$/u.test(startedOn)) {
-              patch({ error: "The start date must look like 2026-09-01." });
-              return;
-            }
-            props.onSavePaper({
-              id: paper.id,
-              title,
-              authors: paper.authors ?? [],
-              currentStep: paper.current_step as AdminBotPaperStep,
-              alias: aliasTyped ? (adminBotNormalizePaperAlias(aliasTyped) ?? "") : "",
-              startedOn,
-            });
-            // Dropped rather than kept: the next render reads the saved record, so a lingering
-            // draft would show the old answers over the new ones.
-            const { [paper.id]: _saved, ...rest } = state.myWorkProjectEdits ?? {};
-            state.myWorkProjectEdits = rest;
-            props.onRerender?.();
-          }}
-        >
-          Save details
-        </button>
-        ${dirty
-          ? html`<button
-              type="button"
-              class="btn btn--sm"
-              data-testid=${`my-work-details-cancel-${paper.id}`}
-              @click=${() => {
-                const { [paper.id]: _discarded, ...rest } = state.myWorkProjectEdits ?? {};
-                state.myWorkProjectEdits = rest;
-                props.onRerender?.();
-              }}
+      <form
+        class="my-work-details__form"
+        @submit=${(event: SubmitEvent) => event.preventDefault()}
+        @focusout=${(event: FocusEvent) => {
+          const form = event.currentTarget as HTMLFormElement;
+          if (!focusLeftForm(form, event)) {
+            return;
+          }
+          // Leaving resolves the draft rather than waiting out the debounce: the member may be on
+          // their way to another card or another tab, and a pending timer would not survive it.
+          //
+          // Not flushAutosave, which only runs when a timer is pending. A draft that cannot be
+          // written has had its timer cancelled, and that is exactly the case that must not pass
+          // silently -- it is how the create form used to lose a project without saying so.
+          // `commit` decides: it writes, or it explains.
+          const live = (state.myWorkProjectEdits ?? {})[paper.id];
+          const changed =
+            live !== undefined &&
+            (live.title !== stored.title ||
+              live.alias !== stored.alias ||
+              live.startedOn !== stored.startedOn);
+          if (!changed) {
+            return;
+          }
+          cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+          commit();
+        }}
+      >
+        <div class="my-work-details__grid">
+          <label class="my-work-details__field">
+            <span>Title</span>
+            <input
+              class="input"
+              data-testid=${`my-work-details-title-${paper.id}`}
+              .value=${draft.title}
+              @input=${(event: Event) =>
+                edited({ title: (event.target as HTMLInputElement).value })}
+            />
+          </label>
+          <label class="my-work-details__field">
+            <span>Short name</span>
+            <input
+              class="input"
+              maxlength=${adminBotPaperAliasMaxLength}
+              data-testid=${`my-work-details-alias-${paper.id}`}
+              .value=${draft.alias}
+              @input=${(event: Event) =>
+                edited({ alias: (event.target as HTMLInputElement).value })}
+            />
+            <span class="register__hint">
+              Names the Slack channel for a project that does not have one yet. Renaming it here
+              does not rename a channel that already exists.
+            </span>
+          </label>
+          <label class="my-work-details__field">
+            <span>Started on</span>
+            <input
+              class="input"
+              type="date"
+              data-testid=${`my-work-details-started-${paper.id}`}
+              .value=${draft.startedOn}
+              @input=${(event: Event) =>
+                edited({ startedOn: (event.target as HTMLInputElement).value })}
+            />
+          </label>
+        </div>
+        ${draft.error
+          ? html`<p
+              class="my-work-add-form__error"
+              role="alert"
+              data-testid=${`my-work-details-error-${paper.id}`}
             >
-              Cancel
-            </button>`
+              ${draft.error}
+            </p>`
           : nothing}
-      </div>
+        <div class="my-work-details__actions">
+          <span class="my-work-details__autosave-hint">${t("myWork.details.autosaveHint")}</span>
+          <!-- The explicit save. Autosave still does the work; this only changes when the member
+               gets to decide it happened. A form that only ever saves itself gives someone who has
+               just corrected a title no way to *finish*: they either wait out a debounce they
+               cannot see or navigate away and hope. -->
+          <button
+            type="button"
+            class="btn btn--sm"
+            ?disabled=${!dirty}
+            data-testid=${`my-work-details-save-${paper.id}`}
+            @click=${() => {
+              // Unconditional, unlike flushAutosave: with no pending timer that helper does
+              // nothing, and a Save button that silently no-ops because the debounce already fired
+              // is the one outcome a person pressing it cannot tell apart from a broken button.
+              cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+              commit({ force: true });
+            }}
+          >
+            Save details
+          </button>
+        </div>
+      </form>
     </details>
   `;
 }

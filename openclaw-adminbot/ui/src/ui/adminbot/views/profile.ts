@@ -21,12 +21,11 @@ import {
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
+import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
-import { ownPapers } from "./my-work.ts";
 import type {
   AssignedBadge,
   BadgeDefinition,
@@ -34,6 +33,7 @@ import type {
   LabMember,
   MemberProfileUpdate,
 } from "../auth/session.ts";
+import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import {
   joinPhoneNumber,
   resolvePhoneDial,
@@ -48,6 +48,7 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { renderCountrySelect } from "./country-select.ts";
+import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
@@ -85,11 +86,7 @@ function groupFields(fields: EditableField[]): Array<{
   })).filter((group) => group.fields.length > 0);
 }
 
-// Autosave: a section commits itself a beat after the member stops typing anywhere in its form,
-// or immediately on leaving it (focus moving outside the form). One shared timer per section --
-// not per field -- so a pause commits every field together in one request instead of racing one
-// PUT per keystroke-field.
-const AUTOSAVE_DEBOUNCE_MS = 900;
+// One timer for the basics form -- see adminbot/autosave.ts for the shared timing rules.
 let basicsSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 // PROFILE_FIELDS carries its keys as plain `string` (it is data, not a `const`-narrowed
@@ -99,46 +96,6 @@ let basicsSaveTimer: ReturnType<typeof setTimeout> | undefined;
 // accepted; this only exists to satisfy the compiler about a key that's already known-dynamic.
 function setField(fields: MemberProfileUpdate, key: string, value: unknown): void {
   (fields as Record<string, unknown>)[key] = value;
-}
-
-function scheduleAutosave(
-  timer: ReturnType<typeof setTimeout> | undefined,
-  set: (next: ReturnType<typeof setTimeout> | undefined) => void,
-  commit: () => void,
-): void {
-  if (timer) {
-    clearTimeout(timer);
-  }
-  set(
-    setTimeout(() => {
-      set(undefined);
-      commit();
-    }, AUTOSAVE_DEBOUNCE_MS),
-  );
-}
-
-// Commits an edit that is still inside its debounce window, because focus leaving the form means
-// the member is done with it. With no timer pending there is nothing to flush: leaving a form
-// nobody typed in used to fire a full-record PUT, a "saved" toast for a save that changed nothing,
-// and an outbound account check per checkable field -- so merely tabbing through the page burned
-// GitHub's 60-request unauthenticated hourly budget, which a whole lab shares behind one campus IP.
-function flushAutosave(
-  timer: ReturnType<typeof setTimeout> | undefined,
-  set: (next: ReturnType<typeof setTimeout> | undefined) => void,
-  commit: () => void,
-): void {
-  if (!timer) {
-    return;
-  }
-  clearTimeout(timer);
-  set(undefined);
-  commit();
-}
-
-// True once focus has actually left the form -- not merely moved between two fields inside it.
-function focusLeftForm(form: HTMLFormElement, event: FocusEvent): boolean {
-  const next = event.relatedTarget as Node | null;
-  return !next || !form.contains(next);
 }
 
 // Fires alongside every autosave commit for the fields that have a real "does this account
@@ -636,10 +593,7 @@ const PHONE_CODE_SUFFIX = "__dial";
 
 const PROJECT_CHIPS_MAX_VISIBLE = 4;
 
-function renderProjectChips(
-  state: AppViewState,
-  props: ProfileProps,
-): ReturnType<typeof html> {
+function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnType<typeof html> {
   const papers = ownPapers(state);
   if (papers.length === 0) {
     return html`<span class="profile__project-empty">${t("profile.basics.noProjects")}</span>`;
