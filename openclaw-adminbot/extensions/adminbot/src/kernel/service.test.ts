@@ -2407,7 +2407,7 @@ describe("AdminBotService", () => {
     }
   });
 
-  it("requires a @cs.toronto.edu email for core members, but exempts external collaborators", () => {
+  it("prefers a @cs.toronto.edu email but stores whatever address the lab actually has", () => {
     const service = new AdminBotService();
 
     const student = unwrap(
@@ -2421,17 +2421,21 @@ describe("AdminBotService", () => {
     );
     expect(student.email).toBe("student@cs.toronto.edu");
 
-    expect(
+    // Members routinely arrive with a CMU or ETH address months before a departmental account
+    // exists. Refusing it left the record blank, which is worse than storing the address that
+    // works -- nothing downstream depends on the domain, and vectorRosterEmail still prefers the
+    // cs one when a member carries both.
+    const incoming = unwrap(
       service.upsertLabMember({
         receives_nudges: true,
-        id: "wrong-domain",
-        name: "Wrong Domain",
+        id: "incoming",
+        name: "Incoming",
         privilege_level: "member",
-        email: "wrong-domain@gmail.com",
+        email: "korinna@cmu.edu",
       }),
-    ).toMatchObject({ ok: false, status: 400 });
+    );
+    expect(incoming.email).toBe("korinna@cmu.edu");
 
-    // The whole point of external_collaborator is people outside the department directory.
     const collaborator = unwrap(
       service.upsertLabMember({
         receives_nudges: true,
@@ -2442,6 +2446,23 @@ describe("AdminBotService", () => {
       }),
     );
     expect(collaborator.email).toBe("collab@otheruni.edu");
+  });
+
+  it("still refuses something that is not an email address at all", () => {
+    // Dropping the domain rule must not drop the format check with it. It also closes a gap: the
+    // old rule short-circuited for external collaborators, so their addresses were never checked.
+    const service = new AdminBotService();
+    for (const privilege_level of ["member", "external_collaborator"] as const) {
+      expect(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: `bad-${privilege_level}`,
+          name: "Bad",
+          privilege_level,
+          email: "not-an-email",
+        }),
+      ).toMatchObject({ ok: false, status: 400 });
+    }
   });
 
   it("re-saving an unrelated field does not re-trigger email validation", () => {

@@ -2750,10 +2750,22 @@ async function handleAuthenticatedRoute(
     const body = readRecord(await readJson(req));
     // Only a genuine admin *member* session (the Control UI's own Bearer) gets the full governance
     // write that can set privilege_level/status/email/access_overrides. The shared service principal
-    // drives every agent tool call regardless of which member is chatting, so it must NOT imply
-    // admin here; it is limited to the same whitelisted profile fields as a member self-edit (but
-    // for any member id, so non-escalation automation can sync those fields). updateOwnProfile
-    // rejects governed fields with a clear 4xx and performs no partial write.
+    // drives every agent tool call regardless of which member is chatting, so it does not get that
+    // write; it is limited to the same whitelisted profile fields as a member self-edit (but for
+    // any member id, so automation can sync those fields). updateOwnProfile rejects governed fields
+    // with a clear 4xx and performs no partial write.
+    //
+    // This used to say the service principal "must NOT imply admin". That is no longer true in
+    // effect, and the comment is corrected rather than left to mislead. Password resets are now
+    // delivered to `correspondence_email` (see passwordResetRecipient in workflows/identity/auth.ts),
+    // which is on that whitelist -- so a holder of the service token can redirect any member's reset
+    // link to an address they control and take the account over, admins included.
+    //
+    // Accepted deliberately: the service token is held as tightly as an admin password, and the
+    // alternative -- members without a departmental mailbox being unable to recover their account --
+    // was the worse failure. If that judgement changes, the fix is to drop `correspondence_email`
+    // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
+    // to the database and do not come through here.
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
       sendServiceResult(
         res,

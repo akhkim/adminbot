@@ -773,6 +773,50 @@ describe("AdminBotAuthService password reset", () => {
     expect(sent[0]?.token).toBeTruthy();
   });
 
+  it("mails the reset to the correspondence address when the member has one", async () => {
+    // The login address is the departmental identity the account is keyed by; the correspondence
+    // address is the one the member actually reads. For anyone without a cs.toronto.edu account
+    // yet, sending to the login address is sending to a mailbox that does not exist.
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const member = store.getLabMember("ada")!;
+    store.saveLabMember({ ...member, correspondence_email: "ada@cmu.edu" });
+
+    auth.requestPasswordReset({ email: "ada@cs.toronto.edu" });
+
+    await flushMicrotasks();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.email).toBe("ada@cmu.edu");
+  });
+
+  it("still identifies the account by the login address, not the correspondence one", async () => {
+    // Only the destination moved. Typing the correspondence address at the login screen must not
+    // find an account -- credentials are keyed by the login email, and answering otherwise would
+    // make this route a membership oracle over a second set of addresses.
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const member = store.getLabMember("ada")!;
+    store.saveLabMember({ ...member, correspondence_email: "ada@cmu.edu" });
+
+    const result = auth.requestPasswordReset({ email: "ada@cmu.edu" });
+
+    expect(result.ok).toBe(true);
+    await flushMicrotasks();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("falls back to the login address when there is no correspondence one", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const member = store.getLabMember("ada")!;
+    store.saveLabMember({ ...member, correspondence_email: "   " });
+
+    auth.requestPasswordReset({ email: "ada@cs.toronto.edu" });
+
+    await flushMicrotasks();
+    expect(sent[0]?.email).toBe("ada@cs.toronto.edu");
+  });
+
   it("answers identically for an unknown address and mails nothing", async () => {
     const { auth, sent } = setupWithMail();
 

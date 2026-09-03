@@ -9856,7 +9856,7 @@ function validateLabMember(
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
   }
-  const emailError = validateCsEmail(member.email, privilegeLevel, existingEmail);
+  const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {
     return emailError;
   }
@@ -10101,30 +10101,31 @@ function validateEmailFormat(value: unknown, label: string): string | undefined 
   return undefined;
 }
 
-const CS_TORONTO_EMAIL = /^[^\s@]+@cs\.toronto\.edu$/iu;
-
-// The department directory is the whole reason `email` is governance-owned rather than
-// self-editable: every Slack/paper/reimbursement flow that identifies a member by email
-// assumes it is their cs.toronto.edu address. external_collaborator exists precisely for
-// people who are not in that directory, so they are exempt rather than unable to be added at
-// all. Only a genuinely new or changed value is checked -- re-saving an unrelated field on an
-// already-stored member must not start failing because of a value nobody is touching.
-function validateCsEmail(
+// A cs.toronto.edu address is preferred, not required.
+//
+// This used to refuse anything else outright for anyone who was not an external collaborator, on
+// the reasoning that the department directory is what every Slack/paper/reimbursement flow keys a
+// member by. In practice that is not what the roster is: lab members arrive with a CMU or an ETH
+// address and work here for months before a departmental account exists -- and refusing to store
+// the only address the lab actually has for them left the record blank, which is strictly worse
+// than storing the address that works.
+//
+// "Preferred" is still honoured where it means something: `vectorRosterEmail` picks the
+// cs.toronto.edu address when a member carries one, falling back to whatever else is on file, and
+// the onboarding mail asks people to get one. Nothing depends on the domain for correctness.
+//
+// Only a genuinely new or changed value is checked -- re-saving an unrelated field on an
+// already-stored member must not start failing over a value nobody is touching.
+function validateMemberEmail(
   value: string | undefined,
-  privilegeLevel: AdminBotPrivilegeLevel,
   existingEmail: string | undefined,
 ): string | undefined {
   if (value === undefined || value === existingEmail) {
     return undefined;
   }
-  const trimmed = value.trim();
-  if (!trimmed || privilegeLevel === "external_collaborator") {
-    return undefined;
-  }
-  if (!CS_TORONTO_EMAIL.test(trimmed)) {
-    return "member email must be a @cs.toronto.edu address (external collaborators are exempt)";
-  }
-  return undefined;
+  // Format only. The old domain rule short-circuited before any format check for external
+  // collaborators, so their addresses were never validated at all; this closes that quietly.
+  return validateEmailFormat(value, "member email");
 }
 
 // The availability importer fetches this URL server-side with the AdminBot's own Google

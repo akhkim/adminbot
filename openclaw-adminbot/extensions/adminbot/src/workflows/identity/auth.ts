@@ -535,12 +535,39 @@ export class AdminBotAuthService {
   // Best-effort, same contract as the account-approved mail: the token row is already written, so a
   // failed send is audited for follow-up rather than rolled back into an error the caller sees
   // (which would also leak whether the address exists).
-  private notifyPasswordReset(email: string, memberId: string, token: string): void {
+  /**
+   * Where the reset link is sent.
+   *
+   * The correspondence address when the member has one, and the login address otherwise. These are
+   * routinely different people-facing facts: `email` is the departmental identity the account is
+   * keyed by, and `correspondence_email` is the address the member actually reads -- which for
+   * anyone who has not been issued a cs.toronto.edu account yet is the only one that reaches them.
+   * A reset sent to a mailbox nobody opens is a member who cannot get back in.
+   *
+   * The login address stays the identifier: this changes the destination, never what you type to
+   * request the reset or to sign in.
+   *
+   * Known and accepted consequence: `correspondence_email` is self-editable and writable for any
+   * member by the shared service principal (see PUT /lab/members/:id in api/server.ts), where
+   * `email` is not. So the service token can redirect a reset and take an account over, admins
+   * included -- a boundary that held only while resets went to the login address. The lab's call
+   * is that the token is guarded like an admin password, and that a member with no departmental
+   * mailbox being locked out permanently is the worse failure.
+   */
+  private passwordResetRecipient(loginEmail: string, memberId: string): string {
+    const member = this.store.getLabMember(memberId);
+    const correspondence =
+      typeof member?.correspondence_email === "string" ? member.correspondence_email.trim() : "";
+    return correspondence || loginEmail;
+  }
+
+  private notifyPasswordReset(loginEmail: string, memberId: string, token: string): void {
     if (!this.sendPasswordResetEmail) {
       return;
     }
     const member = this.store.getLabMember(memberId);
     const name = typeof member?.name === "string" ? member.name : undefined;
+    const email = this.passwordResetRecipient(loginEmail, memberId);
     void this.sendPasswordResetEmail({
       email,
       ...(name ? { name } : {}),
