@@ -444,6 +444,80 @@ describe("AdminBotService paper coauthors", () => {
     ).toMatchObject({ ok: false });
   });
 
+  // The bulk grid writes the same fields to the same row as the card. This is the service half of
+  // that claim: everything the grid offers as editable has to survive a member write.
+  it("stores every field the bulk grid can edit", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot, renamed",
+        alias: "adminbot",
+        started_on: "2026-02-01",
+        current_step: "overleaf_writing",
+        venue: "ICLR 2027",
+        author_roles: "Joeun writes, Andrew reviews",
+        feedback_givers: ["Rahul Shrestha"],
+        author_links: [{ name: "Joeun Yook", member_id: "joeun-yook" }, { name: "Someone New" }],
+        artifacts: {
+          topic: "causal abstraction",
+          submission_url: "https://openreview.net/forum?id=abc",
+          arxiv_paper_password: "ab12cd",
+          venue_targets: JSON.stringify([
+            { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
+          ]),
+        },
+      }),
+    );
+
+    const stored = unwrap(service.listPapers()).papers.find((entry) => entry.id === "adminbot");
+    expect(stored).toMatchObject({
+      title: "AdminBot, renamed",
+      alias: "adminbot",
+      started_on: "2026-02-01",
+      current_step: "overleaf_writing",
+      venue: "ICLR 2027",
+      author_roles: "Joeun writes, Andrew reviews",
+      feedback_givers: ["Rahul Shrestha"],
+    });
+    expect(stored?.artifacts).toMatchObject({
+      topic: "causal abstraction",
+      submission_url: "https://openreview.net/forum?id=abc",
+      // The column that used to accept text and drop it.
+      arxiv_paper_password: "ab12cd",
+    });
+    // The roster link the grid preserves has to survive the write, not just the UI merge.
+    expect(stored?.author_links).toEqual([
+      { name: "Joeun Yook", member_id: "joeun-yook" },
+      { name: "Someone New" },
+    ]);
+  });
+
+  // Why the grid shows the acceptance answers rather than offering to edit them.
+  it("refuses a venue decision from the member write path, admin included", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    expect(
+      service.upsertOwnPaper("joeun-yook", { id: "adminbot", venue_decision: "accept" }),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+
   it("records an external coauthor and gives them nothing else", () => {
     const service = lab();
     unwrap(

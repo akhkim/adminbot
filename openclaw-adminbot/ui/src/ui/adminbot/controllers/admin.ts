@@ -486,6 +486,14 @@ export type AdminBotPaperSaveInput = {
   googleSlidesUrl?: string;
   posterUrl?: string;
   /**
+   * arXiv's own per-paper password, which coauthors need to claim ownership of a submission.
+   *
+   * Plain text on a record every coauthor can read, and it rides in `artifacts` like the links
+   * beside it -- so it is as readable as the paper's Overleaf URL, and no more protected. That is
+   * the trade the lab asked for: the alternative was a column that silently accepted nothing.
+   */
+  arxivPaperPassword?: string;
+  /**
    * Conference pre-registration, JSON-encoded. See venue-targets.ts for the shape and for why it
    * lives in `artifacts` rather than a column: the service merges that map on write, so this
    * needs no schema change and becomes a backfill once the table exists.
@@ -2495,6 +2503,10 @@ export async function saveAdminBotPaper(
     ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
+    // Sent even when empty, so clearing it actually clears it.
+    ...(paper.arxivPaperPassword === undefined
+      ? {}
+      : { arxiv_paper_password: paper.arxivPaperPassword }),
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.

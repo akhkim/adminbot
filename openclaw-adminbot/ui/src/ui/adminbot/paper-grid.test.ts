@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
   applyPaste,
   columnIndexOf,
@@ -19,8 +20,9 @@ import {
   pendingSaves,
   recordHistory,
   PAPER_GRID_THRESHOLD,
+  mergeAuthorLinks,
+  parseVenueTargets,
 } from "./paper-grid.ts";
-import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 
 function paper(id: string, artifacts: Record<string, string> = {}): AdminBotPaperRecord {
   return {
@@ -45,7 +47,12 @@ const arxivCol = {
   hosts: ["arxiv.org"],
   path: /^\/abs\//u,
 } as never;
-const pwCol = { key: "arxiv_paper_password", label: "pw", short: "pw", pattern: /^[A-Za-z0-9]{6}$/u } as never;
+const pwCol = {
+  key: "arxiv_paper_password",
+  label: "pw",
+  short: "pw",
+  pattern: /^[A-Za-z0-9]{6}$/u,
+} as never;
 
 describe("cell validation", () => {
   it("accepts an empty cell — empty clears the link", () => {
@@ -76,10 +83,14 @@ describe("cell validation", () => {
 
 describe("paste from a spreadsheet", () => {
   const papers = [paper("p1"), paper("p2"), paper("p3")];
+  // Addressed by name, not by 0. These tests used to start at literal column 0 and read back
+  // brainstorming_doc_url, which was the same thing until the grid grew the card's own fields and
+  // Title took that slot -- exactly the drift columnIndexOf exists to survive.
+  const docs = columnIndexOf("brainstorming_doc_url");
 
   it("spreads a tab-separated block down and across from the pasted cell", () => {
     const state = emptyPaperGridState();
-    const filled = applyPaste(state, papers, 0, 0, "folderA\tviewA\nfolderB\tviewB");
+    const filled = applyPaste(state, papers, 0, docs, "folderA\tviewA\nfolderB\tviewB");
     expect(filled).toBe(4);
     expect(state.edits.get("p1")?.get("brainstorming_doc_url")).toBe("folderA");
     expect(state.edits.get("p1")?.get("overleaf_view_url")).toBe("viewA");
@@ -88,21 +99,21 @@ describe("paste from a spreadsheet", () => {
 
   it("starts at the pasted cell, not at the top-left", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, papers, 1, 1, "viewOnly");
+    applyPaste(state, papers, 1, columnIndexOf("overleaf_view_url"), "viewOnly");
     expect(state.edits.get("p1")).toBeUndefined();
     expect(state.edits.get("p2")?.get("overleaf_view_url")).toBe("viewOnly");
   });
 
   it("drops rows pasted past the end instead of inventing papers", () => {
     const state = emptyPaperGridState();
-    const filled = applyPaste(state, papers, 2, 0, "a\nb\nc\nd");
+    const filled = applyPaste(state, papers, 2, docs, "a\nb\nc\nd");
     expect(filled).toBe(1);
     expect(state.edits.size).toBe(1);
   });
 
   it("handles CRLF, which is what Excel on Windows puts on the clipboard", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, papers, 0, 0, "one\r\ntwo\r\n");
+    applyPaste(state, papers, 0, docs, "one\r\ntwo\r\n");
     expect(state.edits.get("p2")?.get("brainstorming_doc_url")).toBe("two");
   });
 });
@@ -170,7 +181,13 @@ describe("change history", () => {
 
   it("reports a first value as added", () => {
     const state = emptyPaperGridState();
-    applyPaste(state, [paper("p2")], 0, columnIndexOf("poster_url"), "https://example.com/poster.pdf");
+    applyPaste(
+      state,
+      [paper("p2")],
+      0,
+      columnIndexOf("poster_url"),
+      "https://example.com/poster.pdf",
+    );
     const [entry] = diffForHistory(state, [paper("p2")]);
     expect(entry).toMatchObject({ kind: "added", column: "Poster" });
     expect(describeHistory(entry!)).toBe("You added Poster: https://example.com/poster.pdf");
@@ -223,15 +240,10 @@ describe("change history", () => {
 });
 
 describe("fill down", () => {
-  const arxiv = (id: string, url?: string) =>
-    paper(id, url ? { arxiv_url: url } : {});
+  const arxiv = (id: string, url?: string) => paper(id, url ? { arxiv_url: url } : {});
 
   it("copies the value into the empty cells below", () => {
-    const papers = [
-      arxiv("p1", "https://arxiv.org/abs/1111.1111"),
-      arxiv("p2"),
-      arxiv("p3"),
-    ];
+    const papers = [arxiv("p1", "https://arxiv.org/abs/1111.1111"), arxiv("p2"), arxiv("p3")];
     const state = emptyPaperGridState();
     expect(fillDown(state, papers, arxivCol, 0, 2)).toBe(2);
     expect(cellValue(state, papers[2]!, arxivCol)).toBe("https://arxiv.org/abs/1111.1111");
@@ -357,5 +369,164 @@ describe("the help bubble", () => {
     expect(state.helpFor).toBe("arxiv_url");
     state.helpFor = null;
     expect(state.helpFor).toBeNull();
+  });
+});
+
+// The grid now carries what the card carries, and writes it to the same row through the same
+// endpoint. These cover the fields that are not a plain string on the save input, because those
+// are the ones a naive round-trip would quietly damage.
+describe("the fields the card carries", () => {
+  const rich = (): AdminBotPaperRecord =>
+    ({
+      id: "p1",
+      title: "Causal abstraction",
+      alias: "cais",
+      started_on: "2026-01-15",
+      current_step: "overleaf_writing",
+      authors: ["Ada Lovelace", "Yook, Joeun"],
+      author_links: [
+        { name: "Ada Lovelace", member_id: "ada" },
+        { name: "Yook, Joeun", member_id: "joeun" },
+      ],
+      feedback_givers: ["Rahul Shrestha"],
+      venue_decision: "accept",
+      accepted_year: 2027,
+      is_archival: true,
+      artifacts: {},
+    }) as unknown as AdminBotPaperRecord;
+
+  const columnFor = (key: string) => gridColumns()[columnIndexOf(key)]!;
+
+  it("offers every field the card can edit", () => {
+    const keys = gridColumns().map((column) => String(column.key));
+    for (const key of [
+      "title",
+      "alias",
+      "started_on",
+      "current_step",
+      "authors",
+      "author_roles",
+      "feedback_givers",
+      "venue",
+      "venue_targets",
+      "topic",
+      "venue_decision",
+      "accepted_venue",
+      "accepted_year",
+      "is_archival",
+      "presentation_type",
+      "blocker_log",
+      "submission_url",
+      "arxiv_paper_password",
+    ]) {
+      expect(keys, `${key} should be a column`).toContain(key);
+    }
+  });
+
+  it("reads the record's own columns, not just artifacts", () => {
+    const state = emptyPaperGridState();
+    const record = rich();
+    expect(cellValue(state, record, columnFor("title"))).toBe("Causal abstraction");
+    expect(cellValue(state, record, columnFor("alias"))).toBe("cais");
+    expect(cellValue(state, record, columnFor("started_on"))).toBe("2026-01-15");
+    expect(cellValue(state, record, columnFor("current_step"))).toBe("overleaf_writing");
+    expect(cellValue(state, record, columnFor("accepted_year"))).toBe("2027");
+    expect(cellValue(state, record, columnFor("is_archival"))).toBe("true");
+  });
+
+  // The hazard worth naming: author_links is what decides whose My Projects page a paper appears
+  // on, and a cell holds names and nothing else.
+  it("keeps an author's roster link when their name is untouched", () => {
+    const state = emptyPaperGridState();
+    const record = rich();
+    state.edits.set("p1", new Map([["authors", "Ada Lovelace; Yook, Joeun; New Person"]]));
+    const [save] = pendingSaves(state, [record]);
+
+    expect(save?.authors).toEqual(["Ada Lovelace", "Yook, Joeun", "New Person"]);
+    expect(save?.authorLinks).toEqual([
+      { name: "Ada Lovelace", member_id: "ada" },
+      { name: "Yook, Joeun", member_id: "joeun" },
+      // Genuinely new, so unlinked rather than guessed at. The card's picker links it.
+      { name: "New Person" },
+    ]);
+  });
+
+  it("splits authors on semicolons, because a BibTeX name has a comma in it", () => {
+    expect(mergeAuthorLinks(rich(), ["Yook, Joeun"]).map((link) => link.name)).toEqual([
+      "Yook, Joeun",
+    ]);
+  });
+
+  it("round-trips venue targets through the way the spreadsheet reads them", () => {
+    expect(parseVenueTargets("80% ICLR 2027 · 50% ARR October")).toEqual([
+      { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
+      { venue_id: "arr october", label: "ARR October", confidence: 50 },
+    ]);
+    expect(parseVenueTargets("")).toEqual([]);
+    expect(parseVenueTargets("ICLR, probably")).toBeUndefined();
+  });
+
+  it("holds a cell it cannot parse instead of writing a broken record", () => {
+    const state = emptyPaperGridState();
+    const record = rich();
+    state.edits.set("p1", new Map([["venue_targets", "ICLR, probably"]]));
+    expect(pendingSaves(state, [record])).toEqual([]);
+  });
+
+  it("refuses an empty title and a short name Slack could not take", () => {
+    expect(cellError(columnFor("title"), "   ")).toBeTruthy();
+    expect(cellError(columnFor("title"), "Fine")).toBeUndefined();
+    expect(cellError(columnFor("alias"), "Bob's Project")).toBeTruthy();
+    expect(cellError(columnFor("alias"), "cais")).toBeUndefined();
+    // Blank clears it, which the record allows.
+    expect(cellError(columnFor("alias"), "")).toBeUndefined();
+  });
+
+  // A text column is not a URL column, and running new URL() over a title would call it bad.
+  it("does not hold non-link columns to link rules", () => {
+    expect(
+      cellError(columnFor("author_roles"), "Ada writes, Joeun runs experiments"),
+    ).toBeUndefined();
+    expect(cellError(columnFor("venue"), "ICLR 2027")).toBeUndefined();
+    expect(cellError(columnFor("current_step"), "overleaf_writing")).toBeUndefined();
+    expect(cellError(columnFor("current_step"), "not_a_step")).toBeTruthy();
+  });
+
+  it("writes the arXiv password that used to be dropped", () => {
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["arxiv_paper_password", "ab12cd"]]));
+    const [save] = pendingSaves(state, [rich()]);
+    expect(save).toMatchObject({ arxivPaperPassword: "ab12cd" });
+    expect(cellError(columnFor("arxiv_paper_password"), "nope")).toBeTruthy();
+  });
+
+  // The service refuses venue_decision from the member write path (400, admin included) and drops
+  // the four details beside it. A cell that accepted them would fail the whole row.
+  it("shows the acceptance answers without offering an edit the service would refuse", () => {
+    const state = emptyPaperGridState();
+    for (const key of [
+      "venue_decision",
+      "accepted_venue",
+      "accepted_year",
+      "is_archival",
+      "presentation_type",
+    ]) {
+      const column = columnFor(key);
+      expect(column.save, `${key} must not be writable`).toBeUndefined();
+      expect(column.apply, `${key} must not be writable`).toBeUndefined();
+      state.edits.set("p1", new Map([[key, "accept"]]));
+      expect(pendingSaves(state, [rich()]), `${key} must not reach a save`).toEqual([]);
+    }
+  });
+
+  // Shown so the grid is honest about what a paper holds; not editable, because each entry carries
+  // an author and a timestamp that retyping would erase.
+  it("shows the blocker log without offering to overwrite it", () => {
+    const column = columnFor("blocker_log");
+    expect(column.save).toBeUndefined();
+    expect(column.apply).toBeUndefined();
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["blocker_log", "anything"]]));
+    expect(pendingSaves(state, [rich()])).toEqual([]);
   });
 });
