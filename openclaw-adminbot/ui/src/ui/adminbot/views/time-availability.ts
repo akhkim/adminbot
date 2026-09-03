@@ -1684,9 +1684,10 @@ function revealCommitmentEditor(
 ): void {
   props.onActiveCommitmentChange(type);
   requestAnimationFrame(() => {
-    document
-      .querySelector(".adminbot-time-availability__commitment-picker")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    globalThis.document
+      ?.querySelector<HTMLElement>(".adminbot-time-availability__commitment-picker")
+      ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   });
 }
 
