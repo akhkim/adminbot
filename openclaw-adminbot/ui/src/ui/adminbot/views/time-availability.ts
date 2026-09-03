@@ -1730,9 +1730,17 @@ function renderJinesisTable(
                             editingIndex: rows.indexOf(row),
                           });
                           requestAnimationFrame(() => {
-                            document
-                              .querySelector(".adminbot-time-availability__commitment-picker")
-                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            const reduceMotion = globalThis.matchMedia?.(
+                              "(prefers-reduced-motion: reduce)",
+                            )?.matches;
+                            globalThis.document
+                              ?.querySelector<HTMLElement>(
+                                ".adminbot-time-availability__commitment-picker",
+                              )
+                              ?.scrollIntoView({
+                                behavior: reduceMotion ? "auto" : "smooth",
+                                block: "start",
+                              });
                           });
                         }}
                       >

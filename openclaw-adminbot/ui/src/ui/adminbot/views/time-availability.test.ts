@@ -75,6 +75,11 @@ function renderView(overrides: Partial<AdminBotTimeAvailabilityProps> = {}): HTM
 
 const NOW = Date.UTC(2026, 2, 2); // Monday 2 March 2026
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("rangeBins", () => {
   it("gives a week seven day-long bins from today", () => {
     const bins = rangeBins("week", NOW);
@@ -216,6 +221,34 @@ describe("renderAdminBotTimeAvailability", () => {
       editingIndex: 0,
     });
   });
+
+  it.each([
+    { reducedMotion: true, behavior: "auto" },
+    { reducedMotion: false, behavior: "smooth" },
+  ] as const)(
+    "scrolls to the editor with $behavior behavior when reduced motion is $reducedMotion",
+    ({ reducedMotion, behavior }) => {
+      const scrollIntoView = vi.fn();
+      const picker = document.createElement("div");
+      picker.className = "adminbot-time-availability__commitment-picker";
+      picker.scrollIntoView = scrollIntoView;
+      document.body.append(picker);
+      vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+
+      try {
+        renderView()
+          .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+          ?.click();
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior, block: "start" });
+      } finally {
+        picker.remove();
+      }
+    },
+  );
 
   it("appends the drafted commitment to the existing rows on submit", () => {
     const onSaveSchedule = vi.fn();
