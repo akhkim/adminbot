@@ -23,6 +23,14 @@ import {
 import { blockerLog } from "./blockers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import {
+  applyModelSuggestions,
+  buildImportPlan,
+  createCandidates,
+  matchColumns,
+  matchRows,
+  parseSheet,
+} from "./paper-import.ts";
+import {
   canonicalVenueId,
   effectiveVenueTargets,
   formatVenueTargets,
@@ -55,7 +63,7 @@ type ArtifactKey = NonNullable<AdminBotPaperRecord["artifacts"]>;
  */
 type ColumnKind = "url" | "text" | "date" | "number" | "select" | "readonly";
 
-type Column = {
+export type Column = {
   /** Identity of the column: the `artifacts` key by default, otherwise just a stable name. */
   key: keyof ArtifactKey | string;
   /** Key on the save input. Absent means `apply` writes it, or that nothing does. */
@@ -575,6 +583,12 @@ export function saveWidths(widths: Map<string, number>): void {
 }
 
 export type PaperGridState = {
+  /** The pasted sheet, its plan, and whether the panel is open. Nothing here is written. */
+  importOpen?: boolean;
+  importText?: string;
+  importPlan?: import("./paper-import.ts").ImportPlan;
+  importSheet?: import("./paper-import.ts").ParsedSheet;
+  importBusy?: boolean;
   /** paperId -> column key -> typed value. Only what the user actually changed. */
   edits: PaperGridEdits;
   saving: boolean;
@@ -920,6 +934,18 @@ export type PaperGridProps = {
   onChange: () => void;
   onSaveAll: (inputs: AdminBotPaperSaveInput[]) => void;
   onExit: () => void;
+  /**
+   * Asks the service to place the columns the local pass could not.
+   *
+   * Optional: without it the import still works, with those columns left for the member to map by
+   * hand. The model is an assist, never the thing the feature stands on.
+   */
+  onMapColumnsWithModel?: (
+    unmapped: Array<{ header: string; samples: string[] }>,
+    available: string[],
+  ) => Promise<Record<string, string>>;
+  /** Files the rows that matched no paper, as the second, confirmed step. */
+  onCreatePapers?: (candidates: import("./paper-import.ts").CreateCandidate[]) => void;
 };
 
 /**
@@ -1047,6 +1073,178 @@ function renderColumnHelp(state: PaperGridState, column: Column, onChange: () =>
   </span>`;
 }
 
+/**
+ * The import panel: paste a sheet, see what it would do, then fill.
+ *
+ * Two steps on purpose. The plan is shown before anything moves -- how many cells would be filled,
+ * which of their columns nothing claimed, which rows matched no paper, and which cells were
+ * refused and why. Filling writes into the grid's own `edits` map, so an import lands exactly where
+ * a typed cell lands and is saved by the same Update button through the same endpoint.
+ */
+function renderImportPanel(props: PaperGridProps): TemplateResult {
+  const { state, papers } = props;
+  const plan = state.importPlan;
+  const sheet = state.importSheet;
+  const filledCells = plan
+    ? [...plan.fills.values()].reduce((total, row) => total + row.size, 0)
+    : 0;
+  const candidates = plan && sheet ? createCandidates(sheet, plan) : [];
+  const creatable = candidates.filter((candidate) => candidate.missing.length === 0);
+
+  const analyse = async (): Promise<void> => {
+    const text = state.importText ?? "";
+    if (!text.trim()) {
+      return;
+    }
+    const parsed = parseSheet(text);
+    let columns = matchColumns(parsed);
+    // The model only ever sees what the local pass could not place.
+    const leftovers = columns.filter((column) => !column.target);
+    if (leftovers.length > 0 && props.onMapColumnsWithModel) {
+      const claimed = new Set(columns.flatMap((column) => (column.target ? [column.target] : [])));
+      const available = gridColumns()
+        .filter((column) => (column.save || column.apply) && !claimed.has(String(column.key)))
+        .map((column) => String(column.key));
+      state.importBusy = true;
+      props.onChange();
+      try {
+        const suggestions = await props.onMapColumnsWithModel(
+          leftovers.map((column) => ({
+            header: column.header,
+            samples: parsed.rows
+              .map((row) => (row[column.sourceIndex] ?? "").trim())
+              .filter(Boolean)
+              .slice(0, 3),
+          })),
+          available,
+        );
+        columns = applyModelSuggestions(columns, suggestions);
+      } catch {
+        // A dead tunnel costs the leftovers and nothing else.
+      } finally {
+        state.importBusy = false;
+      }
+    }
+    state.importSheet = parsed;
+    state.importPlan = buildImportPlan(parsed, columns, matchRows(parsed, columns, papers));
+    props.onChange();
+  };
+
+  return html`
+    <div class="paper-grid__import">
+      <div class="paper-grid__history-head">
+        <strong>Import a sheet</strong>
+        <span class="paper-grid__muted">
+          Paste it with its header row — the columns do not have to be in our order
+        </span>
+      </div>
+      <textarea
+        class="paper-grid__import-text"
+        rows="4"
+        data-testid="paper-grid-import-text"
+        placeholder="Title&#9;Overleaf&#9;arXiv&#10;Causal abstraction&#9;https://…&#9;https://…"
+        .value=${state.importText ?? ""}
+        @input=${(event: Event) => {
+          state.importText = (event.target as HTMLTextAreaElement).value;
+          // The old plan describes the old paste; keeping it on screen would be a lie.
+          state.importPlan = undefined;
+          state.importSheet = undefined;
+          props.onChange();
+        }}
+      ></textarea>
+      <div class="paper-grid__tools">
+        <button
+          type="button"
+          class="btn btn--sm"
+          ?disabled=${state.importBusy || !(state.importText ?? "").trim()}
+          data-testid="paper-grid-import-analyse"
+          @click=${() => void analyse()}
+        >
+          ${state.importBusy ? "Matching…" : "Match it up"}
+        </button>
+        ${plan
+          ? html`<button
+              type="button"
+              class="btn primary"
+              ?disabled=${filledCells === 0}
+              data-testid="paper-grid-import-fill"
+              @click=${() => {
+                for (const [paperId, cells] of plan.fills) {
+                  const row = state.edits.get(paperId) ?? new Map<string, string>();
+                  for (const [key, value] of cells) {
+                    row.set(key, value);
+                  }
+                  state.edits.set(paperId, row);
+                }
+                state.notice = `Filled ${filledCells} cell(s) from the sheet. Nothing is saved until you press Update.`;
+                state.importPlan = undefined;
+                state.importSheet = undefined;
+                state.importText = "";
+                state.importOpen = false;
+                props.onChange();
+              }}
+            >
+              Fill ${filledCells} cell(s)
+            </button>`
+          : nothing}
+      </div>
+
+      ${plan
+        ? html`
+            <ul class="paper-grid__import-summary" data-testid="paper-grid-import-summary">
+              <li>
+                ${plan.rows.filter((row) => row.paperId).length} of ${plan.rows.length} row(s)
+                matched a paper you already have
+              </li>
+              <li>
+                ${plan.columns.filter((column) => column.target).length} of ${plan.columns.length}
+                column(s)
+                placed${plan.unmappedHeaders.length
+                  ? html` — ignoring
+                      <strong>${plan.unmappedHeaders.join(", ")}</strong>`
+                  : nothing}
+              </li>
+              ${plan.rejected.length
+                ? html`<li class="paper-grid__warn">
+                    ${plan.rejected.length} cell(s) left behind:
+                    ${plan.rejected
+                      .slice(0, 3)
+                      .map((entry) => `row ${entry.rowIndex + 1} ${entry.column} (${entry.reason})`)
+                      .join("; ")}
+                  </li>`
+                : nothing}
+              ${candidates.length
+                ? html`<li>
+                    ${candidates.length} row(s) matched nothing.
+                    ${creatable.length
+                      ? html`<button
+                          type="button"
+                          class="btn btn--sm"
+                          data-testid="paper-grid-import-create"
+                          @click=${() => {
+                            props.onCreatePapers?.(creatable);
+                            state.notice = `Filing ${creatable.length} new paper(s).`;
+                            props.onChange();
+                          }}
+                        >
+                          Also create ${creatable.length}
+                        </button>`
+                      : nothing}
+                    ${candidates.length > creatable.length
+                      ? html`<span class="paper-grid__muted">
+                          ${candidates.length - creatable.length} cannot be created yet — a new
+                          paper needs a title, a short name and a start date
+                        </span>`
+                      : nothing}
+                  </li>`
+                : nothing}
+            </ul>
+          `
+        : nothing}
+    </div>
+  `;
+}
+
 export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   const { state, papers } = props;
   const changedRows = new Set(
@@ -1098,11 +1296,23 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
           >
             History${state.history.length ? ` (${state.history.length})` : ""}
           </button>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="paper-grid-import-toggle"
+            @click=${() => {
+              state.importOpen = !state.importOpen;
+              props.onChange();
+            }}
+          >
+            Import a sheet
+          </button>
           <button type="button" class="btn btn--sm" @click=${props.onExit}>Back to cards</button>
         </div>
       </div>
 
       ${state.notice ? html`<p class="paper-grid__notice">${state.notice}</p>` : nothing}
+      ${state.importOpen ? renderImportPanel(props) : nothing}
       ${state.showHistory
         ? html`<div class="paper-grid__history">
             <div class="paper-grid__history-head">

@@ -34,6 +34,7 @@ import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/
 import {
   draftLinkedInPost,
   loadStoredMemberSession,
+  mapImportColumns,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
 import {
@@ -2403,6 +2404,33 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             rerender();
           },
           onExit: () => exitGrid(rerender),
+          onMapColumnsWithModel: async (unmapped, available) => {
+            const stored = loadStoredMemberSession();
+            return stored
+              ? mapImportColumns(unmapped, available, stored.sessionToken, resolveAdminBotBaseUrl())
+              : {};
+          },
+          // The second step, and a deliberate one: these rows matched no paper, so each becomes a
+          // new record rather than an edit to an existing one. Same endpoint as everything else.
+          onCreatePapers: (candidates) => {
+            for (const candidate of candidates) {
+              const title = candidate.values.title ?? "";
+              props.onSavePaper({
+                // Slugged from the title, the way the create form does it: the service upserts by
+                // id, and a row out of somebody's sheet has none to offer.
+                id: title
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/gu, "-")
+                  .replace(/(^-|-$)/gu, "")
+                  .slice(0, 60),
+                title,
+                authors: [],
+                currentStep: paperSteps[0],
+                alias: candidate.values.alias ?? "",
+                startedOn: candidate.values.started_on ?? "",
+              });
+            }
+          },
         })}
       </div>
     `;
