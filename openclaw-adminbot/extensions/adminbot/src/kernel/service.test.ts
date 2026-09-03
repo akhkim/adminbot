@@ -391,6 +391,59 @@ describe("AdminBotService paper coauthors", () => {
     );
   });
 
+  // A project is renamed as the work finds its shape, so the three answers the create form insists
+  // on have to stay editable afterwards. The service already allowed this; nothing exercised it.
+  it("lets an author revise the title, short name and start date after filing", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        alias: "adminbot",
+        started_on: "2026-01-15",
+        authors: ["Joeun Yook", "Andrew Kim"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+
+    unwrap(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "adminbot-two",
+        started_on: "2026-02-01",
+      }),
+    );
+    const revised = unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot");
+    expect(revised).toMatchObject({
+      title: "AdminBot, revisited",
+      alias: "adminbot-two",
+      started_on: "2026-02-01",
+    });
+
+    // Blank clears the alias rather than failing validation -- the record allows a project with no
+    // channel name, and the card's editor sends "" for exactly that.
+    unwrap(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "",
+      }),
+    );
+    expect(
+      unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot")?.alias,
+    ).toBeUndefined();
+
+    // A short name Slack could not take is still refused, on the edit path as on the create one.
+    expect(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "Bob's Project",
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
   it("records an external coauthor and gives them nothing else", () => {
     const service = lab();
     unwrap(

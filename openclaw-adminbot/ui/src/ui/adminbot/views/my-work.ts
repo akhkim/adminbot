@@ -523,6 +523,155 @@ function overviewFor(props: MyWorkProps, paperId: string): PaperSlotOverviewRow 
  * go and do. This carries the count *and* the first thing outstanding, which is the sentence
  * somebody scanning five papers is actually looking for.
  */
+/**
+ * The project's own answers, editable after the fact.
+ *
+ * Title, short name and start date are collected when the project is filed and, until now, were
+ * fixed from that moment. A title is the one most likely to be wrong later -- work gets renamed as
+ * it finds its shape -- and the service has always allowed all three through
+ * OWN_PAPER_EDITABLE_FIELDS, so the only thing missing was somewhere to type them.
+ *
+ * The short name is checked here with the same rule the create form uses, because it still names
+ * the Slack channel. Renaming it does not rename an existing channel, which is why the hint says
+ * so rather than leaving the member to find out.
+ */
+function renderProjectDetails(
+  state: AppViewState,
+  props: MyWorkProps,
+  paper: AdminBotPaperRecord,
+): unknown {
+  const edits = state.myWorkProjectEdits ?? {};
+  const stored = {
+    title: paper.title ?? "",
+    alias: paper.alias ?? "",
+    startedOn: paper.started_on ?? "",
+    error: null as string | null,
+  };
+  const draft = edits[paper.id] ?? stored;
+  const patch = (fields: Partial<typeof stored>): void => {
+    // Spreading undefined in an object literal contributes nothing, so this is safe against the
+    // partial state doubles the view is rendered with in tests.
+    state.myWorkProjectEdits = {
+      ...state.myWorkProjectEdits,
+      [paper.id]: { ...draft, ...fields },
+    };
+    props.onRerender?.();
+  };
+  const dirty =
+    draft.title !== stored.title ||
+    draft.alias !== stored.alias ||
+    draft.startedOn !== stored.startedOn;
+  return html`
+    <details class="my-work-details" data-testid=${`my-work-details-${paper.id}`}>
+      <summary>Project details</summary>
+      <div class="my-work-details__grid">
+        <label class="my-work-details__field">
+          <span>Title</span>
+          <input
+            class="input"
+            data-testid=${`my-work-details-title-${paper.id}`}
+            .value=${draft.title}
+            @input=${(event: Event) =>
+              patch({ title: (event.target as HTMLInputElement).value, error: null })}
+          />
+        </label>
+        <label class="my-work-details__field">
+          <span>Short name</span>
+          <input
+            class="input"
+            maxlength=${adminBotPaperAliasMaxLength}
+            data-testid=${`my-work-details-alias-${paper.id}`}
+            .value=${draft.alias}
+            @input=${(event: Event) =>
+              patch({ alias: (event.target as HTMLInputElement).value, error: null })}
+          />
+          <span class="register__hint">
+            Names the Slack channel for a project that does not have one yet. Renaming it here does
+            not rename a channel that already exists.
+          </span>
+        </label>
+        <label class="my-work-details__field">
+          <span>Started on</span>
+          <input
+            class="input"
+            type="date"
+            data-testid=${`my-work-details-started-${paper.id}`}
+            .value=${draft.startedOn}
+            @input=${(event: Event) =>
+              patch({ startedOn: (event.target as HTMLInputElement).value, error: null })}
+          />
+        </label>
+      </div>
+      ${draft.error
+        ? html`<p
+            class="my-work-add-form__error"
+            role="alert"
+            data-testid=${`my-work-details-error-${paper.id}`}
+          >
+            ${draft.error}
+          </p>`
+        : nothing}
+      <div class="my-work-details__actions">
+        <button
+          type="button"
+          class="btn btn--sm"
+          ?disabled=${!dirty}
+          data-testid=${`my-work-details-save-${paper.id}`}
+          @click=${() => {
+            const title = draft.title.trim();
+            if (!title) {
+              patch({ error: "Give the project a title." });
+              return;
+            }
+            // Blank clears the alias, which the record allows; anything else has to be a name
+            // Slack would take.
+            const aliasTyped = draft.alias.trim();
+            const aliasProblem = aliasTyped ? aliasRefusal(aliasTyped) : null;
+            if (aliasProblem) {
+              patch({ error: aliasProblem });
+              return;
+            }
+            const startedOn = draft.startedOn.trim();
+            if (startedOn && !/^\d{4}-\d{2}-\d{2}$/u.test(startedOn)) {
+              patch({ error: "The start date must look like 2026-09-01." });
+              return;
+            }
+            props.onSavePaper({
+              id: paper.id,
+              title,
+              authors: paper.authors ?? [],
+              currentStep: paper.current_step as AdminBotPaperStep,
+              alias: aliasTyped ? (adminBotNormalizePaperAlias(aliasTyped) ?? "") : "",
+              startedOn,
+            });
+            // Dropped rather than kept: the next render reads the saved record, so a lingering
+            // draft would show the old answers over the new ones.
+            const { [paper.id]: _saved, ...rest } = state.myWorkProjectEdits ?? {};
+            state.myWorkProjectEdits = rest;
+            props.onRerender?.();
+          }}
+        >
+          Save details
+        </button>
+        ${dirty
+          ? html`<button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`my-work-details-cancel-${paper.id}`}
+              @click=${() => {
+                const { [paper.id]: _discarded, ...rest } = state.myWorkProjectEdits ?? {};
+                state.myWorkProjectEdits = rest;
+                props.onRerender?.();
+              }}
+            >
+              Cancel
+            </button>`
+          : nothing}
+      </div>
+    </details>
+  `;
+}
+
 function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const row = overviewFor(props, paper.id);
   if (!row) {
@@ -937,7 +1086,8 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
       <div class="my-work-item__body" id=${panelId} ?hidden=${!open}>
         ${open
           ? html`
-              ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+              ${renderProjectDetails(state, props, paper)} ${renderVenueTargets(paper)}
+              ${renderTarget(paper, props)}
               ${renderPaperTimeline({
                 paperId: paper.id,
                 slots: props.slots[paper.id]?.slots ?? [],
@@ -1378,6 +1528,28 @@ function defaultTarget(now = new Date()) {
 const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
 
 /**
+ * Why this short name cannot be one, or null when it can.
+ *
+ * Shared by the create form and the card's own editor so the two cannot answer differently: the
+ * alias becomes a Slack channel either way, and a rule that only one of them enforces is a rule
+ * that gets discovered afterwards.
+ */
+export function aliasRefusal(typed: string): string | null {
+  const trimmed = typed.trim();
+  if (!trimmed) {
+    return "Give the project a short name — it becomes its Slack channel.";
+  }
+  if (!adminBotNormalizePaperAlias(trimmed)) {
+    return (
+      `"${trimmed}" cannot be a Slack channel name. Use letters, digits and hyphens, ` +
+      `${adminBotPaperAliasMaxLength} characters or fewer — a title with an apostrophe, ` +
+      "a colon or spaces around punctuation will not do as it stands."
+    );
+  }
+  return null;
+}
+
+/**
  * Whether the alias contradicts a channel the member says already exists.
  *
  * Three states, and only one of them blocks:
@@ -1518,12 +1690,32 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         const form = event.currentTarget as HTMLFormElement;
         const data = new FormData(form);
         const title = draft.trim();
-        const alias = adminBotNormalizePaperAlias(String(data.get("alias") ?? "")) ?? "";
+        const aliasTyped = String(data.get("alias") ?? "").trim();
+        const alias = adminBotNormalizePaperAlias(aliasTyped) ?? "";
         const startedOn = String(data.get("started_on") ?? "").trim();
+        // Every refusal below says why. They all used to be a bare `return`, which files nothing
+        // and reports nothing: the member is left looking at a filled-in form and an unchanged
+        // page, with no way to tell a rejected alias from a dead click. The alias is the one that
+        // actually bites -- copying the title across brings its apostrophes, colons and length
+        // with it, none of which can be a Slack channel name.
+        const refuse = (reason: string): void => {
+          state.myWorkProjectError = reason;
+          props.onRerender?.();
+        };
         // Both are asked for rather than optional: the alias is what the project's Slack channel
         // gets named after, and a start date filled in later is a guess. The submit refuses rather
         // than filing a project that has to be chased for them afterwards.
-        if (!title || !alias || !startedOn) {
+        if (!title) {
+          refuse("Give the project a title.");
+          return;
+        }
+        const aliasProblem = aliasRefusal(aliasTyped);
+        if (aliasProblem) {
+          refuse(aliasProblem);
+          return;
+        }
+        if (!startedOn) {
+          refuse("Say when work on the project started.");
           return;
         }
         // The already-exists box is a claim the member made; this is where it is checked. Only a
@@ -1531,8 +1723,13 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         // unticked rather than as a failure, because refusing a correct alias over an unavailable
         // lookup is worse than filing one nobody verified.
         if (channelMismatch(props, alias)) {
+          refuse(
+            `No #${adminBotProjectChannelName(alias)} in Slack, but the box says the channel ` +
+              "already exists. Use the channel's exact name, or untick the box.",
+          );
           return;
         }
+        state.myWorkProjectError = null;
         const rows = currentTargets();
         const primary = rows[0] ?? { venueId: fallback.id, year: fallback.year, confidence: 50 };
         props.onSavePaper({
@@ -1564,6 +1761,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         });
         state.myWorkProjectDraft = null;
         state.myWorkProjectAlias = "";
+        state.myWorkProjectError = null;
         state.myWorkProjectVenues = [];
         props.onChannelCheckToggle?.(false);
       }}
@@ -1572,6 +1770,12 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         <h3>${t("myWork.items.add")}</h3>
         <p>Starts at the first step and shows up on Active Papers too.</p>
       </div>
+
+      ${state.myWorkProjectError
+        ? html`<p class="my-work-add-form__error" role="alert" data-testid="my-work-add-error">
+            ${state.myWorkProjectError}
+          </p>`
+        : nothing}
 
       <label class="register__field">
         <span class="register__label">Title</span>
