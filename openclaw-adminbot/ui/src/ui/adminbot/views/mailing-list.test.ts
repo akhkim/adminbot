@@ -112,3 +112,20 @@ describe("renderMailingList", () => {
 function container_text(container: HTMLElement): string {
   return container.textContent ?? "";
 }
+
+// The tab's controls are the app's controls. Written as bare labels around bare inputs they drew
+// browser defaults, two tabs away from the Announcements composer they are supposed to match.
+describe("the controls", () => {
+  it("wires the range and recipient into the shared form styling", async () => {
+    const container = await draw();
+    const controls = container.querySelector(".adminbot-mailing-list__controls");
+    expect(controls?.classList.contains("adminbot-form")).toBe(true);
+    const fields = controls?.querySelectorAll(".adminbot-form__field") ?? [];
+    expect(fields).toHaveLength(3);
+    // Each field labels its own box, which is what the shared rule styles.
+    for (const field of fields) {
+      expect(field.querySelector("span")).not.toBeNull();
+      expect(field.querySelector("input")).not.toBeNull();
+    }
+  });
+});

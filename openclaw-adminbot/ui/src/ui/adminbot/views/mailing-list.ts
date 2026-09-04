@@ -54,9 +54,13 @@ class AdminbotMailingListView extends LitElement {
       <section class="adminbot-panel">
         <div class="card-title">${t("mailingList.title")}</div>
         <p class="muted">${t("mailingList.sub")}</p>
-        <div class="adminbot-mailing-list__controls">
-          <label>
-            ${t("mailingList.from")}
+        <!-- adminbot-form is what carries this tab's controls into the app's own input styling
+             (height, border, focus ring, placeholder colour), and adminbot-form__field is what
+             puts a label above its box. Written as bare labels around bare inputs, this row drew
+             browser defaults beside the Announcements composer it sits two tabs away from. -->
+        <div class="adminbot-form adminbot-mailing-list__controls">
+          <label class="adminbot-form__field">
+            <span>${t("mailingList.from")}</span>
             <input
               type="date"
               .value=${props.from}
@@ -67,8 +71,8 @@ class AdminbotMailingListView extends LitElement {
                 })}
             />
           </label>
-          <label>
-            ${t("mailingList.to")}
+          <label class="adminbot-form__field">
+            <span>${t("mailingList.to")}</span>
             <input
               type="date"
               .value=${props.to}
@@ -79,8 +83,8 @@ class AdminbotMailingListView extends LitElement {
                 })}
             />
           </label>
-          <label class="adminbot-mailing-list__email">
-            ${t("mailingList.recipient")}
+          <label class="adminbot-form__field adminbot-mailing-list__email">
+            <span>${t("mailingList.recipient")}</span>
             <input
               type="email"
               placeholder="someone@example.org"
@@ -91,15 +95,17 @@ class AdminbotMailingListView extends LitElement {
               }}
             />
           </label>
-          <button
-            class="btn"
-            type="button"
-            ?disabled=${props.loading}
-            @click=${() => props.onPreview()}
-            data-testid="mailing-list-preview"
-          >
-            ${props.loading ? t("mailingList.previewing") : t("mailingList.preview")}
-          </button>
+          <div class="adminbot-form__actions adminbot-mailing-list__preview-action">
+            <button
+              class="btn"
+              type="button"
+              ?disabled=${props.loading}
+              @click=${() => props.onPreview()}
+              data-testid="mailing-list-preview"
+            >
+              ${props.loading ? t("mailingList.previewing") : t("mailingList.preview")}
+            </button>
+          </div>
         </div>
         ${props.error
           ? html`<div class="adminbot-error" data-testid="mailing-list-error">${props.error}</div>`
