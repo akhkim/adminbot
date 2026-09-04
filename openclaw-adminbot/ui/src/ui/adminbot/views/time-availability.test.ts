@@ -13,6 +13,7 @@ import {
   milestoneDraftError,
   milestoneToRow,
   renderAdminBotTimeAvailability,
+  withinWindow,
   type AdminBotTimeAvailabilityProps,
   type MilestoneDraft,
 } from "./time-availability.ts";
@@ -1532,10 +1533,17 @@ describe("the big-deadlines panel", () => {
     );
   });
 
-  it("presents the picker as one of the tab's editors", () => {
+  // A disclosure now, not an open form: the panel is a banner about what is coming, and the editor
+  // was more than half its height. Everything it held is still one click away.
+  it("keeps the picker shut until it is asked for", () => {
     const view = renderView({ members: [scheduled()] });
     const section = view.querySelector('[data-testid="time-availability-add-deadline-section"]');
-    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a deadline");
+    expect(section?.tagName).toBe("DETAILS");
+    expect((section as HTMLDetailsElement | null)?.open).toBe(false);
+    expect(
+      section?.querySelector(".adminbot-time-availability__deadline-add-summary")?.textContent,
+    ).toContain("Add a deadline");
+    // Shut, not absent: the form is in the DOM and opens without a round trip.
     expect(section?.querySelector("button.primary")).not.toBeNull();
     // Deliberately not classed as an editor: it lives in the deadlines panel, and the commitment
     // form is found by .adminbot-time-availability__form.
@@ -1651,5 +1659,77 @@ describe("the big-deadlines panel", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── the tables follow the chart ─────────────────────────────────────────────────────────────
+//
+// The chart pages through time and the tables are the same schedule in words, so they answer for
+// the same span. What is finished drops out of the list until the pager reaches it again.
+
+describe("commitments follow the chart's window", () => {
+  const spanning = () =>
+    member({
+      availability: [
+        { start: "2025-09-01", end: "2025-12-15", project: "Last term", hours_per_week: 10 },
+        { start: "2026-03-01", end: "2026-06-30", project: "This term", hours_per_week: 20 },
+      ],
+      time_off: [{ start: "2025-10-01", end: "2025-10-08", kind: "vacation" }],
+    } as Partial<AdminBotLabMember>);
+
+  const window = { start: "2026-03-01", end: "2026-04-12" };
+
+  it("lists only what the window covers", () => {
+    const container = renderView({ members: [spanning()], chartWindow: window });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("This term");
+    expect(table?.textContent).not.toContain("Last term");
+  });
+
+  // Never a silent gap: a row that is filtered out is counted where it would have been.
+  it("says how many rows the window is hiding", () => {
+    const container = renderView({ members: [spanning()], chartWindow: window });
+    const note = container.querySelector('[data-testid="time-availability-hidden"]');
+    expect(note?.textContent).toContain("1");
+  });
+
+  it("brings the finished ones back when the pager reaches them", () => {
+    const container = renderView({
+      members: [spanning()],
+      chartWindow: { start: "2025-09-01", end: "2025-10-13" },
+    });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("Last term");
+    expect(table?.textContent).not.toContain("This term");
+  });
+
+  // Before the chart has reported a window there is nothing to filter against, and hiding rows on
+  // that first frame would be a flash of a shorter list.
+  it("shows everything until the chart says what it is drawing", () => {
+    const container = renderView({ members: [spanning()], chartWindow: null });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("This term");
+    expect(table?.textContent).toContain("Last term");
+  });
+});
+
+describe("withinWindow", () => {
+  const window = { start: "2026-03-01", end: "2026-04-01" };
+
+  it("keeps a commitment that straddles the window's start", () => {
+    expect(withinWindow({ start: "2026-01-01", end: "2026-03-10" }, window)).toBe(true);
+  });
+
+  it("keeps one that runs past the end", () => {
+    expect(withinWindow({ start: "2026-03-20", end: "2026-09-01" }, window)).toBe(true);
+  });
+
+  it("drops one that finished before it opens", () => {
+    expect(withinWindow({ start: "2026-01-01", end: "2026-02-28" }, window)).toBe(false);
+  });
+
+  // The window's end is exclusive: a commitment starting on it belongs to the next page.
+  it("drops one that starts on the exclusive end", () => {
+    expect(withinWindow({ start: "2026-04-01", end: "2026-04-30" }, window)).toBe(false);
   });
 });

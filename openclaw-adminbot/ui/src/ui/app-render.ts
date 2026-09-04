@@ -3555,6 +3555,19 @@ export function renderApp(state: AppViewState) {
               range: state.adminBotTimeAvailabilityRange,
               onRangeChange: (range) => {
                 state.adminBotTimeAvailabilityRange = range;
+                // The chart re-anchors on a range change, so the window it reported for the old
+                // interval no longer describes what it draws. Cleared rather than kept: the tables
+                // show everything for the one frame before the new window arrives.
+                state.adminBotTimeChartWindow = null;
+              },
+              chartWindow: state.adminBotTimeChartWindow,
+              onChartWindowChange: (window) => {
+                const current = state.adminBotTimeChartWindow;
+                if (current?.start === window.start && current?.end === window.end) {
+                  return; // same span; a re-render here would loop against the chart's own effect
+                }
+                state.adminBotTimeChartWindow = window;
+                requestHostUpdate?.();
               },
               viewerMemberId: state.memberId ?? null,
               viewerIsAdmin: accessRole === "admin",

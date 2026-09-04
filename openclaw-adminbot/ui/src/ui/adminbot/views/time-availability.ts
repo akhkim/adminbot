@@ -62,6 +62,7 @@ import {
   type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
+  type TimeChartWindow,
 } from "./time-allocation-chart.ts";
 import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
 
@@ -253,6 +254,14 @@ export type AdminBotTimeAvailabilityProps = {
   onMemberChange: (memberId: string) => void;
   range: TimeAvailabilityRange;
   onRangeChange: (range: TimeAvailabilityRange) => void;
+  /**
+   * The span the chart is currently drawing, which the commitment tables below it follow.
+   *
+   * Null until the chart has reported one -- on that first render the tables show everything,
+   * because filtering to a window nobody has said yet would hide rows for a frame.
+   */
+  chartWindow?: TimeChartWindow | null;
+  onChartWindowChange?: (window: TimeChartWindow) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
   /**
@@ -1464,11 +1473,17 @@ function renderAddDeadline(
     <!-- Styled as one of the tab's editors and deliberately not classed as one: it lives in the
          deadlines panel, above them, and .adminbot-time-availability__form is how the commitment
          form is found. Sharing that class would have made "the form" ambiguous. -->
-    <section
+    <details
       class="adminbot-time-availability__deadline-add"
       data-testid="time-availability-add-deadline-section"
     >
-      <div class="card-title">${t("adminbotTimeAvailability.milestones.addConference")}</div>
+      <!-- Shut until asked for. Open, this editor is a title, a two-line explanation, a labelled
+           select and a button -- more than half the height of a panel whose job is to say what is
+           coming. Adding a deadline is something a member does once a term; reading the panel is
+           what they do every time they open the tab. -->
+      <summary class="adminbot-time-availability__deadline-add-summary">
+        ${t("adminbotTimeAvailability.milestones.addConference")}
+      </summary>
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.addConferenceHint")}
       </p>
@@ -1529,7 +1544,7 @@ function renderAddDeadline(
           </button>
         </div>
       </form>
-    </section>
+    </details>
   `;
 }
 
@@ -1598,15 +1613,17 @@ function renderBigDeadlines(
         ${rows.map(
           (row) => html`
             <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
-              <!-- Three explicit rows rather than grid placement per span. The link and the remove
-                   button were both pinned to the same cell, so they drew on top of each other, and
-                   the AoE clock was held on one line inside a 15rem tile, so it was cut off at the
-                   border. Countdown and actions share the top row; the name and the date each get
-                   their own and may wrap. -->
+              <!-- Two rows, not three. The countdown and the name are the pair a reader scans, so
+                   they share the top line with the actions; the date and its AoE cutoff share the
+                   second. It was three stacked rows, which made a panel of eight deadlines taller
+                   than the chart it sits above -- and the panel is a banner, not the subject of
+                   the page. Both lines may still wrap: a venue name and a full
+                   "23:59 Anywhere on Earth (UTC-12)" are each too long to promise one line. -->
               <div class="adminbot-time-availability__deadline-top">
                 <span class="adminbot-time-availability__deadline-away">
                   ${daysAwayLabel(row.date, now)}
                 </span>
+                <span class="adminbot-time-availability__deadline-label">${row.label}</span>
                 <span class="adminbot-time-availability__deadline-actions">
                   ${renderLink(row.link)}
                   <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's
@@ -1646,7 +1663,6 @@ function renderBigDeadlines(
                     : nothing}
                 </span>
               </div>
-              <span class="adminbot-time-availability__deadline-label">${row.label}</span>
               <div class="adminbot-time-availability__deadline-when">
                 <span class="adminbot-time-availability__deadline-date">
                   ${tableDate(row.date)}
@@ -1692,11 +1708,49 @@ function revealCommitmentEditor(
   });
 }
 
+/**
+ * Whether a dated row is on screen in the chart above.
+ *
+ * Overlap, not containment: a commitment that runs from last term into this one is current work
+ * and belongs in the list, even though it started before the window opens. Both ends are
+ * inclusive dates, so the comparison is against the window's exclusive end.
+ */
+export function withinWindow(
+  row: { start: string; end: string },
+  window: TimeChartWindow | null,
+): boolean {
+  if (!window) {
+    return true;
+  }
+  return row.start < window.end && row.end >= window.start;
+}
+
+/**
+ * The tables follow the chart's window rather than listing everything ever recorded.
+ *
+ * A member two years into the lab has a page of finished courses and holidays under a chart
+ * showing this month, and the two disagreed about what the tab was about: the chart answered
+ * "what is running now" while the list answered "what have you ever told us". Filtering to the
+ * visible span makes them one surface -- and the chart's pager is what reaches the past, which is
+ * why the count of what was filtered out says so rather than leaving a silent gap.
+ */
+function renderHiddenNote(hidden: number) {
+  return hidden > 0
+    ? html`<p
+        class="adminbot-time-availability__hidden-note"
+        data-testid="time-availability-hidden"
+      >
+        ${t("adminbotTimeAvailability.tables.hiddenOutsideWindow", { count: String(hidden) })}
+      </p>`
+    : nothing;
+}
+
 function renderJinesisTable(
   tasks: readonly TimeAllocationTask[],
   rows: AvailabilityRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
+  hidden = 0,
 ) {
   const colors = taskColors(tasks);
   return html`
@@ -1793,6 +1847,7 @@ function renderJinesisTable(
           })}
         </tbody>
       </table>
+      ${renderHiddenNote(hidden)}
     </div>
   `;
 }
@@ -1801,6 +1856,7 @@ function renderOtherTable(
   rows: TimeOffRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
+  hidden = 0,
 ) {
   return html`
     <div class="adminbot-time-allocation-table-wrap" data-testid="time-availability-other-table">
@@ -1906,6 +1962,7 @@ function renderOtherTable(
           )}
         </tbody>
       </table>
+      ${renderHiddenNote(hidden)}
     </div>
   `;
 }
@@ -1977,6 +2034,11 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
     selectedMember && props.viewerMemberId && selectedMember.id === props.viewerMemberId,
   );
   const hasAnything = tasks.length > 0 || storedTimeOff.length > 0;
+  // What the chart is showing. The tables below are the same schedule in words, so they answer for
+  // the same span -- see withinWindow, and the note each table draws for what it left out.
+  const window = props.chartWindow ?? null;
+  const visibleTasks = tasks.filter((task) => withinWindow(task, window));
+  const visibleTimeOff = storedTimeOff.filter((row) => withinWindow(row, window));
 
   return html`
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
@@ -2037,16 +2099,30 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                         selectedMember.id,
                         chartInterval(props.range),
                         wholeDayAway,
+                        props.onChartWindowChange,
                       )}
                       ${renderWhereStrip(whereStrip)}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
-                ${tasks.length
-                  ? renderJinesisTable(tasks, storedAvailability, props, editable)
+                ${visibleTasks.length || tasks.length
+                  ? renderJinesisTable(
+                      visibleTasks,
+                      storedAvailability,
+                      props,
+                      editable,
+                      tasks.length - visibleTasks.length,
+                    )
                   : nothing}
-                ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
+                ${visibleTimeOff.length || storedTimeOff.length
+                  ? renderOtherTable(
+                      visibleTimeOff,
+                      props,
+                      editable,
+                      storedTimeOff.length - visibleTimeOff.length,
+                    )
+                  : nothing}
                 ${renderOverallNotes(props, storedNotes, editable)}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">

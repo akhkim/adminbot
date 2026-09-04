@@ -17,6 +17,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  useEffect,
   useId,
   useState,
 } from "react";
@@ -231,16 +232,12 @@ function tableDate(iso: string): string {
   }).format(new Date(dateMs(iso)));
 }
 
-
 function formatPercentage(value: number): string {
   return new Intl.NumberFormat(i18n.getLocale(), {
     style: "percent",
     maximumFractionDigits: 1,
   }).format(value / 100);
 }
-
-
-
 
 function taskCategories(tasks: readonly TimeAllocationTask[]): TimeAllocationCategory[] {
   return [
@@ -315,7 +312,7 @@ export function allocationSegments(
 ): TimeAllocationSegment[] {
   const categories = taskCategories(tasks);
   const segments: TimeAllocationSegment[] = [];
-  for (let bucketOffset = 0; bucketOffset < 7; bucketOffset += 1) {
+  for (let bucketOffset = 0; bucketOffset < CHART_WINDOW_BUCKETS; bucketOffset += 1) {
     const start = addIntervals(windowStart, interval, bucketOffset);
     const end = addIntervals(start, interval, 1);
     const days = Array.from(
@@ -451,11 +448,7 @@ function TimeAllocationTooltip({
           createElement(
             "div",
             null,
-            createElement(
-              "strong",
-              null,
-              t("adminbotTimeAvailability.legendTimeOff"),
-            ),
+            createElement("strong", null, t("adminbotTimeAvailability.legendTimeOff")),
             ...outsideAllocations.map((entry) =>
               createElement(
                 "div",
@@ -706,27 +699,75 @@ function TimeAllocationLegend({
   );
 }
 
+/** How many buckets one page of the chart shows. The pager moves by exactly this many. */
+export const CHART_WINDOW_BUCKETS = 7;
+
+/** The half-open span a window covers, as the rest of the tab reads it. */
+export type TimeChartWindow = { start: string; end: string };
+
+export function chartWindowFor(
+  windowStart: string,
+  interval: TimeAllocationInterval,
+): TimeChartWindow {
+  return {
+    start: windowStart,
+    end: addIntervals(windowStart, interval, CHART_WINDOW_BUCKETS),
+  };
+}
+
+/**
+ * Which page the chart opens on.
+ *
+ * The window containing today, so the first thing a reader sees is what is running now. It used to
+ * open on the oldest row in the schedule, which for anyone with a year of history meant the chart
+ * -- and now the commitment tables that follow it -- opened on a term that finished long ago.
+ *
+ * The exception keeps the panel from opening blank: a schedule that is entirely in the past has
+ * nothing to show at today, so it opens on the page holding its most recent row instead. Somebody
+ * whose commitments have all ended should see the last of them, not an empty chart.
+ */
+export function defaultWindowStart(
+  tasks: readonly TimeAllocationTask[],
+  awayRanges: readonly TimeAllocationAwayRange[],
+  interval: TimeAllocationInterval,
+  now: number = Date.now(),
+): string {
+  const today = isoDate(now);
+  const todayWindow = alignIntervalStart(today, interval);
+  const ends = [...tasks.map((task) => task.end), ...awayRanges.map((range) => range.end)];
+  const latest = ends.toSorted().at(-1);
+  if (!latest || latest >= today) {
+    return todayWindow;
+  }
+  // Everything has ended. Land the last row on the final bucket of the page rather than the first,
+  // so the run up to it is on screen too.
+  return addIntervals(alignIntervalStart(latest, interval), interval, -(CHART_WINDOW_BUCKETS - 1));
+}
+
 function EffortStackChart({
   tasks,
   awayRanges,
   memberName,
   interval,
+  onWindowChange,
 }: {
   tasks: readonly TimeAllocationTask[];
   awayRanges: readonly TimeAllocationAwayRange[];
   memberName: string;
   interval: TimeAllocationInterval;
+  /** Told the visible span on mount and on every page, so the tables below can follow it. */
+  onWindowChange?: (window: TimeChartWindow) => void;
 }): ReactNode {
   const patternPrefix = `adminbot-time-chart-${useId().replace(/[^\dA-Z_-]/giu, "")}`;
   const [windowStart, setWindowStart] = useState(() =>
-    alignIntervalStart(
-      [
-        ...tasks.map((task) => task.start),
-        ...awayRanges.map((range) => range.start),
-      ].toSorted()[0] ?? isoDate(Date.now()),
-      interval,
-    ),
+    defaultWindowStart(tasks, awayRanges, interval),
   );
+  // Reported through an effect rather than from the click handler: the first window is chosen here
+  // and never clicked, and a listener that only heard about pages would filter the tables against
+  // a span the chart is not drawing.
+  useEffect(() => {
+    onWindowChange?.(chartWindowFor(windowStart, interval));
+  }, [windowStart, interval, onWindowChange]);
   const segments = allocationSegments(tasks, awayRanges, windowStart, interval);
   const taskNotes = new Map(
     tasks.flatMap((task) =>
@@ -736,9 +777,7 @@ function EffortStackChart({
   const colors = taskColors(tasks);
   const categories = taskCategories(tasks);
   const outsideKeys = new Set(
-    categories
-      .filter((category) => category.source === "outside")
-      .map((category) => category.key),
+    categories.filter((category) => category.source === "outside").map((category) => category.key),
   );
   // Recharts draws a Bar's background across the complete plot height. Keep that responsibility on
   // an invisible series rather than the first task: a fully-away day has no task bar to attach to.
@@ -841,8 +880,11 @@ function EffortStackChart({
       { className: "adminbot-time-chart__pager" },
       createElement(ChartPageButton, {
         direction: "previous",
-        label: `Previous 7 ${intervalPlural(interval)}`,
-        onClick: () => setWindowStart((currentStart) => addIntervals(currentStart, interval, -7)),
+        label: `Previous ${CHART_WINDOW_BUCKETS} ${intervalPlural(interval)}`,
+        onClick: () =>
+          setWindowStart((currentStart) =>
+            addIntervals(currentStart, interval, -CHART_WINDOW_BUCKETS),
+          ),
       }),
       createElement(
         "div",
@@ -998,8 +1040,11 @@ function EffortStackChart({
       ),
       createElement(ChartPageButton, {
         direction: "next",
-        label: `Next 7 ${intervalPlural(interval)}`,
-        onClick: () => setWindowStart((currentStart) => addIntervals(currentStart, interval, 7)),
+        label: `Next ${CHART_WINDOW_BUCKETS} ${intervalPlural(interval)}`,
+        onClick: () =>
+          setWindowStart((currentStart) =>
+            addIntervals(currentStart, interval, CHART_WINDOW_BUCKETS),
+          ),
       }),
     ),
     createElement(
@@ -1060,6 +1105,23 @@ class AdminBotEffortStackChartElement extends HTMLElement {
     this.renderChart();
   }
 
+  /**
+   * Announce the span the chart is drawing.
+   *
+   * A DOM event rather than a callback property: the window belongs to the chart's own paging
+   * state, and an event is what a lit template can already listen for without the two sides
+   * sharing a function identity across re-renders.
+   */
+  private readonly reportWindow = (window: TimeChartWindow): void => {
+    this.dispatchEvent(
+      new CustomEvent<TimeChartWindow>("time-window-change", {
+        detail: window,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
+
   connectedCallback() {
     this.renderChart();
   }
@@ -1087,6 +1149,7 @@ class AdminBotEffortStackChartElement extends HTMLElement {
           awayRanges: this.chartAwayRanges,
           memberName: this.chartMemberName,
           interval: this.chartInterval,
+          onWindowChange: this.reportWindow,
         }),
       );
     });
@@ -1103,6 +1166,7 @@ export function renderTimeAllocationChart(
   memberId: string,
   interval: TimeAllocationInterval,
   awayRanges: readonly TimeAllocationAwayRange[] = [],
+  onWindowChange?: (window: TimeChartWindow) => void,
 ) {
   return html`
     <adminbot-effort-stack-chart
@@ -1111,7 +1175,8 @@ export function renderTimeAllocationChart(
       .tasks=${tasks}
       .awayRanges=${awayRanges}
       .memberName=${memberName}
+      @time-window-change=${(event: Event) =>
+        onWindowChange?.((event as CustomEvent<TimeChartWindow>).detail)}
     ></adminbot-effort-stack-chart>
   `;
 }
-
