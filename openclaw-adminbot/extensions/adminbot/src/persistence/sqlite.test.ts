@@ -335,6 +335,11 @@ describe("AdminBotSqliteStore", () => {
         title: "Paper One",
         authors: ["alice"],
         current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: {
           overleaf_edit_url: "https://overleaf.example/edit",
         },
@@ -359,6 +364,11 @@ describe("AdminBotSqliteStore", () => {
       expect.objectContaining({
         id: "paper-1",
         current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: { overleaf_edit_url: "https://overleaf.example/edit" },
       }),
     ]);

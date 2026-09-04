@@ -2498,9 +2498,8 @@ export async function saveAdminBotPaper(
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.
-  // The author's own details, editable from their card. Kept apart from `acceptance` below
-  // because that one carries governance fields a member is forbidden to send at all -- mixing
-  // them would make a member's ordinary edit look like an attempt to record a venue decision.
+  // The author's own details, editable from their card. Kept apart from `acceptance` below only
+  // because the latter needs to preserve explicit blank values used by the "Not said" controls.
   const details = {
     ...(paper.feedbackGivers === undefined ? {} : { feedback_givers: paper.feedbackGivers }),
     ...(paper.authorRoles === undefined ? {} : { author_roles: paper.authorRoles }),
@@ -2512,10 +2511,12 @@ export async function saveAdminBotPaper(
   const acceptance = {
     ...(paper.venueDecision ? { venue_decision: paper.venueDecision } : {}),
     ...(paper.acceptedVenue === undefined ? {} : { accepted_venue: paper.acceptedVenue }),
-    ...(paper.acceptedYear ? { accepted_year: Number(paper.acceptedYear) } : {}),
-    ...(paper.isArchival === undefined || paper.isArchival === ""
+    ...(paper.acceptedYear === undefined
       ? {}
-      : { is_archival: paper.isArchival === "true" }),
+      : { accepted_year: paper.acceptedYear === "" ? "" : Number(paper.acceptedYear) }),
+    ...(paper.isArchival === undefined
+      ? {}
+      : { is_archival: paper.isArchival === "" ? "" : paper.isArchival === "true" }),
     // Sent even when empty, so clearing the choice actually clears it. Dropping falsy values
     // here made Reset look like it worked and then quietly leave the old track on file.
     ...(paper.presentationType === undefined ? {} : { presentation_type: paper.presentationType }),
@@ -2553,6 +2554,15 @@ export async function saveAdminBotPaper(
       title: paper.title,
       authors: paper.authors,
       currentStep: paper.currentStep,
+      ...(paper.venueDecision ? { venueDecision: paper.venueDecision } : {}),
+      ...(paper.acceptedVenue === undefined ? {} : { acceptedVenue: paper.acceptedVenue }),
+      ...(paper.acceptedYear === undefined
+        ? {}
+        : { acceptedYear: paper.acceptedYear === "" ? "" : Number(paper.acceptedYear) }),
+      ...(paper.isArchival === undefined
+        ? {}
+        : { isArchival: paper.isArchival === "" ? "" : paper.isArchival === "true" }),
+      ...(paper.presentationType === undefined ? {} : { presentationType: paper.presentationType }),
       ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
       ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
     });

@@ -12,8 +12,10 @@ import {
   collaboratorSubgroupSchema,
   evidencePointerSchema,
   paperArtifactsSchema,
+  paperPresentationTypeSchema,
   paperReminderSchema,
   paperStepSchema,
+  paperVenueDecisionSchema,
   privilegeLevelSchema,
   riskTierSchema,
   sensitiveInfoSchema,
@@ -492,6 +494,16 @@ export default defineToolPlugin({
         title: Type.String(),
         authors: Type.Array(Type.String()),
         currentStep: paperStepSchema,
+        venueDecision: Type.Optional(paperVenueDecisionSchema),
+        acceptedVenue: Type.Optional(Type.String()),
+        // Empty string is the explicit clear emitted by the project card's "Not said" controls.
+        acceptedYear: Type.Optional(
+          Type.Union([Type.Integer({ minimum: 2000, maximum: 2100 }), Type.Literal("")]),
+        ),
+        isArchival: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("")])),
+        presentationType: Type.Optional(
+          Type.Union([paperPresentationTypeSchema, Type.Literal("")]),
+        ),
         artifacts: Type.Optional(paperArtifactsSchema),
         mentorMemberId: Type.Optional(Type.String()),
         checks: Type.Optional(

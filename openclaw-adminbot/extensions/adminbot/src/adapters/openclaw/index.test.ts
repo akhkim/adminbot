@@ -530,6 +530,11 @@ describe("AdminBot tool handlers", () => {
       title: "Paper One",
       authors: ["alice"],
       currentStep: "social_posts",
+      venueDecision: "accept",
+      acceptedVenue: "ICLR 2027",
+      acceptedYear: 2027,
+      isArchival: true,
+      presentationType: "spotlight",
       artifacts: {
         google_drive_pdf_url: "https://drive.example/pdf",
         twitter_draft_url: "https://x.example/draft",
@@ -548,6 +553,11 @@ describe("AdminBot tool handlers", () => {
         title: "Paper One",
         authors: ["alice"],
         current_step: "social_posts",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: {
           google_drive_pdf_url: "https://drive.example/pdf",
           twitter_draft_url: "https://x.example/draft",

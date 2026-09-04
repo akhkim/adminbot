@@ -549,7 +549,14 @@ describe("saveAdminBotPaper", () => {
       }),
     );
 
-    await saveAdminBotPaper(host, baseInput);
+    await saveAdminBotPaper(host, {
+      ...baseInput,
+      venueDecision: "accept",
+      acceptedVenue: "ICLR 2027",
+      acceptedYear: "2027",
+      isArchival: "true",
+      presentationType: "spotlight",
+    });
 
     // A plain member's paired device holds read-only gateway scopes, so the tool path is not
     // available to them at all — and it would run as the privileged service principal anyway.
@@ -566,8 +573,40 @@ describe("saveAdminBotPaper", () => {
       title: "World Models Survey",
       current_step: "overleaf_writing",
       artifacts: { conference: "NeurIPS 2026" },
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
     });
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("forwards Not said as an explicit clear instead of silently omitting it", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "paper-1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await saveAdminBotPaper(host, {
+      ...baseInput,
+      acceptedVenue: "",
+      acceptedYear: "",
+      isArchival: "",
+      presentationType: "",
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({
+      accepted_venue: "",
+      accepted_year: "",
+      is_archival: "",
+      presentation_type: "",
+    });
   });
 
   it("explains a refusal instead of saving when the member does not own the paper (403)", async () => {
@@ -590,18 +629,39 @@ describe("saveAdminBotPaper", () => {
 
   it("falls back to the gateway tool for a break-glass session with no member login", async () => {
     const toolInvocations: string[] = [];
+    let toolArgs: Record<string, unknown> | undefined;
     const { host } = createHost({});
     host.client = {
-      request: async (_method: string, params: { name?: string }) => {
+      request: async (
+        _method: string,
+        params: { name?: string; args?: Record<string, unknown> },
+      ) => {
         toolInvocations.push(params.name ?? "");
+        if (params.name === "adminbot_upsert_paper") {
+          toolArgs = params.args;
+        }
         return { ok: true, toolName: params.name, output: {} };
       },
     } as never;
     const fetchMock = vi.spyOn(globalThis, "fetch");
 
-    await saveAdminBotPaper(host, baseInput);
+    await saveAdminBotPaper(host, {
+      ...baseInput,
+      venueDecision: "reject",
+      acceptedVenue: "ACL 2026",
+      acceptedYear: "2026",
+      isArchival: "false",
+      presentationType: "poster",
+    });
 
     expect(toolInvocations).toContain("adminbot_upsert_paper");
+    expect(toolArgs).toMatchObject({
+      venueDecision: "reject",
+      acceptedVenue: "ACL 2026",
+      acceptedYear: 2026,
+      isArchival: false,
+      presentationType: "poster",
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
