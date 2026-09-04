@@ -109,6 +109,7 @@ export const TAB_PAGES = [
       "adminbotProfileOverview",
       "adminbotGrantReport",
       "adminbotMailingList",
+      "adminbotRecentEdits",
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
@@ -203,6 +204,7 @@ export type Tab =
   | "adminbotConferencePapers"
   | "adminbotCalendar"
   | "adminbotGrantReport"
+  | "adminbotRecentEdits"
   | "adminbotMailingList"
   | "adminbotDeadlines"
   | "overview"
@@ -290,6 +292,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
   adminbotMailingList: "/mailing-list",
+  adminbotRecentEdits: "/recent-edits",
   adminbotDeadlines: "/deadlines",
   overview: "/overview",
   channels: "/channels",
@@ -325,6 +328,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/conference-papers": "adminbotConferencePapers",
   "/adminbot/deadlines": "adminbotDeadlines",
   "/adminbot/grant-report": "adminbotGrantReport",
+  "/adminbot/recent-edits": "adminbotRecentEdits",
   "/adminbot/mailing-list": "adminbotMailingList",
   "/adminbot/meeting-requests": "adminbotMeetingRequests",
   "/adminbot/meetings": "adminbotMeetings",
@@ -487,6 +491,9 @@ export function iconForTab(tab: Tab): IconName {
     // The same record as the grant report, addressed to one reader and put in the post.
     case "adminbotMailingList":
       return "send";
+    // A log of what the lab's own record has been doing, which is a history rather than a board.
+    case "adminbotRecentEdits":
+      return "history";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":

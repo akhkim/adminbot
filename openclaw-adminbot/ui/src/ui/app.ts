@@ -20,6 +20,7 @@ import type {
   MemberAdoptionSummary,
   MemberImpersonator,
   PublicationDigestPreview,
+  RecentUpdateRow,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
@@ -394,6 +395,9 @@ export class OpenClawApp extends LitElement {
   @state() memberId: string | null = null;
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
+  @state() adminBotRecentEdits: RecentUpdateRow[] = [];
+  @state() adminBotRecentEditsLoading = false;
+  @state() adminBotRecentEditsError: string | null = null;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;

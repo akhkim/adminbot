@@ -216,6 +216,9 @@ export type AppViewState = {
   // The Mailing List tab: the range and recipient an admin has chosen, and the digest that range
   // would send. Null preview means nothing has been read yet -- see the tab's own note on why a
   // preview is cleared whenever the range changes.
+  adminBotRecentEdits: import("./adminbot/auth/session.ts").RecentUpdateRow[];
+  adminBotRecentEditsLoading: boolean;
+  adminBotRecentEditsError: string | null;
   adminBotMailingListPreview: import("./adminbot/auth/session.ts").PublicationDigestPreview | null;
   adminBotMailingListLoading: boolean;
   adminBotMailingListSending: boolean;

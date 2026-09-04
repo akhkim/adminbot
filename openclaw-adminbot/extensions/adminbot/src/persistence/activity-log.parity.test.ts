@@ -157,3 +157,34 @@ describe("sqlite store: activity log durability", () => {
     expect(second.listUpdateEventsByMember("ada").map((event) => event.id)).toEqual(["update"]);
   });
 });
+
+// The lab-wide read, asserted against both stores for the same reason as the rest of this file:
+// the service cannot tell them apart, and "newest first" is exactly the kind of thing an array
+// filter and an ORDER BY disagree about.
+describe.each(stores)("%s store: the recent-edits feed", (_name, makeStore) => {
+  it("returns the newest edits first, across every member", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "a", at: "2026-03-01T10:00:00.000Z" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "b", at: "2026-03-03T10:00:00.000Z", member_id: "grace" }),
+    );
+    store.appendUpdateEvent(updateEvent({ id: "c", at: "2026-03-02T10:00:00.000Z" }));
+    expect(store.listRecentUpdateEvents(10).map((row) => row.id)).toEqual(["b", "c", "a"]);
+  });
+
+  it("honours the cap", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "a", at: "2026-03-01T10:00:00.000Z" }));
+    store.appendUpdateEvent(updateEvent({ id: "b", at: "2026-03-02T10:00:00.000Z" }));
+    expect(store.listRecentUpdateEvents(1).map((row) => row.id)).toEqual(["b"]);
+  });
+
+  // One save writes a row per changed field, so a whole page of these shares a timestamp.
+  it("keeps a stable order for edits made in the same millisecond", () => {
+    const store = makeStore();
+    const at = "2026-03-01T10:00:00.000Z";
+    store.appendUpdateEvent(updateEvent({ id: "a", at }));
+    store.appendUpdateEvent(updateEvent({ id: "b", at }));
+    expect(store.listRecentUpdateEvents(10).map((row) => row.id)).toEqual(["b", "a"]);
+  });
+});

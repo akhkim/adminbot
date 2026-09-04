@@ -3669,6 +3669,50 @@ export async function fetchPaperSlotOverview(
   return { ok: true, value: body?.papers ?? [] };
 }
 
+/** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
+export type RecentUpdateRow = {
+  id: string;
+  at: string;
+  subject: "profile" | "paper" | "paper_slot";
+  source: "member" | "admin" | "import";
+  actor_member_id: string;
+  actor_name?: string;
+  subject_member_id?: string;
+  subject_member_name?: string;
+  paper_id?: string;
+  paper_title?: string;
+  field_key?: string;
+  slot_id: string;
+};
+
+/**
+ * The last N edits anyone made, newest first.
+ *
+ * Admin-only on the service side. A 404 here means the service predates this route -- the Control
+ * UI ships on merge and the service is deployed separately, so a new page can reach a server that
+ * has never heard of it, and the view says so rather than showing an empty feed.
+ */
+export async function fetchRecentUpdates(
+  sessionToken: string,
+  baseUrl: string,
+  limit = 50,
+): Promise<AuthResult<RecentUpdateRow[]>> {
+  const result = await authedJson(
+    baseUrl,
+    `/activity/updates?limit=${encodeURIComponent(String(limit))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { updates?: RecentUpdateRow[] } | null;
+  return { ok: true, value: body?.updates ?? [] };
+}
+
 export type PaperSlotRow = {
   paper_id: string;
   slot: string;

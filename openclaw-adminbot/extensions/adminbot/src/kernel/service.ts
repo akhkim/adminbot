@@ -95,8 +95,10 @@ import {
 import {
   paperRecordSlotId,
   paperSlotId,
+  parseSlotId,
   profileSlotId,
   type AdminBotLoginEvent,
+  type AdminBotRecentUpdate,
   type AdminBotUpdateEvent,
   type AdminBotUpdateSource,
   type AdminBotUpdateSubject,
@@ -466,6 +468,7 @@ export type AdminBotServiceStore = {
   listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[];
   listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[];
   listUpdateEventsSince(since: string): AdminBotUpdateEvent[];
+  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[];
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
@@ -2035,14 +2038,24 @@ export class AdminBotService {
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
-    this.recordUpdateEvents({
-      subject: "profile",
-      slotIds: changedProfileFields(existing, member as Record<string, unknown>).map(profileSlotId),
-      memberId: origin.actor ?? stored.id,
-      subjectMemberId: stored.id,
-      source: origin.source ?? "import",
-      at: now,
-    });
+    // Only when somebody is behind it. This used to fall back to `stored.id`, which recorded the
+    // roster importer's whole-file pass as the member editing their own profile -- the exact
+    // conflation the actor/subject split exists to prevent, and one that reads back as adoption in
+    // any feed built on this table. Nothing is lost by skipping: `field_provenance` above keeps
+    // the import's stamp per field, which is where "when was this last touched, and by what kind
+    // of writer" is answered. This log answers "who did it", and an import is not a who.
+    if (origin.actor) {
+      this.recordUpdateEvents({
+        subject: "profile",
+        slotIds: changedProfileFields(existing, member as Record<string, unknown>).map(
+          profileSlotId,
+        ),
+        memberId: origin.actor,
+        subjectMemberId: stored.id,
+        source: origin.source ?? "import",
+        at: now,
+      });
+    }
     // One hook covers every path that edits a profile — the member's own form, an admin, the
     // roster importer — because they all land here. Recording it at the three call sites instead
     // is how one of them ends up forgotten.
@@ -5308,6 +5321,44 @@ export class AdminBotService {
       status: 200,
       payload: { updates: this.store.listUpdateEventsByMember(memberId, limit) },
     };
+  }
+
+  /**
+   * The last N edits anyone made, newest first, with the names filled in.
+   *
+   * The lab-wide read this table never had. `listUpdateEventsByMember` answers "what has this
+   * person touched" and `...BySlot` answers "who has touched this field"; neither answers the
+   * question an admin actually asks, which is "what has been changed lately, and by whom".
+   *
+   * Capped rather than paged: this is a feed somebody scans, and a page-two nobody clicks is more
+   * machinery than the question needs.
+   */
+  listRecentUpdates(limit = 50): AdminBotServiceResponse<{ updates: AdminBotRecentUpdate[] }> {
+    const capped = Math.min(Math.max(Math.trunc(limit) || 0, 1), 200);
+    // Names for the two ids on each row, resolved once for the whole page rather than per row.
+    const names = new Map(this.store.listLabMembers().map((member) => [member.id, member.name]));
+    const titles = new Map(this.store.listPapers().map((paper) => [paper.id, paper.title]));
+    const updates = this.store.listRecentUpdateEvents(capped).map((event) => {
+      const parsed = parseSlotId(event.slot_id);
+      const actorName = names.get(event.member_id);
+      const subjectName = event.subject_member_id ? names.get(event.subject_member_id) : undefined;
+      const paperTitle = parsed?.paperId ? titles.get(parsed.paperId) : undefined;
+      return {
+        id: event.id,
+        at: event.at,
+        subject: event.subject,
+        source: event.source,
+        actor_member_id: event.member_id,
+        slot_id: event.slot_id,
+        ...(actorName ? { actor_name: actorName } : {}),
+        ...(event.subject_member_id ? { subject_member_id: event.subject_member_id } : {}),
+        ...(subjectName ? { subject_member_name: subjectName } : {}),
+        ...(parsed?.paperId ? { paper_id: parsed.paperId } : {}),
+        ...(paperTitle ? { paper_title: paperTitle } : {}),
+        ...(parsed?.field ? { field_key: parsed.field } : {}),
+      } satisfies AdminBotRecentUpdate;
+    });
+    return { ok: true, status: 200, payload: { updates } };
   }
 
   /** Everyone who has ever changed this one slot, newest first. */

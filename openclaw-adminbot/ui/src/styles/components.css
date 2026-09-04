@@ -11576,3 +11576,84 @@ select.input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus);
 }
+
+/* ── Recent Edits ───────────────────────────────────────────────────────────────────────────
+   A feed, read by scanning: one line per edit, the names first and the machinery second. */
+
+.recent-edits__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.recent-edits__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rows, not cards. Forty cards is forty boxes to look past; a rule between rows is enough
+   separation for a list somebody reads top to bottom. */
+.recent-edits__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.recent-edits__row:last-child {
+  border-bottom: 0;
+}
+
+.recent-edits__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* The two names carry the sentence, so they are the only things at full strength. */
+.recent-edits__actor {
+  font-weight: 600;
+}
+
+.recent-edits__field {
+  color: var(--text);
+}
+
+.recent-edits__subject,
+.recent-edits__paper {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.recent-edits__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An admin editing somebody else's record is the row worth noticing: it is the one a member did
+   not do themselves, and the one that explains a field they do not remember filling in. */
+.recent-edits__row[data-source="admin"] .recent-edits__source {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+}
+
+.recent-edits__empty {
+  margin: 0;
+  color: var(--muted);
+}
