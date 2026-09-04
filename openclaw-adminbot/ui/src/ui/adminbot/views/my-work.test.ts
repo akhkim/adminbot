@@ -1221,6 +1221,27 @@ describe("editing a project's own details", () => {
 
 // Saving the way the profile page saves: a beat after typing stops, or on the way out. The explicit
 // button stays, so these cover what it does not -- see adminbot/autosave.ts for the shared timing.
+// The sheet is the page, not a column in it. `.my-work` caps itself at a readable measure for the
+// card list; a sixty-column table wants the window, and the cap was leaving a third of it empty.
+describe("the sheet's width", () => {
+  it("drops the reading-measure cap the card list keeps", () => {
+    const papers = [paper(), paper({ id: "p2" }), paper({ id: "p3" })];
+    const first = draw({ papers });
+    // The sheet is opt-in: the cards are still the surface until somebody asks for it.
+    first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!.click();
+    const { container } = draw({ papers });
+    expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(true);
+    // And back out again, so the next test in this file does not inherit an open sheet.
+    container.querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")?.click();
+  });
+
+  it("keeps the cap on the card list", () => {
+    const { container } = draw({ papers: [paper()] });
+    const cards = container.querySelector(".my-work");
+    expect(cards?.classList.contains("my-work--sheet")).toBe(false);
+  });
+});
+
 describe("project details autosave", () => {
   beforeEach(() => {
     vi.useFakeTimers();
