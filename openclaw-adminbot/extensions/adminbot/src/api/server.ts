@@ -36,6 +36,7 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -45,7 +46,11 @@ import {
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
-import { createAdminBotSqliteService } from "../persistence/sqlite.js";
+import {
+  createMemoryFailedRequestLedger,
+  type FailedExternalRequestLedger,
+} from "../persistence/failed-requests.js";
+import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
 import {
   createAdminBotSensitiveInfoDocument,
@@ -72,7 +77,11 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
-import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
+import {
+  createDcsFormRunner,
+  submitDcsFormViaAwsFallback,
+  withDcsFormFailover,
+} from "../workflows/onboarding/dcs-form.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
@@ -201,6 +210,8 @@ export type AdminBotMockServiceOptions = {
   // Absent in unit/mock setups, which leaves DCS form submission silently unwired (no attempt,
   // no audit event) rather than half-working.
   dcsFormScriptPath?: string;
+  llmRouter?: LlmLoadRouter;
+  failedRequestLedger?: FailedExternalRequestLedger;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
@@ -394,6 +405,8 @@ type AdminBotRouteContext = {
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
   trustProxyHeaders: boolean;
+  llmRouter: LlmLoadRouter;
+  failedRequestLedger: FailedExternalRequestLedger;
 };
 
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
@@ -412,6 +425,18 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, serviceOptions(options));
   }
+  const failedRequestLedger =
+    options.failedRequestLedger ??
+    (store instanceof AdminBotSqliteStore
+      ? store.failedRequestLedger()
+      : createMemoryFailedRequestLedger());
+  const llmRouter =
+    options.llmRouter ??
+    createLlmLoadRouter({
+      maxLocal: envInteger("ADMINBOT_LLM_MAX_LOCAL", 8),
+      maxPublic: envInteger("ADMINBOT_LLM_MAX_PUBLIC", 100),
+      nodes: parseLlmNodes(process.env.ADMINBOT_LLM_NODES),
+    });
   const gatewayToken = trimmedEnv(options.gatewayToken ?? process.env.OPENCLAW_GATEWAY_TOKEN);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
@@ -446,8 +471,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(() => {
-      const submitDcsForm =
-        options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
+      const submitDcsForm = resolveDcsFormRunner(options, service, failedRequestLedger);
       return submitDcsForm ? { submitDcsForm } : {};
     })(),
     ...(gatewayToken ? { gatewayToken } : {}),
@@ -464,8 +488,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
   // request identically. Undefined when no script path is configured, which the sender reports
   // rather than silently skipping.
-  const dcsFormRunner =
-    options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
+  const dcsFormRunner = resolveDcsFormRunner(options, service, failedRequestLedger);
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
@@ -489,6 +512,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     options.privacyBroker ??
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
+      llmRouter,
     });
   let activeEmailAutomation: Promise<unknown> | undefined;
   const emailAutomationRunner = options.emailAutomationRunner;
@@ -556,6 +580,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     anonymousRateLimiter: createAnonymousRateLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
+    llmRouter,
+    failedRequestLedger,
   };
   const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
   const slackChannelNamingSweepTimer =
@@ -1909,6 +1935,17 @@ async function handleAuthenticatedRoute(
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
     sendJson(res, 200, await privacyBroker.handle(body));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/llm-load") {
+    sendJson(res, 200, ctx.llmRouter.status());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/failed-requests") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendJson(res, 200, { requests: ctx.failedRequestLedger.list(100) });
     return;
   }
   if (req.method === "GET" && url.pathname === "/proposals/pending") {
@@ -3545,6 +3582,100 @@ function constantTimeEqual(left: string, right: string): boolean {
     return false;
   }
   return timingSafeEqual(leftBuf, rightBuf);
+}
+
+function resolveDcsFormRunner(
+  options: AdminBotMockServiceOptions,
+  service: AdminBotService,
+  ledger: FailedExternalRequestLedger,
+): ReturnType<typeof createDcsFormRunner> {
+  const inner =
+    options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
+  if (!inner || options.dcsFormRunner) {
+    return inner;
+  }
+  const awsUrl = trimmedEnv(process.env.ADMINBOT_DCS_AWS_FALLBACK_URL);
+  const awsToken = trimmedEnv(process.env.ADMINBOT_DCS_AWS_FALLBACK_TOKEN);
+  return withDcsFormFailover(inner, {
+    record: (input) => ledger.record(input),
+    update: (id, patch) => ledger.update(id, patch),
+    ...(awsUrl
+      ? {
+          awsFallback: (params) =>
+            submitDcsFormViaAwsFallback(params, {
+              url: awsUrl,
+              ...(awsToken ? { token: awsToken } : {}),
+            }),
+        }
+      : {}),
+    escalateToHumans: async ({ params, error, recordId }) => {
+      const recipientIds = dcsEscalationMemberIds(service);
+      if (recipientIds.length === 0) {
+        return { escalated: false, errorMessage: "no DCS escalation recipients are configured" };
+      }
+      const result = await service.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: recipientIds,
+          title: "DCS form submission failed",
+          message:
+            `DCS form automation failed for ${params.firstName} ${params.lastName} <${params.email}>. ` +
+            `Exact request id ${recordId}. Error: ${error}. ` +
+            `Submit by hand: https://forms.office.com/r/TgGWBGWLZa ` +
+            `(Sponsor: Jin, Zhijing; Group: External Visitor).`,
+          kind: "nudge",
+          important: true,
+        },
+        "adminbot-dcs-failover",
+      );
+      if (!result.ok) {
+        return { escalated: false, errorMessage: result.error.message };
+      }
+      if (result.payload.skipped.length > 0) {
+        return {
+          escalated: false,
+          errorMessage: `DCS escalation skipped ${result.payload.skipped
+            .map((entry) => `${entry.member_id}: ${entry.reason}`)
+            .join("; ")}`,
+        };
+      }
+      if (result.payload.created.length !== recipientIds.length) {
+        return {
+          escalated: false,
+          errorMessage: `DCS escalation created ${result.payload.created.length} of ${recipientIds.length} nudges`,
+        };
+      }
+      return { escalated: true };
+    },
+  });
+}
+
+function dcsEscalationMemberIds(service: AdminBotService): string[] {
+  const ids = new Set<string>();
+  const settings = service.getSettings();
+  const head = settings.ok ? settings.payload.head_professor_member_id?.trim() : undefined;
+  if (head) {
+    ids.add(head);
+  }
+  const extra = trimmedEnv(process.env.ADMINBOT_DCS_ESCALATION_MEMBER_IDS);
+  if (extra) {
+    for (const id of extra.split(",")) {
+      const trimmed = id.trim();
+      if (trimmed) {
+        ids.add(trimmed);
+      }
+    }
+  }
+  return [...ids];
+}
+
+function envInteger(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function trimmedEnv(value: string | undefined): string | undefined {
