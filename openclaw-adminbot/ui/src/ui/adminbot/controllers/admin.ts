@@ -10,6 +10,9 @@ import {
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
   type MemberNotification,
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewPaperflowCandidate,
+  type AdminBotEmailReviewResolution,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -26,6 +29,7 @@ import {
   type WorkshopConferenceOption,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
+  resolveEmailReviewAsAdmin,
   saveOwnPaper,
   fetchVenueSources,
   rebuildVenueIndexes,
@@ -676,6 +680,8 @@ export type AdminBotReimbursementState = {
 
 export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
+  emailReviews?: AdminBotEmailReviewItem[];
+  emailReviewCandidates?: AdminBotEmailReviewPaperflowCandidate[];
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   nudges: AdminBotPaperNudge[];
@@ -829,6 +835,8 @@ export const ADMINBOT_SERVICE_UNREACHABLE_MESSAGE =
 export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
   return {
     proposals: [],
+    emailReviews: [],
+    emailReviewCandidates: [],
     members: [],
     papers: [],
     nudges: [],
@@ -964,8 +972,9 @@ async function loadAdminBotOverSession(
       };
       return;
     }
-    const [pending, nudges, settings, sensitiveInfo] = await Promise.all([
+    const [pending, emailReview, nudges, settings, sensitiveInfo] = await Promise.all([
       optional("/proposals/pending?limit=50"),
+      optional("/automation/email/review"),
       optional("/papers/nudges"),
       optional("/settings"),
       optional("/sensitive-info"),
@@ -976,6 +985,11 @@ async function loadAdminBotOverSession(
     const filePath = readString(sensitiveInfoRecord, "path");
     host.adminBotData = {
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
+      emailReviews: readArray<AdminBotEmailReviewItem>(emailReview, "reviews"),
+      emailReviewCandidates: readArray<AdminBotEmailReviewPaperflowCandidate>(
+        emailReview,
+        "paperflow_candidates",
+      ),
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
@@ -1066,6 +1080,8 @@ export async function loadAdminBot(
     const filePath = readString(sensitiveInfoRecord, "path");
     host.adminBotData = {
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
+      emailReviews: [],
+      emailReviewCandidates: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
@@ -1178,6 +1194,49 @@ function requirePrivilegedSession(
     return null;
   }
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
+}
+
+export async function resolveAdminBotEmailReview(
+  host: AdminBotHost,
+  messageId: string,
+  resolution: AdminBotEmailReviewResolution,
+): Promise<void> {
+  host.adminBotBusyActionId = `email-review:${messageId}`;
+  host.adminBotNotice = null;
+  try {
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
+    const result = await resolveEmailReviewAsAdmin(
+      messageId,
+      resolution,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : result.kind === "forbidden"
+              ? "Email review requires an administrator account."
+              : `Could not resolve this email: ${result.message ?? result.kind}`,
+      };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text:
+        resolution.kind === "paperflow_evidence"
+          ? "Attached the email to the paper. AdminBot will stop reminders for that stage."
+          : "Removed the email from AdminBot's review queue without changing any paper.",
+    };
+    await loadAdminBot(host);
+  } finally {
+    host.adminBotBusyActionId = null;
+  }
 }
 
 // Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the

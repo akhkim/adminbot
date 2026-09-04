@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   formatTalkLatex,
@@ -211,6 +211,32 @@ describe("mailbox scan watermark", () => {
     state.finish("broke", "failed", "boom");
     expect(state.isSettled("broke")).toBe(false);
     expect(state.isSettled("never-seen")).toBe(false);
+    cleanup();
+  });
+
+  it("stores the subject and received time an administrator needs to review the message", () => {
+    const { state, cleanup } = store();
+    state.begin(
+      message({
+        id: "held",
+        subject: "Reviews released",
+        internalDate: String(Date.parse("2026-09-03T21:04:00.000Z")),
+      }),
+      { category: "paperflow_bcc", reason: "sender is not a trusted lab address" },
+    );
+    state.finish("held", "needs_review", "sender is not a trusted lab address");
+
+    expect(
+      state.db
+        .prepare(
+          "SELECT subject, received_at, status FROM adminbot_email_messages WHERE message_id = ?",
+        )
+        .get("held"),
+    ).toEqual({
+      subject: "Reviews released",
+      received_at: "2026-09-03T21:04:00.000Z",
+      status: "needs_review",
+    });
     cleanup();
   });
 });

@@ -172,6 +172,28 @@ function proposalsItem(
   };
 }
 
+function emailReviewsItem(
+  state: AppViewState,
+  role: AccessRole,
+): AttentionItem | null {
+  if (role !== "admin") {
+    return null;
+  }
+  const reviews = state.adminBotData?.emailReviews ?? [];
+  if (reviews.length === 0) {
+    return null;
+  }
+  return {
+    id: "email-reviews",
+    title: "Emails need a decision",
+    summary: `${reviews.length} ${
+      reviews.length === 1 ? "message was" : "messages were"
+    } held because AdminBot could not safely decide what to update.`,
+    actionLabel: "Review emails",
+    onAction: () => state.setTab("adminbot"),
+  };
+}
+
 function registrationsItem(
   state: AppViewState,
   role: AccessRole,
@@ -257,6 +279,7 @@ function attentionItems(
     ...notificationItems(state, role),
     mandatoryFieldsItem(state),
     nextStepItem(state, role),
+    emailReviewsItem(state, role),
     proposalsItem(state, role),
     registrationsItem(state, role),
   ].filter((item): item is AttentionItem => item !== null);

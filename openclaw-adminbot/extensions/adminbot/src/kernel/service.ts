@@ -122,6 +122,11 @@ import {
   type DeadlinePublicationPayload,
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
+import type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewPaperflowCandidate,
+  AdminBotEmailReviewResolution,
+} from "../contracts/email-review.js";
 import {
   adminBotFeedbackCommentMax,
   adminBotFeedbackId,
@@ -415,6 +420,17 @@ export type AdminBotServiceStore = {
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
+  /** Messages the hourly mailbox pass refused to automate, newest first. */
+  saveEmailReview(review: AdminBotEmailReviewItem): void;
+  listEmailReviews(): AdminBotEmailReviewItem[];
+  getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined;
+  /** Returns false when another administrator already settled this row. */
+  resolveEmailReview(params: {
+    messageId: string;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    resolvedBy: string;
+    resolvedAt: string;
+  }): boolean;
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
   /** The whole ledger, or one domain's slice. */
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
@@ -4840,6 +4856,105 @@ export class AdminBotService {
       details: { paper_id: params.paperId, stage: params.stage, recorded_by: recordedBy },
     });
     return { ok: true, status: 200, payload: { recorded: true, record } };
+  }
+
+  /**
+   * The admin review queue plus the only safe PaperFlow targets it may close right now.
+   *
+   * Candidates come from the same open-stage walk as the reminder sweep. The UI never invents a
+   * stage name or offers a paper whose current venue stage is already closed.
+   */
+  listEmailReviews(): AdminBotServiceResponse<{
+    reviews: AdminBotEmailReviewItem[];
+    paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
+  }> {
+    const stageResult = this.collectPaperflowStageNudges();
+    if (!stageResult.ok) {
+      return stageResult;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        reviews: this.store.listEmailReviews(),
+        paperflow_candidates: stageResult.payload.items.map((item) => ({
+          paper_id: item.paper_id,
+          title: item.title,
+          stage: item.stage,
+          stage_label: adminBotPaperflowStageRegistry[item.stage].label,
+          ...(item.venue ? { venue: item.venue } : {}),
+        })),
+      },
+    };
+  }
+
+  /** Settle one held email after an administrator has made the decision automation refused. */
+  resolveEmailReview(params: {
+    messageId: string;
+    resolution: AdminBotEmailReviewResolution;
+    actor: string;
+  }): AdminBotServiceResponse<{
+    resolution: AdminBotEmailReviewResolution["kind"];
+    evidence_recorded: boolean;
+  }> {
+    const review = this.store.getEmailReview(params.messageId);
+    if (!review) {
+      return serviceError(404, "email review not found or already resolved");
+    }
+    const resolution = params.resolution;
+    let evidenceRecorded = false;
+    if (resolution.kind === "paperflow_evidence") {
+      const openStages = this.collectPaperflowStageNudges();
+      if (!openStages.ok) {
+        return openStages;
+      }
+      const targetIsOpen = openStages.payload.items.some(
+        (item) => item.paper_id === resolution.paper_id && item.stage === resolution.stage,
+      );
+      if (!targetIsOpen) {
+        return serviceError(409, "that paper stage is no longer open for evidence");
+      }
+      const evidence = this.recordPaperflowEvidence({
+        paperId: resolution.paper_id,
+        stage: resolution.stage,
+        messageId: review.message_id,
+        ...(review.subject ? { subject: review.subject } : {}),
+        sender: review.sender,
+        recordedBy: "admin",
+        actor: params.actor,
+      });
+      if (!evidence.ok) {
+        return evidence;
+      }
+      evidenceRecorded = evidence.payload.recorded;
+    }
+    const resolvedAt = new Date().toISOString();
+    if (
+      !this.store.resolveEmailReview({
+        messageId: review.message_id,
+        resolution: resolution.kind,
+        resolvedBy: params.actor,
+        resolvedAt,
+      })
+    ) {
+      return serviceError(409, "email review was resolved by another administrator");
+    }
+    this.recordAudit({
+      type: "email_review.resolved",
+      actor: params.actor,
+      details: {
+        message_id: review.message_id,
+        resolution: resolution.kind,
+        ...(resolution.kind === "paperflow_evidence"
+          ? { paper_id: resolution.paper_id, stage: resolution.stage }
+          : {}),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { resolution: resolution.kind, evidence_recorded: evidenceRecorded },
+    };
   }
 
   /**

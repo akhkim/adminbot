@@ -12,8 +12,12 @@ import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
 import { startSheetPan } from "./sheet-pan.ts";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
-import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
+import type {
+  AdminBotEmailReviewResolution,
+  MemberNudgeChannel,
+  MemberProfileUpdate,
+  PaperSlotOverviewRow,
+} from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -60,6 +64,7 @@ import {
   renderPaperGrid,
   type PaperGridState,
 } from "../paper-grid.ts";
+import { renderAdminBotEmailReview } from "./email-review.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   paperOverviewRows,
@@ -105,6 +110,10 @@ export type AdminBotProps = {
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
+  onResolveEmailReview: (
+    messageId: string,
+    resolution: AdminBotEmailReviewResolution,
+  ) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
   /**
    * Folds one roster record into another. Absent for a caller that cannot merge (anything but a
@@ -2835,9 +2844,21 @@ function renderPanel(props: AdminBotProps) {
       }
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Pending actions</div>
-          <div class="card-sub">Immutable proposals from AdminBot's action broker.</div>
-          ${renderPendingActions(props)}
+          <div class="card-title">Review queues</div>
+          <div class="card-sub">Decisions AdminBot deliberately leaves to an administrator.</div>
+          <div class="adminbot-review-queues">
+            <section class="adminbot-review-queues__actions">
+              <h3>Pending actions</h3>
+              <p>Immutable proposals from AdminBot's action broker.</p>
+              ${renderPendingActions(props)}
+            </section>
+            ${renderAdminBotEmailReview({
+              reviews: props.data.emailReviews ?? [],
+              candidates: props.data.emailReviewCandidates ?? [],
+              busyActionId: props.busyActionId,
+              onResolve: props.onResolveEmailReview,
+            })}
+          </div>
         </div>
       `;
     case "settings":
