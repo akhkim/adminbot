@@ -2071,6 +2071,9 @@ export const en: TranslationMap = {
       confirm:
         "Delete \u201c{title}\u201d?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
     },
+    details: {
+      autosaveHint: "Changes save automatically.",
+    },
     items: {
       title: "Projects & Papers",
       empty: "Nothing on your record yet. Add your first project.",
