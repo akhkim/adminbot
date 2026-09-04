@@ -7,7 +7,9 @@ import {
   type LoginMode,
   type MemberAuthFailure,
   type RosterError,
+  beginViewAs as beginViewAsInternal,
   closeChangePassword as closeChangePasswordInternal,
+  endViewAs as endViewAsInternal,
   loadRoster as loadRosterInternal,
   openChangePassword as openChangePasswordInternal,
   signOutMember as signOutMemberInternal,
@@ -16,6 +18,8 @@ import {
 } from "./adminbot/auth/flow.ts";
 import type {
   MemberAdoptionSummary,
+  MemberImpersonator,
+  PublicationDigestPreview,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
@@ -62,6 +66,7 @@ import {
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
@@ -386,6 +391,20 @@ export class OpenClawApp extends LitElement {
   @state() memberNotes = "";
   @state() memberPrivilegeLevel: string | null = null;
   @state() memberId: string | null = null;
+  // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
+  // disappears, and the swap in flight disables both.
+  @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
+  @state() adminBotMailingListLoading = false;
+  @state() adminBotMailingListSending = false;
+  @state() adminBotMailingListError: string | null = null;
+  @state() adminBotMailingListNotice: string | null = null;
+  // Opens on the calendar year to date, which is the range this is almost always wanted for.
+  @state() adminBotMailingListFrom = defaultMailingListRange().from;
+  @state() adminBotMailingListTo = defaultMailingListRange().to;
+  @state() adminBotMailingListEmail = "";
+  @state() memberImpersonatedBy: MemberImpersonator | null = null;
+  @state() memberImpersonationBusy = false;
+  @state() memberImpersonationError: string | null = null;
   @state() adminBotOnboarding: MemberOnboarding | null = null;
   @state() adminBotOnboardingAcknowledged = true;
   @state() adminBotOnboardingBusyStepId: string | null = null;
@@ -1186,6 +1205,29 @@ export class OpenClawApp extends LitElement {
     await submitMemberAuthInternal(
       this as unknown as Parameters<typeof submitMemberAuthInternal>[0],
     );
+  }
+
+  async beginViewAs(memberId: string) {
+    await beginViewAsInternal(
+      this as unknown as Parameters<typeof beginViewAsInternal>[0],
+      memberId,
+    );
+    // The admin's own toasts and notifications belong to the session being parked, not to the
+    // member whose view is opening. Carried across, they read as that member's -- which is the one
+    // thing a view meant to show what somebody else sees must not do.
+    dismissAllToasts();
+    resetNotificationPopups();
+    this.adminBotNotifications = undefined;
+  }
+
+  async endViewAs() {
+    await endViewAsInternal(this as unknown as Parameters<typeof endViewAsInternal>[0]);
+    // Same reasoning as signOutMember: the toasts, the popped-ids set and the notification list
+    // all belong to the session that just ended. Left in place, the admin lands back on their own
+    // dashboard reading the member's unread notifications.
+    dismissAllToasts();
+    resetNotificationPopups();
+    this.adminBotNotifications = undefined;
   }
 
   async signOutMember() {

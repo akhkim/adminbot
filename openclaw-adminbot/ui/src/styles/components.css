@@ -1932,13 +1932,16 @@
   text-overflow: ellipsis;
 }
 
-.adminbot-member-roster :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+.adminbot-member-roster
+  :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
   position: sticky;
   z-index: 2;
   background: var(--card);
 }
 
-.adminbot-member-roster thead :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+.adminbot-member-roster
+  thead
+  :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
   z-index: 3;
   background: var(--bg-muted);
 }
@@ -2180,6 +2183,88 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/*
+ * The "you are viewing as somebody else" bar.
+ *
+ * Pinned to the bottom of the viewport rather than pushed into the page flow: the admin navigates
+ * the whole app inside the view, and a banner that scrolled away would be missing at exactly the
+ * moment it matters. Bottom rather than top so it does not fight the header on any of the tabs,
+ * and it sits above the feedback widget's corner for the same reason.
+ *
+ * Warn colours, not danger: viewing as a member is a normal, reversible thing to be doing. It has
+ * to be impossible to miss, not alarming.
+ */
+/* The Mailing List tab's range/recipient row, and the preview under it. */
+.adminbot-mailing-list__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+.adminbot-mailing-list__controls label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The recipient is the one field whose value is worth reading back at a glance before sending. */
+.adminbot-mailing-list__email {
+  flex: 1 1 18rem;
+}
+
+.adminbot-mailing-list__papers {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+}
+
+.adminbot-mailing-list__papers li {
+  margin-bottom: var(--space-2);
+}
+
+.adminbot-mailing-list__papers small {
+  display: block;
+}
+
+/* Left out for want of a date. Collapsed, but never off the page -- see the view's header. */
+.adminbot-mailing-list__undated,
+.adminbot-mailing-list__body {
+  margin-bottom: var(--space-3);
+}
+
+.adminbot-mailing-list__body pre {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  white-space: pre-wrap;
+}
+
+.adminbot-mailing-list__send {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.adminbot-impersonation-banner {
+  position: fixed;
+  z-index: 40;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--warn-muted);
+  border-radius: var(--radius-md);
+  background: var(--warn-subtle);
+  color: var(--warn);
+  box-shadow: var(--shadow-md);
 }
 
 .adminbot-member-sheet__edit {

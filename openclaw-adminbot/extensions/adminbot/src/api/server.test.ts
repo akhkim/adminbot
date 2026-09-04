@@ -3443,3 +3443,295 @@ describe("GET /nudges/escalated", () => {
     expect(stream.status).toBe(401);
   });
 });
+
+describe("viewing the lab as another member", () => {
+  // An admin and a plain member, both with real sessions, which is where every case starts.
+  async function twoAccounts(baseUrl: string): Promise<{ adminToken: string }> {
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(baseUrl, "ada", { name: "Ada", email: "ada@cs.toronto.edu" });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    await approveClaim(baseUrl, "ada", "ada@cs.toronto.edu");
+    return { adminToken: await loginToken(baseUrl, "root@cs.toronto.edu") };
+  }
+
+  async function viewAs(baseUrl: string, adminToken: string, memberId: string): Promise<string> {
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: memberId }),
+    });
+    if (res.status !== 200) {
+      throw new Error(`impersonate failed: ${res.status} ${await res.text()}`);
+    }
+    return ((await res.json()) as { session_token: string }).session_token;
+  }
+
+  it("serves the member's own session, and says who is really looking", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const session = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await expect(session.json()).resolves.toMatchObject({
+      member: { id: "ada" },
+      impersonated_by: { id: "root", name: "Root" },
+    });
+  });
+
+  it("refuses the shared service token, which would turn one secret into the whole roster", async () => {
+    const { baseUrl } = await startService();
+    await twoAccounts(baseUrl);
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("refuses a member who is not an admin", async () => {
+    const { baseUrl } = await startService();
+    await twoAccounts(baseUrl);
+    const adaToken = await loginToken(baseUrl, "ada@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adaToken}` }),
+      body: JSON.stringify({ member_id: "root" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("files a profile edit made while viewing under the admin, not the member", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const saved = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ location: "Vancouver" }),
+    });
+    expect(saved.status).toBe(200);
+    // The write lands on Ada's record -- that is what "as Ada" means.
+    const roster = mockFor(baseUrl).service.listLabMembers();
+    if (!roster.ok) {
+      throw new Error(roster.error.message);
+    }
+    const stored = roster.payload.members.find((entry) => entry.id === "ada");
+    expect(stored?.location).toBe("Vancouver");
+    // But the field is stamped as an admin's doing, with the admin named. Stamping it `member`
+    // would count as Ada adopting the tool on a day she was not there, which is exactly the
+    // number the Profile Overview exists to keep honest.
+    expect(stored?.field_provenance?.location).toMatchObject({ source: "admin", actor: "root" });
+  });
+
+  it("refuses to change the member's sign-in credentials", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    for (const [pathname, body] of [
+      ["/auth/password", { current_password: "correcthorse", new_password: "hunter22222" }],
+      ["/auth/email", { new_email: "elsewhere@example.com", current_password: "correcthorse" }],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${pathname}`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify(body),
+      });
+      // Acting as an account is not taking it over: these are the two routes that would lock the
+      // member out of their own.
+      expect(res.status).toBe(403);
+    }
+    // And the password still works, so nothing half-happened.
+    expect(await loginToken(baseUrl, "ada@cs.toronto.edu")).toBeTruthy();
+  });
+
+  it("ends on request and leaves the admin signed in as themselves", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const stopped = await fetch(`${baseUrl}/auth/impersonate/stop`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(stopped.status).toBe(200);
+    const dead = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(dead.status).toBe(401);
+    const own = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    await expect(own.json()).resolves.toMatchObject({ member: { id: "root" } });
+  });
+});
+
+describe("lab calendar invite backfill route", () => {
+  it("plans by default, and refuses the shared service token", async () => {
+    const invited: string[] = [];
+    const { baseUrl } = await startService({
+      calendarInviteRunner: async (email: string) => {
+        invited.push(email);
+      },
+    });
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "root@cs.toronto.edu");
+
+    // The service principal drives every agent tool call, and a run mails real people.
+    const refused = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({}),
+    });
+    expect(refused.status).toBe(403);
+
+    // Counted as a delta: approving root above fired its own onboarding invite for root, which is
+    // the approval path doing its job and not this route's doing.
+    const beforePlan = invited.length;
+    const planned = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({}),
+    });
+    await expect(planned.json()).resolves.toMatchObject({ dry_run: true });
+    // An empty body is a plan, never a send: the default has to be the safe one when 155 people
+    // are on the other end of it.
+    expect(invited).toHaveLength(beforePlan);
+
+    const ran = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ dry_run: false }),
+    });
+    expect(ran.status).toBe(200);
+    expect(invited).toContain("ada@cs.toronto.edu");
+  });
+});
+
+describe("publication mailing list", () => {
+  async function labWithPapers(sent: Array<{ to: string; subject: string; body: string }>) {
+    const { baseUrl } = await startService({
+      publicationMailingRunner: async (params) => {
+        sent.push(params);
+      },
+    });
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    const mock = mockFor(baseUrl);
+    for (const [id, title, arxiv] of [
+      ["in-range", "In Range", "https://arxiv.org/abs/2606.00001"],
+      ["out-range", "Out Of Range", "https://arxiv.org/abs/2201.00001"],
+      ["undated", "Undated", ""],
+    ] as const) {
+      const result = mock.service.upsertPaper({
+        id,
+        title,
+        authors: ["Ada"],
+        ...(arxiv ? { artifacts: { arxiv_url: arxiv } } : {}),
+      } as never);
+      if (!result.ok) {
+        throw new Error(result.error.message);
+      }
+    }
+    return { baseUrl, token: await loginToken(baseUrl, "root@cs.toronto.edu") };
+  }
+
+  it("previews the exact digest the send would mail", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const preview = await fetch(`${baseUrl}/papers/mailing-list?from=2026-01-01&to=2026-12-31`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await preview.json()) as {
+      publications: Array<{ id: string }>;
+      undated_count: number;
+      subject: string;
+    };
+    expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
+    expect(body.undated_count).toBe(1);
+    // Read-only: a preview must never be the thing that sends.
+    expect(sent).toEqual([]);
+
+    const run = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "funder@example.org" }),
+    });
+    expect(run.status).toBe(200);
+    // The same subject and body the preview showed -- one function behind both, so the tab cannot
+    // show one list and the email carry another.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("funder@example.org");
+    expect(sent[0]?.subject).toBe(body.subject);
+    expect(sent[0]?.body).toContain("In Range");
+    expect(sent[0]?.body).not.toContain("Out Of Range");
+  });
+
+  it("refuses a bad range and a missing recipient before sending anything", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const backwards = await fetch(`${baseUrl}/papers/mailing-list?from=2026-12-31&to=2026-01-01`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(backwards.status).toBe(400);
+    const noEmail = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "  " }),
+    });
+    expect(noEmail.status).toBe(400);
+    expect(sent).toEqual([]);
+  });
+
+  it("keeps the shared service token out of an admin-composed send", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl } = await labWithPapers(sent);
+    const refused = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "anyone@example.org" }),
+    });
+    // The caller names the recipient, so this is a send to an arbitrary address.
+    expect(refused.status).toBe(403);
+    expect(sent).toEqual([]);
+  });
+
+  it("audits what left the lab and to whom", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "funder@example.org" }),
+    });
+    const audit = mockFor(baseUrl)
+      .service.listAuditEvents()
+      .filter((event) => event.type === "publication_digest.sent");
+    expect(audit).toHaveLength(1);
+    // The recipient and the range are the whole of what was disclosed and to whom.
+    expect(audit[0]?.details).toMatchObject({
+      recipient: "funder@example.org",
+      from: "2026-01-01",
+      to: "2026-12-31",
+      publications: 1,
+    });
+  });
+});

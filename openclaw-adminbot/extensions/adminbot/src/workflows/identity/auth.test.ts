@@ -1000,3 +1000,392 @@ describe("AdminBotAuthService password reset", () => {
     expect(auth.resolveSession(sessionToken)).toBeFalsy();
   });
 });
+
+describe("AdminBotAuthService impersonation", () => {
+  // An admin and a plain member, both signed in, which is the state every case below starts from.
+  function twoAccounts(now?: () => Date) {
+    const { store, auth } = setup(now ? { now } : {});
+    claimAndApprove(store, auth, "root", "root@cs.toronto.edu");
+    // After the claim, not before: claimAndApprove writes the roster row itself, so promoting
+    // first would be overwritten by it.
+    store.saveLabMember(member("root", "root@cs.toronto.edu", { privilege_level: "admin" }));
+    claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const login = auth.login({ email: "root@cs.toronto.edu", password: "correcthorse" });
+    if (!login.ok) {
+      throw new Error("admin login failed");
+    }
+    const admin = auth.resolveSession(login.payload.session_token);
+    if (!admin) {
+      throw new Error("admin session did not resolve");
+    }
+    return { store, auth, admin, adminToken: login.payload.session_token };
+  }
+
+  function impersonate(auth: AdminBotAuthService, admin: ReturnType<typeof twoAccounts>["admin"]) {
+    const started = auth.startImpersonation({ admin, memberId: "ada" });
+    if (!started.ok) {
+      throw new Error(started.error.message);
+    }
+    return started.payload.session_token;
+  }
+
+  it("resolves as the member being viewed, while naming the admin behind it", () => {
+    const { auth, admin } = twoAccounts();
+    const principal = auth.resolveSession(impersonate(auth, admin));
+    // The member is the one being viewed -- this is what makes every route serve their view
+    // without knowing impersonation exists.
+    expect(principal?.member.id).toBe("ada");
+    // And the admin is still recoverable, which is what attribution and the banner need.
+    expect(principal?.impersonator?.id).toBe("root");
+    expect(principal?.session.impersonated_by).toBe("root");
+  });
+
+  it("leaves the admin's own session working, so there is a way back", () => {
+    const { auth, admin, adminToken } = twoAccounts();
+    impersonate(auth, admin);
+    const own = auth.resolveSession(adminToken);
+    expect(own?.member.id).toBe("root");
+    expect(own?.impersonator).toBeUndefined();
+  });
+
+  it("takes the impersonated member's privilege, not the admin's", () => {
+    const { auth, admin } = twoAccounts();
+    const principal = auth.resolveSession(impersonate(auth, admin));
+    // Viewing as a plain member means losing admin routes for the duration. That is the feature:
+    // an admin who kept their own privileges would not be seeing what the member sees.
+    expect(principal?.member.privilege_level).toBe("member");
+  });
+
+  it("refuses a non-admin, a self-impersonation, an unknown member, and nesting", () => {
+    const { store, auth, admin } = twoAccounts();
+    claimAndApprove(store, auth, "grace", "grace@cs.toronto.edu");
+    const adaLogin = auth.login({ email: "ada@cs.toronto.edu", password: "correcthorse" });
+    if (!adaLogin.ok) {
+      throw new Error("member login failed");
+    }
+    const ada = auth.resolveSession(adaLogin.payload.session_token);
+    if (!ada) {
+      throw new Error("member session did not resolve");
+    }
+    expect(auth.startImpersonation({ admin: ada, memberId: "grace" })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+    expect(auth.startImpersonation({ admin, memberId: "root" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(auth.startImpersonation({ admin, memberId: "nobody" })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+    // No nesting: the chain of who is really acting has to stay one link long.
+    const viewing = auth.resolveSession(impersonate(auth, admin));
+    if (!viewing) {
+      throw new Error("impersonated session did not resolve");
+    }
+    expect(auth.startImpersonation({ admin: viewing, memberId: "grace" })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("stops dead when the admin behind it loses admin", () => {
+    const { store, auth, admin } = twoAccounts();
+    const token = impersonate(auth, admin);
+    expect(auth.resolveSession(token)?.member.id).toBe("ada");
+    const root = store.getLabMember("root");
+    if (!root) {
+      throw new Error("admin missing");
+    }
+    store.saveLabMember({ ...root, privilege_level: "member" });
+    // Not merely denied on the next admin route -- the session itself is gone, so a demotion
+    // cannot leave a token behind that outlives the access that justified it.
+    expect(auth.resolveSession(token)).toBeUndefined();
+  });
+
+  it("expires on its own well before a normal session would", () => {
+    let nowMs = Date.parse("2026-09-03T10:00:00.000Z");
+    const { auth, admin } = twoAccounts(() => new Date(nowMs));
+    const token = impersonate(auth, admin);
+    nowMs += 29 * 60 * 1000;
+    expect(auth.resolveSession(token)?.member.id).toBe("ada");
+    nowMs += 2 * 60 * 1000;
+    expect(auth.resolveSession(token)).toBeUndefined();
+  });
+
+  it("ends on request, and refuses to end a session that is not one", () => {
+    const { auth, admin, adminToken } = twoAccounts();
+    const token = impersonate(auth, admin);
+    expect(auth.endImpersonation(token)).toMatchObject({ ok: true });
+    expect(auth.resolveSession(token)).toBeUndefined();
+    // The admin is still signed in as themselves -- ending a view is not a logout.
+    expect(auth.resolveSession(adminToken)?.member.id).toBe("root");
+    // A stray call on a normal session must not sign anybody out by accident.
+    expect(auth.endImpersonation(adminToken)).toMatchObject({ ok: false, status: 400 });
+    expect(auth.resolveSession(adminToken)?.member.id).toBe("root");
+  });
+
+  it("records both halves against the admin, naming who was viewed", () => {
+    const { store, auth, admin } = twoAccounts();
+    const token = impersonate(auth, admin);
+    auth.endImpersonation(token);
+    const events = store
+      .listAuditEvents()
+      .filter((event) => event.type.startsWith("auth.impersonation"));
+    expect(events.map((event) => event.type)).toEqual([
+      "auth.impersonation_started",
+      "auth.impersonation_ended",
+    ]);
+    for (const event of events) {
+      // On the admin, always: "who was looking at my account" is the question this answers.
+      expect(event.actor).toBe("root");
+      expect(event.details?.member_id).toBe("ada");
+    }
+  });
+
+  it("tells the browser it is impersonating, so it can offer a way out", () => {
+    const { auth, admin } = twoAccounts();
+    const principal = auth.resolveSession(impersonate(auth, admin));
+    if (!principal) {
+      throw new Error("impersonated session did not resolve");
+    }
+    expect(auth.sessionView(principal)).toMatchObject({
+      member: { id: "ada" },
+      impersonated_by: { id: "root", name: "root" },
+    });
+    // A normal session says nothing, so the banner is driven by presence rather than a flag the
+    // client has to remember to check against the member id.
+    const own = auth.resolveSession(
+      (() => {
+        const login = auth.login({ email: "ada@cs.toronto.edu", password: "correcthorse" });
+        if (!login.ok) {
+          throw new Error("member login failed");
+        }
+        return login.payload.session_token;
+      })(),
+    );
+    if (!own) {
+      throw new Error("member session did not resolve");
+    }
+    expect(auth.sessionView(own).impersonated_by).toBeUndefined();
+  });
+});
+
+describe("lab calendar invite backfill", () => {
+  // The repair path's whole reason for existing: these members were approved while
+  // ADMINBOT_LAB_EMAIL was unset, so every invite failed and nothing ever tried again.
+  function labWith(
+    invites: string[],
+    fail?: (email: string) => string,
+    // Records the options each grant was made with, so a test can assert on the notification flag
+    // without every other test having to care about it.
+    notified?: Array<boolean | undefined>,
+  ) {
+    const { store, auth } = setup();
+    const inviteToLabCalendar = async (
+      email: string,
+      options?: { sendNotifications?: boolean },
+    ) => {
+      const message = fail?.(email);
+      if (message) {
+        throw new Error(message);
+      }
+      invites.push(email);
+      notified?.push(options?.sendNotifications);
+    };
+    const withRunner = new AdminBotAuthService({
+      store,
+      createMember: (input) => {
+        const result = new AdminBotService(store).upsertLabMember(input);
+        if (!result.ok) {
+          throw new Error(result.error.message);
+        }
+        return result.payload;
+      },
+      inviteToLabCalendar,
+    });
+    return { store, auth: withRunner, plainAuth: auth };
+  }
+
+  function seed(
+    store: AdminBotMemoryStore,
+    id: string,
+    overrides: Partial<AdminBotLabMember> = {},
+  ) {
+    store.saveLabMember({
+      ...member(id, `${id}@cs.toronto.edu`),
+      privilege_level: "member",
+      ...overrides,
+    });
+  }
+
+  it("plans without sending anything by default", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    seed(store, "grace");
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root" });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.payload.dry_run).toBe(true);
+    expect(result.payload.granted.map((entry) => entry.id).toSorted()).toEqual(["ada", "grace"]);
+    // The point of the default: a run that mails 155 people must be asked for, never stumbled into.
+    expect(invites).toEqual([]);
+  });
+
+  it("grants and audits when asked for the write", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(result.payload.granted).toHaveLength(1);
+    const sent = store
+      .listAuditEvents()
+      .filter((event) => event.type === "auth.calendar_invite_sent");
+    expect(sent).toHaveLength(1);
+    // Marked as a backfill so the audit trail can tell a repair from an onboarding, and recorded
+    // against the admin who ran it rather than the member it was for.
+    expect(sent[0]?.details).toMatchObject({ member_id: "ada", backfill: true });
+    expect(sent[0]?.actor).toBe("root");
+  });
+
+  it("skips anybody already invited, so nobody is mailed twice", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    seed(store, "grace");
+    store.recordAudit({
+      id: "aud_prior",
+      timestamp: "2026-08-01T00:00:00.000Z",
+      type: "auth.calendar_invite_sent",
+      actor: "root",
+      details: { member_id: "ada" },
+    });
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    // The ACL write is idempotent; the mail Google sends on it is not.
+    expect(invites).toEqual(["grace@cs.toronto.edu"]);
+    expect(result.payload.already_invited).toBe(1);
+  });
+
+  it("leaves out people the lab calendar is not for", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    seed(store, "ext", { privilege_level: "external_collaborator" });
+    seed(store, "gone", { status: "alumni" });
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    // Same predicate the standing-invite sweep uses, so "who is on the lab calendar" keeps one
+    // answer rather than gaining a second one here.
+    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+  });
+
+  it("prefers the Google address over the departmental one", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada", { calendar_email: "ada.personal@gmail.com" });
+    await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    // A calendar ACL is granted to a Google identity; the professional address on file is often a
+    // departmental alias that is not one.
+    expect(invites).toEqual(["ada.personal@gmail.com"]);
+  });
+
+  it("reports members with no address instead of inventing one", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    store.saveLabMember({
+      ...member("noaddr", ""),
+      privilege_level: "member",
+      email: undefined as unknown as string,
+    });
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.payload.no_address.map((entry) => entry.id)).toEqual(["noaddr"]);
+    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+  });
+
+  it("stops after the first failure rather than burning the batch on one broken variable", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites, () => "the lab calendar is not configured");
+    for (const id of ["ada", "grace", "hopper"]) {
+      seed(store, id);
+    }
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    // A missing variable fails identically for everybody. Attempting all 155 teaches nothing and
+    // writes 155 audit rows saying the same thing.
+    expect(result.payload.failed).toHaveLength(1);
+    expect(result.payload.granted).toHaveLength(0);
+    expect(result.payload.failed[0]?.error).toContain("not configured");
+  });
+
+  it("walks the roster in batches and says how many are left", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    for (const id of ["ada", "grace", "hopper"]) {
+      seed(store, id);
+    }
+    const result = await auth.backfillLabCalendarInvites({
+      actorId: "root",
+      dryRun: false,
+      limit: 2,
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(invites).toHaveLength(2);
+    expect(result.payload.remaining).toBe(1);
+  });
+
+  it("grants silently, unlike the invite onboarding sends", async () => {
+    const invites: string[] = [];
+    const notified: Array<boolean | undefined> = [];
+    const { store, auth } = labWith(invites, undefined, notified);
+    seed(store, "ada");
+    await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    // The share notification is how a *new* member finds out the calendar exists. On a backfill it
+    // announces a months-old oversight to people who may have left the lab a year ago, and 150 at
+    // once reads as a compromise. The access is granted either way.
+    expect(notified).toEqual([false]);
+  });
+
+  it("leaves the onboarding invite noisy, which is the half that should be", async () => {
+    const invites: string[] = [];
+    const notified: Array<boolean | undefined> = [];
+    const { store, auth } = labWith(invites, undefined, notified);
+    store.saveLabMember(member("ada", "ada@cs.toronto.edu"));
+    auth.claim({ member_id: "ada", email: "ada@cs.toronto.edu", password: "correcthorse" });
+    auth.approveRegistration(pendingIdForMember(auth, "ada"), "root");
+    await flushMicrotasks();
+    // Undefined, not false: the approval path says nothing and the runner defaults to notifying.
+    // Asserted because the two paths differing is the whole point of the option -- a later change
+    // that flipped the default would silence onboarding without any test noticing.
+    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(notified).toEqual([undefined]);
+  });
+
+  it("refuses when the deployment has no calendar runner at all", async () => {
+    const { plainAuth } = labWith([]);
+    // Distinct from a failed grant: there is nothing to retry, and a 503 says so.
+    expect(await plainAuth.backfillLabCalendarInvites({ actorId: "root" })).toMatchObject({
+      ok: false,
+      status: 503,
+    });
+  });
+});

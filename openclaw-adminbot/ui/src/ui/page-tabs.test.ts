@@ -63,11 +63,13 @@ describe("renderPageTabs", () => {
       "Active Papers",
       "Profile Completeness",
       "Grant Report",
+      "Mailing List",
     ]);
     expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
       "/papers",
       "/profile-overview",
       "/grant-report",
+      "/mailing-list",
     ]);
   });
 

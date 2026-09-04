@@ -12,17 +12,14 @@
 // when the sheet changes, and this test says whether the code needs to move too.
 
 import { describe, expect, it } from "vitest";
+import { adminBotExternalCollaboratorSubgroups } from "../../contracts/actions.js";
 import {
   adminBotCollaboratorAccessCells,
   adminBotCollaboratorAccessItems,
   collaboratorSubgroupAccess,
   type AdminBotCollaboratorAccessItemId,
 } from "./collaborator-subgroups.js";
-import { adminBotExternalCollaboratorSubgroups } from "../../contracts/actions.js";
-import {
-  CONTACT_ACCESS_MATRIX,
-  CONTACT_SHEET_SUBGROUPS,
-} from "./generated/contact-roster.js";
+import { CONTACT_ACCESS_MATRIX, CONTACT_SHEET_SUBGROUPS } from "./generated/contact-roster.js";
 
 /**
  * Sheet row -> the access item that implements it.
@@ -42,7 +39,10 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
   // onboarding mail through the membership sweeps rather than through the access matrix, so there
   // is no matrix row to compare against -- see chaseOpenOnboarding.
   ["onboarding email", null],
-  ["If their profile should be in our Back-end spreadsheet in full details", "spreadsheet_full_details"],
+  [
+    "If their profile should be in our Back-end spreadsheet in full details",
+    "spreadsheet_full_details",
+  ],
   [
     "In our back-end spreadsheet: we store their email, roughly tldr background (PhD, Prof, … intersecting with us for XX)",
     "spreadsheet_basic",
@@ -59,7 +59,10 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "Issue a check condition: If they do not have main slack space, Link to Jinesis free slack space for slack-guest-chat group in DCS with the interviewer and project collaborators they can chat with",
     "slack_guest_space_check",
   ],
-  ["Join Jinesis #friends-and-collaborators… through Slack Connect", "slack_connect_friends_channel"],
+  [
+    "Join Jinesis #friends-and-collaborators… through Slack Connect",
+    "slack_connect_friends_channel",
+  ],
   ["Add them to #jinesis-active and #random-active both channels", "active_channels"],
   ["Slack-guest-chat with Zhijing & interviewer", "slack_guest_chat_zhijing"],
   ["Add to #discussion-xxx for joining the discussions on this broad topic", "discussion_channel"],
@@ -71,6 +74,12 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "Has access to our project-related google drive folder (Or create it if not exist)",
     "project_drive_folder",
   ],
+  // New in the (2)/(3) revision of the sheet, and deliberately unmapped. This row is the two
+  // standing invites -- the lab calendar and the Monday group meeting -- which are reconciled by
+  // workflows/members/surface-membership.ts against `privilege_level` and the `coauthor_major`
+  // subgroup, not by the collaborator access matrix. Adding a matrix row for it would give the
+  // same decision two owners; `belongsOnSurface` is the one that already sends the invites.
+  ["View access to lab calendar + invite to Monday Group Meeting", null],
   [
     "Add to slack channel #meeting-xxx for the weekly themed meeting, and also Wed themed meeting’s calendar invite. (Slack + calendar)\n\nWhoever that is on our calendar invite will be repeatedly reminded to use the Google Calendar app interface with alert, and ignore calendar related emails, due to all the complex time zones and spontaneous move of meetings.",
     "weekly_meeting",

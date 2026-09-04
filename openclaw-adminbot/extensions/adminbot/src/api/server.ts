@@ -80,8 +80,13 @@ import {
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
+import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
-import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
+import {
+  ADMINBOT_LAB_EMAIL_ENV,
+  adminBotLabCalendarId,
+  createCalendarInviteRunner,
+} from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
@@ -93,6 +98,10 @@ import {
   createImportColumnMapper,
   type ImportColumnMapper,
 } from "../workflows/papers/import-columns.js";
+import {
+  type PublicationMailingRunner,
+  createPublicationMailingRunner,
+} from "../workflows/papers/mailing-list-email.js";
 import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
@@ -215,6 +224,8 @@ export type AdminBotMockServiceOptions = {
   // `gog`, and so a deployment without a configured document simply has no job rather than a
   // button that fails at the CLI.
   cvDigestPublisher?: AdminBotCvDigestPublisher;
+  /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
+  publicationMailingRunner?: PublicationMailingRunner;
   // Reads a venue's accepted papers from OpenReview, and turns text into vectors. Injected so the
   // conference-paper tool is testable without a network and so a deployment without OpenReview
   // credentials simply has no index job rather than a button that fails inside a connector.
@@ -466,6 +477,8 @@ type AdminBotRouteContext = {
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   cvScanDeps?: AdminBotCvScanDeps;
   cvDigestPublisher?: AdminBotCvDigestPublisher;
+  /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
+  publicationMailingRunner?: PublicationMailingRunner;
   venuePapersReader?: import("../connectors/openreview-notes.js").OpenReviewNotesReader;
   // Always present: the server builds both from the environment, and an absent embedder would
   // make every search path optional-chained for a case that cannot happen.
@@ -510,7 +523,31 @@ type AdminBotRouteContext = {
   trustProxyHeaders: boolean;
 };
 
+/**
+ * Say once, at startup, that nobody will be granted calendar access.
+ *
+ * Silence here is what let this go unnoticed for four months: the invite is best-effort by design
+ * -- an approval must not fail because Google did -- so an unconfigured deployment approved
+ * members, failed the invite, wrote an audit row, and carried on looking healthy. Nothing read
+ * those rows until somebody audited them, by which point 155 members had been told in their
+ * onboarding checklist that they were already on the calendar.
+ *
+ * Skipped when a runner is injected: tests and the host supply their own, and it is not this
+ * function's business whether that one is configured.
+ */
+function warnIfLabCalendarUnconfigured(injected: unknown): void {
+  if (injected || adminBotLabCalendarId()) {
+    return;
+  }
+  console.warn(
+    `[adminbot] ${ADMINBOT_LAB_EMAIL_ENV} is not set: no member will be granted lab calendar ` +
+      "access, and every approval will record auth.calendar_invite_failed. Set it, then repair " +
+      "the members already approved with POST /lab/members/backfill-calendar-invites.",
+  );
+}
+
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
+  warnIfLabCalendarUnconfigured(options.calendarInviteRunner);
   let store: AdminBotServiceStore;
   let service: AdminBotService;
   let closeDurable: () => void = () => {};
@@ -554,6 +591,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       }
       return result.payload;
     },
+    // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
+    // below: the runner is still installed when unconfigured, because a failure that is audited is
+    // better than a side effect that is silently skipped.
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
@@ -676,6 +716,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
+    publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,
@@ -928,6 +969,33 @@ async function handleAuthRoute(
     sendJson(res, 200, ctx.auth.sessionView(principal));
     return;
   }
+  // Open and close a "view as" session. Both are member-authenticated rather than
+  // requirePrivileged: the admin check lives in the auth service, which is also where the
+  // no-nesting and not-yourself rules are, so all four refusals are stated in one place.
+  if (req.method === "POST" && url.pathname === "/auth/impersonate") {
+    const principal = resolvePrincipal(req, ctx);
+    if (!principal || principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendAuthResult(
+      res,
+      ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/auth/impersonate/stop") {
+    const token = bearerToken(req) ?? cookieToken(req);
+    if (!token) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    // No principal resolution first: an impersonated session that has already expired should still
+    // be closable, and the auth service refuses anything that is not an impersonation row anyway.
+    sendAuthResult(res, ctx.auth.endImpersonation(token));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/auth/pair-device") {
     await handlePairDeviceRoute(req, res, ctx);
     return;
@@ -980,6 +1048,9 @@ async function handleAuthRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
+    if (refuseWhileImpersonating(res, principal)) {
+      return;
+    }
     const body = readRecord(await readJson(req));
     const result = ctx.auth.changePassword(
       principal.member.id,
@@ -1001,6 +1072,9 @@ async function handleAuthRoute(
     if (principal.kind !== "member") {
       // The service principal has no credential to reverify; email change is a member-only action.
       sendJson(res, 400, { error: { message: "member principal required" } });
+      return;
+    }
+    if (refuseWhileImpersonating(res, principal)) {
       return;
     }
     const body = readRecord(await readJson(req));
@@ -1060,11 +1134,63 @@ async function handleRegistrationRoute(
   sendJson(res, 404, { error: { message: "not found" } });
 }
 
+/**
+ * Who performed this request, for anything that records an actor.
+ *
+ * On a "view as" session this is the admin, not the member being viewed. The two are separate
+ * questions and the split is deliberate: `principal.member` answers "whose account is this" and is
+ * what a handler uses to decide *what* to operate on, while this answers "who is at the keyboard"
+ * and is what belongs in an audit row. Collapsing them is how an admin's action ends up filed
+ * under a member who was not there -- the same conflation the `lab_member.upserted` actor stamp
+ * had, and impersonation would be a far quieter version of it.
+ */
 function principalActor(principal: AdminBotPrincipal): string {
   if (principal.kind === "service") {
     return "service";
   }
-  return principal.kind === "anonymous" ? "anonymous" : principal.member.id;
+  if (principal.kind === "anonymous") {
+    return "anonymous";
+  }
+  return principal.impersonator?.id ?? principal.member.id;
+}
+
+/**
+ * Refuse the two routes that change how a member signs in, when the caller is only visiting.
+ *
+ * Both already demand the member's current password, so an admin cannot reach them anyway -- this
+ * turns a confusing "invalid email or password" into an answer, and states the boundary in code
+ * rather than leaving it as a property of the password check that a later refactor could drop.
+ * The line is between acting *as* an account and taking it over: everything else an impersonated
+ * session does is recorded against the admin and can be undone by whoever reads the audit trail,
+ * while a changed password or account email locks the member out of their own account.
+ */
+function refuseWhileImpersonating(
+  res: ServerResponse,
+  principal: AdminBotMemberPrincipal,
+): boolean {
+  if (!principal.impersonator) {
+    return false;
+  }
+  sendJson(res, 403, {
+    error: {
+      message: "sign-in credentials cannot be changed while viewing as another member",
+    },
+  });
+  return true;
+}
+
+/**
+ * The origin stamp for a profile write made through this principal.
+ *
+ * A member editing their own record is adoption and stamps `member`. The same form submitted by an
+ * admin who is viewing as that member is not: nobody has arrived, and counting it would inflate
+ * the exact number the Profile Overview exists to keep honest. So it stamps `admin`, with the
+ * admin as the actor, and reads identically to that admin editing the row from the members tab.
+ */
+function profileWriteOrigin(principal: AdminBotMemberPrincipal): AdminBotWriteOrigin {
+  return principal.impersonator
+    ? { source: "admin", actor: principal.impersonator.id }
+    : { source: "member", actor: principal.member.id };
 }
 
 // Approves a pending gateway device pairing for the signed-in member, with scopes capped by their
@@ -2527,6 +2653,104 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listDuplicateMembers());
     return;
   }
+  if (req.method === "GET" && url.pathname === "/papers/mailing-list") {
+    // The preview. Read-only and computed by the same function the send uses, so what an admin
+    // reads here is what would actually go out -- the same rule /papers/nudge-batches follows.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.collectPublicationMailing({
+        fromIso: url.searchParams.get("from") ?? "",
+        toIso: url.searchParams.get("to") ?? "",
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/mailing-list/send") {
+    // requireMemberPrivileged, not requirePrivileged: the caller names the recipient, so this is
+    // an admin-composed send to an arbitrary address and the shared service principal is kept out
+    // of it. The same reasoning as /lab/members/merge and /nudges/send.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    if (!ctx.publicationMailingRunner) {
+      sendJson(res, 503, { error: { message: "publication mailing is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const recipient = asString(body.email).trim();
+    if (!recipient.includes("@")) {
+      sendJson(res, 400, { error: { message: "a recipient email address is required" } });
+      return;
+    }
+    const digest = service.collectPublicationMailing({
+      fromIso: asString(body.from),
+      toIso: asString(body.to),
+    });
+    if (!digest.ok) {
+      sendServiceResult(res, digest);
+      return;
+    }
+    try {
+      await ctx.publicationMailingRunner({
+        to: recipient,
+        subject: digest.payload.subject,
+        body: digest.payload.body,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "publication_digest.failed",
+        actor: principalActor(principal),
+        details: { recipient, from: digest.payload.from, to: digest.payload.to, reason: message },
+      });
+      sendJson(res, 502, { error: { message: `could not send the digest: ${message}` } });
+      return;
+    }
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "publication_digest.sent",
+      actor: principalActor(principal),
+      details: {
+        recipient,
+        from: digest.payload.from,
+        to: digest.payload.to,
+        // The count, so the trail says what went out without storing the whole list twice.
+        publications: digest.payload.publications.length,
+        undated: digest.payload.undated_count,
+      },
+    });
+    sendJson(res, 200, {
+      sent: true,
+      recipient,
+      publications: digest.payload.publications.length,
+      undated_count: digest.payload.undated_count,
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/lab/members/backfill-calendar-invites") {
+    // requireMemberPrivileged for the same reason /lab/members/merge is: a run mails real people,
+    // and the service principal drives every agent tool call. `dry_run` defaults to true in the
+    // auth service, so a caller who sends nothing gets the plan rather than the sends.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendAuthResult(
+      res,
+      await ctx.auth.backfillLabCalendarInvites({
+        actorId: principalActor(principal),
+        ...(body.dry_run === false ? { dryRun: false } : {}),
+        ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/lab/members/merge") {
     // requireMemberPrivileged, not requirePrivileged: a merge retires a person's record, moves
     // their login and cannot be undone from the UI, and the caller names both ids -- so it is
@@ -3003,8 +3227,9 @@ async function handleAuthenticatedRoute(
           { ...(body as AdminBotLabMemberInput), id: memberId },
           // An admin correcting somebody's record is not that member adopting the tool, so this is
           // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
-          // "who typed this" has an answer either way.
-          { source: "admin", actor: principal.member.id },
+          // "who typed this" has an answer either way -- and comes from principalActor so that an
+          // admin doing this while viewing as another admin is still recorded as themselves.
+          { source: "admin", actor: principalActor(principal) },
         ),
       );
       return;
@@ -3023,7 +3248,7 @@ async function handleAuthenticatedRoute(
       sendJson(res, 403, { error: { message: "members can only update their own profile" } });
       return;
     }
-    sendServiceResult(res, service.updateOwnProfile(memberId, body));
+    sendServiceResult(res, service.updateOwnProfile(memberId, body, profileWriteOrigin(principal)));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers") {

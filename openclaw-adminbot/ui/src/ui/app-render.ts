@@ -75,6 +75,10 @@ import {
   withdrawAdminBotLogisticsRequest,
 } from "./adminbot/controllers/logistics.ts";
 import {
+  loadAdminBotMailingList,
+  sendAdminBotMailingList,
+} from "./adminbot/controllers/mailing-list.ts";
+import {
   circulateAdminBotSocialDraft,
   loadAdminBotNudgeBatches,
   loadAdminBotPaperSlotOverview,
@@ -814,6 +818,10 @@ const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
   notifyLazyViewChanged,
 );
+const lazyMailingList = createLazyView(
+  () => import("./adminbot/views/mailing-list.ts"),
+  notifyLazyViewChanged,
+);
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
   notifyLazyViewChanged,
@@ -977,6 +985,47 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     default:
       return null;
   }
+}
+
+/**
+ * The standing reminder that this is somebody else's view.
+ *
+ * Rendered next to the feedback widget rather than inside any tab, because an admin who has opened
+ * a member's view then navigates the whole app in it -- a banner that only appeared on Lab Members
+ * would vanish exactly when it is most needed. It is driven off what the service reports about the
+ * session, not off what this browser remembers doing, so a reload keeps it and an expired view
+ * loses it on its own.
+ *
+ * It says what is being recorded as well as who is being viewed. "Anything you change is recorded
+ * as you" is the whole contract of the feature, and an admin who is unsure of it is one who edits
+ * more cautiously than they need to -- or less.
+ */
+function renderImpersonationBanner(state: AppViewState) {
+  const impersonator = state.memberImpersonatedBy;
+  if (!impersonator) {
+    return nothing;
+  }
+  return html`
+    <div class="adminbot-impersonation-banner" role="status" data-testid="impersonation-banner">
+      <span
+        >${t("impersonation.banner", {
+          member:
+            state.adminBotData?.members.find((entry) => entry.id === state.memberId)?.name ??
+            state.memberId ??
+            "",
+          admin: impersonator.name,
+        })}</span
+      >
+      <button
+        class="btn btn--sm"
+        type="button"
+        ?disabled=${state.memberImpersonationBusy === true}
+        @click=${() => void state.endViewAs()}
+      >
+        ${t("impersonation.back")}
+      </button>
+    </div>
+  `;
 }
 
 // A floating bottom-right feedback widget appears on AdminBot feature tabs only. A changed tab
@@ -3631,7 +3680,10 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotPapers" && adminBotMode === "admin" && activePaperCard
           ? renderPaperCardDialog({
               state,
-              props: { ...paperWorkspaceProps(state, requestHostUpdate), canNudge: true },
+              props: {
+                ...paperWorkspaceProps(state, requestHostUpdate),
+                canNudge: true,
+              },
               paper: activePaperCard,
               onClose: () => {
                 state.adminBotPaperCardId = null;
@@ -3800,6 +3852,13 @@ export function renderApp(state: AppViewState) {
               // The checklist itself lives at the bottom of the profile page instead of in a
               // popup, so "view onboarding checklist" from Lab Members just goes there.
               onShowOnboardingWelcome: () => state.setTab("profile"),
+              // Admins only, and not from inside a view that is already somebody else's -- the
+              // service refuses both, and leaving the button out says so before it is clicked.
+              ...(adminBotMode === "admin" && !state.memberImpersonatedBy
+                ? {
+                    onViewAsMember: (member) => void state.beginViewAs(member.id),
+                  }
+                : {}),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
@@ -3880,6 +3939,30 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotOpportunities"
           ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
+          : nothing}
+        ${state.tab === "adminbotMailingList" && adminBotMode === "admin"
+          ? renderLazyView(lazyMailingList, (m) =>
+              m.renderMailingList({
+                preview: state.adminBotMailingListPreview,
+                loading: state.adminBotMailingListLoading,
+                sending: state.adminBotMailingListSending,
+                error: state.adminBotMailingListError,
+                notice: state.adminBotMailingListNotice,
+                from: state.adminBotMailingListFrom,
+                to: state.adminBotMailingListTo,
+                email: state.adminBotMailingListEmail,
+                onRangeChange: (range) => {
+                  state.adminBotMailingListFrom = range.from;
+                  state.adminBotMailingListTo = range.to;
+                  // Cleared with the range it described. A preview left on screen next to two new
+                  // dates is the one way this screen could mislead about what would be sent.
+                  state.adminBotMailingListPreview = null;
+                },
+                onEmailChange: (email) => (state.adminBotMailingListEmail = email),
+                onPreview: () => void loadAdminBotMailingList(state),
+                onSend: () => void sendAdminBotMailingList(state),
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotGrantReport" && adminBotMode === "admin"
           ? renderLazyView(lazyGrantReport, (m) =>
@@ -4078,7 +4161,9 @@ export function renderApp(state: AppViewState) {
                       ? { detail: state.adminBotVenueIndexJob.detail }
                       : {}),
                     ...(state.adminBotVenueIndexJob.finishedAtMs
-                      ? { finishedAtMs: state.adminBotVenueIndexJob.finishedAtMs }
+                      ? {
+                          finishedAtMs: state.adminBotVenueIndexJob.finishedAtMs,
+                        }
                       : {}),
                   },
                   {
@@ -4097,7 +4182,9 @@ export function renderApp(state: AppViewState) {
                         }
                       : {}),
                     ...(state.adminBotCvDigestJob.finishedAtMs
-                      ? { finishedAtMs: state.adminBotCvDigestJob.finishedAtMs }
+                      ? {
+                          finishedAtMs: state.adminBotCvDigestJob.finishedAtMs,
+                        }
                       : {}),
                   },
                   {
@@ -4110,7 +4197,9 @@ export function renderApp(state: AppViewState) {
                       ? { detail: state.adminBotChannelNamingJob.detail }
                       : {}),
                     ...(state.adminBotChannelNamingJob.finishedAtMs
-                      ? { finishedAtMs: state.adminBotChannelNamingJob.finishedAtMs }
+                      ? {
+                          finishedAtMs: state.adminBotChannelNamingJob.finishedAtMs,
+                        }
                       : {}),
                   },
                 ],
@@ -4989,8 +5078,8 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
       </main>
-      ${renderFeedbackWidget(state)} ${renderExecApprovalPrompt(state)}
-      ${renderGatewayUrlConfirmation(state)} ${nothing}
+      ${renderImpersonationBanner(state)} ${renderFeedbackWidget(state)}
+      ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)} ${nothing}
     </div>
   `;
 }

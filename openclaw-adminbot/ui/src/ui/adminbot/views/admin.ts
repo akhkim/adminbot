@@ -97,7 +97,12 @@ export type AdminBotProps = {
   onSaveSlot?: (
     paperId: string,
     slot: string,
-    input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+    input: {
+      url?: string;
+      value_text?: string;
+      value_note?: string;
+      done?: boolean;
+    },
   ) => void;
   /** Venue id the pre-registration table is filtered to; empty shows every upcoming venue. */
   venueFilter?: string;
@@ -149,6 +154,15 @@ export type AdminBotProps = {
   // Reopens the post-login onboarding welcome screen on demand. Omitted (or a no-op) when the
   // signed-in member has no onboarding checklist to show.
   onShowOnboardingWelcome?: () => void;
+  /**
+   * Open a session that sees the lab as this member. Absent for anyone who cannot -- so the button
+   * is off the page rather than on it and refused, the same rule onDeleteMember follows.
+   *
+   * Passed as a callback rather than driven from `mode === "admin"` here because the host also
+   * knows whether a swap is already in flight, and whether this session is *itself* a view (which
+   * cannot open another).
+   */
+  onViewAsMember?: (member: AdminBotLabMember) => void;
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
   onDeletePaper: (paper: AdminBotPaperRecord) => void;
   onSaveSettings: (settings: AdminBotSettingsSaveInput) => void;
@@ -389,7 +403,9 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
       ? { slackUserId: getFormValue(data, "slackUserId") }
       : {}),
     ...(getFormValue(data, "privilegeLevel")
-      ? { privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel }
+      ? {
+          privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel,
+        }
       : {}),
     // The hidden field still submits, so the privilege check is what keeps a subgroup out of the
     // payload for a non-collaborator — the service rejects the pair outright.
@@ -403,7 +419,9 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
         }
       : {}),
     ...(getFormValue(data, "status")
-      ? { status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"] }
+      ? {
+          status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"],
+        }
       : {}),
     // A checkbox submits nothing when it is clear, so its absence is the "off" answer rather than
     // a field the form did not ask about -- which is what lets this editor take somebody off the
@@ -661,8 +679,9 @@ function renderSettings(
         <div class="card-title">Searchable conferences</div>
         <div class="card-sub">
           The conferences members can search on Find Interesting Papers, in the order they appear.
-          One per line as <code>OpenReview venue id | label</code>. After changing this, rebuild the
-          index from the Cron tab — a conference added here has no papers until then.
+          One per line as
+          <code>OpenReview venue id | label</code>. After changing this, rebuild the index from the
+          Cron tab — a conference added here has no papers until then.
         </div>
         <form
           class="adminbot-form"
@@ -1364,6 +1383,16 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                       >
                         ${rowEdit === "admin" ? "Edit" : "Edit my profile"}
                       </button>`}
+                  ${props.onViewAsMember && member.id !== props.signedInMemberId
+                    ? html`<button
+                        class="btn btn--sm btn--ghost adminbot-member-sheet__edit"
+                        type="button"
+                        title=${t("impersonation.viewAsTitle", { name: member.name })}
+                        @click=${() => props.onViewAsMember?.(member)}
+                      >
+                        ${t("impersonation.viewAs")}
+                      </button>`
+                    : nothing}
                   ${member.id === props.signedInMemberId && props.onShowOnboardingWelcome
                     ? html`<button
                         class="btn btn--sm btn--ghost adminbot-member-sheet__edit"
@@ -1912,7 +1941,10 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     // The row is a summary; the paper's own card is the detail. Not the edit popover -- that is a
     // form over the record's raw fields, where the card is the paper as everyone else reads it.
     onOpenPaper: (paperId) => props.onOpenPaperCard?.(paperId),
-    stages: paperSteps.map((step) => ({ value: step, label: stepLabels[step] ?? friendly(step) })),
+    stages: paperSteps.map((step) => ({
+      value: step,
+      label: stepLabels[step] ?? friendly(step),
+    })),
     actions:
       papers.length > PAPER_GRID_THRESHOLD
         ? html`<button
@@ -2061,7 +2093,11 @@ function renderTravelBoard(props: AdminBotProps, papers: AdminBotPaperRecord[]) 
     if (!venue || !row.attendance) {
       continue;
     }
-    const entry = byVenue.get(venue) ?? { going: new Set<string>(), unknown: 0, papers: 0 };
+    const entry = byVenue.get(venue) ?? {
+      going: new Set<string>(),
+      unknown: 0,
+      papers: 0,
+    };
     for (const name of row.attendance.going ?? []) {
       entry.going.add(name);
     }
@@ -2144,15 +2180,16 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
             All venues
           </button>
           ${venues.map(
-            (venue) => html`<button
-              type="button"
-              class="venue-table__filter ${filter === venue.venue_id ? "is-on" : ""}"
-              data-testid=${`venue-filter-${venue.venue_id}`}
-              @click=${() => props.onVenueFilter?.(venue.venue_id)}
-            >
-              ${venue.label}
-              <span class="venue-table__days">${daysUntil(venue.deadline)}d</span>
-            </button>`,
+            (venue) =>
+              html`<button
+                type="button"
+                class="venue-table__filter ${filter === venue.venue_id ? "is-on" : ""}"
+                data-testid=${`venue-filter-${venue.venue_id}`}
+                @click=${() => props.onVenueFilter?.(venue.venue_id)}
+              >
+                ${venue.label}
+                <span class="venue-table__days">${daysUntil(venue.deadline)}d</span>
+              </button>`,
           )}
         </div>
       </div>
@@ -2177,9 +2214,10 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                       <td class="venue-table__title">${paper.title}</td>
                       <td class="venue-table__venue">
                         ${targets.map(
-                          (target) => html`<span class="venue-table__target"
-                            ><strong>${target.confidence}%</strong> ${target.label}</span
-                          >`,
+                          (target) =>
+                            html`<span class="venue-table__target"
+                              ><strong>${target.confidence}%</strong> ${target.label}</span
+                            >`,
                         )}
                       </td>
                       <td class="venue-table__authors">${(paper.authors ?? []).join(", ")}</td>
@@ -2431,7 +2469,10 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   const byId = new Map(papers.map((paper) => [paper.id, paper]));
   const rows = (props.paperSlotOverview ?? [])
     .filter((row) => !row.dormant && !row.closed && byId.has(row.paper_id))
-    .map((row) => ({ row, paper: byId.get(row.paper_id) as AdminBotPaperRecord }));
+    .map((row) => ({
+      row,
+      paper: byId.get(row.paper_id) as AdminBotPaperRecord,
+    }));
 
   if (rows.length === 0) {
     return html`<div class="adminbot-empty adminbot-empty--compact">

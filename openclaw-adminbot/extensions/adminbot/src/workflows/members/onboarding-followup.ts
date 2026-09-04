@@ -139,13 +139,31 @@ export type OnboardingFollowUpDecision =
  * reminders at once to catch up.
  */
 export function planOnboardingFollowUp(params: {
-  welcomedAt: string;
+  /**
+   * When the onboarding email went out, when the trail records one.
+   *
+   * Optional only alongside `alreadyEmailed`: the roster knows the lab has emailed hundreds of
+   * people whose sends predate the audit trail, and refusing to chase them for want of a timestamp
+   * would leave exactly the backlog the ladder is for.
+   */
+  welcomedAt?: string | undefined;
   lastLoginAt?: string | undefined;
   lastSelfEditAt?: string | undefined;
   /** How many ladder messages have already gone out (the ledger's count). */
   sentCount: number;
   /** When the last ladder message went out. Absent when none has. */
   lastNudgedAt?: string | undefined;
+  /**
+   * The roster says this person has had the onboarding email, though the trail has no record of it.
+   *
+   * Only consulted when `welcomedAt` is absent, and that precedence is the whole subtlety. A
+   * recorded welcome is a date the ladder can measure five business days from, and it should --
+   * somebody emailed by the system on Monday is not overdue on Tuesday for being a full member.
+   * This flag is for the other case: the hundreds of people emailed before the trail existed, for
+   * whom there is no date to wait from and the only sensible question left is "have they ever
+   * signed in?".
+   */
+  alreadyEmailed?: boolean;
   now: Date;
   plan?: OnboardingFollowUpPlan;
 }): OnboardingFollowUpDecision {
@@ -153,13 +171,33 @@ export function planOnboardingFollowUp(params: {
   // Any sign of life ends the ladder, at every step including before the escalation. The ladder
   // exists to reach somebody who has not arrived; once they have, the remaining steps are the lab
   // chasing a person who is already here.
-  if (engagedSince(params.welcomedAt, params)) {
+  //
+  // "Since the welcome" when there is a welcome to measure from, and "ever" when there is not.
+  // The first is the sharper test -- somebody re-onboarded after a standing change may well have
+  // signed in last year -- but it needs a date, and for the already-emailed backlog there is none.
+  const engaged = params.welcomedAt
+    ? engagedSince(params.welcomedAt, params)
+    : hasEverEngaged(params);
+  if (engaged) {
     return { due: false, reason: "engaged" };
   }
   if (params.sentCount === 0) {
-    return businessDaysBetween(params.welcomedAt, params.now) >= plan.firstChaseBusinessDays
-      ? { due: true, step: "first_reminder" }
-      : { due: false, reason: "too_soon" };
+    if (params.welcomedAt) {
+      // A recorded welcome wins over the roster flag: it is an actual date, so the actual wait
+      // applies. Letting `alreadyEmailed` short-circuit here would fire on somebody the system
+      // emailed this morning, purely for being a full member.
+      return businessDaysBetween(params.welcomedAt, params.now) >= plan.firstChaseBusinessDays
+        ? { due: true, step: "first_reminder" }
+        : { due: false, reason: "too_soon" };
+    }
+    if (params.alreadyEmailed) {
+      // Straight in at the first reminder. The wait this skips is a wait for an email they have
+      // already had, measured from a date nobody wrote down.
+      return { due: true, step: "first_reminder" };
+    }
+    // No welcome and not emailed: the ladder has not started for this person, and sending the
+    // email is not this function's step to take.
+    return { due: false, reason: "too_soon" };
   }
   const since = params.lastNudgedAt;
   if (!since) {

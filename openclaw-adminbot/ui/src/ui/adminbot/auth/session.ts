@@ -262,13 +262,19 @@ export type MemberSession = {
   expires_at: string;
   member: LabMember;
   gateway?: MemberGateway;
+  impersonated_by?: MemberImpersonator;
 };
+
+// The admin behind a "view as" session. Present on GET /auth/session only while one is open, so
+// the banner is driven by its presence rather than by the client remembering what it did.
+export type MemberImpersonator = { id: string; name: string };
 
 // Session view returned by GET /auth/session (no session_token echoed back).
 export type MemberSessionInfo = {
   expires_at: string;
   member: LabMember;
   gateway?: MemberGateway;
+  impersonated_by?: MemberImpersonator;
 };
 
 // Unclaimed roster entry surfaced in the claim picker (GET /auth/roster).
@@ -776,6 +782,83 @@ export async function deleteLabMemberAsAdmin(
  * that matters on screen: it is where the shared `admin` login turns up, and an admin who cannot
  * see why a row survived the purge will assume the purge is broken.
  */
+/** One paper in the publication digest, as the preview returns it. */
+export type PublicationDigestEntry = {
+  id: string;
+  title: string;
+  authors: string[];
+  venue?: string;
+  url?: string;
+  date: { iso: string; precision: "month" | "year"; source: "arxiv" | "accepted_year" };
+};
+
+export type PublicationDigestPreview = {
+  from: string;
+  to: string;
+  publications: PublicationDigestEntry[];
+  excluded: Array<{
+    id: string;
+    title: string;
+    reason: "no_date" | "out_of_range";
+    date?: PublicationDigestEntry["date"];
+  }>;
+  undated_count: number;
+  subject: string;
+  body: string;
+};
+
+/**
+ * What the digest for this range would contain. Read-only.
+ *
+ * The tab shows this before anything is sent, and the send recomputes it from the same function --
+ * so the preview is the email rather than a rehearsal of it.
+ */
+export async function fetchPublicationDigest(
+  params: { from: string; to: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PublicationDigestPreview>> {
+  const search = new URLSearchParams({ from: params.from, to: params.to });
+  const result = await authedJson(
+    baseUrl,
+    `/papers/mailing-list?${search.toString()}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as PublicationDigestPreview };
+}
+
+/** Mails the digest for this range to one address. */
+export async function sendPublicationDigest(
+  params: { from: string; to: string; email: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ sent: true; recipient: string; publications: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/papers/mailing-list/send",
+    "POST",
+    sessionToken,
+    params,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { sent: true; recipient: string; publications: number },
+  };
+}
+
 export async function fetchMembersWithoutEmail(
   sessionToken: string,
   baseUrl: string,
@@ -2592,6 +2675,47 @@ export async function fetchMemberSession(
   return { ok: true, value: body as MemberSessionInfo };
 }
 
+/**
+ * Open a session that sees the lab as `memberId`. Admin-only; the service enforces that.
+ *
+ * The returned token is a *different* session, not a mutation of the caller's -- the admin's own
+ * stays valid, which is what makes the way back a matter of putting it down rather than signing in
+ * again. See saveStoredMemberSession for where it is parked meanwhile.
+ */
+export async function startImpersonation(
+  memberId: string,
+  token: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSession>> {
+  const result = await authedJson(baseUrl, "/auth/impersonate", "POST", token, {
+    member_id: memberId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberSession };
+}
+
+/**
+ * Close a "view as" session. Best-effort, like logoutMember: the local swap back has to happen
+ * whether or not the service is reachable, or an admin whose network blipped is stuck as somebody
+ * else with no way out.
+ */
+export async function stopImpersonation(token: string, baseUrl: string): Promise<void> {
+  try {
+    await fetch(`${baseUrl}/auth/impersonate/stop`, {
+      method: "POST",
+      credentials: "omit",
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Best-effort; the session expires on its own within the half hour regardless.
+  }
+}
+
 export async function logoutMember(token: string, baseUrl: string): Promise<void> {
   try {
     await fetch(`${baseUrl}/auth/logout`, {
@@ -2606,7 +2730,15 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
 
 // Only non-secret fields are persisted; the gateway token is intentionally
 // excluded and re-fetched from GET /auth/session on resume.
-export type StoredMemberSession = { sessionToken: string; expiresAt: string };
+//
+// `impersonator` is the admin's own session, parked here while they view the lab as somebody else.
+// It has to survive a reload: an admin who refreshes the page mid-view would otherwise be left
+// holding only the impersonated token, with their own account reachable again only by signing in.
+export type StoredMemberSession = {
+  sessionToken: string;
+  expiresAt: string;
+  impersonator?: { sessionToken: string; expiresAt: string };
+};
 
 export function loadStoredMemberSession(): StoredMemberSession | null {
   const storage = getSafeLocalStorage();
@@ -2620,7 +2752,19 @@ export function loadStoredMemberSession(): StoredMemberSession | null {
     if (!sessionToken) {
       return null;
     }
-    return { sessionToken, expiresAt: normalizeOptionalString(parsed.expiresAt) ?? "" };
+    const parkedToken = normalizeOptionalString(parsed.impersonator?.sessionToken);
+    return {
+      sessionToken,
+      expiresAt: normalizeOptionalString(parsed.expiresAt) ?? "",
+      ...(parkedToken
+        ? {
+            impersonator: {
+              sessionToken: parkedToken,
+              expiresAt: normalizeOptionalString(parsed.impersonator?.expiresAt) ?? "",
+            },
+          }
+        : {}),
+    };
   } catch {
     return null;
   }
@@ -2631,7 +2775,11 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
   try {
     storage?.setItem(
       SESSION_STORAGE_KEY,
-      JSON.stringify({ sessionToken: next.sessionToken, expiresAt: next.expiresAt }),
+      JSON.stringify({
+        sessionToken: next.sessionToken,
+        expiresAt: next.expiresAt,
+        ...(next.impersonator ? { impersonator: next.impersonator } : {}),
+      }),
     );
   } catch {
     // best-effort — quota/security failures must not block the in-memory session.

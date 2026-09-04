@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
+  ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
+  adminBotHasBeenOnboardEmailed,
   adminBotIsAlumniType,
-  adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   ADMINBOT_REC_LETTER_CHANNEL,
   adminBotDormantChaseMemberTypes,
@@ -253,6 +254,7 @@ import {
   dormantChaseDue,
   isChaseableMember,
   planOnboardingFollowUp,
+  type OnboardingFollowUpPlan,
   type OnboardingFollowUpStep,
 } from "../workflows/members/onboarding-followup.js";
 import {
@@ -308,6 +310,12 @@ import {
   paperflowRecipient,
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
+import {
+  type Publication,
+  type PublicationExclusion,
+  renderPublicationDigest,
+  selectPublications,
+} from "../workflows/papers/publication-list.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -920,6 +928,11 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
 // not been asked yet still shows up; short enough that the query stays one index scan.
 const LOCATION_DRIFT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
+// A calendar day, exactly. The publication range is a pair of days a person typed into two date
+// inputs; anything looser would let "2026" through as a range and silently compare it as a string
+// against "2026-05-01".
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/u;
+
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
   // Ten minutes: long enough to drop test calls and accidental rejoins, short enough to keep a
@@ -1001,17 +1014,29 @@ export function buildOnboardingChaseMessage(params: {
  */
 export function buildOnboardingFollowUpMessage(params: {
   step: "first_reminder" | "second_reminder";
-  days: number;
+  /**
+   * Days since the onboarding email, when the trail records when it went out.
+   *
+   * Absent for the already-emailed backlog, whose sends predate the audit trail. The alternative
+   * was to derive a number from `created_at`, which would have produced "your onboarding email
+   * went out 400 days ago" -- the exact accusation buildDormantAccountMessage exists to avoid. A
+   * sentence that does not claim a date is better than one that claims a wrong one.
+   */
+  days?: number;
 }): string {
   if (params.step === "first_reminder") {
     return [
-      `Your onboarding email went out ${params.days} days ago and the portal has not seen you yet.`,
+      params.days === undefined
+        ? "Your onboarding email has gone out and the portal has not seen you yet."
+        : `Your onboarding email went out ${params.days} days ago and the portal has not seen you yet.`,
       "",
       "Signing in once is all this needs — it is what unlocks your profile, your papers and the calendar.",
     ].join("\n");
   }
   return [
-    `Still nothing on your account ${params.days} days after your onboarding email — this is the second reminder.`,
+    params.days === undefined
+      ? "Still nothing on your account since your onboarding email — this is the second reminder."
+      : `Still nothing on your account ${params.days} days after your onboarding email — this is the second reminder.`,
     "",
     "Signing in once clears it. If something is in the way (no access, wrong address, wrong person), say so here and I will sort it out rather than keep asking.",
   ].join("\n");
@@ -2031,13 +2056,78 @@ export class AdminBotService {
       });
     }
     this.recordAudit({
+      // The account that typed this, not the account it is about. These used to be the same field:
+      // the event stamped the subject as the actor, so an admin correcting somebody else's record
+      // landed on that member's row and read back as them editing their own profile. It is the
+      // same conflation `field_provenance` exists to resolve, and it is what made the Activity
+      // column credit profile edits to members who had never signed in.
+      //
+      // The importer has no actor, so it still falls back to the subject -- which is what
+      // bulkMemberWriteSeconds needs to keep recognising a whole-roster pass.
       type: "lab_member.upserted",
-      actor: member.id,
+      actor: origin.actor ?? member.id,
       details: {
         privilege_level: privilegeLevel,
+        // Now that `actor` means "who changed it", the subject needs somewhere of its own to live;
+        // without this an admin edit would say who typed but not whose record it was.
+        member_id: stored.id,
+        source: origin.source ?? "import",
       },
     });
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * The publication digest for a date range: what would be sent, and what would not.
+   *
+   * A preview and the send read the same function, so the tab cannot show one list and the email
+   * carry another. `excluded` is returned in full rather than counted, because the honest answer
+   * to "why is this digest so short" is almost always a list of titles with no date on them --
+   * see workflows/papers/publication-list.ts for why the roster's acceptance fields cannot be the
+   * date and the arXiv id is.
+   */
+  collectPublicationMailing(params: { fromIso: string; toIso: string }): AdminBotServiceResponse<{
+    from: string;
+    to: string;
+    publications: Publication[];
+    excluded: PublicationExclusion[];
+    undated_count: number;
+    subject: string;
+    body: string;
+  }> {
+    const fromIso = params.fromIso.trim();
+    const toIso = params.toIso.trim();
+    if (!ISO_DAY_RE.test(fromIso) || !ISO_DAY_RE.test(toIso)) {
+      return serviceError(400, "from and to must be YYYY-MM-DD dates");
+    }
+    if (fromIso > toIso) {
+      return serviceError(400, "from must not be after to");
+    }
+    const { included, excluded } = selectPublications({
+      papers: this.store.listPapers(),
+      fromIso,
+      toIso,
+    });
+    const undatedCount = excluded.filter((entry) => entry.reason === "no_date").length;
+    const digest = renderPublicationDigest({
+      publications: included,
+      undatedCount,
+      fromIso,
+      toIso,
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        from: fromIso,
+        to: toIso,
+        publications: included,
+        excluded,
+        undated_count: undatedCount,
+        subject: digest.subject,
+        body: digest.body,
+      },
+    };
   }
 
   listLabMembers(): AdminBotServiceResponse<{ members: AdminBotLabMemberView[] }> {
@@ -2818,20 +2908,12 @@ export class AdminBotService {
       if (member.status === "alumni" || member.status === "external") {
         continue;
       }
-      // Columns R and S of the lab spreadsheet, and nothing else. `privilege_level` was the first
-      // attempt at "full member" and is not that question: the roster marks nearly everyone the
-      // lab has ever collaborated with as `member`, so it swept in alumni, one-paper coauthors and
-      // two visiting professors. Somebody who is in neither column is deliberately untouched --
-      // they are not somebody this lab plans its term around.
-      const batch = member.test_onboard_batch;
-      const addressable =
-        ((typeof batch === "number" && batch >= 1 && batch <= 3) ||
-          adminBotIsFullMemberType(member.member_type)) &&
-        // Alumni are out even when they carry a batch. The spreadsheet keeps the batch after
-        // somebody leaves, so reading it alone sent a message about next term's submissions to
-        // three people who have already gone.
-        !adminBotIsAlumniType(member.member_type);
-      if (!addressable) {
+      // Columns R and S of the lab spreadsheet, and nothing else -- see the helper for why
+      // `privilege_level` is not this question and why alumni are out even when they carry a
+      // batch. Shared with the onboarding ladder rather than copied: "has the lab already emailed
+      // this person" is one question, and two copies of it drifting is how one sweep starts
+      // chasing somebody the other has decided is out of scope.
+      if (!adminBotHasBeenOnboardEmailed(member)) {
         continue;
       }
       if (headProfessor && member.id === headProfessor) {
@@ -3382,6 +3464,11 @@ export class AdminBotService {
   updateOwnProfile(
     memberId: string,
     input: Record<string, unknown>,
+    // Defaults to the member writing their own record, which is what this route is for. The route
+    // overrides it on a "view as" session, where the same form is being filled in by an admin --
+    // see profileWriteOrigin in the server. The whitelist of editable fields is unchanged either
+    // way: impersonation grants the admin the member's reach, not more than it.
+    origin: AdminBotWriteOrigin = { source: "member", actor: memberId },
   ): AdminBotServiceResponse<AdminBotLabMember> {
     const existing = this.store.getLabMember(memberId);
     if (!existing) {
@@ -3407,7 +3494,7 @@ export class AdminBotService {
       id: memberId,
       privilege_level: existing.privilege_level,
     };
-    const saved = this.upsertLabMember(merged, { source: "member", actor: memberId });
+    const saved = this.upsertLabMember(merged, origin);
     // The member has just answered; anything still chasing them for an answer they have now given
     // is noise. Retracted here rather than only on the next sweep so the bell, the dashboard card
     // and the toast all go quiet on the save that fixed them, which is when the member is looking.
@@ -6920,11 +7007,12 @@ export class AdminBotService {
    * going forward, but they start empty, and a page that showed zeros for a lab that has been
    * signing in for a month would be worse than one that showed a floor and said so.
    *
-   * `lab_member.upserted` is deliberately read as the member's *own* edit. The event records the
-   * subject member as the actor, so an admin correcting somebody else's record lands on the
-   * subject's row -- which overcounts self-edits for exactly the rows an admin has touched. It is
-   * the same conflation `field_provenance` exists to resolve, and the self_filled_field_count
-   * column next to this one is the number to trust when the two disagree.
+   * `lab_member.upserted` is bucketed by whoever *made* the change, which is what the event now
+   * records: an admin correcting somebody else's record counts as an edit by that admin and does
+   * not appear on the subject's row at all. Rows written before that fix still carry the subject
+   * as the actor, so history reads as it always did -- the correction applies going forward, and
+   * the self_filled_field_count column next to this one stays the number to trust when the two
+   * disagree.
    */
   private memberActivityCounts(): Map<
     string,
@@ -6983,19 +7071,29 @@ export class AdminBotService {
    * correcting a handful of records, and that stays well under it.
    */
   private bulkMemberWriteSeconds(): Set<string> {
-    const actorsBySecond = new Map<string, Set<string>>();
+    const subjectsBySecond = new Map<string, Set<string>>();
     for (const event of this.store.listAuditEvents()) {
-      if (event.type !== "lab_member.upserted" || !event.actor) {
+      if (event.type !== "lab_member.upserted") {
+        continue;
+      }
+      // Distinct *subjects*, not distinct actors. The two were interchangeable while the event
+      // stamped the subject as its actor; now that an admin's own id goes in `actor`, counting
+      // actors would read one admin's burst of corrections as a single writer and, worse, would
+      // stop recognising an import that ever grows an actor of its own. `details.member_id` is
+      // only on rows written since that change, so fall back to the actor for older ones.
+      const subject =
+        typeof event.details?.member_id === "string" ? event.details.member_id : event.actor;
+      if (!subject) {
         continue;
       }
       const second = event.timestamp.slice(0, 19);
-      const actors = actorsBySecond.get(second) ?? new Set<string>();
-      actors.add(event.actor);
-      actorsBySecond.set(second, actors);
+      const subjects = subjectsBySecond.get(second) ?? new Set<string>();
+      subjects.add(subject);
+      subjectsBySecond.set(second, subjects);
     }
     const bulk = new Set<string>();
-    for (const [second, actors] of actorsBySecond) {
-      if (actors.size >= BULK_MEMBER_WRITE_THRESHOLD) {
+    for (const [second, subjects] of subjectsBySecond) {
+      if (subjects.size >= BULK_MEMBER_WRITE_THRESHOLD) {
         bulk.add(second);
       }
     }
@@ -8923,10 +9021,21 @@ export class AdminBotService {
    */
   async chaseDisengagedMembers(
     actor: string,
-    options: { nowIso?: string } = {},
+    options: {
+      nowIso?: string;
+      /**
+       * How the onboarding ladder runs this pass. Defaults to the current catch-up round.
+       *
+       * Injectable so the sweep's pace and reach are testable at values other than whichever round
+       * is live -- the same reasoning `OnboardingFollowUpPlan` already gives for being a shape
+       * rather than the shipped constant's literal type. Ending the round means deleting the
+       * default, not rewriting the tests that pin the standing behaviour.
+       */
+      followUp?: { plan?: OnboardingFollowUpPlan; claimAlreadyEmailed?: boolean };
+    } = {},
   ): Promise<
     AdminBotServiceResponse<{
-      reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days: number }>;
+      reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days?: number }>;
       escalated: Array<{ member_id: string; notifications: number }>;
       dormant: string[];
       skipped: AdminBotMemberNudgeSkip[];
@@ -8934,16 +9043,24 @@ export class AdminBotService {
   > {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
     const nowIso = now.toISOString();
+    const followUpPlan = options.followUp?.plan ?? ADMINBOT_ONBOARDING_CATCH_UP_ROUND.plan;
+    const claimAlreadyEmailed =
+      options.followUp?.claimAlreadyEmailed ??
+      ADMINBOT_ONBOARDING_CATCH_UP_ROUND.claimAlreadyEmailed;
     const welcomes = this.latestOnboardingWelcomeByMember();
     const ledger = this.nudgeLedgerIndex();
-    const reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days: number }> = [];
+    const reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days?: number }> = [];
     const escalated: Array<{ member_id: string; notifications: number }> = [];
     const dormant: string[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const stamps: Array<{ domain: AdminBotNudgeDomain; subjectId: string; memberId: string }> = [];
 
     for (const member of this.store.listLabMembers()) {
-      if (!isChaseableMember(member)) {
+      // Widened for the catch-up round: `adminBotDormantChaseMemberTypes` is `["full"]`, so a
+      // member carrying a Test Onboard batch but not the `full` token is outside this sweep
+      // entirely -- and those are half the people the round is for.
+      const emailed = claimAlreadyEmailed && adminBotHasBeenOnboardEmailed(member);
+      if (!isChaseableMember(member) && !emailed) {
         continue;
       }
       const lastLoginAt = this.lastLoginOf(member);
@@ -8951,15 +9068,17 @@ export class AdminBotService {
       const welcomedAt = welcomes.get(member.id);
       let laddered = false;
 
-      if (welcomedAt) {
+      if (welcomedAt || emailed) {
         const entry = ledger.get(`onboarding_followup|${member.id}|${member.id}`);
         const decision = planOnboardingFollowUp({
-          welcomedAt,
+          ...(welcomedAt ? { welcomedAt } : {}),
+          alreadyEmailed: emailed,
           ...(lastLoginAt ? { lastLoginAt } : {}),
           ...(lastEditAt ? { lastSelfEditAt: lastEditAt } : {}),
           sentCount: entry?.nudge_count ?? 0,
           ...(entry?.last_nudged_at ? { lastNudgedAt: entry.last_nudged_at } : {}),
           now,
+          plan: followUpPlan,
         });
         // "Still running" is due-now or not-yet, but not finished and not engaged: those two mean
         // the ladder has let go, and the standing reminder may take the member back.
@@ -8975,12 +9094,17 @@ export class AdminBotService {
             memberId: member.id,
           });
         } else if (decision.due && decision.step !== "escalate") {
-          const days = daysBetween(welcomedAt, now);
+          // Undefined when no welcome was ever recorded -- the message then drops the day count
+          // rather than inventing one. See buildOnboardingFollowUpMessage.
+          const days = welcomedAt ? daysBetween(welcomedAt, now) : undefined;
           const sent = await this.sendMemberNudge(
             {
               channel: "slack",
               recipient_member_ids: [member.id],
-              message: buildOnboardingFollowUpMessage({ step: decision.step, days }),
+              message: buildOnboardingFollowUpMessage({
+                step: decision.step,
+                ...(days === undefined ? {} : { days }),
+              }),
               kind: "nudge",
               title:
                 decision.step === "first_reminder"
@@ -9001,7 +9125,13 @@ export class AdminBotService {
           // Stamped whether or not Slack took it, for the reason chaseOpenOnboarding gives: the
           // notification was filed either way, and a member with no linked Slack must not be
           // re-chased every night because the DM never landed.
-          reminded.push({ member_id: member.id, step: decision.step, days });
+          reminded.push({
+            member_id: member.id,
+            step: decision.step,
+            // Omitted rather than zeroed when unknown: a report saying "0 days" would read as
+            // "emailed today", which is the opposite of why these people are being chased.
+            ...(days === undefined ? {} : { days }),
+          });
           stamps.push({
             domain: "onboarding_followup",
             subjectId: member.id,

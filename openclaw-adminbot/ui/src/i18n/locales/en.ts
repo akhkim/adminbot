@@ -479,6 +479,7 @@ export const en: TranslationMap = {
     adminbotConferencePapers: "Find Interesting Papers",
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
+    adminbotMailingList: "Mailing List",
     adminbotDeadlines: "Deadlines",
     adminbotOpportunities: "Opportunities",
     activity: "Activity",
@@ -533,6 +534,7 @@ export const en: TranslationMap = {
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
     adminbotGrantReport:
       "Every paper mapped to a safety area, and the track record behind each ask.",
+    adminbotMailingList: "Mail our publications for a date range to one address.",
     adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
     activity: "Browser-local tool activity summaries.",
@@ -1480,6 +1482,45 @@ export const en: TranslationMap = {
     },
   },
 
+  impersonation: {
+    viewAs: "View as",
+    viewAsTitle: "Open a session that sees the lab exactly as {name} does",
+    banner: "You are viewing the lab as {member}. Anything you change is recorded as {admin}.",
+    back: "Back to my account",
+    unreachable: "AdminBot is unreachable, so the view could not be opened.",
+    refused:
+      "That view could not be opened. Only admins can view as another member, and not as themselves.",
+  },
+  mailingList: {
+    title: "Publication mailing list",
+    sub: "Every publication in our records for a date range, mailed to one address.",
+    from: "From",
+    to: "To",
+    recipient: "Send to",
+    preview: "Preview",
+    previewing: "Reading…",
+    empty: "Choose a range and press Preview to see what would be sent.",
+    summary: "{count} publications between {from} and {to}.",
+    noneInRange: "No publications in our records fall in this range.",
+    noAuthors: "Authors not recorded",
+    undated: "{count} papers left out for having no date",
+    undatedWhy:
+      "We date a paper from its arXiv id, or from its accepted year. A paper with neither has no date we can place in a range, so it is not in the email.",
+    showEmail: "Show the email as it will be sent",
+    send: "Send to {email}",
+    sending: "Sending…",
+    sent: "Sent {count} publications to {email}.",
+    source: {
+      arxiv: "arXiv",
+      accepted_year: "accepted year",
+    },
+    error: {
+      signIn: "Sign in as an admin to use the mailing list.",
+      forbidden: "The mailing list is admin-only.",
+      unreachable: "AdminBot is unreachable at {url}.",
+      failed: "The mailing list request failed.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",

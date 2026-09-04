@@ -11,6 +11,8 @@ import type {
 import { adminBotMemberRoles } from "../../contracts/actions.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
+import { belongsOnSurface } from "../members/surface-membership.js";
+import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
 
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
 // detected per-credential without a migration; verify re-derives with the stored params.
@@ -45,6 +47,15 @@ const RATE_LIMIT_MAX_FAILURES = 10;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const APPROVAL_EMAIL_MAX_ATTEMPTS = 3;
 
+// A "view as" session is for answering a question, not for working in, so it expires on its own
+// well before a normal session would. Short enough that a forgotten tab stops being an open door,
+// long enough to walk through a member's whole view without it dying mid-click.
+const IMPERSONATION_TTL_MS = 30 * 60 * 1000;
+
+// How many members one backfill call grants. Small because each grant mails a real person: an
+// admin should be able to run one batch, look at what arrived, and decide whether to continue.
+const DEFAULT_CALENDAR_BACKFILL_LIMIT = 25;
+
 export type AdminBotAuthSessionPayload = {
   session_token: string;
   expires_at: string;
@@ -57,6 +68,8 @@ export type AdminBotAuthSessionPayload = {
 export type AdminBotAuthSessionView = {
   expires_at: string;
   member: AdminBotLabMember;
+  /** Present only while an admin is viewing the lab as this member. */
+  impersonated_by?: { id: string; name: string };
   gateway?: { url: string };
 };
 
@@ -64,6 +77,14 @@ export type AdminBotMemberPrincipal = {
   kind: "member";
   member: AdminBotLabMember;
   session: AdminBotAuthSession;
+  /**
+   * The admin behind a "view as" session, resolved fresh on every request. Absent on a normal one.
+   *
+   * `member` stays the member being viewed -- reads must see what they see -- so this is the field
+   * anything recording *who did it* has to consult. `principalActor` in the server is the single
+   * place that decides, so route handlers do not each have to remember.
+   */
+  impersonator?: AdminBotLabMember;
 };
 
 // `pending_approval` lets the login route render its distinct 403 body while every other
@@ -99,7 +120,7 @@ export type AdminBotAuthServiceOptions = {
   // Best-effort side effect fired (not awaited) when a registration is approved, granting the
   // new member's account email view access to the lab calendar. A rejection is audited but never
   // fails or delays the approval response — see approveRegistration.
-  inviteToLabCalendar?: (email: string) => Promise<void>;
+  inviteToLabCalendar?: CalendarInviteRunner;
   // Best-effort side effect fired (not awaited) when a registration is approved, telling the new
   // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
   // fails or delays the approval response.
@@ -171,7 +192,7 @@ const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week"]);
 export class AdminBotAuthService {
   private readonly store: AdminBotServiceStore;
   private readonly createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
-  private readonly inviteToLabCalendar?: (email: string) => Promise<void>;
+  private readonly inviteToLabCalendar?: CalendarInviteRunner;
   private readonly sendAccountApprovedEmail?: (params: {
     email: string;
     name?: string;
@@ -420,7 +441,100 @@ export class AdminBotAuthService {
     this.store.touchSession(tokenHash, nowIso);
     // Opportunistic cleanup of expired rows on the read path so sessions do not accumulate.
     this.store.pruneSessionsBefore(nowIso);
-    return { kind: "member", member, session };
+    if (!session.impersonated_by) {
+      return { kind: "member", member, session };
+    }
+    // A "view as" session is only as good as the admin behind it. Resolving them on every request
+    // rather than trusting the row means demoting or deleting an admin ends their impersonated
+    // sessions at once, instead of leaving a token that outlives their own access.
+    const impersonator = this.store.getLabMember(session.impersonated_by);
+    if (!impersonator || impersonator.privilege_level !== "admin") {
+      this.store.revokeSession(tokenHash, nowIso);
+      return undefined;
+    }
+    return { kind: "member", member, session, impersonator };
+  }
+
+  /**
+   * Open a session that sees the lab as `memberId` sees it.
+   *
+   * A real session row for the target member, not a flag on the admin's own: every route, access
+   * check and privilege gate then reads the member being viewed without knowing impersonation
+   * exists, which is the only way the view is actually theirs rather than an approximation of it.
+   * An admin impersonating a trial member loses admin routes for the duration -- that is the
+   * feature working, not a bug.
+   *
+   * The admin's own session is untouched and still valid, so returning is a matter of dropping
+   * this token rather than signing in again.
+   *
+   * Four refusals, each closing a way this becomes an escalation rather than a debugging tool:
+   *
+   *   - Only a member principal who is an admin *right now*. In particular not the service
+   *     principal: that token is shared by every agent tool call, and letting it mint a session as
+   *     any member would turn one shared secret into the whole roster.
+   *   - No impersonating yourself, which would only produce a confusing second session.
+   *   - No nesting. Impersonating onward from an impersonated session would make the chain of who
+   *     is really acting depend on rows that have already expired by the time anyone reads them.
+   *   - Nothing for a member who does not exist.
+   *
+   * Impersonating another admin is allowed: it grants nothing the caller does not already hold,
+   * and refusing it would block the case this is most often needed for.
+   */
+  startImpersonation(params: {
+    admin: AdminBotMemberPrincipal;
+    memberId: string;
+  }): AdminBotAuthResponse<AdminBotAuthSessionPayload> {
+    const { admin, memberId } = params;
+    if (admin.member.privilege_level !== "admin") {
+      return authError(403, "admin privileges required");
+    }
+    if (admin.session.impersonated_by) {
+      return authError(403, "cannot impersonate from an impersonated session");
+    }
+    if (admin.member.id === memberId) {
+      return authError(400, "cannot impersonate yourself");
+    }
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return authError(404, "member not found");
+    }
+    const { payload } = this.startSession(member, {
+      by: admin.member.id,
+      ttlMs: IMPERSONATION_TTL_MS,
+    });
+    // Audited on the admin, like every other governance action, and carrying the subject -- so
+    // "who was looking at my account, and when" is answerable from the trail alone.
+    this.audit("auth.impersonation_started", admin.member.id, {
+      member_id: member.id,
+      member_name: member.name,
+      expires_at: payload.expires_at,
+    });
+    // Deliberately no `sessionToken` on the response, which is what would make the route set the
+    // session cookie. The token goes back in the body for the caller to hold as a bearer, leaving
+    // the admin's own cookie exactly as it was -- so the way back does not depend on the very
+    // session that is about to be revoked.
+    return { ok: true, status: 200, payload };
+  }
+
+  /**
+   * End a "view as" session.
+   *
+   * Distinct from `logout` so the audit trail says which of the two happened, and so a stray call
+   * on a normal session cannot sign a member out of their own account by accident.
+   */
+  endImpersonation(rawToken: string): AdminBotAuthResponse<{ ended: true }> {
+    const tokenHash = hashToken(rawToken);
+    const session = this.store.getSession(tokenHash);
+    if (!session?.impersonated_by) {
+      return authError(400, "not an impersonated session");
+    }
+    if (!session.revoked_at) {
+      this.store.revokeSession(tokenHash, this.now().toISOString());
+      this.audit("auth.impersonation_ended", session.impersonated_by, {
+        member_id: session.member_id,
+      });
+    }
+    return { ok: true, status: 200, payload: { ended: true } };
   }
 
   logout(rawToken: string): AdminBotAuthResponse<{ logged_out: true }> {
@@ -715,6 +829,126 @@ export class AdminBotAuthService {
     throw lastError;
   }
 
+  /**
+   * Grant lab calendar access to everybody who should already have had it.
+   *
+   * The repair half of the invite. The approval-time invite is fire-and-forget by design, so a
+   * deployment with `ADMINBOT_LAB_EMAIL` unset -- which is what this lab ran for four months --
+   * approves members, fails every invite, and has no way to catch up afterwards. Fixing the
+   * variable does nothing for the people already approved; this is what reaches them.
+   *
+   * Who: `belongsOnSurface(member, "lab_calendar")`, the same predicate that decides who stays on
+   * the standing invite. Reusing it rather than writing a second rule means "who is on the lab
+   * calendar" keeps one answer.
+   *
+   * Who not: anybody with an `auth.calendar_invite_sent` already in the trail. The ACL write is
+   * idempotent, but the invite emails Google sends are not, and re-mailing a hundred people who
+   * were correctly onboarded is its own incident.
+   *
+   * `dryRun` is the default and `limit` is small on purpose. Each grant mails a real person, so
+   * this is a walk an admin takes in batches while watching what lands, not a button that mails
+   * the roster.
+   */
+  async backfillLabCalendarInvites(params: {
+    actorId: string;
+    dryRun?: boolean;
+    limit?: number;
+  }): Promise<
+    AdminBotAuthResponse<{
+      granted: Array<{ id: string; name: string; email: string }>;
+      failed: Array<{ id: string; name: string; email: string; error: string }>;
+      already_invited: number;
+      no_address: Array<{ id: string; name: string }>;
+      remaining: number;
+      dry_run: boolean;
+    }>
+  > {
+    if (!this.inviteToLabCalendar) {
+      return authError(503, "no calendar invite runner is configured");
+    }
+    const dryRun = params.dryRun !== false;
+    const limit = Math.max(1, Math.min(params.limit ?? DEFAULT_CALENDAR_BACKFILL_LIMIT, 200));
+    const invited = new Set<string>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "auth.calendar_invite_sent") {
+        continue;
+      }
+      const memberId = event.details?.member_id;
+      if (typeof memberId === "string") {
+        invited.add(memberId);
+      }
+    }
+    const noAddress: Array<{ id: string; name: string }> = [];
+    const candidates: Array<{ id: string; name: string; email: string }> = [];
+    for (const member of this.store.listLabMembers()) {
+      if (!belongsOnSurface(member, "lab_calendar") || invited.has(member.id)) {
+        continue;
+      }
+      // The Google account first: an ACL is granted to a Google identity, and the professional
+      // address on file is often a departmental alias that is not one.
+      const email = (
+        member.calendar_email ??
+        member.email ??
+        member.correspondence_email ??
+        ""
+      ).trim();
+      if (!email) {
+        noAddress.push({ id: member.id, name: member.name });
+        continue;
+      }
+      candidates.push({ id: member.id, name: member.name, email });
+    }
+    const batch = candidates.slice(0, limit);
+    const granted: Array<{ id: string; name: string; email: string }> = [];
+    const failed: Array<{ id: string; name: string; email: string; error: string }> = [];
+    if (!dryRun) {
+      for (const candidate of batch) {
+        try {
+          // Awaited, unlike the approval-time invite: this call *is* the request, so a failure
+          // belongs in its response rather than in a log the caller never sees. Sequential for the
+          // same reason -- a hundred parallel ACL writes is how a quota gets spent.
+          // Silently, unlike the onboarding invite. This grants access somebody should already
+          // have had, so Google's share notification would announce a months-old oversight to a
+          // roster that includes people who left the lab a year ago. The access lands the same
+          // way; only the mail is suppressed. See CalendarInviteOptions.
+          await this.inviteToLabCalendar(candidate.email, { sendNotifications: false });
+          this.audit("auth.calendar_invite_sent", params.actorId, {
+            member_id: candidate.id,
+            email: candidate.email,
+            backfill: true,
+          });
+          granted.push(candidate);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.audit("auth.calendar_invite_failed", params.actorId, {
+            member_id: candidate.id,
+            email: candidate.email,
+            error: message,
+            backfill: true,
+          });
+          failed.push({ ...candidate, error: message });
+          // A missing variable or a dead credential fails identically for everybody, so there is
+          // nothing to learn from the other 154 attempts and a real cost to making them.
+          if (failed.length === 1 && granted.length === 0) {
+            break;
+          }
+        }
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        granted: dryRun ? batch : granted,
+        failed,
+        already_invited: invited.size,
+        no_address: noAddress,
+        remaining: Math.max(0, candidates.length - batch.length),
+        dry_run: dryRun,
+      },
+    };
+  }
+
   // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
   // and failure are both audited so a failed invite can be retried/investigated later.
   private inviteNewMemberToLabCalendar(email: string, memberId: string, decidedBy: string): void {
@@ -816,21 +1050,37 @@ export class AdminBotAuthService {
     return {
       expires_at: principal.session.expires_at,
       member: principal.member,
+      // The one place the illusion is deliberately broken. Everything else about an impersonated
+      // session reads as the member so the view is honest, but a browser that cannot tell it is
+      // impersonating cannot offer a way back -- and an admin who forgets which account they are
+      // in is how a "view as" ends with something filed under the wrong name.
+      ...(principal.impersonator
+        ? {
+            impersonated_by: {
+              id: principal.impersonator.id,
+              name: principal.impersonator.name,
+            },
+          }
+        : {}),
       ...(this.gatewayUrl ? { gateway: { url: this.gatewayUrl } } : {}),
     };
   }
 
-  private startSession(member: AdminBotLabMember): { payload: AdminBotAuthSessionPayload } {
+  private startSession(
+    member: AdminBotLabMember,
+    impersonation?: { by: string; ttlMs: number },
+  ): { payload: AdminBotAuthSessionPayload } {
     const rawToken = randomBytes(SESSION_TOKEN_BYTES).toString("base64url");
     const nowMs = this.now().getTime();
     const createdIso = new Date(nowMs).toISOString();
-    const expiresIso = new Date(nowMs + this.sessionTtlMs).toISOString();
+    const expiresIso = new Date(nowMs + (impersonation?.ttlMs ?? this.sessionTtlMs)).toISOString();
     this.store.saveSession({
       token_hash: hashToken(rawToken),
       member_id: member.id,
       created_at: createdIso,
       expires_at: expiresIso,
       last_seen_at: createdIso,
+      ...(impersonation ? { impersonated_by: impersonation.by } : {}),
     });
     return {
       payload: {

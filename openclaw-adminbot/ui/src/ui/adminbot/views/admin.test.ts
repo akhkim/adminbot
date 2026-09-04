@@ -276,9 +276,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
         onDeleteMember: (target) => deleted.push(target.id),
       }),
     );
-    const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="member-delete-pat"]',
-    );
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="member-delete-pat"]');
     expect(button).not.toBeNull();
 
     globalThis.confirm = () => false;
@@ -1438,5 +1436,52 @@ describe("renderAdminBot members panel — lenient saves and autosave", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("renderAdminBot members panel — view as", () => {
+  const roster: AdminBotLabMember[] = [
+    ...members,
+    member({ id: "ada", name: "Ada Lovelace", email: "ada@lab.co", privilege_level: "member" }),
+  ];
+
+  function draw(overrides: Partial<AdminBotProps> = {}) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        signedInMemberId: "pat",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+        ...overrides,
+      }),
+    );
+  }
+
+  function viewAsButtons(container: HTMLElement): HTMLButtonElement[] {
+    return [...container.querySelectorAll<HTMLButtonElement>("tbody tr button")].filter(
+      (button) => button.textContent?.trim() === "View as",
+    );
+  }
+
+  it("offers the action on other members' rows only", () => {
+    const container = draw({ onViewAsMember: () => undefined });
+    const buttons = viewAsButtons(container);
+    // One button, on Ada's row -- viewing as yourself is the one case the service refuses outright,
+    // so the row that would do it does not offer it.
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.closest("tr")?.textContent).toContain("Ada Lovelace");
+  });
+
+  it("hands back the member whose row was clicked", () => {
+    const clicked: string[] = [];
+    const container = draw({ onViewAsMember: (entry) => clicked.push(entry.id) });
+    viewAsButtons(container)[0]?.click();
+    expect(clicked).toEqual(["ada"]);
+  });
+
+  it("leaves the action off the page entirely when the host cannot open one", () => {
+    // No callback is how a non-admin -- or an admin already inside somebody else's view -- sees
+    // this panel. Absent rather than disabled: a button that cannot act is a question the page
+    // has no way to answer.
+    expect(viewAsButtons(draw())).toHaveLength(0);
   });
 });

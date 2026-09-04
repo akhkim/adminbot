@@ -6,6 +6,7 @@
 // person, and the escalation arriving on the queue the professor's page already reads.
 
 import { describe, expect, it } from "vitest";
+import { adminBotOnboardingFollowUpPlan } from "../contracts/actions.js";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -54,7 +55,23 @@ function welcome(service: AdminBotService, at = WELCOME_AT) {
   Object.assign(row as { timestamp: string }, { timestamp: at });
 }
 
+/**
+ * A pass at the lab's *standing* pace and reach.
+ *
+ * Stated rather than defaulted, because the shipped default is whichever temporary catch-up round
+ * is live (ADMINBOT_ONBOARDING_CATCH_UP_ROUND). These cases are about the ladder's own mechanics --
+ * the five-business-day gate, the ledger advancing the sequence, the two sweeps not both firing --
+ * and pinning them to the standing values is what lets a round be switched on and off without
+ * rewriting them.
+ */
 const run = (service: AdminBotService, nowIso: string) =>
+  service.chaseDisengagedMembers("service", {
+    nowIso,
+    followUp: { plan: adminBotOnboardingFollowUpPlan, claimAlreadyEmailed: false },
+  });
+
+/** A pass at the current catch-up round's pace and reach: the shipped default. */
+const runRound = (service: AdminBotService, nowIso: string) =>
   service.chaseDisengagedMembers("service", { nowIso });
 
 describe("the onboarding ladder", () => {
@@ -122,7 +139,11 @@ describe("the onboarding ladder", () => {
       for (let step = 0; step < stopAfter; step += 1) {
         await run(service, days[step]!);
       }
-      store.appendLoginEvent({ id: `l-${stopAfter}`, member_id: "ada", at: "2026-03-13T09:00:00.000Z" });
+      store.appendLoginEvent({
+        id: `l-${stopAfter}`,
+        member_id: "ada",
+        at: "2026-03-13T09:00:00.000Z",
+      });
       const after = unwrap(await run(service, "2026-04-30T09:00:00.000Z"));
       expect(after.reminded).toEqual([]);
       expect(after.escalated).toEqual([]);
@@ -228,5 +249,108 @@ describe("who the sweep is for", () => {
     const result = unwrap(await run(service, FIRST_DUE));
     expect(result.reminded).toEqual([]);
     expect(result.dormant).toEqual(["ada"]);
+  });
+});
+
+// TEMPORARY -- the current catch-up round. When the round ends and
+// ADMINBOT_ONBOARDING_CATCH_UP_ROUND is deleted, this block goes with it; the block above is the
+// standing behaviour and stays.
+describe("the catch-up round", () => {
+  it("starts an already-emailed member at the Slack reminder, with no welcome on file", async () => {
+    const { service } = lab();
+    // No welcome recorded: the email went out before the audit trail existed, which is the state
+    // most of the roster is in. The standing ladder cannot see these people at all.
+    expect(unwrap(await run(service, WELCOME_AT)).reminded).toEqual([]);
+    expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toMatchObject([
+      { member_id: "ada", step: "first_reminder" },
+    ]);
+  });
+
+  it("does not claim to know when an email it has no record of went out", async () => {
+    const { service, store } = lab();
+    await runRound(service, WELCOME_AT);
+    const [notification] = store.listMemberNotifications("ada");
+    // Deriving a number from created_at would have produced "your onboarding email went out 400
+    // days ago" -- an accusation about a date nobody wrote down.
+    expect(notification?.body).toContain("Your onboarding email has gone out");
+    expect(notification?.body).not.toMatch(/\d+ days ago/u);
+  });
+
+  it("still waits when the welcome IS on file — two business days, not five", async () => {
+    const { service } = lab();
+    welcome(service);
+    // The recorded date still wins over the roster flag: somebody the system emailed on Monday is
+    // not chased the same afternoon for being a full member. The round only shortens the wait.
+    // Tuesday is one business day in.
+    expect(unwrap(await runRound(service, "2026-03-03T09:00:00.000Z")).reminded).toEqual([]);
+    // Wednesday is two.
+    expect(unwrap(await runRound(service, "2026-03-04T09:00:00.000Z")).reminded).toMatchObject([
+      { step: "first_reminder" },
+    ]);
+  });
+
+  it("counts the first gap in business days, so it cannot open on a weekend", async () => {
+    const { service } = lab();
+    // Welcomed Friday 6 March. Two calendar days is Sunday; two business days is Tuesday.
+    welcome(service, "2026-03-06T09:00:00.000Z");
+    expect(unwrap(await runRound(service, "2026-03-08T09:00:00.000Z")).reminded).toEqual([]);
+    expect(unwrap(await runRound(service, "2026-03-10T09:00:00.000Z")).reminded).toMatchObject([
+      { step: "first_reminder" },
+    ]);
+  });
+
+  it("leaves two days between steps instead of three and five", async () => {
+    const { service } = lab();
+    await runRound(service, "2026-03-02T09:00:00.000Z");
+    // Second reminder at +2, not +3.
+    expect(unwrap(await runRound(service, "2026-03-03T09:00:00.000Z")).reminded).toEqual([]);
+    expect(unwrap(await runRound(service, "2026-03-04T09:00:00.000Z")).reminded).toMatchObject([
+      { step: "second_reminder" },
+    ]);
+    // Escalation at +2 again, not +5.
+    expect(unwrap(await runRound(service, "2026-03-05T09:00:00.000Z")).escalated).toEqual([]);
+    expect(unwrap(await runRound(service, "2026-03-06T09:00:00.000Z")).escalated).toMatchObject([
+      { member_id: "ada", notifications: 2 },
+    ]);
+  });
+
+  it("reaches a Test Onboard batch member the standing sweep never touches", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({
+        id: "khai",
+        name: "Khai",
+        email: "khai@lab.test",
+        // No `full` token, so adminBotDormantChaseMemberTypes (["full"]) excludes them entirely.
+        test_onboard_batch: 2,
+        receives_nudges: true,
+        slack_user_id: "U-KHAI",
+      }),
+    );
+    expect(unwrap(await run(service, WELCOME_AT)).reminded).toEqual([]);
+    expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toMatchObject([
+      { member_id: "khai", step: "first_reminder" },
+    ]);
+  });
+
+  it("leaves alumni alone however the spreadsheet marks them", async () => {
+    const { service } = lab({ memberType: "alumni, full" });
+    // The batch and the `full` token both survive somebody leaving; having left wins over both.
+    expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toEqual([]);
+  });
+
+  it("stops on any sign of life, without a welcome to measure from", async () => {
+    const { service } = lab();
+    unwrap(
+      service.updateOwnProfile(
+        "ada",
+        { whatsapp: "+1 555 0100" },
+        { source: "member", actor: "ada" },
+      ),
+    );
+    // With no welcome date there is no "since" to test against, so the question becomes "have they
+    // ever been here" -- and they have.
+    expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toEqual([]);
   });
 });
