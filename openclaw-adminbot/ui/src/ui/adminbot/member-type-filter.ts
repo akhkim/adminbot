@@ -83,16 +83,22 @@ export function renderMemberTypeFilter(params: {
   const { selected, onChange, testIdPrefix, label } = params;
   const toggle = (value: string) =>
     onChange(
-      selected.includes(value)
-        ? selected.filter((entry) => entry !== value)
-        : [...selected, value],
+      selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value],
     );
+  // `chip-row` and `chip` are the app's own control vocabulary, and the two class names this
+  // group used to carry had no rules behind them anywhere in the stylesheet -- so the filter drew
+  // as a raw <fieldset>, browser border and all, beside toolbars that had been restyled around it.
+  // The checkbox stays inside the chip: it is what makes the state readable without colour, and
+  // `.chip input` is already spaced for it.
   return html`
-    <fieldset class="profile-overview__type-filter" data-testid=${`${testIdPrefix}-type-filter`}>
+    <fieldset
+      class="chip-row profile-overview__type-filter"
+      data-testid=${`${testIdPrefix}-type-filter`}
+    >
       <legend class="sr-only">${label}</legend>
       ${ADMINBOT_MEMBER_TYPE_FILTERS.map(
         (option) => html`
-          <label class="profile-overview__type-option">
+          <label class="chip profile-overview__type-option">
             <input
               type="checkbox"
               data-testid=${`${testIdPrefix}-type-${option.value}`}

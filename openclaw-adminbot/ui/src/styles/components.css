@@ -2197,22 +2197,28 @@
  * to be impossible to miss, not alarming.
  */
 /* The Mailing List tab's range/recipient row, and the preview under it. */
+/* Row, not column: `adminbot-form` stacks its fields by default, which is right for a composer
+   and wrong for two dates and an address that belong on one line. The fields keep the form's own
+   input styling either way -- that is what the class is here for. */
 .adminbot-mailing-list__controls {
-  display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: var(--space-3);
   align-items: flex-end;
   margin-bottom: var(--space-3);
 }
 
-.adminbot-mailing-list__controls label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+/* Both dates take their natural width; the recipient takes the rest of the line. */
+.adminbot-mailing-list__controls .adminbot-form__field {
+  flex: 0 0 auto;
+}
+
+/* The button sits on the baseline of the boxes rather than under its own invisible label. */
+.adminbot-mailing-list__preview-action {
+  margin: 0;
 }
 
 /* The recipient is the one field whose value is worth reading back at a glance before sending. */
-.adminbot-mailing-list__email {
+.adminbot-mailing-list__controls .adminbot-mailing-list__email {
   flex: 1 1 18rem;
 }
 
@@ -11536,4 +11542,37 @@ select.input:focus {
 
 .adminbot-time-availability__deadline-add-summary:hover {
   color: var(--accent, var(--text));
+}
+
+/* ── the member-type filter, on Active Papers and Profile Completeness ──────────────────────
+   A <fieldset> of checkboxes with two class names that had no rules behind them: it drew with the
+   browser's own fieldset border and default boxes, next to toolbars built out of the app's chips.
+   It is the same control it was -- checkboxes, because four options fit on screen at once and a
+   multi-select hides the state it is holding -- wearing the vocabulary the rest of the page uses. */
+
+.profile-overview__type-filter {
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.profile-overview__type-option {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Ticked reads as filled, not only as a ticked box: the row's job is to say at a glance how narrow
+   the filter currently is, and a checkmark at 12px does not carry that across four chips. */
+.profile-overview__type-option:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  color: var(--text);
+}
+
+.profile-overview__type-option:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
 }
