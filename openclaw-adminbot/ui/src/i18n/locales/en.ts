@@ -1285,6 +1285,8 @@ export const en: TranslationMap = {
     },
     tables: {
       jinesis: "Jinesis commitments",
+      hiddenOutsideWindow:
+        "{count} outside the dates above — page the chart to bring them into view.",
       other: "Outside your Jinesis commitments",
       commitment: "Commitment",
       availability: "Availability",

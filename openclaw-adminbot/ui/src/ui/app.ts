@@ -109,6 +109,7 @@ import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
+import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
 import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
@@ -705,6 +706,8 @@ export class OpenClawApp extends LitElement {
   // A month of weekly bins is the span most schedules are planned over: long enough to see a
   // commitment start, short enough that each bar is still a real week.
   @state() adminBotTimeAvailabilityRange: TimeAvailabilityRange = "month";
+  /** Set by the time chart as it pages; the commitment tables are filtered to it. */
+  @state() adminBotTimeChartWindow: TimeChartWindow | null = null;
   // Two independent drafts: the Jinesis form and the time-away form each keep their own, so
   // half-typed input in one survives working in the other.
   @state() adminBotTimeAwayDraft: TimeAvailabilityDraft = {

@@ -6,6 +6,8 @@ import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   allocationSegments,
+  chartWindowFor,
+  defaultWindowStart,
   renderTimeAllocationChart,
   type TimeAllocationAwayRange,
   type TimeAllocationTask,
@@ -132,5 +134,38 @@ describe("whole-day availability in chart intervals", () => {
     expect(week.awayDays).toBe(0);
     expect(week.total).toBe(25);
     expect(week.allocations[0]?.name).toBe("Course load");
+  });
+});
+
+// Which page the chart opens on. It used to open on the oldest row in the schedule, so anyone with
+// a term of history landed on a window that finished months ago -- and now that the commitment
+// tables follow this window, that would have been the list they landed on too.
+describe("defaultWindowStart", () => {
+  const now = Date.UTC(2026, 2, 2); // 2 March 2026
+  const task = (start: string, end: string): TimeAllocationTask => ({
+    ...(TASKS[0] as TimeAllocationTask),
+    start,
+    end,
+  });
+
+  it("opens on the window holding today when anything is still running", () => {
+    const start = defaultWindowStart([task("2025-09-01", "2026-06-30")], [], "week", now);
+    const window = chartWindowFor(start, "week");
+    expect(start <= "2026-03-02").toBe(true);
+    expect(window.end > "2026-03-02").toBe(true);
+  });
+
+  it("opens on today for a schedule that has not started yet", () => {
+    const start = defaultWindowStart([task("2026-08-01", "2026-09-01")], [], "month", now);
+    expect(start <= "2026-03-02").toBe(true);
+  });
+
+  // The one case that must not open on today: everything has ended, so today's page is empty and
+  // the panel would look broken rather than finished.
+  it("falls back to the last page with something on it", () => {
+    const start = defaultWindowStart([task("2024-01-01", "2024-03-01")], [], "month", now);
+    const window = chartWindowFor(start, "month");
+    expect(start < "2024-03-01").toBe(true);
+    expect(window.end > "2024-03-01").toBe(true);
   });
 });

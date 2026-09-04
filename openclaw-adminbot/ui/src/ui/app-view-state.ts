@@ -567,6 +567,10 @@ export type AppViewState = {
   adminBotLettersSavedAt: number | null;
   adminBotLettersSaveError: string | null;
   adminBotTimeAvailabilityRange: TimeAvailabilityRange;
+  /** The span the time chart is drawing, so the commitment tables can follow its pager. */
+  adminBotTimeChartWindow:
+    | import("./adminbot/views/time-allocation-chart.ts").TimeChartWindow
+    | null;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;

@@ -10728,11 +10728,14 @@ details[open] > .ov-expandable-toggle::after {
    lab's conferences it was taking most of a screen to say four dates. The density is the whole
    change -- the three-row tile below is left alone, because those rows are what stopped the link
    and the remove button drawing on top of each other and the AoE clock being clipped. */
+/* A banner, not the subject of the page: it says what is coming so the timeline below can be read
+   against it. Every measure here is the smaller of the two that were tried -- the panel was taller
+   than the chart it introduces. */
 .adminbot-time-availability__deadlines {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
   align-content: start;
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
@@ -10754,7 +10757,16 @@ details[open] > .ov-expandable-toggle::after {
    be read before the list rather than after it. */
 .adminbot-time-availability__deadline-hint {
   margin: 0;
-  font-size: var(--control-ui-text-sm);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+/* The note each commitment table draws when the chart's window hides rows. Muted and small: it is
+   an explanation for an absence, not a row of its own. */
+.adminbot-time-availability__hidden-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
 
@@ -10775,21 +10787,35 @@ details[open] > .ov-expandable-toggle::after {
    same cell, so they drew on top of each other. */
 .adminbot-time-availability__deadline-list li {
   display: grid;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
+  gap: 0;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
 }
 
+/* Countdown, name, actions on one line. The name takes the slack, so the countdown stays hard
+   against the left edge where a column of them lines up and the actions stay hard against the
+   right. */
 .adminbot-time-availability__deadline-top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  align-items: baseline;
+  gap: var(--space-2);
   /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
      the button's height the row was mostly empty space above the name. */
   min-height: 0;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-away {
+  flex: 0 0 auto;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-label {
+  flex: 1 1 auto;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-actions {
+  margin-left: auto;
 }
 
 .adminbot-time-availability__deadline-actions {
@@ -11494,4 +11520,28 @@ select.input:focus {
   margin: var(--space-2) 0 0;
   padding-left: var(--space-4);
   color: var(--muted);
+}
+
+/* The deadline picker is a disclosure, not a permanently open form: see the comment in
+   renderAddDeadline. The summary reads as one of the panel's own small actions rather than as a
+   section heading, since that is what it now is. */
+.adminbot-time-availability__deadline-add[open] {
+  padding-bottom: var(--space-2);
+}
+
+.adminbot-time-availability__deadline-add-summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text);
+  list-style-position: inside;
+}
+
+.adminbot-time-availability__deadline-add-summary::marker {
+  color: var(--muted);
+}
+
+.adminbot-time-availability__deadline-add-summary:hover {
+  color: var(--accent, var(--text));
 }
