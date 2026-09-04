@@ -128,4 +128,29 @@ describe("AdminBot privacy broker", () => {
     );
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("sends a generic public task to OpenRouter when OPENROUTER_API_KEY is set", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input, init) => {
+      calls.push(String(input));
+      if (String(input).includes("127.0.0.1")) {
+        return local({
+          classification: "generic",
+          sanitized_task: "Explain merge sort",
+          replacements: [],
+        });
+      }
+      expect(init?.headers?.Authorization).toBe("Bearer or-key");
+      return response({ choices: [{ message: { content: "OpenRouter answer" } }] });
+    }) as PrivacyBrokerFetch;
+    const broker = createAdminBotPrivacyBroker(config, {
+      fetchImpl,
+      env: { ...env, OPENROUTER_API_KEY: "or-key" },
+    });
+    await expect(broker.handle({ task: "Explain merge sort" })).resolves.toEqual({
+      route: "remote",
+      output: "OpenRouter answer",
+    });
+    expect(calls[1]).toBe("https://openrouter.ai/api/v1/chat/completions");
+  });
 });
