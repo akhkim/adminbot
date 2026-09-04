@@ -444,6 +444,91 @@ describe("AdminBotService paper coauthors", () => {
     ).toMatchObject({ ok: false });
   });
 
+  // The bulk grid writes the same fields to the same row as the card. This is the service half of
+  // that claim: everything the grid offers as editable has to survive a member write.
+  it("stores every field the bulk grid can edit", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot, renamed",
+        alias: "adminbot",
+        started_on: "2026-02-01",
+        current_step: "overleaf_writing",
+        venue: "ICLR 2027",
+        author_roles: "Joeun writes, Andrew reviews",
+        feedback_givers: ["Rahul Shrestha"],
+        author_links: [{ name: "Joeun Yook", member_id: "joeun-yook" }, { name: "Someone New" }],
+        artifacts: {
+          topic: "causal abstraction",
+          submission_url: "https://openreview.net/forum?id=abc",
+          arxiv_paper_password: "ab12cd",
+          venue_targets: JSON.stringify([
+            { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
+          ]),
+        },
+      }),
+    );
+
+    const stored = unwrap(service.listPapers()).papers.find((entry) => entry.id === "adminbot");
+    expect(stored).toMatchObject({
+      title: "AdminBot, renamed",
+      alias: "adminbot",
+      started_on: "2026-02-01",
+      current_step: "overleaf_writing",
+      venue: "ICLR 2027",
+      author_roles: "Joeun writes, Andrew reviews",
+      feedback_givers: ["Rahul Shrestha"],
+    });
+    expect(stored?.artifacts).toMatchObject({
+      topic: "causal abstraction",
+      submission_url: "https://openreview.net/forum?id=abc",
+      // The column that used to accept text and drop it.
+      arxiv_paper_password: "ab12cd",
+    });
+    // The roster link the grid preserves has to survive the write, not just the UI merge.
+    expect(stored?.author_links).toEqual([
+      { name: "Joeun Yook", member_id: "joeun-yook" },
+      { name: "Someone New" },
+    ]);
+  });
+
+  // What the venue said is a fact the authors report, so an author may record it on their own
+  // paper -- the card and the sheet both offer the control, and until #147 both got a 400 for it.
+  // The workflow fields beside it stay privileged, which is the boundary this asserts.
+  it("takes a venue decision from an author, and still refuses the workflow fields", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    const stored = unwrap(
+      service.upsertOwnPaper("joeun-yook", { id: "adminbot", venue_decision: "accept" }),
+    );
+    expect(stored?.venue_decision).toBe("accept");
+    // Not everything on the record travelled with it: who gets nudged, and which attempt this is,
+    // are the paper flow's to set.
+    expect(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        first_author_member_id: "joeun-yook",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+
   it("records an external coauthor and gives them nothing else", () => {
     const service = lab();
     unwrap(

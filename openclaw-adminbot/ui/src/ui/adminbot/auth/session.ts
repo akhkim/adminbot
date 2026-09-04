@@ -1907,6 +1907,30 @@ export async function publishCvDigest(
 // the member Bearer rather than the gateway tool path because the service decides there what a
 // plain member may touch -- their own submissions, without the governance fields -- and because a
 // member's paired device holds read-only gateway scopes, so `tools.invoke` is not open to them.
+/**
+ * Asks the service to place the import columns the local pass could not.
+ *
+ * Nothing is written by this call: what comes back is a suggested mapping the grid shows for
+ * review. A failure is not an error the member needs to see -- the local pass has already produced
+ * a usable mapping -- so the caller treats an empty answer and a dead tunnel the same way.
+ */
+export async function mapImportColumns(
+  unmapped: Array<{ header: string; samples: string[] }>,
+  available: string[],
+  sessionToken: string,
+  baseUrl: string,
+): Promise<Record<string, string>> {
+  const result = await authedJson(baseUrl, "/papers/import/columns", "POST", sessionToken, {
+    unmapped,
+    available,
+  });
+  if ("unreachable" in result || !result.response.ok) {
+    return {};
+  }
+  const mapping = (result.body as { mapping?: Record<string, string> } | null)?.mapping;
+  return mapping && typeof mapping === "object" ? mapping : {};
+}
+
 export async function saveOwnPaper(
   paperId: string,
   body: Record<string, unknown>,

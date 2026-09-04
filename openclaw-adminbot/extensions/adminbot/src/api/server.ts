@@ -90,6 +90,10 @@ import {
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
 import {
+  createImportColumnMapper,
+  type ImportColumnMapper,
+} from "../workflows/papers/import-columns.js";
+import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
 } from "../workflows/papers/openreview-workflow.js";
@@ -228,6 +232,8 @@ export type AdminBotMockServiceOptions = {
   // Drafts an event from a sentence. Defaults to the privacy broker, so a prompt naming a member
   // gets the same placeholder treatment every other reasoning task gets.
   calendarEventDrafter?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  /** Maps leftover import columns with the local model. Injected so tests need no tunnel. */
+  importColumnMapper?: ImportColumnMapper;
   // Same for the `gog` CLI-backed "your account is approved" email.
   accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
   passwordResetEmailRunner?: (params: {
@@ -477,6 +483,8 @@ type AdminBotRouteContext = {
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  /** Suggests a mapping for import columns the local pass could not place. */
+  importColumnMapper?: ImportColumnMapper;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
   /**
@@ -690,6 +698,11 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     draftCalendarEvent:
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
+    // Loopback-only, like every model call here. Built unconditionally and only ever reached when
+    // an import leaves a column the local pass could not place.
+    importColumnMapper:
+      options.importColumnMapper ??
+      createImportColumnMapper({ fetchImpl: (input, init) => fetch(input, init) }),
     allowedOrigins,
     refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
@@ -2286,6 +2299,40 @@ async function handleAuthenticatedRoute(
         principal.member.id,
       ),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/import/columns") {
+    // A member importing their own sheet. Nothing is written here: the answer is a suggested
+    // mapping the Control UI shows for review before a single cell is filled.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const unmapped = Array.isArray(body.unmapped)
+      ? body.unmapped.flatMap((entry) => {
+          const record = readRecord(entry);
+          const header = asString(record.header);
+          if (!header) {
+            return [];
+          }
+          const samples = Array.isArray(record.samples)
+            ? record.samples.flatMap((value) => (typeof value === "string" ? [value] : []))
+            : [];
+          return [{ header, samples }];
+        })
+      : [];
+    const available = Array.isArray(body.available)
+      ? body.available.flatMap((value) => (typeof value === "string" ? [value] : []))
+      : [];
+    const mapper = ctx.importColumnMapper;
+    if (!mapper) {
+      // The local pass has already produced a usable mapping, so no model is a smaller answer
+      // rather than an error.
+      sendJson(res, 200, { mapping: {} });
+      return;
+    }
+    sendJson(res, 200, { mapping: await mapper({ unmapped, available }) });
     return;
   }
   if (req.method === "GET" && url.pathname === "/opportunities") {

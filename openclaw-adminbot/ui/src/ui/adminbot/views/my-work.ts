@@ -34,6 +34,7 @@ import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/
 import {
   draftLinkedInPost,
   loadStoredMemberSession,
+  mapImportColumns,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
 import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
@@ -78,11 +79,13 @@ import {
   partitionByCompletion,
 } from "../paper-completion.ts";
 import {
+  clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
   PAPER_GRID_THRESHOLD,
   recordHistory,
   renderPaperGrid,
+  unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
@@ -132,6 +135,14 @@ export type MyWorkProps = {
   onReviewNudges: () => void;
   onToggleNudgeRecipient: (memberId: string) => void;
   onToggleCard: (paperId: string) => void;
+  /**
+   * Fetches one paper's evidence without opening its card.
+   *
+   * The sheet needs it: a card loads its cycle when somebody expands it, and the grid shows
+   * thirty papers at once with nothing expanded. Optional, so a surface that has no cycle wiring
+   * simply offers no evidence columns rather than offering ones that would drop what is typed.
+   */
+  onLoadSlots?: (paperId: string) => void;
   onSaveSlot: (
     paperId: string,
     slot: string,
@@ -2483,6 +2494,17 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
           state: gridState,
           papers: items,
           onChange: rerender,
+          // The card's own two data sources, handed to the sheet: the evidence rows it has
+          // loaded, and the two writes that fill them. Same state, same endpoints -- the grid is
+          // a second drawing of the card, not a second store.
+          slots: props.slots,
+          onLoadSlots: props.onLoadSlots,
+          onSaveSlots: (writes) => {
+            for (const write of writes) {
+              props.onSaveSlot(write.paperId, write.slot, write.input);
+            }
+          },
+          viewerName: findOwnMember(state)?.name ?? "",
           onSaveAll: (inputs) => {
             if (!gridState) {
               return;
@@ -2492,6 +2514,7 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             // Diffed before the write: afterwards the record holds the new value and the old
             // one is gone, so "changed X from A to B" would no longer be answerable.
             const entries = diffForHistory(gridState, items);
+            const stranded = unsentSlotEdits(gridState, items);
             gridState.history = recordHistory(entries);
             rerender();
             // One request per changed paper, because that is the endpoint that exists today.
@@ -2500,11 +2523,43 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
               props.onSavePaper(input);
             }
             gridState.saving = false;
-            gridState.edits = new Map();
-            gridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.`;
+            clearSavedEdits(gridState, items);
+            gridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.${
+              // Said rather than swallowed: these are evidence cells typed against a paper whose
+              // slots had not loaded, and the person who typed them deserves to know they need a
+              // second press once the band has finished loading.
+              stranded ? ` ${stranded} evidence cell(s) still loading — press Update again.` : ""
+            }`;
             rerender();
           },
           onExit: () => exitGrid(rerender),
+          onMapColumnsWithModel: async (unmapped, available) => {
+            const stored = loadStoredMemberSession();
+            return stored
+              ? mapImportColumns(unmapped, available, stored.sessionToken, resolveAdminBotBaseUrl())
+              : {};
+          },
+          // The second step, and a deliberate one: these rows matched no paper, so each becomes a
+          // new record rather than an edit to an existing one. Same endpoint as everything else.
+          onCreatePapers: (candidates) => {
+            for (const candidate of candidates) {
+              const title = candidate.values.title ?? "";
+              props.onSavePaper({
+                // Slugged from the title, the way the create form does it: the service upserts by
+                // id, and a row out of somebody's sheet has none to offer.
+                id: title
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/gu, "-")
+                  .replace(/(^-|-$)/gu, "")
+                  .slice(0, 60),
+                title,
+                authors: [],
+                currentStep: paperSteps[0],
+                alias: candidate.values.alias ?? "",
+                startedOn: candidate.values.started_on ?? "",
+              });
+            }
+          },
         })}
       </div>
     `;

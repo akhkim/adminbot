@@ -1551,6 +1551,15 @@ export type AdminBotPaperArtifactLinks = {
   linkedin_draft_url?: string;
   google_slides_url?: string;
   poster_url?: string;
+  /**
+   * arXiv's own per-paper password, which a coauthor needs to claim ownership of a submission.
+   *
+   * Stored beside the links because that is what it is used with, and with the same protection:
+   * none beyond the record's own access rules. Every coauthor of the paper can read it, as they
+   * can its Overleaf edit link. It lived as a disabled column in the bulk grid for a while,
+   * accepting text it then dropped, which is worse than either storing it or not offering it.
+   */
+  arxiv_paper_password?: string;
 };
 
 export type AdminBotPaperReminderState = {

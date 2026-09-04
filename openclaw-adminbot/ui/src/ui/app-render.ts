@@ -78,6 +78,7 @@ import {
   circulateAdminBotSocialDraft,
   loadAdminBotNudgeBatches,
   loadAdminBotPaperSlotOverview,
+  loadAdminBotPaperSlots,
   nudgeAdminBotPaperAuthors,
   recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
@@ -871,6 +872,11 @@ function paperWorkspaceProps(
     canNudge: false,
     onToggleCard: (paperId) => {
       void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
+    },
+    // Same fetch the card makes when it opens, without opening anything: the sheet draws every
+    // paper's evidence at once, so it asks for the rows rather than for a card.
+    onLoadSlots: (paperId) => {
+      void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
     },
     onSaveSlot: (paperId, slot, input) => {
       void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() => requestHostUpdate?.());
@@ -3725,6 +3731,16 @@ export function renderApp(state: AppViewState) {
               panel: adminBotPanel,
               onRerender: () => requestHostUpdate?.(),
               paperSlotOverview: state.adminBotPaperSlotOverview,
+              // Active Papers' bulk sheet writes evidence the same way the card does.
+              paperCycles: state.adminBotPaperSlots,
+              onLoadSlots: (paperId: string) => {
+                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
+              },
+              onSaveSlot: (paperId: string, slot: string, input) => {
+                void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
               connected: state.connected,
               loading: state.adminBotLoading,
               error: state.adminBotError,
