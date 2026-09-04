@@ -88,6 +88,27 @@ Vercel should serve static Control UI assets only. Prompts must connect directly
 to the VM gateway over authenticated TLS; do not proxy or log prompts through a
 Vercel Function, analytics collector, or other hosted middleware.
 
+### Load, failover, and offline
+
+Concurrent local (Aurora-class) privacy/private calls are capped at 8 in-process
+slots. Generic public work prefers OpenRouter when `OPENROUTER_API_KEY` is set,
+capped at 100 (hard ceiling 500). Extra callers wait in FIFO order instead of
+piling onto the GPUs. Nodes default to loopback Aurora (`RTX6000`); set
+`ADMINBOT_LLM_NODES` to `id|baseUrl|gpu` CSV for aurora, maple (`RTX6000`), and
+conserto3 (`H100`). PaperMentor can share the same process allocator.
+
+A failed DCS form submit is written to `adminbot_failed_external_requests` with
+the exact payload, then retried at `ADMINBOT_DCS_AWS_FALLBACK_URL` if set, then
+escalated through `sendMemberNudge` (propose → auto-execute) to the head
+professor plus `ADMINBOT_DCS_ESCALATION_MEMBER_IDS`. Privileged operators can
+list failures at `GET /ops/failed-requests`; anyone signed in can read
+`GET /ops/llm-load`.
+
+The Control UI caches successful member GETs and queues mutations in IndexedDB
+when `:8765` is unreachable (Chrome/Docs-style reads, WhatsApp-style queued
+sends). An on-device SLM for offline drafts is an interview-task stub, not
+shipped.
+
 ### Connect Gmail and Calendar with gog
 
 Install and authenticate `gog` from `gogcli` on the AdminBot service host. The
