@@ -2489,7 +2489,10 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   if (gridOffered && gridState) {
     return html`
-      <div class="my-work">
+      <!-- The sheet takes the page: my-work caps itself at a readable measure for the card
+           list, which is a column of prose, while a sheet of sixty columns wants every pixel.
+           The cap was leaving a third of the window empty beside a table that scrolls. -->
+      <div class="my-work my-work--sheet">
         ${renderPaperGrid({
           state: gridState,
           papers: items,

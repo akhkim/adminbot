@@ -670,3 +670,16 @@
 .paper-grid__table tbody tr:hover .paper-grid__sticky {
   background: color-mix(in srgb, var(--sheet-green) 7%, var(--bg));
 }
+
+/* ── the sheet takes the page ────────────────────────────────────────────────────────────
+   `.my-work` caps itself at 62rem, which is the right measure for the card list it was
+   written for: a column of paragraphs, venues and blocker notes that would be harder to read
+   run out to 1900px. The sheet is the opposite thing. It is a table wider than any window,
+   already scrolling inside its own box, so every pixel the cap withholds is a column the
+   reader has to scroll to instead of one they can see.
+
+   Scoped to the sheet rather than lifted off `.my-work`, and written as a double class so it
+   wins wherever this file lands in the import order. */
+.my-work.my-work--sheet {
+  max-width: none;
+}
