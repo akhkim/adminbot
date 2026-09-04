@@ -94,10 +94,19 @@ describe("matching their columns to ours", () => {
     expect(matched[1]?.target).toBeUndefined();
   });
 
-  // A read-only column cannot be filled, so it must never be an import target.
+  // A read-only column cannot be filled, so it must never be an import target. The blocker log
+  // is one: each entry carries an author and a timestamp, and an import that wrote it would
+  // replace a history with a column of retyped titles.
   it("never maps onto a column the grid will not write", () => {
-    const sheet = parseSheet("Venue decision\tOpen blockers\naccept\tstuck");
+    const sheet = parseSheet("Open blockers\tX post drafted\nstuck\tyes");
     expect(matchColumns(sheet).map((column) => column.target)).toEqual([undefined, undefined]);
+  });
+
+  // The venue's answer is writable now, on the sheet as on the card, so a sheet of decisions
+  // imports rather than being silently ignored.
+  it("maps a column of decisions, which the grid now writes", () => {
+    const sheet = parseSheet("Venue decision\naccept");
+    expect(matchColumns(sheet)[0]?.target).toBe("venue_decision");
   });
 });
 
@@ -111,19 +120,27 @@ describe("the model's suggestions", () => {
       delete leftover.target;
       leftover.how = "none";
     }
-    const merged = applyModelSuggestions(local, { "The latex one": "overleaf_edit_url" });
-    expect(merged[1]).toMatchObject({ target: "overleaf_edit_url", how: "model" });
+    const merged = applyModelSuggestions(local, {
+      "The latex one": "overleaf_edit_url",
+    });
+    expect(merged[1]).toMatchObject({
+      target: "overleaf_edit_url",
+      how: "model",
+    });
   });
 
   it("does not overrule a column the header or the values already settled", () => {
     const local = matchColumns(parseSheet("Title\tarXiv\nOne\thttps://arxiv.org/abs/1"));
-    const merged = applyModelSuggestions(local, { Title: "topic", arXiv: "poster_url" });
+    const merged = applyModelSuggestions(local, {
+      Title: "topic",
+      arXiv: "poster_url",
+    });
     expect(merged.map((column) => column.target)).toEqual(["title", "arxiv_url"]);
   });
 
   it("ignores a suggestion that is not a writable column", () => {
     const local = matchColumns(parseSheet("Title\tMystery\nOne\tx"));
-    const merged = applyModelSuggestions(local, { Mystery: "venue_decision" });
+    const merged = applyModelSuggestions(local, { Mystery: "blocker_log" });
     expect(merged[1]?.target).toBeUndefined();
     expect(applyModelSuggestions(local, { Mystery: "not_a_column" })[1]?.target).toBeUndefined();
   });
@@ -191,7 +208,14 @@ describe("the plan", () => {
     const plan = planImport("Title\tarXiv\nCausal Abstraction for Agents\tnot-a-link", papers);
     expect(plan.fills.get("p1")?.has("arxiv_url")).toBe(false);
     expect(plan.rejected).toEqual([
-      { rowIndex: 0, column: "arxiv_url", value: "not-a-link", reason: "not a URL" },
+      // The registry's own words: an evidence-backed link column is checked with the same
+      // function the service will apply, so the cell says what the service would have said.
+      {
+        rowIndex: 0,
+        column: "arxiv_url",
+        value: "not-a-link",
+        reason: "that is not a URL",
+      },
     ]);
   });
 
@@ -223,7 +247,11 @@ describe("the create step", () => {
     expect(candidates).toHaveLength(2);
     expect(candidates[0]).toMatchObject({
       rowIndex: 0,
-      values: { title: "Brand New Paper", alias: "bnp", started_on: "2026-03-01" },
+      values: {
+        title: "Brand New Paper",
+        alias: "bnp",
+        started_on: "2026-03-01",
+      },
       missing: [],
     });
     // Reported rather than guessed: an invented alias names somebody's Slack channel.

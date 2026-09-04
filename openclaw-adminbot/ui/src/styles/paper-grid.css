@@ -257,7 +257,9 @@
   color: var(--text);
   font: inherit;
   text-overflow: ellipsis;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .paper-grid__cell input:hover:not(:disabled) {
@@ -487,4 +489,184 @@
   background: color-mix(in srgb, var(--text) 8%, transparent);
   font-size: 0.92em;
   word-break: break-all;
+}
+
+/* ── bands ──────────────────────────────────────────────────────────────────────────────
+   Sixty columns is a different surface from the nine this started as. Two things make it
+   readable: a heading row above the column names that says which subject you are in, and a
+   row of chips that puts a whole subject away. Both address the same unit -- the band a
+   column declares in `paper-grid.ts` -- so what you switch off is exactly what stops being
+   drawn, and the widths and paste targets follow it. */
+
+.paper-grid__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.paper-grid__bands {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.paper-grid__band {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 3px 10px;
+  border: 1px solid var(--sheet-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.paper-grid__band:hover:not(:disabled) {
+  border-color: var(--sheet-green);
+  color: var(--text);
+}
+
+.paper-grid__band.is-on {
+  border-color: var(--sheet-green);
+  background: color-mix(in srgb, var(--sheet-green) 18%, var(--bg));
+  color: var(--sheet-head-text);
+}
+
+.paper-grid__band:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The count is the honest half of a hidden band: "Evidence 15" says what is behind the chip. */
+.paper-grid__band-count {
+  padding: 0 0.45em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9em;
+}
+
+/* The header's top row. Shorter than the column row and centred over its span, so it reads as
+   a label for the group rather than as another column heading. */
+
+.paper-grid__table thead .paper-grid__band-row th {
+  height: 1.9rem;
+  font-size: 0.85em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--sheet-line);
+}
+
+.paper-grid__table thead .paper-grid__band-head {
+  /* A left edge per band: the one line that says where one subject ends and the next starts,
+     without a second colour scheme to learn. */
+  border-left: 2px solid var(--sheet-green);
+  /* Left, not centred: a band of nine columns is wider than the window, and a centred label
+     sits in the middle of a span whose middle is usually off-screen -- which is how "PROJECT"
+     ended up floating over the Topic column. Against its own left edge it is next to the
+     boundary it names. */
+  text-align: left;
+  padding-left: var(--space-2);
+}
+
+.paper-grid__table thead .paper-grid__band-row .paper-grid__rownum,
+.paper-grid__table thead .paper-grid__band-row .paper-grid__sticky {
+  background: var(--sheet-head);
+}
+
+/* The second header row is the one that sticks under the band row. */
+.paper-grid__table thead .paper-grid__band-row th {
+  top: 0;
+}
+
+.paper-grid__table thead tr:not(.paper-grid__band-row) th {
+  top: 1.9rem;
+}
+
+/* ── selects, and a cell that has been touched ──────────────────────────────────────────
+   The grid grew closed-list columns (a step, a decision, a yes/no gate) and they arrived
+   unstyled: a native select in a dark sheet is a black box with a system arrow, which is
+   most of why the surface read as unfinished. They get the same inset field as an input. */
+
+.paper-grid__cell select {
+  position: absolute;
+  inset: var(--sheet-pad);
+  width: calc(100% - (var(--sheet-pad) * 2));
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--text) 3%, var(--bg));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  /* The arrow, drawn rather than loaded: the CSP allows no external images and a data URI for
+     a triangle is less legible than the gradient that draws one. */
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% + 1px),
+    calc(100% - 9px) calc(50% + 1px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.paper-grid__cell select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--sheet-green) 55%, transparent);
+  background-color: color-mix(in srgb, var(--text) 6%, var(--bg));
+}
+
+.paper-grid__cell select:focus {
+  z-index: 20;
+  border-color: var(--sheet-active);
+  outline: 2px solid var(--sheet-active);
+  outline-offset: -2px;
+  background-color: var(--sheet-cell);
+}
+
+.paper-grid__cell select:disabled {
+  background-color: color-mix(in srgb, var(--text) 5%, var(--bg));
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+/* Typed but not yet sent. The corner mark is deliberately not a colour change on the field:
+   thirty pending cells tinted green read as thirty errors, and the one thing a person wants
+   to see before pressing Update is which cells the press is about. */
+
+.paper-grid__cell--edited .paper-grid__cell::before {
+  content: "";
+  position: absolute;
+  top: var(--sheet-pad);
+  left: var(--sheet-pad);
+  z-index: 21;
+  border-top: 6px solid var(--sheet-green);
+  border-right: 6px solid transparent;
+  pointer-events: none;
+}
+
+/* Rows alternate, faintly. On a sheet this wide the eye loses its row between the pinned title
+   and the column it is aiming for. */
+
+.paper-grid__table tbody tr:nth-child(even) td,
+.paper-grid__table tbody tr:nth-child(even) .paper-grid__sticky {
+  background: color-mix(in srgb, var(--text) 2.5%, var(--bg));
+}
+
+.paper-grid__table tbody tr:hover td,
+.paper-grid__table tbody tr:hover .paper-grid__sticky {
+  background: color-mix(in srgb, var(--sheet-green) 7%, var(--bg));
 }

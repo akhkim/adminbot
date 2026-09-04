@@ -11,8 +11,7 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import { startSheetPan } from "./sheet-pan.ts";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow, PaperSlotRow } from "../auth/session.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
 import {
   type BlockerRow,
@@ -50,14 +49,17 @@ import {
   effectiveVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
+import { startSheetPan } from "./sheet-pan.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
 import {
   PAPER_GRID_THRESHOLD,
+  clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
   recordHistory,
   renderPaperGrid,
+  unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
 import {
@@ -77,6 +79,20 @@ export type AdminBotProps = {
    * from the same table. Absent while the tab is still loading, which renders as empty.
    */
   paperSlotOverview?: PaperSlotOverviewRow[];
+  /**
+   * The evidence rows the host has loaded, and the two calls that fill and write them.
+   *
+   * Active Papers draws the same sheet as My Projects & Papers, so it needs the same wiring:
+   * without these the evidence band is offered but inert, which is the one thing the sheet must
+   * never be. See `renderPaperGrid`.
+   */
+  paperCycles?: Record<string, { slots: PaperSlotRow[] }>;
+  onLoadSlots?: (paperId: string) => void;
+  onSaveSlot?: (
+    paperId: string,
+    slot: string,
+    input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+  ) => void;
   /** Venue id the pre-registration table is filtered to; empty shows every upcoming venue. */
   venueFilter?: string;
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
@@ -1014,11 +1030,7 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         </select>
       </label>
       <label class="adminbot-form__field adminbot-form__field--check">
-        <input
-          type="checkbox"
-          name="receivesNudges"
-          ?checked=${member?.receives_nudges === true}
-        />
+        <input type="checkbox" name="receivesNudges" ?checked=${member?.receives_nudges === true} />
         <span>AdminBot may contact them</span>
         <small
           >Off unless the lab turns it on. Everything AdminBot sends — profile reminders, paper
@@ -1621,7 +1633,10 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   if (props.mode === "general") {
     return spreadsheet;
   }
-  return html`${renderDuplicateMembers(props, members)}${renderMembersWithoutEmail(props, members)}${spreadsheet}
+  return html`${renderDuplicateMembers(props, members)}${renderMembersWithoutEmail(
+      props,
+      members,
+    )}${spreadsheet}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button
@@ -1837,6 +1852,14 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
       state: paperGridState,
       papers,
       onChange: rerender,
+      slots: props.paperCycles,
+      onLoadSlots: props.onLoadSlots,
+      onSaveSlots: (writes) => {
+        for (const write of writes) {
+          props.onSaveSlot?.(write.paperId, write.slot, write.input);
+        }
+      },
+      viewerName: signedInMember(props)?.name ?? "",
       onSaveAll: (inputs) => {
         if (!paperGridState) {
           return;
@@ -1845,14 +1868,17 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
         // Diffed before the write: afterwards the record holds the new value and the old one is
         // gone, so "changed X from A to B" would no longer be answerable.
         const entries = diffForHistory(paperGridState, papers);
+        const stranded = unsentSlotEdits(paperGridState, papers);
         paperGridState.history = recordHistory(entries);
         rerender();
         for (const input of inputs) {
           props.onSavePaper(input);
         }
         paperGridState.saving = false;
-        paperGridState.edits = new Map();
-        paperGridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.`;
+        clearSavedEdits(paperGridState, papers);
+        paperGridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.${
+          stranded ? ` ${stranded} evidence cell(s) still loading — press Update again.` : ""
+        }`;
         rerender();
       },
       onExit: () => {

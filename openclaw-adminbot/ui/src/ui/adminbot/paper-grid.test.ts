@@ -1,4 +1,6 @@
+import { render } from "lit";
 import { beforeAll, describe, expect, it } from "vitest";
+import { adminBotPaperSlots } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
   applyPaste,
@@ -19,9 +21,17 @@ import {
   loadHistory,
   pendingSaves,
   recordHistory,
+  renderPaperGrid,
   PAPER_GRID_THRESHOLD,
   mergeAuthorLinks,
   parseVenueTargets,
+  clearSavedEdits,
+  isWritable,
+  pendingSlotWrites,
+  unsentSlotEdits,
+  visibleColumns,
+  COLUMN_GROUPS,
+  type GridCycles,
 } from "./paper-grid.ts";
 
 function paper(id: string, artifacts: Record<string, string> = {}): AdminBotPaperRecord {
@@ -126,7 +136,10 @@ describe("what gets saved", () => {
     applyPaste(state, papers, 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/1234.5678");
     const saves = pendingSaves(state, papers);
     expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ id: "p1", arxivUrl: "https://arxiv.org/abs/1234.5678" });
+    expect(saves[0]).toMatchObject({
+      id: "p1",
+      arxivUrl: "https://arxiv.org/abs/1234.5678",
+    });
   });
 
   it("leaves an invalid cell behind but still saves the valid ones in the same row", () => {
@@ -141,7 +154,9 @@ describe("what gets saved", () => {
   });
 
   it("shows the stored value until it is edited", () => {
-    const stored = paper("p9", { arxiv_url: "https://arxiv.org/abs/9999.1111" });
+    const stored = paper("p9", {
+      arxiv_url: "https://arxiv.org/abs/9999.1111",
+    });
     const state = emptyPaperGridState();
     expect(cellValue(state, stored, arxivCol)).toBe("https://arxiv.org/abs/9999.1111");
     applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "https://arxiv.org/abs/0000.2222");
@@ -416,11 +431,44 @@ describe("the fields the card carries", () => {
       "is_archival",
       "presentation_type",
       "blocker_log",
+      // Filing a blocker and closing the paper out are both things the card does, so both are
+      // cells here too.
+      "blocker",
+      "completed_at",
       "submission_url",
       "arxiv_paper_password",
     ]) {
       expect(keys, `${key} should be a column`).toContain(key);
     }
+  });
+
+  // Appends, never replaces: the log carries who raised each entry and when, and a sheet that
+  // overwrote it would trade a history for one line of retyped text.
+  it("files a blocker from a cell, keeping the ones already on the paper", () => {
+    const state = emptyPaperGridState();
+    const paperWithLog = {
+      ...rich(),
+      artifacts: {
+        blocker_log: JSON.stringify([
+          {
+            stage: "submission",
+            title: "Waiting on numbers",
+            note: "",
+            by: "Ada",
+            at: "2026-08-01T00:00:00.000Z",
+          },
+        ]),
+      },
+    } as unknown as AdminBotPaperRecord;
+    state.edits.set("p1", new Map([["blocker", "Overleaf compile is broken"]]));
+    const [save] = pendingSaves(state, [paperWithLog]);
+    const log = JSON.parse(save?.blockerLog ?? "[]") as Array<{
+      title: string;
+    }>;
+    expect(log.map((entry) => entry.title)).toEqual([
+      "Overleaf compile is broken",
+      "Waiting on numbers",
+    ]);
   });
 
   it("reads the record's own columns, not just artifacts", () => {
@@ -500,10 +548,10 @@ describe("the fields the card carries", () => {
     expect(cellError(columnFor("arxiv_paper_password"), "nope")).toBeTruthy();
   });
 
-  // The service refuses venue_decision from the member write path (400, admin included) and drops
-  // the four details beside it. A cell that accepted them would fail the whole row.
-  it("shows the acceptance answers without offering an edit the service would refuse", () => {
-    const state = emptyPaperGridState();
+  // The card offers these five and so does the sheet: they are governance rather than authorship
+  // (`upsertOwnPaper` refuses `venue_decision` outright), and the person they are for is the admin
+  // recording a round of decisions -- who should not have to open twenty cards to do it.
+  it("offers the acceptance answers the card offers", () => {
     for (const key of [
       "venue_decision",
       "accepted_venue",
@@ -511,12 +559,24 @@ describe("the fields the card carries", () => {
       "is_archival",
       "presentation_type",
     ]) {
-      const column = columnFor(key);
-      expect(column.save, `${key} must not be writable`).toBeUndefined();
-      expect(column.apply, `${key} must not be writable`).toBeUndefined();
-      state.edits.set("p1", new Map([[key, "accept"]]));
-      expect(pendingSaves(state, [rich()]), `${key} must not reach a save`).toEqual([]);
+      expect(columnFor(key).save, `${key} should be writable`).toBeDefined();
     }
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["venue_decision", "accept"]]));
+    expect(pendingSaves(state, [rich()])[0]).toMatchObject({
+      venueDecision: "accept",
+    });
+  });
+
+  // The safety property that makes offering them safe: a row nobody typed a decision into never
+  // carries one, so an author's ordinary edit is never refused for a field they did not touch.
+  it("sends a decision only from the cell that was typed in", () => {
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["overleaf_view_url", "https://www.overleaf.com/read/abcdef"]]));
+    const [save] = pendingSaves(state, [rich()]);
+    expect(save).toBeDefined();
+    expect(save?.venueDecision).toBeUndefined();
+    expect(save?.acceptedVenue).toBeUndefined();
   });
 
   // Shown so the grid is honest about what a paper holds; not editable, because each entry carries
@@ -528,5 +588,268 @@ describe("the fields the card carries", () => {
     const state = emptyPaperGridState();
     state.edits.set("p1", new Map([["blocker_log", "anything"]]));
     expect(pendingSaves(state, [rich()])).toEqual([]);
+  });
+});
+
+// ── the evidence half ─────────────────────────────────────────────────────────────────────
+//
+// The checklist the card counts as "0/21 artifacts" lives in `paper_slots`, not on the paper, and
+// it is written one slot at a time. These are the tests that it is the same data and not a second
+// copy of it: what the sheet shows comes from the cycle the card loaded, and what it saves goes to
+// the endpoint the card's own checkbox uses.
+
+describe("evidence columns", () => {
+  const paperRow = (): AdminBotPaperRecord =>
+    ({
+      id: "p1",
+      title: "Causal abstraction",
+      authors: ["Ada"],
+      current_step: "arxiv_polish",
+      artifacts: { poster_url: "https://drive.google.com/file/d/old/view" },
+    }) as unknown as AdminBotPaperRecord;
+
+  const cycles = (rows: Array<Record<string, unknown>>): GridCycles => ({
+    p1: { slots: rows as never },
+  });
+
+  const columnFor = (key: string) => gridColumns()[columnIndexOf(key)]!;
+
+  it("gives every slot in the registry a column, once", () => {
+    const slotted = gridColumns().flatMap((column) => (column.slot ? [column.slot] : []));
+    expect(new Set(slotted).size, "no slot may appear twice").toBe(slotted.length);
+    for (const slot of adminBotPaperSlots) {
+      expect(slotted, `${slot} should be reachable from the sheet`).toContain(slot);
+    }
+  });
+
+  it("shows the slot's own value ahead of the artifact it mirrors", () => {
+    const state = emptyPaperGridState();
+    const column = columnFor("poster_url");
+    // No cycle loaded: the artifact the paper has always carried is what there is.
+    expect(cellValue(state, paperRow(), column)).toBe("https://drive.google.com/file/d/old/view");
+    state.cycles = cycles([
+      {
+        slot: "poster",
+        status: "provided",
+        url: "https://drive.google.com/file/d/new/view",
+      },
+    ]);
+    expect(cellValue(state, paperRow(), column)).toBe("https://drive.google.com/file/d/new/view");
+  });
+
+  it("reads a yes/no gate as the two answers its checkbox gives", () => {
+    const state = emptyPaperGridState();
+    const column = columnFor("slot:pi_approval");
+    expect(cellValue(state, paperRow(), column)).toBe("");
+    state.cycles = cycles([{ slot: "pi_approval", status: "provided" }]);
+    expect(cellValue(state, paperRow(), column)).toBe("yes");
+  });
+
+  it("sends each changed slot as the write its own kind takes", () => {
+    const state = emptyPaperGridState();
+    state.cycles = cycles([
+      { slot: "pi_approval", status: "missing" },
+      { slot: "submission_id", status: "missing" },
+      { slot: "talk_video", status: "missing" },
+    ]);
+    state.edits.set(
+      "p1",
+      new Map([
+        ["slot:pi_approval", "yes"],
+        ["slot:submission_id", "4821"],
+        ["slot:talk_video", "https://www.youtube.com/watch?v=abc"],
+      ]),
+    );
+    const writes = pendingSlotWrites(state, [paperRow()]);
+    expect(writes.map((write) => write.slot).sort()).toEqual([
+      "pi_approval",
+      "submission_id",
+      "talk_video",
+    ]);
+    expect(writes.find((write) => write.slot === "pi_approval")?.input).toEqual({ done: true });
+    expect(writes.find((write) => write.slot === "submission_id")?.input).toEqual({
+      value_text: "4821",
+    });
+    expect(writes.find((write) => write.slot === "talk_video")?.input).toEqual({
+      url: "https://www.youtube.com/watch?v=abc",
+    });
+  });
+
+  // Re-sending a value that is already stored would restamp who provided the evidence and when,
+  // on a row somebody else filled in.
+  it("does not re-send a slot that already holds the typed value", () => {
+    const state = emptyPaperGridState();
+    state.cycles = cycles([{ slot: "pi_approval", status: "provided" }]);
+    state.edits.set("p1", new Map([["slot:pi_approval", "yes"]]));
+    expect(pendingSlotWrites(state, [paperRow()])).toEqual([]);
+  });
+
+  // A tick typed before the paper's slots arrived cannot be told apart from a re-send, so it is
+  // held rather than sent -- and held rather than dropped, which is what the notice promises.
+  it("holds evidence typed against a paper whose slots have not loaded", () => {
+    const state = emptyPaperGridState();
+    state.edits.set(
+      "p1",
+      new Map([
+        ["slot:pi_approval", "yes"],
+        ["title", "Renamed"],
+      ]),
+    );
+    const papers = [paperRow()];
+    expect(pendingSlotWrites(state, papers)).toEqual([]);
+    expect(unsentSlotEdits(state, papers)).toBe(1);
+    clearSavedEdits(state, papers);
+    expect(state.edits.get("p1")?.get("title")).toBeUndefined();
+    expect(state.edits.get("p1")?.get("slot:pi_approval")).toBe("yes");
+  });
+
+  // The two social-draft gates read the drafts table and reject a direct write. Shown, never typed
+  // in -- a tick there would claim a consent that was never asked for.
+  it("shows the derived gates without offering to tick them", () => {
+    for (const key of ["slot:x_draft", "slot:linkedin_draft"]) {
+      expect(isWritable(columnFor(key)), `${key} must not be writable`).toBe(false);
+    }
+    const state = emptyPaperGridState();
+    state.cycles = cycles([{ slot: "x_draft", status: "missing" }]);
+    state.edits.set("p1", new Map([["slot:x_draft", "yes"]]));
+    expect(pendingSlotWrites(state, [paperRow()])).toEqual([]);
+  });
+
+  it("keeps an evidence link honest by the registry's own rule", () => {
+    const column = columnFor("slot:x_post");
+    expect(cellError(column, "not-a-link")).toBeDefined();
+    expect(cellError(column, "https://x.com/JinesisLab/status/1839")).toBeUndefined();
+  });
+});
+
+describe("column bands", () => {
+  it("draws only the bands that are switched on", () => {
+    const state = emptyPaperGridState();
+    // Evidence is off by default: it is the one band that costs a request per paper to fill.
+    expect(state.groups).not.toContain("evidence");
+    expect(visibleColumns(state).some((column) => column.group === "evidence")).toBe(false);
+    state.groups = [...state.groups, "evidence"];
+    expect(visibleColumns(state).some((column) => column.group === "evidence")).toBe(true);
+  });
+
+  it("keeps the bands in registry order however they were ticked", () => {
+    const state = emptyPaperGridState();
+    state.groups = ["links", "project"];
+    const order = visibleColumns(state).map((column) => column.group);
+    expect(order.indexOf("project")).toBeLessThan(order.indexOf("links"));
+  });
+
+  // The paste target is an index into what is drawn. With a band hidden that differs from the
+  // registry's order, and pasting into the registry's would land every value in the wrong column.
+  it("pastes into the columns on screen, not the ones behind a hidden band", () => {
+    const state = emptyPaperGridState();
+    state.groups = ["links"];
+    const papers = [paperRow2()];
+    const columns = visibleColumns(state);
+    const first = columns[0]!;
+    applyPaste(state, papers, 0, 0, "https://docs.google.com/document/d/abc/edit");
+    expect(state.edits.get("p2")?.get(String(first.key))).toBe(
+      "https://docs.google.com/document/d/abc/edit",
+    );
+  });
+
+  it("names every band a column claims", () => {
+    const known = new Set(COLUMN_GROUPS.map((group) => group.id));
+    for (const column of gridColumns()) {
+      expect(known, `${String(column.key)} is in an unknown band`).toContain(column.group);
+    }
+  });
+});
+
+function paperRow2(): AdminBotPaperRecord {
+  return {
+    id: "p2",
+    title: "Second",
+    authors: ["Ada"],
+    current_step: "brainstorming_docs",
+    artifacts: {},
+  } as unknown as AdminBotPaperRecord;
+}
+
+// ── the drawn sheet ───────────────────────────────────────────────────────────────────────
+//
+// The parts of the surface that are behaviour rather than layout: which bands are drawn, what
+// asking for a band costs, and that one press sends both halves of a row.
+
+describe("the sheet as drawn", () => {
+  const papers = [paperRow2()];
+
+  function draw(overrides: Partial<Parameters<typeof renderPaperGrid>[0]> = {}) {
+    document.body.replaceChildren();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const loaded: string[] = [];
+    const saved: unknown[][] = [];
+    const slotWrites: unknown[][] = [];
+    const state = emptyPaperGridState();
+    const props = {
+      state,
+      papers,
+      onChange: () => undefined,
+      onSaveAll: (inputs: unknown[]) => saved.push(inputs),
+      onExit: () => undefined,
+      onLoadSlots: (id: string) => loaded.push(id),
+      onSaveSlots: (writes: unknown[]) => slotWrites.push(writes),
+      ...overrides,
+    } as Parameters<typeof renderPaperGrid>[0];
+    render(renderPaperGrid(props), host);
+    return { host, state, loaded, saved, slotWrites, props };
+  }
+
+  it("draws a chip per band, with the evidence one off", () => {
+    const { host } = draw();
+    for (const group of COLUMN_GROUPS) {
+      expect(
+        host.querySelector(`[data-testid="paper-grid-band-${group.id}"]`),
+        `${group.id} needs a chip`,
+      ).not.toBeNull();
+    }
+    const evidence = host.querySelector('[data-testid="paper-grid-band-evidence"]');
+    expect(evidence?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelectorAll('th[data-band="evidence"]').length).toBe(0);
+  });
+
+  // One request per paper, and only for the band that needs them. A member who never opens
+  // Evidence sends none of these at all.
+  it("asks for a paper's evidence once, and only while the band is open", async () => {
+    const { loaded } = draw();
+    await Promise.resolve();
+    expect(loaded).toEqual([]);
+
+    const second = draw();
+    second.state.groups = [...second.state.groups, "evidence"];
+    render(renderPaperGrid(second.props), second.host);
+    await Promise.resolve();
+    expect(second.loaded).toEqual(["p2"]);
+    // Drawn again with nothing loaded yet: the request is not repeated on every frame.
+    render(renderPaperGrid(second.props), second.host);
+    await Promise.resolve();
+    expect(second.loaded).toEqual(["p2"]);
+  });
+
+  it("sends the record and the evidence from one press", () => {
+    const drawn = draw({
+      slots: { p2: { slots: [{ slot: "pi_approval", status: "missing" }] } },
+    });
+    const { host, state, saved, slotWrites } = drawn;
+    state.edits.set(
+      "p2",
+      new Map([
+        ["title", "Renamed"],
+        ["slot:pi_approval", "yes"],
+      ]),
+    );
+    // Drawn again: the button is disabled until there is something to send, which is the state
+    // the first draw was in.
+    render(renderPaperGrid(drawn.props), host);
+    const update = host.querySelector("button.btn.primary") as HTMLButtonElement;
+    update.click();
+    expect(saved[0]).toHaveLength(1);
+    expect(slotWrites[0]).toHaveLength(1);
   });
 });
