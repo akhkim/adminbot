@@ -42,6 +42,7 @@ import {
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
+  resolveAdminBotEmailReview,
   mergeAdminBotMembers,
   loadSlackChannelNames,
   EMPTY_SLACK_CHANNEL_CHECK,
@@ -3770,6 +3771,8 @@ export function renderApp(state: AppViewState) {
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
+              onResolveEmailReview: (messageId, resolution) =>
+                void resolveAdminBotEmailReview(state, messageId, resolution),
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),

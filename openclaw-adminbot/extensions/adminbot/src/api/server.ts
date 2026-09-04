@@ -1217,6 +1217,46 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, await ctx.runEmailAutomation());
     return;
   }
+  if (req.method === "GET" && url.pathname === "/automation/email/review") {
+    // Subjects, senders and triage reasons are mailbox data, so this is a real-admin read rather
+    // than another service-token cron route. The list contains only messages automation already
+    // refused to act on; reading it never retries or changes Gmail.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listEmailReviews());
+    return;
+  }
+  const emailReview = /^\/automation\/email\/review\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && emailReview?.[1]) {
+    // This decision can stop a PaperFlow reminder, so the shared service principal is denied even
+    // though the write itself is local. An administrator must inspect the mail and choose.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const kind = body.kind;
+    if (kind !== "dismissed" && kind !== "paperflow_evidence") {
+      sendJson(res, 400, { error: { message: "kind must be dismissed or paperflow_evidence" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.resolveEmailReview({
+        messageId: decodeURIComponent(emailReview[1]),
+        resolution:
+          kind === "dismissed"
+            ? { kind }
+            : {
+                kind,
+                paper_id: typeof body.paper_id === "string" ? body.paper_id : "",
+                stage: typeof body.stage === "string" ? body.stage : "",
+              },
+        actor: principalActor(principal),
+      }),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/member-map") {
     // Public in shape (see GET /member-map in ANONYMOUS_ROUTES), but only ever public in a
     // counts-only shape: publishing 100+ people's names and locations is a decision to make

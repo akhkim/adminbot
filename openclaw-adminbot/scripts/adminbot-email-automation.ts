@@ -1,7 +1,6 @@
 #!/usr/bin/env -S node --import tsx
 
 import { execFile } from "node:child_process";
-import { isMainModule } from "./lib/is-main-module.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +9,7 @@ import { promisify } from "node:util";
 import {
   adminBotPaperflowEvidenceMinConfidence,
   createAdminBotSqliteService,
+  ensureAdminBotEmailReviewSchema,
   isAdminBotPaperflowStage,
   looksLikeZoomRecordingNotice,
   noticeToMeeting,
@@ -29,6 +29,7 @@ import {
   type ModelEmailDraft,
   type PaperflowCandidate,
 } from "./adminbot-email-model.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 const execFileAsync = promisify(execFile);
 // Every address, calendar and channel below identifies a specific workspace, so it is deployment
@@ -367,11 +368,16 @@ export class StateStore {
         message_id TEXT PRIMARY KEY,
         thread_id TEXT NOT NULL,
         sender TEXT NOT NULL,
+        subject TEXT,
         category TEXT NOT NULL,
         status TEXT NOT NULL,
         reason TEXT,
         attempts INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
+        received_at TEXT,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        resolution TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS adminbot_email_effects (
@@ -395,6 +401,7 @@ export class StateStore {
         scanned_through TEXT NOT NULL
       );
     `);
+    ensureAdminBotEmailReviewSchema(this.db);
   }
 
   close(): void {
@@ -448,7 +455,9 @@ export class StateStore {
     const row = this.db
       .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
       .get(messageId) as { status?: string } | undefined;
-    return row?.status === "completed" || row?.status === "needs_review";
+    return (
+      row?.status === "completed" || row?.status === "needs_review" || row?.status === "reviewed"
+    );
   }
 
   getOnboarding(
@@ -488,22 +497,30 @@ export class StateStore {
     if (
       existing?.status === "completed" ||
       existing?.status === "needs_review" ||
+      existing?.status === "reviewed" ||
       existing?.status === "processing"
     )
       return false;
     this.db
       .prepare(`INSERT INTO adminbot_email_messages
-      (message_id, thread_id, sender, category, status, reason, attempts, updated_at)
-      VALUES (?, ?, ?, ?, 'processing', ?, 1, ?)
+      (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
+       updated_at)
+      VALUES (?, ?, ?, ?, ?, 'processing', ?, 1, ?, ?)
       ON CONFLICT(message_id) DO UPDATE SET status='processing', category=excluded.category,
-        reason=excluded.reason, attempts=adminbot_email_messages.attempts + 1,
-        last_error=NULL, updated_at=excluded.updated_at`)
+        thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
+        reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
+        attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`)
       .run(
         message.id,
         message.threadId,
         message.from,
+        message.subject,
         classification.category,
         classification.reason,
+        message.internalDate && Number.isFinite(Number(message.internalDate))
+          ? new Date(Number(message.internalDate)).toISOString()
+          : null,
         new Date().toISOString(),
       );
     return true;

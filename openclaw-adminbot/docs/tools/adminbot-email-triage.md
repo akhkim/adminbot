@@ -4,14 +4,25 @@
 message it touches ends up in exactly one of three states, and the state is written back to Gmail
 as a label. Only one of the three leaves the inbox.
 
-| Outcome | Label | Stays in the inbox? | Means |
-| --- | --- | --- | --- |
-| completed | `AdminBot/Handled` | no — archived | Every effect landed. Nothing for a person to do. |
-| needs review | `AdminBot/Needs Review` | **yes** | Understood, but deliberately not automated: an unrecognized email, an untrusted sender asking for a privileged action, a bcc that matched no paper. |
-| failed | `AdminBot/Error` | **yes** | Something broke mid-pass. The reason is in the run's JSON summary and in `adminbot_email_messages.last_error`. |
+| Outcome      | Label                   | Stays in the inbox? | Means                                                                                                                                               |
+| ------------ | ----------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| completed    | `AdminBot/Handled`      | no — archived       | Every effect landed. Nothing for a person to do.                                                                                                    |
+| needs review | `AdminBot/Needs Review` | **yes**             | Understood, but deliberately not automated: an unrecognized email, an untrusted sender asking for a privileged action, a bcc that matched no paper. |
+| failed       | `AdminBot/Error`        | **yes**             | Something broke mid-pass. The reason is in the run's JSON summary and in `adminbot_email_messages.last_error`.                                      |
 
 So **the inbox is the to-do list**. What is left in it after a pass is exactly the work that still
 needs a person, and each piece of it carries a label saying which kind it is.
+
+Administrators also see the `AdminBot/Needs Review` queue in Control UI under **Pending Actions →
+Emails needing review**. Each card names the sender, subject, classification, and the exact reason
+automation stopped. For venue evidence, the administrator can attach the message to one of the
+currently open PaperFlow stages; this records the Gmail message id on the stage and stops its
+reminders. `Not paper evidence` settles the review without changing a paper. Both decisions are
+audited.
+
+The Control UI decision deliberately does not alter or archive the Gmail message. Gmail remains the
+human-readable source record, with its original `AdminBot/Needs Review` label, while the database
+records that an administrator resolved the item so it does not remain in AdminBot's queue.
 
 ## Why labels rather than deleting
 

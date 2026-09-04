@@ -92,6 +92,37 @@ describe("renderDashboard", () => {
     expect(container.textContent).toContain("1");
   });
 
+  it("surfaces held email only to an administrator", () => {
+    const setTab = vi.fn();
+    const state = createState({
+      setTab,
+      adminBotData: {
+        proposals: [],
+        emailReviews: [
+          {
+            message_id: "m1",
+            thread_id: "t1",
+            sender: "venue@example.org",
+            category: "paperflow_bcc",
+            updated_at: "2026-09-03T21:05:00.000Z",
+          },
+        ],
+      },
+    });
+    const admin = renderPage(state, "admin");
+    expect(attentionIds(admin)).toContain("email-reviews");
+    admin
+      .querySelector<HTMLButtonElement>(
+        '[data-testid="dashboard-attention-email-reviews"] button',
+      )
+      ?.click();
+    expect(setTab).toHaveBeenCalledWith("adminbot");
+
+    expect(attentionIds(renderPage(state, "member"))).not.toContain(
+      "email-reviews",
+    );
+  });
+
   it("keeps the admin queues out of a member's view", () => {
     const container = renderPage(
       createState({

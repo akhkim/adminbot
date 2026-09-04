@@ -3400,6 +3400,61 @@ function profileOverviewRow(row: Partial<MemberProfileOverviewRow>): MemberProfi
   };
 }
 
+// --- Held-email review ---
+
+export type AdminBotEmailReviewItem = {
+  message_id: string;
+  thread_id: string;
+  sender: string;
+  subject?: string;
+  category: string;
+  reason?: string;
+  received_at?: string;
+  updated_at: string;
+};
+
+export type AdminBotEmailReviewPaperflowCandidate = {
+  paper_id: string;
+  title: string;
+  stage: string;
+  stage_label: string;
+  venue?: string;
+};
+
+export type AdminBotEmailReviewData = {
+  reviews: AdminBotEmailReviewItem[];
+  paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
+};
+
+export type AdminBotEmailReviewResolution =
+  | { kind: "paperflow_evidence"; paper_id: string; stage: string }
+  | { kind: "dismissed" };
+
+export async function resolveEmailReviewAsAdmin(
+  messageId: string,
+  resolution: AdminBotEmailReviewResolution,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ resolution: string; evidence_recorded: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/automation/email/review/${encodeURIComponent(messageId)}`,
+    "POST",
+    sessionToken,
+    resolution,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { resolution: string; evidence_recorded: boolean },
+  };
+}
+
 // --- Paper evidence slots ---
 //
 // The tall table behind My Projects & Papers: one row per artifact per paper. The registry that

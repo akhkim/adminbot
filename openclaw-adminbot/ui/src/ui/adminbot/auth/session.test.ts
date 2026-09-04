@@ -16,6 +16,7 @@ import {
   issueDeviceToken,
   pairDevice,
   resolveAdminBotBaseUrl,
+  resolveEmailReviewAsAdmin,
   saveStoredMemberSession,
   signupMember,
   nudgeOnboardingStep,
@@ -494,6 +495,32 @@ describe("onboarding step nudge", () => {
     expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
       channel: "email",
       message: "Please join us.",
+    });
+  });
+});
+
+describe("email review resolution", () => {
+  it("posts the administrator's exact paper and stage decision", async () => {
+    const value = { resolution: "paperflow_evidence", evidence_recorded: true };
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, value));
+
+    const result = await resolveEmailReviewAsAdmin(
+      "gmail/message-1",
+      { kind: "paperflow_evidence", paper_id: "paper-1", stage: "reviews_out" },
+      "sess-tok",
+      BASE_URL,
+    );
+
+    expect(result).toEqual({ ok: true, value });
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/automation/email/review/gmail%2Fmessage-1`);
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer sess-tok" }),
+    });
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
+      kind: "paperflow_evidence",
+      paper_id: "paper-1",
+      stage: "reviews_out",
     });
   });
 });

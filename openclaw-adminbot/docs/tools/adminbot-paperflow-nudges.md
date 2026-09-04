@@ -174,11 +174,15 @@ seconds and cannot lose a paper.
 
 ### Recovering an already received message
 
-If an author followed the earlier BCC instruction, find the message under
-`AdminBot/Needs Review`, confirm the paper and open stage, then call
-`POST /papers/paperflow-evidence` with `recorded_by: "admin"`. That closes the current stage without
-weakening the trusted-sender rule. The already filed email is not retried automatically because a
-needs-review outcome is intentionally settled until a person decides it.
+If an author followed the earlier BCC instruction, open **Pending Actions → Emails needing review**
+in Control UI. The card explains why the message was held and offers only papers with a currently
+open venue stage. Confirm the message, choose the matching paper, and press **Attach and stop
+reminder**. That records the message id and closes the stage without weakening the trusted-sender
+rule. The already filed email is not retried automatically because a needs-review outcome is
+intentionally settled until a person decides it.
+
+The underlying `POST /papers/paperflow-evidence` route remains available for operators and batch
+recovery, but the normal recovery path no longer requires constructing that request by hand.
 
 ## Related
 
