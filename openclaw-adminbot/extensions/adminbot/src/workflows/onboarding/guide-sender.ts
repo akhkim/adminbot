@@ -11,14 +11,14 @@
 // account-approved email are wired.
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import { renderEmailBodyHtml } from "../../connectors/email-html.js";
+import { resolveGogExecutable } from "../../connectors/gog.js";
 import {
   adminBotExternalCollaboratorSubgroups,
   type AdminBotExternalCollaboratorSubgroup,
 } from "../../contracts/actions.js";
-import { renderEmailBodyHtml } from "../../connectors/email-html.js";
-import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
-import { resolveGogExecutable } from "../../connectors/gog.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
+import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
 import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
@@ -192,16 +192,8 @@ export type AdminBotOnboardingSenderOptions = {
    * just noisier for the recipient.
    */
   slackConnectInviteCache?: {
-    get: (
-      email: string,
-      channelId: string,
-    ) => { url: string; created_at: string } | undefined;
-    save: (invite: {
-      email: string;
-      channel_id: string;
-      url: string;
-      created_at: string;
-    }) => void;
+    get: (email: string, channelId: string) => { url: string; created_at: string } | undefined;
+    save: (invite: { email: string; channel_id: string; url: string; created_at: string }) => void;
   };
   now?: () => Date;
   /**
@@ -360,9 +352,7 @@ export function createAdminBotOnboardingSender(
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
   return async (request) => {
     const overrides: AdminBotGuideOverrides = {
-      ...(request.subject_override?.trim()
-        ? { subject: request.subject_override }
-        : {}),
+      ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
       ...(request.body_override?.trim() ? { body: request.body_override } : {}),
     };
     const name = request.name?.trim() ?? "";
@@ -397,8 +387,7 @@ export function createAdminBotOnboardingSender(
       // under the address they are being written to, and was silently wrong for everyone else.
       member_email:
         request.values?.member_email?.trim() || options.portalLoginEmail?.(email) || email,
-      zhijing_whatsapp:
-        request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
+      zhijing_whatsapp: request.values?.zhijing_whatsapp ?? options.headProfessorWhatsapp?.(),
     };
 
     // Report every missing hand-entered value at once, before provisioning anything: asking the
@@ -408,10 +397,7 @@ export function createAdminBotOnboardingSender(
     // Edited copy is judged by what it still says, not by what the stored template said.
     const copy = `${overrides.subject ?? template.subject ?? ""}\n${overrides.body ?? template.body}`;
     const missingByHand = template.required.filter(
-      (token) =>
-        copy.includes(`{${token}}`) &&
-        !generated.has(token) &&
-        !base[token]?.trim(),
+      (token) => copy.includes(`{${token}}`) && !generated.has(token) && !base[token]?.trim(),
     );
     if (missingByHand.length > 0) {
       return {
@@ -469,9 +455,7 @@ export function createAdminBotOnboardingSender(
       if (!probe.ok) {
         return { ok: false, error: composeFailure(probe) };
       }
-      const unknown = unfilledPlaceholders(
-        `${probe.guide.subject}\n${probe.guide.body}`,
-      );
+      const unknown = unfilledPlaceholders(`${probe.guide.subject}\n${probe.guide.body}`);
       if (unknown.length > 0) {
         return {
           ok: false,
@@ -490,10 +474,7 @@ export function createAdminBotOnboardingSender(
 
     // Provisioned because the copy being sent asks for it, not because the stored template does:
     // an operator who deleted the Drive sentence should not still get a folder created for them.
-    if (
-      copy.includes("{drive_folder_link}") &&
-      !values.drive_folder_link?.trim()
-    ) {
+    if (copy.includes("{drive_folder_link}") && !values.drive_folder_link?.trim()) {
       if (!options.provisionDriveWorkspace) {
         return {
           ok: false,
@@ -511,10 +492,7 @@ export function createAdminBotOnboardingSender(
       values.drive_folder_link = workspace.link;
     }
 
-    if (
-      copy.includes("{slack_connect_link}") &&
-      !values.slack_connect_link?.trim()
-    ) {
+    if (copy.includes("{slack_connect_link}") && !values.slack_connect_link?.trim()) {
       if (!options.inviteToSlackConnect) {
         return {
           ok: false,
@@ -542,10 +520,7 @@ export function createAdminBotOnboardingSender(
       // Slack invitation every time a mail was corrected and re-sent, and left several live
       // invitations to the same channel pointing at the same person.
       const cached = options.slackConnectInviteCache?.get(email, channelId);
-      if (
-        cached?.url &&
-        adminBotSlackConnectInviteIsFresh(cached, options.now?.() ?? new Date())
-      ) {
+      if (cached?.url && adminBotSlackConnectInviteIsFresh(cached, options.now?.() ?? new Date())) {
         slackLink = cached.url;
         values.slack_connect_link = cached.url;
       } else {
@@ -569,8 +544,7 @@ export function createAdminBotOnboardingSender(
         // Slack invited them either way; only the shareable link is optional. The copy reads
         // "...stay in touch: {slack_connect_link}", so a missing link becomes the sentence that is
         // actually true -- the invitation is in their inbox -- rather than a refusal to send.
-        values.slack_connect_link =
-          invite.url || "check your inbox for the Slack invitation";
+        values.slack_connect_link = invite.url || "check your inbox for the Slack invitation";
         if (invite.url) {
           // Only a real link is worth remembering; the fallback sentence is not one.
           options.slackConnectInviteCache?.save({
@@ -588,9 +562,7 @@ export function createAdminBotOnboardingSender(
     // it could only be reported, and the recipient would already be holding the promise.
     const projectChannels = [
       ...new Set(
-        (request.slack_project_channels ?? [])
-          .map((entry) => entry.trim())
-          .filter(Boolean),
+        (request.slack_project_channels ?? []).map((entry) => entry.trim()).filter(Boolean),
       ),
     ];
     const projectInvites: { channel: string; url: string }[] = [];
@@ -630,9 +602,9 @@ export function createAdminBotOnboardingSender(
     let activeChannelInvites:
       | { configured: boolean; invited: { channel: string; url: string }[] }
       | undefined;
-    const subgroup = (
-      adminBotExternalCollaboratorSubgroups as readonly string[]
-    ).includes(template.id)
+    const subgroup = (adminBotExternalCollaboratorSubgroups as readonly string[]).includes(
+      template.id,
+    )
       ? (template.id as AdminBotExternalCollaboratorSubgroup)
       : undefined;
     const owedActiveChannels =
@@ -679,12 +651,7 @@ export function createAdminBotOnboardingSender(
       }
     }
 
-    const composed = composeOnboardingGuide(
-      template.id,
-      values,
-      env,
-      overrides,
-    );
+    const composed = composeOnboardingGuide(template.id, values, env, overrides);
     if (!composed.ok) {
       return { ok: false, error: composeFailure(composed) };
     }
@@ -711,9 +678,7 @@ export function createAdminBotOnboardingSender(
       body: guide.body,
       ...html,
       ...(request.cc?.length ? { cc: request.cc } : {}),
-      ...(request.reply_to?.trim()
-        ? { reply_to: request.reply_to.trim() }
-        : {}),
+      ...(request.reply_to?.trim() ? { reply_to: request.reply_to.trim() } : {}),
     });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
@@ -721,8 +686,7 @@ export function createAdminBotOnboardingSender(
     // rather than fired and forgotten, because the operator asked for it in this request and the
     // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
     let dcsForm: { submitted: boolean; error?: string } | undefined;
-    const wantsDcsForm =
-      request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
+    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
     if (wantsDcsForm) {
       if (!options.submitDcsForm) {
         dcsForm = {
@@ -730,15 +694,27 @@ export function createAdminBotOnboardingSender(
           error: "the DCS form runner is not configured",
         };
       } else {
-        const { firstName, lastName } = splitDisplayName(name);
-        try {
-          await options.submitDcsForm({ firstName, lastName, email });
-          dcsForm = { submitted: true };
-        } catch (error) {
+        // A name with no family name in it cannot be filed: the form asks for First and Last, and
+        // answering both with the same word is how a DCS account was requested for "Eric Eric".
+        // Reported as a failed attempt rather than thrown -- the guide itself has been sent, and
+        // this is the shape the tab and the audit already use for "somebody has to do this by
+        // hand".
+        const parts = splitDisplayName(name);
+        if (!parts) {
           dcsForm = {
             submitted: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: `no last name in "${name}" — the DCS form asks for First and Last separately. Put the full name on the roster and re-send, or file the request by hand.`,
           };
+        } else {
+          try {
+            await options.submitDcsForm({ ...parts, email });
+            dcsForm = { submitted: true };
+          } catch (error) {
+            dcsForm = {
+              submitted: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
         }
       }
     }
@@ -751,12 +727,8 @@ export function createAdminBotOnboardingSender(
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
-        ...(projectInvites.length > 0
-          ? { project_channel_invites: projectInvites }
-          : {}),
-        ...(activeChannelInvites
-          ? { active_channel_invites: activeChannelInvites }
-          : {}),
+        ...(projectInvites.length > 0 ? { project_channel_invites: projectInvites } : {}),
+        ...(activeChannelInvites ? { active_channel_invites: activeChannelInvites } : {}),
         ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },
     };

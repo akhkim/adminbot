@@ -52,6 +52,8 @@ type Recorded = {
   drive: string[];
   connect: Array<{ email: string; channelId: string }>;
   dcs: string[];
+  /** What the DCS runner was asked to file, which is the half that reached the university. */
+  dcsNames: Array<{ firstName: string; lastName: string }>;
 };
 
 /**
@@ -62,12 +64,12 @@ type Recorded = {
  */
 async function send(
   templateId: string,
-  options: { activeChannels?: string | undefined } = {},
+  options: { activeChannels?: string | undefined; name?: string } = {},
 ): Promise<{
   result: Awaited<ReturnType<ReturnType<typeof createAdminBotOnboardingSender>>>;
   recorded: Recorded;
 }> {
-  const recorded: Recorded = { mail: [], drive: [], connect: [], dcs: [] };
+  const recorded: Recorded = { mail: [], drive: [], connect: [], dcs: [], dcsNames: [] };
   const sender = createAdminBotOnboardingSender({
     // Built here, never inherited: `resolveActiveChannels` and the deployment tokens read the
     // environment, and a test that took the host's would pass or fail depending on whose machine
@@ -90,8 +92,9 @@ async function send(
     },
     // Returns void, like the real runner: the send reports `dcs_form.submitted` from whether this
     // resolved or threw, not from anything it hands back.
-    submitDcsForm: async () => {
+    submitDcsForm: async ({ firstName, lastName }) => {
       recorded.dcs.push(templateId);
+      recorded.dcsNames.push({ firstName, lastName });
     },
     headProfessorWhatsapp: () => "+1 555 0100",
     // Always injected. See the file header: this is the only option with a real-world fallback.
@@ -101,7 +104,7 @@ async function send(
   });
   const result = await sender({
     template_id: templateId,
-    name: "Ada Lovelace",
+    name: options.name ?? "Ada Lovelace",
     email: "ada@example.test",
     slack_channel_id: "C0TEST",
     // Read off the template rather than hardcoded, so this file does not have to be edited every
@@ -131,9 +134,7 @@ describe("onboarding sends nothing to the outside world under test", () => {
   it("records the mail instead of delivering it", async () => {
     const { result, recorded } = await send("coauthor_major");
     expect(payloadOf(result).sent).toBe(true);
-    expect(recorded.mail).toEqual([
-      { to: "ada@example.test", subject: expect.any(String) },
-    ]);
+    expect(recorded.mail).toEqual([{ to: "ada@example.test", subject: expect.any(String) }]);
   });
 });
 
@@ -234,5 +235,33 @@ describe("access levels with no onboarding mail at all", () => {
     expect(without.toSorted()).toEqual(
       ["acquaintance", "coauthor_discussant_designer", "external_prof"].toSorted(),
     );
+  });
+});
+
+// The DCS request is filed on the university's system under the lab's name, so what goes in its
+// two required fields is the one thing here that cannot be quietly wrong.
+describe("the DCS request's name", () => {
+  const DCS_TEMPLATE = "member";
+
+  it("files the family name from the roster's one free-text name", async () => {
+    const { recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
+    expect(recorded.dcsNames).toEqual([{ firstName: "Eric", lastName: "Zhang" }]);
+  });
+
+  // The bug as reported: a one-word name filed a real account for "Eric Eric".
+  it("refuses to file rather than answering both fields with the same word", async () => {
+    const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
+    expect(recorded.dcsNames).toEqual([]);
+    const dcs = payloadOf(result).dcs_form;
+    expect(dcs?.submitted).toBe(false);
+    expect(dcs?.error).toContain("no last name");
+  });
+
+  // The guide is the thing the member is waiting for; the form is a side errand. A name the form
+  // cannot take must not hold up the mail.
+  it("still sends the guide when the form cannot be filed", async () => {
+    const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
+    expect(payloadOf(result).sent).toBe(true);
+    expect(recorded.mail).toHaveLength(1);
   });
 });

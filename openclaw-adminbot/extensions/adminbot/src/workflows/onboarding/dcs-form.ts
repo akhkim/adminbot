@@ -5,21 +5,31 @@ const execFile = promisify(execFileCallback);
 const DCS_FORM_TIMEOUT_MS = 90_000;
 const DCS_FORM_MAX_OUTPUT_BYTES = 1024 * 1024;
 
-// The roster keeps one free-text `name`; the DCS form (like most external forms) wants separate
-// First/Last Name answers, so this splits on the last space -- everything before it becomes the
-// first name (covers middle names/initials), the final token becomes the last name. A one-word
-// name (no space) has nothing to split, so it is used for both rather than leaving a required
-// field blank.
-export function splitDisplayName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim();
-  const lastSpace = trimmed.lastIndexOf(" ");
-  if (lastSpace === -1) {
-    return { firstName: trimmed, lastName: trimmed };
+/**
+ * The roster's one free-text `name`, as the separate First/Last answers an external form wants.
+ *
+ * Split on the last run of whitespace: everything before it is the first name (which covers
+ * middle names and initials), the final token is the last name.
+ *
+ * `undefined` when there is no last name to give, which the caller must treat as "cannot file
+ * this". It used to answer a one-word name by putting that word in *both* fields, and the result
+ * was a real DCS account requested for "Eric Eric" -- a wrong surname on a university system,
+ * filed under the lab's name, which is worse than the blank the duplication was avoiding. There
+ * are 14 one-word names on the roster today, so this was not a one-off.
+ *
+ * Whitespace is matched as a class rather than as a literal " " for the same reason: a name
+ * pasted out of Slack or Sheets can carry a non-breaking or full-width space, and against a
+ * literal space "Eric\u00a0Zhang" looked exactly like a mononym and was duplicated whole.
+ */
+export function splitDisplayName(
+  name: string,
+): { firstName: string; lastName: string } | undefined {
+  const parts = name.trim().split(/\s+/u).filter(Boolean);
+  const lastName = parts.length > 1 ? parts.at(-1) : undefined;
+  if (!lastName) {
+    return undefined;
   }
-  return {
-    firstName: trimmed.slice(0, lastSpace).trim(),
-    lastName: trimmed.slice(lastSpace + 1).trim(),
-  };
+  return { firstName: parts.slice(0, -1).join(" "), lastName };
 }
 
 export type DcsFormRunner = (params: {

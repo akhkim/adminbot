@@ -971,8 +971,10 @@ export class AdminBotAuthService {
   // Fire-and-forget, same contract as the calendar invite and approval email: the approval is
   // already recorded, so a failed form submission is audited for a human to file by hand rather
   // than rolled back. The roster only ever records one free-text `name`, so it is split on the
-  // last space (see splitDisplayName) to fill the form's separate First/Last Name questions --
-  // the same shape the actual form asks a person to fill in by hand.
+  // last run of whitespace (see splitDisplayName) to fill the form's separate First/Last Name
+  // questions -- the same shape the actual form asks a person to fill in by hand. A name with no
+  // family name in it is not filed at all: the splitter returns nothing and the attempt is
+  // recorded as failed, because the alternative was a DCS account requested for "Eric Eric".
 
   rejectRegistration(id: string, decidedBy: string): AdminBotAuthResponse<{ status: "rejected" }> {
     const registration = this.store.getAccountRegistration(id);
