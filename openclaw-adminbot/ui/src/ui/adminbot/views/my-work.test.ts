@@ -777,6 +777,62 @@ describe("target venue", () => {
   });
 });
 
+describe("project acceptance", () => {
+  it("sends the venue decision selected on an author's project card", () => {
+    const { container, saved } = draw({ openIds: ["p1"], papers: [paper()] });
+    const decision = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-decision-p1"]',
+    )!;
+    decision.value = "accept";
+    decision.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "p1",
+      title: "Causal abstraction",
+      venueDecision: "accept",
+    });
+  });
+
+  it("sends every acceptance detail, including explicit clears", () => {
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+    const { container, saved } = draw({ openIds: ["p1"], papers: [accepted] });
+
+    const venue = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-venue-p1"]',
+    )!;
+    venue.value = "";
+    venue.dispatchEvent(new Event("change", { bubbles: true }));
+    const year = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-year-p1"]',
+    )!;
+    year.value = "";
+    year.dispatchEvent(new Event("change", { bubbles: true }));
+    const archival = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-archival-p1"]',
+    )!;
+    archival.value = "";
+    archival.dispatchEvent(new Event("change", { bubbles: true }));
+    const presentation = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-presentation-p1"]',
+    )!;
+    presentation.value = "";
+    presentation.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.slice(-4)).toEqual([
+      expect.objectContaining({ acceptedVenue: "" }),
+      expect.objectContaining({ acceptedYear: "" }),
+      expect.objectContaining({ isArchival: "" }),
+      expect.objectContaining({ presentationType: "" }),
+    ]);
+  });
+});
+
 describe("finished papers", () => {
   const done = { completed_at: "2026-07-14T18:03:11.000Z" };
 

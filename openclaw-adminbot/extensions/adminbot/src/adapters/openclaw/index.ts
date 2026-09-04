@@ -11,7 +11,9 @@ import type {
   AdminBotLabMember,
   AdminBotPaperRecordInput,
   AdminBotPaperRecord,
+  AdminBotPaperPresentationType,
   AdminBotPaperStep,
+  AdminBotPaperVenueDecision,
   AdminBotPrivilegeLevel,
   AdminBotRiskTier,
   AdminBotSensitiveInfoRecord,
@@ -179,6 +181,11 @@ type PaperParams = {
   title: string;
   authors: string[];
   currentStep: AdminBotPaperStep;
+  venueDecision?: AdminBotPaperVenueDecision;
+  acceptedVenue?: string;
+  acceptedYear?: number | "";
+  isArchival?: boolean | "";
+  presentationType?: AdminBotPaperPresentationType | "";
   artifacts?: AdminBotPaperRecordInput["artifacts"];
   mentorMemberId?: string;
   checks?: AdminBotPaperRecordInput["checks"];
@@ -573,12 +580,19 @@ function paperRecord(params: PaperParams): AdminBotPaperRecordInput {
     title: params.title,
     authors: params.authors,
     current_step: params.currentStep,
+    ...(params.venueDecision ? { venue_decision: params.venueDecision } : {}),
+    ...(params.acceptedVenue === undefined ? {} : { accepted_venue: params.acceptedVenue }),
+    ...(params.acceptedYear === undefined ? {} : { accepted_year: params.acceptedYear }),
+    ...(params.isArchival === undefined ? {} : { is_archival: params.isArchival }),
+    ...(params.presentationType === undefined
+      ? {}
+      : { presentation_type: params.presentationType }),
     ...(params.artifacts ? { artifacts: params.artifacts } : {}),
     ...(params.mentorMemberId ? { mentor_member_id: params.mentorMemberId } : {}),
     ...(params.checks ? { checks: params.checks } : {}),
     ...(params.reminder ? { reminder: params.reminder } : {}),
     ...(params.notes ? { notes: params.notes } : {}),
-  };
+  } as AdminBotPaperRecordInput;
 }
 
 function readArray<T>(value: unknown, key: string): T[] {

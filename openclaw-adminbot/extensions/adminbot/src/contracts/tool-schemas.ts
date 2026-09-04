@@ -2,12 +2,16 @@ import { Type } from "typebox";
 import {
   adminBotActionTypes,
   adminBotExternalCollaboratorSubgroups,
+  adminBotPaperPresentationTypes,
   adminBotPaperSteps,
+  adminBotPaperVenueDecisions,
   adminBotPrivilegeLevels,
   adminBotRiskTiers,
   type AdminBotActionType,
   type AdminBotExternalCollaboratorSubgroup,
   type AdminBotPaperStep,
+  type AdminBotPaperPresentationType,
+  type AdminBotPaperVenueDecision,
   type AdminBotPrivilegeLevel,
   type AdminBotRiskTier,
 } from "./actions.js";
@@ -37,6 +41,16 @@ export const collaboratorSubgroupSchema = Type.Unsafe<AdminBotExternalCollaborat
 export const paperStepSchema = Type.Unsafe<AdminBotPaperStep>({
   type: "string",
   enum: [...adminBotPaperSteps],
+});
+
+export const paperVenueDecisionSchema = Type.Unsafe<AdminBotPaperVenueDecision>({
+  type: "string",
+  enum: [...adminBotPaperVenueDecisions],
+});
+
+export const paperPresentationTypeSchema = Type.Unsafe<AdminBotPaperPresentationType>({
+  type: "string",
+  enum: [...adminBotPaperPresentationTypes],
 });
 
 export const accessGrantSchema = Type.Object(
