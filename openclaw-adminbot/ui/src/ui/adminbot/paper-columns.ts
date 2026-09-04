@@ -423,16 +423,15 @@ const RECORD_COLUMNS: Column[] = [
   },
   // ── what the venue said ─────────────────────────────────────────────────────────────────
   //
-  // These five are the card's acceptance block, and they are governance rather than authorship:
-  // `upsertOwnPaper` refuses `venue_decision` from a plain member outright (400) and drops the
-  // four beside it. They are offered here anyway, and for the same reason the card offers them --
-  // an admin filling in a sheet of decisions is the person these are for, and a surface that
-  // silently lacks them sends that person back to twenty cards.
+  // These five are the card's acceptance block, and they are the authors' own report of what the
+  // venue answered: `OWN_PAPER_EDITABLE_FIELDS` takes all five from the member write path, so a
+  // cell here saves for the author whose paper it is as well as for an admin filling in a sheet
+  // of decisions. The workflow fields beside them on the record -- who gets nudged, which attempt
+  // this is, the dormancy exemption -- stay privileged and have no column.
   //
-  // What makes that safe is that only a *typed* cell is ever sent: `pendingSaves` reads the edit
-  // map, not the record, so a member who leaves these alone never has one in their payload and
-  // never sees the refusal. A member who does type one gets that row refused, exactly as the card
-  // refuses it, and the other rows in the sheet still save.
+  // Only a *typed* cell is ever sent either way: `pendingSaves` reads the edit map, not the
+  // record, so a row nobody touched these in never carries them and a stored answer is never
+  // rewritten by somebody editing the Overleaf link beside it.
   {
     key: "venue_decision",
     group: "decision",
@@ -443,7 +442,7 @@ const RECORD_COLUMNS: Column[] = [
     label: "Venue decision",
     short: "Decision",
     format: "Whether the venue has answered",
-    hint: "Recorded by an admin — a member's own edit here is refused, as it is on the card",
+    hint: "The venue's answer, as the authors report it — the same control the card carries",
   },
   {
     key: "accepted_venue",

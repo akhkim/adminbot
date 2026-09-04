@@ -43,6 +43,12 @@ export type {
 } from "./src/workflows/papers/openreview-workflow.js";
 export { createCompositeAdminBotExecutor } from "./src/connectors/composite.js";
 export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/persistence/sqlite.js";
+export { ensureAdminBotEmailReviewSchema } from "./src/persistence/email-review.js";
+export type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewPaperflowCandidate,
+  AdminBotEmailReviewResolution,
+} from "./src/contracts/email-review.js";
 // PaperFlow venue-cycle stages. Exported for scripts/adminbot-email-automation.ts, which reads the
 // open stages to hand the classifier a closed set to choose from, and writes back the evidence
 // when a bcc closes one.

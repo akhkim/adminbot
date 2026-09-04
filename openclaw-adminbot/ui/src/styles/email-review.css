@@ -1,0 +1,175 @@
+.adminbot-review-queues {
+  display: grid;
+  gap: var(--space-6);
+  margin-top: var(--space-5);
+}
+
+.adminbot-review-queues__actions,
+.email-review-queue {
+  min-width: 0;
+}
+
+.adminbot-review-queues__actions > h3,
+.email-review-queue__heading h3,
+.email-review__header h4 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.adminbot-review-queues__actions > p,
+.email-review-queue__heading p,
+.email-review-queue__gmail-note,
+.email-review__no-targets {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+}
+
+.email-review-queue {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.email-review-queue__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.email-review-queue__heading p {
+  max-width: 68ch;
+}
+
+.email-review-queue__count {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--warn-subtle);
+  color: var(--warn);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 700;
+}
+
+.email-review-list {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.email-review {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+.email-review__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.email-review__header > div {
+  min-width: 0;
+}
+
+.email-review__header h4 {
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+  font-size: var(--control-ui-text-lg);
+}
+
+.email-review__status {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.email-review__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.email-review__facts div {
+  min-width: 0;
+}
+
+.email-review__facts dt {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.email-review__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
+.email-review__reason {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--warn-subtle);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+}
+
+.email-review__resolution {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.email-review__resolution label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+}
+
+.email-review__resolution select {
+  width: 100%;
+}
+
+.email-review__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.email-review__no-targets {
+  grid-column: 1 / -1;
+}
+
+.email-review-queue__gmail-note {
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 760px) {
+  .email-review__facts,
+  .email-review__resolution {
+    grid-template-columns: 1fr;
+  }
+
+  .email-review__actions {
+    justify-content: flex-end;
+  }
+}

@@ -1993,6 +1993,7 @@ export type AdminBotAuditEvent = {
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"
     | "paperflow_stage.evidenced"
+    | "email_review.resolved"
     | "paper_social_draft.saved"
     | "paper_social_draft.circulated"
     | "paper_social_consent.recorded"

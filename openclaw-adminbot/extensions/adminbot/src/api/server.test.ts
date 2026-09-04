@@ -1975,11 +1975,16 @@ describe("onboarding acknowledgement", () => {
 // board stays shared, but a member's write is confined to papers they filed or are named on, and to
 // the descriptive fields (governance -- mentor, checklist, reminder cadence -- stays admin-only).
 describe("member-authored papers", () => {
-  async function tokenFor(baseUrl: string, id: string, name: string): Promise<string> {
+  async function tokenFor(
+    baseUrl: string,
+    id: string,
+    name: string,
+    privilegeLevel: "member" | "admin" = "member",
+  ): Promise<string> {
     seedMember(baseUrl, id, {
       name,
       email: `${id}@cs.toronto.edu`,
-      privilege_level: "member",
+      privilege_level: privilegeLevel,
     });
     await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
     return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
@@ -2045,6 +2050,53 @@ describe("member-authored papers", () => {
       submitted_by_member_id: "ada",
       artifacts: { conference: "ICML 2026" },
     });
+  });
+
+  it("persists acceptance details from an author session", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      title: "Sparse world models",
+      authors: ["Ada Author"],
+      current_step: "submission",
+    });
+
+    const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+  });
+
+  it("lets an authenticated admin record a decision on another member's paper", async () => {
+    const { baseUrl } = await startService();
+    const adminToken = await tokenFor(baseUrl, "admin", "Admin User", "admin");
+    await putPaper(baseUrl, "lab-paper", serviceHeaders({ "Content-Type": "application/json" }), {
+      title: "Lab paper",
+      authors: ["Someone Else"],
+      current_step: "submission",
+    });
+
+    const res = await putPaper(baseUrl, "lab-paper", memberHeaders(adminToken), {
+      title: "Lab paper",
+      authors: ["Someone Else"],
+      current_step: "submission",
+      venue_decision: "reject",
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ venue_decision: "reject" });
   });
 
   it("lets a member named in the authors edit a paper an admin filed", async () => {

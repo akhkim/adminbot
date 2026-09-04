@@ -34,6 +34,10 @@ import type {
   AdminBotBadgeNominationStatus,
 } from "../contracts/badges.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
+import type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewResolution,
+} from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -60,6 +64,7 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
+import { adminBotEmailReviewFromRow, ensureAdminBotEmailReviewSchema } from "./email-review.js";
 
 const require = createRequire(import.meta.url);
 
@@ -642,6 +647,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
         ON adminbot_workshop_match_runs(started_at DESC);
     `);
+    ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
@@ -2070,6 +2076,83 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       }
       return record;
     });
+  }
+
+  saveEmailReview(review: AdminBotEmailReviewItem): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_email_messages
+          (message_id, thread_id, sender, subject, category, status, reason, attempts,
+           received_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'needs_review', ?, 1, ?, ?)
+         ON CONFLICT(message_id) DO UPDATE SET
+           thread_id=excluded.thread_id,
+           sender=excluded.sender,
+           subject=excluded.subject,
+           category=excluded.category,
+           status='needs_review',
+           reason=excluded.reason,
+           received_at=excluded.received_at,
+           resolved_at=NULL,
+           resolved_by=NULL,
+           resolution=NULL,
+           updated_at=excluded.updated_at`,
+      )
+      .run(
+        review.message_id,
+        review.thread_id,
+        review.sender,
+        review.subject ?? null,
+        review.category,
+        review.reason ?? null,
+        review.received_at ?? null,
+        review.updated_at,
+      );
+  }
+
+  listEmailReviews(): AdminBotEmailReviewItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category, reason, received_at, updated_at
+           FROM adminbot_email_messages
+          WHERE status = 'needs_review'
+          ORDER BY updated_at DESC`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    return rows.map(adminBotEmailReviewFromRow);
+  }
+
+  getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category, reason, received_at, updated_at
+           FROM adminbot_email_messages
+          WHERE message_id = ? AND status = 'needs_review'`,
+      )
+      .get(messageId) as Record<string, unknown> | undefined;
+    return row ? adminBotEmailReviewFromRow(row) : undefined;
+  }
+
+  resolveEmailReview(params: {
+    messageId: string;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    resolvedBy: string;
+    resolvedAt: string;
+  }): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE adminbot_email_messages
+            SET status = 'reviewed', resolved_at = ?, resolved_by = ?, resolution = ?, updated_at = ?
+          WHERE message_id = ? AND status = 'needs_review'`,
+      )
+      .run(
+        params.resolvedAt,
+        params.resolvedBy,
+        params.resolution,
+        params.resolvedAt,
+        params.messageId,
+      );
+    return Number(result.changes) > 0;
   }
 
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {

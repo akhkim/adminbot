@@ -548,9 +548,9 @@ describe("the fields the card carries", () => {
     expect(cellError(columnFor("arxiv_paper_password"), "nope")).toBeTruthy();
   });
 
-  // The card offers these five and so does the sheet: they are governance rather than authorship
-  // (`upsertOwnPaper` refuses `venue_decision` outright), and the person they are for is the admin
-  // recording a round of decisions -- who should not have to open twenty cards to do it.
+  // The card offers these five and so does the sheet, and the member write path takes all five
+  // (OWN_PAPER_EDITABLE_FIELDS) -- so an author records their own paper's outcome, and an admin
+  // records a round of them without opening twenty cards.
   it("offers the acceptance answers the card offers", () => {
     for (const key of [
       "venue_decision",
@@ -568,8 +568,8 @@ describe("the fields the card carries", () => {
     });
   });
 
-  // The safety property that makes offering them safe: a row nobody typed a decision into never
-  // carries one, so an author's ordinary edit is never refused for a field they did not touch.
+  // The property that keeps a stored answer safe: a row nobody typed a decision into never carries
+  // one, so editing the Overleaf link beside it cannot rewrite what the venue said.
   it("sends a decision only from the cell that was typed in", () => {
     const state = emptyPaperGridState();
     state.edits.set("p1", new Map([["overleaf_view_url", "https://www.overleaf.com/read/abcdef"]]));

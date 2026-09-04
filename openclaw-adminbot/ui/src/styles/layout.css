@@ -7521,6 +7521,15 @@ adminbot-deadlines-view {
   display: flex;
   gap: var(--space-2);
   margin-top: var(--space-3);
+  align-items: center;
+}
+
+/* The hint sits left of the button and pushes it to the end, so "saves itself" is read before the
+   control that looks like it is the only way to save. */
+.my-work-details__autosave-hint {
+  margin-right: auto;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
 }
 
 .my-work-add-form.register .input {

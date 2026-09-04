@@ -152,15 +152,105 @@ describe("the paper fields the slots hang off", () => {
     expect(saved).toMatchObject({ venue: "ICLR 2027", deadline: "2026-09-24" });
   });
 
-  it("refuses the governance fields outright rather than silently dropping them", () => {
+  it("lets an author record every acceptance field and preserves them on later edits", () => {
+    const service = new AdminBotService();
+    seed(service);
+    const decided = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "p1",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
+      }),
+    );
+    expect(decided).toMatchObject({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    const renamed = unwrap(service.upsertOwnPaper("ada", { id: "p1", title: "New title" }));
+    expect(renamed).toMatchObject({
+      title: "New title",
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "eve",
+        name: "Eve Outsider",
+        privilege_level: "member",
+      } as never),
+    );
+    expect(service.upsertOwnPaper("eve", { id: "p1", venue_decision: "reject" })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("clears optional acceptance details when the card sends Not said", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
+      }),
+    );
+
+    const cleared = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "p1",
+        accepted_venue: "",
+        accepted_year: "",
+        is_archival: "",
+        presentation_type: "",
+      }),
+    );
+    expect(cleared).toMatchObject({ venue_decision: "accept" });
+    expect(cleared.accepted_venue).toBeUndefined();
+    expect(cleared.accepted_year).toBeUndefined();
+    expect(cleared.is_archival).toBeUndefined();
+    expect(cleared.presentation_type).toBeUndefined();
+  });
+
+  it("refuses malformed acceptance details instead of storing unusable values", () => {
     const service = new AdminBotService();
     seed(service);
     for (const field of [
-      "first_author_member_id",
-      "venue_decision",
-      "attempt",
-      "dormant_override",
+      { venue_decision: "maybe" },
+      { accepted_year: 1999 },
+      { accepted_year: 2026.5 },
+      { is_archival: "yes" },
+      { presentation_type: "keynote" },
     ]) {
+      expect(service.upsertOwnPaper("ada", { id: "p1", ...field })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+  });
+
+  it("refuses the governance fields outright rather than silently dropping them", () => {
+    const service = new AdminBotService();
+    seed(service);
+    for (const field of ["first_author_member_id", "attempt", "dormant_override"]) {
       expect(service.upsertOwnPaper("ada", { id: "p1", [field]: "bob" })).toMatchObject({
         ok: false,
         status: 400,
@@ -341,7 +431,12 @@ describe("attendance on the slot overview", () => {
     // The field is always present so the console never has to distinguish "no attendees" from
     // "this service is too old to say".
     const service = new AdminBotService();
-    service.upsertPaper({ id: "p2", title: "Quiet", authors: ["Alice"], current_step: "submission" });
+    service.upsertPaper({
+      id: "p2",
+      title: "Quiet",
+      authors: ["Alice"],
+      current_step: "submission",
+    });
     const row = service.listPaperSlotOverview().payload?.papers.find((p) => p.paper_id === "p2");
     expect(row?.attendance).toEqual({ yes: 0, no: 0, unknown: 0, going: [] });
   });

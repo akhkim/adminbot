@@ -502,8 +502,10 @@ describe("AdminBotService paper coauthors", () => {
     ]);
   });
 
-  // Why the grid shows the acceptance answers rather than offering to edit them.
-  it("refuses a venue decision from the member write path, admin included", () => {
+  // What the venue said is a fact the authors report, so an author may record it on their own
+  // paper -- the card and the sheet both offer the control, and until #147 both got a 400 for it.
+  // The workflow fields beside it stay privileged, which is the boundary this asserts.
+  it("takes a venue decision from an author, and still refuses the workflow fields", () => {
     const service = lab();
     unwrap(
       service.upsertOwnPaper("joeun-yook", {
@@ -513,8 +515,17 @@ describe("AdminBotService paper coauthors", () => {
         current_step: "brainstorming_docs",
       }),
     );
-    expect(
+    const stored = unwrap(
       service.upsertOwnPaper("joeun-yook", { id: "adminbot", venue_decision: "accept" }),
+    );
+    expect(stored?.venue_decision).toBe("accept");
+    // Not everything on the record travelled with it: who gets nudged, and which attempt this is,
+    // are the paper flow's to set.
+    expect(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        first_author_member_id: "joeun-yook",
+      }),
     ).toMatchObject({ ok: false, status: 400 });
   });
 

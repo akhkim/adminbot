@@ -10,6 +10,9 @@ import {
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
   type MemberNotification,
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewPaperflowCandidate,
+  type AdminBotEmailReviewResolution,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -26,6 +29,7 @@ import {
   type WorkshopConferenceOption,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
+  resolveEmailReviewAsAdmin,
   saveOwnPaper,
   fetchVenueSources,
   rebuildVenueIndexes,
@@ -684,6 +688,8 @@ export type AdminBotReimbursementState = {
 
 export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
+  emailReviews?: AdminBotEmailReviewItem[];
+  emailReviewCandidates?: AdminBotEmailReviewPaperflowCandidate[];
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   nudges: AdminBotPaperNudge[];
@@ -837,6 +843,8 @@ export const ADMINBOT_SERVICE_UNREACHABLE_MESSAGE =
 export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
   return {
     proposals: [],
+    emailReviews: [],
+    emailReviewCandidates: [],
     members: [],
     papers: [],
     nudges: [],
@@ -972,8 +980,9 @@ async function loadAdminBotOverSession(
       };
       return;
     }
-    const [pending, nudges, settings, sensitiveInfo] = await Promise.all([
+    const [pending, emailReview, nudges, settings, sensitiveInfo] = await Promise.all([
       optional("/proposals/pending?limit=50"),
+      optional("/automation/email/review"),
       optional("/papers/nudges"),
       optional("/settings"),
       optional("/sensitive-info"),
@@ -984,6 +993,11 @@ async function loadAdminBotOverSession(
     const filePath = readString(sensitiveInfoRecord, "path");
     host.adminBotData = {
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
+      emailReviews: readArray<AdminBotEmailReviewItem>(emailReview, "reviews"),
+      emailReviewCandidates: readArray<AdminBotEmailReviewPaperflowCandidate>(
+        emailReview,
+        "paperflow_candidates",
+      ),
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
@@ -1074,6 +1088,8 @@ export async function loadAdminBot(
     const filePath = readString(sensitiveInfoRecord, "path");
     host.adminBotData = {
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
+      emailReviews: [],
+      emailReviewCandidates: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
@@ -1186,6 +1202,49 @@ function requirePrivilegedSession(
     return null;
   }
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
+}
+
+export async function resolveAdminBotEmailReview(
+  host: AdminBotHost,
+  messageId: string,
+  resolution: AdminBotEmailReviewResolution,
+): Promise<void> {
+  host.adminBotBusyActionId = `email-review:${messageId}`;
+  host.adminBotNotice = null;
+  try {
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
+    const result = await resolveEmailReviewAsAdmin(
+      messageId,
+      resolution,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : result.kind === "forbidden"
+              ? "Email review requires an administrator account."
+              : `Could not resolve this email: ${result.message ?? result.kind}`,
+      };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text:
+        resolution.kind === "paperflow_evidence"
+          ? "Attached the email to the paper. AdminBot will stop reminders for that stage."
+          : "Removed the email from AdminBot's review queue without changing any paper.",
+    };
+    await loadAdminBot(host);
+  } finally {
+    host.adminBotBusyActionId = null;
+  }
 }
 
 // Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
@@ -2510,9 +2569,8 @@ export async function saveAdminBotPaper(
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.
-  // The author's own details, editable from their card. Kept apart from `acceptance` below
-  // because that one carries governance fields a member is forbidden to send at all -- mixing
-  // them would make a member's ordinary edit look like an attempt to record a venue decision.
+  // The author's own details, editable from their card. Kept apart from `acceptance` below only
+  // because the latter needs to preserve explicit blank values used by the "Not said" controls.
   const details = {
     ...(paper.feedbackGivers === undefined ? {} : { feedback_givers: paper.feedbackGivers }),
     ...(paper.authorRoles === undefined ? {} : { author_roles: paper.authorRoles }),
@@ -2524,10 +2582,12 @@ export async function saveAdminBotPaper(
   const acceptance = {
     ...(paper.venueDecision ? { venue_decision: paper.venueDecision } : {}),
     ...(paper.acceptedVenue === undefined ? {} : { accepted_venue: paper.acceptedVenue }),
-    ...(paper.acceptedYear ? { accepted_year: Number(paper.acceptedYear) } : {}),
-    ...(paper.isArchival === undefined || paper.isArchival === ""
+    ...(paper.acceptedYear === undefined
       ? {}
-      : { is_archival: paper.isArchival === "true" }),
+      : { accepted_year: paper.acceptedYear === "" ? "" : Number(paper.acceptedYear) }),
+    ...(paper.isArchival === undefined
+      ? {}
+      : { is_archival: paper.isArchival === "" ? "" : paper.isArchival === "true" }),
     // Sent even when empty, so clearing the choice actually clears it. Dropping falsy values
     // here made Reset look like it worked and then quietly leave the old track on file.
     ...(paper.presentationType === undefined ? {} : { presentation_type: paper.presentationType }),
@@ -2565,6 +2625,15 @@ export async function saveAdminBotPaper(
       title: paper.title,
       authors: paper.authors,
       currentStep: paper.currentStep,
+      ...(paper.venueDecision ? { venueDecision: paper.venueDecision } : {}),
+      ...(paper.acceptedVenue === undefined ? {} : { acceptedVenue: paper.acceptedVenue }),
+      ...(paper.acceptedYear === undefined
+        ? {}
+        : { acceptedYear: paper.acceptedYear === "" ? "" : Number(paper.acceptedYear) }),
+      ...(paper.isArchival === undefined
+        ? {}
+        : { isArchival: paper.isArchival === "" ? "" : paper.isArchival === "true" }),
+      ...(paper.presentationType === undefined ? {} : { presentationType: paper.presentationType }),
       ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
       ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
     });

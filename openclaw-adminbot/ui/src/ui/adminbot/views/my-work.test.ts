@@ -1,6 +1,6 @@
 // My Projects & Papers: the card list, what a closed card says, and the global nudge above it.
 import { render } from "lit";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
@@ -777,6 +777,62 @@ describe("target venue", () => {
   });
 });
 
+describe("project acceptance", () => {
+  it("sends the venue decision selected on an author's project card", () => {
+    const { container, saved } = draw({ openIds: ["p1"], papers: [paper()] });
+    const decision = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-decision-p1"]',
+    )!;
+    decision.value = "accept";
+    decision.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "p1",
+      title: "Causal abstraction",
+      venueDecision: "accept",
+    });
+  });
+
+  it("sends every acceptance detail, including explicit clears", () => {
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+    const { container, saved } = draw({ openIds: ["p1"], papers: [accepted] });
+
+    const venue = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-venue-p1"]',
+    )!;
+    venue.value = "";
+    venue.dispatchEvent(new Event("change", { bubbles: true }));
+    const year = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-year-p1"]',
+    )!;
+    year.value = "";
+    year.dispatchEvent(new Event("change", { bubbles: true }));
+    const archival = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-archival-p1"]',
+    )!;
+    archival.value = "";
+    archival.dispatchEvent(new Event("change", { bubbles: true }));
+    const presentation = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-presentation-p1"]',
+    )!;
+    presentation.value = "";
+    presentation.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.slice(-4)).toEqual([
+      expect.objectContaining({ acceptedVenue: "" }),
+      expect.objectContaining({ acceptedYear: "" }),
+      expect.objectContaining({ isArchival: "" }),
+      expect.objectContaining({ presentationType: "" }),
+    ]);
+  });
+});
+
 describe("finished papers", () => {
   const done = { completed_at: "2026-07-14T18:03:11.000Z" };
 
@@ -1160,5 +1216,131 @@ describe("editing a project's own details", () => {
       container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')
         ?.disabled,
     ).toBe(false);
+  });
+});
+
+// Saving the way the profile page saves: a beat after typing stops, or on the way out. The explicit
+// button stays, so these cover what it does not -- see adminbot/autosave.ts for the shared timing.
+describe("project details autosave", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const typeInto = (
+    container: HTMLElement,
+    testid: string,
+    value: string,
+    rerender: () => void,
+  ) => {
+    const input = container.querySelector<HTMLInputElement>(`[data-testid="${testid}"]`)!;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+  };
+
+  const leaveForm = (container: HTMLElement) => {
+    container
+      .querySelector<HTMLFormElement>(".my-work-details__form")!
+      .dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+  };
+
+  it("commits a beat after typing stops, with nothing pressed", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "A better title", rerender);
+
+    // Still inside the debounce: a keystroke is not a decision.
+    vi.advanceTimersByTime(500);
+    expect(saved).toHaveLength(0);
+
+    vi.advanceTimersByTime(500);
+    expect(saved.at(-1)).toMatchObject({ id: "p1", title: "A better title" });
+  });
+
+  it("restarts the timer on every keystroke rather than saving mid-word", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    for (const value of ["A", "Ab", "Abc"]) {
+      typeInto(container, "my-work-details-title-p1", value, rerender);
+      vi.advanceTimersByTime(600);
+    }
+    expect(saved).toHaveLength(0);
+
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+    expect(saved.at(-1)).toMatchObject({ title: "Abc" });
+  });
+
+  it("holds a draft it cannot write instead of firing a doomed request", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-alias-p1", "Bob's Project", rerender);
+    vi.advanceTimersByTime(5000);
+
+    expect(saved).toHaveLength(0);
+    // And says nothing yet: the member may be three characters into typing it.
+    expect(container.querySelector('[data-testid="my-work-details-error-p1"]')).toBeNull();
+  });
+
+  // The case that made the create form lose a project silently: a draft that cannot be written has
+  // no pending timer, so a plain flush would do nothing and the member would leave none the wiser.
+  it("explains an unwritable draft when focus leaves, rather than dropping it", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-alias-p1", "Bob's Project", rerender);
+    leaveForm(container);
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("cannot be a Slack channel name");
+  });
+
+  it("commits immediately when focus leaves mid-debounce", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Left early", rerender);
+    leaveForm(container);
+
+    expect(saved.at(-1)).toMatchObject({ title: "Left early" });
+  });
+
+  it("writes once when the debounce and the blur both come due", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Once only", rerender);
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+
+    // The record has not come back yet, so the draft still differs from what is stored.
+    leaveForm(container);
+    expect(saved).toHaveLength(1);
+  });
+
+  // A failed write leaves the signature recorded, so the automatic paths would suppress the retry.
+  // The button is a deliberate act and must always reach the service.
+  it("re-sends on an explicit press even when the values have not changed since", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Retry me", rerender);
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+
+    rerender();
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    expect(saved).toHaveLength(2);
+    expect(saved.at(-1)).toMatchObject({ title: "Retry me" });
+  });
+
+  it("leaves a form nobody touched alone", () => {
+    const { container, saved } = draw({ openIds: ["p1"], papers: [paper()] });
+    leaveForm(container);
+    vi.advanceTimersByTime(5000);
+    expect(saved).toHaveLength(0);
+  });
+
+  it("still says changes save themselves", () => {
+    const { container } = draw({ openIds: ["p1"], papers: [paper()] });
+    expect(container.querySelector(".my-work-details__autosave-hint")?.textContent?.trim()).toBe(
+      "Changes save automatically.",
+    );
   });
 });
