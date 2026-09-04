@@ -69,6 +69,7 @@ describe("iconForTab", () => {
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
       adminbotGrantReport: "scrollText",
+      adminbotMailingList: "send",
       adminbotProfessor: "lobster",
       adminbotMeetings: "play",
       adminbotTimeAvailability: "clock",
@@ -126,6 +127,7 @@ describe("titleForTab", () => {
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
       adminbotGrantReport: "Grant Report",
+      adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
@@ -181,6 +183,7 @@ describe("subtitleForTab", () => {
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
+      adminbotMailingList: "Mail our publications for a date range to one address.",
       adminbotProfessor: "What is waiting on you, across every queue.",
       adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
       adminbotTimeAvailability: "Who is committed to what, and when.",

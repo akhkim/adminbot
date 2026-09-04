@@ -104,7 +104,12 @@ export const TAB_PAGES = [
   // entry it read as a separate tool; it is the export of this page.
   {
     page: "labOverview",
-    tabs: ["adminbotPapers", "adminbotProfileOverview", "adminbotGrantReport"],
+    tabs: [
+      "adminbotPapers",
+      "adminbotProfileOverview",
+      "adminbotGrantReport",
+      "adminbotMailingList",
+    ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
   // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
@@ -198,6 +203,7 @@ export type Tab =
   | "adminbotConferencePapers"
   | "adminbotCalendar"
   | "adminbotGrantReport"
+  | "adminbotMailingList"
   | "adminbotDeadlines"
   | "overview"
   | "channels"
@@ -283,6 +289,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotConferencePapers: "/conference-papers",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
+  adminbotMailingList: "/mailing-list",
   adminbotDeadlines: "/deadlines",
   overview: "/overview",
   channels: "/channels",
@@ -318,6 +325,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/conference-papers": "adminbotConferencePapers",
   "/adminbot/deadlines": "adminbotDeadlines",
   "/adminbot/grant-report": "adminbotGrantReport",
+  "/adminbot/mailing-list": "adminbotMailingList",
   "/adminbot/meeting-requests": "adminbotMeetingRequests",
   "/adminbot/meetings": "adminbotMeetings",
   "/adminbot/members": "adminbotMembers",
@@ -476,6 +484,9 @@ export function iconForTab(tab: Tab): IconName {
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";
+    // The same record as the grant report, addressed to one reader and put in the post.
+    case "adminbotMailingList":
+      return "send";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":

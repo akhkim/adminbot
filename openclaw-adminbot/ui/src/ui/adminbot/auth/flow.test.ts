@@ -5,6 +5,8 @@ import type { UiSettings } from "../../storage.ts";
 import {
   type MemberAuthHost,
   acknowledgeOnboardingChecklist,
+  beginViewAs,
+  endViewAs,
   loadMemberPrivilege,
   recoverFromRejectedDeviceToken,
   resumeMemberSession,
@@ -12,7 +14,11 @@ import {
   signOutMember,
   submitMemberAuth,
 } from "./flow.ts";
-import { clearStoredMemberSession, saveStoredMemberSession } from "./session.ts";
+import {
+  clearStoredMemberSession,
+  loadStoredMemberSession,
+  saveStoredMemberSession,
+} from "./session.ts";
 
 const BASE_URL = "http://127.0.0.1:8765";
 
@@ -604,5 +610,140 @@ describe("device-token recovery latch", () => {
 
     expect(host.deviceTokenRecoveryAttempted).toBe(false);
     expect(host.connect).toHaveBeenCalled();
+  });
+});
+
+describe("viewing the lab as another member", () => {
+  const ADMIN_TOKEN = "admin-sess";
+
+  function signedInAdmin() {
+    saveStoredMemberSession({ sessionToken: ADMIN_TOKEN, expiresAt: "2026-12-01T00:00:00Z" });
+    return makeHost({ memberId: "root", memberPrivilegeLevel: "admin" });
+  }
+
+  // The impersonate call, the device token the swap re-mints, and the session read that a resume
+  // does -- the three URLs any of these paths can touch.
+  function mockService(handlers: {
+    impersonate?: () => Response;
+    session?: () => Response;
+    stop?: () => Response;
+  }) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/auth/impersonate/stop")) {
+        return handlers.stop?.() ?? jsonResponse(200, { ended: true });
+      }
+      if (url.includes("/auth/impersonate")) {
+        return (
+          handlers.impersonate?.() ??
+          jsonResponse(200, {
+            session_token: "view-sess",
+            expires_at: "2026-09-03T10:30:00Z",
+            member: { id: "ada", privilege_level: "member" },
+            impersonated_by: { id: "root", name: "Root" },
+          })
+        );
+      }
+      if (url.includes("/auth/device-token")) {
+        return jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] });
+      }
+      if (url.includes("/auth/session")) {
+        return (
+          handlers.session?.() ??
+          jsonResponse(200, {
+            expires_at: "2026-12-01T00:00:00Z",
+            member: { id: "root", privilege_level: "admin" },
+          })
+        );
+      }
+      return jsonResponse(200, {});
+    });
+  }
+
+  it("swaps the active session and parks the admin's own", async () => {
+    const host = signedInAdmin();
+    mockService({});
+
+    await beginViewAs(host, "ada");
+
+    // The app now reads as the member everywhere, including the privilege that gates admin tabs.
+    expect(host.memberId).toBe("ada");
+    expect(host.memberPrivilegeLevel).toBe("member");
+    expect(host.memberImpersonatedBy).toEqual({ id: "root", name: "Root" });
+    // And the way back is on disk, so a reload does not strand the admin in somebody else's view.
+    const stored = loadStoredMemberSession();
+    expect(stored?.sessionToken).toBe("view-sess");
+    expect(stored?.impersonator?.sessionToken).toBe(ADMIN_TOKEN);
+  });
+
+  it("puts the admin back where they were, and drops the parked token", async () => {
+    const host = signedInAdmin();
+    mockService({});
+    await beginViewAs(host, "ada");
+
+    await endViewAs(host);
+
+    expect(host.memberId).toBe("root");
+    expect(host.memberPrivilegeLevel).toBe("admin");
+    expect(host.memberImpersonatedBy).toBeNull();
+    const stored = loadStoredMemberSession();
+    expect(stored?.sessionToken).toBe(ADMIN_TOKEN);
+    expect(stored?.impersonator).toBeUndefined();
+  });
+
+  it("refuses to nest, so there is only ever one way back", async () => {
+    const host = signedInAdmin();
+    const fetchSpy = mockService({});
+    await beginViewAs(host, "ada");
+    const callsAfterFirst = fetchSpy.mock.calls.length;
+
+    await beginViewAs(host, "grace");
+
+    expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst);
+    expect(host.memberId).toBe("ada");
+  });
+
+  it("leaves the admin where they are when the service refuses", async () => {
+    const host = signedInAdmin();
+    mockService({
+      impersonate: () => jsonResponse(403, { error: { message: "admin privileges required" } }),
+    });
+
+    await beginViewAs(host, "ada");
+
+    expect(host.memberId).toBe("root");
+    expect(host.memberImpersonatedBy).toBeUndefined();
+    expect(host.memberImpersonationError).toBeTruthy();
+    // Nothing was parked, so the stored session is untouched rather than half-swapped.
+    expect(loadStoredMemberSession()?.sessionToken).toBe(ADMIN_TOKEN);
+  });
+
+  it("signs out rather than stranding the admin when their own session died meanwhile", async () => {
+    const host = signedInAdmin();
+    let viewing = false;
+    mockService({
+      impersonate: () => {
+        viewing = true;
+        return jsonResponse(200, {
+          session_token: "view-sess",
+          expires_at: "2026-09-03T10:30:00Z",
+          member: { id: "ada", privilege_level: "member" },
+          impersonated_by: { id: "root", name: "Root" },
+        });
+      },
+      // The admin's own session is gone by the time they come back -- expired, or revoked from
+      // another browser. There is nothing to restore, so the gate is the only honest destination.
+      session: () =>
+        viewing
+          ? jsonResponse(401, { error: { message: "authentication required" } })
+          : jsonResponse(200, { expires_at: "x", member: { id: "root" } }),
+    });
+    await beginViewAs(host, "ada");
+
+    await endViewAs(host);
+
+    expect(host.memberId).toBeNull();
+    expect(host.memberImpersonatedBy).toBeNull();
+    expect(loadStoredMemberSession()).toBeNull();
   });
 });

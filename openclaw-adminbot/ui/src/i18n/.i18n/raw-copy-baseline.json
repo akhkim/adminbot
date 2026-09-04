@@ -1746,6 +1746,41 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/member-type-filter.ts",
+      "text": "Clear"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/member-type-filter.ts",
+      "text": "Alumni"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/member-type-filter.ts",
+      "text": "Coauthor (major)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/member-type-filter.ts",
+      "text": "Full member"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/member-type-filter.ts",
+      "text": "Own-pace advisee"
+    },
+    {
+      "count": 1,
       "kind": "object-property",
       "name": "title",
       "path": "ui/src/ui/adminbot/next-step.ts",
@@ -1943,6 +1978,13 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Title&#9;Overleaf&#9;arXiv&#10;Causal abstraction&#9;https://…&#9;https://…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Drag down to copy into the empty cells below — click to fill the whole column"
@@ -1959,7 +2001,7 @@
       "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "No backend field yet"
+      "text": "Shown here, edited on the card"
     },
     {
       "count": 1,
@@ -1983,6 +2025,13 @@
       "text": "Clear"
     },
     {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Import a sheet"
+    },
+    {
       "count": 1,
       "kind": "html-text",
       "name": "text",
@@ -2001,7 +2050,49 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Paste it with its header row — the columns do not have to be in our order"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Recent changes"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Accepted"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Accepted venue"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Accepted year"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Archival"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Archival?"
     },
     {
       "count": 1,
@@ -2022,7 +2113,63 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Author roles"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Authors"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Current step"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Drive PDF (arXiv version)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Feedback givers"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Non-archival"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Not heard yet"
+    },
+    {
+      "count": 2,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Not said"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Open blockers"
     },
     {
       "count": 1,
@@ -2050,6 +2197,13 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Presentation"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Project doc / folder"
     },
     {
@@ -2057,7 +2211,70 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Rejected"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Short name"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Slides"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Started on"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Submission"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Target venue"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Target venues, with odds"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Title"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Topic"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Venue decision"
     },
     {
       "count": 1,
@@ -2463,6 +2680,20 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Delete member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Delete them"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Edit member"
     },
     {
@@ -2639,6 +2870,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Minimum meeting minutes"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "No address in any of the three fields, so AdminBot cannot write to them and they can never finish a profile. Usually import artefacts. Preview first — an account that can still be signed into is refused, and the preview is where it says so."
     },
     {
       "count": 1,
@@ -2844,6 +3082,13 @@
       "text": "Possible duplicate records"
     },
     {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Preview"
+    },
+    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
@@ -2884,6 +3129,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Reminder status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Removes the record entirely. Merge instead to keep their history."
     },
     {
       "count": 2,
@@ -3695,6 +3947,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Deadline history"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Deadline time"
     },
     {
@@ -3940,6 +4199,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "The official source marks this deadline as extended, but does not publish the earlier date."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Time zone"
     },
     {
@@ -4038,7 +4304,21 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Corrected"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Demo tracks"
+    },
+    {
+      "count": 2,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Extended"
     },
     {
       "count": 1,
@@ -4067,6 +4347,13 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Rebuttals"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Updated"
     },
     {
       "count": 1,
@@ -4338,6 +4625,13 @@
       "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/mailing-list.ts",
+      "text": "someone@example.org"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/member-sheet.ts",
       "text": "Any column…"
     },
@@ -4451,6 +4745,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "— #proj-cais means the alias is"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "A rough call, so everyone reads the plan the same way."
     },
     {
@@ -4472,6 +4773,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Alias"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "Archival — counts as a publication"
     },
     {
@@ -4480,6 +4788,20 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "Archival?"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "cais"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Cancel"
     },
     {
       "count": 2,
@@ -4556,7 +4878,42 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "If the project already has a Slack channel, the alias must be that channel's name without the"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "in Slack."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "Mark as presented and completed"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Matches"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Names the Slack channel for a project that does not have one yet. Renaming it here does not rename a channel that already exists."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "No"
     },
     {
       "count": 1,
@@ -4612,7 +4969,35 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "prefix"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "Presentation"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "proj-"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Project details"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Reading the lab's Slack channels…"
     },
     {
       "count": 1,
@@ -4640,10 +5025,17 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
-      "text": "Short name"
+      "text": "Save details"
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "Short name"
+    },
+    {
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
@@ -4686,6 +5078,13 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/my-work.ts",
+      "text": "This project already has a Slack channel"
+    },
+    {
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
@@ -4750,9 +5149,156 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "e.g. MIT, Google"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "e.g. Sep 1 – Oct 15, 2026"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "https://..."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Research Internship"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Who is this for, what does it offer?"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Add opportunity"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Edit"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "Open program page"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Remove"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Waiting on an admin review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "&times;"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Application window"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Approve"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "awaiting review"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Cancel"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Category"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Deadline (AoE)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Delete"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Description"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Host / Organiser"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Link"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Name *"
     },
     {
       "count": 1,
@@ -4767,6 +5313,27 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "Programs the lab wants you to know about. Eligibility is quoted from each program so you can judge your own fit &mdash; nothing here is filtered by who you are."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Reject"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Remove this opportunity?"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "TBA"
     },
     {
       "count": 1,
@@ -5095,14 +5662,14 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-slots.ts",
-      "text": "Tracked automatically — bcc AdminBot on the venue's mail and these close themselves."
+      "text": "Tracked automatically — forward venue mail to AdminBot from an email address saved on your profile."
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-slots.ts",
-      "text": "Waiting — bcc us when it lands"
+      "text": "Waiting — forward the venue email when it lands"
     },
     {
       "count": 1,
@@ -5854,7 +6421,7 @@
       "text": "Updated"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/app-render.ts",

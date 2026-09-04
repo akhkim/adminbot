@@ -100,6 +100,12 @@ MEMBER_COLUMNS = {
         9: "github",
         10: "linkedin",
         11: "website",
+        # The three columns the access audit grades against. `member_type` is the sheet's own
+        # statement of which matrix row applies to somebody, and `channels` is the only readable
+        # record of whether the Slack half of onboarding actually happened.
+        15: "slack_id",
+        18: "member_type",
+        24: "channels",
     },
 }
 
@@ -117,6 +123,12 @@ PUBLISHED_FIELDS = {
     "linkedin",
     "website",
     "twitter",
+    # Added for the access audit (workflows/members/access-audit.ts). None of the three is
+    # personal in the way a phone number is: a Slack member id, the lab's own label for the
+    # relationship, and a list of the lab's own channel names.
+    "slack_id",
+    "member_type",
+    "channels",
 }
 
 
@@ -175,21 +187,80 @@ def rows_of(worksheet) -> list[list[str]]:
     return [row for row in rows if any(row)]
 
 
+def header_token(text: str) -> str:
+    """A header cell reduced to its subgroup token.
+
+    The sheet's headers carry explanations the columns are keyed on but nobody types exactly:
+    "coauthor-major (20-40 hrs/week)", "interviewee\n\ninterviewee-calendar". Everything from the
+    first bracket or newline on is commentary, so the token is what survives that cut.
+    """
+    head = re.split(r"[(\n]", text, maxsplit=1)[0]
+    return head.strip().lower().replace(" ", "-").replace("_", "-").strip("-")
+
+
+def locate_access_header(rows: list[list[str]]) -> tuple[int, int, dict[int, str]]:
+    """Find the header row, its label column, and which column answers for which subgroup.
+
+    Located rather than hard-coded because the workbook's shape is not stable: revision (4) put
+    the header on the first row with the label in column 0, and revisions (2) and (3) put a
+    "To Check" annotation row above it and shifted every column one to the right. A collector
+    pinned to fixed indices read the annotation row as the header and produced a matrix of the
+    wrong answers -- silently, because every cell it read was still a legal cell.
+
+    So the anchor is the sheet's own words: the row carrying "Access item" is the header, and each
+    subgroup's column is the one whose heading names it.
+    """
+    # The sheet's own spelling of each column, which is not always the subgroup key with dashes:
+    # the discussant column reads "coauthor-discussant-or-designer". Stated rather than derived,
+    # so a renamed column fails loudly here instead of quietly dropping a subgroup's answers.
+    wanted = {
+        "slightly-better-than-emails": "slightly_better_than_emails",
+        "acquaintance": "acquaintance",
+        "alumni": "alumni",
+        "interviewee": "interviewee",
+        "own-pace-advisee": "own_pace_advisee",
+        "coauthor-minor": "coauthor_minor",
+        "coauthor-major": "coauthor_major",
+        "disappearing-coauthor": "disappearing_coauthor",
+        "external-prof": "external_prof",
+        "coauthor-discussant-or-designer": "coauthor_discussant_designer",
+    }
+    if set(wanted.values()) != set(SUBGROUP_COLUMNS.values()):
+        raise SystemExit("the header alias table and SUBGROUP_COLUMNS disagree about the subgroups")
+    for index, row in enumerate(rows):
+        labels = [header_token(cell) for cell in row]
+        if "access-item" not in labels:
+            continue
+        label_column = labels.index("access-item")
+        columns = {
+            column: wanted[token]
+            for column, token in enumerate(labels)
+            if token in wanted and column != label_column
+        }
+        missing = sorted(set(wanted.values()) - set(columns.values()))
+        if missing:
+            raise SystemExit(
+                "access sheet header is missing a column for: " + ", ".join(missing)
+            )
+        return index, label_column, columns
+    raise SystemExit("no row in the access sheet carries an 'Access item' heading")
+
+
 def collect_access_matrix(worksheet) -> list[dict]:
     rows = rows_of(worksheet)
-    header, body = rows[0], rows[1:]
-    for index, key in SUBGROUP_COLUMNS.items():
-        if index >= len(header) or not header[index]:
-            raise SystemExit(f"column {index} ({key}) is missing from the access sheet header")
+    header_index, label_column, columns = locate_access_header(rows)
     items = []
-    for row in body:
+    for row in rows[header_index + 1 :]:
+        label = row[label_column] if label_column < len(row) else ""
+        if not label:
+            continue
         # Trailing blanks are trimmed by openpyxl, so a short row means "no" for every column
         # past its end rather than a missing answer.
         cells = {
             key: access_cell(row[index] if index < len(row) else "")
-            for index, key in SUBGROUP_COLUMNS.items()
+            for index, key in columns.items()
         }
-        items.append({"label": row[0], "cells": cells})
+        items.append({"label": label, "cells": cells})
     return items
 
 

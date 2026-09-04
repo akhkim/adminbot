@@ -17,6 +17,7 @@ import {
 import {
   type AuthErrorKind,
   acknowledgeOnboardingStep,
+  type MemberImpersonator,
   type MemberOnboarding,
   type MemberSession,
   type RosterMember,
@@ -38,6 +39,8 @@ import {
   saveStoredMemberSession,
   setOnboardingStep,
   signupMember,
+  startImpersonation,
+  stopImpersonation,
 } from "./session.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
@@ -102,6 +105,14 @@ export type MemberAuthHost = {
   memberNotes: string;
   memberPrivilegeLevel: string | null;
   memberId: string | null;
+  // The admin behind the session, while one of them is viewing the lab as somebody else. Null in
+  // the ordinary case. Driven off what GET /auth/session reports rather than off what this client
+  // last did, so a reload -- or a session that expired on its own -- lands in the right state.
+  memberImpersonatedBy?: MemberImpersonator | null;
+  // Set while the swap in either direction is in flight, so the banner and the members tab can
+  // disable their buttons rather than let a double click open two sessions.
+  memberImpersonationBusy?: boolean;
+  memberImpersonationError?: string | null;
   // Cleared on sign-out. The roster and paper list now load off the *session* rather than off
   // opening the Members tab (see app-render.ts), and the load is latched on `loadedAt` -- so
   // leaving the previous member's data in place would make the next person to sign in on this
@@ -309,6 +320,7 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   // of assuming admin for every signed-in member.
   host.memberPrivilegeLevel = session.member?.privilege_level ?? null;
   host.memberId = session.member?.id ?? null;
+  host.memberImpersonatedBy = session.impersonated_by ?? null;
   // A rejected device token before sign-in cannot recover — recoverFromRejectedDeviceToken needs a
   // member session and returns false without one — but it still burns the once-per-session latch.
   // Signing in is exactly the event that makes recovery possible, so re-arm it here; otherwise the
@@ -476,6 +488,7 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     });
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    host.memberImpersonatedBy = result.value.impersonated_by ?? null;
     // Refreshed on every resume, not just a fresh sign-in: the dashboard warning card is meant
     // to keep appearing on reload after reload until the member actually acknowledges it.
     host.adminBotOnboarding = result.value.member?.onboarding ?? null;
@@ -494,6 +507,94 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
   // 401 / rejected: the stored session is dead — drop it and show the gate.
   clearStoredMemberSession();
   return "cleared";
+}
+
+/**
+ * Start viewing the lab as another member.
+ *
+ * The admin's own session is parked in storage rather than dropped, and the impersonated one takes
+ * its place as the active token -- so every existing call site keeps reading "the session" without
+ * knowing anything has happened, which is what makes the whole app render the member's view rather
+ * than only the pages that were taught about impersonation.
+ *
+ * Everything else about this is `applyMemberSession`, the same path a fresh sign-in takes: the
+ * gateway reconnects with the member's privileges, the dashboard reloads against their data, and
+ * the onboarding card resolves for them. Reusing it is the point -- a bespoke half-swap is how a
+ * page ends up showing one member's roster and another's papers.
+ */
+export async function beginViewAs(host: MemberAuthHost, memberId: string): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.memberImpersonationBusy) {
+    return;
+  }
+  // Refuse to nest locally as well as server-side, so the button cannot get an admin into a state
+  // whose way back is ambiguous even briefly.
+  if (stored.impersonator) {
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.memberImpersonationBusy = true;
+  host.memberImpersonationError = null;
+  try {
+    const result = await startImpersonation(memberId, stored.sessionToken, baseUrl);
+    if (!result.ok) {
+      host.memberImpersonationError =
+        result.kind === "unreachable"
+          ? t("adminbot.impersonation.unreachable")
+          : t("adminbot.impersonation.refused");
+      return;
+    }
+    await applyMemberSession(host, result.value);
+    // After applyMemberSession, which has just written the new token: parking the admin's own has
+    // to be the last write, or the save inside it would drop it again.
+    saveStoredMemberSession({
+      sessionToken: result.value.session_token,
+      expiresAt: result.value.expires_at,
+      impersonator: { sessionToken: stored.sessionToken, expiresAt: stored.expiresAt },
+    });
+  } finally {
+    host.memberImpersonationBusy = false;
+  }
+}
+
+/**
+ * Stop viewing as another member and go back to the admin's own account.
+ *
+ * The parked token is picked up and re-resumed through the normal path, so the admin lands exactly
+ * where a reload would have put them. If there is nothing parked -- a session restored from an
+ * older client, say -- signing out is the honest fallback: staying in a member's view with no way
+ * back would be worse than asking for a password.
+ */
+export async function endViewAs(host: MemberAuthHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.memberImpersonationBusy) {
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.memberImpersonationBusy = true;
+  host.memberImpersonationError = null;
+  try {
+    // Told to the service first, so the audit trail closes the view even if the local restore then
+    // fails. Best-effort by contract -- see stopImpersonation.
+    await stopImpersonation(stored.sessionToken, baseUrl);
+    if (!stored.impersonator) {
+      host.memberImpersonatedBy = null;
+      await signOutMember(host);
+      return;
+    }
+    saveStoredMemberSession({
+      sessionToken: stored.impersonator.sessionToken,
+      expiresAt: stored.impersonator.expiresAt,
+    });
+    if ((await resumeMemberSession(host)) !== "resumed") {
+      // The admin's own session died while they were away (expired, or revoked elsewhere). There
+      // is nothing left to go back to, so land on the gate rather than on a half-restored view.
+      host.memberImpersonatedBy = null;
+      await signOutMember(host);
+    }
+  } finally {
+    host.memberImpersonationBusy = false;
+  }
 }
 
 export function hasStoredMemberSession(): boolean {
@@ -519,6 +620,7 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
   if (result.ok) {
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    host.memberImpersonatedBy = result.value.impersonated_by ?? null;
     host.adminBotOnboarding = result.value.member?.onboarding ?? null;
     host.adminBotOnboardingAcknowledged = host.memberId
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
@@ -531,6 +633,11 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   if (stored) {
     await logoutMember(stored.sessionToken, baseUrl);
+    // Signing out while viewing as somebody else ends both sessions. Leaving the parked one alive
+    // would keep an admin signed in on a token this browser has just forgotten it holds.
+    if (stored.impersonator) {
+      await logoutMember(stored.impersonator.sessionToken, baseUrl);
+    }
   }
   clearStoredMemberSession();
   host.memberAuthFailure = null;
@@ -555,6 +662,8 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.memberNotes = "";
   host.memberPrivilegeLevel = null;
   host.memberId = null;
+  host.memberImpersonatedBy = null;
+  host.memberImpersonationError = null;
   if (host.adminBotData) {
     host.adminBotData = createEmptyAdminBotDashboardData();
   }

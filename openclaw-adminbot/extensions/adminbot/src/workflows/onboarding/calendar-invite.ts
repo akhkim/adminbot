@@ -16,7 +16,36 @@ const GWS_MAX_OUTPUT_BYTES = 1024 * 1024;
 // deployment approves members without a calendar invite instead of failing the approval.
 export const ADMINBOT_LAB_EMAIL_ENV = "ADMINBOT_LAB_EMAIL";
 
-export type CalendarInviteRunner = (email: string) => Promise<void>;
+export type CalendarInviteOptions = {
+  /**
+   * Whether Google mails the person about the share. Defaults to true.
+   *
+   * True is right for onboarding: the notification is how a new member finds out the calendar
+   * exists, arriving alongside everything else their first day. It is wrong for the backfill,
+   * which grants access somebody should have had months ago -- a share notification landing years
+   * after an alumnus left reads as a mistake, and 150 of them at once reads as a compromise.
+   * Access still appears in their calendar list either way; only the announcement is suppressed.
+   */
+  sendNotifications?: boolean;
+};
+
+export type CalendarInviteRunner = (
+  email: string,
+  options?: CalendarInviteOptions,
+) => Promise<void>;
+
+/**
+ * The configured lab calendar, or undefined when this deployment has none.
+ *
+ * Exported so the composition root can say so *once, at startup*, rather than leaving the answer
+ * to be discovered one failed approval at a time. It was: the runner is always constructed, so an
+ * unconfigured deployment accepted every approval, fired the invite, failed, and wrote an audit
+ * row nobody reads -- 17 times across four months, every one of them the same missing variable,
+ * while the checklist told each of those members they had been added to the calendar.
+ */
+export function adminBotLabCalendarId(env?: NodeJS.ProcessEnv): string | undefined {
+  return (env ?? process.env)[ADMINBOT_LAB_EMAIL_ENV]?.trim() || undefined;
+}
 
 // The AdminBot service's systemd unit runs with a minimal PATH that doesn't include the npm
 // global bin directory `gws` installs into, so a bare "gws" lookup fails with ENOENT there even
@@ -43,12 +72,12 @@ function resolveGwsExecutable(env: NodeJS.ProcessEnv | undefined): string {
  */
 export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInviteRunner {
   const gws = resolveGwsExecutable(env);
-  return async (email) => {
+  return async (email, options) => {
     const trimmed = email.trim();
     if (!trimmed) {
       throw new Error("calendar invite requires a non-empty email");
     }
-    const calendarId = (env ?? process.env)[ADMINBOT_LAB_EMAIL_ENV]?.trim();
+    const calendarId = adminBotLabCalendarId(env);
     if (!calendarId) {
       throw new Error(
         `the lab calendar is not configured: set ${ADMINBOT_LAB_EMAIL_ENV} to grant calendar access`,
@@ -62,7 +91,12 @@ export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInv
           "acl",
           "insert",
           "--params",
-          JSON.stringify({ calendarId, sendNotifications: true }),
+          JSON.stringify({
+            calendarId,
+            // Defaulted here rather than at the call site so a caller that says nothing keeps the
+            // onboarding behaviour; only the backfill opts out.
+            sendNotifications: options?.sendNotifications ?? true,
+          }),
           "--json",
           JSON.stringify({ role: "reader", scope: { type: "user", value: trimmed } }),
         ],

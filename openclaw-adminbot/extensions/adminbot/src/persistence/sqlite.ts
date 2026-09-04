@@ -520,7 +520,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL,
-        revoked_at TEXT
+        revoked_at TEXT,
+        -- Null on a normal sign-in; the admin's member id on a "view as" session. See
+        -- AdminBotAuthSession in contracts/actions.ts for why the two ids are kept apart.
+        impersonated_by TEXT
       );
 
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
@@ -652,6 +655,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
     this.migrateWorkshopMatchRuns();
+    this.migrateSessionColumns();
   }
 
   /**
@@ -665,6 +669,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    *
    * Startup is the one moment where "running" is provably wrong: no pass can predate this process.
    */
+  /**
+   * Give an `adminbot_sessions` written by an earlier release the `impersonated_by` column.
+   *
+   * Nullable with no default, so every session that already exists reads back as a normal sign-in
+   * -- which is what they all are. Nothing else about the row changes, so live sessions survive
+   * the upgrade rather than everybody being signed out by a migration.
+   */
+  private migrateSessionColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_sessions)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("impersonated_by")) {
+      this.db.exec("ALTER TABLE adminbot_sessions ADD COLUMN impersonated_by TEXT");
+    }
+  }
+
   private migrateWorkshopMatchRuns(): void {
     const columns = new Set(
       (
@@ -2719,13 +2741,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           created_at,
           expires_at,
           last_seen_at,
-          revoked_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          revoked_at,
+          impersonated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(token_hash) DO UPDATE SET
           member_id = excluded.member_id,
           expires_at = excluded.expires_at,
           last_seen_at = excluded.last_seen_at,
-          revoked_at = excluded.revoked_at`,
+          revoked_at = excluded.revoked_at,
+          impersonated_by = excluded.impersonated_by`,
       )
       .run(
         session.token_hash,
@@ -2734,18 +2758,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         session.expires_at,
         session.last_seen_at,
         session.revoked_at ?? null,
+        session.impersonated_by ?? null,
       );
   }
 
   getSession(tokenHash: string): AdminBotAuthSession | undefined {
     const row = this.db
       .prepare(
-        `SELECT token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at
+        `SELECT token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at,
+                impersonated_by
           FROM adminbot_sessions WHERE token_hash = ?`,
       )
       .get(tokenHash) as
-      | (Omit<AdminBotAuthSession, "revoked_at"> & {
+      | (Omit<AdminBotAuthSession, "revoked_at" | "impersonated_by"> & {
           revoked_at: string | null;
+          impersonated_by: string | null;
         })
       | undefined;
     if (!row) {
@@ -2758,6 +2785,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       expires_at: row.expires_at,
       last_seen_at: row.last_seen_at,
       ...(row.revoked_at ? { revoked_at: row.revoked_at } : {}),
+      ...(row.impersonated_by ? { impersonated_by: row.impersonated_by } : {}),
     };
   }
 

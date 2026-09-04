@@ -219,6 +219,35 @@ export const adminBotTestOnboardBatches = [1, 2, 3] as const;
 export type AdminBotTestOnboardBatch = (typeof adminBotTestOnboardBatches)[number];
 
 /**
+ * Has the lab already sent this person their onboarding email?
+ *
+ * Columns R and S of the spreadsheet and nothing else: an explicit Test Onboard batch, or the
+ * Member Type column calling them a full member. `privilege_level` is not this question -- the
+ * roster marks nearly everyone the lab has ever collaborated with as `member`, which sweeps in
+ * alumni, one-paper coauthors and two visiting professors.
+ *
+ * Alumni are out even when they carry a batch: the spreadsheet keeps the batch after somebody
+ * leaves, and reading it alone has already sent one sweep's mail to three people who had gone.
+ *
+ * Somebody in neither column is deliberately false rather than unknown. They are the people the
+ * lab has not started onboarding, and for the follow-up ladder that is the right answer -- they
+ * begin at the email, not partway down.
+ */
+export function adminBotHasBeenOnboardEmailed(member: {
+  member_type?: string;
+  test_onboard_batch?: number;
+}): boolean {
+  if (adminBotIsAlumniType(member.member_type)) {
+    return false;
+  }
+  const batch = member.test_onboard_batch;
+  return (
+    (adminBotTestOnboardBatches as readonly number[]).includes(batch ?? 0) ||
+    adminBotIsFullMemberType(member.member_type)
+  );
+}
+
+/**
  * Does the lab's own Member Type column call this person a full member?
  *
  * The spreadsheet's column S, kept verbatim: a comma-separated list like "full",
@@ -473,6 +502,58 @@ export const adminBotOnboardingFollowUpPlan = {
   firstChaseBusinessDays: 5,
   secondChaseDays: 3,
   escalateAfterDays: 5,
+} as const;
+
+/**
+ * TEMPORARY -- the compressed ladder, for the current catch-up round only.
+ *
+ * The standing plan above is the lab's considered pace. This one exists to work through a backlog
+ * of people who were emailed a while ago and never arrived, so every gap is two days instead of
+ * five, three and five.
+ *
+ * The first gap only bites on somebody the system emailed itself, since the backlog enters at the
+ * first Slack reminder regardless (see `alreadyEmailed` in planOnboardingFollowUp). It is set here
+ * so a member welcomed *during* the round is chased at the round's pace rather than the standing
+ * one -- two people on the same ladder moving at different speeds would be the confusing outcome.
+ *
+ * To end the round, delete this constant and the `plan:` line in chaseDisengagedMembers that reads
+ * it. Nothing else refers to it, and the standing plan is already the default everywhere else --
+ * so removal is a revert, not a migration.
+ */
+export const adminBotTemporaryOnboardingFollowUpPlan = {
+  // Still *business* days, unlike the two calendar-day gaps below. Keeping the unit is what stops
+  // the first reminder landing on a Sunday: two calendar days from a Friday welcome is the
+  // weekend, and a ladder that opens by messaging somebody on their day off is not a faster
+  // ladder, only a ruder one. Two business days from Friday is Tuesday.
+  firstChaseBusinessDays: 2,
+  secondChaseDays: 2,
+  escalateAfterDays: 2,
+} as const;
+
+/**
+ * TEMPORARY -- everything the current catch-up round changes, in one object.
+ *
+ * Passed to `chaseDisengagedMembers` as its default. Ending the round is deleting this constant
+ * and the `?? ADMINBOT_ONBOARDING_CATCH_UP_ROUND` that reads it; the standing behaviour is what the
+ * parameters already default to underneath.
+ *
+ * Two changes, and the second is the one with reach:
+ *
+ *   - `plan`: two days between every step instead of five, three and five.
+ *   - `claimAlreadyEmailed`: the sweep considers everybody the roster says has had the onboarding
+ *     email -- full members *and* Test Onboard batches 1-3 -- rather than full members alone, and
+ *     starts the ones with no recorded welcome at the first Slack reminder instead of waiting five
+ *     business days from a date nobody wrote down.
+ *
+ * Worth knowing while this is on: the ladder then owns nearly everybody the standing dormant
+ * reminder used to chase, because `adminBotDormantChaseMemberTypes` is `["full"]` and every full
+ * member has had the email. That is the intended trade -- two messages and then the professor's
+ * desk, rather than the same reminder every three days forever -- and the dormant sweep takes them
+ * back once the ladder escalates and lets go.
+ */
+export const ADMINBOT_ONBOARDING_CATCH_UP_ROUND = {
+  plan: adminBotTemporaryOnboardingFollowUpPlan,
+  claimAlreadyEmailed: true,
 } as const;
 
 /**
@@ -2079,6 +2160,11 @@ export type AdminBotAuditEvent = {
     | "profile_photo.polished"
     | "profile_photo.applied"
     | "auth.login_location_updated"
+    // An admin opening, and dropping, a session that sees the lab as another member. Both halves
+    // are recorded on the admin: "who looked at my account" is a question a member is entitled to
+    // an answer to, and an unclosed start is itself worth being able to see.
+    | "auth.impersonation_started"
+    | "auth.impersonation_ended"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
     | "member.location_observed"
@@ -2103,7 +2189,11 @@ export type AdminBotAuditEvent = {
     | "cv.digest_failed"
     // Rebuilding the conference paper indexes. It spends a few minutes of an external API's quota
     // and replaces what every member then searches, so who triggered one is worth keeping.
-    | "venue_index.rebuilt";
+    | "venue_index.rebuilt"
+    // The publication digest going out to an address an admin typed. Recorded because it leaves
+    // the lab: the recipient and the range are the whole of what was disclosed and to whom.
+    | "publication_digest.sent"
+    | "publication_digest.failed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
@@ -2163,6 +2253,19 @@ export type AdminBotAuthSession = {
   expires_at: string;
   last_seen_at: string;
   revoked_at?: string;
+  /**
+   * Set only on an admin's "view as" session: the admin who opened it.
+   *
+   * `member_id` stays the member being viewed, so every route reads the roster, the access matrix
+   * and the privilege level of the person being impersonated without knowing this field exists --
+   * which is the point, since the whole value of the feature is seeing exactly what they see.
+   *
+   * What it does change is attribution. Anything this session writes is recorded against the
+   * admin, never the member: an impersonated session that could file edits under somebody else's
+   * name is precisely the confusion the `lab_member.upserted` actor fix removed, and it would be a
+   * worse version of it because there would be no way to notice from the data.
+   */
+  impersonated_by?: string;
 };
 
 // ---------------------------------------------------------------------------

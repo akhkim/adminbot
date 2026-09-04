@@ -211,8 +211,26 @@ export type AppViewState = {
   // Where the member is in the walk of the checklist (null = not navigated yet; the view opens on
   // the first step that still needs the member).
   adminBotOnboardingStepIndex: number | null;
+  // Set while an admin is viewing the lab as another member; null otherwise. See the banner in
+  // app-render, which is the one place the impersonated view admits it is one.
+  // The Mailing List tab: the range and recipient an admin has chosen, and the digest that range
+  // would send. Null preview means nothing has been read yet -- see the tab's own note on why a
+  // preview is cleared whenever the range changes.
+  adminBotMailingListPreview: import("./adminbot/auth/session.ts").PublicationDigestPreview | null;
+  adminBotMailingListLoading: boolean;
+  adminBotMailingListSending: boolean;
+  adminBotMailingListError: string | null;
+  adminBotMailingListNotice: string | null;
+  adminBotMailingListFrom: string;
+  adminBotMailingListTo: string;
+  adminBotMailingListEmail: string;
+  memberImpersonatedBy: import("./adminbot/auth/session.ts").MemberImpersonator | null;
+  memberImpersonationBusy: boolean;
+  memberImpersonationError: string | null;
   submitMemberAuth: () => Promise<void>;
   signOutMember: () => Promise<void>;
+  beginViewAs: (memberId: string) => Promise<void>;
+  endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
   tab: Tab;
   onboarding: boolean;

@@ -120,14 +120,18 @@ describe("the onboarding ladder", () => {
       sentCount: 2,
       lastNudgedAt: "2026-03-12T09:00:00.000Z",
     };
-    expect(planOnboardingFollowUp({ ...afterSecond, now: at("2026-03-16T09:00:00.000Z") })).toEqual({
-      due: false,
-      reason: "too_soon",
-    });
-    expect(planOnboardingFollowUp({ ...afterSecond, now: at("2026-03-17T09:00:00.000Z") })).toEqual({
-      due: true,
-      step: "escalate",
-    });
+    expect(planOnboardingFollowUp({ ...afterSecond, now: at("2026-03-16T09:00:00.000Z") })).toEqual(
+      {
+        due: false,
+        reason: "too_soon",
+      },
+    );
+    expect(planOnboardingFollowUp({ ...afterSecond, now: at("2026-03-17T09:00:00.000Z") })).toEqual(
+      {
+        due: true,
+        step: "escalate",
+      },
+    );
     // A repeat escalation is the lab appearing to nag through its professor.
     expect(
       planOnboardingFollowUp({ ...afterSecond, sentCount: 3, now: at("2026-04-01T09:00:00.000Z") }),
@@ -182,9 +186,10 @@ describe("the onboarding ladder", () => {
 
   it("takes the plan as an argument, so the gaps can be retuned in one place", () => {
     const plan = { firstChaseBusinessDays: 1, secondChaseDays: 1, escalateAfterDays: 1 } as const;
-    expect(
-      planOnboardingFollowUp({ ...base, now: at("2026-03-03T09:00:00.000Z"), plan }),
-    ).toEqual({ due: true, step: "first_reminder" });
+    expect(planOnboardingFollowUp({ ...base, now: at("2026-03-03T09:00:00.000Z"), plan })).toEqual({
+      due: true,
+      step: "first_reminder",
+    });
     // And the shipped plan is the one the lab stated.
     expect(adminBotOnboardingFollowUpPlan).toEqual({
       firstChaseBusinessDays: 5,
@@ -198,30 +203,93 @@ describe("the dormant-account reminder", () => {
   it("chases somebody who has never signed in, every three days", () => {
     expect(dormantChaseDue({ laddered: false, now: at(MONDAY) })).toBe(true);
     expect(
-      dormantChaseDue({ laddered: false, lastNudgedAt: MONDAY, now: at("2026-03-04T09:00:00.000Z") }),
+      dormantChaseDue({
+        laddered: false,
+        lastNudgedAt: MONDAY,
+        now: at("2026-03-04T09:00:00.000Z"),
+      }),
     ).toBe(false);
     expect(
-      dormantChaseDue({ laddered: false, lastNudgedAt: MONDAY, now: at("2026-03-05T09:00:00.000Z") }),
+      dormantChaseDue({
+        laddered: false,
+        lastNudgedAt: MONDAY,
+        now: at("2026-03-05T09:00:00.000Z"),
+      }),
     ).toBe(true);
   });
 
   it("stops once they have signed in", () => {
-    expect(dormantChaseDue({ laddered: false, lastLoginAt: MONDAY, now: at("2026-04-01T00:00:00Z") })).toBe(
-      false,
-    );
+    expect(
+      dormantChaseDue({ laddered: false, lastLoginAt: MONDAY, now: at("2026-04-01T00:00:00Z") }),
+    ).toBe(false);
   });
 
   it("does not treat an admin's edit as the member arriving", () => {
     // Deliberately different from the ladder: this reminder is about the account never having been
     // opened, and somebody else filling in the record is not that.
-    expect(
-      dormantChaseDue({ laddered: false, now: at(MONDAY) }),
-    ).toBe(true);
+    expect(dormantChaseDue({ laddered: false, now: at(MONDAY) })).toBe(true);
   });
 
   it("stands aside while the onboarding ladder owns the member", () => {
     // Otherwise a newly welcomed member gets the ladder's reminder and this one in the same week,
     // about the same thing.
     expect(dormantChaseDue({ laddered: true, now: at(MONDAY) })).toBe(false);
+  });
+});
+
+describe("planOnboardingFollowUp — the already-emailed backlog", () => {
+  const NOW = new Date("2026-03-02T09:00:00.000Z");
+
+  it("enters at the first reminder when there is no welcome to wait from", () => {
+    expect(planOnboardingFollowUp({ alreadyEmailed: true, sentCount: 0, now: NOW })).toEqual({
+      due: true,
+      step: "first_reminder",
+    });
+  });
+
+  it("lets a recorded welcome outrank the roster flag", () => {
+    // The subtlety worth pinning: a date the trail actually holds is a date the ladder should
+    // wait from. Otherwise somebody emailed this morning is chased this afternoon for being a
+    // full member.
+    expect(
+      planOnboardingFollowUp({
+        welcomedAt: "2026-03-02T08:00:00.000Z",
+        alreadyEmailed: true,
+        sentCount: 0,
+        now: NOW,
+      }),
+    ).toEqual({ due: false, reason: "too_soon" });
+  });
+
+  it("does nothing for somebody who has had neither an email nor a welcome", () => {
+    // Sending the first email is not this function's step to take.
+    expect(planOnboardingFollowUp({ sentCount: 0, now: NOW })).toEqual({
+      due: false,
+      reason: "too_soon",
+    });
+  });
+
+  it("falls back to 'ever engaged' when there is no welcome to measure since", () => {
+    expect(
+      planOnboardingFollowUp({
+        alreadyEmailed: true,
+        lastLoginAt: "2025-01-01T00:00:00.000Z",
+        sentCount: 0,
+        now: NOW,
+      }),
+    ).toEqual({ due: false, reason: "engaged" });
+  });
+
+  it("keeps measuring the later steps from the last message, not from the flag", () => {
+    // The flag only ever answers the first gate. Everything after it is the ordinary ladder.
+    expect(
+      planOnboardingFollowUp({
+        alreadyEmailed: true,
+        sentCount: 1,
+        lastNudgedAt: "2026-03-01T09:00:00.000Z",
+        now: NOW,
+        plan: { firstChaseBusinessDays: 5, secondChaseDays: 2, escalateAfterDays: 2 },
+      }),
+    ).toEqual({ due: false, reason: "too_soon" });
   });
 });
