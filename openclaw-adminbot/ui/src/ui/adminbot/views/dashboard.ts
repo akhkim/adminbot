@@ -423,7 +423,7 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
 export function renderDashboard(state: AppViewState, role: AccessRole) {
   return html`
     <div class="dashboard">
-      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
+      ${renderOfflineBanner(state)} ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
@@ -433,5 +433,26 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
         ${renderDeadlines({ role, memberId: state.memberId, settings: state.settings })}
       </div>
     </div>
+  `;
+}
+
+function renderOfflineBanner(state: AppViewState) {
+  const pending = state.adminBotOfflinePendingWrites ?? 0;
+  const cached = Boolean(state.adminBotUsingCachedReads);
+  if (!cached && pending === 0) {
+    return nothing;
+  }
+  const reads = cached
+    ? "Showing the last copy saved on this device. You can still read and type; sends wait until AdminBot is reachable."
+    : "";
+  const writes =
+    pending > 0
+      ? `${pending} edit${pending === 1 ? "" : "s"} waiting to send, like a WhatsApp message queued without signal.`
+      : "";
+  return html`
+    <section class="dashboard__nudge-warning" data-tone="warn" data-testid="dashboard-offline" role="status">
+      <strong>Working offline</strong>
+      <p>${[reads, writes].filter(Boolean).join(" ")}</p>
+    </section>
   `;
 }

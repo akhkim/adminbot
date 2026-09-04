@@ -8,6 +8,14 @@ import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
+import {
+  cacheAdminBotGet,
+  type AdminBotOfflineScope,
+  enqueueAdminBotMutation,
+  flushAdminBotOutbox,
+  pendingAdminBotOutboxCount,
+  readCachedAdminBotGet,
+} from "../offline/outbox.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -274,7 +282,7 @@ export type AuthErrorKind =
   | "not-found";
 
 export type AuthResult<T> =
-  | { ok: true; value: T }
+  | { ok: true; value: T; cached?: boolean }
   // `message` carries the service's own explanation, and is only ever populated for a 400 --
   // a validation refusal names the field it rejected ("LinkedIn link must be a profile URL"),
   // which no generic client-side string can. Auth and rate-limit failures deliberately keep
@@ -370,6 +378,72 @@ async function postJson(
   return { response, body: await readJson(response) };
 }
 
+let lastAuthedCall:
+  | { baseUrl: string; token: string; offlineScope?: AdminBotOfflineScope }
+  | undefined;
+
+async function resolveOfflineScope(
+  baseUrl: string,
+  token: string,
+): Promise<AdminBotOfflineScope | undefined> {
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return undefined;
+  }
+  let digest: ArrayBuffer;
+  try {
+    digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  } catch {
+    // Offline storage must never make an otherwise-valid online request unusable. If the
+    // browser cannot derive a non-secret session identity, fail closed by disabling cache/outbox.
+    return undefined;
+  }
+  const principalKey = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return {
+    baseUrl: baseUrl.replace(/\/+$/u, ""),
+    principalKey,
+  };
+}
+
+export async function pendingQueuedAdminBotWriteCount(
+  token: string,
+  baseUrl: string,
+): Promise<number> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  return scope ? pendingAdminBotOutboxCount(scope) : 0;
+}
+
+export async function flushQueuedAdminBotWrites(): Promise<{ flushed: number; remaining: number }> {
+  const auth = lastAuthedCall;
+  if (!auth?.offlineScope) {
+    return { flushed: 0, remaining: 0 };
+  }
+  return flushAdminBotOutbox(auth.offlineScope, async (item) => {
+    try {
+      const response = await fetch(`${item.base_url}${item.path}`, {
+        method: item.method,
+        credentials: "omit",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${auth.token}`,
+        },
+        ...(item.method === "DELETE" ? {} : { body: JSON.stringify(item.payload) }),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  });
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    void flushQueuedAdminBotWrites();
+  });
+}
+
 // Bearer-authenticated POST/PUT for member-session routes. Same unreachable
 // sentinel + credentials:"omit" contract as postJson.
 async function authedJson(
@@ -378,7 +452,9 @@ async function authedJson(
   method: "GET" | "POST" | "PUT" | "DELETE",
   token: string,
   payload?: unknown,
-): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
+): Promise<{ response: Response; body: unknown; fromCache?: boolean } | { unreachable: true }> {
+  const offlineScope = await resolveOfflineScope(baseUrl, token);
+  lastAuthedCall = { baseUrl, token, ...(offlineScope ? { offlineScope } : {}) };
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
@@ -394,9 +470,24 @@ async function authedJson(
       ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
+    if (method === "GET") {
+      const cached = offlineScope ? await readCachedAdminBotGet(offlineScope, path) : undefined;
+      if (cached !== undefined) {
+        return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+      }
+    } else if (offlineScope) {
+      await enqueueAdminBotMutation(offlineScope, { method, path, payload });
+    }
     return { unreachable: true };
   }
-  return { response, body: await readJson(response) };
+  const body = await readJson(response);
+  if (method === "GET" && response.ok && offlineScope) {
+    void cacheAdminBotGet(offlineScope, path, body);
+  }
+  if (method !== "GET" && response.ok) {
+    void flushQueuedAdminBotWrites();
+  }
+  return { response, body };
 }
 
 // Self-service profile edit (PUT /lab/members/:id) with the member session. Only
@@ -1321,7 +1412,7 @@ export async function fetchMemberResource(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: result.body, ...(result.fromCache ? { cached: true } : {}) };
 }
 
 /** Lists the conferences an admin has made searchable, with how fresh each index is. */
@@ -1860,6 +1951,13 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
     });
   } catch {
     // Best-effort: local session is cleared regardless of server reachability.
+  } finally {
+    if (
+      lastAuthedCall?.token === token &&
+      lastAuthedCall.baseUrl.replace(/\/+$/u, "") === baseUrl.replace(/\/+$/u, "")
+    ) {
+      lastAuthedCall = undefined;
+    }
   }
 }
 
@@ -1898,6 +1996,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 }
 
 export function clearStoredMemberSession(): void {
+  lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {
     storage?.removeItem(SESSION_STORAGE_KEY);

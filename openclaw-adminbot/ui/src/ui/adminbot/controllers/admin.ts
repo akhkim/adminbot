@@ -36,6 +36,7 @@ import {
   updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
+  pendingQueuedAdminBotWriteCount,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
@@ -763,6 +764,8 @@ export type AdminBotHost = {
   adminBotMemberMapLoading: boolean;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  adminBotUsingCachedReads?: boolean;
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
@@ -987,6 +990,8 @@ async function loadAdminBotOverSession(
 ): Promise<void> {
   host.adminBotLoading = true;
   host.adminBotError = null;
+  host.adminBotUsingCachedReads = false;
+  let usedCache = false;
   const read = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     if (!result.ok) {
@@ -994,10 +999,16 @@ async function loadAdminBotOverSession(
         result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
       );
     }
+    if (result.cached) {
+      usedCache = true;
+    }
     return result.value;
   };
   const optional = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    if (result.ok && result.cached) {
+      usedCache = true;
+    }
     return result.ok ? result.value : undefined;
   };
   try {
@@ -1009,6 +1020,7 @@ async function loadAdminBotOverSession(
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
         loadedAt: Date.now(),
       };
+      host.adminBotUsingCachedReads = usedCache;
       return;
     }
     const [pending, nudges, settings, sensitiveInfo] = await Promise.all([
@@ -1031,10 +1043,15 @@ async function loadAdminBotOverSession(
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
     };
+    host.adminBotUsingCachedReads = usedCache;
   } catch (err) {
     host.adminBotError = err instanceof Error ? err.message : String(err);
   } finally {
     host.adminBotLoading = false;
+    host.adminBotOfflinePendingWrites = await pendingQueuedAdminBotWriteCount(
+      session.sessionToken,
+      session.baseUrl,
+    );
   }
 }
 

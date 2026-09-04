@@ -1,19 +1,24 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
+import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   changeMemberEmail,
   claimMember,
   clearStoredMemberSession,
   fetchMemberSession,
+  fetchMemberResource,
   fetchRelevantPapers,
   fetchRoster,
+  flushQueuedAdminBotWrites,
   hasAcknowledgedOnboardingChecklist,
   loadStoredMemberSession,
   loginMember,
+  logoutMember,
   markOnboardingChecklistAcknowledged,
   issueDeviceToken,
   pairDevice,
+  pendingQueuedAdminBotWriteCount,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   sendOnboardingGuide,
@@ -539,5 +544,65 @@ describe("onboarding step nudge", () => {
       channel: "email",
       message: "Please join us.",
     });
+  });
+});
+
+describe("offline GET cache and mutation outbox", () => {
+  it("returns the last successful roster only to the same session", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { members: [{ id: "ada" }] }));
+    await fetchMemberResource("/lab/members", "ada-session", BASE_URL);
+    fetchMock.mockRejectedValue(new Error("offline"));
+
+    await expect(fetchMemberResource("/lab/members", "ada-session", BASE_URL)).resolves.toEqual({
+      ok: true,
+      value: { members: [{ id: "ada" }] },
+      cached: true,
+    });
+    await expect(fetchMemberResource("/lab/members", "mei-session", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "unreachable",
+    });
+  });
+
+  it("does not replay a queued mutation with another session or origin", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", "https://admin-a.test");
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }));
+    await fetchMemberResource("/prime", "mei-session", "https://admin-b.test");
+
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "https://admin-b.test/lab/members/ada",
+      expect.anything(),
+    );
+    await expect(
+      pendingQueuedAdminBotWriteCount("ada-session", "https://admin-a.test"),
+    ).resolves.toBe(1);
+
+    await fetchMemberResource("/prime", "ada-session", "https://admin-a.test");
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 1, remaining: 0 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://admin-a.test/lab/members/ada",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer ada-session" }),
+      }),
+    );
+  });
+
+  it("clears replay credentials when the member logs out", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    fetchMock.mockResolvedValue(jsonResponse(200, { logged_out: true }));
+
+    await logoutMember("ada-session", BASE_URL);
+    fetchMock.mockClear();
+
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

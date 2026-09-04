@@ -76,6 +76,17 @@ export {
   defaultAdminBotPrivacyBrokerConfig,
 } from "./src/privacy/broker.js";
 export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy/broker.js";
+export { createLlmLoadRouter, parseLlmNodes, sharedLlmLoadRouter } from "./src/kernel/llm-router.js";
+export type { LlmLoadRouter } from "./src/kernel/llm-router.js";
+export {
+  createMemoryFailedRequestLedger,
+  createSqliteFailedRequestLedger,
+} from "./src/persistence/failed-requests.js";
+export { withDcsFormFailover, submitDcsFormViaAwsFallback } from "./src/workflows/onboarding/dcs-form.js";
+export type {
+  AdminBotFailedExternalRequest,
+  AdminBotLlmLoadStatus,
+} from "./src/contracts/resilience.js";
 export { createAdminBotReimbursementWorkflow } from "./src/workflows/reimbursements/workflow.js";
 export type {
   AdminBotReimbursementRequest,

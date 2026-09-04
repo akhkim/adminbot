@@ -398,6 +398,10 @@ export type AppViewState = {
   agentsSelectedId: string | null;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  /** Last dashboard GETs were served from the device cache because the service was unreachable. */
+  adminBotUsingCachedReads?: boolean;
+  /** Mutations queued while the AdminBot service was offline. */
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
   // search query for finding other members' requests, and the list of members invited to help on

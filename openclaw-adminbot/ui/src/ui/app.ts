@@ -581,6 +581,8 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.

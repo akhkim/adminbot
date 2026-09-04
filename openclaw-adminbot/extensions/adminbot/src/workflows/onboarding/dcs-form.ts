@@ -22,11 +22,40 @@ export function splitDisplayName(name: string): { firstName: string; lastName: s
   };
 }
 
-export type DcsFormRunner = (params: {
+export type DcsFormParams = {
   firstName: string;
   lastName: string;
   email: string;
-}) => Promise<void>;
+};
+
+export type DcsFormRunner = (params: DcsFormParams) => Promise<void>;
+
+export type DcsFormEscalationResult =
+  | { escalated: true }
+  | { escalated: false; errorMessage: string };
+
+export type DcsFormFailover = {
+  record: (input: {
+    serviceType: string;
+    payload: Record<string, unknown>;
+    errorMessage: string;
+    status?: "recorded" | "aws_retry_failed" | "escalated_to_human" | "resolved";
+  }) => { id: string };
+  update: (
+    id: string,
+    patch: {
+      status?: "recorded" | "aws_retry_failed" | "escalated_to_human" | "resolved";
+      error_message?: string;
+      attempt_count?: number;
+    },
+  ) => unknown;
+  awsFallback?: (params: DcsFormParams) => Promise<void>;
+  escalateToHumans?: (input: {
+    params: DcsFormParams;
+    error: string;
+    recordId: string;
+  }) => Promise<DcsFormEscalationResult>;
+};
 
 /**
  * Submits the DCS Slack-access request form (scripts/adminbot-dcs-form-submit.ts) on a newly
@@ -75,6 +104,96 @@ export function createDcsFormRunner(options: {
       throw new Error(parsed.error);
     }
   };
+}
+
+/**
+ * Local Playwright first, then an exact-payload AWS retry, then a human Slack/nudge.
+ * The original request is written to the ledger before either fallback so a crash cannot drop it.
+ */
+export function withDcsFormFailover(
+  submit: DcsFormRunner,
+  failover: DcsFormFailover,
+): DcsFormRunner {
+  return async (params) => {
+    try {
+      await submit(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      let recordedError = message;
+      const recorded = failover.record({
+        serviceType: "dcs_form",
+        payload: { ...params },
+        errorMessage: message,
+        status: "recorded",
+      });
+      if (failover.awsFallback) {
+        try {
+          await failover.awsFallback(params);
+          failover.update(recorded.id, { status: "resolved", attempt_count: 2 });
+          return;
+        } catch (awsError) {
+          const awsMessage = awsError instanceof Error ? awsError.message : String(awsError);
+          recordedError = `${message}; aws: ${awsMessage}`;
+          failover.update(recorded.id, {
+            status: "aws_retry_failed",
+            error_message: recordedError,
+            attempt_count: 2,
+          });
+        }
+      }
+      if (failover.escalateToHumans) {
+        try {
+          const escalation = await failover.escalateToHumans({
+            params,
+            error: message,
+            recordId: recorded.id,
+          });
+          if (escalation.escalated) {
+            failover.update(recorded.id, { status: "escalated_to_human" });
+          } else {
+            failover.update(recorded.id, {
+              error_message: `${recordedError}; escalation: ${escalation.errorMessage}`,
+            });
+          }
+        } catch (escalationError) {
+          const escalationMessage =
+            escalationError instanceof Error ? escalationError.message : String(escalationError);
+          failover.update(recorded.id, {
+            error_message: `${recordedError}; escalation: ${escalationMessage}`,
+          });
+        }
+      }
+      throw error;
+    }
+  };
+}
+
+export async function submitDcsFormViaAwsFallback(
+  params: DcsFormParams,
+  options: { url: string; token?: string; fetchImpl?: typeof fetch },
+): Promise<void> {
+  const url = new URL(options.url);
+  if (url.protocol !== "https:" && url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+    throw new Error("DCS AWS fallback URL must use https");
+  }
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    throw new Error(`DCS AWS fallback returned HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as { ok?: boolean; error?: string };
+  if (body.ok !== true) {
+    throw new Error(body.error?.trim() || "DCS AWS fallback did not confirm submission");
+  }
 }
 
 function parseDcsFormResult(stdout: string): { ok: true } | { ok: false; error: string } {
