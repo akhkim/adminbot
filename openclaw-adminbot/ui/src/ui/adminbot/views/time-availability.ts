@@ -1725,32 +1725,25 @@ export function withinWindow(
   return row.start < window.end && row.end >= window.start;
 }
 
-/**
+/*
  * The tables follow the chart's window rather than listing everything ever recorded.
  *
  * A member two years into the lab has a page of finished courses and holidays under a chart
  * showing this month, and the two disagreed about what the tab was about: the chart answered
  * "what is running now" while the list answered "what have you ever told us". Filtering to the
- * visible span makes them one surface -- and the chart's pager is what reaches the past, which is
- * why the count of what was filtered out says so rather than leaving a silent gap.
+ * visible span makes them one surface, and the chart's pager is what reaches the past.
+ *
+ * A window with nothing in it draws nothing -- no table, no count of what was filtered out. That
+ * count was tried and it was noise: an empty table under a line explaining its own emptiness took
+ * more room than the rows would have, on a tab that had just been shortened. The chart directly
+ * above already shows the same empty span, so the absence is legible without being narrated.
  */
-function renderHiddenNote(hidden: number) {
-  return hidden > 0
-    ? html`<p
-        class="adminbot-time-availability__hidden-note"
-        data-testid="time-availability-hidden"
-      >
-        ${t("adminbotTimeAvailability.tables.hiddenOutsideWindow", { count: String(hidden) })}
-      </p>`
-    : nothing;
-}
 
 function renderJinesisTable(
   tasks: readonly TimeAllocationTask[],
   rows: AvailabilityRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
-  hidden = 0,
 ) {
   const colors = taskColors(tasks);
   return html`
@@ -1847,7 +1840,6 @@ function renderJinesisTable(
           })}
         </tbody>
       </table>
-      ${renderHiddenNote(hidden)}
     </div>
   `;
 }
@@ -1856,7 +1848,6 @@ function renderOtherTable(
   rows: TimeOffRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
-  hidden = 0,
 ) {
   return html`
     <div class="adminbot-time-allocation-table-wrap" data-testid="time-availability-other-table">
@@ -1962,7 +1953,6 @@ function renderOtherTable(
           )}
         </tbody>
       </table>
-      ${renderHiddenNote(hidden)}
     </div>
   `;
 }
@@ -2106,22 +2096,11 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
-                ${visibleTasks.length || tasks.length
-                  ? renderJinesisTable(
-                      visibleTasks,
-                      storedAvailability,
-                      props,
-                      editable,
-                      tasks.length - visibleTasks.length,
-                    )
+                ${visibleTasks.length
+                  ? renderJinesisTable(visibleTasks, storedAvailability, props, editable)
                   : nothing}
-                ${visibleTimeOff.length || storedTimeOff.length
-                  ? renderOtherTable(
-                      visibleTimeOff,
-                      props,
-                      editable,
-                      storedTimeOff.length - visibleTimeOff.length,
-                    )
+                ${visibleTimeOff.length
+                  ? renderOtherTable(visibleTimeOff, props, editable)
                   : nothing}
                 ${renderOverallNotes(props, storedNotes, editable)}
                 ${!hasAnything && !editable

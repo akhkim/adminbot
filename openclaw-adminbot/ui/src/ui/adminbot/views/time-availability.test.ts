@@ -1686,11 +1686,15 @@ describe("commitments follow the chart's window", () => {
     expect(table?.textContent).not.toContain("Last term");
   });
 
-  // Never a silent gap: a row that is filtered out is counted where it would have been.
-  it("says how many rows the window is hiding", () => {
-    const container = renderView({ members: [spanning()], chartWindow: window });
-    const note = container.querySelector('[data-testid="time-availability-hidden"]');
-    expect(note?.textContent).toContain("1");
+  // A window with nothing in it says nothing. An empty table under a line explaining why it is
+  // empty was more page than the rows would have been, and the chart above shows the same gap.
+  it("draws no table at all when the window holds nothing", () => {
+    const container = renderView({
+      members: [spanning()],
+      chartWindow: { start: "2024-01-01", end: "2024-02-12" },
+    });
+    expect(container.querySelector('[data-testid="time-availability-jinesis-table"]')).toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-other-table"]')).toBeNull();
   });
 
   it("brings the finished ones back when the pager reaches them", () => {

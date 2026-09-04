@@ -10762,14 +10762,6 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
 }
 
-/* The note each commitment table draws when the chart's window hides rows. Muted and small: it is
-   an explanation for an absence, not a row of its own. */
-.adminbot-time-availability__hidden-note {
-  margin: var(--space-1) 0 0;
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
 .adminbot-time-availability__deadline-list {
   display: grid;
   gap: var(--space-2);
