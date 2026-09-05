@@ -498,6 +498,38 @@ const TEMPLATE = `<meta charset="utf-8" />
     font-size: 12.5px;
     color: var(--muted);
   }
+  /* The rest of the venue's calendar: reviews, rebuttal, decisions, camera-ready, the
+     conference. Muted and countdown-free so it never competes with the submission above. */
+  .csched {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .csched li {
+    display: contents;
+  }
+  .csched .m-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .csched .m-date {
+    font-family: var(--mono);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .csched-details {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .csched-details > summary {
+    cursor: pointer;
+  }
   .clink {
     display: inline-flex;
     align-items: center;
@@ -1017,6 +1049,70 @@ const TEMPLATE = `<meta charset="utf-8" />
       ? text
       : \`\${text.slice(0, separator)} <span class="aoe">\${text.slice(separator)}</span>\`;
   }
+  // Milestone order is the story -- reviews, the window to answer them, the decision, the work,
+  // the trip -- not the calendar: a venue can date two stages the same day (ICLR releases reviews
+  // and opens discussion both on Nov 5), and a date-only sort puts those in source order.
+  const MILESTONE_ORDER = [
+    "reviews",
+    "rebuttal",
+    "notification",
+    "cycle_end",
+    "camera_ready",
+    "conference",
+  ];
+  function milestoneRank(milestone) {
+    const index = MILESTONE_ORDER.indexOf(milestone);
+    return index < 0 ? MILESTONE_ORDER.length : index;
+  }
+  function fmtRange(from, to) {
+    const start = fmtAoe(from);
+    const end = fmtAoe(to);
+    if (!start || !end) return start || end;
+    // The year once when both ends share it: a one-week window should read as one span.
+    return (from || "").slice(0, 4) === (to || "").slice(0, 4)
+      ? \`\${start.replace(/, \\d{4}$/, "")} – \${end}\`
+      : \`\${start} – \${end}\`;
+  }
+  function milestoneDate(entry) {
+    if (entry.kind === "period") return fmtRange(entry.starts, entry.ends);
+    // Only an AoE cutoff gets the AoE suffix; a day the venue acts on is a plain date.
+    return entry.kind === "deadline" ? \`\${fmtAoe(entry.date)} AoE\` : fmtAoe(entry.date);
+  }
+  // \`notification_aoe\` becomes a decision entry when the curated schedule has none, so the rows
+  // that know only their notification date still render one list rather than a special case.
+  function venueSchedule(x) {
+    const curated = Array.isArray(x.schedule) ? x.schedule : [];
+    const entries = curated.slice();
+    if (x.notification_aoe && !curated.some((entry) => entry.milestone === "notification")) {
+      entries.push({
+        milestone: "notification",
+        label: "Accept/reject",
+        kind: "deadline",
+        date: x.notification_aoe,
+      });
+    }
+    return entries.sort(
+      (a, b) =>
+        milestoneRank(a.milestone) - milestoneRank(b.milestone) ||
+        String(a.starts || a.date || "").localeCompare(String(b.starts || b.date || "")) ||
+        String(a.label).localeCompare(String(b.label)),
+    );
+  }
+  function scheduleNote(x) {
+    const entries = venueSchedule(x);
+    if (!entries.length) return "";
+    const rows = entries
+      .map(
+        (entry) =>
+          \`<li data-milestone="\${esc(entry.milestone)}"><span class="m-label">\${esc(entry.label)}</span><span class="m-date">\${esc(milestoneDate(entry))}</span></li>\`,
+      )
+      .join("");
+    // Collapsed past two: one or two lines cost nothing open (the common case is a workshop that
+    // knows only its notification date), where four would be the tallest part of the card.
+    return entries.length <= 2
+      ? \`<ul class="csched">\${rows}</ul>\`
+      : \`<details class="csched-details"><summary>Rest of the schedule (\${entries.length})</summary><ul class="csched">\${rows}</ul></details>\`;
+  }
   function aoeDayKey(now) {
     return new Date(now - 12 * 3600000).toISOString().slice(0, 10);
   }
@@ -1337,9 +1433,7 @@ const TEMPLATE = `<meta charset="utf-8" />
         const title = call
           ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(x.name)}</a>\`
           : esc(x.name);
-        const notif = x._notif
-          ? \`<div class="cnote">Accept/reject: \${fmtAoe(x.notification_aoe)} AoE</div>\`
-          : "";
+        const notif = scheduleNote(x);
         return \`<div class="card" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}">
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
       <div class="cname">\${title}</div>

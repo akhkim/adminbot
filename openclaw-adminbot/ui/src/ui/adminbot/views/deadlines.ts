@@ -23,12 +23,18 @@ import {
   aoeDateTimeLabel,
   aoeInstantMs,
   countdownLabel,
+  dateRangeLabel,
   daysLeftLabel,
   MS_DAY,
+  plainDateLabel,
   urgencyOf,
   type Urgency,
 } from "../data/deadline-time.ts";
-import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
+import {
+  DEADLINE_VENUES,
+  type DeadlineMilestone,
+  type DeadlineVenue,
+} from "../data/deadlines.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderAoeDateTime } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
@@ -143,6 +149,73 @@ export function mergeArrSubmissionDuplicates(
   }
 
   return entries.filter((entry) => !dropped.has(entry)).map((entry) => renamed.get(entry) ?? entry);
+}
+
+/**
+ * Stage order for a rendered schedule: the story, not the calendar.
+ *
+ * Sorted by stage first because a venue can date two stages the same day -- ICLR releases reviews
+ * and opens author discussion both on 5 November -- and a date-only sort puts them in whichever
+ * order the source happened to list, which reads as noise. Anything unrecognised sorts last rather
+ * than being dropped: a venue inventing a stage is a thing to show, not to hide.
+ */
+const MILESTONE_ORDER = [
+  "reviews",
+  "rebuttal",
+  "notification",
+  "cycle_end",
+  "camera_ready",
+  "conference",
+];
+
+function milestoneRank(milestone: string): number {
+  const index = MILESTONE_ORDER.indexOf(milestone);
+  return index === -1 ? MILESTONE_ORDER.length : index;
+}
+
+/** The first date a milestone occupies, for ordering within one stage. */
+function milestoneStart(entry: DeadlineMilestone): string {
+  return entry.starts ?? entry.date ?? entry.ends ?? "";
+}
+
+/**
+ * Everything this venue has published after its submission, in the order it happens.
+ *
+ * `notification_aoe` is folded in as a decision entry when the curated schedule carries none, so
+ * the ~30 rows that know only their notification date (every workshop, mostly) still render one
+ * consistent list rather than a special case beside it. A curated notification always wins: it
+ * comes off the venue's own calendar with a label the venue chose ("Meta-reviews released" is not
+ * "Accept/reject"), where the folded-in one is only a date with no words of its own.
+ */
+export function venueSchedule(venue: DeadlineVenue): DeadlineMilestone[] {
+  const curated = venue.schedule ?? [];
+  const entries = [...curated];
+  if (venue.notification_aoe && !curated.some((entry) => entry.milestone === "notification")) {
+    entries.push({
+      milestone: "notification",
+      label: "Accept/reject",
+      kind: "deadline",
+      date: venue.notification_aoe,
+    });
+  }
+  return entries.toSorted(
+    (left, right) =>
+      milestoneRank(left.milestone) - milestoneRank(right.milestone) ||
+      milestoneStart(left).localeCompare(milestoneStart(right)) ||
+      left.label.localeCompare(right.label),
+  );
+}
+
+/** One schedule entry's date, read the way its `kind` says to read it. */
+export function milestoneDateLabel(entry: DeadlineMilestone): string {
+  if (entry.kind === "period") {
+    return dateRangeLabel(entry.starts ?? "", entry.ends ?? "");
+  }
+  // Only an AoE cutoff gets the AoE suffix. A day the venue acts on is a plain calendar date, and
+  // "conference opens Apr 26 AoE" would claim a precision nobody published.
+  return entry.kind === "deadline"
+    ? `${aoeDateLabel(entry.date ?? "")} AoE`
+    : plainDateLabel(entry.date ?? "");
 }
 
 /**
@@ -1439,6 +1512,43 @@ class AdminbotDeadlinesView extends LitElement {
     </span>`;
   }
 
+  /**
+   * The rest of the venue's calendar, under the date the card counts down to.
+   *
+   * Deliberately quiet: no countdown, no urgency colour, no effect on sorting or on which entry
+   * the board leads with. The submission is the thing anybody has to act on, and a rebuttal window
+   * six months out competing with it for attention would make the board harder to read, not
+   * richer. These are here to be looked up -- "when do decisions land", "can I book that week" --
+   * which is a different act from scanning for what is due next.
+   *
+   * Collapsed past two entries. One or two lines cost nothing open, and that is the common case
+   * (a workshop knows only its notification date); ICLR's four would otherwise be the tallest part
+   * of a card whose point is a single date.
+   */
+  private renderSchedule(venue: DeadlineVenue) {
+    const entries = venueSchedule(venue);
+    if (entries.length === 0) {
+      return nothing;
+    }
+    const rows = entries.map(
+      (entry) => html`<li class="deadline-card__milestone" data-milestone=${entry.milestone}>
+        <span class="deadline-card__milestone-label">${entry.label}</span>
+        <span class="deadline-card__milestone-date">${milestoneDateLabel(entry)}</span>
+      </li>`,
+    );
+    if (entries.length <= 2) {
+      return html`<ul class="deadline-card__schedule" data-testid="deadline-schedule">
+        ${rows}
+      </ul>`;
+    }
+    return html`<details class="deadline-card__schedule-details" data-testid="deadline-schedule">
+      <summary>Rest of the schedule (${entries.length})</summary>
+      <ul class="deadline-card__schedule">
+        ${rows}
+      </ul>
+    </details>`;
+  }
+
   private renderStale(venue: DeadlineVenue) {
     return venue.stale
       ? html`<p class="deadline-card__note">Source not observed in the latest sweep.</p>`
@@ -1479,11 +1589,7 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-card__countdown">
           ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
         </p>
-        ${venue.notification_aoe
-          ? html`<p class="deadline-card__note">
-              Accept/reject: ${aoeDateLabel(venue.notification_aoe)} AoE
-            </p>`
-          : nothing}
+        ${this.renderSchedule(venue)}
         ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
     `;

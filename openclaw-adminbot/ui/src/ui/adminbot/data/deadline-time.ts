@@ -47,6 +47,36 @@ export function aoeDateTimeLabel(aoe: string): string {
   return date && time ? `${date} · ${time[1]}:${time[2]} AoE` : date;
 }
 
+/**
+ * A calendar day with no time of day: "Nov 5, 2026".
+ *
+ * Distinct from `aoeDateLabel` on purpose. That one keeps the AoE frame because an AoE deadline is
+ * still open twelve hours after its UTC date; a day the venue *acts* on -- decisions released, the
+ * conference opening -- is a plain calendar date, and stamping AoE on it would claim a precision
+ * the venue never published.
+ */
+export function plainDateLabel(day: string): string {
+  const m = /(\d{4})-(\d{2})-(\d{2})/u.exec(day);
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : "";
+}
+
+/**
+ * A span as one line: "Nov 5 – Nov 18, 2026", or "Dec 30, 2026 – Jan 2, 2027" across a year.
+ *
+ * The year is printed once when both ends share it, because "Nov 5, 2026 – Nov 18, 2026" makes a
+ * one-week rebuttal window look like two separate dates to read and compare.
+ */
+export function dateRangeLabel(from: string, to: string): string {
+  const start = plainDateLabel(from);
+  const end = plainDateLabel(to);
+  if (!start || !end) {
+    return start || end;
+  }
+  return from.slice(0, 4) === to.slice(0, 4)
+    ? `${start.replace(/, \d{4}$/u, "")} – ${end}`
+    : `${start} – ${end}`;
+}
+
 // Four bands rather than a gradient: a countdown is read as "can I still start this", and that
 // question has a small number of distinct answers. Named for the token each one resolves to, so
 // urgency is a design-system color and not a hex chosen per component.

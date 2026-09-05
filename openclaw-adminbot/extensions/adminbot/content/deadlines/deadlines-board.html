@@ -492,6 +492,38 @@
     font-size: 12.5px;
     color: var(--muted);
   }
+  /* The rest of the venue's calendar: reviews, rebuttal, decisions, camera-ready, the
+     conference. Muted and countdown-free so it never competes with the submission above. */
+  .csched {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .csched li {
+    display: contents;
+  }
+  .csched .m-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .csched .m-date {
+    font-family: var(--mono);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .csched-details {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .csched-details > summary {
+    cursor: pointer;
+  }
   .clink {
     display: inline-flex;
     align-items: center;
@@ -1004,7 +1036,34 @@
         "link": "https://2026.aaclnet.org/calls/main_conference_papers/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-07-02",
+        "kind": "date"
+      },
+      {
+        "milestone": "rebuttal",
+        "label": "Author response",
+        "starts": "2026-07-08",
+        "ends": "2026-07-14",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-07-30",
+        "kind": "date"
+      },
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-08-02",
+        "kind": "date"
+      }
+    ]
   },
   {
     "id": "aacl2026_demo",
@@ -1048,7 +1107,22 @@
         "link": "https://2026.aaclnet.org/calls/demos/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2026-10-01 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference (Hengqin, China)",
+        "starts": "2026-11-06",
+        "ends": "2026-11-10",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "emnlp2026_commitment",
@@ -1092,7 +1166,29 @@
         "link": "https://2026.emnlp.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response and discussion",
+        "starts": "2026-07-07",
+        "ends": "2026-07-13",
+        "kind": "period"
+      },
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2026-08-30 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference",
+        "starts": "2026-10-24",
+        "ends": "2026-10-29",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "arr_2026_august",
@@ -1135,7 +1231,34 @@
         "link": "https://aclrollingreview.org/dates"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-09-07",
+        "kind": "date"
+      },
+      {
+        "milestone": "rebuttal",
+        "label": "Author response",
+        "starts": "2026-09-14",
+        "ends": "2026-09-24",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-10-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-10-11",
+        "kind": "date"
+      }
+    ]
   },
   {
     "id": "emnlp2026_ws_nlp4pi",
@@ -1192,7 +1315,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_rebuttal",
@@ -1235,7 +1359,49 @@
         "link": "https://neurips.cc/Conferences/2026"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "reviews",
+        "label": "Reviews released",
+        "date": "2026-07-22 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "rebuttal",
+        "label": "Author-reviewer-AC discussion",
+        "starts": "2026-07-27",
+        "ends": "2026-08-03",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Author notifications",
+        "date": "2026-09-24 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference — Sydney",
+        "starts": "2026-12-08",
+        "ends": "2026-12-10",
+        "kind": "period"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference — Atlanta",
+        "starts": "2026-12-10",
+        "ends": "2026-12-11",
+        "kind": "period"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference — Paris",
+        "starts": "2026-12-09",
+        "ends": "2026-12-11",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "aacl2026_commitment",
@@ -1279,7 +1445,29 @@
         "link": "https://2026.aaclnet.org/calls/main_conference_papers/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response and discussion",
+        "starts": "2026-07-07",
+        "ends": "2026-07-13",
+        "kind": "period"
+      },
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2026-09-30 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference (Hengqin, China)",
+        "starts": "2026-11-06",
+        "ends": "2026-11-10",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "emnlp2026_ws_GroundLM_Shared_Tasks",
@@ -1336,7 +1524,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/GroundLM_Shared_Tasks"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_MathNLP_ARR_Commitment",
@@ -1393,7 +1582,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/MathNLP_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_LUHME_ARR_Commitment",
@@ -1450,7 +1640,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/LUHME_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_ORACLE_ARR_Commitment",
@@ -1517,7 +1708,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/ORACLE_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_WNUT_ARR_Commitment",
@@ -1574,7 +1766,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/WNUT_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_UncertaiNLP_ARR_Commitment",
@@ -1638,7 +1831,8 @@
         "link": "https://uncertainlp.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_WSLP",
@@ -1714,7 +1908,8 @@
         "link": "https://exploration-lab.github.io/WSLP-2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_WiNLP_ARR_Commitment",
@@ -1778,7 +1973,8 @@
         "link": "https://winlp-workshop.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_BlackboxNLP_ARR_Commitment",
@@ -1835,7 +2031,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/BlackboxNLP_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_WiML",
@@ -1892,7 +2089,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WiML"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "aacl2026_commitment_second",
@@ -1936,7 +2134,29 @@
         "link": "https://2026.aaclnet.org/calls/main_conference_papers/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response and discussion",
+        "starts": "2026-07-07",
+        "ends": "2026-07-13",
+        "kind": "period"
+      },
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2026-09-30 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference (Hengqin, China)",
+        "starts": "2026-11-06",
+        "ends": "2026-11-10",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "emnlp2026_ws_AKBC_ARR_Commitment",
@@ -2005,7 +2225,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/AKBC_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_LXAI",
@@ -2066,7 +2287,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LXAI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_SALMA_ARR_Commitment",
@@ -2130,7 +2352,8 @@
         "link": "https://salma-workshop.github.io/salma-2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NeurReps_Extended_Abstracts",
@@ -2187,7 +2410,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Extended_Abstracts"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NeurReps_Proceedings",
@@ -2244,7 +2468,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Proceedings"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_FinNLP_ARR_Commitment",
@@ -2315,7 +2540,8 @@
         "link": "https://sigfintech.github.io/finnlp2026/call-for-papers.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_FLMSec",
@@ -2372,7 +2598,8 @@
         "link": "https://flmsec.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_NLLP_ARR_Commitment",
@@ -2429,7 +2656,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_PANDORA_ARR_Commitment",
@@ -2486,7 +2714,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/PANDORA_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_EIML",
@@ -2543,7 +2772,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EIML"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AXIOM",
@@ -2600,7 +2830,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AXIOM"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_JUDGe",
@@ -2657,7 +2888,8 @@
         "link": "https://judge2026.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_TAE",
@@ -2733,7 +2965,8 @@
         "link": "https://tai-eval.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Verify-Agents",
@@ -2790,7 +3023,8 @@
         "link": "https://verify-agents-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4MetaScience",
@@ -2866,7 +3100,8 @@
         "link": "https://ai4metascience.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ML4Molecules",
@@ -2942,7 +3177,8 @@
         "link": "https://moleculediscovery.github.io/workshop2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Child_Safety_in_AI",
@@ -2999,7 +3235,8 @@
         "link": "https://childsafety-ai.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NewInML",
@@ -3056,7 +3293,8 @@
         "link": "https://newinml.github.io/NewInML2026NeurIPS/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RPS",
@@ -3113,7 +3351,8 @@
         "link": "https://representations-physical-sciences.github.io/workshop-2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RCMLR",
@@ -3175,7 +3414,8 @@
         "link": "https://translatingmlresearch.github.io/RCMLR/call-for-papers/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_SocialAgent",
@@ -3257,7 +3497,8 @@
         "link": "https://social-llm-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_TCCML",
@@ -3314,7 +3555,8 @@
         "link": "https://www.climatechange.ai/events/neurips2026"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_IAEval",
@@ -3373,7 +3615,8 @@
         "link": "https://eval-interactive-agents-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RAAAI",
@@ -3430,7 +3673,8 @@
         "link": "https://resource-aware-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_TCCML_Tutorials_Track",
@@ -3487,7 +3731,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TCCML_Tutorials_Track"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ML4PS",
@@ -3544,7 +3789,8 @@
     "deadline_official_url": "",
     "deadline_official_evidence": "",
     "deadline_extended": false,
-    "deadline_history_status": "not_extended"
+    "deadline_history_status": "not_extended",
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4Mat",
@@ -3601,7 +3847,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4Mat"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_LIGHT",
@@ -3658,7 +3905,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LIGHT"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_EconML",
@@ -3717,7 +3965,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EconML"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AgenticOS",
@@ -3774,7 +4023,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticOS"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_PALM",
@@ -3850,7 +4100,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PALM"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4Science",
@@ -3926,7 +4177,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4Science"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_DocInsights_ARR_Commitment",
@@ -3999,7 +4251,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/DocInsights_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AABA4ET",
@@ -4063,7 +4316,8 @@
         "link": "https://sites.google.com/view/aaba4et/call-for-papers"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4PowerGrids",
@@ -4120,7 +4374,8 @@
         "link": "https://ai4powergrids.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4ChipDesign",
@@ -4196,7 +4451,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4ChipDesign"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_MINT_ARR_Commitment",
@@ -4260,7 +4516,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/MINT_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_MLForSys",
@@ -4336,7 +4593,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MLForSys"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_MLxOR",
@@ -4412,7 +4670,8 @@
         "link": "https://mlxor-2026.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_REALM_ARR_Commitment",
@@ -4469,7 +4728,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/REALM_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_IMPACT-SPEECH_ARR_Commitment",
@@ -4566,7 +4826,8 @@
         "deadline_label": "ARR commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_WaC-13_ARR_Commitment",
@@ -4633,7 +4894,8 @@
         "link": "https://wackyworkshop.org"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_InterpScience",
@@ -4690,7 +4952,8 @@
         "link": "https://interpscience.github.io/cfp"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_NLLP",
@@ -4747,7 +5010,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_UserSim",
@@ -4824,7 +5088,8 @@
         "link": "https://usersim-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_PhysUnderstand",
@@ -4881,7 +5146,8 @@
         "link": "https://sites.google.com/view/neurips-2026-workshop-pudm"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4GOOD",
@@ -4954,7 +5220,8 @@
         "deadline_label": "submission"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RL4XS",
@@ -5011,7 +5278,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RL4XS"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_HAIC",
@@ -5075,7 +5343,8 @@
         "link": "https://neurips2026haic.com/cfp.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_WRL",
@@ -5139,7 +5408,8 @@
         "link": "https://www.robot-learning.ml/2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ICBINB-BIO",
@@ -5214,7 +5484,8 @@
         "link": "https://icbinb-bio.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Interp4Discovery",
@@ -5278,7 +5549,8 @@
         "link": "https://interpretability4discovery.github.io/cfp.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ReMuCAI",
@@ -5335,7 +5607,8 @@
         "link": "https://sites.google.com/view/remucai/call-for-papers"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GDDL",
@@ -5401,7 +5674,8 @@
         "link": "https://gddl-neurips-2026.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Robotics_World_Modeling",
@@ -5479,7 +5753,8 @@
         "link": "https://robowm-ws.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Sim2Sci",
@@ -5547,7 +5822,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Sim2Sci"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_MRL",
@@ -5613,7 +5889,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/MRL"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_DynaFront",
@@ -5688,7 +5965,8 @@
         "link": "https://sites.google.com/view/dynafrontneurips26"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GlobalSouthAI",
@@ -5745,7 +6023,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GlobalSouthAI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_CLEA",
@@ -5802,7 +6081,8 @@
         "link": "https://clea-neurips.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_BiAlign",
@@ -5859,7 +6139,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/BiAlign"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Pre-to-Post",
@@ -5916,7 +6197,8 @@
         "link": "https://pretrain2posttrain.github.io/call.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ML4SpatialBio",
@@ -5991,7 +6273,8 @@
         "link": "https://imsb-uke.github.io/ml4spatialbio-2026/cfp.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_OPT",
@@ -6056,7 +6339,8 @@
         "link": "https://opt-ml.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Simbiochem",
@@ -6113,7 +6397,8 @@
         "link": "https://www.simbiochem.com"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_MPLR-FM",
@@ -6196,7 +6481,8 @@
         "link": "https://neurips-workshop2026.github.io/foundation_model_agentic_privacy/call_for_papers.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_VLM4RWD",
@@ -6253,7 +6539,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VLM4RWD"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AgenticWeb",
@@ -6310,7 +6597,8 @@
         "link": "https://projectnanda.org/workshops/neurips26/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AutoMLR",
@@ -6367,7 +6655,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AutoMLR"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI_and_the_Self",
@@ -6424,7 +6713,8 @@
         "link": "https://aintheself.github.io/call-for-papers.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AIDaR",
@@ -6495,7 +6785,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AIDaR"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_BeNTo",
@@ -6554,7 +6845,8 @@
         "link": "https://bento-neurips.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_DiffuLM",
@@ -6618,7 +6910,8 @@
         "link": "https://7amin.github.io/diffulm-neurips2026/cfp.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ESR_Demo_Track",
@@ -6675,7 +6968,8 @@
         "link": "https://embodiedsr.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ESR_Paper_Track",
@@ -6732,7 +7026,8 @@
         "link": "https://embodiedsr.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Meta-Agents",
@@ -6808,7 +7103,8 @@
         "link": "https://meta-agents-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI4DD",
@@ -6872,7 +7168,8 @@
         "link": "https://ai4dd-neurips2026.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_STODY",
@@ -6937,7 +7234,8 @@
         "link": "https://eethanshi.github.io/stochastic-dynamics-2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AI-Native_Academia",
@@ -7001,7 +7299,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI-Native_Academia"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_CWM",
@@ -7058,7 +7357,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CWM"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_E-values",
@@ -7117,7 +7417,8 @@
         "link": "https://e-values-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_BrainBodyFM",
@@ -7182,7 +7483,8 @@
         "link": "https://brainbodyfm-workshop.github.io/call-for-papers.html"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Med-Reasoner",
@@ -7247,7 +7549,8 @@
         "link": "https://med-reasoner.github.io/neurips2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_SaTQuML",
@@ -7311,7 +7614,8 @@
         "link": "https://satquml.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_TTCL",
@@ -7394,7 +7698,8 @@
         "link": "https://ttcl-agents.github.io"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_CODEC-FM",
@@ -7451,7 +7756,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CODEC-FM"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ODI",
@@ -7508,7 +7814,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ODI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_PTA",
@@ -7588,7 +7895,8 @@
         "link": "https://ptaworkshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_IAB",
@@ -7645,7 +7953,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAB"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_IAB_Competition_Paper_Track",
@@ -7702,7 +8011,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAB_Competition_Paper_Track"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GenAI4Health",
@@ -7759,7 +8069,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Demonstration_Paper_Track",
@@ -7816,7 +8127,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Demonstration_Paper_Track"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Position_Paper_Track",
@@ -7873,7 +8185,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Position_Paper_Track"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ATTRIB",
@@ -7930,7 +8243,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ATTRIB"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AIWILD",
@@ -7987,7 +8301,8 @@
         "link": "https://agentwild-workshop.github.io/neurips2026/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_TS-LIMITS",
@@ -8044,7 +8359,8 @@
         "link": "https://ts-limits.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_WM_PAI",
@@ -8121,7 +8437,8 @@
         "link": "https://www.worldmodels-physicalai.com/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_XAI4Science",
@@ -8185,7 +8502,8 @@
         "link": "https://xai4science.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_FAST",
@@ -8249,7 +8567,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FAST"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AIM",
@@ -8313,7 +8632,8 @@
         "link": "https://aim-neurips26.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_LP4FM",
@@ -8389,7 +8709,8 @@
         "link": "https://lp4fm.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_GEM_Bio",
@@ -8449,7 +8770,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GEM_Bio"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NeuralArtifacts",
@@ -8525,7 +8847,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeuralArtifacts"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_SLM-Agents",
@@ -8589,7 +8912,8 @@
         "deadline_label": "submission"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_MATH-AI",
@@ -8646,7 +8970,8 @@
         "link": "https://mathai-2026.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_DevAI",
@@ -8703,7 +9028,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/DevAI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_ASCI",
@@ -8760,7 +9086,8 @@
         "link": "https://asci.artificialintelligencepathology.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_Insights_ARR_Commitment",
@@ -8817,7 +9144,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/Insights_ARR_Commitment"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_BabyVLM",
@@ -8893,7 +9221,8 @@
         "deadline_label": "submission"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_InfPriv",
@@ -8950,7 +9279,8 @@
         "link": "https://beyond-private-training.ai.studio/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_CL4FMAgents",
@@ -9040,7 +9370,8 @@
         "deadline_label": "submission"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NeurReps_Findings",
@@ -9097,7 +9428,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Findings"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_AISciK",
@@ -9154,7 +9486,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AISciK"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_MusIML",
@@ -9211,7 +9544,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MusIML"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_PhysWorldAI",
@@ -9268,7 +9602,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PhysWorldAI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_PriGM",
@@ -9332,7 +9667,8 @@
         "link": "https://sites.google.com/view/prigmneurips2026/call-for-papers"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_NEmo",
@@ -9389,7 +9725,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NEmo"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_Africa_in_AI",
@@ -9446,7 +9783,8 @@
         "link": "https://africainai.mailab.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RTCA",
@@ -9510,7 +9848,8 @@
         "link": "https://rtcaneurips26.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_LCFM",
@@ -9567,7 +9906,8 @@
         "link": "https://longcontextfm.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RoboPAD",
@@ -9624,7 +9964,8 @@
         "link": "https://robotpad2026.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_QueerInAI",
@@ -9681,7 +10022,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/QueerInAI"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_FLLMPT",
@@ -9757,7 +10099,8 @@
         "link": "https://www.fllmpt-work.shop/call/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_EvoRobust",
@@ -9814,7 +10157,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EvoRobust"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_VERICODEGEN",
@@ -9871,7 +10215,8 @@
         "link": "https://vericodegen.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_RoCo-Spring",
@@ -9928,7 +10273,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RoCo-Spring"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "emnlp2026_ws_DocInsights_Shared_Task",
@@ -10001,7 +10347,8 @@
         "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/DocInsights_Shared_Task"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_FMTS",
@@ -10077,7 +10424,8 @@
         "link": "https://fmts-workshop.github.io/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "neurips2026_ws_WMHS",
@@ -10148,7 +10496,8 @@
         "deadline_label": "submission"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "iclr2027_abstract",
@@ -10192,7 +10541,35 @@
         "link": "https://iclr.cc/Conferences/2027"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "reviews",
+        "label": "Reviews released",
+        "date": "2026-11-05",
+        "kind": "date"
+      },
+      {
+        "milestone": "rebuttal",
+        "label": "Author-reviewer discussion",
+        "starts": "2026-11-05",
+        "ends": "2026-11-18",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Final decisions",
+        "date": "2026-12-16",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2027-04-26",
+        "ends": "2027-04-30",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "neurips2026_ws_AgenticLS",
@@ -10249,7 +10626,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticLS"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "eacl2027_demo",
@@ -10293,7 +10671,22 @@
         "link": "https://2027.eacl.org/calls/demos/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2027-01-06 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference (Athens)",
+        "starts": "2027-03-09",
+        "ends": "2027-03-14",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "neurips2026_ws_InfPriv_Fast_Track",
@@ -10350,7 +10743,8 @@
         "link": "https://beyond-private-training.ai.studio/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "iclr2027_paper",
@@ -10394,7 +10788,35 @@
         "link": "https://iclr.cc/Conferences/2027"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "reviews",
+        "label": "Reviews released",
+        "date": "2026-11-05",
+        "kind": "date"
+      },
+      {
+        "milestone": "rebuttal",
+        "label": "Author-reviewer discussion",
+        "starts": "2026-11-05",
+        "ends": "2026-11-18",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Final decisions",
+        "date": "2026-12-16",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2027-04-26",
+        "ends": "2027-04-30",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "eacl2027_commitment",
@@ -10438,7 +10860,29 @@
         "link": "https://2027.eacl.org/calls/papers/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response",
+        "starts": "2026-09-14",
+        "ends": "2026-09-19",
+        "kind": "period"
+      },
+      {
+        "milestone": "camera_ready",
+        "label": "Camera-ready due",
+        "date": "2026-11-26 23:59:59",
+        "kind": "deadline"
+      },
+      {
+        "milestone": "conference",
+        "label": "Main conference (Athens)",
+        "starts": "2027-03-09",
+        "ends": "2027-03-14",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "arr_2026_october",
@@ -10481,7 +10925,15 @@
         "link": "https://aclrollingreview.org/dates"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-12-20",
+        "kind": "date"
+      }
+    ]
   },
   {
     "id": "naacl2027_paper",
@@ -10525,7 +10977,16 @@
         "link": "https://2027.naacl.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "conference",
+        "label": "Main conference",
+        "starts": "2027-06-01",
+        "ends": "2027-06-05",
+        "kind": "period"
+      }
+    ]
   },
   {
     "id": "neurips2026_ws_VERICODEGEN_Competition",
@@ -10582,7 +11043,8 @@
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VERICODEGEN_Competition"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": []
   },
   {
     "id": "naacl2027_commitment",
@@ -10626,7 +11088,16 @@
         "link": "https://2027.naacl.org/"
       }
     ],
-    "stale": false
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "conference",
+        "label": "Main conference",
+        "starts": "2027-06-01",
+        "ends": "2027-06-05",
+        "kind": "period"
+      }
+    ]
   }
 ];
   // AoE (UTC-12): wall-clock T corresponds to UTC instant T + 12h
@@ -10676,6 +11147,70 @@
     return separator < 0
       ? text
       : `${text.slice(0, separator)} <span class="aoe">${text.slice(separator)}</span>`;
+  }
+  // Milestone order is the story -- reviews, the window to answer them, the decision, the work,
+  // the trip -- not the calendar: a venue can date two stages the same day (ICLR releases reviews
+  // and opens discussion both on Nov 5), and a date-only sort puts those in source order.
+  const MILESTONE_ORDER = [
+    "reviews",
+    "rebuttal",
+    "notification",
+    "cycle_end",
+    "camera_ready",
+    "conference",
+  ];
+  function milestoneRank(milestone) {
+    const index = MILESTONE_ORDER.indexOf(milestone);
+    return index < 0 ? MILESTONE_ORDER.length : index;
+  }
+  function fmtRange(from, to) {
+    const start = fmtAoe(from);
+    const end = fmtAoe(to);
+    if (!start || !end) return start || end;
+    // The year once when both ends share it: a one-week window should read as one span.
+    return (from || "").slice(0, 4) === (to || "").slice(0, 4)
+      ? `${start.replace(/, \d{4}$/, "")} – ${end}`
+      : `${start} – ${end}`;
+  }
+  function milestoneDate(entry) {
+    if (entry.kind === "period") return fmtRange(entry.starts, entry.ends);
+    // Only an AoE cutoff gets the AoE suffix; a day the venue acts on is a plain date.
+    return entry.kind === "deadline" ? `${fmtAoe(entry.date)} AoE` : fmtAoe(entry.date);
+  }
+  // `notification_aoe` becomes a decision entry when the curated schedule has none, so the rows
+  // that know only their notification date still render one list rather than a special case.
+  function venueSchedule(x) {
+    const curated = Array.isArray(x.schedule) ? x.schedule : [];
+    const entries = curated.slice();
+    if (x.notification_aoe && !curated.some((entry) => entry.milestone === "notification")) {
+      entries.push({
+        milestone: "notification",
+        label: "Accept/reject",
+        kind: "deadline",
+        date: x.notification_aoe,
+      });
+    }
+    return entries.sort(
+      (a, b) =>
+        milestoneRank(a.milestone) - milestoneRank(b.milestone) ||
+        String(a.starts || a.date || "").localeCompare(String(b.starts || b.date || "")) ||
+        String(a.label).localeCompare(String(b.label)),
+    );
+  }
+  function scheduleNote(x) {
+    const entries = venueSchedule(x);
+    if (!entries.length) return "";
+    const rows = entries
+      .map(
+        (entry) =>
+          `<li data-milestone="${esc(entry.milestone)}"><span class="m-label">${esc(entry.label)}</span><span class="m-date">${esc(milestoneDate(entry))}</span></li>`,
+      )
+      .join("");
+    // Collapsed past two: one or two lines cost nothing open (the common case is a workshop that
+    // knows only its notification date), where four would be the tallest part of the card.
+    return entries.length <= 2
+      ? `<ul class="csched">${rows}</ul>`
+      : `<details class="csched-details"><summary>Rest of the schedule (${entries.length})</summary><ul class="csched">${rows}</ul></details>`;
   }
   function aoeDayKey(now) {
     return new Date(now - 12 * 3600000).toISOString().slice(0, 10);
@@ -10997,9 +11532,7 @@
         const title = call
           ? `<a href="${esc(call)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>`
           : esc(x.name);
-        const notif = x._notif
-          ? `<div class="cnote">Accept/reject: ${fmtAoe(x.notification_aoe)} AoE</div>`
-          : "";
+        const notif = scheduleNote(x);
         return `<div class="card" data-entry-type="${esc(x.entry_type)}" data-archival-status="${esc(x.archival_status)}" data-venue-priority="${esc(x.venue_priority)}" style="--u:${u.cvar}">
       <div class="row1"><span class="badge">${type}</span><span class="pill">${u.txt}</span></div>
       <div class="cname">${title}</div>
