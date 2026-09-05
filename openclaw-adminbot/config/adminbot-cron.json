@@ -326,9 +326,9 @@
       "description": "Weekly re-read of each Opportunities page; files proposals, never publishes",
       "cron": "40 6 * * 1",
       "argv": [
-        "python3",
-        "scripts/adminbot-opportunity-refresh.py",
-        "--apply"
+        "bash",
+        "scripts/adminbot-opportunity-cron.sh",
+        "refresh"
       ],
       "timeoutSeconds": 900
     }

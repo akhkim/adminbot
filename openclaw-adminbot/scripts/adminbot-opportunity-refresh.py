@@ -92,6 +92,10 @@ def service_request(base, path, token, payload=None):
     request = urllib.request.Request(
         f"{base.rstrip('/')}{path}",
         headers={
+            # The agent string matters even talking to our own service: pointed at the public
+            # origin this goes through Cloudflare, which answers a bare Python-urllib/3.x with a
+            # 403 that looks exactly like an auth failure. On Aurora it is loopback and moot.
+            **HTTP_HEADERS,
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         },
@@ -192,4 +196,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as error:
+        # stdout is the run summary in the Cron tab and a traceback is not one. The service being
+        # down or refusing the token is the ordinary failure here, and it should read as a
+        # sentence and turn the run red.
+        raise SystemExit(f"opportunity refresh: could not reach the AdminBot service: {error}")
