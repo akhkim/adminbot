@@ -2135,7 +2135,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   listEmailReviews(): AdminBotEmailReviewItem[] {
     const rows = this.db
       .prepare(
-        `SELECT message_id, thread_id, sender, subject, category, reason, received_at, updated_at
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at
            FROM adminbot_email_messages
           WHERE status = 'needs_review'
           ORDER BY updated_at DESC`,
@@ -2147,7 +2148,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined {
     const row = this.db
       .prepare(
-        `SELECT message_id, thread_id, sender, subject, category, reason, received_at, updated_at
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at
            FROM adminbot_email_messages
           WHERE message_id = ? AND status = 'needs_review'`,
       )
