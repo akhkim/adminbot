@@ -20,7 +20,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { createLookup, describeVerdict, verifyEntry } from "./lib/reference-verifier.mjs";
+import {
+  defaultReferenceCachePath,
+  ReferenceVerdictCache,
+  verifyEntriesWithCache,
+} from "./lib/reference-verdict-cache.mjs";
+import { createLookup, describeVerdict } from "./lib/reference-verifier.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -240,7 +245,7 @@ async function proposeEmail(submission, findings, venue) {
   return { proposed: true };
 }
 
-async function checkSubmission(submission, lookup, venue, { propose }) {
+async function checkSubmission(submission, lookup, cache, venue, { propose, refreshCache }) {
   const extraction = await runPython("adminbot-pdf-references.py", [submission.pdf_path]);
   if (!extraction.ok) {
     return { ...submission, status: "no_references", detail: extraction.reason };
@@ -250,17 +255,12 @@ async function checkSubmission(submission, lookup, venue, { propose }) {
     return { ...submission, status: "no_entries_parsed" };
   }
 
-  const dois = [
-    ...new Set(entries.map((e) => (e.fields.doi || "").toLowerCase().trim()).filter(Boolean)),
-  ];
-  const doiLookup = await lookup.lookupByDOIs(dois);
+  const verified = await verifyEntriesWithCache(entries, lookup, cache, { refreshCache });
 
   const findings = [];
   const counts = {};
-  for (const entry of entries) {
-    const verdict = await verifyEntry(entry, doiLookup, lookup.searchByTitle, {
-      trustedAbsence: lookup.trustedAbsence,
-    });
+  for (const [index, entry] of entries.entries()) {
+    const verdict = verified.verdicts[index];
     counts[verdict.kind] = (counts[verdict.kind] ?? 0) + 1;
     const finding = describeVerdict(entry, verdict);
     if (finding) {
@@ -280,12 +280,14 @@ async function checkSubmission(submission, lookup, venue, { propose }) {
     counts,
     findings,
     proposal,
+    cache: verified.cache,
   };
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const propose = !args.includes("--no-propose");
+  const refreshCache = args.includes("--refresh-cache");
   const limit = Number(args.find((a) => a.startsWith("--limit="))?.split("=")[1] || 0);
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-refcheck-"));
 
@@ -293,7 +295,11 @@ async function main() {
     apiKey: process.env.SEMANTIC_SCHOLAR_API_KEY,
     contactEmail: CONTACT_EMAIL,
   });
-  log(`reference check: provider=${lookup.provider} propose=${propose} venues=${VENUES.length}`);
+  const cache = new ReferenceVerdictCache(defaultReferenceCachePath());
+  log(
+    `reference check: provider=${lookup.provider} propose=${propose} venues=${VENUES.length} ` +
+      `cache=${refreshCache ? "refresh" : "read/write"}`,
+  );
   if (!lookup.trustedAbsence) {
     log(
       "note: no SEMANTIC_SCHOLAR_API_KEY, so a reference with no search hit is reported as " +
@@ -329,12 +335,16 @@ async function main() {
       log(`  ${venue}: ${targets.length} paper(s) to check (${listing.skipped} skipped)`);
       for (const submission of targets) {
         try {
-          const result = await checkSubmission(submission, lookup, venue, { propose });
+          const result = await checkSubmission(submission, lookup, cache, venue, {
+            propose,
+            refreshCache,
+          });
           results.push({ venue, ...result });
           const criticals = (result.findings ?? []).filter((f) => f.severity === "critical").length;
           log(
             `    #${submission.number} ${result.status} entries=${result.entries ?? 0} ` +
               `critical=${criticals} proposed=${result.proposal?.proposed ?? false}`,
+            `cache=${result.cache?.hits ?? 0}h/${result.cache?.misses ?? 0}m`,
           );
         } catch (error) {
           failed += 1;
@@ -344,14 +354,17 @@ async function main() {
       }
     }
   } finally {
+    cache.close();
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 
   const checked = results.filter((r) => r.status === "checked");
   const criticalPapers = checked.filter((r) => r.findings.some((f) => f.severity === "critical"));
+  const cacheStats = cache.snapshotStats();
   log(
     `\nreference check: ${checked.length} paper(s) checked, ${criticalPapers.length} with critical ` +
-      `findings, ${results.filter((r) => r.proposal?.proposed).length} proposal(s) queued, ${failed} failure(s)`,
+      `findings, ${results.filter((r) => r.proposal?.proposed).length} proposal(s) queued, ${failed} failure(s); ` +
+      `cache ${cacheStats.hits} hit(s), ${cacheStats.misses} miss(es), ${cacheStats.writes} write(s)`,
   );
   if (process.env.ADMINBOT_REFERENCE_CHECK_JSON) {
     fs.writeFileSync(process.env.ADMINBOT_REFERENCE_CHECK_JSON, JSON.stringify(results, null, 2));
