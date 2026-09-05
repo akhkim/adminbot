@@ -34,6 +34,7 @@ import type {
   MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import {
   joinPhoneNumber,
   resolvePhoneDial,
@@ -50,9 +51,12 @@ import {
 import { renderCountrySelect } from "./country-select.ts";
 import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
+import { renderRecentEdits } from "./recent-edits.ts";
 
 export type ProfileProps = {
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
+  /** Fetches this record's edit history, called when the panel is opened. */
+  onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
   onPolishPhoto?: () => void;
   onApplyPolishedPhoto?: (variantId: string) => void;
   onSubmitBadgeNomination?: (badgeId: string, evidence: string) => void;
@@ -1581,6 +1585,18 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
       ${renderSuggestions(state, member)}
+      <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
+           the answer to a question somebody asks occasionally rather than on every visit. Since
+           "view as" landed, an admin editing this profile is a thing that happens, and this is
+           where a member can see that it did. -->
+      ${renderRecentEdits({
+        // Optional-chained for the reason the paper card is: this view is rendered against
+        // partial state doubles in tests and against a host that may predate the field.
+        ...(state.adminBotRecentEdits?.[recentEditsKey("member", member.id)] ??
+          EMPTY_RECENT_EDITS),
+        subject: "member",
+        onOpen: () => props.onLoadRecentEdits?.("member", member.id),
+      })}
     </div>
   `;
 }

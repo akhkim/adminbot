@@ -480,7 +480,6 @@ export const en: TranslationMap = {
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
     adminbotMailingList: "Mailing List",
-    adminbotRecentEdits: "Recent Edits",
     adminbotDeadlines: "Deadlines",
     adminbotOpportunities: "Opportunities",
     activity: "Activity",
@@ -536,7 +535,6 @@ export const en: TranslationMap = {
     adminbotGrantReport:
       "Every paper mapped to a safety area, and the track record behind each ask.",
     adminbotMailingList: "Mail our publications for a date range to one address.",
-    adminbotRecentEdits: "Who changed what, newest first.",
     adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
     activity: "Browser-local tool activity summaries.",
@@ -1525,11 +1523,8 @@ export const en: TranslationMap = {
   },
   recentEdits: {
     title: "Recent edits",
-    sub: "Who changed what, newest first. Sign-ins and imports are not edits and are not listed.",
-    reload: "Refresh",
-    loading: "Reading…",
+    loading: "reading…",
     empty: "No edits recorded yet.",
-    onRecordOf: "on {member}'s record",
     paperRecord: "Paper record",
     source: {
       member: "By the member",

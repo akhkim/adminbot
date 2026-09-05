@@ -796,6 +796,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return recentFirst(this.updateEvents, limit);
   }
 
+  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter(
+        (event) =>
+          event.subject_member_id === memberId ||
+          (!event.subject_member_id && event.member_id === memberId && event.subject === "profile"),
+      ),
+      limit,
+    );
+  }
+
+  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter(
+        (event) =>
+          event.slot_id === `paper:${paperId}` ||
+          event.slot_id.startsWith(`paper_slot:${paperId}:`),
+      ),
+      limit,
+    );
+  }
+
   saveMeeting(meeting: AdminBotMeetingRecord): void {
     this.meetings.set(meeting.id, meeting);
   }
