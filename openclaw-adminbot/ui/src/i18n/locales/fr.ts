@@ -1533,6 +1533,25 @@ export const fr: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Modifications récentes",
+    loading: "lecture…",
+    empty: "Aucune modification enregistrée pour l'instant.",
+    paperRecord: "Fiche de l'article",
+    source: {
+      member: "Par le membre",
+      admin: "Par un administrateur",
+      import: "Importé",
+    },
+    error: {
+      signIn: "Connectez-vous pour consulter le journal des modifications.",
+      forbidden: "Seuls les administrateurs peuvent consulter le journal des modifications.",
+      unreachable: "Impossible de joindre le service AdminBot à {url}.",
+      notDeployed:
+        "Cette version du service n'a pas encore de journal des modifications — la Control UI est livrée à la fusion et le service est déployé séparément.",
+      failed: "Impossible de lire le journal des modifications.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2112,6 +2131,9 @@ export const fr: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Les modifications sont enregistrées automatiquement.",
     },
     items: {
       title: "Projects & Papers",

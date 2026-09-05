@@ -1528,6 +1528,25 @@ export const es: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Cambios recientes",
+    loading: "leyendo…",
+    empty: "Todavía no hay cambios registrados.",
+    paperRecord: "Registro del artículo",
+    source: {
+      member: "Por el miembro",
+      admin: "Por un administrador",
+      import: "Importado",
+    },
+    error: {
+      signIn: "Inicia sesión para leer el registro de cambios.",
+      forbidden: "Solo los administradores pueden leer el registro de cambios.",
+      unreachable: "No se pudo conectar con el servicio AdminBot en {url}.",
+      notDeployed:
+        "Esta versión del servicio aún no tiene registro de cambios: la Control UI se publica al fusionar y el servicio se despliega por separado.",
+      failed: "No se pudo leer el registro de cambios.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2107,6 +2126,9 @@ export const es: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Los cambios se guardan automáticamente.",
     },
     items: {
       title: "Projects & Papers",

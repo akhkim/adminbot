@@ -1512,6 +1512,25 @@ export const th: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "การแก้ไขล่าสุด",
+    loading: "กำลังอ่าน…",
+    empty: "ยังไม่มีการบันทึกการแก้ไข",
+    paperRecord: "ระเบียนบทความ",
+    source: {
+      member: "โดยสมาชิก",
+      admin: "โดยผู้ดูแลระบบ",
+      import: "นำเข้า",
+    },
+    error: {
+      signIn: "ลงชื่อเข้าใช้เพื่ออ่านบันทึกการแก้ไข",
+      forbidden: "เฉพาะผู้ดูแลระบบเท่านั้นที่อ่านบันทึกการแก้ไขได้",
+      unreachable: "ไม่สามารถเชื่อมต่อบริการ AdminBot ที่ {url} ได้",
+      notDeployed:
+        "บริการรุ่นนี้ยังไม่มีบันทึกการแก้ไข — Control UI จะเผยแพร่เมื่อผสานโค้ด ส่วนบริการจะติดตั้งแยกต่างหาก",
+      failed: "ไม่สามารถอ่านบันทึกการแก้ไขได้",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2091,6 +2110,9 @@ export const th: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "ระบบบันทึกการเปลี่ยนแปลงโดยอัตโนมัติ",
     },
     items: {
       title: "Projects & Papers",

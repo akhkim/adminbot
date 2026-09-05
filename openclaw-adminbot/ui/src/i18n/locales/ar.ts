@@ -1518,6 +1518,25 @@ export const ar: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "التعديلات الأخيرة",
+    loading: "جارٍ القراءة…",
+    empty: "لا توجد تعديلات مسجّلة بعد.",
+    paperRecord: "سجل الورقة",
+    source: {
+      member: "بواسطة العضو",
+      admin: "بواسطة مسؤول",
+      import: "مستورد",
+    },
+    error: {
+      signIn: "سجّل الدخول لقراءة سجل التعديلات.",
+      forbidden: "قراءة سجل التعديلات متاحة للمسؤولين فقط.",
+      unreachable: "تعذّر الوصول إلى خدمة AdminBot على {url}.",
+      notDeployed:
+        "لا يحتوي هذا الإصدار من الخدمة على سجل تعديلات بعد — تُنشر واجهة التحكم عند الدمج بينما تُنشر الخدمة بشكل منفصل.",
+      failed: "تعذّرت قراءة سجل التعديلات.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2097,6 +2116,9 @@ export const ar: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "تُحفظ التغييرات تلقائيًا.",
     },
     items: {
       title: "Projects & Papers",

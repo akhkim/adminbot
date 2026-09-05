@@ -1528,6 +1528,25 @@ export const nl: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Recente wijzigingen",
+    loading: "lezen…",
+    empty: "Nog geen wijzigingen vastgelegd.",
+    paperRecord: "Paperrecord",
+    source: {
+      member: "Door het lid",
+      admin: "Door een beheerder",
+      import: "Geïmporteerd",
+    },
+    error: {
+      signIn: "Meld je aan om het wijzigingslogboek te lezen.",
+      forbidden: "Alleen beheerders kunnen het wijzigingslogboek lezen.",
+      unreachable: "Kon de AdminBot-service op {url} niet bereiken.",
+      notDeployed:
+        "Deze build van de service heeft nog geen wijzigingslogboek — de Control UI wordt bij het mergen uitgeleverd en de service wordt apart uitgerold.",
+      failed: "Kon het wijzigingslogboek niet lezen.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2107,6 +2126,9 @@ export const nl: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Wijzigingen worden automatisch opgeslagen.",
     },
     items: {
       title: "Projects & Papers",
