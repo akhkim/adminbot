@@ -48,7 +48,7 @@ describe("email review queue", () => {
     );
   });
 
-  it("submits only the selected current paper and stage", () => {
+  it("requires an explicit selection before attaching evidence", () => {
     const onResolve = vi.fn();
     const container = document.createElement("div");
     render(
@@ -61,6 +61,15 @@ describe("email review queue", () => {
       container,
     );
 
+    container
+      .querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onResolve).not.toHaveBeenCalled();
+    const select = container.querySelector<HTMLSelectElement>("select")!;
+    expect(select.value).toBe("");
+    expect(select.checkValidity()).toBe(false);
+    select.value = "0";
+    expect(select.checkValidity()).toBe(true);
     container
       .querySelector("form")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
