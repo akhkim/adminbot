@@ -939,14 +939,17 @@ describe("Active Papers draws the same workspace", () => {
 });
 
 describe("the banners above the list", () => {
-  const decided = {
+  // The fields, and the cast, kept apart: the tests below build variants by spreading this, and a
+  // value already cast to `never` cannot be spread.
+  const decidedFields = {
     id: "d1",
     title: "A decided paper",
     authors: ["Ada Lovelace"],
     current_step: "submission",
     venue_decision: "accept",
     accepted_venue: "EMNLP 2026",
-  } as never;
+  };
+  const decided = decidedFields as never;
 
   it("draws the decision banner on the member's own page", () => {
     const { container } = draw({ scopedPapers: [decided], personal: true });
@@ -963,7 +966,11 @@ describe("the banners above the list", () => {
   });
 
   it("records sent only when the assigned owner explicitly confirms it", () => {
-    const owned = { ...decided, id: "decision-email", submitted_by_member_id: "ada" } as never;
+    const owned = {
+      ...decidedFields,
+      id: "decision-email",
+      submitted_by_member_id: "ada",
+    } as never;
     const state = {
       memberId: "ada",
       adminBotData: {
@@ -1003,7 +1010,7 @@ describe("the banners above the list", () => {
 
   it("can undo an accidental sent mark", () => {
     const acknowledged = {
-      ...decided,
+      ...decidedFields,
       id: "decision-email-undo",
       submitted_by_member_id: "ada",
       artifacts: { decision_coauthor_email_sent: "accept:EMNLP 2026" },
