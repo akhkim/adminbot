@@ -18,13 +18,7 @@
 // by pointing at the next venue rather than by closing the paper.
 
 import { html, nothing } from "lit";
-import type {
-  AdminBotLabMember,
-  AdminBotPaperRecord,
-  AdminBotPaperSaveInput,
-} from "./controllers/admin.ts";
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
-import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 import {
   ADMINBOT_BCC,
   buildCoauthorEmail,
@@ -33,10 +27,16 @@ import {
   hasPlaceholders,
   unreachableAuthors,
 } from "./coauthor-email.ts";
-
+import type {
+  AdminBotLabMember,
+  AdminBotPaperRecord,
+  AdminBotPaperSaveInput,
+} from "./controllers/admin.ts";
+import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 
 /** Set once the author has seen the popup for this decision, so it never reopens. */
 const SEEN_KEY = "decision_seen";
+const EMAIL_SENT_KEY = "decision_coauthor_email_sent";
 
 export const PRESENTATION_TYPES = [
   "main",
@@ -83,6 +83,16 @@ function seenStamp(paper: AdminBotPaperRecord, decision: string): string {
   return `${decision}:${paper.accepted_venue ?? paper.artifacts?.conference ?? ""}`;
 }
 
+/** The acknowledgement belongs to this decision, not permanently to the paper. */
+export function decisionEmailSentStamp(paper: AdminBotPaperRecord): string {
+  const decision = decisionOf(paper);
+  return decision ? seenStamp(paper, decision) : "";
+}
+
+export function isDecisionEmailSent(paper: AdminBotPaperRecord): boolean {
+  const stamp = decisionEmailSentStamp(paper);
+  return Boolean(stamp && paper.artifacts?.[EMAIL_SENT_KEY] === stamp);
+}
 
 /**
  * What to call the venue on the banner.
@@ -105,7 +115,6 @@ export function displayVenue(paper: AdminBotPaperRecord): string {
   return /committed to\s+(.+)$/iu.exec(raw)?.[1]?.trim() || raw;
 }
 
-
 export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;
   decision: "accept" | "reject";
@@ -120,9 +129,12 @@ export type DecisionBannerProps = {
   isEmailOwner: boolean;
   /** The email task panel, open or shut, and the body as edited. */
   email: { open: boolean; body: string } | null;
+  /** Human acknowledgement for this exact venue decision; copying text is never treated as sent. */
+  emailSent: boolean;
   onToggleEmail: () => void;
   onEmailBody: (body: string) => void;
   onResetEmail: () => void;
+  onSetEmailSent: (sent: boolean) => void;
   onSavePaper: (input: AdminBotPaperSaveInput) => void;
   /** "unknown" is a real answer here: it is what a cleared attendance means, and what the nudge
    *  sweep looks for. */
@@ -243,7 +255,6 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               <span class="decision-banner__label">Going?</span>
               ${choice("Yes", draft.attending === "yes", () => props.onDraft({ attending: "yes" }))}
               ${choice("No", draft.attending === "no", () => props.onDraft({ attending: "no" }))}
-
             </div>
           `
         : html`
@@ -254,7 +265,6 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
                   props.onDraft({ nextVenue: option.venue_id }),
                 ),
               )}
-
             </div>
           `}
 
@@ -283,9 +293,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               Reset
             </button>`
           : nothing}
-        ${props.saved
-          ? html`<span class="decision-banner__note">Recorded.</span>`
-          : nothing}
+        ${props.saved ? html`<span class="decision-banner__note">Recorded.</span>` : nothing}
         ${props.isEmailOwner
           ? html`<button
               type="button"
@@ -293,17 +301,14 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               data-testid=${`decision-email-toggle-${paper.id}`}
               @click=${props.onToggleEmail}
             >
-              TODO · email the coauthors
+              ${props.emailSent ? "Coauthor email sent ✓" : "TODO · email the coauthors"}
             </button>`
           : renderEmailOwnerNote(props)}
       </div>
-      ${props.isEmailOwner && props.email?.open
-        ? renderEmailTask(props, venue)
-        : nothing}
+      ${props.isEmailOwner && props.email?.open ? renderEmailTask(props, venue) : nothing}
     </section>
   `;
 }
-
 
 /**
  * What the other coauthors see where the sender sees a TODO.
@@ -352,7 +357,9 @@ function renderEmailTask(props: DecisionBannerProps, venue: string) {
 
       <div class="decision-todo__row">
         <span class="decision-banner__label">To</span>
-        <code class="decision-todo__addresses">${recipients.join(", ") || "no addresses on file"}</code>
+        <code class="decision-todo__addresses"
+          >${recipients.join(", ") || "no addresses on file"}</code
+        >
         <button
           type="button"
           class="btn btn--sm"
@@ -404,10 +411,22 @@ function renderEmailTask(props: DecisionBannerProps, venue: string) {
           Reset draft
         </button>
         ${hasPlaceholders(body)
-          ? html`<span class="decision-todo__warn">
-              Still has [BRACKETS] to fill in.
-            </span>`
+          ? html`<span class="decision-todo__warn"> Still has [BRACKETS] to fill in. </span>`
           : nothing}
+        <button
+          type="button"
+          class="btn ${props.emailSent ? "btn--sm" : "primary"}"
+          data-testid=${`decision-email-sent-${paper.id}`}
+          aria-pressed=${props.emailSent ? "true" : "false"}
+          @click=${() => props.onSetEmailSent(!props.emailSent)}
+        >
+          ${props.emailSent ? "Undo sent mark" : "Mark sent"}
+        </button>
+        <span class="decision-banner__note">
+          ${props.emailSent
+            ? "Recorded for this venue decision."
+            : "Use this only after you send the message."}
+        </span>
       </div>
     </section>
   `;

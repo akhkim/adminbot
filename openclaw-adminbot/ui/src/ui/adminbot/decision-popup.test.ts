@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PRESENTATION_TYPES, displayVenue, pendingDecision } from "./decision-popup.ts";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
+import {
+  PRESENTATION_TYPES,
+  displayVenue,
+  isDecisionEmailSent,
+  pendingDecision,
+} from "./decision-popup.ts";
 
 function paper(fields: Record<string, unknown>): AdminBotPaperRecord {
   return {
@@ -52,6 +57,20 @@ describe("when the popup should open", () => {
       "oral",
       "award",
     ]);
+  });
+});
+
+describe("coauthor-email acknowledgement", () => {
+  it("belongs to the exact decision and venue", () => {
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "EMNLP 2026",
+      artifacts: { decision_coauthor_email_sent: "accept:EMNLP 2026" },
+    });
+    expect(isDecisionEmailSent(accepted)).toBe(true);
+
+    expect(isDecisionEmailSent({ ...accepted, venue_decision: "reject" })).toBe(false);
+    expect(isDecisionEmailSent({ ...accepted, accepted_venue: "ICLR 2027" })).toBe(false);
   });
 });
 

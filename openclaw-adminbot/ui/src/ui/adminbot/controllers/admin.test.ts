@@ -556,6 +556,7 @@ describe("saveAdminBotPaper", () => {
       acceptedYear: "2027",
       isArchival: "true",
       presentationType: "spotlight",
+      decisionEmailSent: "accept:ICLR 2027",
     });
 
     // A plain member's paired device holds read-only gateway scopes, so the tool path is not
@@ -572,7 +573,10 @@ describe("saveAdminBotPaper", () => {
     expect(JSON.parse(init!.body as string)).toMatchObject({
       title: "World Models Survey",
       current_step: "overleaf_writing",
-      artifacts: { conference: "NeurIPS 2026" },
+      artifacts: {
+        conference: "NeurIPS 2026",
+        decision_coauthor_email_sent: "accept:ICLR 2027",
+      },
       venue_decision: "accept",
       accepted_venue: "ICLR 2027",
       accepted_year: 2027,
