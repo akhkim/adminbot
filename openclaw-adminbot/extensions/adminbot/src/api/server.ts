@@ -2766,11 +2766,15 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
+    // `venue` composes by acceptance instead of by date; the payload always carries the venue
+    // options, so one preview call is enough to fill the picker and read the digest.
+    const venue = url.searchParams.get("venue")?.trim() ?? "";
     sendServiceResult(
       res,
       service.collectPublicationMailing({
         fromIso: url.searchParams.get("from") ?? "",
         toIso: url.searchParams.get("to") ?? "",
+        ...(venue ? { venue } : {}),
       }),
     );
     return;
@@ -2792,9 +2796,11 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "a recipient email address is required" } });
       return;
     }
+    const venue = asString(body.venue).trim();
     const digest = service.collectPublicationMailing({
       fromIso: asString(body.from),
       toIso: asString(body.to),
+      ...(venue ? { venue } : {}),
     });
     if (!digest.ok) {
       sendServiceResult(res, digest);
@@ -2813,7 +2819,13 @@ async function handleAuthenticatedRoute(
         timestamp: new Date().toISOString(),
         type: "publication_digest.failed",
         actor: principalActor(principal),
-        details: { recipient, from: digest.payload.from, to: digest.payload.to, reason: message },
+        details: {
+          recipient,
+          from: digest.payload.from,
+          to: digest.payload.to,
+          ...(venue ? { venue } : {}),
+          reason: message,
+        },
       });
       sendJson(res, 502, { error: { message: `could not send the digest: ${message}` } });
       return;
@@ -2827,6 +2839,9 @@ async function handleAuthenticatedRoute(
         recipient,
         from: digest.payload.from,
         to: digest.payload.to,
+        // Which composition this was, so a trail of sends to the same address can be told apart:
+        // "the 2026 list" and "the ICLR 2027 list" are different emails.
+        ...(digest.payload.venue ? { venue: digest.payload.venue } : {}),
         // The count, so the trail says what went out without storing the whole list twice.
         publications: digest.payload.publications.length,
         undated: digest.payload.undated_count,
@@ -2835,6 +2850,7 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, {
       sent: true,
       recipient,
+      ...(digest.payload.venue ? { venue: digest.payload.venue } : {}),
       publications: digest.payload.publications.length,
       undated_count: digest.payload.undated_count,
     });

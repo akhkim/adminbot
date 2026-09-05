@@ -3982,11 +3982,19 @@ export function renderApp(state: AppViewState) {
                 from: state.adminBotMailingListFrom,
                 to: state.adminBotMailingListTo,
                 email: state.adminBotMailingListEmail,
+                venue: state.adminBotMailingListVenue,
+                venues: state.adminBotMailingListVenues,
                 onRangeChange: (range) => {
                   state.adminBotMailingListFrom = range.from;
                   state.adminBotMailingListTo = range.to;
                   // Cleared with the range it described. A preview left on screen next to two new
                   // dates is the one way this screen could mislead about what would be sent.
+                  state.adminBotMailingListPreview = null;
+                },
+                onVenueChange: (venue) => {
+                  state.adminBotMailingListVenue = venue;
+                  // Same rule as the range: the preview described the old composition, so leaving
+                  // it up beside a new one is the way this screen could lie about what it sends.
                   state.adminBotMailingListPreview = null;
                 },
                 onEmailChange: (email) => (state.adminBotMailingListEmail = email),

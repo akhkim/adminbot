@@ -789,20 +789,35 @@ export type PublicationDigestEntry = {
   authors: string[];
   venue?: string;
   url?: string;
-  date: { iso: string; precision: "month" | "year"; source: "arxiv" | "accepted_year" };
+  /** Absent only in venue mode, where acceptance puts a paper in the list rather than its date. */
+  date?: { iso: string; precision: "month" | "year"; source: "arxiv" | "accepted_year" };
+};
+
+/** A venue the picker offers, with what a digest for it would hold. */
+export type PublicationDigestVenue = {
+  key: string;
+  label: string;
+  accepted: number;
+  pending: number;
 };
 
 export type PublicationDigestPreview = {
   from: string;
   to: string;
+  /** The venue this digest was composed from, spelled as the records spell it. Absent = by date. */
+  venue?: string;
+  /** Every venue the records mention. Always returned, so one call fills the picker. */
+  venues: PublicationDigestVenue[];
   publications: PublicationDigestEntry[];
   excluded: Array<{
     id: string;
     title: string;
-    reason: "no_date" | "out_of_range";
+    reason: "no_date" | "out_of_range" | "not_accepted";
     date?: PublicationDigestEntry["date"];
   }>;
   undated_count: number;
+  /** Venue mode: papers naming the venue with no decision recorded. */
+  pending_count: number;
   subject: string;
   body: string;
 };
@@ -814,11 +829,14 @@ export type PublicationDigestPreview = {
  * so the preview is the email rather than a rehearsal of it.
  */
 export async function fetchPublicationDigest(
-  params: { from: string; to: string },
+  params: { from: string; to: string; venue?: string },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<PublicationDigestPreview>> {
   const search = new URLSearchParams({ from: params.from, to: params.to });
+  if (params.venue) {
+    search.set("venue", params.venue);
+  }
   const result = await authedJson(
     baseUrl,
     `/papers/mailing-list?${search.toString()}`,
@@ -836,7 +854,7 @@ export async function fetchPublicationDigest(
 
 /** Mails the digest for this range to one address. */
 export async function sendPublicationDigest(
-  params: { from: string; to: string; email: string },
+  params: { from: string; to: string; email: string; venue?: string },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<{ sent: true; recipient: string; publications: number }>> {

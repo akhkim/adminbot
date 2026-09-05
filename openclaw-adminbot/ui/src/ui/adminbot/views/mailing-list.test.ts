@@ -21,8 +21,13 @@ function preview(overrides: Partial<PublicationDigestPreview> = {}): Publication
         date: { iso: "2026-06-01", precision: "month", source: "arxiv" },
       },
     ],
+    venues: [
+      { key: "iclr 2027", label: "ICLR 2027", accepted: 1, pending: 8 },
+      { key: "neurips 2026", label: "NeurIPS 2026", accepted: 2, pending: 0 },
+    ],
     excluded: [{ id: "p2", title: "Undated Work", reason: "no_date" }],
     undated_count: 1,
+    pending_count: 0,
     subject: "Jinesis Lab publications, 2026-01-01 to 2026-12-31",
     body: "Publications from the Jinesis Lab...",
     ...overrides,
@@ -47,7 +52,10 @@ async function draw(overrides: Partial<MailingListProps> = {}) {
     from: "2026-01-01",
     to: "2026-12-31",
     email: "funder@example.org",
+    venue: "",
+    venues: preview().venues,
     onRangeChange: () => undefined,
+    onVenueChange: () => undefined,
     onEmailChange: () => undefined,
     onPreview: () => undefined,
     onSend: () => undefined,
@@ -109,6 +117,69 @@ describe("renderMailingList", () => {
   });
 });
 
+describe("renderMailingList by venue", () => {
+  const accepted: PublicationDigestPreview = preview({
+    venue: "ICLR 2027",
+    publications: [
+      {
+        id: "p1",
+        title: "Judging the Judges",
+        authors: ["Arth", "Zhijing"],
+        venue: "ICLR 2027",
+        // No date: accepted at the venue is why it is here, and an undated accepted paper is
+        // still a paper the lab got in.
+      },
+    ],
+    excluded: [{ id: "p3", title: "Aimed There Only", reason: "not_accepted" }],
+    undated_count: 0,
+    pending_count: 1,
+  });
+
+  it("offers each venue with what a digest for it would hold", async () => {
+    const options = (await draw()).querySelectorAll('[data-testid="mailing-list-venue"] option');
+    // The count is on the option itself, so choosing "ICLR 2027" has already told the admin the
+    // email will be short and why.
+    expect([...options].map((option) => option.textContent?.trim())).toEqual([
+      "A date range",
+      "ICLR 2027 — 1 accepted, 8 awaiting a decision",
+      "NeurIPS 2026 — 2 accepted, 0 awaiting a decision",
+    ]);
+  });
+
+  it("stops the dates mattering once a venue is chosen", async () => {
+    const container = await draw({ venue: "iclr 2027", preview: accepted });
+    // An acceptance list is the whole venue; leaving the dates live would suggest they still cut.
+    for (const input of container.querySelectorAll<HTMLInputElement>('input[type="date"]')) {
+      expect(input.disabled).toBe(true);
+    }
+  });
+
+  it("keeps an accepted paper with no date, and says so rather than showing a blank", async () => {
+    const container = await draw({ venue: "iclr 2027", preview: accepted });
+    expect(container_text(container)).toContain("1 papers accepted at ICLR 2027");
+    expect(container_text(container)).toContain("Date not recorded");
+  });
+
+  it("names the papers still awaiting a decision instead of the undated ones", async () => {
+    const container = await draw({ venue: "iclr 2027", preview: accepted });
+    const pending = container.querySelector('[data-testid="mailing-list-pending"]');
+    // This is what explains a thin ICLR list: papers aimed there that nobody has heard back on.
+    expect(pending?.textContent).toContain("Aimed There Only");
+    expect(pending?.textContent).toContain("1 papers aimed at ICLR 2027");
+    expect(container.querySelector('[data-testid="mailing-list-undated"]')).toBeNull();
+  });
+
+  it("says plainly when nothing was accepted there", async () => {
+    const container = await draw({
+      venue: "iclr 2027",
+      preview: preview({ venue: "ICLR 2027", publications: [], excluded: [], undated_count: 0 }),
+    });
+    expect(container_text(container)).toContain(
+      "No paper in our records is recorded as accepted at ICLR 2027",
+    );
+  });
+});
+
 function container_text(container: HTMLElement): string {
   return container.textContent ?? "";
 }
@@ -121,11 +192,13 @@ describe("the controls", () => {
     const controls = container.querySelector(".adminbot-mailing-list__controls");
     expect(controls?.classList.contains("adminbot-form")).toBe(true);
     const fields = controls?.querySelectorAll(".adminbot-form__field") ?? [];
-    expect(fields).toHaveLength(3);
-    // Each field labels its own box, which is what the shared rule styles.
+    // Four since the venue picker joined the row: compose-from, from, to, recipient.
+    expect(fields).toHaveLength(4);
+    // Each field labels its own box, which is what the shared rule styles. The picker's box is a
+    // select rather than an input, and the shared rule has to reach it just the same.
     for (const field of fields) {
       expect(field.querySelector("span")).not.toBeNull();
-      expect(field.querySelector("input")).not.toBeNull();
+      expect(field.querySelector("input, select")).not.toBeNull();
     }
   });
 });

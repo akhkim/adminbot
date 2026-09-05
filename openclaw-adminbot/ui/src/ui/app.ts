@@ -20,6 +20,7 @@ import type {
   MemberAdoptionSummary,
   MemberImpersonator,
   PublicationDigestPreview,
+  PublicationDigestVenue,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
@@ -405,6 +406,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMailingListFrom = defaultMailingListRange().from;
   @state() adminBotMailingListTo = defaultMailingListRange().to;
   @state() adminBotMailingListEmail = "";
+  // "" is the date range; anything else is a venue key from the last preview.
+  @state() adminBotMailingListVenue = "";
+  @state() adminBotMailingListVenues: PublicationDigestVenue[] = [];
   @state() memberImpersonatedBy: MemberImpersonator | null = null;
   @state() memberImpersonationBusy = false;
   @state() memberImpersonationError: string | null = null;
