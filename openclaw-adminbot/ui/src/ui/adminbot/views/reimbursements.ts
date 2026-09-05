@@ -169,9 +169,8 @@ function renderComplianceWarning() {
       </p>
       <ol class="adminbot-reimbursement-warning__list">
         <li>
-          Make a copy of <strong>DCS Expense Form.xlsx</strong> and the
-          <strong>Trip Summary Form</strong>. Fill out the highlighted section of the DCS Expense
-          Form, and every section of the Trip Summary Form, as shown by the example above &mdash;
+          Fill out the highlighted section of the <strong>DCS Expense Form</strong>, and every
+          section of the <strong>Trip Summary Form</strong>, as shown by the example above &mdash;
           with itemized expenses in each category, including the description / clear business
           purpose of the expense <strong>and</strong> the amount claimed for each one.
         </li>
@@ -198,7 +197,7 @@ function renderComplianceWarning() {
         <li>
           Email
           <a href="mailto:gizelda.pereira@utoronto.ca">gizelda.pereira@utoronto.ca</a>
-          with the two files above and the receipts, and provide any other information she needs.
+          with both completed forms and the receipts, and provide any other information she needs.
         </li>
       </ol>
     </section>
