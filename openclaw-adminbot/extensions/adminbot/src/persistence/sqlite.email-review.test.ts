@@ -20,6 +20,38 @@ function databasePath(): string {
 }
 
 describe("SQLite email review queue", () => {
+  it.each([null, "", "   ", "paper match was ambiguous; queued for review"])(
+    "shows the processing failure when present, falling back for %j",
+    (failure) => {
+      const target = databasePath();
+      const service = createAdminBotSqliteService({ databasePath: target });
+      const db = new DatabaseSync(target);
+      try {
+        db.prepare(`INSERT INTO adminbot_email_messages
+          (message_id, thread_id, sender, category, status, reason, last_error, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          "held",
+          "thread",
+          "venue@example.org",
+          "paperflow_bcc",
+          "needs_review",
+          "classified as venue evidence",
+          failure,
+          "2026-09-05T00:00:00.000Z",
+        );
+        const expected = failure?.trim() || "classified as venue evidence";
+        expect(service.store.listEmailReviews()[0]?.reason).toBe(expected);
+        expect(service.store.getEmailReview("held")?.reason).toBe(expected);
+        expect(
+          db.prepare("SELECT reason FROM adminbot_email_messages WHERE message_id = ?").get("held"),
+        ).toEqual({ reason: "classified as venue evidence" });
+      } finally {
+        db.close();
+        service.close();
+      }
+    },
+  );
+
   it("upgrades the legacy automation table and persists review decisions", () => {
     const target = databasePath();
     const legacy = new DatabaseSync(target);
