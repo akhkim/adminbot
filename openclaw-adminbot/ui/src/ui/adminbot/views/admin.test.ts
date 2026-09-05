@@ -1485,3 +1485,65 @@ describe("renderAdminBot members panel — view as", () => {
     expect(viewAsButtons(draw())).toHaveLength(0);
   });
 });
+
+describe("renderAdminBot members panel — edit history", () => {
+  it("opens one member's history from their row and fetches it on the click", () => {
+    const asked: Array<[string, string]> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onLoadRecentEdits: (subject, id) => asked.push([subject, id]),
+      }),
+    );
+    const open = container.querySelector<HTMLButtonElement>(
+      '[data-testid="member-edits-open-pat"]',
+    );
+    expect(open).not.toBeNull();
+    // The popover it points at is the one carrying that member's rows, not a shared panel.
+    expect(open?.getAttribute("popovertarget")).toBe(
+      container.querySelector('[data-testid="member-edits-pat"]')?.id,
+    );
+    // Nothing is asked for until somebody asks: forty histories nobody opened is the cost this
+    // avoids.
+    expect(asked).toEqual([]);
+    open?.click();
+    expect(asked).toEqual([["member", "pat"]]);
+  });
+
+  it("shows the loaded rows, naming the actor rather than the member", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onLoadRecentEdits: () => undefined,
+        recentEdits: {
+          "member:pat": {
+            loading: false,
+            error: null,
+            updates: [
+              {
+                slot_id: "member:pat:role",
+                subject: "member",
+                field_key: "role",
+                actor_member_id: "sam",
+                actor_name: "Sam Lee",
+                source: "admin",
+                at: "2026-09-01T10:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const panel = container.querySelector('[data-testid="member-edits-pat"]');
+    expect(panel?.querySelector(".recent-edits__actor")?.textContent).toBe("Sam Lee");
+    expect(panel?.querySelector('[data-testid="recent-edits-empty"]')).toBeNull();
+  });
+
+  it("keeps the history out of the general roster, where the row is not an admin's to read", () => {
+    const container = renderToDiv(
+      baseProps({ mode: "general", onLoadRecentEdits: () => undefined }),
+    );
+    expect(container.querySelector('[data-testid="member-edits-open-pat"]')).toBeNull();
+    expect(container.querySelector('[data-testid="member-edits-pat"]')).toBeNull();
+  });
+});

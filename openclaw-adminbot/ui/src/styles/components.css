@@ -11588,6 +11588,16 @@ select.input:focus {
   padding-top: var(--space-2);
 }
 
+/* In the roster popover the panel is the whole card, so the rule and gap that separate it from
+   the record above it on a profile have nothing to separate it from. */
+.recent-edits--flat {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .recent-edits__summary {
   cursor: pointer;
   font-size: var(--control-ui-text-sm);

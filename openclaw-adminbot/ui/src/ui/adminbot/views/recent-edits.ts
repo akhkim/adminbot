@@ -90,6 +90,30 @@ function renderRow(row: RecentUpdateRow, subject: RecentEditsProps["subject"]) {
   `;
 }
 
+/**
+ * The panel's contents, without the disclosure around them.
+ *
+ * Split out because an admin reads this history from somewhere else: on a profile it belongs in a
+ * shut `<details>` under the record, but in the roster it is the whole point of the popover it
+ * opens in, and a disclosure inside a popover is a second click for nothing.
+ */
+export function renderRecentEditsBody(props: Omit<RecentEditsProps, "onOpen">) {
+  return html`
+    ${props.error
+      ? html`<div class="callout danger" data-testid="recent-edits-error">${props.error}</div>`
+      : nothing}
+    ${props.updates.length
+      ? html`<ol class="recent-edits__list" data-testid="recent-edits-list">
+          ${props.updates.map((row) => renderRow(row, props.subject))}
+        </ol>`
+      : props.loading || props.error
+        ? nothing
+        : html`<p class="recent-edits__empty" data-testid="recent-edits-empty">
+            ${t("recentEdits.empty")}
+          </p>`}
+  `;
+}
+
 export function renderRecentEdits(props: RecentEditsProps) {
   return html`
     <details
@@ -107,18 +131,7 @@ export function renderRecentEdits(props: RecentEditsProps) {
           ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
           : nothing}
       </summary>
-      ${props.error
-        ? html`<div class="callout danger" data-testid="recent-edits-error">${props.error}</div>`
-        : nothing}
-      ${props.updates.length
-        ? html`<ol class="recent-edits__list" data-testid="recent-edits-list">
-            ${props.updates.map((row) => renderRow(row, props.subject))}
-          </ol>`
-        : props.loading || props.error
-          ? nothing
-          : html`<p class="recent-edits__empty" data-testid="recent-edits-empty">
-              ${t("recentEdits.empty")}
-            </p>`}
+      ${renderRecentEditsBody(props)}
     </details>
   `;
 }

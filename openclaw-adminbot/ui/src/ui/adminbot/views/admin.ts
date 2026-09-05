@@ -44,6 +44,11 @@ import type {
   AdminBotSettingsSaveInput,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import {
+  EMPTY_RECENT_EDITS,
+  recentEditsKey,
+  type RecentEditsState,
+} from "../controllers/recent-edits.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
@@ -54,6 +59,7 @@ import {
   effectiveVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
+import { renderRecentEditsBody } from "./recent-edits.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
@@ -113,6 +119,16 @@ export type AdminBotProps = {
   onOpenPaperCard?: (paperId: string) => void;
   /** Redraw after local-only state changes, such as opening the bulk sheet. */
   onRerender?: () => void;
+  /**
+   * Per-member edit history, keyed the way the profile panel keys it.
+   *
+   * The roster is where an admin asks "who has been in this person's record" -- the profile page
+   * answers it for the member themselves, and reaching it as an admin otherwise means viewing as
+   * them, which is a heavier act than reading a log. Same rows, same route: the service already
+   * lets an admin read anyone's.
+   */
+  recentEdits?: Record<string, RecentEditsState>;
+  onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
   onVenueFilter?: (venueId: string) => void;
   mode?: "admin" | "general";
   /** Which column the reported-blocker list is sorted by. */
@@ -132,10 +148,7 @@ export type AdminBotProps = {
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
-  onResolveEmailReview: (
-    messageId: string,
-    resolution: AdminBotEmailReviewResolution,
-  ) => void;
+  onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
   /**
    * Folds one roster record into another. Absent for a caller that cannot merge (anything but a
@@ -1090,6 +1103,48 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
   `;
 }
 
+/**
+ * One member's edit history, opened from their roster row.
+ *
+ * A popover rather than a row expansion: this sheet pans sideways and every column is in play, so
+ * a row that grows downward pushes the person the admin is comparing against off the screen.
+ *
+ * Loaded on the button, not with the page. Drawing the roster already costs a request per panel
+ * that wants one, and forty histories nobody asked for is the kind of thing that makes a tab feel
+ * slow for a question asked once a week.
+ */
+function renderMemberEditsPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
+  const editsId = `adminbot-member-edits-${index}`;
+  const state = props.recentEdits?.[recentEditsKey("member", member.id)] ?? EMPTY_RECENT_EDITS;
+  return html`
+    <article
+      class="adminbot-editor-card adminbot-popover"
+      id=${editsId}
+      popover
+      data-testid=${`member-edits-${member.id}`}
+    >
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget=${editsId}
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">${t("recentEdits.title")}</div>
+      <div class="card-sub">
+        ${member.name} · ${member.id}
+        ${state.loading
+          ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
+          : nothing}
+      </div>
+      <div class="recent-edits recent-edits--flat">
+        ${renderRecentEditsBody({ ...state, subject: "member" })}
+      </div>
+    </article>
+  `;
+}
+
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
   return html`
@@ -1393,6 +1448,17 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                         ${t("impersonation.viewAs")}
                       </button>`
                     : nothing}
+                  ${props.mode === "admin" && props.onLoadRecentEdits
+                    ? html`<button
+                        class="btn btn--sm btn--ghost adminbot-member-sheet__edit"
+                        type="button"
+                        data-testid=${`member-edits-open-${member.id}`}
+                        popovertarget=${`adminbot-member-edits-${index}`}
+                        @click=${() => props.onLoadRecentEdits?.("member", member.id)}
+                      >
+                        ${t("recentEdits.title")}
+                      </button>`
+                    : nothing}
                   ${member.id === props.signedInMemberId && props.onShowOnboardingWelcome
                     ? html`<button
                         class="btn btn--sm btn--ghost adminbot-member-sheet__edit"
@@ -1496,6 +1562,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
         }
         return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
       })}
+      ${props.mode === "admin" && props.onLoadRecentEdits
+        ? members.map((member, index) => renderMemberEditsPopover(member, index, props))
+        : nothing}
     </section>
   `;
 }
