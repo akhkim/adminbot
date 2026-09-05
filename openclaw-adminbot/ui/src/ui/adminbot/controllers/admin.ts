@@ -270,6 +270,9 @@ export type WorkshopNudgeRecommendation = {
 
 export type WorkshopNudgeResult = {
   generated_at: string;
+  /** Present when this stored pass was limited to one parent conference. */
+  conference_key?: string;
+  conference_label?: string;
   paper_count: number;
   workshop_count: number;
   recipients: Array<{
