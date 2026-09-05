@@ -1527,6 +1527,25 @@ export const pt_BR: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Edições recentes",
+    loading: "lendo…",
+    empty: "Nenhuma edição registrada ainda.",
+    paperRecord: "Registro do artigo",
+    source: {
+      member: "Pelo membro",
+      admin: "Por um administrador",
+      import: "Importado",
+    },
+    error: {
+      signIn: "Entre para ler o registro de edições.",
+      forbidden: "Somente administradores podem ler o registro de edições.",
+      unreachable: "Não foi possível acessar o serviço AdminBot em {url}.",
+      notDeployed:
+        "Esta versão do serviço ainda não tem registro de edições — a Control UI é publicada no merge e o serviço é implantado separadamente.",
+      failed: "Não foi possível ler o registro de edições.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2106,6 +2125,9 @@ export const pt_BR: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "As alterações são salvas automaticamente.",
     },
     items: {
       title: "Projects & Papers",

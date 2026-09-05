@@ -1520,6 +1520,24 @@ export const ko: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "최근 편집",
+    loading: "읽는 중…",
+    empty: "아직 기록된 편집이 없습니다.",
+    paperRecord: "논문 기록",
+    source: {
+      member: "회원이 편집",
+      admin: "관리자가 편집",
+      import: "가져옴",
+    },
+    error: {
+      signIn: "편집 기록을 보려면 로그인하세요.",
+      forbidden: "관리자만 편집 기록을 볼 수 있습니다.",
+      unreachable: "{url} 의 AdminBot 서비스에 연결할 수 없습니다.",
+      notDeployed: "이 서비스 빌드에는 아직 편집 기록이 없습니다. Control UI는 병합 시 배포되고 서비스는 별도로 배포됩니다.",
+      failed: "편집 기록을 읽을 수 없습니다.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2099,6 +2117,9 @@ export const ko: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "변경 사항은 자동으로 저장됩니다.",
     },
     items: {
       title: "Projects & Papers",

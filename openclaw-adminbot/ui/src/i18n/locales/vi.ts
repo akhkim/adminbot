@@ -1523,6 +1523,25 @@ export const vi: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Chỉnh sửa gần đây",
+    loading: "đang đọc…",
+    empty: "Chưa ghi nhận chỉnh sửa nào.",
+    paperRecord: "Hồ sơ bài báo",
+    source: {
+      member: "Bởi thành viên",
+      admin: "Bởi quản trị viên",
+      import: "Đã nhập",
+    },
+    error: {
+      signIn: "Đăng nhập để xem nhật ký chỉnh sửa.",
+      forbidden: "Chỉ quản trị viên mới xem được nhật ký chỉnh sửa.",
+      unreachable: "Không kết nối được dịch vụ AdminBot tại {url}.",
+      notDeployed:
+        "Bản dựng dịch vụ này chưa có nhật ký chỉnh sửa — Control UI phát hành khi merge, còn dịch vụ được triển khai riêng.",
+      failed: "Không đọc được nhật ký chỉnh sửa.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2102,6 +2121,9 @@ export const vi: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Các thay đổi được lưu tự động.",
     },
     items: {
       title: "Projects & Papers",

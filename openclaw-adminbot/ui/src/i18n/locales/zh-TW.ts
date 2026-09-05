@@ -1511,6 +1511,24 @@ export const zh_TW: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "最近的修改",
+    loading: "讀取中…",
+    empty: "尚未記錄任何修改。",
+    paperRecord: "論文記錄",
+    source: {
+      member: "由成員修改",
+      admin: "由管理員修改",
+      import: "匯入",
+    },
+    error: {
+      signIn: "登入後才能查看修改記錄。",
+      forbidden: "只有管理員可以查看修改記錄。",
+      unreachable: "無法連線至 {url} 上的 AdminBot 服務。",
+      notDeployed: "此服務版本尚無修改記錄——控制介面在合併時發布，服務則另行部署。",
+      failed: "無法讀取修改記錄。",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2090,6 +2108,9 @@ export const zh_TW: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "變更會自動儲存。",
     },
     items: {
       title: "Projects & Papers",

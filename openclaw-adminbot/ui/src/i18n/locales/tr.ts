@@ -1531,6 +1531,25 @@ export const tr: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Son düzenlemeler",
+    loading: "okunuyor…",
+    empty: "Henüz kaydedilmiş düzenleme yok.",
+    paperRecord: "Makale kaydı",
+    source: {
+      member: "Üye tarafından",
+      admin: "Bir yönetici tarafından",
+      import: "İçe aktarıldı",
+    },
+    error: {
+      signIn: "Düzenleme kaydını okumak için oturum açın.",
+      forbidden: "Düzenleme kaydını yalnızca yöneticiler okuyabilir.",
+      unreachable: "{url} adresindeki AdminBot hizmetine ulaşılamadı.",
+      notDeployed:
+        "Bu hizmet sürümünde henüz düzenleme kaydı yok — Control UI birleştirmede yayına alınır, hizmet ise ayrıca dağıtılır.",
+      failed: "Düzenleme kaydı okunamadı.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2110,6 +2129,9 @@ export const tr: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Değişiklikler otomatik olarak kaydedilir.",
     },
     items: {
       title: "Projects & Papers",

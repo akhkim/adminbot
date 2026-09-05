@@ -1528,6 +1528,25 @@ export const uk: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Останні зміни",
+    loading: "читання…",
+    empty: "Змін поки не зафіксовано.",
+    paperRecord: "Запис статті",
+    source: {
+      member: "Учасником",
+      admin: "Адміністратором",
+      import: "Імпортовано",
+    },
+    error: {
+      signIn: "Увійдіть, щоб переглянути журнал змін.",
+      forbidden: "Журнал змін можуть читати лише адміністратори.",
+      unreachable: "Не вдалося зʼєднатися зі службою AdminBot за адресою {url}.",
+      notDeployed:
+        "Ця збірка служби ще не має журналу змін — Control UI виходить під час злиття, а служба розгортається окремо.",
+      failed: "Не вдалося прочитати журнал змін.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2107,6 +2126,9 @@ export const uk: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Зміни зберігаються автоматично.",
     },
     items: {
       title: "Projects & Papers",

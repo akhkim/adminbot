@@ -1530,6 +1530,24 @@ export const ja_JP: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "最近の編集",
+    loading: "読み込み中…",
+    empty: "まだ編集は記録されていません。",
+    paperRecord: "論文レコード",
+    source: {
+      member: "メンバーによる編集",
+      admin: "管理者による編集",
+      import: "インポート",
+    },
+    error: {
+      signIn: "編集履歴を読むにはサインインしてください。",
+      forbidden: "編集履歴を読めるのは管理者だけです。",
+      unreachable: "{url} の AdminBot サービスに接続できませんでした。",
+      notDeployed: "このサービスビルドにはまだ編集履歴がありません。Control UI はマージ時に公開され、サービスは別途デプロイされます。",
+      failed: "編集履歴を読み込めませんでした。",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2109,6 +2127,9 @@ export const ja_JP: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "変更は自動的に保存されます。",
     },
     items: {
       title: "Projects & Papers",

@@ -1525,6 +1525,25 @@ export const id: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "Perubahan terbaru",
+    loading: "membaca…",
+    empty: "Belum ada perubahan yang tercatat.",
+    paperRecord: "Catatan makalah",
+    source: {
+      member: "Oleh anggota",
+      admin: "Oleh admin",
+      import: "Diimpor",
+    },
+    error: {
+      signIn: "Masuk untuk membaca log perubahan.",
+      forbidden: "Hanya admin yang dapat membaca log perubahan.",
+      unreachable: "Tidak dapat menghubungi layanan AdminBot di {url}.",
+      notDeployed:
+        "Build layanan ini belum memiliki log perubahan — Control UI dirilis saat merge dan layanannya di-deploy terpisah.",
+      failed: "Tidak dapat membaca log perubahan.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2104,6 +2123,9 @@ export const id: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Perubahan disimpan otomatis.",
     },
     items: {
       title: "Projects & Papers",

@@ -1526,6 +1526,25 @@ export const fa: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  recentEdits: {
+    title: "ویرایش‌های اخیر",
+    loading: "در حال خواندن…",
+    empty: "هنوز ویرایشی ثبت نشده است.",
+    paperRecord: "پرونده مقاله",
+    source: {
+      member: "توسط عضو",
+      admin: "توسط مدیر",
+      import: "وارد شده",
+    },
+    error: {
+      signIn: "برای خواندن گزارش ویرایش‌ها وارد شوید.",
+      forbidden: "فقط مدیران می‌توانند گزارش ویرایش‌ها را بخوانند.",
+      unreachable: "دسترسی به سرویس AdminBot در {url} ممکن نشد.",
+      notDeployed:
+        "این نسخه از سرویس هنوز گزارش ویرایش ندارد — رابط کنترل هنگام ادغام منتشر می‌شود و سرویس جداگانه مستقر می‌گردد.",
+      failed: "خواندن گزارش ویرایش‌ها ممکن نشد.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -2105,6 +2124,9 @@ export const fa: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete “{title}”?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "تغییرات به‌طور خودکار ذخیره می‌شوند.",
     },
     items: {
       title: "Projects & Papers",
