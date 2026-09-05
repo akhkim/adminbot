@@ -9440,6 +9440,32 @@ details[open] > .ov-expandable-toggle::after {
   }
 }
 
+.adminbot-reimbursement-warning {
+  margin-bottom: var(--space-5);
+}
+
+.adminbot-reimbursement-warning__title {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: var(--space-2);
+}
+
+.adminbot-reimbursement-warning__lede {
+  margin: 0 0 var(--space-3);
+}
+
+.adminbot-reimbursement-warning__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.adminbot-reimbursement-warning__list a {
+  color: inherit;
+}
+
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);

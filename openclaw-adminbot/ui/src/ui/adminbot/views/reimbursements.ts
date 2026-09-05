@@ -148,6 +148,63 @@ function renderDraft(state: AdminBotReimbursementState, onGenerate: () => void) 
   `;
 }
 
+/**
+ * The assistant drafts both forms from an LLM reading of the receipts, so the numbers and the
+ * business-purpose wording are a starting point, not an audit-ready filing. This block states what
+ * the claimant still owes Finance before sending anything, and it renders above the workspace on
+ * every path into this tab (signed-in, guest, and public shell).
+ */
+function renderComplianceWarning() {
+  return html`
+    <section class="callout warning adminbot-reimbursement-warning" role="note">
+      <div class="adminbot-reimbursement-warning__title">
+        Read this before trusting the generated forms
+      </div>
+      <p class="adminbot-reimbursement-warning__lede">
+        Both forms are drafted for you by the LLM assistant in the box on this page: it reads your
+        receipts and fills the forms in. It can misread an amount, a date, or a category, and it
+        cannot know anything the receipts do not say &mdash; so treat what it produces as a first
+        draft, and check every line against the receipts yourself. The steps below are on you, not
+        on the assistant.
+      </p>
+      <ol class="adminbot-reimbursement-warning__list">
+        <li>
+          Make a copy of <strong>DCS Expense Form.xlsx</strong> and the
+          <strong>Trip Summary Form</strong>. Fill out the highlighted section of the DCS Expense
+          Form, and every section of the Trip Summary Form, as shown by the example above &mdash;
+          with itemized expenses in each category, including the description / clear business
+          purpose of the expense <strong>and</strong> the amount claimed for each one.
+        </li>
+        <li>
+          Include descriptions of pick-up and drop-off locations for Taxi / Rideshare / Public
+          Transport trips.
+        </li>
+        <li>
+          Include names of all attendees (first and last) if claiming a hospitality expense (a meal
+          paid for the research group). The most senior person at the meal must be the one paying
+          &mdash; e.g. if Zhijing is present at a research group lunch meeting, Zhijing pays for the
+          meal.
+        </li>
+        <li>
+          If you combine personal travel with business travel, you need to provide airfare
+          comparisons from the same time you booked your flight, showing the pricing of the business
+          leg of your trip only. In general, connect with Gizelda to get compliant supporting
+          documentation.
+          <strong
+            >Without audit-compliant documentation, there is a risk of being unable to reimburse the
+            expenses.</strong
+          >
+        </li>
+        <li>
+          Email
+          <a href="mailto:gizelda.pereira@utoronto.ca">gizelda.pereira@utoronto.ca</a>
+          with the two files above and the receipts, and provide any other information she needs.
+        </li>
+      </ol>
+    </section>
+  `;
+}
+
 export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) {
   const messages = props.state.messages.length
     ? props.state.messages
@@ -159,6 +216,7 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
         },
       ];
   return html`
+    ${renderComplianceWarning()}
     <div class="adminbot-reimbursement-workspace">
       <section class="adminbot-reimbursement-chat" aria-label="Reimbursement assistant">
         <div class="adminbot-reimbursement-chat__heading">
