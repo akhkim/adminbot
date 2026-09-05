@@ -2515,6 +2515,29 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  // Both discovery feeds land here: the hub crawl and, when it lands, the inbox pass. One intake
+  // rather than one per feed, so the dedupe and the suppression rule cannot differ between them.
+  if (req.method === "POST" && url.pathname === "/opportunities/discovered") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const discovery = readRecord(body.discovered);
+    sendServiceResult(
+      res,
+      service.submitDiscoveredOpportunity({
+        input: readOpportunity(body),
+        discovery: {
+          feed: asString(discovery.feed) || "web",
+          source_url: asString(discovery.source_url),
+          evidence: asString(discovery.evidence),
+          found_at: new Date().toISOString(),
+        },
+        actor: principalActor(principal),
+      }),
+    );
+    return;
+  }
   // The refresh sweep files what it read; a human decides. Two routes rather than one because the
   // two callers are different kinds of principal: the sweep runs from cron with the service token
   // and may only propose, while accepting a date onto a board members plan against is an admin act.

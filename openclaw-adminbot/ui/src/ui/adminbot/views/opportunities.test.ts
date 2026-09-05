@@ -252,6 +252,52 @@ describe("who may contribute", () => {
     });
   });
 
+  // A candidate nobody asked for is a claim about somebody else's page, so the reviewer gets the
+  // line it was read out of and a link to check it before approving anything.
+  describe("an entry the sweep found", () => {
+    const discovered = () =>
+      contributed({
+        status: "pending",
+        discovered: {
+          feed: "web",
+          source_url: "https://cra.org/cra-wp/grad-cohort-workshops/",
+          evidence: "Application deadline: October 15, 2027.",
+          found_at: "2026-09-05T00:00:00.000Z",
+        },
+      });
+
+    it("says it was found rather than submitted, and shows the evidence", async () => {
+      signIn();
+      serveContributed([discovered()]);
+      const container = await renderView();
+
+      const banner = container.querySelector('[data-testid="opp-discovered"]');
+      expect(banner?.textContent).toContain("not submitted by a member");
+      expect(banner?.textContent).toContain("October 15, 2027");
+      expect(banner?.querySelector("a")?.getAttribute("href")).toBe(
+        "https://cra.org/cra-wp/grad-cohort-workshops/",
+      );
+    });
+
+    // It is still an ordinary pending entry: the sweep files, an admin publishes.
+    it("waits on the same approval a member's submission waits on", async () => {
+      signIn();
+      serveContributed([discovered()]);
+      const container = await renderView();
+
+      expect(container.querySelector(".opp-pending-tag")).not.toBeNull();
+      expect(container.querySelector(".opp-decide")).not.toBeNull();
+    });
+
+    it("says nothing about provenance for an entry a member submitted", async () => {
+      signIn();
+      serveContributed([contributed({ status: "pending" })]);
+      const container = await renderView();
+
+      expect(container.querySelector('[data-testid="opp-discovered"]')).toBeNull();
+    });
+  });
+
   it("still shows the bundled half when the service cannot be reached", async () => {
     vi.stubGlobal(
       "fetch",

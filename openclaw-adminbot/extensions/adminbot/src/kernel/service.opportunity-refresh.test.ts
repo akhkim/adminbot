@@ -132,3 +132,105 @@ describe("deciding a swept deadline", () => {
     });
   });
 });
+
+// Discovery: a sweep filing something nobody asked for. The board is served to signed-out
+// visitors, so nothing a sweep finds is ever published by the sweep -- an admin publishes it.
+describe("a discovered opportunity", () => {
+  const found = (url: string, overrides: Record<string, unknown> = {}) => ({
+    input: {
+      name: "Rising Stars in EECS 2027",
+      category: "rising_stars" as const,
+      link: url,
+      ...overrides,
+    },
+    discovery: {
+      feed: "web",
+      source_url: url,
+      evidence: "Applications are due 15 October 2027.",
+      found_at: "2026-09-05T00:00:00.000Z",
+    },
+    actor: "sweep",
+  });
+
+  function lab() {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "grace",
+        name: "Grace Hopper",
+        privilege_level: "admin",
+      } as never),
+    );
+    return service;
+  }
+
+  it("arrives pending, with where it came from on the record", () => {
+    const service = lab();
+    const result = unwrap(
+      service.submitDiscoveredOpportunity(found("https://risingstars.example.edu/2027")),
+    );
+    expect(result.filed).toBe(true);
+    expect(result.opportunity.status).toBe("pending");
+    expect(result.opportunity.discovered).toMatchObject({
+      feed: "web",
+      source_url: "https://risingstars.example.edu/2027",
+      evidence: "Applications are due 15 October 2027.",
+    });
+  });
+
+  // The sweep re-reads the same hubs every week and would otherwise file the same programme
+  // every week.
+  it("does not file a source already on the board", () => {
+    const service = lab();
+    unwrap(service.submitDiscoveredOpportunity(found("https://risingstars.example.edu/2027")));
+    const again = unwrap(
+      service.submitDiscoveredOpportunity(found("https://risingstars.example.edu/2027")),
+    );
+    expect(again.filed).toBe(false);
+  });
+
+  // The rule that makes the queue survivable, and the deliberate opposite of what the deadline
+  // refresh does: there the page is the subject and a dismissed date must be proposable again;
+  // here the source is the subject, and asking twice about a programme the lab declined is how a
+  // review queue becomes noise.
+  it("stays rejected once an admin has said no", () => {
+    const service = lab();
+    const filed = unwrap(
+      service.submitDiscoveredOpportunity(found("https://risingstars.example.edu/2027")),
+    ).opportunity;
+    unwrap(service.decideOpportunity(filed.id, "rejected", "grace"));
+    const again = unwrap(
+      service.submitDiscoveredOpportunity(found("https://risingstars.example.edu/2027")),
+    );
+    expect(again.filed).toBe(false);
+    expect(
+      unwrap(service.listOpportunities({ memberId: "grace", isAdmin: true })).opportunities.filter(
+        (entry) => entry.status === "pending",
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses a candidate with nowhere to check it", () => {
+    const service = lab();
+    expect(
+      service.submitDiscoveredOpportunity({
+        ...found("https://risingstars.example.edu/2027"),
+        discovery: {
+          feed: "web",
+          source_url: "",
+          evidence: "",
+          found_at: "2026-09-05T00:00:00.000Z",
+        },
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it("holds a candidate to the same rules a member's submission is held to", () => {
+    const service = lab();
+    expect(
+      service.submitDiscoveredOpportunity(
+        found("https://risingstars.example.edu/2027", { name: "" }),
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+});

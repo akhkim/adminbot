@@ -21,10 +21,12 @@ PYTHON="${ADMINBOT_PYTHON:-/usr/bin/python3}"
 
 usage() {
   cat <<'EOF'
-Usage: adminbot-opportunity-cron.sh [refresh|preview]
+Usage: adminbot-opportunity-cron.sh [refresh|preview|discover|discover-preview]
 
-  refresh   Read each Opportunities page and file what changed as a proposal (default)
-  preview   Show what it would file; writes nothing
+  refresh           Re-read each entry's page, file changed dates as proposals (default)
+  preview           Show what refresh would file; writes nothing
+  discover          Read the configured hub pages, file new candidates as pending
+  discover-preview  Show what discover would file; writes nothing
 EOF
 }
 
@@ -33,6 +35,8 @@ task="${1:-refresh}"
 case "$task" in
   refresh) apply="--apply" ;;
   preview) apply="" ;;
+  discover) apply="--apply" ;;
+  discover-preview) apply="" ;;
   -h | --help)
     usage
     exit 0
@@ -59,5 +63,10 @@ adminbot_load_cron_env "opportunity $task" || exit 1
 : "${ADMINBOT_URL:=http://127.0.0.1:${ADMINBOT_PORT:-8765}}"
 export ADMINBOT_URL
 
+case "$task" in
+  discover | discover-preview) script="adminbot-opportunity-discover.py" ;;
+  *) script="adminbot-opportunity-refresh.py" ;;
+esac
+
 # shellcheck disable=SC2086
-exec "$PYTHON" "$REPO_ROOT/scripts/adminbot-opportunity-refresh.py" $apply
+exec "$PYTHON" "$REPO_ROOT/scripts/$script" $apply

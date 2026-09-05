@@ -157,6 +157,7 @@ import {
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
   isAdminBotOpportunityDeadline,
+  type AdminBotOpportunityDiscovery,
   validateAdminBotOpportunity,
   type AdminBotOpportunity,
   type AdminBotOpportunityInput,
@@ -2512,6 +2513,79 @@ export class AdminBotService {
       details: { opportunity_id: updated.id },
     });
     return { ok: true, status: 200, payload: { opportunity: this.opportunityView(updated) } };
+  }
+
+  /**
+   * File something a sweep found, as a candidate for an admin to publish or throw away.
+   *
+   * Always `pending`, never approved: a sweep has no judgement about whether a programme is one
+   * this lab cares about, and the board is served to signed-out visitors. The review state that
+   * already existed for member submissions is the same one used here, for the same reason.
+   *
+   * Two refusals, and the second is what makes the queue survivable:
+   *
+   *   - A source already on the board is not news. The sweep re-reads the same hubs every week
+   *     and would otherwise file the same programme every week.
+   *   - A source somebody already *rejected* stays rejected. Rejected rows are kept rather than
+   *     deleted, so they double as the suppression list: "no" means no, and it means it without
+   *     a second table to keep in step. That is the opposite of what the deadline *refresh*
+   *     does, deliberately -- there, a dismissed date must be proposable again when the page
+   *     changes, because the page is the subject. Here the source is the subject, and asking
+   *     twice about a programme the lab has declined is how a review queue becomes noise.
+   */
+  submitDiscoveredOpportunity(params: {
+    input: Partial<AdminBotOpportunityInput>;
+    discovery: AdminBotOpportunityDiscovery;
+    actor: string;
+  }): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView; filed: boolean }> {
+    const sourceUrl = params.discovery.source_url.trim();
+    if (!sourceUrl.startsWith("https://")) {
+      return serviceError(400, "a discovered opportunity must name the https page it came from");
+    }
+    const validated = validateAdminBotOpportunity(params.input);
+    if (!validated.ok) {
+      return serviceError(400, validated.error);
+    }
+    const already = this.store
+      .listOpportunities()
+      .find((entry) => entry.discovered?.source_url === sourceUrl || entry.link === sourceUrl);
+    if (already) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { opportunity: this.opportunityView(already), filed: false },
+      };
+    }
+    const now = new Date().toISOString();
+    const opportunity: AdminBotOpportunity = {
+      id: `opp_${randomUUID()}`,
+      ...validated.value,
+      deadline_aoe: validated.value.deadline_aoe ?? "",
+      status: "pending",
+      discovered: {
+        feed: params.discovery.feed,
+        source_url: sourceUrl,
+        evidence: params.discovery.evidence.trim().slice(0, ADMINBOT_OPPORTUNITY_TEXT_MAX),
+        found_at: now,
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    this.store.saveOpportunity(opportunity);
+    this.recordAudit({
+      type: "opportunity.discovered",
+      actor: params.actor,
+      details: {
+        opportunity_id: opportunity.id,
+        feed: params.discovery.feed,
+        source_url: sourceUrl,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { opportunity: this.opportunityView(opportunity), filed: true },
+    };
   }
 
   /**
