@@ -961,6 +961,93 @@ describe("the banners above the list", () => {
     expect(container.querySelector('[data-testid="decision-banner-d1"]')).toBeNull();
     expect(container.querySelector('[data-testid="prereg-open"]')).toBeNull();
   });
+
+  it("records sent only when the assigned owner explicitly confirms it", () => {
+    const owned = { ...decided, id: "decision-email", submitted_by_member_id: "ada" } as never;
+    const state = {
+      memberId: "ada",
+      adminBotData: {
+        papers: [owned],
+        members: [
+          {
+            id: "ada",
+            name: "Ada Lovelace",
+            privilege_level: "member",
+            correspondence_email: "ada@example.edu",
+            access: [],
+          },
+        ],
+        settings: {},
+      },
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+    } as unknown as AppViewState;
+    const { container, saved, rerender } = draw({
+      scopedPapers: [owned],
+      personal: true,
+      state,
+    });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-toggle-decision-email"]')
+      ?.click();
+    rerender();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-sent-decision-email"]')
+      ?.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "decision-email",
+      decisionEmailSent: "accept:EMNLP 2026",
+    });
+  });
+
+  it("can undo an accidental sent mark", () => {
+    const acknowledged = {
+      ...decided,
+      id: "decision-email-undo",
+      submitted_by_member_id: "ada",
+      artifacts: { decision_coauthor_email_sent: "accept:EMNLP 2026" },
+    } as never;
+    const state = {
+      memberId: "ada",
+      adminBotData: {
+        papers: [acknowledged],
+        members: [
+          {
+            id: "ada",
+            name: "Ada Lovelace",
+            privilege_level: "member",
+            correspondence_email: "ada@example.edu",
+            access: [],
+          },
+        ],
+        settings: {},
+      },
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+    } as unknown as AppViewState;
+    const { container, saved, rerender } = draw({
+      scopedPapers: [acknowledged],
+      personal: true,
+      state,
+    });
+
+    expect(
+      container.querySelector('[data-testid="decision-email-toggle-decision-email-undo"]')
+        ?.textContent,
+    ).toContain("sent");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-toggle-decision-email-undo"]')
+      ?.click();
+    rerender();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-sent-decision-email-undo"]')
+      ?.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "decision-email-undo",
+      decisionEmailSent: "",
+    });
+  });
 });
 
 describe("deleting a paper", () => {
