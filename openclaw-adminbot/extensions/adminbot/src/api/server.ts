@@ -2694,6 +2694,18 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listDuplicateMembers());
     return;
   }
+  if (req.method === "GET" && url.pathname === "/activity/updates") {
+    // Who changed what, across the whole lab. Privileged: the rows name members and the fields
+    // they filled in, which is the roster's own working record rather than anything a member is
+    // entitled to read about everyone else. The service principal is allowed -- this is a read,
+    // and the same trail is already in /audit.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const limit = Number(url.searchParams.get("limit") ?? "");
+    sendServiceResult(res, service.listRecentUpdates(Number.isFinite(limit) ? limit : undefined));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/mailing-list") {
     // The preview. Read-only and computed by the same function the send uses, so what an admin
     // reads here is what would actually go out -- the same rule /papers/nudge-batches follows.

@@ -151,3 +151,65 @@ describe("login events", () => {
     expect(serviceWithMember().listLoginEvents("nobody").ok).toBe(false);
   });
 });
+
+// The lab-wide feed: "who changed what, lately". The two reads beside it answer per-member and
+// per-field; this is the one an admin actually opens, and the one the table had no reader for.
+describe("recent updates", () => {
+  it("names the actor, the field and whose record it was", () => {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Toronto" } as never, {
+        source: "admin",
+        actor: "grace",
+      }),
+    );
+    const [row] = unwrap(service.listRecentUpdates()).updates;
+    expect(row).toMatchObject({
+      actor_member_id: "grace",
+      actor_name: "Grace Hopper",
+      subject_member_id: "ada",
+      subject_member_name: "Ada Lovelace",
+      field_key: "location",
+      source: "admin",
+      subject: "profile",
+    });
+  });
+
+  // A self-edit carries no subject: the actor is the owner, and the reader shows one name.
+  it("leaves the subject off a member editing their own record", () => {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Toronto" } as never, {
+        source: "member",
+        actor: "ada",
+      }),
+    );
+    const [row] = unwrap(service.listRecentUpdates()).updates;
+    expect(row?.actor_member_id).toBe("ada");
+    expect(row?.subject_member_id).toBeUndefined();
+  });
+
+  it("gives the newest first and honours the limit", () => {
+    const service = serviceWithMember();
+    for (const location of ["Toronto", "Zurich", "Boston"]) {
+      unwrap(
+        service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location } as never, {
+          source: "member",
+          actor: "ada",
+        }),
+      );
+    }
+    const updates = unwrap(service.listRecentUpdates(2)).updates;
+    expect(updates).toHaveLength(2);
+    expect(updates[0]?.at >= (updates[1]?.at ?? "")).toBe(true);
+  });
+
+  // An unattributed pass -- the roster importer -- must not read as the member editing themselves,
+  // which is the whole point of separating actor from subject.
+  it("does not credit an import to the member whose record it touched", () => {
+    const service = serviceWithMember();
+    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Oslo" } as never));
+    const mine = unwrap(service.listUpdateEventsByMember("ada")).updates;
+    expect(mine.filter((event) => event.source === "import")).toEqual([]);
+  });
+});

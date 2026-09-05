@@ -140,12 +140,15 @@ describe("TAB_GROUPS", () => {
       // The mailing list sits beside the grant report: both answer "what has the lab published",
       // one for a funder and one for an address.
       "adminbotMailingList",
+      // And the edit log, which answers "what has been going on in the record itself".
+      "adminbotRecentEdits",
     ]);
     // Neither is its own sidebar entry any more, which is the whole point of the move.
     const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);
     expect(sidebarTabs).not.toContain("adminbotBadges");
     expect(sidebarTabs).not.toContain("adminbotGrantReport");
     expect(sidebarTabs).not.toContain("adminbotMailingList");
+    expect(sidebarTabs).not.toContain("adminbotRecentEdits");
   });
 
   it("keeps every sub-tab path routable so existing links still land", () => {

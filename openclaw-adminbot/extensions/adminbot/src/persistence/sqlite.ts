@@ -2327,6 +2327,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.readUpdateEvents("WHERE at >= ? ORDER BY at DESC, rowid DESC", since);
   }
 
+  // "Who changed what, lately" across everyone -- the one question this table could answer and had
+  // no reader for. rowid breaks the tie for the same reason it does everywhere else here: one save
+  // writes a row per changed field, and they share a millisecond.
+  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents("ORDER BY at DESC, rowid DESC LIMIT ?", limit);
+  }
+
   // SQLite gives back `null` for an absent TEXT column, but the contract says the field is absent.
   // Normalizing here keeps every reader's "did somebody else edit this" check a null check.
   private readUpdateEvents(

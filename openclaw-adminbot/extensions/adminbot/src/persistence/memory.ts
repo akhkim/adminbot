@@ -792,6 +792,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return recentFirst(this.updateEvents.filter((event) => event.at >= since));
   }
 
+  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(this.updateEvents, limit);
+  }
+
   saveMeeting(meeting: AdminBotMeetingRecord): void {
     this.meetings.set(meeting.id, meeting);
   }
