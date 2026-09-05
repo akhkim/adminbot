@@ -509,6 +509,8 @@ export type AdminBotPaperSaveInput = {
    * is resubmitted gets a second decision, and that one deserves telling too.
    */
   decisionSeen?: string;
+  /** Human acknowledgement that the coauthor update for this exact decision was sent. */
+  decisionEmailSent?: string;
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
@@ -2554,6 +2556,10 @@ export async function saveAdminBotPaper(
     // Sent even when empty, because clearing every venue has to be able to erase the key.
     ...(paper.venueTargets === undefined ? {} : { venue_targets: paper.venueTargets }),
     ...(paper.decisionSeen ? { decision_seen: paper.decisionSeen } : {}),
+    // Sent even when empty so an accidental acknowledgement can be undone.
+    ...(paper.decisionEmailSent === undefined
+      ? {}
+      : { decision_coauthor_email_sent: paper.decisionEmailSent }),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
     // Sent even when empty: reopening a paper has to be able to erase the key, not just skip it.

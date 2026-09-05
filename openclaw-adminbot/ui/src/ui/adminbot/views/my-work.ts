@@ -65,7 +65,13 @@ import {
   parseVenue,
   venueYears,
 } from "../data/venue-catalog.ts";
-import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
+import {
+  decisionEmailSentStamp,
+  decisionOf,
+  isDecisionAnswered,
+  isDecisionEmailSent,
+  renderDecisionBanner,
+} from "../decision-popup.ts";
 import {
   clearHiddenPapers,
   partitionHiddenPapers,
@@ -2338,6 +2344,7 @@ function renderDecisionBanners(
         return owner.id === memberId || isSamePerson(owner.name, props.memberName(memberId));
       })(),
       email: emailTasks.get(paper.id) ?? null,
+      emailSent: isDecisionEmailSent(paper),
       onToggleEmail: () => {
         const current = emailTasks.get(paper.id);
         emailTasks.set(paper.id, {
@@ -2360,6 +2367,14 @@ function renderDecisionBanners(
         });
         props.onRerender?.();
       },
+      onSetEmailSent: (sent) =>
+        props.onSavePaper({
+          id: paper.id,
+          title: paper.title,
+          authors: paper.authors ?? [],
+          currentStep: paper.current_step as AdminBotPaperStep,
+          decisionEmailSent: sent ? decisionEmailSentStamp(paper) : "",
+        }),
       onReset: () => {
         decisionDrafts.set(paper.id, { presentation: "", attending: "", nextVenue: "" });
         savedDecisions.delete(paper.id);
