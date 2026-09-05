@@ -77,6 +77,8 @@ describe("renderEmailBodyHtml", () => {
       const template = findOnboardingTemplate(id);
       const html = renderEmailBodyHtml(template?.body ?? "");
       expect(html.split("<ul>").length, id).toBe(html.split("</ul>").length);
+      // `<ol` rather than `<ol>`, so a list carrying a `start` attribute still counts.
+      expect(html.split("<ol").length, id).toBe(html.split("</ol>").length);
       expect(html.split("<li>").length, id).toBe(html.split("</li>").length);
       expect(html.split("<p>").length, id).toBe(html.split("</p>").length);
     }
@@ -91,6 +93,37 @@ describe("anchor-text links", () => {
     expect(html).toContain('<a href="https://www.linkedin.com/in/zhijing-jin/">Zhijing-Jin</a>');
     // The source notation must never survive into the delivered markup.
     expect(html).not.toContain("](");
+  });
+
+  it("makes '1. ' steps an ordered list, across the blank lines the copy puts between them", () => {
+    // The onboarding templates separate every numbered step with a blank line so the plain-text
+    // part reads well. That must not split the list into three one-item lists, or three paragraphs.
+    expect(renderEmailBodyHtml("1. First step.\n\n2. Second step.\n\n3. Third step.")).toBe(
+      "<ol><li>First step.</li><li>Second step.</li><li>Third step.</li></ol>",
+    );
+  });
+
+  it("nests a run of bullets inside the numbered step that introduces them", () => {
+    // "5. Keep updated by following our social media accounts:" and its unindented bullets: the
+    // bullets belong to that step, and must not terminate the numbered list.
+    expect(
+      renderEmailBodyHtml("1. Portal: sign in.\n\n2. Socials:\n\n- LinkedIn\n- X\n\nQuestions?"),
+    ).toBe(
+      "<ol><li>Portal: sign in.</li><li>Socials:<ul><li>LinkedIn</li><li>X</li></ul></li></ol>" +
+        "<p>Questions?</p>",
+    );
+  });
+
+  it("keeps a list that does not start at one numbered as the copy numbered it", () => {
+    expect(renderEmailBodyHtml("3. Third.\n\n4. Fourth.")).toBe(
+      '<ol start="3"><li>Third.</li><li>Fourth.</li></ol>',
+    );
+  });
+
+  it("ends a list at a line of prose, so the next run starts its own list", () => {
+    expect(renderEmailBodyHtml("1. One.\n\nThen this.\n\n1. One again.")).toBe(
+      "<ol><li>One.</li></ol><p>Then this.</p><ol><li>One again.</li></ol>",
+    );
   });
 
   it("accepts a mailto: target", () => {
