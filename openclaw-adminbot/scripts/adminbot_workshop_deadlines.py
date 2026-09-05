@@ -335,12 +335,24 @@ def _old_hint(text, start, end):
     return bool(OLD_HINT_LEFT.search(left) or OLD_HINT_RIGHT.search(right))
 
 
-def deadline_candidates_from_text(text, source_url, year, document_id=""):
+def deadline_candidates_from_text(
+    text, source_url, year, document_id="", positive_signals=POSITIVE_SIGNALS
+):
+    """
+    Dates on a page that a signal phrase says are deadlines, with the evidence they were read from.
+
+    `positive_signals` is a parameter because the phrases are the only subject-specific part of
+    this. The default set is about papers -- "submission deadline", "papers are due" -- and finds
+    nothing on a fellowship page, which talks about applications. The opportunity sweep passes its
+    own vocabulary rather than adding application words here, because a CFP page that happens to
+    mention an application deadline must not have it outrank the paper deadline for the 143
+    workshops this default set is tuned for.
+    """
     normalized = _normalize_text(text)
     output = []
     for start, end, date in _all_dates(normalized, year):
         positive, label, positive_distance = _nearest_signal(
-            normalized, start, end, POSITIVE_SIGNALS
+            normalized, start, end, positive_signals
         )
         negative, negative_label, negative_distance = _nearest_signal(
             normalized, start, end, NEGATIVE_SIGNALS
@@ -382,12 +394,14 @@ def deadline_candidates_from_text(text, source_url, year, document_id=""):
     return output
 
 
-def deadline_candidates_from_html(html, source_url, year):
+def deadline_candidates_from_html(html, source_url, year, positive_signals=POSITIVE_SIGNALS):
     texts, script_urls = deadline_texts_from_html(html)
     candidates = []
     for kind, text in texts:
         candidates.extend(
-            deadline_candidates_from_text(text, source_url, year, f"{source_url}#{kind}")
+            deadline_candidates_from_text(
+                text, source_url, year, f"{source_url}#{kind}", positive_signals
+            )
         )
     return candidates, script_urls
 

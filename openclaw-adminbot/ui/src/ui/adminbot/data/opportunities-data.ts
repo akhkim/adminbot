@@ -56,8 +56,17 @@ export type Opportunity = {
  * `Opportunity`, which is what the board keys "can this be edited" off -- a bundled row has no
  * server-side identity to edit.
  */
+/** What the refresh sweep read off the entry's own page, waiting on a human. */
+export type OpportunityDeadlineProposal = {
+  deadline_aoe: string;
+  source_url: string;
+  evidence: string;
+  found_at: string;
+};
+
 export type AdminBotOpportunityView = Opportunity & {
   status: OpportunityStatus;
+  proposed_deadline?: OpportunityDeadlineProposal;
   submitted_by_member_id?: string;
   submitted_by_name?: string;
   created_at: string;

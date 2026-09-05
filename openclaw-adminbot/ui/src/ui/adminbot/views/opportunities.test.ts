@@ -192,6 +192,66 @@ describe("who may contribute", () => {
     }
   });
 
+  // The refresh sweep reads each entry's own page and files what it found. It never writes the
+  // board: these programs are annual and their pages are edited in place, so last year's date and
+  // next year's look identical until a person reads the quote.
+  describe("a date the refresh sweep proposed", () => {
+    const swept = () =>
+      contributed({
+        deadline_aoe: "2026-10-20 23:59:59",
+        proposed_deadline: {
+          deadline_aoe: "2027-10-15 23:59:59",
+          source_url: "https://risingstars.example.edu/2027",
+          evidence: "Application deadline: October 15, 2027 (11:59pm AoE).",
+          found_at: "2026-09-04T10:00:00.000Z",
+        },
+      });
+
+    it("shows the date, the page it came from and the line it was read out of", async () => {
+      signIn();
+      serveContributed([swept()]);
+      const container = await renderView();
+
+      const proposal = container.querySelector('[data-testid="opp-proposal"]');
+      expect(proposal?.textContent).toContain("2027-10-15");
+      expect(proposal?.textContent).toContain("October 15, 2027");
+      expect(proposal?.querySelector("a")?.getAttribute("href")).toBe(
+        "https://risingstars.example.edu/2027",
+      );
+    });
+
+    // Until somebody accepts it, the board still says what it said. The proposal sits inside the
+    // row, so this asks the date element rather than the row's text.
+    it("leaves the published deadline alone", async () => {
+      signIn();
+      serveContributed([swept()]);
+      const container = await renderView();
+
+      const row = [...container.querySelectorAll(".opp-row")].find((entry) =>
+        entry.textContent?.includes("Member Find"),
+      );
+      expect(row?.querySelector(".opp-when")?.textContent).toContain("Oct 20, 2026");
+      expect(row?.querySelector(".opp-when")?.textContent).not.toContain("2027");
+    });
+
+    it("offers both answers", async () => {
+      signIn();
+      serveContributed([swept()]);
+      const container = await renderView();
+
+      expect(container.querySelector('[data-testid="opp-proposal-accept"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="opp-proposal-dismiss"]')).not.toBeNull();
+    });
+
+    it("shows nothing when the sweep has found nothing", async () => {
+      signIn();
+      serveContributed([contributed()]);
+      const container = await renderView();
+
+      expect(container.querySelector('[data-testid="opp-proposal"]')).toBeNull();
+    });
+  });
+
   it("still shows the bundled half when the service cannot be reached", async () => {
     vi.stubGlobal(
       "fetch",

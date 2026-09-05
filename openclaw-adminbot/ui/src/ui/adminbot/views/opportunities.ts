@@ -15,6 +15,7 @@ import { html, nothing, LitElement } from "lit";
 import {
   deleteOpportunity,
   decideOpportunity,
+  decideOpportunityDeadline,
   fetchOpportunities,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
@@ -294,6 +295,37 @@ class AdminbotOpportunitiesView extends LitElement {
    * have: a pending row is only ever visible to its submitter or an admin, and the submitter's
    * attempt is refused by the service with a 403 that lands in `notice`.
    */
+  /**
+   * Accept or dismiss a date the refresh sweep read off this entry's own page.
+   *
+   * The sweep may only propose. This is where a swept date becomes a published one, and it is a
+   * person doing it -- the board is planned against, and a page carrying last year's date is
+   * indistinguishable from one carrying next year's until somebody reads it.
+   */
+  private async decideDeadline(id: string, accept: boolean): Promise<void> {
+    const stored = loadStoredMemberSession();
+    if (!stored || this.busy) {
+      return;
+    }
+    this.busy = true;
+    this.requestUpdate();
+    try {
+      const result = await decideOpportunityDeadline(
+        id,
+        accept,
+        stored.sessionToken,
+        resolveAdminBotBaseUrl(),
+      );
+      this.notice = result.ok
+        ? { kind: "success", text: accept ? "Deadline updated." : "Proposal dismissed." }
+        : { kind: "error", text: result.message ?? "That decision could not be recorded." };
+      await this.load();
+    } finally {
+      this.busy = false;
+      this.requestUpdate();
+    }
+  }
+
   private async decide(id: string, decision: "approve" | "reject"): Promise<void> {
     const stored = loadStoredMemberSession();
     if (!stored || this.busy) {
@@ -561,6 +593,45 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
         </div>
+        ${mine && item.proposed_deadline
+          ? html`<div class="opp-proposal" data-testid="opp-proposal">
+              <div class="opp-proposal__head">
+                <strong>${item.proposed_deadline.deadline_aoe.slice(0, 10)}</strong>
+                <span
+                  >read off
+                  <a
+                    href=${item.proposed_deadline.source_url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    >the programme page</a
+                  ></span
+                >
+              </div>
+              <!-- The line the date was read out of. Without it this is a bare assertion and the
+                   reviewer has to open the page anyway, which is the work the sweep removes. -->
+              <blockquote class="opp-proposal__evidence">
+                ${item.proposed_deadline.evidence}
+              </blockquote>
+              <div class="opp-proposal__actions">
+                <button
+                  class="opp-form-btn opp-form-btn--primary"
+                  ?disabled=${this.busy}
+                  data-testid="opp-proposal-accept"
+                  @click=${() => void this.decideDeadline(item.id, true)}
+                >
+                  Use this date
+                </button>
+                <button
+                  class="opp-form-btn"
+                  ?disabled=${this.busy}
+                  data-testid="opp-proposal-dismiss"
+                  @click=${() => void this.decideDeadline(item.id, false)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>`
+          : nothing}
         ${mine
           ? html`<div class="opp-actions">
               ${pending
@@ -736,6 +807,38 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-decide {
           padding: 3px 10px;
           font-size: 12px;
+        }
+        /* The refresh sweep's finding, sitting under the entry it is about. Framed as a quote
+           rather than as a value, because it is a reading of somebody else's page and the
+           reviewer's job is to judge it. */
+        .opp-proposal {
+          margin-top: 8px;
+          padding: 8px 10px;
+          border: 1px solid rgba(96, 165, 250, 0.35);
+          border-radius: 6px;
+          background: rgba(96, 165, 250, 0.08);
+          display: grid;
+          gap: 6px;
+        }
+        .opp-proposal__head {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          flex-wrap: wrap;
+          font-size: 13px;
+        }
+        .opp-proposal__evidence {
+          margin: 0;
+          padding-left: 10px;
+          border-left: 2px solid rgba(148, 163, 184, 0.4);
+          color: var(--muted, #94a3b8);
+          font-size: 12px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+        }
+        .opp-proposal__actions {
+          display: flex;
+          gap: 8px;
         }
         .opp-edit:disabled,
         .opp-delete:disabled,
