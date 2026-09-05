@@ -37,6 +37,7 @@ import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
@@ -64,7 +65,11 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
-import { adminBotEmailReviewFromRow, ensureAdminBotEmailReviewSchema } from "./email-review.js";
+import {
+  adminBotEmailReviewFromRow,
+  adminBotResolvedEmailReviewFromRow,
+  ensureAdminBotEmailReviewSchema,
+} from "./email-review.js";
 
 const require = createRequire(import.meta.url);
 
@@ -2155,6 +2160,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .get(messageId) as Record<string, unknown> | undefined;
     return row ? adminBotEmailReviewFromRow(row) : undefined;
+  }
+
+  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at,
+                resolution, resolved_at, resolved_by
+           FROM adminbot_email_messages
+          WHERE status = 'reviewed'
+            AND resolution IN ('paperflow_evidence', 'dismissed')
+            AND resolved_at IS NOT NULL
+            AND resolved_by IS NOT NULL
+          ORDER BY resolved_at DESC
+          LIMIT ?`,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map(adminBotResolvedEmailReviewFromRow);
   }
 
   resolveEmailReview(params: {

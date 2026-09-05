@@ -131,6 +131,7 @@ import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
   AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import {
   adminBotFeedbackCommentMax,
@@ -439,6 +440,8 @@ export type AdminBotServiceStore = {
   saveEmailReview(review: AdminBotEmailReviewItem): void;
   listEmailReviews(): AdminBotEmailReviewItem[];
   getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined;
+  /** Most recently settled decisions, newest first and capped by the caller. */
+  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[];
   /** Returns false when another administrator already settled this row. */
   resolveEmailReview(params: {
     messageId: string;
@@ -5178,16 +5181,41 @@ export class AdminBotService {
   listEmailReviews(): AdminBotServiceResponse<{
     reviews: AdminBotEmailReviewItem[];
     paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
+    recent_resolutions: AdminBotResolvedEmailReviewItem[];
   }> {
     const stageResult = this.collectPaperflowStageNudges();
     if (!stageResult.ok) {
       return stageResult;
     }
+    const evidenceByMessage = new Map(
+      this.store
+        .listPaperflowEvidence()
+        .filter((record) => record.message_id)
+        .map((record) => [record.message_id as string, record]),
+    );
+    const recentResolutions = this.store.listResolvedEmailReviews(20).map((review) => {
+      const evidence = evidenceByMessage.get(review.message_id);
+      const paper = evidence ? this.store.getPaper(evidence.paper_id) : undefined;
+      const actor = this.store.getLabMember(review.resolved_by);
+      return {
+        ...review,
+        ...(actor ? { resolved_by_name: actor.name } : {}),
+        ...(evidence
+          ? {
+              paper_id: evidence.paper_id,
+              ...(paper ? { paper_title: paper.title } : {}),
+              stage: evidence.stage,
+              stage_label: adminBotPaperflowStageRegistry[evidence.stage].label,
+            }
+          : {}),
+      };
+    });
     return {
       ok: true,
       status: 200,
       payload: {
         reviews: this.store.listEmailReviews(),
+        recent_resolutions: recentResolutions,
         paperflow_candidates: stageResult.payload.items.map((item) => ({
           paper_id: item.paper_id,
           title: item.title,

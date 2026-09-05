@@ -13,6 +13,7 @@ import {
   type AdminBotEmailReviewItem,
   type AdminBotEmailReviewPaperflowCandidate,
   type AdminBotEmailReviewResolution,
+  type AdminBotResolvedEmailReviewItem,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -690,6 +691,7 @@ export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
   emailReviews?: AdminBotEmailReviewItem[];
   emailReviewCandidates?: AdminBotEmailReviewPaperflowCandidate[];
+  emailReviewHistory?: AdminBotResolvedEmailReviewItem[];
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   nudges: AdminBotPaperNudge[];
@@ -845,6 +847,7 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     proposals: [],
     emailReviews: [],
     emailReviewCandidates: [],
+    emailReviewHistory: [],
     members: [],
     papers: [],
     nudges: [],
@@ -998,6 +1001,10 @@ async function loadAdminBotOverSession(
         emailReview,
         "paperflow_candidates",
       ),
+      emailReviewHistory: readArray<AdminBotResolvedEmailReviewItem>(
+        emailReview,
+        "recent_resolutions",
+      ),
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
@@ -1090,6 +1097,7 @@ export async function loadAdminBot(
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
       emailReviews: [],
       emailReviewCandidates: [],
+      emailReviewHistory: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),

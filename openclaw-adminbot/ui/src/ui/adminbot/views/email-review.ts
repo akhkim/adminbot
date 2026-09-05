@@ -3,11 +3,13 @@ import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
   AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
 } from "../auth/session.ts";
 
 export type EmailReviewProps = {
   reviews: AdminBotEmailReviewItem[];
   candidates: AdminBotEmailReviewPaperflowCandidate[];
+  recentResolutions: AdminBotResolvedEmailReviewItem[];
   busyActionId: string | null;
   onResolve: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
 };
@@ -25,6 +27,39 @@ function formatReviewTime(value: string): string {
 
 function categoryLabel(category: string): string {
   return category.replaceAll("_", " ");
+}
+
+function resolutionLabel(review: AdminBotResolvedEmailReviewItem): string {
+  if (review.resolution === "dismissed") {
+    return "Dismissed — no paper changed";
+  }
+  const target = [review.paper_title, review.stage_label].filter(Boolean).join(" — ");
+  return target ? `Attached to ${target}` : "Attached as paper evidence";
+}
+
+function renderRecentResolution(review: AdminBotResolvedEmailReviewItem) {
+  return html`
+    <article class="email-review-history__item">
+      <div class="email-review-history__message">
+        <strong>${review.subject?.trim() || "No subject"}</strong>
+        <span>${review.sender}</span>
+      </div>
+      <div class="email-review-history__decision">
+        <strong>${resolutionLabel(review)}</strong>
+        <span>
+          Reviewed by ${review.resolved_by_name ?? review.resolved_by} ·
+          ${formatReviewTime(review.resolved_at)}
+        </span>
+      </div>
+      <a
+        class="btn btn--sm"
+        href=${gmailThreadUrl(review.thread_id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        >Open in Gmail</a
+      >
+    </article>
+  `;
 }
 
 function submitAttachment(event: Event, props: EmailReviewProps, review: AdminBotEmailReviewItem) {
@@ -163,6 +198,17 @@ export function renderAdminBotEmailReview(props: EmailReviewProps) {
         Resolving a card changes AdminBot's evidence ledger, not the original Gmail message or its
         labels.
       </p>
+      ${props.recentResolutions.length
+        ? html`
+            <details class="email-review-history" data-testid="email-review-history">
+              <summary>Recently reviewed (${props.recentResolutions.length})</summary>
+              <p>The 20 most recent decisions are kept here for verification.</p>
+              <div class="email-review-history__list">
+                ${props.recentResolutions.map(renderRecentResolution)}
+              </div>
+            </details>
+          `
+        : nothing}
     </section>
   `;
 }

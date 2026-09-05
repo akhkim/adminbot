@@ -1,5 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { AdminBotEmailReviewItem } from "../contracts/email-review.js";
+import type {
+  AdminBotEmailReviewItem,
+  AdminBotResolvedEmailReviewItem,
+} from "../contracts/email-review.js";
 
 /**
  * Keep the email automation's table readable by both the hourly script and the long-running API.
@@ -57,4 +60,15 @@ export function adminBotEmailReviewFromRow(row: Record<string, unknown>): AdminB
     }
   }
   return item;
+}
+
+export function adminBotResolvedEmailReviewFromRow(
+  row: Record<string, unknown>,
+): AdminBotResolvedEmailReviewItem {
+  return {
+    ...adminBotEmailReviewFromRow(row),
+    resolution: String(row.resolution) as AdminBotResolvedEmailReviewItem["resolution"],
+    resolved_at: String(row.resolved_at),
+    resolved_by: String(row.resolved_by),
+  };
 }

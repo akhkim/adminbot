@@ -48,6 +48,7 @@ export type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
   AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
 } from "./src/contracts/email-review.js";
 // PaperFlow venue-cycle stages. Exported for scripts/adminbot-email-automation.ts, which reads the
 // open stages to hand the classifier a closed set to choose from, and writes back the evidence

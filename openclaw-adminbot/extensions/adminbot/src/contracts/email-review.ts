@@ -24,3 +24,15 @@ export type AdminBotEmailReviewPaperflowCandidate = {
 export type AdminBotEmailReviewResolution =
   | { kind: "paperflow_evidence"; paper_id: string; stage: string }
   | { kind: "dismissed" };
+
+/** A settled decision, retained so the queue does not erase its own audit context. */
+export type AdminBotResolvedEmailReviewItem = AdminBotEmailReviewItem & {
+  resolution: AdminBotEmailReviewResolution["kind"];
+  resolved_at: string;
+  resolved_by: string;
+  resolved_by_name?: string;
+  paper_id?: string;
+  paper_title?: string;
+  stage?: AdminBotPaperflowStage;
+  stage_label?: string;
+};

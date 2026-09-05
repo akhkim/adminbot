@@ -144,6 +144,7 @@ describe("email review routes", () => {
           stage_label: "Reviews",
         }),
       ],
+      recent_resolutions: [],
     });
   });
 
@@ -190,6 +191,25 @@ describe("email review routes", () => {
     expect(
       mock.store.listAuditEvents().some((event) => event.type === "email_review.resolved"),
     ).toBe(true);
+    const historyResponse = await fetch(`${baseUrl}/automation/email/review`, { headers: admin });
+    expect(historyResponse.status).toBe(200);
+    expect(await historyResponse.json()).toEqual(
+      expect.objectContaining({
+        reviews: [],
+        recent_resolutions: [
+          expect.objectContaining({
+            message_id: "gmail-message-1",
+            resolution: "paperflow_evidence",
+            resolved_by: "admin",
+            resolved_by_name: "Ada Admin",
+            paper_id: "paper-1",
+            paper_title: "Reliable Research Agents",
+            stage: "reviews_out",
+            stage_label: "Reviews",
+          }),
+        ],
+      }),
+    );
   });
 
   it("dismisses unrelated mail without changing a paper", async () => {
@@ -204,5 +224,12 @@ describe("email review routes", () => {
     expect(response.status).toBe(200);
     expect(mock.store.listEmailReviews()).toEqual([]);
     expect(mock.store.listPaperflowEvidence("paper-1")).toEqual([]);
+    expect(mock.store.listResolvedEmailReviews(20)).toEqual([
+      expect.objectContaining({
+        message_id: "gmail-message-1",
+        resolution: "dismissed",
+        resolved_by: "admin",
+      }),
+    ]);
   });
 });

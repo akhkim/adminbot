@@ -32,6 +32,7 @@ describe("email review queue", () => {
       renderAdminBotEmailReview({
         reviews: [review],
         candidates,
+        recentResolutions: [],
         busyActionId: null,
         onResolve: vi.fn(),
       }),
@@ -55,6 +56,7 @@ describe("email review queue", () => {
       renderAdminBotEmailReview({
         reviews: [review],
         candidates,
+        recentResolutions: [],
         busyActionId: null,
         onResolve,
       }),
@@ -87,6 +89,7 @@ describe("email review queue", () => {
       renderAdminBotEmailReview({
         reviews: [review],
         candidates: [],
+        recentResolutions: [],
         busyActionId: null,
         onResolve,
       }),
@@ -102,5 +105,44 @@ describe("email review queue", () => {
     );
     dismiss?.click();
     expect(onResolve).toHaveBeenCalledWith("message-1", { kind: "dismissed" });
+  });
+
+  it("keeps recent decisions inspectable with their actor and evidence target", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotEmailReview({
+        reviews: [],
+        candidates: [],
+        recentResolutions: [
+          {
+            ...review,
+            resolution: "paperflow_evidence",
+            resolved_at: "2026-09-04T10:00:00.000Z",
+            resolved_by: "admin-1",
+            resolved_by_name: "Ada Admin",
+            paper_id: "paper-1",
+            paper_title: "Reliable Research Agents",
+            stage: "reviews_out",
+            stage_label: "Reviews",
+          },
+        ],
+        busyActionId: null,
+        onResolve: vi.fn(),
+      }),
+      container,
+    );
+
+    const history = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="email-review-history"]',
+    );
+    expect(history).not.toBeNull();
+    history!.open = true;
+    expect(history?.textContent?.replace(/\s+/gu, " ")).toContain(
+      "Attached to Reliable Research Agents — Reviews",
+    );
+    expect(history?.textContent).toContain("Ada Admin");
+    expect(history?.querySelector<HTMLAnchorElement>('a[target="_blank"]')?.href).toBe(
+      gmailThreadUrl("thread/1"),
+    );
   });
 });
