@@ -100,6 +100,15 @@ describe("SQLite email review queue", () => {
 
     const second = createAdminBotSqliteService({ databasePath: target });
     expect(second.store.listEmailReviews()).toEqual([]);
+    expect(second.store.listResolvedEmailReviews(20)).toEqual([
+      expect.objectContaining({
+        message_id: "message-1",
+        subject: "Paper decision",
+        resolution: "dismissed",
+        resolved_by: "admin",
+        resolved_at: "2026-09-04T10:00:00.000Z",
+      }),
+    ]);
     second.close();
 
     const inspect = new DatabaseSync(target);

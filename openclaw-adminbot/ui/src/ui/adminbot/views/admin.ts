@@ -2992,6 +2992,7 @@ function renderPanel(props: AdminBotProps) {
             ${renderAdminBotEmailReview({
               reviews: props.data.emailReviews ?? [],
               candidates: props.data.emailReviewCandidates ?? [],
+              recentResolutions: props.data.emailReviewHistory ?? [],
               busyActionId: props.busyActionId,
               onResolve: props.onResolveEmailReview,
             })}
