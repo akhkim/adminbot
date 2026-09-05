@@ -24,6 +24,11 @@ The Control UI decision deliberately does not alter or archive the Gmail message
 human-readable source record, with its original `AdminBot/Needs Review` label, while the database
 records that an administrator resolved the item so it does not remain in AdminBot's queue.
 
+The queue keeps the 20 most recent decisions under **Recently reviewed**. That history names the
+administrator and decision time and, for PaperFlow evidence, the paper and stage the message closed.
+It is an inspection surface rather than an undo button: reversing a stage close is a separate paper
+decision, while the original Gmail thread remains linked from every history row.
+
 ## Why labels rather than deleting
 
 The pass used to trash a fully handled message. That got the shape right — a handled message is not

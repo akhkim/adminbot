@@ -3618,11 +3618,23 @@ export type AdminBotEmailReviewPaperflowCandidate = {
 export type AdminBotEmailReviewData = {
   reviews: AdminBotEmailReviewItem[];
   paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
+  recent_resolutions: AdminBotResolvedEmailReviewItem[];
 };
 
 export type AdminBotEmailReviewResolution =
   | { kind: "paperflow_evidence"; paper_id: string; stage: string }
   | { kind: "dismissed" };
+
+export type AdminBotResolvedEmailReviewItem = AdminBotEmailReviewItem & {
+  resolution: AdminBotEmailReviewResolution["kind"];
+  resolved_at: string;
+  resolved_by: string;
+  resolved_by_name?: string;
+  paper_id?: string;
+  paper_title?: string;
+  stage?: string;
+  stage_label?: string;
+};
 
 export async function resolveEmailReviewAsAdmin(
   messageId: string,

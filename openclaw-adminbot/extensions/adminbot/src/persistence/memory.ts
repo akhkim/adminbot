@@ -39,6 +39,7 @@ import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
@@ -83,6 +84,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
   private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
   private readonly emailReviews = new Map<string, AdminBotEmailReviewItem>();
+  private readonly resolvedEmailReviews = new Map<string, AdminBotResolvedEmailReviewItem>();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
   // both stores rather than accumulating duplicates in one of them.
   private readonly nudgeLedger = new Map<string, AdminBotNudgeLedgerRecord>();
@@ -695,6 +697,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   /** Test and no-database servers may seed the same queue the hourly script writes in SQLite. */
   saveEmailReview(review: AdminBotEmailReviewItem): void {
     this.emailReviews.set(review.message_id, structuredClone(review));
+    this.resolvedEmailReviews.delete(review.message_id);
   }
 
   listEmailReviews(): AdminBotEmailReviewItem[] {
@@ -708,13 +711,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return review ? structuredClone(review) : undefined;
   }
 
+  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[] {
+    return [...this.resolvedEmailReviews.values()]
+      .toSorted((left, right) => right.resolved_at.localeCompare(left.resolved_at))
+      .slice(0, limit)
+      .map((review) => structuredClone(review));
+  }
+
   resolveEmailReview(params: {
     messageId: string;
     resolution: AdminBotEmailReviewResolution["kind"];
     resolvedBy: string;
     resolvedAt: string;
   }): boolean {
-    return this.emailReviews.delete(params.messageId);
+    const review = this.emailReviews.get(params.messageId);
+    if (!review) {
+      return false;
+    }
+    this.emailReviews.delete(params.messageId);
+    this.resolvedEmailReviews.set(params.messageId, {
+      ...structuredClone(review),
+      resolution: params.resolution,
+      resolved_by: params.resolvedBy,
+      resolved_at: params.resolvedAt,
+    });
+    return true;
   }
 
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {

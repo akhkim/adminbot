@@ -163,9 +163,64 @@
   margin-top: var(--space-3);
 }
 
+.email-review-history {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.email-review-history summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.email-review-history > p,
+.email-review-history__message span,
+.email-review-history__decision span {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.email-review-history > p {
+  margin: var(--space-1) 0 var(--space-3);
+}
+
+.email-review-history__list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.email-review-history__item {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+}
+
+.email-review-history__message,
+.email-review-history__decision {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.email-review-history__message strong,
+.email-review-history__message span,
+.email-review-history__decision strong,
+.email-review-history__decision span {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .email-review__facts,
-  .email-review__resolution {
+  .email-review__resolution,
+  .email-review-history__item {
     grid-template-columns: 1fr;
   }
 
