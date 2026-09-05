@@ -30,7 +30,12 @@ function categoryLabel(category: string): string {
 function submitAttachment(event: Event, props: EmailReviewProps, review: AdminBotEmailReviewItem) {
   event.preventDefault();
   const form = event.currentTarget as HTMLFormElement;
-  const selected = Number(new FormData(form).get("paperflowTarget"));
+  const value = new FormData(form).get("paperflowTarget");
+  // Number("") is zero: an untouched placeholder must never attach the first paper.
+  if (typeof value !== "string" || !value.trim()) {
+    return;
+  }
+  const selected = Number(value);
   const candidate = Number.isInteger(selected) ? props.candidates[selected] : undefined;
   if (!candidate) {
     return;
@@ -86,7 +91,12 @@ function renderReview(props: EmailReviewProps, review: AdminBotEmailReviewItem) 
       >
         <label>
           <span>Attach to the open stage for</span>
-          <select name="paperflowTarget" ?disabled=${busy || props.candidates.length === 0}>
+          <select
+            name="paperflowTarget"
+            required
+            ?disabled=${busy || props.candidates.length === 0}
+          >
+            <option value="" disabled selected>Choose a paper and stage</option>
             ${props.candidates.map(
               (candidate, index) => html`
                 <option value=${String(index)}>
