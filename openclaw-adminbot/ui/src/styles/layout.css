@@ -5389,6 +5389,58 @@ adminbot-deadlines-view {
   font-variant-numeric: tabular-nums;
 }
 
+/* The rest of the venue's calendar. Quiet by construction: muted, small, no urgency colour and no
+   countdown, so it never competes with the submission date above it. */
+.deadline-card__schedule {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+}
+
+.deadline-card__milestone {
+  display: contents;
+}
+
+.deadline-card__milestone-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deadline-card__milestone-date {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.deadline-card__schedule-details {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-card__schedule-details > summary {
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.deadline-card__schedule-details[open] > summary {
+  margin-bottom: 2px;
+}
+
+.deadline-card__schedule-details .deadline-card__schedule {
+  margin-top: 0;
+}
+
+
 .deadline-card__date-row,
 .deadline-table__date-row {
   display: inline-flex;

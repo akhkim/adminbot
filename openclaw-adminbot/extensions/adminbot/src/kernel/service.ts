@@ -319,7 +319,10 @@ import {
 import {
   type Publication,
   type PublicationExclusion,
+  type VenueOption,
+  collectVenues,
   renderPublicationDigest,
+  venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
 
@@ -2107,15 +2110,35 @@ export class AdminBotService {
    * see workflows/papers/publication-list.ts for why the roster's acceptance fields cannot be the
    * date and the arXiv id is.
    */
-  collectPublicationMailing(params: { fromIso: string; toIso: string }): AdminBotServiceResponse<{
+  collectPublicationMailing(params: {
+    fromIso: string;
+    toIso: string;
+    /** Compose by acceptance at this venue instead of by date. The range is then ignored. */
+    venue?: string;
+  }): AdminBotServiceResponse<{
     from: string;
     to: string;
+    venue?: string;
+    venues: VenueOption[];
     publications: Publication[];
     excluded: PublicationExclusion[];
     undated_count: number;
+    pending_count: number;
     subject: string;
     body: string;
   }> {
+    const papers = this.store.listPapers();
+    const venues = collectVenues(papers);
+    const requested = params.venue?.trim() ?? "";
+    const wanted = venueKey(requested);
+    // Resolved against the records so the email names the venue the way the papers spell it --
+    // an admin who typed "iclr 2027" should not have that casing turn up in a sent subject line.
+    const venue = wanted ? venues.find((option) => option.key === wanted)?.label : undefined;
+    if (wanted && !venue) {
+      return serviceError(404, `no paper in our records names the venue "${requested}"`);
+    }
+    // The range still has to parse in venue mode, because it is what the payload echoes back and
+    // the tab keeps showing; it just does not select anything.
     const fromIso = params.fromIso.trim();
     const toIso = params.toIso.trim();
     if (!ISO_DAY_RE.test(fromIso) || !ISO_DAY_RE.test(toIso)) {
@@ -2125,16 +2148,19 @@ export class AdminBotService {
       return serviceError(400, "from must not be after to");
     }
     const { included, excluded } = selectPublications({
-      papers: this.store.listPapers(),
+      papers,
       fromIso,
       toIso,
+      ...(venue ? { venue } : {}),
     });
     const undatedCount = excluded.filter((entry) => entry.reason === "no_date").length;
+    const pendingCount = excluded.filter((entry) => entry.reason === "not_accepted").length;
     const digest = renderPublicationDigest({
       publications: included,
       undatedCount,
       fromIso,
       toIso,
+      ...(venue ? { venue, pendingCount } : {}),
     });
     return {
       ok: true,
@@ -2142,9 +2168,12 @@ export class AdminBotService {
       payload: {
         from: fromIso,
         to: toIso,
+        ...(venue ? { venue } : {}),
+        venues,
         publications: included,
         excluded,
         undated_count: undatedCount,
+        pending_count: pendingCount,
         subject: digest.subject,
         body: digest.body,
       },

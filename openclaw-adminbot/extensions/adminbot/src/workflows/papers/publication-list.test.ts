@@ -6,10 +6,13 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  acceptedVenueOf,
   arxivMonth,
+  collectVenues,
   publicationDateOf,
   renderPublicationDigest,
   selectPublications,
+  venueKey,
   withinRange,
 } from "./publication-list.js";
 
@@ -213,5 +216,149 @@ describe("renderPublicationDigest", () => {
       toIso: "2020-12-31",
     });
     expect(digest.body).toContain("No publications in our records fall in this range.");
+  });
+});
+
+describe("venueKey", () => {
+  it("matches the same venue across the spellings the records actually hold", () => {
+    // The track in brackets is not the venue: a digest of "what we got into EMNLP 2026" wants the
+    // demo paper in it.
+    expect(venueKey("EMNLP 2026 (demo)")).toBe(venueKey("emnlp  2026"));
+    expect(venueKey("ACL 2026 (main)")).toBe("acl 2026");
+  });
+
+  it("keeps venues that differ only by year apart", () => {
+    // The failure nobody would spot in a sent email: an ICLR 2026 paper in the ICLR 2027 list.
+    expect(venueKey("ICLR 2027")).not.toBe(venueKey("ICLR 2026"));
+    expect(venueKey(undefined)).toBe("");
+  });
+});
+
+describe("acceptedVenueOf", () => {
+  it("takes the author's own accepted_venue over the target venue", () => {
+    expect(
+      acceptedVenueOf(paper({ venue: "ICLR 2027", accepted_venue: "NeurIPS 2026" })),
+    ).toBe("NeurIPS 2026");
+  });
+
+  it("reads an accept decision as acceptance at the venue the paper was aimed at", () => {
+    expect(acceptedVenueOf(paper({ venue: "ICLR 2027", venue_decision: "accept" }))).toBe(
+      "ICLR 2027",
+    );
+  });
+
+  it("does not treat a target venue as an acceptance", () => {
+    // The live roster's shape: 8 papers name ICLR 2027 and none records a decision. Reading those
+    // as acceptances would mail a conference list of papers that have not been accepted.
+    expect(acceptedVenueOf(paper({ venue: "ICLR 2027" }))).toBeUndefined();
+    const rejected = paper({ venue: "ICLR 2027", venue_decision: "reject" });
+    expect(acceptedVenueOf(rejected)).toBeUndefined();
+  });
+});
+
+describe("collectVenues", () => {
+  it("counts accepted and pending under one key per venue, commonest spelling as the label", () => {
+    const options = collectVenues([
+      paper({ id: "p1", venue: "ICLR 2027" }),
+      paper({ id: "p2", venue: "ICLR 2027" }),
+      paper({ id: "p3", venue: "iclr 2027", venue_decision: "accept" }),
+      paper({ id: "p4", accepted_venue: "EMNLP 2026 (demo)" }),
+    ]);
+    // Most accepted first, ties alphabetical, so the list does not depend on the read order.
+    expect(options.map((option) => [option.label, option.accepted, option.pending])).toEqual([
+      ["EMNLP 2026 (demo)", 1, 0],
+      ["ICLR 2027", 1, 2],
+    ]);
+  });
+});
+
+describe("selectPublications by venue", () => {
+  const papers = [
+    paper({
+      id: "p1",
+      title: "Accepted And Dated",
+      venue: "ICLR 2027",
+      venue_decision: "accept",
+      artifacts: { arxiv_url: "https://arxiv.org/abs/2606.00001" },
+    }),
+    paper({ id: "p2", title: "Accepted No Arxiv", accepted_venue: "ICLR 2027 (main)" }),
+    paper({ id: "p3", title: "Aimed There Only", venue: "ICLR 2027" }),
+    paper({ id: "p4", title: "Another Venue", accepted_venue: "NeurIPS 2026" }),
+  ];
+
+  it("keeps an accepted paper that nothing can date, and ignores the range", () => {
+    const { included } = selectPublications({
+      papers,
+      // A range that excludes everything, to prove it is not consulted.
+      fromIso: "1990-01-01",
+      toIso: "1990-12-31",
+      venue: "ICLR 2027",
+    });
+    // Undated sorts last, behind everything that can say when it appeared.
+    expect(included.map((entry) => entry.title)).toEqual([
+      "Accepted And Dated",
+      "Accepted No Arxiv",
+    ]);
+    expect(included[1]?.date).toBeUndefined();
+  });
+
+  it("reports the papers aimed there with no decision, and stays quiet about the rest", () => {
+    const { excluded } = selectPublications({
+      papers,
+      fromIso: "2026-01-01",
+      toIso: "2027-12-31",
+      venue: "ICLR 2027",
+    });
+    // Only the ICLR paper without a decision: listing the NeurIPS one would bury it.
+    expect(excluded).toEqual([
+      { id: "p3", title: "Aimed There Only", reason: "not_accepted" },
+    ]);
+  });
+});
+
+describe("renderPublicationDigest by venue", () => {
+  it("names the venue once, in the heading, rather than under every entry", () => {
+    const { included, excluded } = selectPublications({
+      papers: [
+        paper({
+          title: "Judging the Judges",
+          venue: "ICLR 2027",
+          venue_decision: "accept",
+          artifacts: { arxiv_url: "https://arxiv.org/abs/2606.00001" },
+        }),
+        paper({ id: "p2", title: "Still Waiting", venue: "ICLR 2027" }),
+      ],
+      fromIso: "2026-01-01",
+      toIso: "2027-12-31",
+      venue: "ICLR 2027",
+    });
+    const digest = renderPublicationDigest({
+      publications: included,
+      undatedCount: 0,
+      pendingCount: excluded.length,
+      fromIso: "2026-01-01",
+      toIso: "2027-12-31",
+      venue: "ICLR 2027",
+    });
+    expect(digest.subject).toBe("Jinesis Lab papers at ICLR 2027");
+    expect(digest.body).toContain("accepted at ICLR 2027.");
+    expect(digest.body).toContain("  June 2026\n");
+    // The venue is the heading; repeating it under each title is noise.
+    expect(digest.body).not.toContain("— ICLR 2027");
+    // And the ones still in flight are counted in the email itself, not just the preview.
+    expect(digest.body).toContain("1 further paper names ICLR 2027");
+  });
+
+  it("says plainly when nothing is recorded as accepted there", () => {
+    const digest = renderPublicationDigest({
+      publications: [],
+      undatedCount: 0,
+      fromIso: "2026-01-01",
+      toIso: "2027-12-31",
+      venue: "ICLR 2027",
+    });
+    expect(digest.body).toContain(
+      "No papers in our records are recorded as accepted at ICLR 2027.",
+    );
   });
 });

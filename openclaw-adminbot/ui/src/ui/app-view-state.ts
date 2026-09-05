@@ -229,6 +229,8 @@ export type AppViewState = {
   adminBotMailingListFrom: string;
   adminBotMailingListTo: string;
   adminBotMailingListEmail: string;
+  adminBotMailingListVenue: string;
+  adminBotMailingListVenues: import("./adminbot/auth/session.ts").PublicationDigestVenue[];
   memberImpersonatedBy: import("./adminbot/auth/session.ts").MemberImpersonator | null;
   memberImpersonationBusy: boolean;
   memberImpersonationError: string | null;

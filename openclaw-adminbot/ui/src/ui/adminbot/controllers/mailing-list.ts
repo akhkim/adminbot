@@ -1,6 +1,7 @@
 // The Mailing List tab's side of the wire.
 //
-// Two calls, deliberately separate: read what the digest for a range would contain, and mail it.
+// Two calls, deliberately separate: read what the digest for a range -- or for one venue's
+// acceptances -- would contain, and mail it.
 // The send recomputes the digest server-side from the same range rather than posting the previewed
 // body back, so a stale tab left open across a paper being filed cannot mail yesterday's list --
 // and nothing the browser holds decides what leaves the lab.
@@ -12,6 +13,7 @@ import {
   resolveAdminBotBaseUrl,
   sendPublicationDigest,
   type PublicationDigestPreview,
+  type PublicationDigestVenue,
 } from "../auth/session.ts";
 
 export type AdminBotMailingListHost = {
@@ -24,6 +26,17 @@ export type AdminBotMailingListHost = {
   adminBotMailingListFrom: string;
   adminBotMailingListTo: string;
   adminBotMailingListEmail: string;
+  /**
+   * Which venue the digest is composed from, or "" for the date range. Holds the venue *key* (the
+   * normalised form the preview returns), not what is on screen: the label is only a spelling of
+   * it, and two records can spell one venue two ways.
+   */
+  adminBotMailingListVenue: string;
+  /**
+   * The venues the picker offers. Held here rather than read off the preview so switching
+   * composition, or a failed read, cannot empty the control an admin needs to switch back with.
+   */
+  adminBotMailingListVenues: PublicationDigestVenue[];
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -61,17 +74,25 @@ export async function loadAdminBotMailingList(host: AdminBotMailingListHost): Pr
   // previewed different range reads as though that range had been sent.
   host.adminBotMailingListNotice = null;
   try {
+    const venue = host.adminBotMailingListVenue.trim();
     const result = await fetchPublicationDigest(
-      { from: host.adminBotMailingListFrom, to: host.adminBotMailingListTo },
+      {
+        from: host.adminBotMailingListFrom,
+        to: host.adminBotMailingListTo,
+        ...(venue ? { venue } : {}),
+      },
       wire.token,
       wire.baseUrl,
     );
     if (!result.ok) {
+      // The venue list lives on the preview, so a failed read would otherwise empty the picker and
+      // leave an admin unable to choose their way out of the error. The old options stay.
       host.adminBotMailingListPreview = null;
       host.adminBotMailingListError = failureText(result, wire.baseUrl);
       return;
     }
     host.adminBotMailingListPreview = result.value;
+    host.adminBotMailingListVenues = result.value.venues;
   } finally {
     host.adminBotMailingListLoading = false;
   }
@@ -88,8 +109,17 @@ export async function sendAdminBotMailingList(host: AdminBotMailingListHost): Pr
   host.adminBotMailingListError = null;
   host.adminBotMailingListNotice = null;
   try {
+    // The venue goes with the send for the same reason the range does: the service recomputes the
+    // digest from the composition, so leaving it off here would mail the date-ranged list under a
+    // venue preview.
+    const venue = host.adminBotMailingListVenue.trim();
     const result = await sendPublicationDigest(
-      { from: host.adminBotMailingListFrom, to: host.adminBotMailingListTo, email },
+      {
+        from: host.adminBotMailingListFrom,
+        to: host.adminBotMailingListTo,
+        email,
+        ...(venue ? { venue } : {}),
+      },
       wire.token,
       wire.baseUrl,
     );

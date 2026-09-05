@@ -7,7 +7,7 @@ import type {
   DeadlineProposalInput,
   DeadlineProposalStore,
 } from "../data/deadline-proposals.ts";
-import type { DeadlineVenue } from "../data/deadlines.ts";
+import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
@@ -18,6 +18,8 @@ import {
   groupDeadlineBoardEntries,
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
+  milestoneDateLabel,
+  venueSchedule,
   workshopGroupLabel,
   priorDeadlineRevisions,
   renderDeadlines,
@@ -398,6 +400,101 @@ describe("deadline board model", () => {
       },
     ] as unknown as Parameters<typeof mergeArrSubmissionDuplicates>[0];
     expect(mergeArrSubmissionDuplicates(solo)).toHaveLength(1);
+  });
+});
+
+describe("venue schedule", () => {
+  const iclr = {
+    id: "iclr2027_paper",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "conference", label: "Conference", kind: "period",
+        starts: "2027-04-26", ends: "2027-04-30" },
+      { milestone: "notification", label: "Final decisions", kind: "date", date: "2026-12-16" },
+      { milestone: "rebuttal", label: "Author-reviewer discussion", kind: "period",
+        starts: "2026-11-05", ends: "2026-11-18" },
+      { milestone: "reviews", label: "Reviews released", kind: "date", date: "2026-11-05" },
+    ],
+  } as unknown as DeadlineVenue;
+
+  it("orders a schedule by stage, not by date", () => {
+    // ICLR releases reviews and opens author discussion on the same day; sorting on the date
+    // alone would leave those two in whatever order the source happened to list them.
+    expect(venueSchedule(iclr).map((entry) => entry.milestone)).toEqual([
+      "reviews",
+      "rebuttal",
+      "notification",
+      "conference",
+    ]);
+  });
+
+  it("folds a bare notification date into the same list", () => {
+    // The ~30 rows that know only when they notify (nearly every workshop) render one list
+    // rather than a special case beside it.
+    const workshop = {
+      notification_aoe: "2026-08-15 23:59:59",
+      schedule: [],
+    } as unknown as DeadlineVenue;
+    expect(venueSchedule(workshop)).toEqual([
+      {
+        milestone: "notification",
+        label: "Accept/reject",
+        kind: "deadline",
+        date: "2026-08-15 23:59:59",
+      },
+    ]);
+  });
+
+  it("lets the venue's own decision entry win over the bare notification date", () => {
+    // "Meta-reviews released" is what ARR calls it, and two decision rows would be worse than
+    // either one alone.
+    const withBoth = { ...iclr, notification_aoe: "2026-12-01 23:59:59" } as DeadlineVenue;
+    const decisions = venueSchedule(withBoth).filter(
+      (entry) => entry.milestone === "notification",
+    );
+    expect(decisions).toEqual([
+      { milestone: "notification", label: "Final decisions", kind: "date", date: "2026-12-16" },
+    ]);
+  });
+
+  it("reads each date the way its kind says to", () => {
+    const [reviews, rebuttal] = venueSchedule(iclr);
+    // A day the venue acts on is a plain date: stamping AoE on it would claim a precision the
+    // venue never published, and only a cutoff an author has to hit is AoE.
+    expect(milestoneDateLabel(reviews!)).toBe("Nov 5, 2026");
+    expect(milestoneDateLabel(rebuttal!)).toBe("Nov 5 – Nov 18, 2026");
+    expect(
+      milestoneDateLabel({
+        milestone: "camera_ready",
+        label: "Camera-ready due",
+        kind: "deadline",
+        date: "2026-08-30 23:59:59",
+      }),
+    ).toBe("Aug 30, 2026 AoE");
+    // A span across a year keeps both years.
+    expect(
+      milestoneDateLabel({
+        milestone: "conference",
+        label: "Conference",
+        kind: "period",
+        starts: "2026-12-30",
+        ends: "2027-01-02",
+      }),
+    ).toBe("Dec 30, 2026 – Jan 2, 2027");
+  });
+
+  it("carries the real dates for the venues the lab targets", () => {
+    // Guards the generated dataset, not the renderer: these come off the venues' own pages, and
+    // a regeneration that dropped the field would otherwise only show up as an empty card.
+    const paper = DEADLINE_VENUES.find((entry) => entry.id === "iclr2027_paper");
+    expect(paper?.deadline_aoe).toBe("2026-09-25 23:59:59");
+    expect(venueSchedule(paper!).map((entry) => [entry.milestone, milestoneDateLabel(entry)]))
+      .toEqual([
+        ["reviews", "Nov 5, 2026"],
+        ["rebuttal", "Nov 5 – Nov 18, 2026"],
+        ["notification", "Dec 16, 2026"],
+        ["conference", "Apr 26 – Apr 30, 2027"],
+      ]);
   });
 });
 
@@ -959,6 +1056,52 @@ describe("renderDeadlines", () => {
     expect(container.querySelector(".deadline-table__venue")).not.toBeNull();
     expect(container.querySelector(".deadline-table tbody .deadline-card__type")).not.toBeNull();
     expect(buttonNamed(container, "Table").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps the countdown on the submission and the rest of the schedule beside it", async () => {
+    const container = await renderView();
+    const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
+      (card) =>
+        card.querySelector(".deadline-card__name")?.textContent?.trim() === "ICLR 2027" &&
+        card.querySelector(".deadline-card__stage")?.textContent?.trim() === "Full paper",
+    )!;
+
+    // The highlighted date and the countdown are still the submission, and nothing else on the
+    // card counts down: a rebuttal window six months out must not compete with what is due next.
+    expect(iclr.querySelector(".deadline-card__date")?.textContent).toContain("Sep 25, 2026");
+    expect(iclr.querySelector(".deadline-card__countdown")?.textContent?.trim()).toMatch(
+      /^\d+d /u,
+    );
+
+    // Four entries, so the list is behind a disclosure rather than doubling the card's height.
+    const schedule = iclr.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
+    expect(schedule.tagName).toBe("DETAILS");
+    expect(schedule.querySelector("summary")?.textContent).toContain("Rest of the schedule (4)");
+    expect(
+      [...schedule.querySelectorAll(".deadline-card__milestone")].map((row) => [
+        row.querySelector(".deadline-card__milestone-label")?.textContent?.trim(),
+        row.querySelector(".deadline-card__milestone-date")?.textContent?.trim(),
+      ]),
+    ).toEqual([
+      ["Reviews released", "Nov 5, 2026"],
+      ["Author-reviewer discussion", "Nov 5 – Nov 18, 2026"],
+      ["Final decisions", "Dec 16, 2026"],
+      ["Conference", "Apr 26 – Apr 30, 2027"],
+    ]);
+    expect(schedule.querySelector(".deadline-card__countdown")).toBeNull();
+  });
+
+  it("leaves a lone notification date inline, where the old note was", async () => {
+    const container = await renderView();
+    const workshop = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
+      (card) =>
+        card.dataset.entryType === "workshop" &&
+        card.querySelector('[data-testid="deadline-schedule"]'),
+    )!;
+    const schedule = workshop.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
+    // One or two lines cost nothing open, and that is what nearly every workshop has.
+    expect(schedule.tagName).toBe("UL");
+    expect(schedule.textContent).toContain("Accept/reject");
   });
 
   it("links a workshop name to its homepage and keeps source actions separate", async () => {

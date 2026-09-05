@@ -98,10 +98,13 @@ CONFERENCES = [
          notification_aoe="2026-09-07 23:59:59",
          link="https://2026.aaclnet.org/calls/main_conference_papers/"),
     # Source: https://2026.aaclnet.org/calls/demos/
+    # The demo track's own page now names 14 September for notification, where this
+    # row carried 1 September. Corrected here rather than in the generated data, so
+    # the change lands as a dated revision on the next sweep like any other.
     dict(id="aacl2026_demo", name="AACL-IJCNLP 2026 (system demonstrations)",
          venue_type="conference", venue_group="AACL-IJCNLP 2026", track="demo",
          venue_family="AACL", deadline_label="demo submission",
-         deadline_aoe="2026-07-15 23:59:59", notification_aoe="2026-09-01 23:59:59",
+         deadline_aoe="2026-07-15 23:59:59", notification_aoe="2026-09-14 23:59:59",
          link="https://2026.aaclnet.org/calls/demos/"),
     dict(id="emnlp2026_commitment", name="EMNLP 2026 (main, ARR commitment)",
          venue_type="conference", venue_group="EMNLP 2026", track="main",
@@ -171,6 +174,173 @@ CONFERENCES = [
          deadline_label="commitment", deadline_aoe="2026-12-20 23:59:59",
          notification_aoe="", link="https://2027.naacl.org/"),
 ]
+
+# --- the rest of each venue's calendar, off the same official pages ---
+#
+# The board counts down to one date per row: the submission. Everything a venue
+# publishes *after* that -- when reviews land, when the rebuttal window opens and
+# closes, when decisions come out, when the camera-ready is due, when the
+# conference itself runs -- is planning information, not a countdown, and it used
+# to live nowhere at all. `deadline_label`/`deadline_aoe` stay the submission, so
+# the board's sorting, urgency and hero are untouched; these ride alongside and
+# render as a quiet list under the card's own date.
+#
+# Rules, same as CONFERENCES above:
+#   * every date comes off the venue's own page, and each list says which one;
+#   * a milestone the venue has not announced is absent, never guessed. "TBA" on
+#     the source means no entry here -- an empty row is readable, a wrong
+#     camera-ready date is planned against;
+#   * `kind` says how to read the date, because these are not all the same thing:
+#       deadline -- an AoE cutoff the author has to hit ("11:59pm AoE")
+#       date     -- a day the venue acts on ("decisions released Dec 16")
+#       period   -- a span with both ends ("author response Sep 14-19")
+#     Only `deadline` is AoE; printing "AoE" on a conference's opening day would
+#     be a false precision.
+#
+# Keyed by deadline id so a demo track can carry its own dates: EACL 2027's demos
+# notify in December and go camera-ready in January, a month either side of the
+# main track. Rows that genuinely share a calendar share a list by name.
+
+ICLR_2027_SCHEDULE = [
+    # Source: https://iclr.cc/Conferences/2027/CallForPapers and /Dates
+    dict(milestone="reviews", label="Reviews released", date="2026-11-05", kind="date"),
+    dict(milestone="rebuttal", label="Author-reviewer discussion",
+         starts="2026-11-05", ends="2026-11-18", kind="period"),
+    dict(milestone="notification", label="Final decisions", date="2026-12-16", kind="date"),
+    dict(milestone="conference", label="Conference", starts="2027-04-26", ends="2027-04-30",
+         kind="period"),
+]
+
+# Sydney, Atlanta and Paris are one conference on three sets of dates, so the
+# schedule carries three entries rather than a single invented range.
+# Source: https://neurips.cc/Conferences/2026/Dates
+NEURIPS_2026_SCHEDULE = [
+    dict(milestone="reviews", label="Reviews released", date="2026-07-22 23:59:59",
+         kind="deadline"),
+    dict(milestone="rebuttal", label="Author-reviewer-AC discussion",
+         starts="2026-07-27", ends="2026-08-03", kind="period"),
+    dict(milestone="notification", label="Author notifications", date="2026-09-24 23:59:59",
+         kind="deadline"),
+    dict(milestone="conference", label="Main conference — Sydney",
+         starts="2026-12-08", ends="2026-12-10", kind="period"),
+    dict(milestone="conference", label="Main conference — Atlanta",
+         starts="2026-12-10", ends="2026-12-11", kind="period"),
+    dict(milestone="conference", label="Main conference — Paris",
+         starts="2026-12-09", ends="2026-12-11", kind="period"),
+]
+
+# Source: https://2026.aaclnet.org/ (main track calendar, shared by both commitments)
+AACL_2026_SCHEDULE = [
+    dict(milestone="rebuttal", label="Author response and discussion",
+         starts="2026-07-07", ends="2026-07-13", kind="period"),
+    dict(milestone="camera_ready", label="Camera-ready due", date="2026-09-30 23:59:59",
+         kind="deadline"),
+    dict(milestone="conference", label="Main conference (Hengqin, China)",
+         starts="2026-11-06", ends="2026-11-10", kind="period"),
+]
+
+# Source: https://2027.eacl.org/ and /calls/papers/
+EACL_2027_CONFERENCE = dict(
+    milestone="conference", label="Main conference (Athens)",
+    starts="2027-03-09", ends="2027-03-14", kind="period",
+)
+
+SCHEDULES = {
+    # Source: https://aclrollingreview.org/dates -- the cycle's own table. A cycle
+    # has no camera-ready or conference of its own: the venue a paper commits to
+    # owns those, and each of those rows carries them.
+    "arr_2026_may": [
+        dict(milestone="reviews", label="Reviews due", date="2026-07-02", kind="date"),
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-07-08", ends="2026-07-14", kind="period"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-07-30",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-08-02", kind="date"),
+    ],
+    "arr_2026_august": [
+        dict(milestone="reviews", label="Reviews due", date="2026-09-07", kind="date"),
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-09-14", ends="2026-09-24", kind="period"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-10-08",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-10-11", kind="date"),
+    ],
+    # The October cycle's middle is still TBA on the ARR table; only its end is
+    # published, so only its end is here.
+    "arr_2026_october": [
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-12-20", kind="date"),
+    ],
+    "aacl2026_commitment": AACL_2026_SCHEDULE,
+    "aacl2026_commitment_second": AACL_2026_SCHEDULE,
+    # Source: https://2026.aaclnet.org/calls/demos/ -- the demo track reviews
+    # single-blind with no rebuttal, so it has no author-response window.
+    "aacl2026_demo": [
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-10-01 23:59:59",
+             kind="deadline"),
+        dict(milestone="conference", label="Main conference (Hengqin, China)",
+             starts="2026-11-06", ends="2026-11-10", kind="period"),
+    ],
+    # Source: https://2026.emnlp.org/
+    "emnlp2026_commitment": [
+        dict(milestone="rebuttal", label="Author response and discussion",
+             starts="2026-07-07", ends="2026-07-13", kind="period"),
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-08-30 23:59:59",
+             kind="deadline"),
+        dict(milestone="conference", label="Main conference",
+             starts="2026-10-24", ends="2026-10-29", kind="period"),
+    ],
+    "neurips2026_rebuttal": NEURIPS_2026_SCHEDULE,
+    "iclr2027_abstract": ICLR_2027_SCHEDULE,
+    "iclr2027_paper": ICLR_2027_SCHEDULE,
+    # Source: https://2027.eacl.org/calls/papers/
+    "eacl2027_commitment": [
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-09-14", ends="2026-09-19", kind="period"),
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-11-26 23:59:59",
+             kind="deadline"),
+        EACL_2027_CONFERENCE,
+    ],
+    # Source: https://2027.eacl.org/calls/demos/ -- "there is no rebuttal stage".
+    "eacl2027_demo": [
+        dict(milestone="camera_ready", label="Camera-ready due", date="2027-01-06 23:59:59",
+             kind="deadline"),
+        EACL_2027_CONFERENCE,
+    ],
+    # Source: https://2027.naacl.org/ -- the site has published its conference week
+    # and its ARR submission date; notification and camera-ready are not up yet.
+    "naacl2027_paper": [
+        dict(milestone="conference", label="Main conference",
+             starts="2027-06-01", ends="2027-06-05", kind="period"),
+    ],
+    "naacl2027_commitment": [
+        dict(milestone="conference", label="Main conference",
+             starts="2027-06-01", ends="2027-06-05", kind="period"),
+    ],
+}
+
+# Ordering for the rendered list. A schedule is read as a story -- reviews, then
+# the window to answer them, then the decision, then the work, then the trip -- so
+# it is sorted by stage first and date second. Sorting by date alone reads oddly
+# whenever two stages share a day (ICLR releases reviews and opens discussion both
+# on Nov 5).
+SCHEDULE_ORDER = (
+    "reviews", "rebuttal", "notification", "cycle_end", "camera_ready", "conference",
+)
+
+
+def attach_schedules(items):
+    """Stamp the curated post-submission calendar onto each entry it belongs to.
+
+    Applied on every write, including a rewrite of the generated outputs, so the
+    table above is the only place these dates are maintained. Entries are copied
+    rather than shared, because two rows point at one Python list (ICLR's abstract
+    and paper rows) and a consumer that mutated one would silently edit the other.
+    """
+    for item in items:
+        schedule = SCHEDULES.get(item.get("id", ""))
+        item["schedule"] = [dict(entry) for entry in schedule] if schedule else []
+    return items
+
 
 # Tracked by the guidebook, but the next round has published no date yet. Listed so the
 # gap is visible: an absent venue otherwise looks exactly like a venue nobody wants
@@ -1491,6 +1661,122 @@ def _load_previous_document(baseline_git_ref=""):
     return json.loads(document)
 
 
+def write_outputs(items):
+    """Write venues.json and the three artifacts generated from it.
+
+    Split out of main() so the outputs can be rebuilt from an existing venues.json
+    without a sweep -- see --rewrite-outputs. Every writer runs from the one list,
+    which is what keeps the plugin dataset, the Control-UI dataset and the
+    standalone board from drifting apart (they did once, by 28 venues).
+    """
+    attach_schedules(items)
+    items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
+    doc = dict(history_version=4, timezone="AoE (UTC-12)",
+               note=("Current projections with append-only deadline revisions. "
+                     "Workshop contribution deadlines are reconciled deterministically from "
+                     "official CFP pages, explicit OpenReview final-paper summaries, and live "
+                     "OpenReview cutoffs; source conflicts remain in each record's provenance. "
+                     "Conference-wide notification cutoffs remain shared."),
+               count=len(items), items=items)
+    json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
+    print(f"wrote {OUT} with {len(items)} items")
+
+    # The checked-in HTML is also directly runnable, so keep its embedded data in
+    # lockstep with the canonical JSON. The generated TypeScript wrapper replaces
+    # this array at request time, but the standalone file has no such injection.
+    board_path = os.path.join(DEADLINES_DIR, "deadlines-board.html")
+    board = open(board_path).read()
+    board, replacements = re.subn(
+        r"const DATA = \[.*?\];\n",
+        "const DATA = " + json.dumps(items, ensure_ascii=False, indent=2) + ";\n",
+        board,
+        count=1,
+        flags=re.DOTALL,
+    )
+    if replacements != 1:
+        raise RuntimeError("standalone deadline board has no replaceable DATA array")
+    open(board_path, "w").write(board)
+    print(f"wrote {board_path}")
+
+    # keep the served-page dataset (Output 0 Control-UI surface) in sync
+    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
+    with open(ds, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                "export const DEADLINE_VENUES = "
+                + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
+    print(f"wrote {ds}")
+
+    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
+    keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
+            "entry_type", "archival_status", "venue_priority", "archival",
+            "submission_type", "milestone", "schedule",
+            "deadline_label", "deadline_aoe", "notification_aoe", "link",
+            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
+            "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
+            "deadline_source_evidence", "deadline_official_url", "deadline_official_evidence",
+            "deadline_extended", "deadline_history_status",
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
+    # "" is the right empty for every string field here; `schedule` is a list, and a
+    # bare "" in it would typecheck as neither.
+    slim = [{k: it.get(k, [] if k == "schedule" else "") for k in keys} for it in items]
+    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
+    with open(ui_ds, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                "export type DeadlineRevision = {\n"
+                "  observed_at: string;\n  deadline_aoe: string;\n"
+                "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
+                "/** One dated stage of a venue's calendar, other than the submission itself. */\n"
+                "export type DeadlineMilestone = {\n"
+                "  /** reviews | rebuttal | notification | cycle_end | camera_ready | conference */\n"
+                "  milestone: string;\n  label: string;\n"
+                "  /** How to read the date: an AoE cutoff, a day the venue acts on, or a span. */\n"
+                "  kind: \"deadline\" | \"date\" | \"period\";\n"
+                "  /** Set for kind \"deadline\" and \"date\". */\n"
+                "  date?: string;\n"
+                "  /** Both set for kind \"period\". */\n"
+                "  starts?: string;\n  ends?: string;\n};\n\n"
+                "export type DeadlineVenue = {\n"
+                "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
+                "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
+                "  deadline_id: string;\n"
+                "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
+                "  venue_id: string;\n  venue_aliases: string[];\n"
+                "  revisions: DeadlineRevision[];\n  stale: boolean;\n"
+                "  track?: string;\n"
+                "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
+                "  venue_family?: string;\n"
+                "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
+                "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
+                "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
+                "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
+                "  /** Compatibility boolean. New consumers use archival_status. */\n"
+                "  archival?: boolean;\n"
+                "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
+                "  submission_type?: string;\n"
+                "  /** Which sub-deadline this row is: abstract, full_paper, camera_ready, ...\n"
+                "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
+                "  milestone?: string;\n"
+                "  /** The rest of this venue's calendar after the submission above: reviews,\n"
+                "   *  rebuttal window, decisions, camera-ready, the conference itself. Empty\n"
+                "   *  when the venue has published none of it. The board counts down to the\n"
+                "   *  submission only; these render as a quiet list beside it. */\n"
+                "  schedule: DeadlineMilestone[];\n"
+                "  deadline_label: string;\n  deadline_aoe: string;\n"
+                "  notification_aoe?: string;\n  link?: string;\n"
+                "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
+                "  source_url?: string;\n  source_checked_at?: string;\n"
+                "  deadline_source_kind?: string;\n  deadline_source_status?: string;\n"
+                "  deadline_source_precision?: string;\n  deadline_source_evidence?: string;\n"
+                "  deadline_official_url?: string;\n  deadline_official_evidence?: string;\n"
+                "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n\n"
+                "export const DEADLINE_VENUES: DeadlineVenue[] = "
+                + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
+    print(f"wrote {ui_ds}")
+
+
+
 def main():
     baseline_args = [
         arg.removeprefix("--baseline-git-ref=")
@@ -1500,13 +1786,23 @@ def main():
     unknown_args = [
         arg
         for arg in sys.argv[1:]
-        if arg != "--force-refresh" and not arg.startswith("--baseline-git-ref=")
+        if arg not in {"--force-refresh", "--rewrite-outputs"}
+        and not arg.startswith("--baseline-git-ref=")
     ]
     if unknown_args:
         raise SystemExit(f"unknown argument(s): {' '.join(unknown_args)}")
     if len(baseline_args) > 1 or (baseline_args and not baseline_args[0]):
         raise SystemExit("--baseline-git-ref requires exactly one non-empty ref")
     force_refresh = "--force-refresh" in sys.argv[1:]
+    # Rebuild the generated artifacts from the venues.json already on disk, with no
+    # network and no revision bookkeeping. This is for a change to the *shape* of the
+    # output -- a new field, a new consumer -- where a full sweep would bury it under a
+    # hundred moved dates. It cannot change a deadline: only a real sweep does that, so
+    # that every change to a date still arrives as a dated revision.
+    if "--rewrite-outputs" in sys.argv[1:]:
+        existing = json.load(open(OUT))
+        write_outputs(existing["items"])
+        return
     previous_doc = _load_previous_document(baseline_args[0] if baseline_args else "")
     previous_items = previous_doc.get("items", [])
     previous_history_version = previous_doc.get("history_version")
@@ -1578,93 +1874,7 @@ def main():
                     and deadline_id.startswith("neurips2026_ws_")
                 ),
             ))
-    items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
-    doc = dict(history_version=4, timezone="AoE (UTC-12)",
-               note=("Current projections with append-only deadline revisions. "
-                     "Workshop contribution deadlines are reconciled deterministically from "
-                     "official CFP pages, explicit OpenReview final-paper summaries, and live "
-                     "OpenReview cutoffs; source conflicts remain in each record's provenance. "
-                     "Conference-wide notification cutoffs remain shared."),
-               count=len(items), items=items)
-    json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
-    print(f"wrote {OUT} with {len(items)} items")
-
-    # The checked-in HTML is also directly runnable, so keep its embedded data in
-    # lockstep with the canonical JSON. The generated TypeScript wrapper replaces
-    # this array at request time, but the standalone file has no such injection.
-    board_path = os.path.join(DEADLINES_DIR, "deadlines-board.html")
-    board = open(board_path).read()
-    board, replacements = re.subn(
-        r"const DATA = \[.*?\];\n",
-        "const DATA = " + json.dumps(items, ensure_ascii=False, indent=2) + ";\n",
-        board,
-        count=1,
-        flags=re.DOTALL,
-    )
-    if replacements != 1:
-        raise RuntimeError("standalone deadline board has no replaceable DATA array")
-    open(board_path, "w").write(board)
-    print(f"wrote {board_path}")
-
-    # keep the served-page dataset (Output 0 Control-UI surface) in sync
-    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
-    with open(ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
-                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
-                "export const DEADLINE_VENUES = "
-                + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
-    print(f"wrote {ds}")
-
-    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
-    keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
-            "entry_type", "archival_status", "venue_priority", "archival",
-            "submission_type", "milestone",
-            "deadline_label", "deadline_aoe", "notification_aoe", "link",
-            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
-            "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
-            "deadline_source_evidence", "deadline_official_url", "deadline_official_evidence",
-            "deadline_extended", "deadline_history_status",
-            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
-    slim = [{k: it.get(k, "") for k in keys} for it in items]
-    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
-    with open(ui_ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
-                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
-                "export type DeadlineRevision = {\n"
-                "  observed_at: string;\n  deadline_aoe: string;\n"
-                "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
-                "export type DeadlineVenue = {\n"
-                "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
-                "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
-                "  deadline_id: string;\n"
-                "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
-                "  venue_id: string;\n  venue_aliases: string[];\n"
-                "  revisions: DeadlineRevision[];\n  stale: boolean;\n"
-                "  track?: string;\n"
-                "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
-                "  venue_family?: string;\n"
-                "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
-                "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
-                "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
-                "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
-                "  /** Compatibility boolean. New consumers use archival_status. */\n"
-                "  archival?: boolean;\n"
-                "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
-                "  submission_type?: string;\n"
-                "  /** Which sub-deadline this row is: abstract, full_paper, camera_ready, ...\n"
-                "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
-                "  milestone?: string;\n"
-                "  deadline_label: string;\n  deadline_aoe: string;\n"
-                "  notification_aoe?: string;\n  link?: string;\n"
-                "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
-                "  source_url?: string;\n  source_checked_at?: string;\n"
-                "  deadline_source_kind?: string;\n  deadline_source_status?: string;\n"
-                "  deadline_source_precision?: string;\n  deadline_source_evidence?: string;\n"
-                "  deadline_official_url?: string;\n  deadline_official_evidence?: string;\n"
-                "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n\n"
-                "export const DEADLINE_VENUES: DeadlineVenue[] = "
-                + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
-    print(f"wrote {ui_ds}")
+    write_outputs(items)
 
     # Coverage report, not a failure: these are venues the guidebook tracks whose next
     # round has not announced a date. Printed every run so the gap stays visible.

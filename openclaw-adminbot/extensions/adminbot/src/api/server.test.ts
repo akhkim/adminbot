@@ -3636,15 +3636,20 @@ describe("publication mailing list", () => {
     });
     await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
     const mock = mockFor(baseUrl);
-    for (const [id, title, arxiv] of [
-      ["in-range", "In Range", "https://arxiv.org/abs/2606.00001"],
-      ["out-range", "Out Of Range", "https://arxiv.org/abs/2201.00001"],
-      ["undated", "Undated", ""],
+    for (const [id, title, arxiv, venue, decision] of [
+      ["in-range", "In Range", "https://arxiv.org/abs/2606.00001", "", ""],
+      ["out-range", "Out Of Range", "https://arxiv.org/abs/2201.00001", "", ""],
+      ["undated", "Undated", "", "", ""],
+      // The venue pair: one accepted at ICLR 2027 with nothing to date it, one only aimed there.
+      ["accepted", "Accepted At ICLR", "", "ICLR 2027", "accept"],
+      ["aimed", "Aimed At ICLR", "", "ICLR 2027", ""],
     ] as const) {
       const result = mock.service.upsertPaper({
         id,
         title,
         authors: ["Ada"],
+        ...(venue ? { venue } : {}),
+        ...(decision ? { venue_decision: decision } : {}),
         ...(arxiv ? { artifacts: { arxiv_url: arxiv } } : {}),
       } as never);
       if (!result.ok) {
@@ -3666,7 +3671,7 @@ describe("publication mailing list", () => {
       subject: string;
     };
     expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
-    expect(body.undated_count).toBe(1);
+    expect(body.undated_count).toBe(3);
     // Read-only: a preview must never be the thing that sends.
     expect(sent).toEqual([]);
 
@@ -3733,5 +3738,72 @@ describe("publication mailing list", () => {
       to: "2026-12-31",
       publications: 1,
     });
+  });
+
+  it("composes by acceptance at a venue instead of by date, and mails what it previewed", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    // A range that excludes everything, to prove the venue composition does not consult it.
+    const preview = await fetch(
+      `${baseUrl}/papers/mailing-list?from=1990-01-01&to=1990-12-31&venue=iclr%202027`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const body = (await preview.json()) as {
+      venue: string;
+      venues: Array<{ label: string; accepted: number; pending: number }>;
+      publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      pending_count: number;
+      subject: string;
+    };
+    // Spelled as the records spell it, not as the caller typed it.
+    expect(body.venue).toBe("ICLR 2027");
+    expect(body.publications.map((entry) => entry.id)).toEqual(["accepted"]);
+    // The paper aimed there is reported, never silently dropped: it is what explains a thin list.
+    expect(body.excluded).toEqual([
+      { id: "aimed", title: "Aimed At ICLR", reason: "not_accepted" },
+    ]);
+    expect(body.pending_count).toBe(1);
+    expect(body.venues).toContainEqual({
+      key: "iclr 2027",
+      label: "ICLR 2027",
+      accepted: 1,
+      pending: 1,
+    });
+
+    const run = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({
+        from: "1990-01-01",
+        to: "1990-12-31",
+        venue: "iclr 2027",
+        email: "funder@example.org",
+      }),
+    });
+    expect(run.status).toBe(200);
+    expect(sent[0]?.subject).toBe(body.subject);
+    expect(sent[0]?.body).toContain("Accepted At ICLR");
+    // The date-ranged list is a different email; sending it under a venue preview is the failure
+    // carrying the venue through to the send exists to prevent.
+    expect(sent[0]?.body).not.toContain("In Range");
+    // And the audit trail can tell the two compositions apart.
+    const audit = mockFor(baseUrl)
+      .service.listAuditEvents()
+      .filter((event) => event.type === "publication_digest.sent");
+    expect(audit[0]?.details).toMatchObject({ venue: "ICLR 2027", publications: 1 });
+  });
+
+  it("refuses a venue no paper names rather than mailing an empty list", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const missing = await fetch(
+      `${baseUrl}/papers/mailing-list?from=2026-01-01&to=2026-12-31&venue=ICML%202027`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    // A typo in a venue name would otherwise read back as "the lab got nothing in", which is a
+    // very different statement from "we have no record of that venue".
+    expect(missing.status).toBe(404);
+    expect(sent).toEqual([]);
   });
 });
