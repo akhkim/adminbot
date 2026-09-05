@@ -3816,6 +3816,14 @@ export function renderApp(state: AppViewState) {
                   requestHostUpdate?.(),
                 );
               },
+              // Who has been in each member's record, read from their roster row. The same
+              // loader the profile and paper panels use; the service decides who may read it.
+              recentEdits: state.adminBotRecentEdits,
+              onLoadRecentEdits: (subject, id) => {
+                void loadAdminBotRecentEdits(state, subject, id).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
               connected: state.connected,
               loading: state.adminBotLoading,
               error: state.adminBotError,
