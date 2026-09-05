@@ -188,3 +188,52 @@ describe.each(stores)("%s store: the recent-edits feed", (_name, makeStore) => {
     expect(store.listRecentUpdateEvents(10).map((row) => row.id)).toEqual(["b", "a"]);
   });
 });
+
+// The two per-object reads. Both have a case an array filter and a SQL clause disagree about: the
+// self-edit that carries no subject, and a paper id that looks like a LIKE pattern.
+describe.each(stores)("%s store: one object's history", (_name, makeStore) => {
+  it("counts a self-edit as part of that member's record", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "self", member_id: "ada" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "byadmin", member_id: "grace", subject_member_id: "ada" }),
+    );
+    store.appendUpdateEvent(updateEvent({ id: "elsewhere", member_id: "grace" }));
+    expect(
+      store
+        .listUpdateEventsForMemberRecord("ada", 10)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["byadmin", "self"]);
+  });
+
+  it("takes the record and every slot on one paper", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "record", subject: "paper", slot_id: "paper:cais" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "slot", subject: "paper_slot", slot_id: "paper_slot:cais:arxiv" }),
+    );
+    store.appendUpdateEvent(
+      updateEvent({ id: "other", subject: "paper_slot", slot_id: "paper_slot:other:arxiv" }),
+    );
+    expect(
+      store
+        .listUpdateEventsForPaper("cais", 10)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["record", "slot"]);
+  });
+
+  // A paper id is a slug, but the prefix match is a LIKE and "%" in one would otherwise match
+  // every paper in the lab.
+  it("does not let a wildcard in a paper id widen the match", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(
+      updateEvent({ id: "mine", subject: "paper_slot", slot_id: "paper_slot:a%b:arxiv" }),
+    );
+    store.appendUpdateEvent(
+      updateEvent({ id: "theirs", subject: "paper_slot", slot_id: "paper_slot:axxb:arxiv" }),
+    );
+    expect(store.listUpdateEventsForPaper("a%b", 10).map((row) => row.id)).toEqual(["mine"]);
+  });
+});

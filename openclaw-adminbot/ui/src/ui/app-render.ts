@@ -99,6 +99,7 @@ import {
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import "./components/feedback-widget.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -112,7 +113,6 @@ import {
   shouldLoadProfileBadgeNominations,
   submitOwnBadgeNomination,
 } from "./adminbot/data/badges.ts";
-import "./components/feedback-widget.ts";
 import {
   clearLogisticsDraft,
   createFactRow,
@@ -823,18 +823,6 @@ const lazyMailingList = createLazyView(
   () => import("./adminbot/views/mailing-list.ts"),
   notifyLazyViewChanged,
 );
-/**
- * Whether the edit feed has been asked for in this session.
- *
- * Module-level rather than on the app state for the same reason the lazy views above are: it is a
- * fact about this page load, not about the lab, and it must not be serialized into anything.
- * Refresh is the deliberate re-read.
- */
-let recentEditsAsked = false;
-const lazyRecentEdits = createLazyView(
-  () => import("./adminbot/views/recent-edits.ts"),
-  notifyLazyViewChanged,
-);
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
   notifyLazyViewChanged,
@@ -881,6 +869,10 @@ function paperWorkspaceProps(
   return {
     onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
     onRerender: () => requestHostUpdate?.(),
+    // One loader for both objects; the panel says which it is asking about.
+    onLoadRecentEdits: (subject, id) => {
+      void loadAdminBotRecentEdits(state, subject, id).finally(() => requestHostUpdate?.());
+    },
     overview: state.adminBotPaperSlotOverview,
     slots: state.adminBotPaperSlots,
     openIds: state.adminBotPaperSlotsOpen,
@@ -2743,20 +2735,6 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => requestHostUpdate?.());
   }
-  // The edit feed loads when its tab opens, once. The sentinel is the error rather than a
-  // timestamp: an empty list is a real answer here (nothing has been edited), so "have we asked"
-  // cannot be read off the data the way the overview reads it off its own stamp.
-  if (
-    state.tab === "adminbotRecentEdits" &&
-    hasMemberSession &&
-    !state.adminBotRecentEditsLoading &&
-    !state.adminBotRecentEditsError &&
-    state.adminBotRecentEdits.length === 0 &&
-    !recentEditsAsked
-  ) {
-    recentEditsAsked = true;
-    void loadAdminBotRecentEdits(state).finally(() => requestHostUpdate?.());
-  }
   // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
   // opened, and re-read after a reminder run clears the stamp.
   if (
@@ -3315,6 +3293,11 @@ export function renderApp(state: AppViewState) {
           ? html`
               ${renderProfile(state, {
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+                onLoadRecentEdits: (subject, id) => {
+                  void loadAdminBotRecentEdits(state, subject, id).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
                 onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
                 onApplyPolishedPhoto: (variantId) =>
                   void applyAdminBotOwnProfilePhoto(state, variantId),
@@ -4007,18 +3990,6 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotGrantReport" && adminBotMode === "admin"
           ? renderLazyView(lazyGrantReport, (m) =>
               m.renderGrantReport({ papers: state.adminBotData.papers }),
-            )
-          : nothing}
-        ${state.tab === "adminbotRecentEdits" && adminBotMode === "admin"
-          ? renderLazyView(lazyRecentEdits, (m) =>
-              m.renderRecentEdits({
-                updates: state.adminBotRecentEdits,
-                loading: state.adminBotRecentEditsLoading,
-                error: state.adminBotRecentEditsError,
-                onReload: () => {
-                  void loadAdminBotRecentEdits(state).finally(() => requestHostUpdate?.());
-                },
-              }),
             )
           : nothing}
         ${state.tab === "adminbotConferencePapers"

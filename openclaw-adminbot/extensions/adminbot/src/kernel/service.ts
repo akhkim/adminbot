@@ -471,6 +471,8 @@ export type AdminBotServiceStore = {
   listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[];
   listUpdateEventsSince(since: string): AdminBotUpdateEvent[];
   listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[];
+  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[];
+  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[];
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
@@ -5444,11 +5446,73 @@ export class AdminBotService {
    * machinery than the question needs.
    */
   listRecentUpdates(limit = 50): AdminBotServiceResponse<{ updates: AdminBotRecentUpdate[] }> {
+    return this.enrichUpdates((capped) => this.store.listRecentUpdateEvents(capped), limit);
+  }
+
+  /**
+   * Everything done to one member's record, whoever did it.
+   *
+   * The per-object read the lab-wide feed was a poor substitute for: on a profile the question is
+   * "who has been in my record", and answering it from a page of everybody's edits means scrolling
+   * past the lab. The store's two-clause query is where the self-edit case is explained.
+   */
+  listRecentUpdatesForMember(
+    memberId: string,
+    limit = 20,
+  ): AdminBotServiceResponse<{ updates: AdminBotRecentUpdate[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, "member not found");
+    }
+    return this.enrichUpdates(
+      (capped) => this.store.listUpdateEventsForMemberRecord(memberId, capped),
+      limit,
+    );
+  }
+
+  /**
+   * Everything done to one paper: the record itself and every evidence slot on it.
+   *
+   * Gated the way the paper's own checklist is -- an author reads their paper, an admin reads any
+   * -- because the history names the same slots the checklist does, and a read nobody checked
+   * would be a way around a rule the surface beside it enforces.
+   */
+  listRecentUpdatesForPaper(
+    paperId: string,
+    viewer: { memberId?: string; isAdmin: boolean },
+    limit = 20,
+  ): AdminBotServiceResponse<{ updates: AdminBotRecentUpdate[] }> {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!viewer.isAdmin) {
+      const member = viewer.memberId ? this.store.getLabMember(viewer.memberId) : undefined;
+      if (!member || !this.memberOwnsPaper(member, paper)) {
+        return serviceError(403, "members can only read papers they authored");
+      }
+    }
+    return this.enrichUpdates(
+      (capped) => this.store.listUpdateEventsForPaper(paperId, capped),
+      limit,
+    );
+  }
+
+  /**
+   * Stored events with the names filled in.
+   *
+   * One implementation for all three reads: the ids on a row are the same ids whichever question
+   * asked for it, and a second copy of this join is how one of them would start rendering a member
+   * id where the others render a name.
+   */
+  private enrichUpdates(
+    read: (limit: number) => AdminBotUpdateEvent[],
+    limit: number,
+  ): AdminBotServiceResponse<{ updates: AdminBotRecentUpdate[] }> {
     const capped = Math.min(Math.max(Math.trunc(limit) || 0, 1), 200);
     // Names for the two ids on each row, resolved once for the whole page rather than per row.
     const names = new Map(this.store.listLabMembers().map((member) => [member.id, member.name]));
     const titles = new Map(this.store.listPapers().map((paper) => [paper.id, paper.title]));
-    const updates = this.store.listRecentUpdateEvents(capped).map((event) => {
+    const updates = read(capped).map((event) => {
       const parsed = parseSlotId(event.slot_id);
       const actorName = names.get(event.member_id);
       const subjectName = event.subject_member_id ? names.get(event.subject_member_id) : undefined;

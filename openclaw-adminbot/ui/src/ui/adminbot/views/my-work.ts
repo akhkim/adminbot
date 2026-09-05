@@ -53,6 +53,7 @@ import type {
   AdminBotPaperStep,
   SlackChannelCheck,
 } from "../controllers/admin.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import {
@@ -103,6 +104,7 @@ import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
 import { findOwnMember } from "./profile.ts";
+import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
@@ -173,6 +175,8 @@ export type MyWorkProps = {
   onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
   /** Writes the signed-in member's own line for this week. Absent leaves the log read-only. */
   onSaveWeeklyUpdate?: (paperId: string, body: string) => void;
+  /** Fetches one object's edit history, called when its panel is opened. */
+  onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
   /**
    * Removes the paper outright. Absent hides the control entirely.
    *
@@ -1276,7 +1280,17 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
               })}
               ${renderWeeklyUpdates(paper, props)} ${renderCycle(state, paper, props)}
-              ${renderStepControls(state, paper, props)} ${renderDeletePaper(paper, props)}
+              ${renderStepControls(state, paper, props)}
+              <!-- Who moved this paper, and when. Below the controls and shut: it is history
+                   about the checklist above it, and the card is long enough already. Opening it
+                   is what fetches it. -->
+              ${renderRecentEdits({
+                ...(state.adminBotRecentEdits?.[recentEditsKey("paper", paper.id)] ??
+                  EMPTY_RECENT_EDITS),
+                subject: "paper",
+                onOpen: () => props.onLoadRecentEdits?.("paper", paper.id),
+              })}
+              ${renderDeletePaper(paper, props)}
             `
           : nothing}
       </div>

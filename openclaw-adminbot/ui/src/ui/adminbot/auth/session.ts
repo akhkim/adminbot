@@ -3708,23 +3708,48 @@ export type RecentUpdateRow = {
 };
 
 /**
- * The last N edits anyone made, newest first.
+ * Who changed what on one member's record, newest first.
  *
- * Admin-only on the service side. A 404 here means the service predates this route -- the Control
- * UI ships on merge and the service is deployed separately, so a new page can reach a server that
- * has never heard of it, and the view says so rather than showing an empty feed.
+ * Your own, or an admin's read of anyone's. A 404 means the service predates this route -- the
+ * Control UI ships on merge and the service is deployed separately, so a new panel can reach a
+ * server that has never heard of it.
  */
-export async function fetchRecentUpdates(
+export async function fetchMemberRecentEdits(
+  memberId: string,
   sessionToken: string,
   baseUrl: string,
-  limit = 50,
+  limit = 20,
 ): Promise<AuthResult<RecentUpdateRow[]>> {
-  const result = await authedJson(
-    baseUrl,
-    `/activity/updates?limit=${encodeURIComponent(String(limit))}`,
-    "GET",
-    sessionToken,
+  return readRecentUpdates(
+    await authedJson(
+      baseUrl,
+      `/lab/members/${encodeURIComponent(memberId)}/recent-edits?limit=${encodeURIComponent(String(limit))}`,
+      "GET",
+      sessionToken,
+    ),
   );
+}
+
+/** The same, for one paper: its record and every evidence slot on it. */
+export async function fetchPaperRecentEdits(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+  limit = 20,
+): Promise<AuthResult<RecentUpdateRow[]>> {
+  return readRecentUpdates(
+    await authedJson(
+      baseUrl,
+      `/papers/${encodeURIComponent(paperId)}/recent-edits?limit=${encodeURIComponent(String(limit))}`,
+      "GET",
+      sessionToken,
+    ),
+  );
+}
+
+function readRecentUpdates(
+  result: Awaited<ReturnType<typeof authedJson>>,
+): AuthResult<RecentUpdateRow[]> {
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }

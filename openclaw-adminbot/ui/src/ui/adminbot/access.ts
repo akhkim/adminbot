@@ -111,7 +111,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Names every paper in the lab against its funding case, including the ones no section
   // claims. That is a governance read about the lab as a whole, not about the viewer.
   adminbotGrantReport: "admin",
-  adminbotRecentEdits: "admin",
   adminbotMailingList: "admin",
   activity: "admin",
   agents: "admin",

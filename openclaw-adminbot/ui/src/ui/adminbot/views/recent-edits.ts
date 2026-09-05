@@ -1,13 +1,13 @@
-// Who changed what, lately.
+// Who changed what on one thing -- a member's record, or a paper.
 //
-// The service has kept an append-only row per changed field since the activity log went in -- who
-// typed it, whose record it was, which field, when -- and until now nothing read it. The two reads
-// beside it answer "what has this person touched" and "who has touched this field"; neither
-// answers the question an admin actually opens the tab to ask.
+// The service has kept an append-only row per changed field since the activity log went in, and
+// nothing read it. This is the reader, and it is deliberately *per object*: the question people
+// actually ask is "who has been in my profile" or "who moved this paper's checklist", and a
+// lab-wide feed answers it only by making you scroll past everybody else's work. The same rows,
+// asked for by subject.
 //
-// Deliberately a feed and not a table with filters. The question is "what has been going on", it
-// is answered by scanning, and every filter offered here is one the Profile Completeness table
-// already answers better for the questions that need filtering.
+// Rendered as a disclosure, shut. It is history: worth having, not worth the space it would take
+// from the record it sits under every time somebody opens the page.
 import { html, nothing } from "lit";
 import { adminBotPaperSlotRegistry } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { t } from "../../../i18n/index.ts";
@@ -19,7 +19,15 @@ export type RecentEditsProps = {
   updates: RecentUpdateRow[];
   loading: boolean;
   error: string | null;
-  onReload: () => void;
+  /** Called when the disclosure is opened, so a closed panel costs no request. */
+  onOpen: () => void;
+  /**
+   * What the panel is about, which decides what each row may leave unsaid.
+   *
+   * On a profile every row is about that member, so repeating "on Ada's record" forty times says
+   * nothing; on a paper every row is about that paper, so the title is already above the list.
+   */
+  subject: "member" | "paper";
 };
 
 /**
@@ -61,32 +69,13 @@ function actorName(row: RecentUpdateRow): string {
   return row.actor_name ?? row.actor_member_id;
 }
 
-/**
- * Whose record it was, when that is somebody else.
- *
- * Absent means a self-edit, which is why the line reads "Ada changed her Location" as one name
- * rather than repeating it on both sides.
- */
-function subjectName(row: RecentUpdateRow): string | undefined {
-  if (!row.subject_member_id) {
-    return undefined;
-  }
-  return row.subject_member_name ?? row.subject_member_id;
-}
-
-function renderRow(row: RecentUpdateRow) {
-  const whose = subjectName(row);
+function renderRow(row: RecentUpdateRow, subject: RecentEditsProps["subject"]) {
   return html`
     <li class="recent-edits__row" data-source=${row.source} data-testid="recent-edits-row">
       <div class="recent-edits__line">
         <span class="recent-edits__actor">${actorName(row)}</span>
         <span class="recent-edits__field">${fieldLabel(row)}</span>
-        ${whose
-          ? html`<span class="recent-edits__subject"
-              >${t("recentEdits.onRecordOf", { member: whose })}</span
-            >`
-          : nothing}
-        ${row.paper_title
+        ${row.paper_title && subject !== "paper"
           ? html`<span class="recent-edits__paper">${row.paper_title}</span>`
           : nothing}
       </div>
@@ -103,34 +92,33 @@ function renderRow(row: RecentUpdateRow) {
 
 export function renderRecentEdits(props: RecentEditsProps) {
   return html`
-    <section class="card adminbot-card adminbot-card--wide recent-edits">
-      <div class="recent-edits__head">
-        <div>
-          <div class="card-title">${t("recentEdits.title")}</div>
-          <div class="card-sub">${t("recentEdits.sub")}</div>
-        </div>
-        <button
-          type="button"
-          class="btn btn--sm"
-          ?disabled=${props.loading}
-          data-testid="recent-edits-reload"
-          @click=${() => props.onReload()}
-        >
-          ${props.loading ? t("recentEdits.loading") : t("recentEdits.reload")}
-        </button>
-      </div>
+    <details
+      class="recent-edits"
+      data-testid="recent-edits"
+      @toggle=${(event: Event) => {
+        if ((event.currentTarget as HTMLDetailsElement).open) {
+          props.onOpen();
+        }
+      }}
+    >
+      <summary class="recent-edits__summary">
+        ${t("recentEdits.title")}
+        ${props.loading
+          ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
+          : nothing}
+      </summary>
       ${props.error
         ? html`<div class="callout danger" data-testid="recent-edits-error">${props.error}</div>`
         : nothing}
       ${props.updates.length
         ? html`<ol class="recent-edits__list" data-testid="recent-edits-list">
-            ${props.updates.map((row) => renderRow(row))}
+            ${props.updates.map((row) => renderRow(row, props.subject))}
           </ol>`
         : props.loading || props.error
           ? nothing
           : html`<p class="recent-edits__empty" data-testid="recent-edits-empty">
               ${t("recentEdits.empty")}
             </p>`}
-    </section>
+    </details>
   `;
 }

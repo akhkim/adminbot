@@ -2329,11 +2329,47 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.readUpdateEvents("WHERE at >= ? ORDER BY at DESC, rowid DESC", since);
   }
 
-  // "Who changed what, lately" across everyone -- the one question this table could answer and had
-  // no reader for. rowid breaks the tie for the same reason it does everywhere else here: one save
-  // writes a row per changed field, and they share a millisecond.
+  // "Who changed what, lately" across everyone. rowid breaks the tie for the same reason it does
+  // everywhere else here: one save writes a row per changed field, and they share a millisecond.
   listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[] {
     return this.readUpdateEvents("ORDER BY at DESC, rowid DESC LIMIT ?", limit);
+  }
+
+  /**
+   * Everything done to one member's record, whoever did it.
+   *
+   * Two clauses because a self-edit carries no subject: `subject_member_id` is only written when
+   * the actor is somebody else, so "Ada's record" is the rows naming her as the subject plus the
+   * profile rows where she is the actor and there is no subject at all. Reading only the first
+   * would show a member every correction an admin made and none of their own work.
+   */
+  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents(
+      `WHERE subject_member_id = ?
+          OR (subject_member_id IS NULL AND member_id = ? AND subject = 'profile')
+        ORDER BY at DESC, rowid DESC LIMIT ?`,
+      memberId,
+      memberId,
+      limit,
+    );
+  }
+
+  /**
+   * Everything done to one paper: the record itself and every evidence slot on it.
+   *
+   * A prefix match rather than an exact slot id, because the paper's slots each carry their own
+   * (`paper_slot:<paper>:<slot>`). The id is escaped and the escape declared: a paper id is a
+   * slug, but one containing `%` would otherwise widen the match to everything.
+   */
+  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[] {
+    const escaped = paperId.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    return this.readUpdateEvents(
+      `WHERE slot_id = ? OR slot_id LIKE ? ESCAPE '\\'
+        ORDER BY at DESC, rowid DESC LIMIT ?`,
+      `paper:${paperId}`,
+      `paper_slot:${escaped}:%`,
+      limit,
+    );
   }
 
   // SQLite gives back `null` for an absent TEXT column, but the contract says the field is absent.

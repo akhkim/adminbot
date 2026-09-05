@@ -11577,28 +11577,44 @@ select.input:focus {
   box-shadow: 0 0 0 3px var(--focus);
 }
 
-/* ── Recent Edits ───────────────────────────────────────────────────────────────────────────
-   A feed, read by scanning: one line per edit, the names first and the machinery second. */
+/* ── Recent edits ───────────────────────────────────────────────────────────────────────────
+   A history panel under the object it is about -- a profile, a paper -- not a page of its own.
+   Shut by default and quiet when open: the record above it is the subject, and this is the
+   footnote. */
 
-.recent-edits__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+.recent-edits {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.recent-edits__summary {
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--muted);
+  list-style-position: inside;
+}
+
+.recent-edits__summary:hover {
+  color: var(--text);
+}
+
+.recent-edits__loading {
+  margin-left: var(--space-2);
+  font-weight: 400;
+  color: var(--muted);
 }
 
 .recent-edits__list {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin: 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
 
-/* Rows, not cards. Forty cards is forty boxes to look past; a rule between rows is enough
-   separation for a list somebody reads top to bottom. */
 .recent-edits__row {
   display: flex;
   align-items: baseline;

@@ -28,7 +28,8 @@ function draw(updates: RecentUpdateRow[], overrides = {}) {
       updates,
       loading: false,
       error: null,
-      onReload: () => {},
+      onOpen: () => {},
+      subject: "member",
       ...overrides,
     }),
     container,
@@ -45,9 +46,10 @@ describe("renderRecentEdits", () => {
     expect(text).toContain("Resident location");
   });
 
-  // The distinction the whole feature exists for: an admin editing somebody else's record reads
-  // differently from that member filling it in themselves.
-  it("says whose record it was when somebody else typed it", () => {
+  // The distinction the whole feature exists for: on somebody's own profile, an admin's
+  // correction and their own edit are the same field on the same record, and only the actor and
+  // the source tell them apart.
+  it("names who typed it, and whether it was an admin", () => {
     const text =
       draw([
         row({
@@ -59,13 +61,7 @@ describe("renderRecentEdits", () => {
         }),
       ]).textContent ?? "";
     expect(text).toContain("Grace Hopper");
-    expect(text).toContain("Ada Lovelace");
     expect(text).toContain("By an admin");
-  });
-
-  it("leaves the record owner unsaid on a self-edit", () => {
-    const container = draw([row()]);
-    expect(container.querySelector(".recent-edits__subject")).toBeNull();
   });
 
   it("names the paper a slot edit landed on", () => {
@@ -99,11 +95,32 @@ describe("renderRecentEdits", () => {
     expect(container.querySelector('[data-testid="recent-edits-empty"]')).toBeNull();
   });
 
-  it("re-reads on demand", () => {
-    const onReload = vi.fn();
-    const container = draw([row()], { onReload });
-    container.querySelector<HTMLButtonElement>('[data-testid="recent-edits-reload"]')?.click();
-    expect(onReload).toHaveBeenCalledOnce();
+  // Opening is what fetches: a panel nobody expands costs no request, which is the whole reason
+  // this is a disclosure and not a section.
+  it("asks for the history only when it is opened", () => {
+    const onOpen = vi.fn();
+    const container = draw([], { onOpen });
+    const panel = container.querySelector<HTMLDetailsElement>('[data-testid="recent-edits"]')!;
+    expect(onOpen).not.toHaveBeenCalled();
+    panel.open = true;
+    panel.dispatchEvent(new Event("toggle"));
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  // The panel's own subject is not worth repeating on every row: on a profile every row is about
+  // that member, and on a paper every row is about that paper.
+  it("leaves out what the panel it sits in already says", () => {
+    const onProfile = draw(
+      [row({ subject_member_id: "ada", subject_member_name: "Ada Lovelace" })],
+      { subject: "member" },
+    );
+    expect(onProfile.querySelector(".recent-edits__subject")).toBeNull();
+
+    const onPaper = draw(
+      [row({ subject: "paper_slot", paper_id: "cais", paper_title: "Causal Abstraction" })],
+      { subject: "paper" },
+    );
+    expect(onPaper.querySelector(".recent-edits__paper")).toBeNull();
   });
 });
 

@@ -2694,6 +2694,37 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listDuplicateMembers());
     return;
   }
+  const memberEdits = /^\/lab\/members\/([^/]+)\/recent-edits$/u.exec(url.pathname);
+  if (req.method === "GET" && memberEdits) {
+    const memberId = decodeURIComponent(memberEdits[1]!);
+    // Your own record, or an admin's read of anyone's. A member seeing who has been in their
+    // profile is the point of putting this on the profile page -- after "view as" landed, an
+    // admin editing it is a thing that happens and the member should be able to see it.
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
+    return;
+  }
+  const paperEdits = /^\/papers\/([^/]+)\/recent-edits$/u.exec(url.pathname);
+  if (req.method === "GET" && paperEdits) {
+    // The viewer goes to the service, which owns the ownership rule -- the same shape
+    // GET /papers/:id/slots uses, so the history cannot become a way around the check the
+    // checklist already makes.
+    sendServiceResult(
+      res,
+      service.listRecentUpdatesForPaper(
+        decodeURIComponent(paperEdits[1]!),
+        {
+          ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+          isAdmin: isPrivileged(principal),
+        },
+        updateLimit(url),
+      ),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/activity/updates") {
     // Who changed what, across the whole lab. Privileged: the rows name members and the fields
     // they filled in, which is the roster's own working record rather than anything a member is
@@ -4389,6 +4420,12 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
   }
   const level = principal.member.privilege_level;
   return level === "admin";
+}
+
+/** `?limit=` for the edit-history reads, or nothing and let the service pick its default. */
+function updateLimit(url: URL): number | undefined {
+  const raw = Number(url.searchParams.get("limit") ?? "");
+  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
 function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
