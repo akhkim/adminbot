@@ -593,6 +593,20 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
         </div>
+        <!-- Where it came from, when nobody submitted it. A candidate a sweep filed is a claim
+             about somebody else's page, so the reviewer gets the line it was read out of and a
+             link to check it -- the same bargain the deadline proposal below makes. -->
+        ${mine && item.discovered
+          ? html`<div class="opp-proposal" data-testid="opp-discovered">
+              <div class="opp-proposal__head">
+                <strong>Found by the weekly sweep — not submitted by a member</strong>
+                <a href=${item.discovered.source_url} target="_blank" rel="noreferrer noopener"
+                  >the page it came from</a
+                >
+              </div>
+              <blockquote class="opp-proposal__evidence">${item.discovered.evidence}</blockquote>
+            </div>`
+          : nothing}
         ${mine && item.proposed_deadline
           ? html`<div class="opp-proposal" data-testid="opp-proposal">
               <div class="opp-proposal__head">

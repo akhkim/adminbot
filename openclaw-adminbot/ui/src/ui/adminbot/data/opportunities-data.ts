@@ -64,9 +64,18 @@ export type OpportunityDeadlineProposal = {
   found_at: string;
 };
 
+/** Where a sweep found an entry, when a sweep found it rather than a member submitting it. */
+export type OpportunityDiscovery = {
+  feed: string;
+  source_url: string;
+  evidence: string;
+  found_at: string;
+};
+
 export type AdminBotOpportunityView = Opportunity & {
   status: OpportunityStatus;
   proposed_deadline?: OpportunityDeadlineProposal;
+  discovered?: OpportunityDiscovery;
   submitted_by_member_id?: string;
   submitted_by_name?: string;
   created_at: string;

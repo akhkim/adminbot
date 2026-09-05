@@ -331,6 +331,17 @@
         "refresh"
       ],
       "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-opportunity-discover",
+      "description": "Weekly hub-page crawl; files new candidates as pending, publishes nothing",
+      "cron": "50 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-opportunity-cron.sh",
+        "discover"
+      ],
+      "timeoutSeconds": 1800
     }
   ]
 }

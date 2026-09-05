@@ -2125,6 +2125,7 @@ export type AdminBotAuditEvent = {
     | "opportunity.updated"
     | "opportunity.approved"
     // The refresh sweep proposing a date off an entry's own page, and the human answer to it.
+    | "opportunity.discovered"
     | "opportunity.deadline_proposed"
     | "opportunity.deadline_accepted"
     | "opportunity.deadline_dismissed"

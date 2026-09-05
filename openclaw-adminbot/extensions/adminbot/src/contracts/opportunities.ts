@@ -76,6 +76,24 @@ export type AdminBotOpportunity = {
    * sweep saying what it saw and where; accepting it is a person saying it is this cycle's date.
    */
   proposed_deadline?: AdminBotOpportunityDeadlineProposal;
+  /**
+   * Where this entry came from, when a sweep found it rather than a member submitting it.
+   *
+   * Kept on the record rather than inferred from `submitted_by_member_id` being absent: an admin
+   * reviewing a queue needs to know which page or which message put a thing in front of them, and
+   * `source_url` is also what makes a rejection stick -- see `submitDiscoveredOpportunity`.
+   */
+  discovered?: AdminBotOpportunityDiscovery;
+};
+
+export type AdminBotOpportunityDiscovery = {
+  /** Which sweep found it. Open enough for a third feed without a migration. */
+  feed: string;
+  /** The page or message it was read from. The identity a repeat sweep dedupes on. */
+  source_url: string;
+  /** The line it was read out of, so a reviewer can judge without opening the page. */
+  evidence: string;
+  found_at: string;
 };
 
 /**
