@@ -146,9 +146,7 @@ describe("what Send reports", () => {
 
   it("shows nothing before a send", () => {
     const { container } = draw(createEmptyWorkshopNudgeReviewState());
-    expect(
-      container.querySelector('[data-testid="workshop-nudges-send-result"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="workshop-nudges-send-result"]')).toBeNull();
   });
 });
 
@@ -185,9 +183,20 @@ describe("the conference picker", () => {
   // the truth, and the pass still runs over everything.
   it("is absent when the service offered no list", () => {
     const { container } = draw(createEmptyWorkshopNudgeReviewState());
-    expect(
-      container.querySelector("[data-testid='workshop-nudges-conference']"),
-    ).toBeNull();
+    expect(container.querySelector("[data-testid='workshop-nudges-conference']")).toBeNull();
+  });
+
+  it("names the scope of a stored narrowed result", () => {
+    const value = state();
+    value.result = {
+      ...value.result!,
+      conference_key: "emnlp-2035",
+      conference_label: "EMNLP 2035",
+    };
+
+    const { container } = draw(value);
+
+    expect(container.textContent).toContain("limited to EMNLP 2035");
   });
 });
 
