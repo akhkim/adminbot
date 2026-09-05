@@ -2374,35 +2374,40 @@ export const fr: TranslationMap = {
           "Rouvrez le dashboard avec openclaw dashboard --no-open pour recopier l’URL actuelle et les détails d’authentification.",
       },
       memberAuth: {
-        title: "Sign-in failed",
-        summary: "That email and password did not match a lab member account.",
-        stepCredentials: "Check your email and password, then try again.",
-        stepClaim: "If you have not set a password yet, use Claim your account.",
+        title: "Échec de la connexion",
+        summary:
+          "Cet e-mail et ce mot de passe ne correspondent à aucun compte de membre du laboratoire.",
+        stepCredentials: "Vérifiez votre e-mail et votre mot de passe, puis réessayez.",
+        stepClaim:
+          "Si vous n'avez pas encore défini de mot de passe, utilisez « Claim your account ».",
       },
       memberClaim: {
-        title: "Could not claim account",
+        title: "Impossible de revendiquer le compte",
         summary:
-          "The account could not be claimed. It may already be claimed, the email may not be eligible, or the password may be too weak.",
-        stepPassword: "Use a password of at least 10 characters.",
-        stepSignIn: "If you already claimed this account, use Sign in instead.",
+          "Le compte n'a pas pu être revendiqué. Il l'est peut-être déjà, l'e-mail n'est peut-être pas éligible, ou le mot de passe est trop faible.",
+        stepPassword: "Utilisez un mot de passe d'au moins 10 caractères.",
+        stepSignIn: "Si vous avez déjà revendiqué ce compte, utilisez plutôt « Sign in ».",
       },
       memberRateLimited: {
-        title: "Too many attempts",
-        summary: "Too many sign-in attempts. Wait a moment before trying again.",
-        summarySeconds: "Too many sign-in attempts. Try again in about {seconds} seconds.",
-        stepWait: "Stop retrying until the cooldown passes, then sign in again.",
+        title: "Trop de tentatives",
+        summary: "Trop de tentatives de connexion. Patientez un instant avant de réessayer.",
+        summarySeconds:
+          "Trop de tentatives de connexion. Réessayez dans environ {seconds} secondes.",
+        stepWait: "Cessez de réessayer jusqu'à la fin du délai, puis reconnectez-vous.",
       },
       memberPending: {
-        title: "Approval pending",
-        summary: "Your account is awaiting admin approval, so it can't sign in yet.",
-        stepWait: "Wait for an admin to approve your account, then sign in again.",
-        stepContact: "If it's been a while, contact an admin to review your request.",
+        title: "Validation en attente",
+        summary:
+          "Votre compte attend l'approbation d'un administrateur ; il ne peut pas encore se connecter.",
+        stepWait: "Attendez qu'un administrateur approuve votre compte, puis reconnectez-vous.",
+        stepContact:
+          "Si cela fait un moment, contactez un administrateur pour qu'il examine votre demande.",
       },
       unreachable: {
-        title: "AdminBot service unreachable",
-        summary: "Could not reach the AdminBot service. Is it running on port 8765?",
-        stepService: "Confirm the AdminBot service is running and listening on port 8765.",
-        stepRetry: "Once the service is reachable, sign in again.",
+        title: "Service AdminBot injoignable",
+        summary: "Impossible de joindre le service AdminBot. Est-il lancé sur le port 8765 ?",
+        stepService: "Vérifiez que le service AdminBot est lancé et écoute sur le port 8765.",
+        stepRetry: "Une fois le service joignable, reconnectez-vous.",
       },
     },
   },
