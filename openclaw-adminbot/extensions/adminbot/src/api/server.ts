@@ -2515,6 +2515,47 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  // The refresh sweep files what it read; a human decides. Two routes rather than one because the
+  // two callers are different kinds of principal: the sweep runs from cron with the service token
+  // and may only propose, while accepting a date onto a board members plan against is an admin act.
+  const proposeOpportunityDeadline = /^\/opportunities\/([^/]+)\/deadline-proposal$/u.exec(
+    url.pathname,
+  );
+  if (req.method === "POST" && proposeOpportunityDeadline) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.proposeOpportunityDeadline({
+        opportunityId: decodeURIComponent(proposeOpportunityDeadline[1]!),
+        deadlineAoe: asString(body.deadline_aoe),
+        sourceUrl: asString(body.source_url),
+        evidence: asString(body.evidence),
+        actor: principalActor(principal),
+      }),
+    );
+    return;
+  }
+  const decideOpportunityDeadline = /^\/opportunities\/([^/]+)\/deadline-proposal\/decision$/u.exec(
+    url.pathname,
+  );
+  if (req.method === "POST" && decideOpportunityDeadline) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.resolveOpportunityDeadlineProposal(
+        decodeURIComponent(decideOpportunityDeadline[1]!),
+        body.accept === true,
+        principal.member.id,
+      ),
+    );
+    return;
+  }
   const approveOpportunity = /^\/opportunities\/([^/]+)\/approve$/u.exec(url.pathname);
   if (req.method === "POST" && approveOpportunity) {
     if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {

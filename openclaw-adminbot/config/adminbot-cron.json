@@ -320,6 +320,17 @@
         "scripts/adminbot-nudge-escalation-cron.sh"
       ],
       "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-opportunity-refresh",
+      "description": "Weekly re-read of each Opportunities page; files proposals, never publishes",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "python3",
+        "scripts/adminbot-opportunity-refresh.py",
+        "--apply"
+      ],
+      "timeoutSeconds": 900
     }
   ]
 }

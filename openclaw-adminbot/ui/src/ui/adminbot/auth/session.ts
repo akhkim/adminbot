@@ -2482,6 +2482,28 @@ export async function decideOpportunity(
   return readOpportunityResult(result);
 }
 
+/**
+ * Accept the refresh sweep's date onto the board, or throw the proposal away.
+ *
+ * The sweep may only ever propose (see the service), so this is the only path by which a swept
+ * date reaches a board members plan against.
+ */
+export async function decideOpportunityDeadline(
+  opportunityId: string,
+  accept: boolean,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotOpportunityView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/opportunities/${encodeURIComponent(opportunityId)}/deadline-proposal/decision`,
+    "POST",
+    sessionToken,
+    { accept },
+  );
+  return readOpportunityResult(result);
+}
+
 export async function deleteOpportunity(
   opportunityId: string,
   sessionToken: string,

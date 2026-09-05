@@ -66,6 +66,31 @@ export type AdminBotOpportunity = {
   updated_at: string;
   decided_at?: string;
   decided_by?: string;
+  /**
+   * A date the refresh sweep read off this entry's own page, waiting for a human to accept it.
+   *
+   * Never applied on its own. These programs are annual and their pages are edited in place, so a
+   * page carrying last year's date is indistinguishable from one carrying next year's until
+   * somebody looks -- and the board's whole rule is that "an unannounced deadline must never
+   * render as if it were a real one, because members plan around this tab". A proposal is the
+   * sweep saying what it saw and where; accepting it is a person saying it is this cycle's date.
+   */
+  proposed_deadline?: AdminBotOpportunityDeadlineProposal;
+};
+
+/**
+ * What the sweep found, and enough to check it without opening the page.
+ *
+ * `evidence` is the line the date was read out of, quoted. Without it a proposal is a bare
+ * assertion and the reviewer has to go and read the page anyway, which is the work the sweep was
+ * supposed to remove.
+ */
+export type AdminBotOpportunityDeadlineProposal = {
+  /** AoE wall clock, same shape as the field it would replace. */
+  deadline_aoe: string;
+  source_url: string;
+  evidence: string;
+  found_at: string;
 };
 
 /** What the board renders: the record plus the submitter's name, for the attribution line. */

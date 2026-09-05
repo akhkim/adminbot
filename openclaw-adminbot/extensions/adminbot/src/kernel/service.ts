@@ -153,6 +153,8 @@ import {
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
 import {
+  ADMINBOT_OPPORTUNITY_TEXT_MAX,
+  isAdminBotOpportunityDeadline,
   validateAdminBotOpportunity,
   type AdminBotOpportunity,
   type AdminBotOpportunityInput,
@@ -2493,6 +2495,114 @@ export class AdminBotService {
       type: "opportunity.updated",
       actor: actor.memberId,
       details: { opportunity_id: updated.id },
+    });
+    return { ok: true, status: 200, payload: { opportunity: this.opportunityView(updated) } };
+  }
+
+  /**
+   * Record what the refresh sweep read off an entry's own page.
+   *
+   * Never writes `deadline_aoe`: see AdminBotOpportunityDeadlineProposal. The sweep is a reader
+   * with no judgement about whether a page has been updated for this cycle yet, and this board is
+   * planned against.
+   *
+   * A proposal that matches what is already stored is dropped rather than filed -- the sweep runs
+   * on a schedule over pages that mostly do not change, and a review queue that fills up with
+   * "still the same date" is one nobody reads.
+   */
+  proposeOpportunityDeadline(params: {
+    opportunityId: string;
+    deadlineAoe: string;
+    sourceUrl: string;
+    evidence: string;
+    actor: string;
+  }): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView; filed: boolean }> {
+    const existing = this.store.getOpportunity(params.opportunityId);
+    if (!existing) {
+      return serviceError(404, "opportunity not found");
+    }
+    const deadline = params.deadlineAoe.trim();
+    if (!isAdminBotOpportunityDeadline(deadline) || !deadline) {
+      return serviceError(400, "a proposed deadline must be an AoE wall clock");
+    }
+    const sourceUrl = params.sourceUrl.trim();
+    if (!sourceUrl.startsWith("https://")) {
+      return serviceError(400, "a proposal must name the https page it was read from");
+    }
+    if (deadline === existing.deadline_aoe) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { opportunity: this.opportunityView(existing), filed: false },
+      };
+    }
+    const found = new Date().toISOString();
+    const updated: AdminBotOpportunity = {
+      ...existing,
+      proposed_deadline: {
+        deadline_aoe: deadline,
+        source_url: sourceUrl,
+        evidence: params.evidence.trim().slice(0, ADMINBOT_OPPORTUNITY_TEXT_MAX),
+        found_at: found,
+      },
+      updated_at: found,
+    };
+    this.store.saveOpportunity(updated);
+    this.recordAudit({
+      type: "opportunity.deadline_proposed",
+      actor: params.actor,
+      details: {
+        opportunity_id: updated.id,
+        from: existing.deadline_aoe,
+        to: deadline,
+        source_url: sourceUrl,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { opportunity: this.opportunityView(updated), filed: true },
+    };
+  }
+
+  /**
+   * Accept the swept date onto the board, or throw the proposal away.
+   *
+   * Dismissing clears it rather than remembering the rejection: the page will be read again next
+   * sweep, and a date somebody said no to last month may be the right one once the host updates
+   * the page. What stops that becoming a loop is the equality check in
+   * `proposeOpportunityDeadline` -- a dismissed date only comes back if the page still says it,
+   * which is the case where asking again is the correct behaviour.
+   */
+  resolveOpportunityDeadlineProposal(
+    opportunityId: string,
+    accept: boolean,
+    actor: string,
+  ): AdminBotServiceResponse<{ opportunity: AdminBotOpportunityView }> {
+    const existing = this.store.getOpportunity(opportunityId);
+    if (!existing) {
+      return serviceError(404, "opportunity not found");
+    }
+    const proposal = existing.proposed_deadline;
+    if (!proposal) {
+      return serviceError(404, "no deadline proposal to decide");
+    }
+    const now = new Date().toISOString();
+    const { proposed_deadline: _cleared, ...rest } = existing;
+    const updated: AdminBotOpportunity = {
+      ...rest,
+      ...(accept ? { deadline_aoe: proposal.deadline_aoe } : {}),
+      updated_at: now,
+    };
+    this.store.saveOpportunity(updated);
+    this.recordAudit({
+      type: accept ? "opportunity.deadline_accepted" : "opportunity.deadline_dismissed",
+      actor,
+      details: {
+        opportunity_id: updated.id,
+        deadline: proposal.deadline_aoe,
+        source_url: proposal.source_url,
+      },
     });
     return { ok: true, status: 200, payload: { opportunity: this.opportunityView(updated) } };
   }
