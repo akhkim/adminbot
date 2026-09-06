@@ -1,3 +1,4 @@
+import "./lab-sharing-member-search.ts";
 import "./lab-sharing-directory.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 // Lab Sharing tab: five panels --
@@ -1199,6 +1200,7 @@ export function renderLabSharing(state: AppViewState) {
       .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-directory>
+    <lab-sharing-member-search .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-member-search>
     <details>
       <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
       ${renderLabSharingPreview(state)}

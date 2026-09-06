@@ -309,7 +309,7 @@ export class LabSharingDirectory extends LitElement {
               ? filtered.map(
                   (request) => html`<article
                     class="lab-sharing-request"
-                    data-project=${request.paper_id}
+                    id=${`lab-project-${encodeURIComponent(request.paper_id)}`} data-project=${request.paper_id}
                   >
                     <h3 class="lab-sharing-request__project">${request.title}</h3>
                     <p class="lab-sharing-request__time">Posted by ${request.owner_name}</p>
