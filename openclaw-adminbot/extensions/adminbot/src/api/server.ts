@@ -2730,6 +2730,27 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
     return;
   }
+  const memberTravel = /^\/lab\/members\/([^/]+)\/travel$/u.exec(url.pathname);
+  if (req.method === "GET" && memberTravel) {
+    const memberId = decodeURIComponent(memberTravel[1]!);
+    // Your own movements, or an admin's read of anyone's -- the same rule as recent-edits, and
+    // for a stronger reason. This is a location history: it is the most sensitive read in the
+    // service, and the tab that shows it being admin-only in the Control UI is visibility, not a
+    // check. A member is always entitled to their own, which is what makes the PI's own travel
+    // page work whether or not they hold the admin role.
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.buildMemberTravelHistory(memberId, {
+        ...(url.searchParams.get("from") ? { fromIso: url.searchParams.get("from")! } : {}),
+        ...(url.searchParams.get("to") ? { toIso: url.searchParams.get("to")! } : {}),
+      }),
+    );
+    return;
+  }
   const paperEdits = /^\/papers\/([^/]+)\/recent-edits$/u.exec(url.pathname);
   if (req.method === "GET" && paperEdits) {
     // The viewer goes to the service, which owns the ownership rule -- the same shape

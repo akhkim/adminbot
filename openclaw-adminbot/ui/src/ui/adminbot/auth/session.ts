@@ -3790,6 +3790,67 @@ function readRecentUpdates(
   return { ok: true, value: body?.updates ?? [] };
 }
 
+/**
+ * One run of sign-ins from a single place. Mirrors AdminBotTravelStay in the service, which is
+ * where the collapse from raw logins to stays happens and where the reasoning for it lives.
+ */
+export type TravelStayRow = {
+  id: string;
+  city?: string;
+  country?: string;
+  continent?: string;
+  timezone?: string;
+  first_seen: string;
+  last_seen: string;
+  login_count: number;
+  observed_days: number;
+  away: boolean;
+};
+
+/** Mirrors AdminBotTravelHistory. */
+export type TravelHistoryRow = {
+  member_id: string;
+  member_name?: string;
+  home_city?: string;
+  home_country?: string;
+  stays: TravelStayRow[];
+  login_count: number;
+  unlocated_login_count: number;
+};
+
+/**
+ * One member's travel timeline, derived from their sign-in log.
+ *
+ * The range is passed to the service rather than applied here: a stay is a run of consecutive
+ * sign-ins, so trimming the log after the collapse would cut a stay in half and report a departure
+ * that never happened.
+ */
+export async function fetchMemberTravelHistory(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  range?: { fromIso?: string; toIso?: string },
+): Promise<AuthResult<TravelHistoryRow | null>> {
+  const query = new URLSearchParams();
+  if (range?.fromIso) query.set("from", range.fromIso);
+  if (range?.toIso) query.set("to", range.toIso);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/travel${suffix}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { travel?: TravelHistoryRow } | null;
+  return { ok: true, value: body?.travel ?? null };
+}
+
 export type PaperSlotRow = {
   paper_id: string;
   slot: string;

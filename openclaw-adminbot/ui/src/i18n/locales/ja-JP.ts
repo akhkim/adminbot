@@ -448,6 +448,7 @@ export const ja_JP: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    myDesk: "My Desk",
   },
   tabs: {
     dashboard: "Dashboard",
@@ -464,6 +465,7 @@ export const ja_JP: TranslationMap = {
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
     adminbotProfessor: "My Desk",
+    adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -516,6 +518,7 @@ export const ja_JP: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotProfessor: "What is waiting on you, across every queue.",
+    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -1502,7 +1505,8 @@ export const ja_JP: TranslationMap = {
     recipient: "Send to",
     preview: "プレビュー",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -1530,6 +1534,16 @@ export const ja_JP: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  adminbotTravel: {
+    error: {
+      signIn: "Sign in to read your travel history.",
+      forbidden: "You can only read your own travel history.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read your travel history.",
+    },
+  },
   recentEdits: {
     title: "最近の編集",
     loading: "読み込み中…",
@@ -1544,7 +1558,8 @@ export const ja_JP: TranslationMap = {
       signIn: "編集履歴を読むにはサインインしてください。",
       forbidden: "編集履歴を読めるのは管理者だけです。",
       unreachable: "{url} の AdminBot サービスに接続できませんでした。",
-      notDeployed: "このサービスビルドにはまだ編集履歴がありません。Control UI はマージ時に公開され、サービスは別途デプロイされます。",
+      notDeployed:
+        "このサービスビルドにはまだ編集履歴がありません。Control UI はマージ時に公開され、サービスは別途デプロイされます。",
       failed: "編集履歴を読み込めませんでした。",
     },
   },
@@ -2372,14 +2387,16 @@ export const ja_JP: TranslationMap = {
       },
       memberClaim: {
         title: "アカウントを引き継げませんでした",
-        summary: "アカウントを引き継げませんでした。すでに引き継ぎ済みか、メールアドレスが対象外か、パスワードが弱すぎる可能性があります。",
+        summary:
+          "アカウントを引き継げませんでした。すでに引き継ぎ済みか、メールアドレスが対象外か、パスワードが弱すぎる可能性があります。",
         stepPassword: "10 文字以上のパスワードを使用してください。",
         stepSignIn: "このアカウントをすでに引き継いでいる場合は「Sign in」を使ってください。",
       },
       memberRateLimited: {
         title: "試行回数が多すぎます",
         summary: "サインインの試行回数が多すぎます。少し待ってからもう一度お試しください。",
-        summarySeconds: "サインインの試行回数が多すぎます。約 {seconds} 秒後にもう一度お試しください。",
+        summarySeconds:
+          "サインインの試行回数が多すぎます。約 {seconds} 秒後にもう一度お試しください。",
         stepWait: "待機時間が過ぎるまで再試行を止め、その後もう一度サインインしてください。",
       },
       memberPending: {
@@ -2391,7 +2408,8 @@ export const ja_JP: TranslationMap = {
       unreachable: {
         title: "AdminBot サービスに接続できません",
         summary: "AdminBot サービスに接続できませんでした。ポート 8765 で動作していますか？",
-        stepService: "AdminBot サービスが起動し、ポート 8765 で待ち受けていることを確認してください。",
+        stepService:
+          "AdminBot サービスが起動し、ポート 8765 で待ち受けていることを確認してください。",
         stepRetry: "サービスに接続できるようになったら、もう一度サインインしてください。",
       },
     },

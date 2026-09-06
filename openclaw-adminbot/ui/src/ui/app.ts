@@ -88,6 +88,7 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
+import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import {
   createFactRow,
@@ -397,6 +398,7 @@ export class OpenClawApp extends LitElement {
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
   @state() adminBotRecentEdits: Record<string, RecentEditsState> = {};
+  @state() adminBotTravel: TravelState = EMPTY_TRAVEL;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;

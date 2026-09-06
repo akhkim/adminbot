@@ -28,7 +28,11 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -778,6 +782,29 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   appendLoginEvent(event: AdminBotLoginEvent): void {
     this.loginEvents.push(event);
+  }
+
+  /**
+   * The one in-place write either log has. See the SQLite side for why enriching a row is not the
+   * same as editing the fact it records.
+   *
+   * Each field falls back to what is already there, matching the COALESCE over there: a later
+   * country-only answer must not blank a city an earlier one resolved.
+   */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    const index = this.loginEvents.findIndex((event) => event.id === id);
+    const existing = this.loginEvents[index];
+    if (!existing) {
+      return;
+    }
+    const merged = { ...existing };
+    for (const field of ["country", "continent", "city", "timezone"] as const) {
+      const value = location[field];
+      if (value) {
+        merged[field] = value;
+      }
+    }
+    this.loginEvents[index] = merged;
   }
 
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {

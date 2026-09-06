@@ -98,6 +98,7 @@ import {
   parseSlotId,
   profileSlotId,
   type AdminBotLoginEvent,
+  type AdminBotLoginLocation,
   type AdminBotRecentUpdate,
   type AdminBotUpdateEvent,
   type AdminBotUpdateSource,
@@ -269,6 +270,10 @@ import {
   topicOfChannel,
   type AdminBotTopicChannelPrefix,
 } from "../workflows/members/topic-channels.js";
+import {
+  buildTravelHistory,
+  type AdminBotTravelHistory,
+} from "../workflows/members/travel-history.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -471,6 +476,8 @@ export type AdminBotServiceStore = {
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
   appendLoginEvent(event: AdminBotLoginEvent): void;
+  /** Fills in where an already-appended sign-in came from. See the note on the persistence side. */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void;
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
   listLoginEventsSince(since: string): AdminBotLoginEvent[];
   appendUpdateEvent(event: AdminBotUpdateEvent): void;
@@ -5548,6 +5555,46 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: { logins: this.store.listLoginEvents(memberId, limit) },
+    };
+  }
+
+  /**
+   * One member's sign-in log read as a travel timeline.
+   *
+   * The whole log, not a page of it: the point of the page this feeds is the shape of a year, and
+   * a limit would silently truncate the timeline into a lie about when somebody got home. The
+   * collapse to stays is what keeps the payload small -- a year of daily logins is a few dozen
+   * stays -- so the row count the reader sees is bounded by how much they actually travelled.
+   *
+   * The derivation is deliberately server-side and shared: the same stays back the timeline, the
+   * trip list and the CSV, and three readers each collapsing the log their own way is three
+   * answers to "how long was she in Singapore".
+   */
+  buildMemberTravelHistory(
+    memberId: string,
+    range?: { fromIso?: string; toIso?: string },
+  ): AdminBotServiceResponse<{ travel: AdminBotTravelHistory }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const from = range?.fromIso?.trim();
+    const to = range?.toIso?.trim();
+    // Filtered before the collapse, not after: a stay is a run of consecutive sign-ins, and
+    // dropping rows from the middle of one would split a single stay into two and report a
+    // departure and a return that never happened.
+    const events = this.store
+      .listLoginEvents(memberId)
+      .filter((event) => (!from || event.at >= from) && (!to || event.at <= to));
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        travel: buildTravelHistory(events, {
+          memberId,
+          ...(member.name ? { memberName: member.name } : {}),
+        }),
+      },
     };
   }
 

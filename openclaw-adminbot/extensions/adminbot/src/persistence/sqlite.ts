@@ -26,7 +26,11 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -603,7 +607,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE TABLE IF NOT EXISTS adminbot_login_events (
         id TEXT PRIMARY KEY,
         member_id TEXT NOT NULL,
-        at TEXT NOT NULL
+        at TEXT NOT NULL,
+        country TEXT,
+        continent TEXT,
+        city TEXT,
+        timezone TEXT
       );
 
       -- Both reads are recent-first: one member's own history, and the lab-wide sweep behind the
@@ -661,6 +669,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migratePaperSlotColumns();
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
+    this.migrateLoginEventColumns();
   }
 
   /**
@@ -689,6 +698,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     );
     if (!columns.has("impersonated_by")) {
       this.db.exec("ALTER TABLE adminbot_sessions ADD COLUMN impersonated_by TEXT");
+    }
+  }
+
+  /**
+   * Give an `adminbot_login_events` written before travel history its four location columns.
+   *
+   * All nullable: every row that already exists was written when only the timestamp was recorded,
+   * and there is no way to recover where those sign-ins came from. They read back as located
+   * nowhere, which is exactly what is known about them -- backfilling them from the member's
+   * current `last_login_city` would invent a travel history that never happened.
+   */
+  private migrateLoginEventColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_login_events)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    for (const column of ["country", "continent", "city", "timezone"]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_login_events ADD COLUMN ${column} TEXT`);
+      }
     }
   }
 
@@ -2290,28 +2320,74 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   appendLoginEvent(event: AdminBotLoginEvent): void {
     this.db
-      .prepare("INSERT INTO adminbot_login_events (id, member_id, at) VALUES (?, ?, ?)")
-      .run(event.id, event.member_id, event.at);
+      .prepare(
+        `INSERT INTO adminbot_login_events (id, member_id, at, country, continent, city, timezone)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.member_id,
+        event.at,
+        event.country ?? null,
+        event.continent ?? null,
+        event.city ?? null,
+        event.timezone ?? null,
+      );
+  }
+
+  /**
+   * Fill in where a sign-in came from, once the geolocation lookup has answered.
+   *
+   * The one write that touches an already-appended row in either log, and it is still not an
+   * edit of the fact: the row says "this member signed in at this instant" before and after, and
+   * this only adds where from. It is a separate call because login must not wait on a third
+   * party -- see the note on the event type.
+   *
+   * COALESCE rather than a plain assignment: a Lite-tier answer carries a country and no city,
+   * and must not blank a city a previous, richer answer for the same row had already written.
+   */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_login_events
+            SET country = COALESCE(?, country),
+                continent = COALESCE(?, continent),
+                city = COALESCE(?, city),
+                timezone = COALESCE(?, timezone)
+          WHERE id = ?`,
+      )
+      .run(
+        location.country ?? null,
+        location.continent ?? null,
+        location.city ?? null,
+        location.timezone ?? null,
+        id,
+      );
   }
 
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
     return (
-      this.db
-        .prepare(
-          `SELECT id, member_id, at FROM adminbot_login_events
+      (
+        this.db
+          .prepare(
+            `SELECT id, member_id, at, country, continent, city, timezone FROM adminbot_login_events
          WHERE member_id = ? ORDER BY at DESC, rowid DESC LIMIT ?`,
-        )
-        // -1 is SQLite's "no limit", which keeps this one statement rather than two.
-        .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[]
+          )
+          // -1 is SQLite's "no limit", which keeps this one statement rather than two.
+          .all(memberId, typeof limit === "number" ? limit : -1) as Array<Record<string, unknown>>
+      ).map(readLoginEventRow)
     );
   }
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
-    return this.db
-      .prepare(
-        "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
-      )
-      .all(since) as AdminBotLoginEvent[];
+    return (
+      this.db
+        .prepare(
+          `SELECT id, member_id, at, country, continent, city, timezone FROM adminbot_login_events
+            WHERE at >= ? ORDER BY at DESC, rowid DESC`,
+        )
+        .all(since) as Array<Record<string, unknown>>
+    ).map(readLoginEventRow);
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {
@@ -3111,6 +3187,27 @@ type AccountRegistrationRow = {
   decided_at: string | null;
   decided_by: string | null;
 };
+
+/**
+ * One `adminbot_login_events` row as the contract shape.
+ *
+ * The four location columns are NULL for every sign-in recorded before travel history existed,
+ * and for every one since where the lookup found nothing. The contract says absent, not null --
+ * the difference matters downstream, where an explicit `null` city would be grouped as a place.
+ */
+function readLoginEventRow(row: Record<string, unknown>): AdminBotLoginEvent {
+  const text = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim() ? value : undefined;
+  return {
+    id: row.id as string,
+    member_id: row.member_id as string,
+    at: row.at as string,
+    ...(text(row.country) ? { country: row.country as string } : {}),
+    ...(text(row.continent) ? { continent: row.continent as string } : {}),
+    ...(text(row.city) ? { city: row.city as string } : {}),
+    ...(text(row.timezone) ? { timezone: row.timezone as string } : {}),
+  };
+}
 
 function rowToRegistration(row: AccountRegistrationRow): AdminBotAccountRegistration {
   return {

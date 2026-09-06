@@ -101,6 +101,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",
+  // A location history. The service allows a member their own and requires privilege for anyone
+  // else's (GET /lab/members/:id/travel), and this tab only ever asks for the viewer's own record,
+  // so admin here is about who is offered the surface, not about what it could reach.
+  adminbotTravel: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",

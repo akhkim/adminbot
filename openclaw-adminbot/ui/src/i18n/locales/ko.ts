@@ -444,6 +444,7 @@ export const ko: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    myDesk: "My Desk",
   },
   tabs: {
     dashboard: "Dashboard",
@@ -460,6 +461,7 @@ export const ko: TranslationMap = {
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
     adminbotProfessor: "My Desk",
+    adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -512,6 +514,7 @@ export const ko: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotProfessor: "What is waiting on you, across every queue.",
+    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -1492,7 +1495,8 @@ export const ko: TranslationMap = {
     recipient: "Send to",
     preview: "미리보기",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -1520,6 +1524,16 @@ export const ko: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  adminbotTravel: {
+    error: {
+      signIn: "Sign in to read your travel history.",
+      forbidden: "You can only read your own travel history.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read your travel history.",
+    },
+  },
   recentEdits: {
     title: "최근 편집",
     loading: "읽는 중…",
@@ -1534,7 +1548,8 @@ export const ko: TranslationMap = {
       signIn: "편집 기록을 보려면 로그인하세요.",
       forbidden: "관리자만 편집 기록을 볼 수 있습니다.",
       unreachable: "{url} 의 AdminBot 서비스에 연결할 수 없습니다.",
-      notDeployed: "이 서비스 빌드에는 아직 편집 기록이 없습니다. Control UI는 병합 시 배포되고 서비스는 별도로 배포됩니다.",
+      notDeployed:
+        "이 서비스 빌드에는 아직 편집 기록이 없습니다. Control UI는 병합 시 배포되고 서비스는 별도로 배포됩니다.",
       failed: "편집 기록을 읽을 수 없습니다.",
     },
   },
@@ -2360,7 +2375,8 @@ export const ko: TranslationMap = {
       },
       memberClaim: {
         title: "계정을 등록하지 못했습니다",
-        summary: "계정을 등록하지 못했습니다. 이미 등록되었거나, 이메일이 대상이 아니거나, 비밀번호가 너무 약할 수 있습니다.",
+        summary:
+          "계정을 등록하지 못했습니다. 이미 등록되었거나, 이메일이 대상이 아니거나, 비밀번호가 너무 약할 수 있습니다.",
         stepPassword: "10자 이상의 비밀번호를 사용하세요.",
         stepSignIn: "이미 이 계정을 등록했다면 ‘Sign in’을 사용하세요.",
       },

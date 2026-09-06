@@ -221,6 +221,8 @@ export type AppViewState = {
     string,
     import("./adminbot/controllers/recent-edits.ts").RecentEditsState
   >;
+  /** The Travel tab's one record: the viewer's own. Never keyed by member -- see its controller. */
+  adminBotTravel: import("./adminbot/controllers/travel.ts").TravelState;
   adminBotMailingListPreview: import("./adminbot/auth/session.ts").PublicationDigestPreview | null;
   adminBotMailingListLoading: boolean;
   adminBotMailingListSending: boolean;

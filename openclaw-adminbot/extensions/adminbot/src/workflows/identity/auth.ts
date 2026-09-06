@@ -331,11 +331,11 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
-    this.recordLoginTime(member.id);
+    const loginEventId = this.recordLoginTime(member.id);
     if (this.geolocateIp && request.remoteIp) {
       // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
       // sign-in itself, and must never make login wait on a third-party API.
-      void this.recordLoginLocation(member.id, request.remoteIp);
+      void this.recordLoginLocation(member.id, request.remoteIp, loginEventId);
     }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
   }
@@ -357,10 +357,10 @@ export class AdminBotAuthService {
    * Re-reads rather than reusing the `member` from login() for the same reason the location writer
    * does: logins race, and this must touch one field and never clobber a concurrent profile edit.
    */
-  private recordLoginTime(memberId: string): void {
+  private recordLoginTime(memberId: string): string | undefined {
     const current = this.store.getLabMember(memberId);
     if (!current) {
-      return;
+      return undefined;
     }
     const now = this.now().toISOString();
     this.store.saveLabMember({ ...current, last_login_at: now, updated_at: now });
@@ -370,7 +370,14 @@ export class AdminBotAuthService {
     //
     // Same choke point on purpose: a login that stamps the field but not the log, or the reverse,
     // is two sources of truth that disagree with nobody able to say which drifted.
-    this.store.appendLoginEvent({ id: randomUUID(), member_id: memberId, at: now });
+    //
+    // The id is returned so the geolocation below can stamp *this* sign-in with where it came
+    // from. Matching on (member, timestamp) instead would be a guess: two tabs signing in within
+    // the same second are two rows, and the travel timeline is only as good as the row the
+    // location lands on.
+    const loginEventId = randomUUID();
+    this.store.appendLoginEvent({ id: loginEventId, member_id: memberId, at: now });
+    return loginEventId;
   }
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
@@ -379,11 +386,22 @@ export class AdminBotAuthService {
   // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
   // self-reported and are deliberately never touched here -- an inferred country must not silently
   // overwrite what a member told us about themselves.
-  private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
+  private async recordLoginLocation(
+    memberId: string,
+    remoteIp: string,
+    loginEventId?: string,
+  ): Promise<void> {
     try {
       const location = await this.geolocateIp?.(remoteIp);
       if (!location || (!location.country && !location.continent && !location.city)) {
         return;
+      }
+      // The sign-in row first, before the member row: it is the only one of the two that is a
+      // record rather than a stamp, so if the process dies between these two writes the timeline
+      // is the half that survives. The member fields below can be re-derived from it; the reverse
+      // is not true, because the next login overwrites them.
+      if (loginEventId) {
+        this.store.attachLoginEventLocation(loginEventId, location);
       }
       // Re-read rather than reuse the `member` from login(): logins can race, and this must
       // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.

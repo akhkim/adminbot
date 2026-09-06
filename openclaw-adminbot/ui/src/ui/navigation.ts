@@ -112,6 +112,12 @@ export const TAB_PAGES = [
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
+  // My Desk and Travel are one page because they are the same reader asking about themselves --
+  // what is waiting on me, and where have I been. Travel does not belong in the Admin group beside
+  // the lab-wide boards: it is nobody's queue, it names one person, and a sidebar entry of its own
+  // would read as a surveillance tool sitting next to the roster rather than as the professor's own
+  // record of their own year.
+  { page: "myDesk", tabs: ["adminbotProfessor", "adminbotTravel"] },
   // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
   // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
   // which put "award Ada a badge" a page away from the roster that says who Ada is.
@@ -192,6 +198,7 @@ export type Tab =
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotProfessor"
+  | "adminbotTravel"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -278,6 +285,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
   adminbotProfessor: "/professor",
+  adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
   adminbotSignatures: "/signatures",
@@ -333,6 +341,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/opportunities": "adminbotOpportunities",
   "/adminbot/papers": "adminbotPapers",
   "/adminbot/professor": "adminbotProfessor",
+  "/adminbot/travel": "adminbotTravel",
   "/adminbot/profile-overview": "adminbotProfileOverview",
   "/adminbot/rec-letters": "adminbotRecLetters",
   "/adminbot/registrations": "adminbotRegistrations",
@@ -481,6 +490,8 @@ export function iconForTab(tab: Tab): IconName {
       return "check";
     case "adminbotProfessor":
       return "lobster";
+    case "adminbotTravel":
+      return "globe";
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";
