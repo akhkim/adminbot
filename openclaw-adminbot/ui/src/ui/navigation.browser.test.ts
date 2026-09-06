@@ -82,34 +82,33 @@ describe("control UI routing", () => {
     expectElement(app, 'a.nav-item[href="/overview"]', HTMLAnchorElement);
   });
 
-  it("renders the dashboard breadcrumb as an overview link", async () => {
-    const app = mountApp("/channels");
+  it("names the sidebar group, then the page, in the breadcrumb", async () => {
+    const app = mountApp("/my-work");
     await app.updateComplete;
 
-    const breadcrumb = expectElement(
+    const context = expectElement(
       app,
-      "dashboard-header .dashboard-header__breadcrumb-link",
-      HTMLAnchorElement,
+      "dashboard-header .dashboard-header__breadcrumb-context",
+      HTMLElement,
     );
-    expect(breadcrumb.getAttribute("href")).toBe("/overview");
-
-    breadcrumb.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await app.updateComplete;
-
-    expect(app.tab).toBe("overview");
-    expect(window.location.pathname).toBe("/overview");
+    const current = expectElement(
+      app,
+      "dashboard-header .dashboard-header__breadcrumb-current",
+      HTMLElement,
+    );
+    expect(context.textContent?.trim()).toBe("My Info");
+    expect(current.textContent?.trim()).toBe("My Projects & Papers");
+    // The gateway's own identity used to lead the trail ("OpenClaw > main >"): it named the
+    // serving process rather than anywhere the member could go.
+    expect(app.querySelector("dashboard-header .dashboard-header__breadcrumb-link")).toBeNull();
+    expect(app.querySelector("dashboard-header")?.textContent).not.toContain("OpenClaw");
   });
 
-  it("keeps the dashboard breadcrumb link inside the configured base path", async () => {
-    const app = mountApp("/ui/channels");
+  it("drops the group segment on a tab that is a group of its own", async () => {
+    const app = mountApp("/dashboard");
     await app.updateComplete;
 
-    const breadcrumb = expectElement(
-      app,
-      "dashboard-header .dashboard-header__breadcrumb-link",
-      HTMLAnchorElement,
-    );
-    expect(breadcrumb.getAttribute("href")).toBe("/ui/overview");
+    expect(app.querySelector("dashboard-header .dashboard-header__breadcrumb-context")).toBeNull();
   });
 
   // The two dreaming tests that stood here are gone with the surface they covered. Dreams was taken

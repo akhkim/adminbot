@@ -114,20 +114,6 @@ export function resolveAssistantAttachmentAuthToken(
   return resolveControlUiAuthToken(state);
 }
 
-export function resolveDashboardHeaderContext(
-  state: Pick<AppViewState, "agentsList" | "sessionKey">,
-): { agentLabel: string } {
-  const agentId = resolveAgentIdFromSessionKey(state.sessionKey);
-  const agent = state.agentsList?.agents.find(
-    (entry) => normalizeLowercaseStringOrEmpty(entry.id) === agentId,
-  );
-  const agentLabel =
-    normalizeOptionalString(agent?.identity?.name) ??
-    normalizeOptionalString(agent?.name) ??
-    agentId;
-  return { agentLabel };
-}
-
 function resolveSidebarChatSessionKey(state: AppViewState): string {
   const snapshot = state.hello?.snapshot as
     | { sessionDefaults?: SessionDefaultsSnapshot }

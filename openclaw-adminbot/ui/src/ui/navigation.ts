@@ -402,6 +402,22 @@ export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): bool
   return group.label === "openclaw" && isSettingsTab(tab);
 }
 
+/**
+ * The sidebar group a tab sits under, as the header breadcrumb says it.
+ *
+ * `home` returns null: the dashboard is a group of one, so naming it would print the same word
+ * twice. The breadcrumb names a group rather than the gateway's own identity because
+ * "OpenClaw > main" told a member which upstream agent process was serving the page -- not a
+ * place they can navigate to, and not a fact they can act on.
+ */
+export function groupTitleForTab(tab: Tab): string | null {
+  const group = TAB_GROUPS.find((candidate) => isTabInGroup(candidate, tab));
+  if (!group || group.label === "home") {
+    return null;
+  }
+  return t(`nav.${group.label}`);
+}
+
 export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   const base = normalizeBasePath(basePath);
   let path = pathname || "/";

@@ -176,33 +176,8 @@
   letter-spacing: var(--tracking-normal);
 }
 
-.topnav-shell .dashboard-header__breadcrumb-link,
 .topnav-shell .dashboard-header__breadcrumb-sep {
   color: var(--muted);
-}
-
-.topnav-shell .dashboard-header__breadcrumb-segment {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.topnav-shell .dashboard-header__breadcrumb-link {
-  display: inline-flex;
-  align-items: center;
-  margin: -2px -4px;
-  padding: 2px 4px;
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.topnav-shell .dashboard-header__breadcrumb-link:hover,
-.topnav-shell .dashboard-header__breadcrumb-link:focus-visible {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .topnav-shell .dashboard-header__breadcrumb-current {
@@ -214,8 +189,10 @@
   text-overflow: ellipsis;
 }
 
+/* Wide enough for the longest group name ("Requests to Zhijing") to read in full: a truncated
+   parent segment says less than no parent segment at all. */
 .topnav-shell .dashboard-header__breadcrumb-context {
-  max-width: 18ch;
+  max-width: 22ch;
   overflow: hidden;
   color: var(--muted);
   font-weight: 500;
@@ -223,9 +200,12 @@
   white-space: nowrap;
 }
 
+/* On a narrow screen the page's own name is the segment worth the width, so the group drops out
+   rather than both halves being clipped. */
 @media (max-width: 720px) {
-  .topnav-shell .dashboard-header__breadcrumb-context {
-    max-width: 10ch;
+  .topnav-shell .dashboard-header__breadcrumb-context,
+  .topnav-shell .dashboard-header__breadcrumb-sep {
+    display: none;
   }
 }
 

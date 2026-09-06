@@ -602,20 +602,20 @@ function renderMemberForm(state: AppViewState) {
     <form class="login-gate__form" data-login-mode=${mode} @submit=${onSubmit} novalidate>
       ${mode === "claim" ? renderRosterPicker(state) : ""}
       ${mode === "signup" ? renderSignupFields(state) : ""}
-      ${isResetRequest
-        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.intro")}</p>`
-        : ""}
-      ${isResetConfirm
-        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.confirmIntro")}</p>`
-        : ""}
+      <!-- The two intro lines are the card's subtitle now (see resolveLoginGateHeading): read
+           under the step's own heading they say what the screen is, whereas as a bare paragraph
+           above the first field they were a second subtitle under a heading that still said
+           "AdminBot". -->
       ${state.passwordResetSent
-        ? html`<div class="callout login-gate__reset-sent" role="status" aria-live="polite">
-            ${t("login.member.reset.sent")}
+        ? html`<div class="callout info login-gate__reset-sent" role="status" aria-live="polite">
+            <span class="login-gate__reset-icon" aria-hidden="true">${icons.send}</span>
+            <span>${t("login.member.reset.sent")}</span>
           </div>`
         : ""}
       ${state.passwordResetDone && mode === "signin"
-        ? html`<div class="callout login-gate__reset-done" role="status" aria-live="polite">
-            ${t("login.member.reset.done")}
+        ? html`<div class="callout success login-gate__reset-done" role="status" aria-live="polite">
+            <span class="login-gate__reset-icon" aria-hidden="true">${icons.check}</span>
+            <span>${t("login.member.reset.done")}</span>
           </div>`
         : ""}
       <!-- Above the fields, not under the button: the person this is for is about to type the
@@ -733,13 +733,31 @@ function renderMemberForm(state: AppViewState) {
             </button>
           `
         : ""}
-      <button
-        type="button"
-        class="login-gate__mode-toggle session-link"
-        @click=${() => switchLoginMode(state, mode === "signin" ? "claim" : "signin")}
-      >
-        ${mode === "signin" ? t("login.member.toggleToClaim") : t("login.member.toggleToSignIn")}
-      </button>
+      <!-- "Already have an account? Sign in" is the wrong way out of a reset step -- the member
+           knows they have an account, that is why they are here. Both steps get the plain way
+           back instead, which every locale already carries for the pending-approval notice. -->
+      ${isResetRequest || isResetConfirm
+        ? html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link login-gate__reset-back"
+              @click=${() => switchLoginMode(state, "signin")}
+            >
+              <span class="login-gate__reset-back-icon" aria-hidden="true">${icons.arrowLeft}</span>
+              ${t("login.pending.back")}
+            </button>
+          `
+        : html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link"
+              @click=${() => switchLoginMode(state, mode === "signin" ? "claim" : "signin")}
+            >
+              ${mode === "signin"
+                ? t("login.member.toggleToClaim")
+                : t("login.member.toggleToSignIn")}
+            </button>
+          `}
     </form>
   `;
 }
@@ -766,9 +784,31 @@ function renderPendingNotice(state: AppViewState) {
 // The guest reimbursement door used to live here. The login screen is now sign-in only; the guest
 // view itself is unchanged and still reachable at ?signedOut=reimbursements.
 
+/**
+ * What the card says above the form.
+ *
+ * The reset steps used to keep the sign-in header -- logo, "AdminBot", the product subtitle --
+ * and pushed their own explanation into a bare paragraph inside the form, so the screen never
+ * said which of the two password steps you were on. Naming the step in the heading and lifting
+ * its intro into the subtitle uses strings that already exist in every locale.
+ */
+function resolveLoginGateHeading(state: AppViewState): { title: string; sub: string } {
+  if (state.loginMode === "reset-request") {
+    return { title: t("login.member.reset.forgot"), sub: t("login.member.reset.intro") };
+  }
+  if (state.loginMode === "reset-confirm") {
+    return {
+      title: t("login.member.reset.setPassword"),
+      sub: t("login.member.reset.confirmIntro"),
+    };
+  }
+  return { title: "AdminBot", sub: t("login.subtitle") };
+}
+
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
+  const heading = resolveLoginGateHeading(state);
   const failure = resolveLoginFailureFeedback({
     connected: state.connected,
     lastError: state.lastError,
@@ -784,8 +824,8 @@ export function renderLoginGate(state: AppViewState) {
       <div class="login-gate__card">
         <div class="login-gate__header">
           <img class="login-gate__logo" src=${faviconSrc} alt="AdminBot" />
-          <div class="login-gate__title">AdminBot</div>
-          <div class="login-gate__sub">${t("login.subtitle")}</div>
+          <div class="login-gate__title">${heading.title}</div>
+          <div class="login-gate__sub">${heading.sub}</div>
         </div>
         ${state.loginPendingNotice
           ? renderPendingNotice(state)
