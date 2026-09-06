@@ -79,3 +79,48 @@ it("retries failures and avoids fetching short queries", async () => {
   await el.updateComplete;
   expect(el.textContent).toContain("Recovered member");
 });
+
+it("does not restore results from an in-flight request after logout", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: unknown) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  const el = new LabSharingMemberSearch();
+  el.sessionToken = "synthetic";
+  document.body.append(el);
+  await el.updateComplete;
+  await type(el, "mina");
+  el.sessionToken = "";
+  await el.updateComplete;
+  finish(result("Private prior-session result"));
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.textContent?.trim()).toBe("");
+  el.sessionToken = "new-session";
+  await el.updateComplete;
+  expect(el.textContent).not.toContain("Private prior-session result");
+  expect(el.querySelector("input")!.value).toBe("");
+});
+
+it("cancels a pending debounce when disconnected", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn().mockResolvedValue(result("Unexpected"));
+  vi.stubGlobal("fetch", fetcher);
+  const el = new LabSharingMemberSearch();
+  el.sessionToken = "synthetic";
+  document.body.append(el);
+  await el.updateComplete;
+  const input = el.querySelector("input")!;
+  input.value = "mina";
+  input.dispatchEvent(new Event("input"));
+  el.remove();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(fetcher).not.toHaveBeenCalled();
+});
