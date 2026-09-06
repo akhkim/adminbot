@@ -155,6 +155,7 @@ import {
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
+import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
@@ -167,7 +168,6 @@ import {
   renderPaperCardDialog,
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
-import { renderOnboardingChecklistSection } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -3301,13 +3301,9 @@ export function renderApp(state: AppViewState) {
                   void submitOwnBadgeNomination(state, badgeId, evidence),
                 onNavigateToTab: (tab) => state.setTab(tab),
               })}
-              <!-- Back on this page, but folded away. It is required reading somebody walks once,
-                   on a page they edit every week: open, it ended the page in a wall of steps they
-                   had already done; gone entirely, there was nowhere left to tick one off, since
-                   the suggestions above only link out. Closed, it costs a line. -->
-              ${renderOnboardingChecklistSection(state)}
             `
           : nothing}
+        ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
           ? renderProfessorView({
               requests: state.adminBotLogisticsRequests ?? [],

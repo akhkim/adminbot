@@ -107,6 +107,8 @@ describe("visibleTabsForRole", () => {
     // group lists it -- it renders in the pinned sidebar footer instead.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
+      // The viewer's own checklist, marked done against their own record.
+      "gettingStarted",
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",

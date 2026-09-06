@@ -1500,62 +1500,154 @@
   font-size: var(--control-ui-text-md);
 }
 
-/* The onboarding checklist, moved here from a first-login popup: a standing warning rather than
-   one card among several, so it gets its own border treatment (danger, not the attention stack's
-   accent edge) and sits above everything else on the page until acknowledged. */
-.dashboard-onboarding {
-  padding: var(--space-6);
-  border: 1px solid var(--danger-muted);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
-  /* The checklist sits beside -- not inside -- the .profile container in app-render.ts, so it
-     would stretch to the full content width without the same 62rem measure the sections above it
-     use. */
+/* The Getting Started page: progress, what is left, what is done. Held to the same 62rem measure
+   the profile sections use, so moving between the two tabs does not change the column width. */
+.getting-started {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
   max-width: 62rem;
 }
 
-.dashboard-onboarding__title::before {
-  content: "";
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin-right: var(--space-3);
-  vertical-align: 0.1em;
-  border-radius: var(--radius-full);
-  background: var(--danger);
+.getting-started__progress {
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
 }
 
-@keyframes onboarding-dot-pulse {
-  0%,
-  60%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  30% {
-    opacity: 0.35;
-    transform: scale(0.85);
-  }
+.getting-started__progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.getting-started__progress-count {
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.getting-started__required-left {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.getting-started__bar {
+  margin-top: var(--space-4);
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.getting-started__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: width var(--duration-slow) var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dashboard-onboarding__title::before {
-    animation: none;
+  .getting-started__bar-fill {
+    transition: none;
   }
 }
 
-.dashboard-onboarding__header {
-  margin-bottom: var(--space-5);
+.getting-started__all-done {
+  margin: var(--space-3) 0 0;
+  color: var(--ok);
+  font-size: var(--control-ui-text-md);
 }
 
-.dashboard-onboarding__title {
+.getting-started__section-title {
+  margin: 0 0 var(--space-4);
   font-size: var(--control-ui-text-xl);
   font-weight: 600;
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
 }
 
-.dashboard-onboarding__sub {
-  margin-top: var(--space-1);
+.getting-started__group {
+  margin-bottom: var(--space-6);
+}
+
+.getting-started__group-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--muted);
+}
+
+.getting-started__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.getting-started__step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.getting-started__auto {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* A finished step is a line, not a card: the detail and links were instructions for doing it, and
+   the only thing still worth reaching is the way back out of a mistaken "done". */
+.getting-started__done-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.getting-started__done-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.getting-started__done-row:last-child {
+  border-bottom: 0;
+}
+
+.getting-started__done-mark {
+  display: inline-flex;
+  color: var(--ok);
+}
+
+.getting-started__done-mark svg {
+  width: 16px;
+  height: 16px;
+}
+
+.getting-started__done-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted-strong);
+}
+
+.getting-started__empty {
+  margin: 0;
+  padding: var(--space-6);
+  max-width: 62rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
   color: var(--muted);
   font-size: var(--control-ui-text-md);
 }
@@ -1566,9 +1658,6 @@
   background: var(--bg);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  /* scrollIntoView(block:"start") lands the top flush against the viewport edge without this, so a
-     tall step slides underneath the sticky topbar and reads as a black cut across the screen. */
-  scroll-margin-top: calc(var(--shell-topbar-height) + var(--space-4));
 }
 
 .onboarding-step-card__row {
@@ -1576,25 +1665,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-}
-
-.onboarding-step-card__row--category {
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border);
-}
-
-.onboarding-step-card__category {
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
-  color: var(--text-strong);
-}
-
-.onboarding-step-card__count {
-  font-size: var(--control-ui-text-md);
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
 }
 
 .onboarding-step-card__row--task {
@@ -1607,22 +1677,6 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-}
-
-.onboarding-step-card__number {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
-  font-size: var(--control-ui-text-md);
-  font-weight: 700;
-  color: var(--muted-strong);
-  font-variant-numeric: tabular-nums;
 }
 
 .onboarding-step-card__label {
@@ -1711,62 +1765,10 @@
   font-size: var(--control-ui-text-md);
 }
 
-.onboarding-step-card__blocked-note {
-  margin: 0 var(--space-5) var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  font-size: var(--control-ui-text-sm);
-}
-
-/* Same surface as the rest of the card -- just a hairline above, not a background swap --
-   so Next/Back/toggle read as this card's own controls, not a separate strip. */
-.onboarding-step-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--border);
-}
-
-.onboarding-step-card__back,
-.onboarding-step-card__toggle,
-.onboarding-step-card__next {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-6);
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .onboarding-step-card__error {
   margin-bottom: var(--space-4);
   color: var(--danger);
   font-size: var(--control-ui-text-md);
-}
-
-.onboarding-step-card__next.btn.primary {
-  height: 35px;
-  padding: 0 var(--space-4);
-  background: #e7e6e6;
-  border: 1px solid #808080;
-  color: #0a0a0a;
-  border-radius: var(--radius-lg);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.onboarding-step-card__next.btn.primary:hover,
-.onboarding-step-card__next.btn.primary:focus-visible {
-  background: #e7e6e6 !important;
-  border-color: #808080 !important;
-  opacity: 0.88;
-}
-
-.onboarding-step-card__next.btn.primary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 
 /* Every card in this stack is something waiting on the viewer, so the accent edge that used to
@@ -3320,25 +3322,30 @@
   color: var(--muted);
 }
 
-.profile__suggestions-group {
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--border);
+/* The one line My Profile keeps about onboarding: how much is left, and the way to the page that
+   owns it. A row rather than a section of cards -- the list itself lives on Getting Started. */
+.profile__onboarding-pointer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
 }
 
-.profile__suggestions-group:first-of-type {
-  padding-top: 0;
-  border-top: none;
+.profile__onboarding-pointer .profile__section-title {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
-.profile__suggestions-group + .profile__suggestions-group {
-  margin-top: var(--space-6);
+.profile__onboarding-pointer-line {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
 }
 
-.profile__suggestions-group-title {
-  margin: 0 0 var(--space-4);
-  font-size: var(--control-ui-text-xl);
-  font-weight: 600;
-  color: var(--text-strong);
+.profile__onboarding-pointer-action {
+  flex: 0 0 auto;
 }
 
 .profile__suggestions {

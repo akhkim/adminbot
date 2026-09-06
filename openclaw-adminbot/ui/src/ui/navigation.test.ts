@@ -55,6 +55,7 @@ describe("iconForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, iconForTab(tab)]))).toEqual({
       dashboard: "barChart",
       profile: "user",
+      gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
       adminbotOpportunities: "zap",
@@ -114,6 +115,7 @@ describe("titleForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, titleForTab(tab)]))).toEqual({
       dashboard: "Dashboard",
       profile: "My Profile",
+      gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
       adminbotOpportunities: "Opportunities",
@@ -167,6 +169,7 @@ describe("subtitleForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, subtitleForTab(tab)]))).toEqual({
       dashboard: "What needs you, and where the lab stands.",
       profile: "Your details, and anything still blank.",
+      gettingStarted: "Your setup checklist — what is left, and what you have already done.",
       myWork: "What you are working on, and anything holding it up.",
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
