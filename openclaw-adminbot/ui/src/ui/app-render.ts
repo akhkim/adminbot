@@ -155,6 +155,7 @@ import {
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
+import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
@@ -167,7 +168,6 @@ import {
   renderPaperCardDialog,
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
-import { renderOnboardingChecklistSection } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -192,7 +192,6 @@ import {
   renderTab,
   resolveAdminBotMode,
   resolveAssistantAttachmentAuthToken,
-  resolveDashboardHeaderContext,
   renderTopbarThemeModeToggle,
   createChatSession,
   dismissChatError,
@@ -1933,7 +1932,6 @@ export function renderApp(state: AppViewState) {
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
   const navDrawerOpen = state.navDrawerOpen && !state.onboarding;
   const navCollapsed = state.settings.navCollapsed && !navDrawerOpen;
-  const dashboardHeaderContext = resolveDashboardHeaderContext(state);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const showToolCalls = state.onboarding ? true : state.settings.chatShowToolCalls;
   const activeAssistantAgentId = resolveChatSelectedAgentId(state);
@@ -3089,14 +3087,7 @@ export function renderApp(state: AppViewState) {
             <span class="nav-collapse-toggle__icon" aria-hidden="true">${icons.menu}</span>
           </button>
           <div class="topnav-shell__content">
-            <dashboard-header
-              .tab=${state.tab}
-              .basePath=${state.basePath}
-              .agentLabel=${dashboardHeaderContext.agentLabel}
-              @navigate=${(event: CustomEvent<Tab>) => {
-                state.setTab(event.detail);
-              }}
-            ></dashboard-header>
+            <dashboard-header .tab=${state.tab}></dashboard-header>
           </div>
           <div class="topnav-shell__actions">
             <button
@@ -3244,7 +3235,12 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
-        ${state.updateStatusBanner
+        <!-- Settings only. The text is git and install plumbing -- "Update skipped:
+             not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
+             rendering above every page, including a member's own profile. Nobody but the admin who
+             pressed Update in Settings can act on it, and that is where they are standing when the
+             answer arrives. -->
+        ${state.updateStatusBanner && state.tab === "config"
           ? html`<div class="callout ${state.updateStatusBanner.tone}" role="alert">
               ${state.updateStatusBanner.text}
             </div>`
@@ -3305,13 +3301,9 @@ export function renderApp(state: AppViewState) {
                   void submitOwnBadgeNomination(state, badgeId, evidence),
                 onNavigateToTab: (tab) => state.setTab(tab),
               })}
-              <!-- Back on this page, but folded away. It is required reading somebody walks once,
-                   on a page they edit every week: open, it ended the page in a wall of steps they
-                   had already done; gone entirely, there was nowhere left to tick one off, since
-                   the suggestions above only link out. Closed, it costs a line. -->
-              ${renderOnboardingChecklistSection(state)}
             `
           : nothing}
+        ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
           ? renderProfessorView({
               requests: state.adminBotLogisticsRequests ?? [],

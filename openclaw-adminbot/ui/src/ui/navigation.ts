@@ -15,7 +15,15 @@ export const TAB_GROUPS = [
   // on it, and the work it is attached to. Time Availability sits here rather than in the shared
   // tools because it is the viewer's own schedule that they edit, and only incidentally other
   // people's that they read.
-  { label: "myInfo", tabs: ["profile", "adminbotTimeAvailability", "myWork"] },
+  //
+  // Getting Started leads the group and outranks the record itself, because for the only people who
+  // need it -- the ones who just arrived -- it is the first thing to do. It used to be the last two
+  // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
+  // edit every week.
+  {
+    label: "myInfo",
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
+  },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
   { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
@@ -179,6 +187,7 @@ export type Tab =
   | "agents"
   | "dashboard"
   | "profile"
+  | "gettingStarted"
   | "myWork"
   | "labSharing"
   | "activity"
@@ -265,6 +274,7 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   dashboard: "/dashboard",
   profile: "/profile",
+  gettingStarted: "/getting-started",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
   activity: "/activity",
@@ -402,6 +412,22 @@ export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): bool
   return group.label === "openclaw" && isSettingsTab(tab);
 }
 
+/**
+ * The sidebar group a tab sits under, as the header breadcrumb says it.
+ *
+ * `home` returns null: the dashboard is a group of one, so naming it would print the same word
+ * twice. The breadcrumb names a group rather than the gateway's own identity because
+ * "OpenClaw > main" told a member which upstream agent process was serving the page -- not a
+ * place they can navigate to, and not a fact they can act on.
+ */
+export function groupTitleForTab(tab: Tab): string | null {
+  const group = TAB_GROUPS.find((candidate) => isTabInGroup(candidate, tab));
+  if (!group || group.label === "home") {
+    return null;
+  }
+  return t(`nav.${group.label}`);
+}
+
 export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   const base = normalizeBasePath(basePath);
   let path = pathname || "/";
@@ -454,6 +480,8 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "profile":
       return "user";
+    case "gettingStarted":
+      return "check";
     case "myWork":
       return "book";
     case "labSharing":

@@ -175,6 +175,58 @@
   font-size: calc(var(--control-ui-text-sm) + 0.0625rem);
 }
 
+/* The way out of a reset step. The arrow points back the way the member came, so the link reads
+   as a step backwards rather than as one more thing to sign up for. */
+.login-gate .login-gate__reset-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+}
+
+.login-gate .login-gate__reset-back:hover {
+  color: var(--text);
+}
+
+.login-gate__reset-back-icon {
+  display: inline-flex;
+}
+
+.login-gate__reset-back-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Both reset notices answer "did that work?", so they lead with a mark and sit on their own
+   tinted panel rather than arriving as one more line of grey text in the form's own column. */
+.login-gate__reset-sent,
+.login-gate__reset-done {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.login-gate__reset-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  /* Optical alignment with the first line of the notice, which sits on a 1.55 line-height. */
+  margin-top: 1px;
+}
+
+.login-gate__reset-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.login-gate__reset-sent .login-gate__reset-icon {
+  color: var(--accent);
+}
+
+.login-gate__reset-done .login-gate__reset-icon {
+  color: var(--ok);
+}
+
 .login-gate .login-gate__mode-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
