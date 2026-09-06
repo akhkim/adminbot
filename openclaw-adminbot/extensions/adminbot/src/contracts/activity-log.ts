@@ -13,12 +13,39 @@
  * running; a row is a fact about a moment, and the moment does not change.
  */
 
-/** One sign-in. Written on the login itself, never on a session refresh or a background sweep. */
+/**
+ * One sign-in. Written on the login itself, never on a session refresh or a background sweep.
+ *
+ * The location fields are the same IPinfo lookup that stamps `last_login_city` on the member row,
+ * kept here as well for the one thing a single overwritten field can never answer: where somebody
+ * was in March. They are attached a moment *after* the row is inserted (the lookup is a network
+ * call and login must not wait on it), so a row with no location is the normal shape for a
+ * geolocation that was slow, unconfigured, or looking at a private IP -- not a corruption.
+ *
+ * Inferred, never stated. A member's own `location` / `current_city` is a different fact and this
+ * never becomes it; see the location-source contract in contracts/actions.ts.
+ */
 export type AdminBotLoginEvent = {
   id: string;
   member_id: string;
   /** ISO-8601. When the credential check succeeded. */
   at: string;
+} & AdminBotLoginLocation;
+
+/**
+ * Where a sign-in came from, as far as the IP said.
+ *
+ * Split out from the event because it arrives separately: the row is written first and this is
+ * attached when the lookup returns. Every field is optional independently -- the Lite tier of the
+ * provider answers with a country and no city, and a country-only stamp is still a usable travel
+ * record.
+ */
+export type AdminBotLoginLocation = {
+  country?: string;
+  continent?: string;
+  city?: string;
+  /** IANA zone. Only ever a region/city name -- a bare UTC offset is dropped at the connector. */
+  timezone?: string;
 };
 
 /**

@@ -704,6 +704,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
+    this.migrateLoginEventColumns();
   }
 
   /**
@@ -765,6 +766,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       `CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_nominated_by_idx
         ON adminbot_badge_nominations(nominated_by, created_at DESC)`,
     );
+  }
+
+  /**
+   * Give an `adminbot_login_events` written before travel history its four location columns.
+   *
+   * All nullable: every row that already exists was written when only the timestamp was recorded,
+   * and there is no way to recover where those sign-ins came from. They read back as located
+   * nowhere, which is exactly what is known about them -- backfilling them from the member's
+   * current `last_login_city` would invent a travel history that never happened.
+   */
+  private migrateLoginEventColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_login_events)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    for (const column of ["country", "continent", "city", "timezone"]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_login_events ADD COLUMN ${column} TEXT`);
+      }
+    }
   }
 
   private migrateWorkshopMatchRuns(): void {

@@ -107,6 +107,7 @@ import {
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -833,6 +834,10 @@ const lazyDeadlines = createLazyView(
 );
 const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
+  notifyLazyViewChanged,
+);
+const lazyTravel = createLazyView(
+  () => import("./adminbot/views/travel.ts"),
   notifyLazyViewChanged,
 );
 const lazyGrantReport = createLazyView(
@@ -2791,6 +2796,18 @@ export function renderApp(state: AppViewState) {
     state.adminBotProfileOverviewLoadedAt = Date.now();
     void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
   }
+  // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
+  // while somebody is reading their own year off it, and the only thing that re-reads it is the
+  // range buttons, which pass their own range through.
+  if (
+    state.tab === "adminbotTravel" &&
+    hasMemberSession &&
+    !state.adminBotTravel.loading &&
+    !state.adminBotTravel.error &&
+    state.adminBotTravel.history === null
+  ) {
+    void loadAdminBotTravel(state).finally(() => requestHostUpdate?.());
+  }
   // My Projects & Papers reads the same way: the overview when the tab opens, and again after a
   // nudge run or a slot write clears the stamp. Individual papers' slots are fetched per card, in
   // the toggle handler, since a closed card needs none of them.
@@ -3390,6 +3407,17 @@ export function renderApp(state: AppViewState) {
                 void state.publishBroadcast?.(draft).finally(() => requestHostUpdate?.());
               },
             })
+          : nothing}
+        ${state.tab === "adminbotTravel" && adminBotMode === "admin"
+          ? renderLazyView(lazyTravel, (m) =>
+              m.renderTravel({
+                history: state.adminBotTravel.history,
+                range: state.adminBotTravel.range,
+                loading: state.adminBotTravel.loading,
+                error: state.adminBotTravel.error,
+                onRangeChange: (range) => void loadAdminBotTravel(state, { range }),
+              }),
+            )
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
         ${state.tab === "adminbotProfileOverview"
