@@ -50,3 +50,26 @@ Offering help does not add paper authors, accept membership or send notification
 SQLite adds `adminbot_help_interests` with a composite project/member primary key;
 repeat saves update one row. Save/withdraw audits record the actor and project ID,
 not free-text notes. Withdrawal changes status; it does not erase the stored record.
+
+## Member search
+
+The Collaborate page searches saved member names, research branches, research topics,
+and titles of projects with an open help request. Matching is case-insensitive
+substring matching. Project associations use the existing project authorship rule;
+closed requests and other paper titles are excluded.
+
+`GET /lab-sharing/members?q=...` requires a member session. Anonymous callers receive
+401 and shared service-token callers receive 403. Trimmed queries under two
+characters return no matches; queries over 100 characters receive 400. Results sort
+by name and ID and return at most 20 members, with `truncated` indicating more matches.
+
+The response contains `members` and `truncated`. Each member has only `id`, `name`,
+`research_branch`, `research_topics`, `matched_fields`, and `projects`. Each project
+contains only `id` and `title`, and appears only when its title matches the query.
+Admins receive the same narrow projection. Email addresses, private offer notes,
+schedules, and non-recruiting paper details are neither searched nor returned.
+
+The UI waits 250 milliseconds after typing, supports retry after a failed request,
+and discards responses from earlier queries or sessions. Signing out clears the
+results. Selecting a project clears the directory filter and scrolls to and focuses
+its card. Search is read-only and requires no new database migration or connector.
