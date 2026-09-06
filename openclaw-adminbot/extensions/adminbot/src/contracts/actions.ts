@@ -2048,6 +2048,10 @@ export type AdminBotAuditEvent = {
   id: string;
   action_id?: string;
   type:
+    | "lab_help.saved"
+    | "lab_help.closed"
+    | "lab_interest.saved"
+    | "lab_interest.withdrawn"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"

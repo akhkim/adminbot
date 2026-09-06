@@ -1,0 +1,62 @@
+/* Keep the service-backed directory on the existing Lab Sharing visual system. */
+lab-sharing-directory {
+  display: block;
+  min-width: 0;
+}
+.lab-sharing-directory {
+  gap: var(--space-5);
+  min-width: 0;
+}
+.lab-sharing-directory h3,
+.lab-sharing-directory p {
+  margin: 0;
+}
+.lab-sharing-directory form,
+.lab-sharing-directory fieldset,
+.lab-sharing-directory label {
+  min-width: 0;
+}
+.lab-sharing-directory fieldset {
+  margin: 0;
+}
+.lab-sharing-directory input,
+.lab-sharing-directory select,
+.lab-sharing-directory textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  font-family: inherit;
+}
+.lab-sharing-directory textarea {
+  min-height: 110px;
+}
+.lab-sharing-directory article {
+  overflow-wrap: anywhere;
+}
+.lab-sharing-directory .lab-sharing-request__note {
+  white-space: pre-wrap;
+}
+.lab-sharing-directory .lab-sharing-request__time {
+  color: var(--muted);
+}
+.lab-sharing-directory button {
+  width: fit-content;
+}
+.lab-sharing-directory .lab-sharing-request .btn {
+  align-self: flex-start;
+}
+.lab-sharing-directory .lab-sharing-ask > p {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+@media (max-width: 600px) {
+  .lab-sharing-directory {
+    padding: var(--space-4);
+  }
+}
+
+.lab-sharing-directory__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
