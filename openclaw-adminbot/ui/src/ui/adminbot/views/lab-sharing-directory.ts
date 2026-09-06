@@ -137,60 +137,26 @@ export class LabSharingDirectory extends LitElement {
         .toLowerCase()
         .includes(query),
     );
-    return html`<section class="card lab-sharing-directory" aria-label="Project help requests">
-      <style>
-        .lab-sharing-directory {
-          display: grid;
-          gap: 16px;
-          min-width: 0;
-        }
-        .lab-sharing-directory form,
-        .lab-sharing-directory fieldset {
-          display: grid;
-          gap: 14px;
-          min-width: 0;
-        }
-        .lab-sharing-directory label {
-          display: grid;
-          gap: 6px;
-          min-width: 0;
-        }
-        .lab-sharing-directory input,
-        .lab-sharing-directory textarea,
-        .lab-sharing-directory select {
-          width: 100%;
-          box-sizing: border-box;
-          min-width: 0;
-          padding: 10px 12px;
-          background: var(--bg, #171717);
-          color: var(--text, #eee);
-          border: 1px solid var(--border, #444);
-          border-radius: 8px;
-          font: inherit;
-        }
-        .lab-sharing-directory textarea {
-          min-height: 110px;
-        }
-        .lab-sharing-directory article {
-          overflow-wrap: anywhere;
-        }
-        .lab-sharing-directory button {
-          width: fit-content;
-        }
-      </style>
-      <h2>Open projects</h2>
-      <p>Find projects looking for help. Requests are shared with signed-in lab members.</p>
+    return html`<section
+      class="lab-sharing lab-sharing-directory"
+      aria-label="Project help requests"
+    >
+      <h2 class="lab-sharing-seek__title">Open projects</h2>
+      <p class="lab-sharing-seek__sub">
+        Find projects looking for help. Requests are shared with signed-in lab members.
+      </p>
       <button class="btn" ?disabled=${this.busy} @click=${() => this.request()}>
         Refresh projects
       </button>
-      ${this.busy ? html`<p role="status">Loading…</p>` : nothing}
-      ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
-      ${this.notice ? html`<p role="status">${this.notice}</p>` : nothing}
+      ${this.busy ? html`<p class="muted" role="status">Loading…</p>` : nothing}
+      ${this.error ? html`<p class="callout danger" role="alert">${this.error}</p>` : nothing}
+      ${this.notice ? html`<p class="muted" role="status">${this.notice}</p>` : nothing}
       ${this.data
         ? html`
-            <label
+            <label class="lab-sharing-ask__field"
               >Search projects or tags
               <input
+                class="lab-sharing-ask__input"
                 type="search"
                 .value=${this.query}
                 @input=${(event: Event) => {
@@ -199,18 +165,26 @@ export class LabSharingDirectory extends LitElement {
             /></label>
             ${filtered.length
               ? filtered.map(
-                  (request) => html`<article class="card" data-project=${request.paper_id}>
-                    <h3>${request.title}</h3>
-                    <p>Posted by ${request.owner_name}</p>
-                    <p style="white-space:pre-wrap">${request.description}</p>
-                    <p>${request.tags.join(" · ")}</p>
+                  (request) => html`<article
+                    class="lab-sharing-request"
+                    data-project=${request.paper_id}
+                  >
+                    <h3 class="lab-sharing-request__project">${request.title}</h3>
+                    <p class="lab-sharing-request__time">Posted by ${request.owner_name}</p>
+                    <p class="lab-sharing-request__note">${request.description}</p>
+                    <div class="lab-sharing-request__needs">
+                      ${request.tags.map(
+                        (tag) => html`<span class="lab-sharing-request__need">${tag}</span>`,
+                      )}
+                    </div>
                     <p>
                       ${request.members_needed} people needed · ${request.hours_per_week} hours per
                       week per person
                     </p>
                     ${request.timeline ? html`<p>Timeline: ${request.timeline}</p>` : nothing}
                     ${request.can_manage
-                      ? html`<button
+                      ? html`<div class="lab-sharing-directory__actions">
+                          <button
                             class="btn"
                             ?disabled=${this.busy}
                             @click=${() => this.edit(request)}
@@ -234,7 +208,8 @@ export class LabSharingDirectory extends LitElement {
                             }}
                           >
                             Close request
-                          </button>`
+                          </button>
+                        </div>`
                       : nothing}
                   </article>`,
                 )
@@ -243,13 +218,14 @@ export class LabSharingDirectory extends LitElement {
                     ? "No projects match your search."
                     : "No projects are asking for help yet."}
                 </p>`}
-            <h3>Your project help request</h3>
+            <h3 class="lab-sharing-seek__title">Your project help request</h3>
             ${this.data.projects.length
               ? html`<form @submit=${(event: SubmitEvent) => this.save(event)}>
-                  <fieldset ?disabled=${this.busy}>
-                    <label
-                      >Project
+                  <fieldset class="lab-sharing-ask" ?disabled=${this.busy}>
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">Project</span>
                       <select
+                        class="lab-sharing-ask__select"
                         required
                         .value=${this.draft.paper_id}
                         @change=${(event: Event) => {
@@ -277,9 +253,10 @@ export class LabSharingDirectory extends LitElement {
                         )}
                       </select></label
                     >
-                    <label
-                      >Tasks and help needed
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">Tasks and help needed</span>
                       <textarea
+                        class="lab-sharing-ask__textarea"
                         required
                         maxlength="4000"
                         .value=${this.draft.description}
@@ -291,9 +268,10 @@ export class LabSharingDirectory extends LitElement {
                         }}
                       ></textarea>
                     </label>
-                    <label
-                      >Tags (comma separated)
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">Tags (comma separated)</span>
                       <input
+                        class="lab-sharing-ask__input"
                         .value=${this.draft.tags}
                         @input=${(event: Event) => {
                           this.draft = {
@@ -302,9 +280,10 @@ export class LabSharingDirectory extends LitElement {
                           };
                         }}
                     /></label>
-                    <label
-                      >People needed
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">People needed</span>
                       <input
+                        class="lab-sharing-ask__input"
                         type="number"
                         required
                         min="1"
@@ -318,9 +297,10 @@ export class LabSharingDirectory extends LitElement {
                           };
                         }}
                     /></label>
-                    <label
-                      >Hours per week per person
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">Hours per week per person</span>
                       <input
+                        class="lab-sharing-ask__input"
                         type="number"
                         required
                         min="0.5"
@@ -334,9 +314,10 @@ export class LabSharingDirectory extends LitElement {
                           };
                         }}
                     /></label>
-                    <label
-                      >Timeline (optional)
+                    <label class="lab-sharing-ask__field"
+                      ><span class="lab-sharing-ask__label">Timeline (optional)</span>
                       <input
+                        class="lab-sharing-ask__input"
                         maxlength="300"
                         .value=${this.draft.timeline}
                         @input=${(event: Event) => {
