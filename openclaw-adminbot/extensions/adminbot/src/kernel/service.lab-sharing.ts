@@ -3,6 +3,7 @@ import type { AdminBotLabMember, AdminBotPaperRecord } from "../contracts/action
 import { validateHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { validateHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotServiceStore } from "./service.js";
+import { searchLabSharingMembers } from "./service.lab-sharing-members.js";
 
 type OwnsPaper = (member: AdminBotLabMember, paper: AdminBotPaperRecord) => boolean;
 const failure = (status: number, message: string) => ({
@@ -17,6 +18,9 @@ export class LabSharingService {
     private store: AdminBotServiceStore,
     private ownsPaper: OwnsPaper,
   ) {}
+  searchMembers(memberId: string, query: string) {
+    return searchLabSharingMembers(this.store, this.ownsPaper, memberId, query);
+  }
   list(memberId: string) {
     const member = this.store.getLabMember(memberId);
     if (!member) {
