@@ -186,3 +186,49 @@ describe("live directory", () => {
     expect(el.textContent).not.toContain("My retained draft");
   });
 });
+
+it("reveals a project hidden by the directory filter and focuses its card", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        projects: [],
+        requests: [
+          {
+            paper_id: "p1",
+            title: "Synthetic project",
+            description: "Review traces",
+            tags: [],
+            owner_name: "Member",
+            members_needed: 1,
+            hours_per_week: 2,
+            timeline: "",
+            status: "open",
+            can_manage: false,
+          },
+        ],
+      }),
+    }),
+  );
+  const el = new LabSharingDirectory();
+  el.sessionToken = "synthetic";
+  document.body.append(el);
+  await settle(el);
+  const input = el.querySelector<HTMLInputElement>('input[type="search"]')!;
+  input.value = "no match";
+  input.dispatchEvent(new Event("input"));
+  await el.updateComplete;
+  expect(el.querySelector('[data-project="p1"]')).toBeNull();
+  const scroll = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scroll;
+  try {
+    await el.showProject("p1");
+    expect(input.value).toBe("");
+    expect(document.activeElement).toBe(el.querySelector('[data-project="p1"]'));
+    expect(scroll).toHaveBeenCalled();
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});

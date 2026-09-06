@@ -11,6 +11,7 @@ type MemberMatch = {
 };
 
 export class LabSharingMemberSearch extends LitElement {
+  @property({ attribute: false }) onProjectSelect?: (paperId: string) => void;
   @property() baseUrl = "";
   @property() sessionToken = "";
   @state() private query = "";
@@ -129,7 +130,20 @@ export class LabSharingMemberSearch extends LitElement {
           <p class="muted">Matched: ${member.matched_fields.join(", ")}</p>
           ${member.projects.map(
             (project) =>
-              html`<a href=${`#lab-project-${encodeURIComponent(project.id)}`}
+              html`<a
+                href=${`#lab-project-${encodeURIComponent(project.id)}`}
+                @click=${(event: MouseEvent) => {
+                  if (
+                    this.onProjectSelect &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey &&
+                    !event.altKey
+                  ) {
+                    event.preventDefault();
+                    this.onProjectSelect(project.id);
+                  }
+                }}
                 >${project.title}</a
               >`,
           )}

@@ -76,6 +76,19 @@ export class LabSharingDirectory extends LitElement {
     this.generation++;
     super.disconnectedCallback();
   }
+  async showProject(paperId: string) {
+    const generation = this.generation;
+    this.query = "";
+    await this.updateComplete;
+    if (generation !== this.generation || !this.sessionToken) {
+      return;
+    }
+    const card = this.querySelector<HTMLElement>(
+      `[id="lab-project-${encodeURIComponent(paperId)}"]`,
+    );
+    card?.scrollIntoView({ block: "center" });
+    card?.focus({ preventScroll: true });
+  }
   private async request(path = "", body?: unknown): Promise<boolean> {
     if (this.busy || !this.sessionToken) {
       return false;
@@ -309,7 +322,9 @@ export class LabSharingDirectory extends LitElement {
               ? filtered.map(
                   (request) => html`<article
                     class="lab-sharing-request"
-                    id=${`lab-project-${encodeURIComponent(request.paper_id)}`} data-project=${request.paper_id}
+                    id=${`lab-project-${encodeURIComponent(request.paper_id)}`}
+                    tabindex="-1"
+                    data-project=${request.paper_id}
                   >
                     <h3 class="lab-sharing-request__project">${request.title}</h3>
                     <p class="lab-sharing-request__time">Posted by ${request.owner_name}</p>
