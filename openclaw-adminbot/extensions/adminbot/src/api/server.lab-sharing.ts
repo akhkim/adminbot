@@ -13,6 +13,13 @@ export async function handleLabSharingRoute(
     sendServiceResult(res, service.labSharing().list(memberId));
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab-sharing/members") {
+    sendServiceResult(
+      res,
+      service.labSharing().searchMembers(memberId, url.searchParams.get("q") ?? ""),
+    );
+    return;
+  }
   const interest = /^\/lab-sharing\/requests\/([^/]+)\/interest(\/withdraw)?$/u.exec(url.pathname);
   if (
     interest &&

@@ -219,4 +219,46 @@ describe("Lab Sharing routes", () => {
     expect(audit.every((event) => event.actor === "member")).toBe(true);
     expect(JSON.stringify(audit)).not.toContain("Private synthetic offer");
   });
+  it("serves a narrow member search only to authenticated members", async () => {
+    const { mock, baseUrl } = await startLab();
+    const member = await memberSession(mock, baseUrl, "member");
+    const admin = await memberSession(mock, baseUrl, "admin");
+    const url = `${baseUrl}/lab-sharing/members`;
+    expect((await fetch(`${url}?q=mina`)).status).toBe(401);
+    expect(
+      (await fetch(`${url}?q=mina`, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } }))
+        .status,
+    ).toBe(403);
+    for (const headers of [member, admin]) {
+      const response = await fetch(`${url}?q=%20MINA%20`, { headers });
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.members).toHaveLength(1);
+      expect(Object.keys(data.members[0]).sort()).toEqual([
+        "id",
+        "matched_fields",
+        "name",
+        "projects",
+        "research_branch",
+        "research_topics",
+      ]);
+      expect(JSON.stringify(data)).not.toContain("member@lab.test");
+      expect(data.members[0].matched_fields).toContain("name");
+    }
+    expect((await (await fetch(url, { headers: member })).json()).members).toEqual([]);
+    expect((await fetch(`${url}?q=${"x".repeat(101)}`, { headers: member })).status).toBe(400);
+    expect((await (await fetch(`${url}?q=reliable`, { headers: member })).json()).members).toEqual(
+      [],
+    );
+    mock.service.labSharing().save("member", "paper-1", draft);
+    const open = await (await fetch(`${url}?q=reliable`, { headers: member })).json();
+    expect(open.members[0].projects).toEqual([
+      { id: "paper-1", title: "Reliable Research Agents" },
+    ]);
+    mock.service.labSharing().save("member", "paper-1", {}, true);
+    expect((await (await fetch(`${url}?q=reliable`, { headers: member })).json()).members).toEqual(
+      [],
+    );
+    expect((await fetch(url, { method: "POST", headers: member })).status).toBe(404);
+  });
 });
