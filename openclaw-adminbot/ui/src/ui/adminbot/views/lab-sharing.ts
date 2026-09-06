@@ -1,3 +1,7 @@
+import { ref } from "lit/directives/ref.js";
+import "./lab-sharing-member-search.ts";
+import { LabSharingDirectory } from "./lab-sharing-directory.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 // Lab Sharing tab: five panels --
 //   1. Director status strip (availability, timezone, progress, a way to flag a blocker)
 //   2. Seek help -- pick a project, describe what's needed, tag it, then post a general call or
@@ -1181,7 +1185,7 @@ function renderComingSoonBanner() {
   `;
 }
 
-export function renderLabSharing(state: AppViewState) {
+export function renderLabSharingPreview(state: AppViewState) {
   return html`
     <div class="lab-sharing" data-testid="lab-sharing" data-preview="true">
       ${renderComingSoonBanner()} ${renderDirectorPanel()} ${renderInvitesPanel(state)}
@@ -1189,4 +1193,27 @@ export function renderLabSharing(state: AppViewState) {
       ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
     </div>
   `;
+}
+
+export function renderLabSharing(state: AppViewState) {
+  const session = loadStoredMemberSession();
+  let directory: LabSharingDirectory | undefined;
+  return html`<lab-sharing-directory
+      ${ref((element) => {
+        directory = element as LabSharingDirectory | undefined;
+      })}
+      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+      .sessionToken=${session?.sessionToken ?? ""}
+    ></lab-sharing-directory>
+    <lab-sharing-member-search
+      .onProjectSelect=${(paperId: string) => {
+        void directory?.showProject(paperId);
+      }}
+      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+      .sessionToken=${session?.sessionToken ?? ""}
+    ></lab-sharing-member-search>
+    <details>
+      <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
+      ${renderLabSharingPreview(state)}
+    </details>`;
 }
