@@ -158,4 +158,65 @@ describe("Lab Sharing routes", () => {
     const audit = mock.store.listAuditEvents();
     expect(audit.some((row) => row.type === "lab_help.saved" && row.actor === "member")).toBe(true);
   });
+  it("authenticates offers, bounds input, protects private responses and allows own withdrawal", async () => {
+    const { mock, baseUrl } = await startLab();
+    const member = await memberSession(mock, baseUrl, "member");
+    const admin = await memberSession(mock, baseUrl, "admin");
+    mock.service.upsertPaper({
+      id: "offers",
+      title: "Synthetic recruitment",
+      authors: ["Ada Admin"],
+      current_step: "brainstorming",
+    });
+    mock.service.labSharing().save("admin", "offers", draft);
+    const root = `${baseUrl}/lab-sharing`;
+    const url = `${root}/requests/offers/interest`;
+    const put = (headers: Record<string, string>, body: unknown) =>
+      fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
+    expect((await put({}, { hours_per_week: 2 })).status).toBe(401);
+    expect(
+      (await put({ Authorization: `Bearer ${SERVICE_TOKEN}` }, { hours_per_week: 2 })).status,
+    ).toBe(403);
+    expect((await put(admin, { hours_per_week: 2 })).status).toBe(403);
+    expect((await put(member, { hours_per_week: 0 })).status).toBe(400);
+    expect((await put(member, { hours_per_week: 2, note: "x".repeat(5000) })).status).toBe(413);
+    expect((await fetch(url, { method: "PUT", headers: member, body: "{" })).status).toBe(400);
+    const saved = await put(member, {
+      hours_per_week: 2,
+      note: "Private synthetic offer",
+      member_id: "admin",
+      status: "withdrawn",
+    });
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).interests[0]).toMatchObject({
+      member_id: "member",
+      status: "active",
+    });
+    const managed = await (await fetch(root, { headers: admin })).json();
+    expect(managed.interests[0].note).toBe("Private synthetic offer");
+    expect(
+      (
+        await fetch(`${url}/withdraw`, {
+          method: "POST",
+          headers: admin,
+          body: JSON.stringify({ member_id: "member" }),
+        })
+      ).status,
+    ).toBe(404);
+    expect(mock.store.listHelpInterests()[0].status).toBe("active");
+    mock.service.labSharing().save("admin", "offers", {}, true);
+    expect((await put(member, { hours_per_week: 3 })).status).toBe(409);
+    expect((await fetch(`${url}/withdraw`, { method: "POST", headers: member })).status).toBe(200);
+    expect(mock.store.listHelpInterests()).toHaveLength(1);
+    expect(mock.store.listHelpInterests()[0].status).toBe("withdrawn");
+    expect((await (await fetch(root, { headers: admin })).json()).interests).toEqual([]);
+    const audit = mock.store
+      .listAuditEvents()
+      .filter((event) => event.type.startsWith("lab_interest."));
+    expect(audit.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["lab_interest.saved", "lab_interest.withdrawn"]),
+    );
+    expect(audit.every((event) => event.actor === "member")).toBe(true);
+    expect(JSON.stringify(audit)).not.toContain("Private synthetic offer");
+  });
 });
