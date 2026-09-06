@@ -41,6 +41,7 @@ export class LabSharingService {
             {
               ...interest,
               title: paper.title,
+              is_own: interest.member_id === memberId,
               member_name: this.store.getLabMember(interest.member_id)?.name ?? "Lab member",
             },
           ];

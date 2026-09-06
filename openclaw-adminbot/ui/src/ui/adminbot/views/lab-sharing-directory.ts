@@ -13,7 +13,21 @@ type HelpRequest = {
   status: "open" | "closed";
   can_manage: boolean;
 };
-type Directory = { projects: { id: string; title: string }[]; requests: HelpRequest[] };
+type Interest = {
+  paper_id: string;
+  title: string;
+  member_name: string;
+  hours_per_week: number;
+  note: string;
+  status: "active" | "withdrawn";
+  updated_at: string;
+  is_own: boolean;
+};
+type Directory = {
+  interests?: Interest[];
+  projects: { id: string; title: string }[];
+  requests: HelpRequest[];
+};
 
 /** A real service-backed island; the other Lab Sharing panels remain explicitly previews. */
 export class LabSharingDirectory extends LitElement {
@@ -32,6 +46,7 @@ export class LabSharingDirectory extends LitElement {
     hours_per_week: 1,
     timeline: "",
   };
+  @state() private offerDrafts: Record<string, { hours_per_week: string; note: string }> = {};
   private generation = 0;
   protected override createRenderRoot() {
     return this;
@@ -40,6 +55,7 @@ export class LabSharingDirectory extends LitElement {
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
       this.generation++;
       this.data = null;
+      this.offerDrafts = {};
       this.error = "";
       this.notice = "";
       this.draft = {
@@ -69,7 +85,12 @@ export class LabSharingDirectory extends LitElement {
     this.error = "";
     try {
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing${path}`, {
-        method: body === undefined ? "GET" : path.endsWith("/close") ? "POST" : "PUT",
+        method:
+          body === undefined
+            ? "GET"
+            : path.endsWith("/close") || path.endsWith("/withdraw")
+              ? "POST"
+              : "PUT",
         headers: {
           Authorization: `Bearer ${this.sessionToken}`,
           "Content-Type": "application/json",
@@ -125,6 +146,127 @@ export class LabSharingDirectory extends LitElement {
       timeline: request.timeline,
     };
     this.querySelector<HTMLSelectElement>("select")?.focus();
+  }
+  private renderInterests() {
+    if (!this.data) {
+      return nothing;
+    }
+    const interests = this.data.interests ?? [];
+    const eligible = this.data.requests.filter(
+      (request) => request.status === "open" && !request.can_manage,
+    );
+    const own = interests.filter((interest) => interest.is_own);
+    return html`
+      ${eligible.length ? html`<h3 class="lab-sharing-seek__title">Offer to help</h3>` : nothing}
+      ${eligible.map((request) => {
+        const saved = own.find((interest) => interest.paper_id === request.paper_id);
+        const draft = this.offerDrafts[request.paper_id] ?? {
+          hours_per_week: String(saved?.hours_per_week ?? 1),
+          note: saved?.note ?? "",
+        };
+        const update = (field: "hours_per_week" | "note", value: string) => {
+          this.offerDrafts = {
+            ...this.offerDrafts,
+            [request.paper_id]: { ...draft, [field]: value },
+          };
+        };
+        return html`<form
+          aria-label=${`Offer for ${request.title}`}
+          @submit=${async (event: SubmitEvent) => {
+            event.preventDefault();
+            this.notice = "";
+            if (
+              await this.request(`/requests/${encodeURIComponent(request.paper_id)}/interest`, {
+                hours_per_week: Number(draft.hours_per_week),
+                note: draft.note,
+              })
+            ) {
+              this.notice = "Offer saved. Project authors and administrators can review it.";
+            }
+          }}
+        >
+          <fieldset class="lab-sharing-ask" ?disabled=${this.busy}>
+            <legend>${request.title}</legend>
+            <p>
+              Your availability and note are visible to you, project authors, and administrators.
+              Offering help does not add you to the project.
+            </p>
+            <label class="lab-sharing-ask__field"
+              ><span class="lab-sharing-ask__label">Your hours per week</span>
+              <input
+                class="lab-sharing-ask__input"
+                type="number"
+                required
+                min="0.5"
+                max="168"
+                step="0.5"
+                .value=${draft.hours_per_week}
+                @input=${(event: Event) =>
+                  update("hours_per_week", (event.target as HTMLInputElement).value)}
+            /></label>
+            <label class="lab-sharing-ask__field"
+              ><span class="lab-sharing-ask__label">Note (optional)</span>
+              <textarea
+                class="lab-sharing-ask__textarea"
+                maxlength="1000"
+                .value=${draft.note}
+                @input=${(event: Event) =>
+                  update("note", (event.target as HTMLTextAreaElement).value)}
+              ></textarea>
+            </label>
+            <button class="btn primary" type="submit">
+              ${saved?.status === "active" ? "Update offer" : "Offer to help"}
+            </button>
+          </fieldset>
+        </form>`;
+      })}
+      ${own.length ? html`<h3 class="lab-sharing-seek__title">Your offers</h3>` : nothing}
+      ${own.map(
+        (interest) => html`<article class="lab-sharing-request">
+          <h3 class="lab-sharing-request__project">${interest.title}</h3>
+          <p>
+            ${interest.status === "active" ? "Active" : "Withdrawn"} · ${interest.hours_per_week}
+            hours per week
+          </p>
+          <p class="lab-sharing-request__note">${interest.note}</p>
+          <p class="muted">Updated ${interest.updated_at}</p>
+          ${interest.status === "active"
+            ? html`<button
+                class="btn"
+                ?disabled=${this.busy}
+                @click=${async () => {
+                  this.notice = "";
+                  if (
+                    await this.request(
+                      `/requests/${encodeURIComponent(interest.paper_id)}/interest/withdraw`,
+                      {},
+                    )
+                  ) {
+                    this.notice = "Offer withdrawn.";
+                  }
+                }}
+              >
+                Withdraw offer
+              </button>`
+            : nothing}
+        </article>`,
+      )}
+      ${interests.some((interest) => !interest.is_own)
+        ? html`<h3 class="lab-sharing-seek__title">Offers on your projects</h3>`
+        : nothing}
+      ${interests
+        .filter((interest) => !interest.is_own)
+        .map(
+          (interest) => html`<article class="lab-sharing-request">
+            <h3 class="lab-sharing-request__project">
+              ${interest.title} · ${interest.member_name}
+            </h3>
+            <p>${interest.hours_per_week} hours per week</p>
+            <p class="lab-sharing-request__note">${interest.note}</p>
+            <p class="muted">Updated ${interest.updated_at}</p>
+          </article>`,
+        )}
+    `;
   }
   override render() {
     if (!this.sessionToken) {
@@ -218,6 +360,7 @@ export class LabSharingDirectory extends LitElement {
                     ? "No projects match your search."
                     : "No projects are asking for help yet."}
                 </p>`}
+            ${this.renderInterests()}
             <h3 class="lab-sharing-seek__title">Your project help request</h3>
             ${this.data.projects.length
               ? html`<form @submit=${(event: SubmitEvent) => this.save(event)}>
