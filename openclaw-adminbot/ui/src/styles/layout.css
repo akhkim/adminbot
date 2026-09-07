@@ -3184,13 +3184,9 @@
    it gets the width. The dial code leads each suggestion (see renderFieldInput), which keeps the
    part that identifies the choice visible when a long country name truncates. */
 /* A field that takes several answers at once: eleven roles as wrapping chips rather than a column
-   of eleven rows, which would be taller than the rest of the identity group put together. Each box
+   of eleven rows, which would be taller than the rest of the identity group put together, and
+   behind a dropdown (`.adminbot-multiselect`, components.css) rather than standing open. Each box
    keeps its label beside it, so the hit target is the whole chip and not a 13px square. */
-.profile__multi {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
 
 .profile__multi-option {
   display: inline-flex;
