@@ -145,7 +145,7 @@ lab-sharing-invites {
 }
 
 .lab-sharing-page .lab-sharing-directory select {
-  padding-right: var(--space-8);
+  padding: 0 var(--space-8) 0 var(--space-4);
 }
 
 .lab-sharing-page > details {
@@ -161,5 +161,22 @@ lab-sharing-invites {
   }
   .lab-sharing-page .lab-sharing-request__header {
     flex-wrap: wrap;
+  }
+}
+
+.lab-sharing-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.lab-sharing-directory__filters > label {
+  flex: 1 1 180px;
+  max-width: 320px;
+}
+@media (max-width: 600px) {
+  .lab-sharing-directory__filters > label {
+    max-width: none;
+    flex-basis: 100%;
   }
 }

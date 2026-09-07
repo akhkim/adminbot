@@ -59,6 +59,8 @@ export class LabSharingDirectory extends LitElement {
       this.generation++;
       this.data = null;
       this.offerDrafts = {};
+      this.query = this.maxHours = "";
+      this.visibleCount = 10;
       this.error = "";
       this.notice = "";
       this.draft = {
@@ -327,7 +329,7 @@ export class LabSharingDirectory extends LitElement {
                   this.visibleCount = 10;
                 }}
             /></label>
-            <div class="lab-sharing-directory__actions">
+            <div class="lab-sharing-directory__filters">
               <label class="lab-sharing-ask__field">Maximum hours per week
                 <input class="lab-sharing-ask__input" type="number" min="1" placeholder="Any" .value=${this.maxHours}
                   @input=${(event: Event) => { this.maxHours = (event.target as HTMLInputElement).value; this.visibleCount = 10; }} />
@@ -395,7 +397,7 @@ export class LabSharingDirectory extends LitElement {
                 )
               : html`<p>
                   ${open.length
-                    ? "No projects match your search."
+                    ? "No projects match these filters. Try fewer search terms or increase the weekly hours."
                     : "No projects are asking for help yet."}
                 </p>`}
             ${filtered.length > this.visibleCount ? html`<button class="btn" @click=${() => { this.visibleCount += 10; }}>Show 10 more projects</button>` : nothing}

@@ -1203,7 +1203,7 @@ export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
   let directory: LabSharingDirectory | undefined;
   let invitations: LabSharingInvites | undefined;
-  return html`<div class="lab-sharing-page"><lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
+  return html`<div class="lab-sharing-page">
     <lab-sharing-directory
       ${ref((element) => {
         directory = element as LabSharingDirectory | undefined;
@@ -1221,6 +1221,7 @@ export function renderLabSharing(state: AppViewState) {
     ></lab-sharing-member-search>
     <lab-sharing-invites ${ref((element) => { invitations = element as LabSharingInvites | undefined; })} .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-invites>
     <lab-sharing-how-to .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-how-to>
+    <lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
     ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     <details>
       <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
