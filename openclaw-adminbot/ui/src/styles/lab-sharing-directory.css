@@ -75,3 +75,10 @@ lab-sharing-invites {
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
 }
+
+.lab-sharing-directory .lab-sharing-ask__field > span {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
