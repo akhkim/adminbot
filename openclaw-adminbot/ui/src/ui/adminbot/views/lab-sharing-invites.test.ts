@@ -111,3 +111,17 @@ it("offers only managed projects with open help requests and clears a closed sel
   expect(el.querySelector("form")).toBeNull();
   expect(el.textContent).toContain("Open a help request for a project you manage");
 });
+
+it("releases a stalled load and offers a retry after timeout", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+    init.signal!.addEventListener("abort", () => reject(new Error("aborted")), {once: true});
+  })));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.sessionToken = "member"; document.body.append(el);
+  await el.updateComplete;
+  await vi.advanceTimersByTimeAsync(30_000);
+  await el.updateComplete;
+  expect(el.textContent).toContain("Invitations took too long to load");
+  expect(el.querySelector("button")!.disabled).toBe(false);
+});
