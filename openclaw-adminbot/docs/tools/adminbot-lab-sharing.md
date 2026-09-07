@@ -73,3 +73,10 @@ The UI waits 250 milliseconds after typing, supports retry after a failed reques
 and discards responses from earlier queries or sessions. Signing out clears the
 results. Selecting a project clears the directory filter and scrolls to and focuses
 its card. Search is read-only and requires no new database migration or connector.
+
+## Collaboration resources
+
+Signed-in members can use the resource cards on Collaborate to open meeting
+recordings, their profile and research topics, time availability, or project records.
+These are ordinary links to existing portal pages and respect the configured base
+path. They do not copy records, submit forms, or expose the internal guidebook.
