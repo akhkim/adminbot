@@ -23,8 +23,8 @@ SQLite adds `adminbot_help_requests` without altering existing tables. The paper
 is its primary key. Deployment does not require manually modifying the database.
 
 Other Lab Sharing features are still clearly labeled sample previews in a collapsed
-section. Direct invitations, announcements, director status and automatic
-notifications remain follow-up work.
+section. Direct invitations, announcements and automatic notifications remain
+follow-up work.
 
 
 ## Offers to help
@@ -80,3 +80,26 @@ Signed-in members can use the resource cards on Collaborate to open meeting
 recordings, their profile and research topics, time availability, or project records.
 These are ordinary links to existing portal pages and respect the configured base
 path. They do not copy records, submit forms, or expose the internal guidebook.
+
+## Director status
+
+The Collaborate page displays a manually shared status to signed-in lab members.
+Administrators can publish or clear it. It does not infer availability from calendars,
+Slack, or private schedules. The editor explicitly identifies the lab-member audience.
+
+- `GET /lab-sharing/status`: current `status` or null, plus `can_manage`.
+- `PUT /lab-sharing/status`: administrator-only publication with `availability`
+  (`available`, `busy`, `away`, or `unknown`), a trimmed 1–500 character `message`,
+  and future timezone-qualified `expires_at`. JSON is limited to 4096 bytes.
+- `POST /lab-sharing/status/clear`: administrator-only removal.
+
+Anonymous callers receive 401; shared service-token callers and member writes receive
+403. The service supplies `updated_by` and `updated_at`, ignoring caller metadata.
+Audit events record the actor without copying status text. SQLite adds a singleton
+`adminbot_director_status` table; publishing replaces its row and clearing deletes it.
+
+The service returns null after expiry; the browser also removes expired status without
+a refresh. Expiry hides the stored text rather than deleting it. Explicit clear removes
+the row. Browser inputs use the editor's device timezone and convert to ISO for the API.
+Session changes clear status and drafts; denied authorization removes editing controls.
+Ordinary network failures retain an administrator's draft for retry.
