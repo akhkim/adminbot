@@ -12,19 +12,20 @@
 // in March, and one thing to delete when a member leaves rather than a trail of past events.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 
-/**
- * The zone stamped on the event.
- *
- * `Europe/Berlin` rather than the bare `CET` tzdata alias: both observe CET/CEST, but the alias is
- * a legacy compatibility entry that some clients refuse, and a real location zone is what Google
- * stores for every other event this lab creates.
- *
- * Worth knowing what this does and does not do. An all-day event is date-only in Google's data
- * model -- it starts on a date, not at an instant -- so the zone does not shift which day the
- * birthday lands on for anyone, and a member in Toronto sees it on the same date as one in Zurich.
- * What it sets is the zone the event's own reminders anchor to.
- */
-export const BIRTHDAY_EVENT_TIMEZONE = "Europe/Berlin";
+// No timezone is sent, and it is not an oversight.
+//
+// An all-day event is date-only in Google's data model: it starts on a date, not at an instant, so
+// there is no offset for a zone to apply and the API has no field to put one in. `gog` enforces
+// this directly -- `--timezone cannot be used with all-day dates` -- so a payload carrying both
+// fails at execution rather than quietly ignoring one.
+//
+// The practical effect is the one people actually want from "in CET": everybody sees the birthday
+// on the same calendar date, whether they are in Zurich, Toronto or Singapore, because the date is
+// not being converted from an instant in the first place. A CET-anchored event would be *worse*
+// for a lab spread across nine hours -- 13 March in Berlin is still 12 March in Vancouver.
+//
+// If a birthday ever needs to fire at a particular moment in CET -- a 9am reminder, say -- that is
+// a timed event rather than an all-day one, and a different payload shape.
 
 const BIRTHDAY_PATTERN = /^(\d{2})-(\d{2})$/u;
 
@@ -121,7 +122,6 @@ export function birthdayEventPayload(
     from: start,
     to: exclusiveEnd(year, birthday),
     all_day: true,
-    timezone: BIRTHDAY_EVENT_TIMEZONE,
     rrule: `RRULE:FREQ=YEARLY;BYMONTH=${birthday.month};BYMONTHDAY=${birthday.day}`,
     // No attendees. The event belongs on the shared calendar for everyone to see; inviting the
     // whole roster to each other's birthdays would put 199 notifications in 199 inboxes.

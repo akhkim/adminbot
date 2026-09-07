@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
-  BIRTHDAY_EVENT_TIMEZONE,
   birthdayEventPayload,
   nextOccurrence,
   parseBirthday,
@@ -78,11 +77,23 @@ describe("birthdayEventPayload", () => {
       // Google's all-day end is exclusive, so a one-day event ends the following day.
       to: "2027-03-15",
       all_day: true,
-      timezone: BIRTHDAY_EVENT_TIMEZONE,
       rrule: "RRULE:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=14",
     });
     // Nobody is invited: 199 people do not need an invitation to each other's birthdays.
     expect(payload?.attendees).toBeUndefined();
+  });
+
+  it("sends no timezone, which gog rejects outright on an all-day event", () => {
+    // `--timezone cannot be used with all-day dates`. A date-only event has no instant for an
+    // offset to apply to, so carrying one fails at execution instead of being ignored -- and every
+    // member sees the birthday on the same date precisely because nothing is being converted.
+    const payload = birthdayEventPayload(
+      member({ birthday: "03-13" }),
+      "lab@example.com",
+      new Date("2026-01-01T00:00:00Z"),
+    );
+    expect(payload?.all_day).toBe(true);
+    expect(payload?.timezone).toBeUndefined();
   });
 
   it("prefers the preferred name", () => {
