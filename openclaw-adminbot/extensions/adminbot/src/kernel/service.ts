@@ -1,3 +1,4 @@
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
@@ -346,6 +347,8 @@ export type AdminBotServiceResponse<T> =
   | { ok: false; status: number; error: { message: string } };
 
 export type AdminBotServiceStore = {
+  saveHelpInterest(interest: LabHelpInterest): void;
+  listHelpInterests(): LabHelpInterest[];
   saveHelpRequest(request: LabHelpRequest): void;
   listHelpRequests(): LabHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;

@@ -122,4 +122,67 @@ describe("live directory", () => {
     expect(el.querySelector("textarea")?.value).toBe("Keep this draft");
     expect(el.textContent).not.toContain("Help request saved");
   });
+  it("retains a failed offer draft and withdraws a saved offer with POST", async () => {
+    const interest = {
+      paper_id: "p1",
+      title: "Synthetic project",
+      member_name: "Reader",
+      hours_per_week: 2,
+      note: "Saved note",
+      status: "active",
+      updated_at: "2026-09-06",
+      is_own: true,
+    };
+    const data = {
+      projects: [],
+      requests: [
+        {
+          paper_id: "p1",
+          title: "Synthetic project",
+          owner_name: "Owner",
+          description: "Tasks",
+          tags: [],
+          members_needed: 1,
+          hours_per_week: 2,
+          timeline: "",
+          status: "open",
+          can_manage: false,
+        },
+      ],
+      interests: [interest],
+    };
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => data })
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...data, interests: [{ ...interest, status: "withdrawn" }] }),
+      });
+    vi.stubGlobal("fetch", fetcher);
+    const el = new LabSharingDirectory();
+    el.sessionToken = "synthetic";
+    document.body.append(el);
+    await settle(el);
+    const note = el.querySelector("textarea")!;
+    note.value = "My retained draft";
+    note.dispatchEvent(new Event("input"));
+    await settle(el);
+    el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(el);
+    expect(el.querySelector("textarea")!.value).toBe("My retained draft");
+    expect(el.textContent).not.toContain("Offer saved.");
+    const withdraw = [...el.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Withdraw offer"),
+    )!;
+    withdraw.click();
+    await settle(el);
+    expect(fetcher.mock.calls[2][0]).toContain("/interest/withdraw");
+    expect(fetcher.mock.calls[2][1].method).toBe("POST");
+    expect(el.textContent).toContain("Offer withdrawn.");
+    el.sessionToken = "";
+    await settle(el);
+    expect(el.textContent).not.toContain("Saved note");
+    expect(el.textContent).not.toContain("My retained draft");
+  });
 });

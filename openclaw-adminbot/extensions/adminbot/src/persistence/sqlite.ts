@@ -1,3 +1,5 @@
+import { ensureLabInterestSchema, saveHelpInterest, listHelpInterests } from "./lab-sharing-interest.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -658,6 +660,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_workshop_match_runs(started_at DESC);
     `);
     ensureLabSharingSchema(this.db);
+    ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -2108,6 +2111,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     });
   }
 
+  saveHelpInterest(interest: LabHelpInterest): void { saveHelpInterest(this.db, interest); }
+  listHelpInterests(): LabHelpInterest[] { return listHelpInterests(this.db); }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);
   }

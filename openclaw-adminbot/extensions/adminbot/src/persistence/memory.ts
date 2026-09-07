@@ -1,3 +1,4 @@
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 /**
  * In-memory service store.
  *
@@ -67,6 +68,13 @@ function slackConnectInviteKey(email: string, channelId: string): string {
 }
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
+  private readonly helpInterests = new Map<string, LabHelpInterest>();
+  saveHelpInterest(interest: LabHelpInterest): void {
+    this.helpInterests.set(JSON.stringify([interest.paper_id, interest.member_id]), structuredClone(interest));
+  }
+  listHelpInterests(): LabHelpInterest[] {
+    return [...this.helpInterests.values()].map((row) => structuredClone(row));
+  }
   private readonly helpRequests = new Map<string, LabHelpRequest>();
   saveHelpRequest(request: LabHelpRequest): void {
     this.helpRequests.set(request.paper_id, structuredClone(request));
