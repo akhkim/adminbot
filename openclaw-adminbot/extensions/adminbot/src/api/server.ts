@@ -4296,6 +4296,44 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "POST" && url.pathname === "/calendar/research-theme-invites/run") {
+    // The sibling of the route above, reaching the same meetings from the other side: that one
+    // fills a theme meeting from its Slack channel, this one from what members say they work on.
+    // Same division of labour -- the caller supplies what it can see (Wednesday's events, and who
+    // is already on each) and names nobody; the service decides who that maps to.
+    //
+    // `attendees` is optional but worth sending: without it every run re-proposes the people
+    // already on the event, and with it a settled roster produces no proposal at all.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const meetings = Array.isArray(body.meetings)
+      ? body.meetings.flatMap((entry) => {
+          const row = readRecord(entry);
+          const eventId = asString(row.event_id);
+          const summary = asString(row.summary);
+          return eventId && summary
+            ? [{ event_id: eventId, summary, attendees: readStringList(row.attendees) }]
+            : [];
+        })
+      : [];
+    if (meetings.length === 0) {
+      sendJson(res, 400, { error: { message: "meetings must be non-empty" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.sweepResearchThemeInvites(
+        {
+          meetings,
+          calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+        },
+        principalActor(principal),
+      ),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/topic-channels/run") {
     // The channel list is caller-supplied, unlike every other sweep, and that is the one thing this
     // route takes: the service has no Slack client, and which channels exist is a fact about the
