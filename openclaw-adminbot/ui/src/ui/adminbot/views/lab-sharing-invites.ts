@@ -57,7 +57,14 @@ export class LabSharingInvites extends LitElement {
     this.busy = false;
   }
   async selectMember(id: string, name: string) {
+    if (this.busy) {
+      return;
+    }
     const generation = this.generation;
+    if (this.recipient?.id !== id) {
+      this.note = this.start = this.end = this.error = this.result = "";
+      this.kind = "collaboration";
+    }
     this.recipient = { id, name };
     await this.updateComplete;
     if (generation !== this.generation) {
@@ -123,9 +130,15 @@ export class LabSharingInvites extends LitElement {
         return;
       }
       this.result = `Invitation request: ${invitationStatus(data.status)}.`;
-      const rows = await this.request("/lab-sharing/invites");
-      if (generation === this.generation) {
-        this.invites = rows.invites;
+      try {
+        const rows = await this.request("/lab-sharing/invites");
+        if (generation === this.generation) {
+          this.invites = rows.invites;
+        }
+      } catch {
+        if (generation === this.generation) {
+          this.error = "Your request was accepted, but history could not refresh. Use Refresh invitations to check its status.";
+        }
       }
     } catch (error) {
       if (generation === this.generation) {
