@@ -30,6 +30,7 @@ import {
 import { persistChatComposerState, restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { startControlUiResponsivenessObserver } from "./control-ui-performance.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
+import { operatorScopesWidened, resolveMemberOperatorScopes } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
@@ -142,8 +143,23 @@ export function handleConnected(host: LifecycleHost) {
       // Gateway token already present (break-glass/URL-param or same-tab reload):
       // the full resume is skipped, so eagerly load privilege from any stored
       // member session so Lab Members gates correctly before it is ever opened.
+      //
+      // The privilege fetch is async but connect below is synchronous, so an admin
+      // would otherwise connect while privilegeLevel is still null and declare a
+      // read-only connection -- leaving every write RPC (Lab Members) failing with
+      // `missing scope: operator.write` for the life of the tab. Reconnect once if
+      // the privilege lands late and entitles the member to more than we asked for.
       if (hasStoredMemberSession()) {
-        void loadMemberPrivilege(memberHost);
+        const scopesAtConnect = resolveMemberOperatorScopes(memberHost.memberPrivilegeLevel);
+        void loadMemberPrivilege(memberHost).then(() => {
+          if (host.connectGeneration !== connectGeneration) {
+            return;
+          }
+          const scopesAfterPrivilege = resolveMemberOperatorScopes(memberHost.memberPrivilegeLevel);
+          if (operatorScopesWidened(scopesAtConnect, scopesAfterPrivilege)) {
+            connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+          }
+        });
       }
       connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
     }

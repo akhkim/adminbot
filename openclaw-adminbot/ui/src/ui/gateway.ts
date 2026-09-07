@@ -208,6 +208,20 @@ export function resolveMemberOperatorScopes(privilegeLevel: string | null | unde
   return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read"];
 }
 
+// True when `next` grants an operator scope `previous` did not. The Control-UI resolves connect
+// scopes from the member's privilege, but privilege is loaded asynchronously: on the reload path
+// that skips the full session resume, connect can happen while privilegeLevel is still null, which
+// declares a read-only connection for an admin and makes every write RPC fail `missing scope:
+// operator.write`. Callers use this to detect that the privilege arrived late and reconnect once
+// with the scopes the member is actually entitled to.
+export function operatorScopesWidened(
+  previous: readonly string[],
+  next: readonly string[],
+): boolean {
+  const held = new Set(previous);
+  return next.some((scope) => !held.has(scope));
+}
+
 export type GatewayConnectAuth = {
   token?: string;
   deviceToken?: string;
