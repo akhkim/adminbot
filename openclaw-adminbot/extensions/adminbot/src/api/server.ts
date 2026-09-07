@@ -133,6 +133,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
+import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
   type MemberSheetEditRequest,
@@ -2677,6 +2678,14 @@ async function handleAuthenticatedRoute(
         principal.member.id,
       ),
     );
+    return;
+  }
+  if (url.pathname === "/lab-sharing" || url.pathname.startsWith("/lab-sharing/")) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "A member session is required." } });
+      return;
+    }
+    await handleLabSharingRoute(req, res, url, service, principal.member.id);
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members") {

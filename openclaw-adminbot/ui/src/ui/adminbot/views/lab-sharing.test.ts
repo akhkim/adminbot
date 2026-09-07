@@ -1,9 +1,9 @@
-﻿/* @vitest-environment jsdom */
+/* @vitest-environment jsdom */
 
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import { renderLabSharing } from "./lab-sharing.ts";
+import { renderLabSharingPreview as renderLabSharing } from "./lab-sharing.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -160,8 +160,7 @@ describe("renderLabSharing", () => {
     const cardsBefore = [...container.querySelectorAll(".lab-sharing-request")].length;
     expect(cardsBefore).toBeGreaterThan(0);
 
-    const firstId = container.querySelector<HTMLElement>(".lab-sharing-request")?.dataset
-      .testid;
+    const firstId = container.querySelector<HTMLElement>(".lab-sharing-request")?.dataset.testid;
     const requestRow = `[data-testid="${firstId}"]`;
     click(container, `${requestRow} .lab-sharing-request__delete`);
     expect(container.querySelector(".lab-sharing-request__delete--confirm")).not.toBeNull();
@@ -200,11 +199,8 @@ describe("renderLabSharing", () => {
 
     input(container, '[data-testid="lab-sharing-announcement-compose"] textarea', "Heads up.");
     click(container, `[data-testid="lab-sharing-announcement-send"]`);
-    expect(
-      container.querySelector('[data-testid="lab-sharing-announcement-compose"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="lab-sharing-announcement-compose"]')).toBeNull();
     const feed = container.querySelector('[data-testid="lab-sharing-announcements"]');
     expect(feed?.textContent).toContain("Heads up.");
   });
 });
-

@@ -42,6 +42,7 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -66,6 +67,13 @@ function slackConnectInviteKey(email: string, channelId: string): string {
 }
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
+  private readonly helpRequests = new Map<string, LabHelpRequest>();
+  saveHelpRequest(request: LabHelpRequest): void {
+    this.helpRequests.set(request.paper_id, structuredClone(request));
+  }
+  listHelpRequests(): LabHelpRequest[] {
+    return [...this.helpRequests.values()].map((row) => structuredClone(row));
+  }
   private readonly proposals = new Map<string, AdminBotStoredProposal>();
   private readonly deadlineSubmissionActions = new Map<string, string>();
   private readonly publishedDeadlines = new Map<string, PublishedDeadlineRecord>();

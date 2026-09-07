@@ -158,7 +158,7 @@ export function pageTitleForTab(tab: Tab) {
 // Empty today: Social Media Bot was the only one, and it is gone rather than built. Drafting the
 // post is a step of a paper, so it lives on that paper's card in My Projects & Papers -- a tab of
 // its own would have been a second place to start the same job, with no paper in hand.
-export const UNIMPLEMENTED_TABS: readonly Tab[] = ["labSharing"];
+export const UNIMPLEMENTED_TABS: readonly Tab[] = [];
 
 /**
  * Whether an arbitrary string names a tab.

@@ -149,6 +149,7 @@ import {
   isGroupMeetingNudgeDue,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
+import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import {
   findDuplicateMembers,
   planMemberMerge,
@@ -325,6 +326,7 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import { LabSharingService } from "./service.lab-sharing.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -344,6 +346,8 @@ export type AdminBotServiceResponse<T> =
   | { ok: false; status: number; error: { message: string } };
 
 export type AdminBotServiceStore = {
+  saveHelpRequest(request: LabHelpRequest): void;
+  listHelpRequests(): LabHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -3835,6 +3839,12 @@ export class AdminBotService {
    * existed -- it is why the first save on an old paper quietly links it, after which this method
    * never has to guess about that paper again.
    */
+  labSharing() {
+    return new LabSharingService(this.store, (member, paper) =>
+      this.memberOwnsPaper(member, paper),
+    );
+  }
+
   private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
     if (paper.submitted_by_member_id === member.id) {
       return true;

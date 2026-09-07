@@ -40,6 +40,7 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -70,6 +71,7 @@ import {
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
 
 const require = createRequire(import.meta.url);
 
@@ -655,6 +657,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
         ON adminbot_workshop_match_runs(started_at DESC);
     `);
+    ensureLabSharingSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -2103,6 +2106,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       }
       return record;
     });
+  }
+
+  saveHelpRequest(request: LabHelpRequest): void {
+    saveHelpRequest(this.db, request);
+  }
+  listHelpRequests(): LabHelpRequest[] {
+    return listHelpRequests(this.db);
   }
 
   saveEmailReview(review: AdminBotEmailReviewItem): void {
