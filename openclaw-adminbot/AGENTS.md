@@ -73,10 +73,11 @@ lane, which specific tests fail, and why. This is the summary.
   `ui/src/ui/components/feedback-widget.test.ts` still flakes in roughly 1 run in 6; see
   docs/refactor-baseline.md. Everything else is deterministic: 2,899 passed / 31 skipped, identical
   across 12 consecutive runs.
-- `test/scripts`: 20 files / 113 tests, 6 failures — 1 in `adminbot-reimbursement-from-email`, 2 in
+- `test/scripts`: 20 files / 113 tests, 5 failures — 1 in `adminbot-reimbursement-from-email`, 2 in
   `aurora-qwen35-setup`, 3 in `aurora-runtime-bootstrap`. `adminbot-email-automation` used to die
-  at import on the `openclaw/plugin-sdk/media-runtime` subpath; that subpath is real again, so the
-  spec collects and one assertion failure remains.
+  at import on the `openclaw/plugin-sdk/media-runtime` subpath and then to fail one assertion; the
+  subpath is real again and the assertion was a `beforeAll` env stub the config cleared after the
+  first test, so that file is green now.
 - `src/plugins/contracts` + `src/plugins/install`: 16 files / 53 failures, nearly all of them
   asserting against the ~130 plugins the deep clean removed (discord, matrix, telegram,
   migrate-hermes) or against provider registries those plugins fed.

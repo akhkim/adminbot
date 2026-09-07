@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
+  calendarCommandRefusal,
   formatTalkLatex,
   outcomeLabelChange,
   resolveEmailAutomationSlackAccount,
@@ -23,7 +24,9 @@ const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
   ...overrides,
 });
 
-const classification = (overrides: Partial<ModelClassification> = {}): ModelClassification => ({
+const classification = (
+  overrides: Partial<ModelClassification> = {},
+): ModelClassification => ({
   category: "student_reachout",
   confidence: 0.98,
   reason: "student asks to join the lab",
@@ -35,8 +38,16 @@ const classification = (overrides: Partial<ModelClassification> = {}): ModelClas
 
 // The privileged-sender allowlist is deployment configuration; without it nobody is privileged.
 // Set here so the authorization tests exercise a configured deployment.
-beforeAll(() => {
-  vi.stubEnv("ADMINBOT_ONBOARDING_SENDERS", "pi@example.edu,pi.admin@example.edu");
+//
+// Per test, not once: the vitest config restores stubbed env between tests, so a `beforeAll` stub
+// was in place for the first test in the file and gone for every one after it. That is what the
+// long-standing onboarding failure in this file actually was -- an unconfigured deployment, where
+// `pi@example.edu` is nobody in particular.
+beforeEach(() => {
+  vi.stubEnv(
+    "ADMINBOT_ONBOARDING_SENDERS",
+    "pi@example.edu,pi.admin@example.edu",
+  );
   vi.stubEnv("ADMINBOT_CONTACT_EMAILS", "ops@example.com");
 });
 afterAll(() => {
@@ -45,7 +56,9 @@ afterAll(() => {
 
 describe("adminbot email automation", () => {
   it("accepts high-confidence student outreach for LLM-guided handling", () => {
-    expect(authorizeClassification(message(), classification()).category).toBe("student_reachout");
+    expect(authorizeClassification(message(), classification()).category).toBe(
+      "student_reachout",
+    );
   });
 
   it("requires the real sender and complete model extraction for onboarding", () => {
@@ -57,14 +70,17 @@ describe("adminbot email automation", () => {
       candidateName: "Candidate",
     });
     expect(authorizeClassification(message(), direct).category).toBe("unknown");
-    expect(authorizeClassification(message({ from: "pi@example.edu" }), direct)).toMatchObject({
+    expect(
+      authorizeClassification(message({ from: "pi@example.edu" }), direct),
+    ).toMatchObject({
       category: "onboarding_instruction",
       decision: "direct",
       candidateEmail: "candidate@example.com",
     });
-    expect(authorizeClassification(message({ from: "ops@example.com" }), direct).category).toBe(
-      "unknown",
-    );
+    expect(
+      authorizeClassification(message({ from: "ops@example.com" }), direct)
+        .category,
+    ).toBe("unknown");
   });
 
   it("recognizes only tracked candidate followups", () => {
@@ -75,22 +91,29 @@ describe("adminbot email automation", () => {
       candidateEmail: "candidate@cs.toronto.edu",
     });
     expect(
-      authorizeClassification(message({ from: "candidate@example.com" }), followup, {
-        candidate_email: "candidate@example.com",
-        decision: "direct",
-      }),
+      authorizeClassification(
+        message({ from: "candidate@example.com" }),
+        followup,
+        {
+          candidate_email: "candidate@example.com",
+          decision: "direct",
+        },
+      ),
     ).toMatchObject({
       category: "onboarding_followup",
       decision: "direct",
       candidateEmail: "candidate@example.com",
     });
-    expect(authorizeClassification(message(), followup).category).toBe("unknown");
+    expect(authorizeClassification(message(), followup).category).toBe(
+      "unknown",
+    );
   });
 
   it("rejects low-confidence and unauthorized privileged classifications", () => {
-    expect(authorizeClassification(message(), classification({ confidence: 0.79 })).category).toBe(
-      "unknown",
-    );
+    expect(
+      authorizeClassification(message(), classification({ confidence: 0.79 }))
+        .category,
+    ).toBe("unknown");
     expect(
       authorizeClassification(
         message(),
@@ -102,14 +125,84 @@ describe("adminbot email automation", () => {
     ).toBe("unknown");
   });
 
+  it("takes a calendar request from a configured sender at its word, however sure the model was", () => {
+    const hedged = classification({
+      category: "calendar_event",
+      confidence: 0.42,
+      reason: "reads like a request to put a talk on the calendar",
+    });
+    expect(
+      authorizeClassification(message({ from: "pi@example.edu" }), hedged)
+        .category,
+    ).toBe("calendar_event");
+    expect(
+      authorizeClassification(
+        message({ from: "Ops <ops@example.com>" }),
+        hedged,
+      ).category,
+    ).toBe("calendar_event");
+    // The bypass is the sender's, not the category's: the same hedged read from outside is still
+    // held for a person.
+    expect(authorizeClassification(message(), hedged).category).toBe("unknown");
+    // And it does not leak to the other privileged categories, where a low-confidence read means
+    // forms or a CV line built from an email nobody was sure about.
+    expect(
+      authorizeClassification(
+        message({ from: "pi@example.edu" }),
+        classification({
+          category: "reimbursement",
+          confidence: 0.42,
+          reason: "maybe expenses",
+        }),
+      ).category,
+    ).toBe("unknown");
+  });
+
+  it("refuses any calendar command that is not a create or a read", () => {
+    expect(
+      calendarCommandRefusal(["calendar", "create", "lab@example.com"]),
+    ).toBeUndefined();
+    expect(calendarCommandRefusal(["calendar", "list"])).toBeUndefined();
+    expect(
+      calendarCommandRefusal(["calendar", "acl", "insert"]),
+    ).toBeUndefined();
+    expect(
+      calendarCommandRefusal([
+        "gmail",
+        "messages",
+        "modify",
+        "--remove",
+        "INBOX",
+      ]),
+    ).toBe(undefined);
+    for (const args of [
+      ["calendar", "delete", "lab@example.com", "evt1"],
+      ["calendar", "remove", "evt1"],
+      ["calendar", "update", "evt1"],
+      ["calendar", "events", "delete", "evt1"],
+      ["calendar", "acl", "delete", "someone@example.com"],
+      ["calendar"],
+    ]) {
+      expect(calendarCommandRefusal(args)).toMatch(/never delete or modify/u);
+    }
+  });
+
   it("resolves env-backed Slack SecretRefs before standalone token reads", async () => {
     const cfg = {
       channels: {
         slack: {
           accounts: {
             default: {
-              botToken: { source: "env", provider: "default", id: "SLACK_BOT_TOKEN" },
-              userToken: { source: "env", provider: "default", id: "SLACK_USER_TOKEN" },
+              botToken: {
+                source: "env",
+                provider: "default",
+                id: "SLACK_BOT_TOKEN",
+              },
+              userToken: {
+                source: "env",
+                provider: "default",
+                id: "SLACK_USER_TOKEN",
+              },
             },
           },
         },
@@ -133,7 +226,8 @@ describe("adminbot email automation", () => {
     expect(
       formatTalkLatex({
         title: "Emergent AI Safety Risks in Multi-Agent LLMs",
-        venue: "Invited Keynote at the Cooperative AI Foundation Summer School 2026",
+        venue:
+          "Invited Keynote at the Cooperative AI Foundation Summer School 2026",
         location: "Toronto, Canada",
         date: "2026/8/3-4",
         upcoming: true,
@@ -159,7 +253,9 @@ describe("adminbot email automation", () => {
         // looks exactly like mail that has not been processed yet.
         expect(change.remove).not.toContain("INBOX");
       }
-      expect(outcomeLabelChange("needs_review").add).toEqual(["AdminBot/Needs Review"]);
+      expect(outcomeLabelChange("needs_review").add).toEqual([
+        "AdminBot/Needs Review",
+      ]);
       expect(outcomeLabelChange("failed").add).toEqual(["AdminBot/Error"]);
     });
 
@@ -197,17 +293,25 @@ describe("mailbox scan watermark", () => {
     const { state, cleanup } = store();
     state.markScannedThrough(new Date("2026-07-18T12:00:00Z"));
     state.markScannedThrough(new Date("2026-07-18T09:00:00Z"));
-    expect(state.scannedThrough()?.toISOString()).toBe("2026-07-18T12:00:00.000Z");
+    expect(state.scannedThrough()?.toISOString()).toBe(
+      "2026-07-18T12:00:00.000Z",
+    );
     cleanup();
   });
 
   it("treats a settled message as done and a retryable one as not", () => {
     const { state, cleanup } = store();
-    state.begin(message({ id: "settled" }), { category: "unknown", reason: "test" });
+    state.begin(message({ id: "settled" }), {
+      category: "unknown",
+      reason: "test",
+    });
     expect(state.isSettled("settled")).toBe(false);
     state.finish("settled", "completed");
     expect(state.isSettled("settled")).toBe(true);
-    state.begin(message({ id: "broke" }), { category: "unknown", reason: "test" });
+    state.begin(message({ id: "broke" }), {
+      category: "unknown",
+      reason: "test",
+    });
     state.finish("broke", "failed", "boom");
     expect(state.isSettled("broke")).toBe(false);
     expect(state.isSettled("never-seen")).toBe(false);
@@ -222,7 +326,10 @@ describe("mailbox scan watermark", () => {
         subject: "Reviews released",
         internalDate: String(Date.parse("2026-09-03T21:04:00.000Z")),
       }),
-      { category: "paperflow_bcc", reason: "sender is not a trusted lab address" },
+      {
+        category: "paperflow_bcc",
+        reason: "sender is not a trusted lab address",
+      },
     );
     state.finish("held", "needs_review", "sender is not a trusted lab address");
 

@@ -15,7 +15,10 @@ import {
   noticeToMeeting,
   renderEmailBodyHtml,
 } from "../extensions/adminbot/api.js";
-import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
+import {
+  getSlackWriteClient,
+  resolveSlackAccount,
+} from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
@@ -39,7 +42,9 @@ const execFileAsync = promisify(execFile);
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is not set — the email automation cannot run without it`);
+    throw new Error(
+      `${name} is not set — the email automation cannot run without it`,
+    );
   }
   return value;
 }
@@ -50,7 +55,8 @@ const botEmail = () => requireEnv("ADMINBOT_BOT_EMAIL");
 const jinesisCalendar = () => requireEnv("ADMINBOT_LAB_EMAIL");
 /** Where reimbursement and error reports go; the first configured contact address. */
 const adminRecipient = () =>
-  addressList("ADMINBOT_CONTACT_EMAILS")[0] ?? requireEnv("ADMINBOT_CONTACT_EMAILS");
+  addressList("ADMINBOT_CONTACT_EMAILS")[0] ??
+  requireEnv("ADMINBOT_CONTACT_EMAILS");
 /** The Slack Connect channel onboarding invites land in. */
 const slackChannel = () => requireEnv("ADMINBOT_ONBOARDING_CHANNEL_ID");
 
@@ -63,7 +69,8 @@ function addressList(name: string): string[] {
 
 // Unset means nobody is privileged, not everybody: an unconfigured deployment must classify every
 // sender as untrusted rather than hand a stranger the onboarding path.
-const onboardingSenders = () => new Set(addressList("ADMINBOT_ONBOARDING_SENDERS"));
+const onboardingSenders = () =>
+  new Set(addressList("ADMINBOT_ONBOARDING_SENDERS"));
 const privilegedSenders = () =>
   new Set([...onboardingSenders(), ...addressList("ADMINBOT_CONTACT_EMAILS")]);
 const APPLICATION_FORM =
@@ -104,7 +111,10 @@ const ALL_OUTCOME_LABELS = Object.values(OUTCOME_LABELS);
  * it is the whole feature: which labels come off matters as much as which goes on, because a
  * message that failed last hour and was handled this hour must not end up carrying both.
  */
-export function outcomeLabelChange(outcome: EmailOutcome): { add: string[]; remove: string[] } {
+export function outcomeLabelChange(outcome: EmailOutcome): {
+  add: string[];
+  remove: string[];
+} {
   const add = OUTCOME_LABELS[outcome];
   const remove = ALL_OUTCOME_LABELS.filter((label) => label !== add);
   // Only a completed message leaves the inbox. What is left in the inbox is then exactly the work
@@ -203,11 +213,69 @@ const GWS = findExecutable([
   "gws",
 ]);
 
+/**
+ * What this pass is allowed to do to a calendar, as an allowlist of verbs.
+ *
+ * The automation now creates events from a trusted sender's mail without a person seeing them
+ * first, so the other half of that bargain has to be enforced rather than merely true today: an
+ * automated pass may add to a calendar and read it, and may never take anything off it. An
+ * allowlist rather than a list of forbidden verbs because the forbidden set is open-ended --
+ * `delete`, `remove`, `trash`, `clear`, and whatever the CLI grows next all have to be refused,
+ * and so does an `update` that empties an event out. Everything the automation actually does is
+ * `calendar create` and `calendar acl insert`, so nothing legitimate is on the far side of this.
+ */
+const ALLOWED_CALENDAR_VERBS = new Set([
+  "create",
+  "list",
+  "get",
+  "show",
+  "events",
+  "acl",
+]);
+const ALLOWED_CALENDAR_ACL_VERBS = new Set(["insert", "list", "get"]);
+const ALLOWED_CALENDAR_EVENTS_VERBS = new Set([
+  "list",
+  "get",
+  "insert",
+  "create",
+]);
+
+/**
+ * Why a calendar command is refused, or undefined when it is allowed.
+ *
+ * Pure and exported so the rule can be asserted without a Google account -- the guarantee "this
+ * automation cannot delete a calendar event" is only worth as much as its test.
+ */
+export function calendarCommandRefusal(args: string[]): string | undefined {
+  const [head, verb, next] = args;
+  if (head !== "calendar") {
+    return undefined;
+  }
+  const describe = (): string =>
+    `refusing calendar command "${args.slice(0, 3).join(" ")}": the email automation may create and read calendar entries, never delete or modify them`;
+  if (!verb || !ALLOWED_CALENDAR_VERBS.has(verb)) {
+    return describe();
+  }
+  if (verb === "acl" && !(next && ALLOWED_CALENDAR_ACL_VERBS.has(next))) {
+    return describe();
+  }
+  if (verb === "events" && !(next && ALLOWED_CALENDAR_EVENTS_VERBS.has(next))) {
+    return describe();
+  }
+  return undefined;
+}
+
 async function command(
   executable: string,
   args: string[],
   options: { timeout?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CommandResult> {
+  // Every shell-out in this file funnels through here, which is the only place the rule can be
+  // enforced once rather than remembered at each call site.
+  const refusal = calendarCommandRefusal(args);
+  if (refusal) {
+    throw new Error(refusal);
+  }
   const result = await execFileAsync(executable, args, {
     encoding: "utf8",
     timeout: options.timeout ?? 45_000,
@@ -225,7 +293,8 @@ function parseJson<T>(text: string): T {
   } catch {
     const first = trimmed.indexOf("{");
     const last = trimmed.lastIndexOf("}");
-    if (first >= 0 && last > first) return JSON.parse(trimmed.slice(first, last + 1)) as T;
+    if (first >= 0 && last > first)
+      return JSON.parse(trimmed.slice(first, last + 1)) as T;
     throw new Error("Command did not return valid JSON");
   }
 }
@@ -244,14 +313,17 @@ function displayName(value: string): string | undefined {
 }
 
 function firstName(message: EmailMessage): string {
-  const candidate = message.fromName?.split(/\s+/u)[0] ?? message.from.split("@", 1)[0];
+  const candidate =
+    message.fromName?.split(/\s+/u)[0] ?? message.from.split("@", 1)[0];
   return candidate.replace(/[^\p{L}\p{N}'-]/gu, "") || "there";
 }
 
 function allEmailAddresses(text: string): string[] {
   return [
     ...new Set(
-      (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu) ?? []).map((x) => x.toLowerCase()),
+      (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu) ?? []).map((x) =>
+        x.toLowerCase(),
+      ),
     ),
   ];
 }
@@ -262,7 +334,16 @@ export function authorizeClassification(
   onboardingThread?: { candidate_email: string; decision: OnboardingDecision },
 ): Classification {
   const sender = normalizeAddress(message.from);
-  if (classification.confidence < 0.8) {
+  const privileged = privilegedSenders().has(sender);
+  // A calendar request from one of the handful of configured lab addresses is taken at its word.
+  // The confidence gate exists for mail from strangers, where a misread costs an unwanted action;
+  // here the sender is already trusted for exactly this, and the worst a shaky read produces is a
+  // wrong event on the lab calendar that the same person can fix in the calendar UI. Holding those
+  // for review meant every "put this in the calendar" note waited on a human, which is the thing
+  // the automation exists to avoid. Creation only -- nothing in this pass can remove an event.
+  const trustedCalendarRequest =
+    classification.category === "calendar_event" && privileged;
+  if (classification.confidence < 0.8 && !trustedCalendarRequest) {
     return {
       ...classification,
       category: "unknown",
@@ -296,7 +377,8 @@ export function authorizeClassification(
       return {
         ...classification,
         category: "unknown",
-        reason: "onboarding instruction is missing a decision or candidate email",
+        reason:
+          "onboarding instruction is missing a decision or candidate email",
       };
     }
     return classification;
@@ -309,7 +391,7 @@ export function authorizeClassification(
     classification.category === "calendar_event" ||
     classification.category === "reimbursement" ||
     classification.category === "talk_entry";
-  if (privilegedCategory && !privilegedSenders().has(sender)) {
+  if (privilegedCategory && !privileged) {
     return {
       ...classification,
       category: "unknown",
@@ -333,21 +415,29 @@ async function draftGuidedEmail(
   const allowedText = request.requiredFacts.join("\n");
   for (const value of request.requiredVerbatim ?? []) {
     if (!draft.body.includes(value)) {
-      throw new Error(`generated ${request.purpose} email omitted required text: ${value}`);
+      throw new Error(
+        `generated ${request.purpose} email omitted required text: ${value}`,
+      );
     }
   }
   for (const url of draft.body.match(/https?:\/\/[^\s)>]+/gu) ?? []) {
     if (!allowedText.includes(url)) {
-      throw new Error(`generated ${request.purpose} email introduced an unapproved link`);
+      throw new Error(
+        `generated ${request.purpose} email introduced an unapproved link`,
+      );
     }
   }
   for (const email of allEmailAddresses(draft.body)) {
     if (!allowedText.toLowerCase().includes(email)) {
-      throw new Error(`generated ${request.purpose} email introduced an unapproved address`);
+      throw new Error(
+        `generated ${request.purpose} email introduced an unapproved address`,
+      );
     }
   }
   if (!draft.body.trimEnd().endsWith("Zhijing")) {
-    throw new Error(`generated ${request.purpose} email omitted the required sender signature`);
+    throw new Error(
+      `generated ${request.purpose} email omitted the required sender signature`,
+    );
   }
   return draft;
 }
@@ -418,7 +508,9 @@ export class StateStore {
     const row = this.db
       .prepare("SELECT scanned_through FROM adminbot_email_scan WHERE id = 1")
       .get() as { scanned_through?: string } | undefined;
-    const at = row?.scanned_through ? Date.parse(row.scanned_through) : Number.NaN;
+    const at = row?.scanned_through
+      ? Date.parse(row.scanned_through)
+      : Number.NaN;
     return Number.isNaN(at) ? undefined : new Date(at);
   }
 
@@ -453,10 +545,14 @@ export class StateStore {
    */
   isSettled(messageId: string): boolean {
     const row = this.db
-      .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .prepare(
+        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
+      )
       .get(messageId) as { status?: string } | undefined;
     return (
-      row?.status === "completed" || row?.status === "needs_review" || row?.status === "reviewed"
+      row?.status === "completed" ||
+      row?.status === "needs_review" ||
+      row?.status === "reviewed"
     );
   }
 
@@ -468,8 +564,7 @@ export class StateStore {
         "SELECT candidate_email, decision FROM adminbot_onboarding_threads WHERE thread_id = ? OR candidate_email = ?",
       )
       .get(threadId, threadId) as
-      | { candidate_email: string; decision: OnboardingDecision }
-      | undefined;
+      { candidate_email: string; decision: OnboardingDecision } | undefined;
   }
 
   saveOnboarding(
@@ -479,20 +574,33 @@ export class StateStore {
     sourceId: string,
   ): void {
     this.db
-      .prepare(`INSERT INTO adminbot_onboarding_threads
+      .prepare(
+        `INSERT INTO adminbot_onboarding_threads
       (thread_id, candidate_email, decision, source_message_id, status, updated_at)
       VALUES (?, ?, ?, ?, 'waiting', ?)
       ON CONFLICT(thread_id) DO UPDATE SET candidate_email=excluded.candidate_email,
         decision=excluded.decision, source_message_id=excluded.source_message_id,
-        status='waiting', updated_at=excluded.updated_at`)
-      .run(threadId, candidateEmail, decision, sourceId, new Date().toISOString());
+        status='waiting', updated_at=excluded.updated_at`,
+      )
+      .run(
+        threadId,
+        candidateEmail,
+        decision,
+        sourceId,
+        new Date().toISOString(),
+      );
   }
 
   // Takes a bare {category, reason} rather than a Classification: the recording-notice branch below
   // never consults the model, so it has no model classification to hand over.
-  begin(message: EmailMessage, classification: { category: string; reason: string }): boolean {
+  begin(
+    message: EmailMessage,
+    classification: { category: string; reason: string },
+  ): boolean {
     const existing = this.db
-      .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .prepare(
+        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
+      )
       .get(message.id) as { status?: string } | undefined;
     if (
       existing?.status === "completed" ||
@@ -502,7 +610,8 @@ export class StateStore {
     )
       return false;
     this.db
-      .prepare(`INSERT INTO adminbot_email_messages
+      .prepare(
+        `INSERT INTO adminbot_email_messages
       (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
        updated_at)
       VALUES (?, ?, ?, ?, ?, 'processing', ?, 1, ?, ?)
@@ -510,7 +619,8 @@ export class StateStore {
         thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
         reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
         attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
-        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`)
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`,
+      )
       .run(
         message.id,
         message.threadId,
@@ -526,7 +636,11 @@ export class StateStore {
     return true;
   }
 
-  finish(messageId: string, status: "completed" | "failed" | "needs_review", error?: string): void {
+  finish(
+    messageId: string,
+    status: "completed" | "failed" | "needs_review",
+    error?: string,
+  ): void {
     this.db
       .prepare(
         "UPDATE adminbot_email_messages SET status=?, last_error=?, updated_at=? WHERE message_id=?",
@@ -543,21 +657,33 @@ export class StateStore {
       .prepare(
         "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
       )
-      .get(messageId, key) as { status: string; result_json?: string } | undefined;
+      .get(messageId, key) as
+      { status: string; result_json?: string } | undefined;
     if (existing?.status === "completed")
-      return existing.result_json ? (JSON.parse(existing.result_json) as T) : undefined;
+      return existing.result_json
+        ? (JSON.parse(existing.result_json) as T)
+        : undefined;
     if (existing?.status === "started")
-      throw new Error(`effect ${key} was started previously; manual review prevents a duplicate`);
+      throw new Error(
+        `effect ${key} was started previously; manual review prevents a duplicate`,
+      );
     this.db
-      .prepare(`INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
-      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`)
+      .prepare(
+        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
+      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`,
+      )
       .run(messageId, key, new Date().toISOString());
     const result = await operation();
     this.db
       .prepare(
         "UPDATE adminbot_email_effects SET status='completed',result_json=?,updated_at=? WHERE message_id=? AND effect_key=?",
       )
-      .run(JSON.stringify(result ?? null), new Date().toISOString(), messageId, key);
+      .run(
+        JSON.stringify(result ?? null),
+        new Date().toISOString(),
+        messageId,
+        key,
+      );
     return result;
   }
 }
@@ -596,7 +722,14 @@ class GoogleClient {
   async raw(messageId: string): Promise<Record<string, unknown>> {
     const result = await command(
       GOG,
-      this.args(["gmail", "raw", messageId, "--format", "full", "--results-only"]),
+      this.args([
+        "gmail",
+        "raw",
+        messageId,
+        "--format",
+        "full",
+        "--results-only",
+      ]),
     );
     return parseJson<Record<string, unknown>>(result.stdout);
   }
@@ -615,7 +748,16 @@ class GoogleClient {
     body: string,
     attachments: string[] = [],
   ): Promise<unknown> {
-    const args = ["gmail", "send", "--to", to, "--subject", subject, "--body", body];
+    const args = [
+      "gmail",
+      "send",
+      "--to",
+      to,
+      "--subject",
+      subject,
+      "--body",
+      body,
+    ];
     // These bodies are model-drafted prose rather than template copy, so they carry no bullet
     // syntax -- but they hit the same delivery wrap, which turns a drafted paragraph into ragged
     // ~70-character lines. The renderer handles a paragraphs-only body fine.
@@ -643,14 +785,20 @@ class GoogleClient {
    * with a confusing message.
    */
   async ensureOutcomeLabels(): Promise<void> {
-    const result = await command(GOG, this.args(["gmail", "labels", "list", "--results-only"]));
+    const result = await command(
+      GOG,
+      this.args(["gmail", "labels", "list", "--results-only"]),
+    );
     const payload = parseJson<unknown>(result.stdout);
     const rows = Array.isArray(payload)
       ? payload
       : ((payload as { labels?: unknown[] })?.labels ?? []);
     const existing = new Set(
       rows.flatMap((row) => {
-        const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+        const name =
+          row && typeof row === "object"
+            ? (row as { name?: unknown }).name
+            : undefined;
         return typeof name === "string" && name ? [name] : [];
       }),
     );
@@ -715,25 +863,43 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
-        JSON.stringify({ calendarId: jinesisCalendar(), sendNotifications: true }),
+        JSON.stringify({
+          calendarId: jinesisCalendar(),
+          sendNotifications: true,
+        }),
         "--json",
-        JSON.stringify({ role: "reader", scope: { type: "user", value: email } }),
+        JSON.stringify({
+          role: "reader",
+          scope: { type: "user", value: email },
+        }),
       ],
       { timeout: 45_000 },
     );
     return parseJson(result.stdout);
   }
 
-  async downloadAttachments(message: EmailMessage, directory: string): Promise<string[]> {
+  async downloadAttachments(
+    message: EmailMessage,
+    directory: string,
+  ): Promise<string[]> {
     const raw = await this.raw(message.id);
     const parts = collectAttachmentParts(raw);
     const files: string[] = [];
     for (const [index, part] of parts.entries()) {
-      const safeName = path.basename(part.filename || `attachment-${index + 1}`);
+      const safeName = path.basename(
+        part.filename || `attachment-${index + 1}`,
+      );
       const destination = path.join(directory, safeName);
       await command(
         GOG,
-        this.args(["gmail", "attachment", message.id, part.attachmentId, "--out", destination]),
+        this.args([
+          "gmail",
+          "attachment",
+          message.id,
+          part.attachmentId,
+          "--out",
+          destination,
+        ]),
         {
           timeout: 60_000,
         },
@@ -749,7 +915,9 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
   const row = value as Record<string, unknown>;
   const id = String(row.id ?? row.messageId ?? "");
   if (!id) return undefined;
-  const rawFrom = String(row.from ?? row.sender ?? headerValue(row, "From") ?? "");
+  const rawFrom = String(
+    row.from ?? row.sender ?? headerValue(row, "From") ?? "",
+  );
   return {
     id,
     threadId: String(row.threadId ?? row.thread_id ?? id),
@@ -763,9 +931,12 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
 
 function headerValue(row: Record<string, unknown>, name: string): unknown {
   const headers = (
-    row.payload as { headers?: Array<{ name?: string; value?: string }> } | undefined
+    row.payload as
+      { headers?: Array<{ name?: string; value?: string }> } | undefined
   )?.headers;
-  return headers?.find((header) => header.name?.toLowerCase() === name.toLowerCase())?.value;
+  return headers?.find(
+    (header) => header.name?.toLowerCase() === name.toLowerCase(),
+  )?.value;
 }
 
 function collectAttachmentParts(
@@ -775,10 +946,12 @@ function collectAttachmentParts(
   const visit = (part: unknown): void => {
     if (!part || typeof part !== "object") return;
     const item = part as Record<string, unknown>;
-    const attachmentId = (item.body as { attachmentId?: string } | undefined)?.attachmentId;
+    const attachmentId = (item.body as { attachmentId?: string } | undefined)
+      ?.attachmentId;
     const filename = String(item.filename ?? "");
     if (attachmentId) result.push({ filename, attachmentId });
-    for (const child of (item.parts as unknown[] | undefined) ?? []) visit(child);
+    for (const child of (item.parts as unknown[] | undefined) ?? [])
+      visit(child);
   };
   visit(raw.payload ?? raw);
   return result;
@@ -802,7 +975,10 @@ async function extractTalk(
   model: AdminBotEmailModel,
 ): Promise<TalkEntry | undefined> {
   try {
-    const talk = await model.talk(message, new Date().toISOString().slice(0, 10));
+    const talk = await model.talk(
+      message,
+      new Date().toISOString().slice(0, 10),
+    );
     return talk.title && talk.venue && talk.date ? talk : undefined;
   } catch {
     return undefined;
@@ -825,7 +1001,9 @@ async function extractText(files: string[]): Promise<string> {
     path.dirname(new URL(import.meta.url).pathname),
     "adminbot-reimbursement-from-email.py",
   );
-  const result = await command("python3", [helper, "extract", ...files], { timeout: 90_000 });
+  const result = await command("python3", [helper, "extract", ...files], {
+    timeout: 90_000,
+  });
   return result.stdout;
 }
 
@@ -855,16 +1033,23 @@ async function prepareReimbursement(
   ]
     .filter(([, value]) => !String(value ?? "").trim())
     .map(([label]) => label);
-  if (!data.expenses.length || data.expenses.every((expense) => expense.amount === 0)) {
+  if (
+    !data.expenses.length ||
+    data.expenses.every((expense) => expense.amount === 0)
+  ) {
     missing.push("at least one non-zero expense");
   }
   const requestedCurrency =
-    data.currency === "OTHER" ? data.other_currency?.trim().toUpperCase() : data.currency;
+    data.currency === "OTHER"
+      ? data.other_currency?.trim().toUpperCase()
+      : data.currency;
   if (!requestedCurrency) {
     missing.push("requested reimbursement currency");
   }
   if (missing.length) {
-    throw new Error(`reimbursement requires manual review; missing ${missing.join(", ")}`);
+    throw new Error(
+      `reimbursement requires manual review; missing ${missing.join(", ")}`,
+    );
   }
   if (data.expenses.length > 30) {
     throw new Error(
@@ -873,7 +1058,9 @@ async function prepareReimbursement(
   }
   const mismatchedCurrencies = data.expenses
     .map((expense) => expense.currency?.trim().toUpperCase())
-    .filter((currency): currency is string => Boolean(currency && currency !== requestedCurrency));
+    .filter((currency): currency is string =>
+      Boolean(currency && currency !== requestedCurrency),
+    );
   if (mismatchedCurrencies.length) {
     throw new Error(
       `reimbursement requires manual review; expense amounts must be converted to ${requestedCurrency} before the forms are filled`,
@@ -892,12 +1079,19 @@ async function prepareReimbursement(
   );
   const outputDir = path.join(directory, "forms");
   fs.mkdirSync(outputDir, { recursive: true });
-  const result = await command("python3", [helper, "fill", input, outputDir], { timeout: 90_000 });
+  const result = await command("python3", [helper, "fill", input, outputDir], {
+    timeout: 90_000,
+  });
   const output = parseJson<{ files: string[] }>(result.stdout);
   return [...output.files, ...supportingFiles];
 }
 
-const SLACK_SECRET_FIELDS = ["botToken", "appToken", "userToken", "signingSecret"] as const;
+const SLACK_SECRET_FIELDS = [
+  "botToken",
+  "appToken",
+  "userToken",
+  "signingSecret",
+] as const;
 
 async function resolveSlackSecretRefs(
   sourceConfig: OpenClawConfig,
@@ -909,7 +1103,9 @@ async function resolveSlackSecretRefs(
 
   const entries: Array<Record<string, unknown>> = [
     slack as Record<string, unknown>,
-    ...Object.values(slack.accounts ?? {}).map((account) => account as Record<string, unknown>),
+    ...Object.values(slack.accounts ?? {}).map(
+      (account) => account as Record<string, unknown>,
+    ),
   ];
   for (const entry of entries) {
     for (const field of SLACK_SECRET_FIELDS) {
@@ -933,23 +1129,30 @@ export async function resolveEmailAutomationSlackAccount(
   } = {},
 ) {
   const sourceConfig = params.cfg ?? loadConfig({ skipPluginValidation: true });
-  const resolvedConfig = await resolveSlackSecretRefs(sourceConfig, params.env ?? process.env);
+  const resolvedConfig = await resolveSlackSecretRefs(
+    sourceConfig,
+    params.env ?? process.env,
+  );
   return resolveSlackAccount({ cfg: resolvedConfig });
 }
 
 async function inviteTrial(email: string): Promise<unknown> {
   const account = await resolveEmailAutomationSlackAccount();
   if (!account.botToken) throw new Error("Slack bot token is not configured");
-  return getSlackWriteClient(account.botToken).apiCall("conversations.inviteShared", {
-    channel: slackChannel(),
-    emails: [email],
-    external_limited: true,
-  });
+  return getSlackWriteClient(account.botToken).apiCall(
+    "conversations.inviteShared",
+    {
+      channel: slackChannel(),
+      emails: [email],
+      external_limited: true,
+    },
+  );
 }
 
 async function inviteFullMember(email: string): Promise<unknown> {
   const account = await resolveEmailAutomationSlackAccount();
-  if (!account.userToken) throw new Error("Slack user token is required for admin.users.invite");
+  if (!account.userToken)
+    throw new Error("Slack user token is required for admin.users.invite");
   const client = getSlackWriteClient(account.userToken);
   const auth = await client.auth.test();
   const teamId = auth.team_id;
@@ -988,7 +1191,9 @@ async function recordPaperflowBcc(
   model: AdminBotEmailModel,
   databasePath: string,
 ): Promise<{ paperId: string; stage: string; confidence: number }> {
-  const { service, store, close } = createAdminBotSqliteService({ databasePath });
+  const { service, store, close } = createAdminBotSqliteService({
+    databasePath,
+  });
   try {
     const sender = normalizeAddress(message.from);
     const known = store
@@ -1012,7 +1217,9 @@ async function recordPaperflowBcc(
       const paper = store.getPaper(item.paper_id);
       const submissionId = store
         .listPaperSlots(item.paper_id)
-        .find((row) => row.slot === "submission_id" && row.status === "provided")?.value_text;
+        .find(
+          (row) => row.slot === "submission_id" && row.status === "provided",
+        )?.value_text;
       const candidate: PaperflowCandidate = {
         paperId: item.paper_id,
         title: item.title,
@@ -1033,11 +1240,15 @@ async function recordPaperflowBcc(
 
     const match = await model.paperflowEvidence(message, candidates);
     if (!match.paperId || !match.stage) {
-      throw new Error(`paperflow bcc matched no open paper (${match.reason}); queued for review`);
+      throw new Error(
+        `paperflow bcc matched no open paper (${match.reason}); queued for review`,
+      );
     }
     // The model was constrained to this set, but a constrained decode is a strong hint rather than
     // a guarantee, and the cost of trusting it wrongly is a paper nobody chases again.
-    const candidate = candidates.find((entry) => entry.paperId === match.paperId);
+    const candidate = candidates.find(
+      (entry) => entry.paperId === match.paperId,
+    );
     if (!candidate) {
       throw new Error(
         `paperflow bcc named a paper that has no open stage (${match.paperId}); queued for review`,
@@ -1047,7 +1258,9 @@ async function recordPaperflowBcc(
     // and "that is not a stage" is only useful if it says which one was meant.
     const namedStage: string = match.stage;
     if (!isAdminBotPaperflowStage(match.stage)) {
-      throw new Error(`${namedStage} is not a PaperFlow stage; queued for review`);
+      throw new Error(
+        `${namedStage} is not a PaperFlow stage; queued for review`,
+      );
     }
     if (match.stage !== candidate.openStage) {
       throw new Error(
@@ -1073,7 +1286,11 @@ async function recordPaperflowBcc(
     if (!recorded.ok) {
       throw new Error(recorded.error.message);
     }
-    return { paperId: match.paperId, stage: match.stage, confidence: match.confidence };
+    return {
+      paperId: match.paperId,
+      stage: match.stage,
+      confidence: match.confidence,
+    };
   } finally {
     close();
   }
@@ -1105,15 +1322,23 @@ async function processMessage(
         ],
         requiredVerbatim: [APPLICATION_FORM],
       });
-      await state.effect(message.id, "student_reply", () => google.reply(message.id, draft.body));
+      await state.effect(message.id, "student_reply", () =>
+        google.reply(message.id, draft.body),
+      );
     } else if (classification.category === "onboarding_instruction") {
       const email = classification.candidateEmail;
       if (!email || !classification.decision) {
-        throw new Error("trusted onboarding email is missing a candidate email or decision");
+        throw new Error(
+          "trusted onboarding email is missing a candidate email or decision",
+        );
       }
       if (classification.decision === "trial") {
-        await state.effect(message.id, "slack_connect", () => inviteTrial(email));
-        await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
+        await state.effect(message.id, "slack_connect", () =>
+          inviteTrial(email),
+        );
+        await state.effect(message.id, "calendar_reader", () =>
+          google.addCalendarReader(email),
+        );
       } else if (classification.decision === "direct") {
         const draft = await draftGuidedEmail(message, model, {
           purpose: "direct_onboarding",
@@ -1128,14 +1353,21 @@ async function processMessage(
             `Create a member account at ${CONTROL_UI_URL} and work through the onboarding guide there.`,
             "Calendar access is part of onboarding.",
           ],
-          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu", botEmail(), CONTROL_UI_ORIGIN],
+          requiredVerbatim: [
+            DCS_FORM,
+            "@cs.toronto.edu",
+            botEmail(),
+            CONTROL_UI_ORIGIN,
+          ],
         });
         const sent = await state.effect(message.id, "direct_instructions", () =>
           google.send(email, draft.subject, draft.body),
         );
         const threadId = extractResultThreadId(sent) ?? message.threadId;
         state.saveOnboarding(threadId, email, "direct", message.id);
-        await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
+        await state.effect(message.id, "calendar_reader", () =>
+          google.addCalendarReader(email),
+        );
       } else {
         const draft = await draftGuidedEmail(message, model, {
           purpose: "decline_candidate",
@@ -1152,7 +1384,10 @@ async function processMessage(
         );
       }
     } else if (classification.category === "onboarding_followup") {
-      const addresses = [normalizeAddress(message.from), ...allEmailAddresses(message.body)];
+      const addresses = [
+        normalizeAddress(message.from),
+        ...allEmailAddresses(message.body),
+      ];
       const dcs = addresses.find((email) => email.endsWith("@cs.toronto.edu"));
       if (!dcs) {
         const draft = await draftGuidedEmail(message, model, {
@@ -1171,8 +1406,12 @@ async function processMessage(
           google.reply(message.id, draft.body),
         );
       } else {
-        await state.effect(message.id, "full_slack_invite", () => inviteFullMember(dcs));
-        await state.effect(message.id, "calendar_reader_dcs", () => google.addCalendarReader(dcs));
+        await state.effect(message.id, "full_slack_invite", () =>
+          inviteFullMember(dcs),
+        );
+        await state.effect(message.id, "calendar_reader_dcs", () =>
+          google.addCalendarReader(dcs),
+        );
         const draft = await draftGuidedEmail(message, model, {
           purpose: "confirm_onboarding",
           recipientName: firstName(message),
@@ -1191,11 +1430,18 @@ async function processMessage(
       }
     } else if (classification.category === "calendar_event") {
       const event = await extractCalendarEvent(message, model);
-      if (!event) throw new Error("calendar request is missing a parseable event title or date");
-      await state.effect(message.id, "calendar_create", () => google.createEvent(event));
+      if (!event)
+        throw new Error(
+          "calendar request is missing a parseable event title or date",
+        );
+      await state.effect(message.id, "calendar_create", () =>
+        google.createEvent(event),
+      );
     } else if (classification.category === "talk_entry") {
       if (!privilegedSenders().has(normalizeAddress(message.from))) {
-        throw new Error("talk-entry automation requires a trusted sender; queued for review");
+        throw new Error(
+          "talk-entry automation requires a trusted sender; queued for review",
+        );
       }
       const talk = await extractTalk(message, model);
       if (!talk) throw new Error("talk email is missing title, venue, or date");
@@ -1216,10 +1462,19 @@ async function processMessage(
       );
     } else if (classification.category === "reimbursement") {
       if (!privilegedSenders().has(normalizeAddress(message.from))) {
-        throw new Error("reimbursement automation requires a trusted sender; queued for review");
+        throw new Error(
+          "reimbursement automation requires a trusted sender; queued for review",
+        );
       }
-      const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reimbursement-"));
-      const files = await prepareReimbursement(message, google, directory, model);
+      const directory = fs.mkdtempSync(
+        path.join(os.tmpdir(), "adminbot-reimbursement-"),
+      );
+      const files = await prepareReimbursement(
+        message,
+        google,
+        directory,
+        model,
+      );
       const draft = await draftGuidedEmail(message, model, {
         purpose: "deliver_reimbursement",
         guidance:
@@ -1242,7 +1497,9 @@ async function processMessage(
         recordPaperflowBcc(message, model, databasePath),
       );
     }
-    await state.effect(message.id, "mark_read", () => google.markRead(message.id));
+    await state.effect(message.id, "mark_read", () =>
+      google.markRead(message.id),
+    );
     state.finish(message.id, "completed");
     return true;
   } catch (error) {
@@ -1285,7 +1542,10 @@ function fileRecordingNotice(
     return false;
   }
   if (
-    !state.begin(message, { category: "meeting_recording", reason: "Zoom cloud recording notice" })
+    !state.begin(message, {
+      category: "meeting_recording",
+      reason: "Zoom cloud recording notice",
+    })
   ) {
     return true;
   }
@@ -1324,7 +1584,8 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   // Where this pass starts reading: the watermark when there is one, an hour back when there is
   // not. gmailScanQuery clamps how far back a long outage may reach.
   const since =
-    state.scannedThrough() ?? new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
+    state.scannedThrough() ??
+    new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
   try {
     const messages = await google.search(since);
     summary.found = messages.length;
@@ -1338,9 +1599,14 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     // rather than in each branch. Its own failure is recorded and swallowed: a message that was
     // genuinely handled must not be reported as failed because a label could not be written, and
     // the label is a filing aid rather than part of the work.
-    const file = async (messageId: string, outcome: EmailOutcome): Promise<void> => {
+    const file = async (
+      messageId: string,
+      outcome: EmailOutcome,
+    ): Promise<void> => {
       try {
-        await state.effect(messageId, `file_${outcome}`, () => google.file(messageId, outcome));
+        await state.effect(messageId, `file_${outcome}`, () =>
+          google.file(messageId, outcome),
+        );
       } catch (error) {
         summary.errors.push(
           `${messageId}: could not file as ${outcome}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1362,7 +1628,9 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         try {
           if (fileRecordingNotice(message, state, databasePath)) {
             const outcome = state.db
-              .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
+              .prepare(
+                "SELECT status FROM adminbot_email_messages WHERE message_id=?",
+              )
               .get(message.id) as { status?: string } | undefined;
             if (outcome?.status === "needs_review") {
               summary.needs_review += 1;
@@ -1386,8 +1654,16 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         state.getOnboarding(message.threadId) ??
         state.getOnboarding(normalizeAddress(message.from));
       try {
-        const modelClassification = await model.classify(message, onboarding);
-        const classification = authorizeClassification(message, modelClassification, onboarding);
+        const modelClassification = await model.classify(
+          message,
+          onboarding,
+          privilegedSenders().has(normalizeAddress(message.from)),
+        );
+        const classification = authorizeClassification(
+          message,
+          modelClassification,
+          onboarding,
+        );
         const processed = await processMessage(
           message,
           classification,
@@ -1403,7 +1679,9 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           continue;
         }
         const status = state.db
-          .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
+          .prepare(
+            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
+          )
           .get(message.id) as { status?: string } | undefined;
         if (status?.status === "completed") {
           summary.completed += 1;
@@ -1415,7 +1693,9 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         }
       } catch (error) {
         const status = state.db
-          .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
+          .prepare(
+            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
+          )
           .get(message.id) as { status?: string } | undefined;
         if (status?.status === "needs_review") {
           summary.needs_review += 1;
@@ -1446,12 +1726,17 @@ if (isMainModule(import.meta.url)) {
   void runEmailAutomation()
     .then((summary) => {
       console.log(JSON.stringify(summary));
-      if (summary.failed > 0 && process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1") {
+      if (
+        summary.failed > 0 &&
+        process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1"
+      ) {
         process.exitCode = 1;
       }
     })
     .catch((error) => {
-      console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      console.error(
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
       process.exitCode = 1;
     });
 }
