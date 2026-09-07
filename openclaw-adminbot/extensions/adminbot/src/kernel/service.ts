@@ -259,6 +259,7 @@ import {
   selfReportedChange,
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import { classifyMemberThemes, type ThemeMatch } from "../workflows/members/research-themes.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -1211,6 +1212,29 @@ export class AdminBotService {
       // proposal while a corrected date is genuinely a new one.
       idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
     });
+  }
+
+  /**
+   * Every member's research themes, inferred from what they wrote about their own work.
+   *
+   * A read, never a write. The classification is drawn from free text people filled in for another
+   * purpose, so it is a suggestion for a human to accept or correct -- the same rule the location
+   * timeline follows, for the same reason. Each row carries the evidence that produced it, so a
+   * wrong theme is a bad pattern somebody can point at rather than an opinion to argue with.
+   *
+   * Members whose profile says nothing matching are returned with an empty `themes` rather than
+   * omitted: "nobody has classified this person" and "this person's interests are outside the six
+   * themes" look identical in a filtered list, and only one of them is a gap worth chasing.
+   */
+  listMemberResearchThemes(): AdminBotServiceResponse<{
+    members: Array<{ member_id: string; name: string; themes: ThemeMatch[] }>;
+  }> {
+    const members = this.store.listLabMembers().map((member) => ({
+      member_id: member.id,
+      name: member.name,
+      themes: classifyMemberThemes(member),
+    }));
+    return { ok: true, status: 200, payload: { members } };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
