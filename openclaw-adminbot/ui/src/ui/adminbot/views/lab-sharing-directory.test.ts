@@ -1,6 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LabSharingDirectory } from "./lab-sharing-directory.ts";
 const payload = { projects: [{ id: "p1", title: "Synthetic project" }], requests: [] };
+// The UI lane runs with `isolate: false`, so one jsdom -- and one customElements registry -- is
+// shared across every test file while each file still gets its own module graph. A second
+// evaluation of lab-sharing-directory.ts therefore produces a second class, which the name guard
+// around its `customElements.define` then declines to register, and `new` on that unregistered
+// class throws "the constructor is not part of the custom element registry". Going through the
+// registry always yields whichever class actually got defined.
+//
+// This only bites once enough files load the module for it to be evaluated twice, so it was
+// latent until the Lab Sharing tabs grew a fourth test file -- which is the worst shape for a
+// bug like this, because the file that breaks is never the file that changed.
+function createDirectory(): LabSharingDirectory {
+  return document.createElement("lab-sharing-directory") as LabSharingDirectory;
+}
+
 async function settle(el: LabSharingDirectory) {
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -37,7 +51,7 @@ describe("live directory", () => {
         }),
       });
     vi.stubGlobal("fetch", fetcher);
-    const el = new LabSharingDirectory();
+    const el = createDirectory();
     el.baseUrl = "http://lab.test";
     el.sessionToken = "synthetic";
     document.body.append(el);
@@ -63,7 +77,7 @@ describe("live directory", () => {
         .mockRejectedValueOnce(new Error("Offline"))
         .mockResolvedValueOnce({ ok: true, json: async () => payload }),
     );
-    const el = new LabSharingDirectory();
+    const el = createDirectory();
     el.sessionToken = "synthetic";
     document.body.append(el);
     await settle(el);
@@ -84,7 +98,7 @@ describe("live directory", () => {
           }),
       ),
     );
-    const el = new LabSharingDirectory();
+    const el = createDirectory();
     el.sessionToken = "old";
     document.body.append(el);
     await settle(el);
@@ -106,7 +120,7 @@ describe("live directory", () => {
           json: async () => ({ error: { message: "Permission changed" } }),
         }),
     );
-    const el = new LabSharingDirectory();
+    const el = createDirectory();
     el.sessionToken = "synthetic";
     document.body.append(el);
     await settle(el);
@@ -160,7 +174,7 @@ describe("live directory", () => {
         json: async () => ({ ...data, interests: [{ ...interest, status: "withdrawn" }] }),
       });
     vi.stubGlobal("fetch", fetcher);
-    const el = new LabSharingDirectory();
+    const el = createDirectory();
     el.sessionToken = "synthetic";
     document.body.append(el);
     await settle(el);
@@ -211,7 +225,7 @@ it("reveals a project hidden by the directory filter and focuses its card", asyn
       }),
     }),
   );
-  const el = new LabSharingDirectory();
+  const el = createDirectory();
   el.sessionToken = "synthetic";
   document.body.append(el);
   await settle(el);
