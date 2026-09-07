@@ -5,6 +5,7 @@ import {
   countryDayTotals,
   dailyLocationRows,
   formatLocationDayCsv,
+  formatLocationObservationCsv,
 } from "./location-daily-log.js";
 
 function entry(overrides: Partial<AdminBotMemberLocationEntry> = {}): AdminBotMemberLocationEntry {
@@ -173,6 +174,39 @@ describe("formatLocationDayCsv", () => {
     expect(lines[1]).toBe("2026-08-09,,,,unknown,,,,unknown");
     expect(lines[2]).toBe(
       "2026-08-10,Canada,,login_ip,observed,2026-08-10T09:00:00.000Z,0,,unknown",
+    );
+  });
+
+  it("writes one row per observation and states nothing between them", () => {
+    const csv = formatLocationObservationCsv([
+      entry({
+        id: "b",
+        observed_at: "2026-08-14T09:00:00.000Z",
+        raw: "Germany",
+        country: "Germany",
+      }),
+      entry(),
+    ]);
+    const lines = csv.trimEnd().split("\n");
+    expect(lines[0]).toBe("observed_at,source,raw,country,place_label,timezone");
+    // Sorted oldest-first regardless of input order, and the four days between the two
+    // observations produce no rows at all.
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toBe("2026-08-10T09:00:00.000Z,login_ip,Canada,Canada,,");
+    expect(lines[2]).toBe("2026-08-14T09:00:00.000Z,login_ip,Germany,Germany,,");
+  });
+
+  it("carries a Slack zone through the observation export", () => {
+    const csv = formatLocationObservationCsv([
+      entry({
+        source: "slack_timezone",
+        raw: "Europe/Amsterdam",
+        country: undefined,
+        timezone: "Europe/Amsterdam",
+      }),
+    ]);
+    expect(csv.trimEnd().split("\n")[1]).toBe(
+      "2026-08-10T09:00:00.000Z,slack_timezone,Europe/Amsterdam,,,Europe/Amsterdam",
     );
   });
 

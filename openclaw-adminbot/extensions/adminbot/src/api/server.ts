@@ -4685,6 +4685,10 @@ function resolvePrincipal(
     }
     const member = ctx.auth.resolveSession(bearer);
     if (member) {
+      // Every authenticated request lands here, which is what makes it the place to notice an
+      // account being used from somewhere new. noteAccountUse is a no-op unless the address
+      // actually changed, so this costs a map lookup on the hot path.
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
       return member;
     }
   }
@@ -4692,6 +4696,7 @@ function resolvePrincipal(
   if (cookie) {
     const member = ctx.auth.resolveSession(cookie);
     if (member) {
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
       return member;
     }
   }

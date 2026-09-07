@@ -19,6 +19,7 @@ import {
   countryDayTotals,
   dailyLocationRows,
   formatLocationDayCsv,
+  formatLocationObservationCsv,
 } from "../src/workflows/members/location-daily-log.js";
 
 function arg(name: string): string | undefined {
@@ -31,7 +32,8 @@ const memberId = arg("member");
 const out = arg("out");
 if (!dbPath || !memberId || !out) {
   console.error(
-    "usage: --db <sqlite> --member <member_id> --out <csv> [--from YYYY-MM-DD] [--to YYYY-MM-DD]",
+    "usage: --db <sqlite> --member <member_id> --out <csv> " +
+      "[--mode observations|daily] [--from YYYY-MM-DD] [--to YYYY-MM-DD]",
   );
   process.exit(2);
 }
@@ -57,20 +59,35 @@ if (history.length === 0) {
   process.exit(1);
 }
 
-const from = arg("from") ?? history[0]!.observed_at.slice(0, 10);
-const to = arg("to") ?? new Date().toISOString().slice(0, 10);
-const rows = dailyLocationRows({ history, from, to });
-writeFileSync(out, formatLocationDayCsv(rows));
+// One row per observation is the default, because it is the only mode that states nothing the
+// system did not see. `--mode daily` opts into the projection, which fills the gaps between
+// observations with assumptions and labels every one of them.
+const mode = arg("mode") ?? "observations";
+if (mode !== "observations" && mode !== "daily") {
+  console.error(`--mode must be "observations" or "daily"`);
+  process.exit(2);
+}
 
-const observed = rows.filter((row) => row.basis === "observed").length;
-const carried = rows.filter((row) => row.basis === "carried").length;
-const unknown = rows.filter((row) => row.basis === "unknown").length;
-console.log(
-  `${out}: ${rows.length} days ${from}..${to} — ${observed} observed, ${carried} carried, ${unknown} unknown`,
-);
-console.log(`sources: ${[...new Set(history.map((entry) => entry.source))].join(", ")}`);
-for (const total of countryDayTotals(rows)) {
+if (mode === "observations") {
+  writeFileSync(out, formatLocationObservationCsv(history));
+  console.log(`${out}: ${history.length} observations`);
+  console.log(`sources: ${[...new Set(history.map((entry) => entry.source))].join(", ")}`);
+} else {
+  const from = arg("from") ?? history[0]!.observed_at.slice(0, 10);
+  const to = arg("to") ?? new Date().toISOString().slice(0, 10);
+  const rows = dailyLocationRows({ history, from, to });
+  writeFileSync(out, formatLocationDayCsv(rows));
+
+  const observed = rows.filter((row) => row.basis === "observed").length;
+  const carried = rows.filter((row) => row.basis === "carried").length;
+  const unknown = rows.filter((row) => row.basis === "unknown").length;
   console.log(
-    `  ${total.country}: ${total.observed_days} observed days, ${total.carried_days} carried`,
+    `${out}: ${rows.length} days ${from}..${to} — ${observed} observed, ${carried} carried, ${unknown} unknown`,
   );
+  console.log(`sources: ${[...new Set(history.map((entry) => entry.source))].join(", ")}`);
+  for (const total of countryDayTotals(rows)) {
+    console.log(
+      `  ${total.country}: ${total.observed_days} observed days, ${total.carried_days} carried`,
+    );
+  }
 }

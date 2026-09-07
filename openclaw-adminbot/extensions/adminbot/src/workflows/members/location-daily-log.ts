@@ -217,3 +217,36 @@ export function formatLocationDayCsv(rows: readonly LocationDayRow[]): string {
 function escapeCsv(value: string): string {
   return /[",\n]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
 }
+
+const OBSERVATION_HEADERS = [
+  "observed_at",
+  "source",
+  "raw",
+  "country",
+  "place_label",
+  "timezone",
+] as const;
+
+/**
+ * The observations themselves, one row each, newest last.
+ *
+ * The honest shape for "record it when it happens". Every row here is something the system actually
+ * saw at the moment it saw it: no carry, no gaps to fill, and nothing that needs a `basis` column
+ * because nothing is assumed. Prefer this over `formatLocationDayCsv` unless a caller genuinely
+ * needs a row per date -- the daily projection can only ever be this data plus assumptions.
+ */
+export function formatLocationObservationCsv(
+  history: readonly AdminBotMemberLocationEntry[],
+): string {
+  const rows = history.toSorted((left, right) => left.observed_at.localeCompare(right.observed_at));
+  const lines = [OBSERVATION_HEADERS.join(",")];
+  for (const row of rows) {
+    lines.push(
+      OBSERVATION_HEADERS.map((header) => {
+        const value = row[header as keyof AdminBotMemberLocationEntry];
+        return value === undefined ? "" : escapeCsv(String(value));
+      }).join(","),
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
