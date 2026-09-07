@@ -16,6 +16,7 @@ import {
   type AdminBotLabMember,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
+import { parseAdminBotMemberRoles } from "../../contracts/member-roles.js";
 import type { AdminBotConferenceAttendeeRecord } from "../../contracts/paper-cycle.js";
 import { interestTerms, overlappingKeywords } from "./venue-relevance.js";
 
@@ -240,7 +241,9 @@ export function workshopNudgeInputsFromAdminBot(params: {
       member.id !== headProfessorMemberId &&
       // Kept as the secondary signal: a visiting or second professor has no settings field naming
       // them, so a filled-in role is still the only thing that can exclude them here.
-      (member.role ?? "").trim().toLowerCase() !== "professor",
+      // A member may hold several roles, so this asks whether one of them is Professor rather than
+      // whether the whole string is: "PhD Student, Professor" excludes them just as "Professor" does.
+      !parseAdminBotMemberRoles(member.role).some((role) => role.toLowerCase() === "professor"),
   );
   const membersById = new Map(activeMembers.map((member) => [member.id, member]));
   const paperIdsByMember = new Map<string, Set<string>>();

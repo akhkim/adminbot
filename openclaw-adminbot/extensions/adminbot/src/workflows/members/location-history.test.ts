@@ -340,3 +340,50 @@ describe("selfReportedChange", () => {
     expect(selfReportedChange(before, { ...before, location: " toronto " })).toBeUndefined();
   });
 });
+
+describe("observationFor timezone sourcing", () => {
+  it("stores a zone from Slack's tz and from a self-report", () => {
+    for (const source of ["self_reported", "slack_timezone"] as const) {
+      const entry = observationFor({
+        memberId: "m-ada",
+        source,
+        raw: "Europe/Amsterdam",
+        observedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "Europe/Amsterdam",
+      });
+      expect(entry?.timezone).toBe("Europe/Amsterdam");
+    }
+  });
+
+  it("never resolves a zone name to the country inside it", () => {
+    // "Europe/Amsterdam" resolves to Netherlands if it is passed to the gazetteer, which is how a
+    // clock setting turns into residency days for a country the member never visited. Half of
+    // Europe shares that zone.
+    const entry = observationFor({
+      memberId: "m-ada",
+      source: "slack_timezone",
+      raw: "Europe/Amsterdam",
+      observedAt: "2026-09-01T00:00:00.000Z",
+      timezone: "Europe/Amsterdam",
+    });
+    expect(entry?.country).toBeUndefined();
+    expect(entry?.place_key).toBeUndefined();
+    expect(entry?.place_label).toBeUndefined();
+    expect(entry?.timezone).toBe("Europe/Amsterdam");
+  });
+
+  it("drops a zone offered for an inferred source", () => {
+    // The invariant the contract's field note protects: turning a country into a zone is a guess,
+    // and `slack_profile` carries typed location text, not a zone.
+    for (const source of ["login_ip", "slack_profile", "admin"] as const) {
+      const entry = observationFor({
+        memberId: "m-ada",
+        source,
+        raw: "Germany",
+        observedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "Europe/Berlin",
+      });
+      expect(entry?.timezone).toBeUndefined();
+    }
+  });
+});

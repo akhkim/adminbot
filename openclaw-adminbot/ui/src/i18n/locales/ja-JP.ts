@@ -452,6 +452,7 @@ export const ja_JP: TranslationMap = {
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
+    gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
     labSharing: "Lab Sharing",
     agents: "エージェント",
@@ -504,6 +505,7 @@ export const ja_JP: TranslationMap = {
   subtitles: {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
+    gettingStarted: "Your setup checklist — what is left, and what you have already done.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "ワークスペース、ツール、ID。",
@@ -1131,6 +1133,15 @@ export const ja_JP: TranslationMap = {
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
   },
+  gettingStarted: {
+    stillToDo: "Still to do",
+    done: "Already done ({count})",
+    requiredLeft: "{count} required",
+    empty: "You have no setup checklist. Nothing is waiting on you here.",
+    profilePointer: "{count} setup step(s) left",
+    profilePointerDone: "Your setup checklist is finished.",
+    open: "Open Getting Started",
+  },
   dashboard: {
     more: "+{count} more",
     nudgeWarning: {
@@ -1502,7 +1513,8 @@ export const ja_JP: TranslationMap = {
     recipient: "Send to",
     preview: "プレビュー",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -1544,7 +1556,8 @@ export const ja_JP: TranslationMap = {
       signIn: "編集履歴を読むにはサインインしてください。",
       forbidden: "編集履歴を読めるのは管理者だけです。",
       unreachable: "{url} の AdminBot サービスに接続できませんでした。",
-      notDeployed: "このサービスビルドにはまだ編集履歴がありません。Control UI はマージ時に公開され、サービスは別途デプロイされます。",
+      notDeployed:
+        "このサービスビルドにはまだ編集履歴がありません。Control UI はマージ時に公開され、サービスは別途デプロイされます。",
       failed: "編集履歴を読み込めませんでした。",
     },
   },
@@ -2372,14 +2385,16 @@ export const ja_JP: TranslationMap = {
       },
       memberClaim: {
         title: "アカウントを引き継げませんでした",
-        summary: "アカウントを引き継げませんでした。すでに引き継ぎ済みか、メールアドレスが対象外か、パスワードが弱すぎる可能性があります。",
+        summary:
+          "アカウントを引き継げませんでした。すでに引き継ぎ済みか、メールアドレスが対象外か、パスワードが弱すぎる可能性があります。",
         stepPassword: "10 文字以上のパスワードを使用してください。",
         stepSignIn: "このアカウントをすでに引き継いでいる場合は「Sign in」を使ってください。",
       },
       memberRateLimited: {
         title: "試行回数が多すぎます",
         summary: "サインインの試行回数が多すぎます。少し待ってからもう一度お試しください。",
-        summarySeconds: "サインインの試行回数が多すぎます。約 {seconds} 秒後にもう一度お試しください。",
+        summarySeconds:
+          "サインインの試行回数が多すぎます。約 {seconds} 秒後にもう一度お試しください。",
         stepWait: "待機時間が過ぎるまで再試行を止め、その後もう一度サインインしてください。",
       },
       memberPending: {
@@ -2391,7 +2406,8 @@ export const ja_JP: TranslationMap = {
       unreachable: {
         title: "AdminBot サービスに接続できません",
         summary: "AdminBot サービスに接続できませんでした。ポート 8765 で動作していますか？",
-        stepService: "AdminBot サービスが起動し、ポート 8765 で待ち受けていることを確認してください。",
+        stepService:
+          "AdminBot サービスが起動し、ポート 8765 で待ち受けていることを確認してください。",
         stepRetry: "サービスに接続できるようになったら、もう一度サインインしてください。",
       },
     },

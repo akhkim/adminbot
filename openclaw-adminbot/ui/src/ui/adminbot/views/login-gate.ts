@@ -1,6 +1,10 @@
 // Control UI view renders login gate screen content.
 import { html } from "lit";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { ConnectErrorDetailCodes } from "../../../../../packages/gateway-protocol/src/connect-error-details.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -451,24 +455,45 @@ function renderSignupFields(state: AppViewState) {
       />
     </label>
   `;
-  const selectField = (
+  // Somebody signing up is routinely two things at once -- a PhD student who is also the lab
+  // manager, a research assistant part-way through a master's -- and the answer is stored as one
+  // comma-joined string, so the form asks for it the same way the profile page does.
+  const multiSelectField = (
     label: string,
     value: string,
     apply: (next: string) => void,
     options: readonly string[],
-    placeholder: string,
-  ) => html`
-    <label class="field">
-      <span>${label}</span>
-      <select .value=${value} @change=${(e: Event) => apply((e.target as HTMLSelectElement).value)}>
-        <option value="" ?selected=${!value}>${placeholder}</option>
-        ${options.map(
-          (option) =>
-            html`<option value=${option} ?selected=${value === option}>${option}</option>`,
-        )}
-      </select>
-    </label>
-  `;
+  ) => {
+    const held = new Set(parseAdminBotMemberRoles(value).map((entry) => entry.toLowerCase()));
+    const toggle = (option: string, checked: boolean) => {
+      const next = options.filter(
+        (entry) =>
+          (held.has(entry.toLowerCase()) && entry !== option) || (checked && entry === option),
+      );
+      apply(formatAdminBotMemberRoles(next));
+    };
+    return html`
+      <div class="field login-gate__multi" role="group" aria-label=${label}>
+        <span>${label}</span>
+        <div class="login-gate__multi-options">
+          ${options.map(
+            (option) => html`
+              <label class="login-gate__multi-option">
+                <input
+                  type="checkbox"
+                  .checked=${held.has(option.toLowerCase())}
+                  @change=${(e: Event) => toggle(option, (e.target as HTMLInputElement).checked)}
+                />
+                <span>${option}</span>
+              </label>
+            `,
+          )}
+        </div>
+      </div>
+    `;
+  };
+  // The single-choice `selectField` helper stood here. Role was its only caller, so it went with
+  // the dropdown rather than being kept for a hypothetical second one.
   return html`
     ${field(
       t("login.member.signup.name"),
@@ -479,14 +504,13 @@ function renderSignupFields(state: AppViewState) {
       t("login.member.signup.namePlaceholder"),
       "name",
     )}
-    ${selectField(
+    ${multiSelectField(
       t("login.member.signup.role"),
       state.memberRole,
       (next) => {
         state.memberRole = next;
       },
       adminBotMemberRoles,
-      t("login.member.signup.rolePlaceholder"),
     )}
     ${field(
       t("login.member.signup.affiliation"),
@@ -602,20 +626,20 @@ function renderMemberForm(state: AppViewState) {
     <form class="login-gate__form" data-login-mode=${mode} @submit=${onSubmit} novalidate>
       ${mode === "claim" ? renderRosterPicker(state) : ""}
       ${mode === "signup" ? renderSignupFields(state) : ""}
-      ${isResetRequest
-        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.intro")}</p>`
-        : ""}
-      ${isResetConfirm
-        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.confirmIntro")}</p>`
-        : ""}
+      <!-- The two intro lines are the card's subtitle now (see resolveLoginGateHeading): read
+           under the step's own heading they say what the screen is, whereas as a bare paragraph
+           above the first field they were a second subtitle under a heading that still said
+           "AdminBot". -->
       ${state.passwordResetSent
-        ? html`<div class="callout login-gate__reset-sent" role="status" aria-live="polite">
-            ${t("login.member.reset.sent")}
+        ? html`<div class="callout info login-gate__reset-sent" role="status" aria-live="polite">
+            <span class="login-gate__reset-icon" aria-hidden="true">${icons.send}</span>
+            <span>${t("login.member.reset.sent")}</span>
           </div>`
         : ""}
       ${state.passwordResetDone && mode === "signin"
-        ? html`<div class="callout login-gate__reset-done" role="status" aria-live="polite">
-            ${t("login.member.reset.done")}
+        ? html`<div class="callout success login-gate__reset-done" role="status" aria-live="polite">
+            <span class="login-gate__reset-icon" aria-hidden="true">${icons.check}</span>
+            <span>${t("login.member.reset.done")}</span>
           </div>`
         : ""}
       <!-- Above the fields, not under the button: the person this is for is about to type the
@@ -733,13 +757,31 @@ function renderMemberForm(state: AppViewState) {
             </button>
           `
         : ""}
-      <button
-        type="button"
-        class="login-gate__mode-toggle session-link"
-        @click=${() => switchLoginMode(state, mode === "signin" ? "claim" : "signin")}
-      >
-        ${mode === "signin" ? t("login.member.toggleToClaim") : t("login.member.toggleToSignIn")}
-      </button>
+      <!-- "Already have an account? Sign in" is the wrong way out of a reset step -- the member
+           knows they have an account, that is why they are here. Both steps get the plain way
+           back instead, which every locale already carries for the pending-approval notice. -->
+      ${isResetRequest || isResetConfirm
+        ? html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link login-gate__reset-back"
+              @click=${() => switchLoginMode(state, "signin")}
+            >
+              <span class="login-gate__reset-back-icon" aria-hidden="true">${icons.arrowLeft}</span>
+              ${t("login.pending.back")}
+            </button>
+          `
+        : html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link"
+              @click=${() => switchLoginMode(state, mode === "signin" ? "claim" : "signin")}
+            >
+              ${mode === "signin"
+                ? t("login.member.toggleToClaim")
+                : t("login.member.toggleToSignIn")}
+            </button>
+          `}
     </form>
   `;
 }
@@ -766,9 +808,31 @@ function renderPendingNotice(state: AppViewState) {
 // The guest reimbursement door used to live here. The login screen is now sign-in only; the guest
 // view itself is unchanged and still reachable at ?signedOut=reimbursements.
 
+/**
+ * What the card says above the form.
+ *
+ * The reset steps used to keep the sign-in header -- logo, "AdminBot", the product subtitle --
+ * and pushed their own explanation into a bare paragraph inside the form, so the screen never
+ * said which of the two password steps you were on. Naming the step in the heading and lifting
+ * its intro into the subtitle uses strings that already exist in every locale.
+ */
+function resolveLoginGateHeading(state: AppViewState): { title: string; sub: string } {
+  if (state.loginMode === "reset-request") {
+    return { title: t("login.member.reset.forgot"), sub: t("login.member.reset.intro") };
+  }
+  if (state.loginMode === "reset-confirm") {
+    return {
+      title: t("login.member.reset.setPassword"),
+      sub: t("login.member.reset.confirmIntro"),
+    };
+  }
+  return { title: "AdminBot", sub: t("login.subtitle") };
+}
+
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
+  const heading = resolveLoginGateHeading(state);
   const failure = resolveLoginFailureFeedback({
     connected: state.connected,
     lastError: state.lastError,
@@ -784,8 +848,8 @@ export function renderLoginGate(state: AppViewState) {
       <div class="login-gate__card">
         <div class="login-gate__header">
           <img class="login-gate__logo" src=${faviconSrc} alt="AdminBot" />
-          <div class="login-gate__title">AdminBot</div>
-          <div class="login-gate__sub">${t("login.subtitle")}</div>
+          <div class="login-gate__title">${heading.title}</div>
+          <div class="login-gate__sub">${heading.sub}</div>
         </div>
         ${state.loginPendingNotice
           ? renderPendingNotice(state)

@@ -456,6 +456,7 @@ export const en: TranslationMap = {
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
+    gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
     labSharing: "Collaborate",
     agents: "Agents",
@@ -508,6 +509,7 @@ export const en: TranslationMap = {
   subtitles: {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
+    gettingStarted: "Your setup checklist — what is left, and what you have already done.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "Workspaces, tools, identities.",
@@ -1129,6 +1131,15 @@ export const en: TranslationMap = {
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
   },
+  gettingStarted: {
+    stillToDo: "Still to do",
+    done: "Already done ({count})",
+    requiredLeft: "{count} required",
+    empty: "You have no setup checklist. Nothing is waiting on you here.",
+    profilePointer: "{count} setup step(s) left",
+    profilePointerDone: "Your setup checklist is finished.",
+    open: "Open Getting Started",
+  },
   dashboard: {
     more: "+{count} more",
     nudgeWarning: {
@@ -1502,7 +1513,8 @@ export const en: TranslationMap = {
     recipient: "Send to",
     preview: "Preview",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -2027,6 +2039,7 @@ export const en: TranslationMap = {
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
       personalCircumstances: "Personal circumstances and/or medical conditions",
+      birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
@@ -2091,6 +2104,8 @@ export const en: TranslationMap = {
       hoursPerWeek:
         "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",
       month: "Year and month, like 2026-03.",
+      birthday:
+        "Month and day, like 03-14 — no year, so your age stays yours. Filling this in adds a recurring all-day event to the shared lab calendar so people can wish you a happy birthday. Leave it blank if you would rather not.",
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
     },

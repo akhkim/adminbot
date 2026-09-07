@@ -158,6 +158,7 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
+import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
   isAdminBotOpportunityDeadline,
@@ -250,6 +251,8 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   detectLocationDrift,
@@ -260,6 +263,16 @@ import {
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
 import {
+  classifyMemberThemes,
+  isThemeMeetingEligible,
+  memberThemeIds,
+  RESEARCH_THEME_IDS,
+  RESEARCH_THEMES,
+  type ResearchThemeId,
+  themeMeetings,
+  type ThemeMatch,
+} from "../workflows/members/research-themes.js";
+import {
   dormantChaseDue,
   isChaseableMember,
   planOnboardingFollowUp,
@@ -267,6 +280,7 @@ import {
   type OnboardingFollowUpStep,
 } from "../workflows/members/onboarding-followup.js";
 import {
+  type AdminBotThemedMeeting,
   matchThemedMeetings,
   matchTopicChannels,
   topicOfChannel,
@@ -847,6 +861,12 @@ const DEFAULT_ACTION_POLICIES = {
   // action in the system that proposed and approved itself in the same tick.
   "slack.rename_channel": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
+  // Same tier as a tentative hold: it writes one all-day event to the shared calendar and invites
+  // nobody, so it lands in the same place a hold does. It is still an approval rather than an auto
+  // policy because the member's own name and date go somewhere the whole lab can read, and an
+  // admin seeing that card is the last point at which somebody can catch a typo'd date or a person
+  // who filled the field in without realising where it would appear.
+  "calendar.create_birthday": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
   // Uninviting somebody is visible to them and reads as a judgement about whether they belong, so
@@ -1179,6 +1199,250 @@ export class AdminBotService {
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Propose the recurring all-day event for a member's birthday.
+   *
+   * A proposal rather than a direct write, because reaching Google is an external effect and every
+   * one of those goes through the approval gate. The card an admin sees is also the last place a
+   * typo'd date, or somebody who filled the field in without noticing where it would show up, can
+   * be caught before it is on a calendar the whole lab reads.
+   *
+   * Changing a birthday proposes an event for the new date and does not retract the old one --
+   * cancelling the previous event needs its Google event id, which the proposal only learns at
+   * execution time. Until that is wired, a corrected date leaves the first event to be removed by
+   * hand.
+   */
+  private proposeBirthdayEvent(member: AdminBotLabMember): void {
+    const calendar = resolveLabCalendar();
+    const payload = birthdayEventPayload(member, calendar.id, new Date());
+    if (!payload) {
+      return;
+    }
+    const name = member.preferred_name?.trim() || member.name.trim();
+    this.createProposal({
+      type: "calendar.create_birthday",
+      summary: `Add ${name}'s birthday to the lab calendar`,
+      target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
+      proposed_payload: payload,
+      rationale: "A member set their birthday on their profile so the lab can send wishes.",
+      undo_plan: "Delete the recurring event from the lab calendar and clear the profile field.",
+      // Keyed on the date as well as the member, so re-saving the same birthday collapses onto one
+      // proposal while a corrected date is genuinely a new one.
+      idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
+    });
+  }
+
+  /**
+   * Every member's research themes, inferred from what they wrote about their own work.
+   *
+   * A read, never a write. The classification is drawn from free text people filled in for another
+   * purpose, so it is a suggestion for a human to accept or correct -- the same rule the location
+   * timeline follows, for the same reason. Each row carries the evidence that produced it, so a
+   * wrong theme is a bad pattern somebody can point at rather than an opinion to argue with.
+   *
+   * Members whose profile says nothing matching are returned with an empty `themes` rather than
+   * omitted: "nobody has classified this person" and "this person's interests are outside the six
+   * themes" look identical in a filtered list, and only one of them is a gap worth chasing.
+   */
+  listMemberResearchThemes(): AdminBotServiceResponse<{
+    members: Array<{ member_id: string; name: string; themes: ThemeMatch[] }>;
+  }> {
+    // Full members and major coauthors only. The themes exist to fill the Wednesday meetings, and
+    // classifying an interviewee or a mailing-list address produces a row nobody can act on.
+    const members = this.store
+      .listLabMembers()
+      .filter(isThemeMeetingEligible)
+      .map((member) => ({
+        member_id: member.id,
+        name: member.name,
+        themes: classifyMemberThemes(member),
+      }));
+    return { ok: true, status: 200, payload: { members } };
+  }
+
+  /**
+   * Invite each eligible member to the Wednesday meeting for every theme their work places them in.
+   *
+   * One proposal per meeting rather than per member: an admin approving "add 9 people to Theme:
+   * Multi-Agent" is reading one decision, where nine cards for the same event is nine chances to
+   * approve eight of them.
+   *
+   * Members already on an event are dropped before the proposal is built, so a sweep that runs
+   * weekly proposes nothing once the roster has settled. That is the same discipline the location
+   * timeline follows -- a sweep should be quiet when nothing changed -- and it is what makes this
+   * safe to schedule rather than run by hand.
+   *
+   * `meetings` is passed in rather than read here: the events live on Google, the service does not
+   * reach out, and the caller that already lists Wednesday's calendar is the one that has them.
+   */
+  sweepResearchThemeInvites(
+    params: {
+      calendarId: string;
+      /** Wednesday's events. Optional: with none, the run does the Slack half only. */
+      meetings?: readonly (AdminBotThemedMeeting & { attendees?: readonly string[] })[];
+    },
+    actor: string,
+  ): AdminBotServiceResponse<{
+    invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }>;
+    joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  }> {
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }> = [];
+    const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
+    const eligible = this.store.listLabMembers().filter(isThemeMeetingEligible);
+
+    for (const themeId of RESEARCH_THEME_IDS) {
+      const matches = themeMeetings(themeId, params.meetings ?? []);
+      if (matches.length === 0) {
+        continue;
+      }
+      if (matches.length > 1) {
+        // Two events answering to one theme is a calendar to look at, not something to resolve by
+        // picking the first -- the lab has two "Theme: Causal LLM" entries in the same hour today.
+        skipped.push({
+          member_id: themeId,
+          reason: `matches ${matches.length} meetings: ${matches.map((m) => m.summary).join("; ")}`,
+        });
+        continue;
+      }
+      const meeting = matches[0] as AdminBotThemedMeeting & { attendees?: readonly string[] };
+      const already = new Set((meeting.attendees ?? []).map((email) => email.trim().toLowerCase()));
+      const attendees: string[] = [];
+      for (const member of eligible) {
+        if (!memberThemeIds(member).includes(themeId)) {
+          continue;
+        }
+        const email = member.calendar_email?.trim();
+        if (!email) {
+          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          continue;
+        }
+        if (already.has(email.toLowerCase())) {
+          continue;
+        }
+        attendees.push(email);
+      }
+      if (attendees.length === 0) {
+        continue;
+      }
+      const unique = [...new Set(attendees)].toSorted();
+      const proposed = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${unique.length} to ${meeting.summary}`,
+        target: { service: "calendar", channel: "calendar", target: meeting.event_id },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: meeting.event_id,
+          // The whole set that will be on the event, existing attendees included: this action type
+          // adds rather than replaces, but the approval card should show the result, not the delta.
+          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])].toSorted(),
+        },
+        rationale: "Members whose stated research interests place them in this theme.",
+        undo_plan: "Remove the attendees with calendar.remove_attendees.",
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: themeId, reason: proposed.error.message });
+        continue;
+      }
+      invited.push({ event_id: meeting.event_id, theme: themeId, attendees: unique });
+    }
+
+    // The Slack half, which is per-member and needs no calendar: a theme's channel is a fixed name
+    // this service already knows, so somebody joins #meeting-mech-interp whether or not Wednesday's
+    // events were passed in.
+    for (const member of eligible) {
+      const outcome = this.proposeThemeChannelInvites(member);
+      joined.push(...outcome.joined);
+      skipped.push(...outcome.skipped);
+    }
+
+    this.recordAudit({
+      type: "research_theme_invites.swept",
+      actor,
+      details: {
+        eligible: eligible.length,
+        meetings: params.meetings?.length ?? 0,
+        invited: invited.length,
+        joined: joined.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { invited, joined, skipped } };
+  }
+
+  /**
+   * Propose one member into the Slack channel for every theme their work places them in.
+   *
+   * Shared by the roster sweep and the profile-save hook, which is the whole reason it is a method:
+   * the two have to agree about who belongs where, and the way they stop agreeing is by being
+   * written twice.
+   *
+   * One proposal per person per channel, because that is the shape `slack.invite_to_channel` takes.
+   * Nothing here reaches Slack; an admin approves, as with every other external effect.
+   */
+  private proposeThemeChannelInvites(member: AdminBotLabMember): {
+    joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  } {
+    const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const themes = new Set(memberThemeIds(member));
+    if (themes.size === 0) {
+      return { joined, skipped };
+    }
+    const slackUserId = member.slack_user_id?.trim();
+    if (!slackUserId) {
+      skipped.push({ member_id: member.id, reason: "member has no slack_user_id" });
+      return { joined, skipped };
+    }
+    for (const theme of RESEARCH_THEMES) {
+      if (!themes.has(theme.id)) {
+        continue;
+      }
+      // What the directory sync last saw them in. Absence is not proof -- a private channel the bot
+      // cannot see is invisible to it -- but for a public #meeting-xxx it is the right check, and it
+      // is what keeps a weekly run from re-proposing the whole lab every time.
+      const inChannel = (member.slack_channels ?? []).some(
+        (name) => name.replace(/^#/u, "").toLowerCase() === theme.meetingChannel,
+      );
+      if (inChannel) {
+        continue;
+      }
+      const proposed = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${member.name} to #${theme.meetingChannel} (${theme.label})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: theme.meetingChannel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel: theme.meetingChannel, user_id: slackUserId },
+        rationale: "Their stated research interests place them in this theme.",
+        undo_plan: "Leave the channel, or have an admin remove the member from it.",
+        // Keyed on the pairing, so the save hook and the weekly sweep proposing the same invite
+        // collapse onto one card rather than two.
+        idempotency_key: `theme-channel:${member.id}:${theme.meetingChannel}`,
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: member.id, reason: proposed.error.message });
+        continue;
+      }
+      // `slack.invite_to_channel` is an auto policy (T1) for the reason its entry gives: the member
+      // and the channel are both computed here from the roster, so nothing about who goes where
+      // came from a caller. Auto-approved still means somebody has to run it, and this is the same
+      // fire-and-forget contract the login geolocation uses -- a profile save must not wait on
+      // Slack, and a Slack outage must not fail the save.
+      void this.execute(proposed.payload.id, { dry_run: false }).catch(() => {
+        // Nothing to do with a failure here: the proposal and its audit row stand, so an invite
+        // that did not land is visible and re-runnable rather than lost.
+      });
+      joined.push({ channel: theme.meetingChannel, theme: theme.id, member_id: member.id });
+    }
+    return { joined, skipped };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
@@ -2088,6 +2352,26 @@ export class AdminBotService {
         raw: moved.raw,
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
+    }
+    // Same hook, same reason: a birthday can be set from the member's own form, an admin's editor
+    // or the roster import, and all three land here. Only on an actual change -- re-saving a
+    // profile must not propose the same event again, and the idempotency key makes a retry of the
+    // *same* date collapse onto one proposal rather than stacking cards on an admin.
+    if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
+      this.proposeBirthdayEvent(stored);
+    }
+    // The same hook again, for theme membership. This is what makes onboarding automatic: a new
+    // member describing their research is a profile write, so the channels they belong in are
+    // proposed the moment they say what they work on, rather than waiting for a sweep.
+    //
+    // Only on a *gain*. Re-saving a profile, or dropping a topic, proposes nothing -- and losing a
+    // theme deliberately does not remove anybody, because leaving a room somebody has been talking
+    // in for a month is not a conclusion to draw from an edited interests field.
+    if (isThemeMeetingEligible(stored)) {
+      const before = new Set(existing ? memberThemeIds(existing) : []);
+      if (memberThemeIds(stored).some((theme) => !before.has(theme))) {
+        this.proposeThemeChannelInvites(stored);
+      }
     }
     this.recordAudit({
       // The account that typed this, not the account it is about. These used to be the same field:
@@ -6792,6 +7076,22 @@ export class AdminBotService {
         }
         this.store.saveLabMember(stored);
         timezonesUpdated += 1;
+        // The field above is the current zone and overwrites itself; this is the timeline. Slack's
+        // `tz` follows a laptop across a border without anyone typing anything, which makes it the
+        // only location-ish signal that keeps arriving for a member who never signs in to AdminBot
+        // -- and a member who never signs in is exactly who the login_ip path cannot see.
+        //
+        // Recorded only on change, like every other observation, so a daily sync of a roster that
+        // has not moved appends nothing. A cleared zone is deliberately not an observation: Slack
+        // having no answer is not evidence that somebody went anywhere.
+        if (next) {
+          this.recordMemberLocation({
+            memberId: stored.id,
+            source: "slack_timezone",
+            raw: next,
+            timezone: next,
+          });
+        }
       }
     }
     this.recordAudit({
@@ -9212,7 +9512,7 @@ export class AdminBotService {
       type: "themed_meeting_invites.swept",
       actor,
       details: {
-        meetings: params.meetings.length,
+        meetings: params.meetings?.length ?? 0,
         proposed: invited.length,
         skipped: skipped.length,
       },
@@ -10303,6 +10603,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "calendar_email",
   "joined_month",
   "graduated_month",
+  "birthday",
   "whatsapp",
   "correspondence_email",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
@@ -10773,8 +11074,15 @@ function validateLabMember(
   // Role is a closed vocabulary, not free text: the roster is filtered and reported on by role,
   // and "PhD student" / "PhD Student" / "PhD" as three distinct values made those counts lie.
   // Empty stays legal — a role nobody has recorded yet is different from a wrong one.
+  //
+  // Several roles are legal too, comma-joined: somebody can be a PhD student and the lab manager,
+  // and every part is checked against the same vocabulary, so the counts stay honest.
   if (member.role !== undefined && member.role !== "") {
-    if (!adminBotMemberRoles.includes(member.role as (typeof adminBotMemberRoles)[number])) {
+    const roles = parseAdminBotMemberRoles(member.role);
+    const unknown = roles.find(
+      (role) => !adminBotMemberRoles.includes(role as (typeof adminBotMemberRoles)[number]),
+    );
+    if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
     }
   }
@@ -10796,6 +11104,12 @@ function validateLabMember(
     const openReviewError = validateOpenReviewId(member.openreview_id);
     if (openReviewError) {
       return openReviewError;
+    }
+  }
+  if (member.birthday !== undefined) {
+    const birthdayError = validateBirthday(member.birthday);
+    if (birthdayError) {
+      return birthdayError;
     }
   }
   // Slack channel names, not ids or links: the sync writes what `users.conversations` reports, and

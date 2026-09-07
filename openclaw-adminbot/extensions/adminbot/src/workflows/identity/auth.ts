@@ -9,6 +9,10 @@ import type {
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../contracts/member-roles.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
@@ -181,9 +185,25 @@ const SIGNUP_PROFILE_FIELDS = [
 
 // Case and spacing differences are the same answer, not a different one: "PhD student" typed by
 // an older client is the vocabulary's "PhD Student".
+//
+// A signup may name several roles, comma-joined. All of them have to match, because a half-matched
+// answer stored as one role would silently drop the other half -- the unmatched string goes to
+// notes instead, where an admin can see what the person actually wrote.
 function normalizeMemberRole(value: string): string | undefined {
-  const needle = value.trim().toLowerCase();
-  return adminBotMemberRoles.find((entry) => entry.toLowerCase() === needle);
+  const submitted = parseAdminBotMemberRoles(value);
+  if (!submitted.length) {
+    return undefined;
+  }
+  const matched: string[] = [];
+  for (const role of submitted) {
+    const needle = role.toLowerCase();
+    const known = adminBotMemberRoles.find((entry) => entry.toLowerCase() === needle);
+    if (!known) {
+      return undefined;
+    }
+    matched.push(known);
+  }
+  return formatAdminBotMemberRoles(matched);
 }
 
 const SIGNUP_STRING_ARRAY_FIELDS = new Set<string>(["research_topics", "projects"]);
@@ -215,6 +235,11 @@ export class AdminBotAuthService {
   // one; otherwise response timing would leak whether an email is on the roster.
   private readonly dummyPasswordScrypt: string;
   private readonly failuresByKey = new Map<string, number[]>();
+  // The last address each member's account was seen from, so noteAccountUse can skip the
+  // geolocation call for the overwhelming majority of requests that came from where the last one
+  // did. In memory on purpose: a restart costs one extra lookup per active member, which is a
+  // better trade than keeping a table of everybody's current IP on disk.
+  private readonly lastSeenIpByMember = new Map<string, string>();
 
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
@@ -453,6 +478,37 @@ export class AdminBotAuthService {
       return undefined;
     }
     return { kind: "member", member, session, impersonator };
+  }
+
+  /**
+   * Sample where an account is being used from, on session use rather than only at sign-in.
+   *
+   * A session outlives the login that opened it -- weeks, for somebody who never signs out -- so
+   * `login()` on its own samples a member's location roughly never, which is why the roster shows
+   * 7 sign-ins across 199 people. Every authenticated request already passes through
+   * `resolveSession`, so this is the one place that can notice the account still in use from
+   * somewhere new.
+   *
+   * Cheap by construction: the geolocation call fires only when the address differs from the last
+   * one seen for that member, because an unchanged IP cannot produce a changed location. Without
+   * that guard this would spend an API budget per request to re-learn one answer.
+   *
+   * Impersonated sessions are skipped. An admin viewing the lab as somebody else is sitting at
+   * their own desk, and writing that address into the member's timeline would record a movement
+   * that nobody involved ever made -- the same failure as letting an inference pose as a fact,
+   * arriving through a different door.
+   */
+  noteAccountUse(principal: AdminBotMemberPrincipal, remoteIp: string | undefined): void {
+    if (!this.geolocateIp || !remoteIp || principal.impersonator) {
+      return;
+    }
+    if (this.lastSeenIpByMember.get(principal.member.id) === remoteIp) {
+      return;
+    }
+    this.lastSeenIpByMember.set(principal.member.id, remoteIp);
+    // Same fire-and-forget contract as the login path: a slow provider must never make a member's
+    // request wait on it.
+    void this.recordLoginLocation(principal.member.id, remoteIp);
   }
 
   /**

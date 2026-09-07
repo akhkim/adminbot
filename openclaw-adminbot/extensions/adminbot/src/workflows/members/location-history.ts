@@ -55,7 +55,17 @@ export function observationFor(params: {
   if (!raw) {
     return undefined;
   }
-  const place = params.source === "login_ip" ? resolveCountry(raw) : resolvePlace(raw);
+  // A zone is never resolved to a place, and the reason is that it *would* resolve. An IANA name
+  // carries a city ("Europe/Amsterdam"), so the gazetteer happily answers "Netherlands" -- for a
+  // string that only ever meant "this laptop is set to CET". Half of Europe shares that zone, and
+  // a member listed in Zurich would acquire Netherlands days out of a clock setting. The zone is
+  // kept as a zone, in `timezone`, and states nothing about a country.
+  const place =
+    params.source === "slack_timezone"
+      ? undefined
+      : params.source === "login_ip"
+        ? resolveCountry(raw)
+        : resolvePlace(raw);
   return {
     id: `loc_${randomUUID()}`,
     member_id: params.memberId,
@@ -63,8 +73,17 @@ export function observationFor(params: {
     source: params.source,
     raw,
     ...(place ? { place_key: place.key, place_label: place.label, country: place.country } : {}),
-    // A timezone is only ever a self-report; see the field's note in contracts.
-    ...(params.timezone && params.source === "self_reported" ? { timezone: params.timezone } : {}),
+    // A timezone is stored only where it is *stated* rather than inferred. That is the invariant
+    // the contract's field note protects: `login_ip` must never carry one, because turning a
+    // country into a zone is a guess, and half the countries the lab spans have several.
+    //
+    // `slack_timezone` qualifies alongside `self_reported`. A Slack `tz` is not an inference about
+    // where somebody is -- it is a zone their own device reports, stored as a zone, under a source
+    // that says where it came from. It stays a *different claim* from the location: it says which
+    // offset their laptop is set to, never which country they are standing in.
+    ...(params.timezone && (params.source === "self_reported" || params.source === "slack_timezone")
+      ? { timezone: params.timezone }
+      : {}),
   };
 }
 

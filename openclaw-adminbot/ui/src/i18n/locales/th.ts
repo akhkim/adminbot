@@ -447,6 +447,7 @@ export const th: TranslationMap = {
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
+    gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
     labSharing: "Lab Sharing",
     agents: "เอเจนต์",
@@ -499,6 +500,7 @@ export const th: TranslationMap = {
   subtitles: {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
+    gettingStarted: "Your setup checklist — what is left, and what you have already done.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "เวิร์กสเปซ เครื่องมือ และข้อมูลประจำตัว",
@@ -1113,6 +1115,15 @@ export const th: TranslationMap = {
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
   },
+  gettingStarted: {
+    stillToDo: "Still to do",
+    done: "Already done ({count})",
+    requiredLeft: "{count} required",
+    empty: "You have no setup checklist. Nothing is waiting on you here.",
+    profilePointer: "{count} setup step(s) left",
+    profilePointerDone: "Your setup checklist is finished.",
+    open: "Open Getting Started",
+  },
   dashboard: {
     more: "+{count} more",
     nudgeWarning: {
@@ -1484,7 +1495,8 @@ export const th: TranslationMap = {
     recipient: "Send to",
     preview: "ดูตัวอย่าง",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -2340,8 +2352,7 @@ export const th: TranslationMap = {
       },
       memberClaim: {
         title: "ไม่สามารถรับสิทธิ์บัญชีได้",
-        summary:
-          "ไม่สามารถรับสิทธิ์บัญชีได้ อาจมีการรับสิทธิ์ไปแล้ว อีเมลอาจไม่เข้าเกณฑ์ หรือรหัสผ่านอ่อนเกินไป",
+        summary: "ไม่สามารถรับสิทธิ์บัญชีได้ อาจมีการรับสิทธิ์ไปแล้ว อีเมลอาจไม่เข้าเกณฑ์ หรือรหัสผ่านอ่อนเกินไป",
         stepPassword: "ใช้รหัสผ่านอย่างน้อย 10 ตัวอักษร",
         stepSignIn: "หากคุณรับสิทธิ์บัญชีนี้ไปแล้ว ให้ใช้ “Sign in” แทน",
       },
