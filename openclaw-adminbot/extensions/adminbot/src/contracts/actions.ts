@@ -2050,6 +2050,8 @@ export type AdminBotAuditEvent = {
   type:
     | "lab_help.saved"
     | "lab_help.closed"
+    | "lab_status.saved"
+    | "lab_status.cleared"
     | "lab_interest.saved"
     | "lab_interest.withdrawn"
     | "proposal.created"
