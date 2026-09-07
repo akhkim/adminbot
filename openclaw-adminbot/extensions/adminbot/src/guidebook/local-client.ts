@@ -14,6 +14,7 @@ export type GuidebookFetch = (
     headers?: Record<string, string>;
     body?: string;
     signal?: AbortSignal;
+    redirect?: "error";
   },
 ) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
 
@@ -49,6 +50,8 @@ async function postJson(
   try {
     response = await fetchImpl(endpoint, {
       method: "POST",
+      // A loopback origin must not redirect private excerpts to another host.
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),

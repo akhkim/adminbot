@@ -103,3 +103,38 @@ a refresh. Expiry hides the stored text rather than deleting it. Explicit clear 
 the row. Browser inputs use the editor's device timezone and convert to ISO for the API.
 Session changes clear status and drafts; denied authorization removes editing controls.
 Ordinary network failures retain an administrator's draft for retry.
+
+## Member how-to guidebook
+
+The Lab how-to panel answers one question at a time using the existing loopback-only
+retrieval and synthesis service and shows source section headings. Answers may quote
+source passages. Local generation does not sanitize them or authorize forwarding to
+hosted models. Questions and answers are not added to the audit log.
+
+`POST /lab-sharing/ask` requires a member session (anonymous 401, shared service token
+403). It accepts a question of 1–1000 trimmed characters in a 4096-byte JSON body.
+Retrieval uses at most four sections and a 30-second request timeout. Browser requests
+also time out and are cancelled on logout; stale answers never enter a new session.
+Model output is rendered as plain text, including any HTML it contains. Failures show
+resource-link guidance without exposing host paths, credentials or model errors.
+
+An operator must first review a dedicated index and confirm every section is suitable
+for all signed-in members. Configure `ADMINBOT_MEMBER_GUIDEBOOK_INDEX` to its absolute
+path and `ADMINBOT_MEMBER_GUIDEBOOK_SHA256` to the SHA-256 of
+`JSON.stringify(JSON.parse(indexFileText))`. For example, compute the digest locally:
+
+```sh
+node --input-type=module -e 'import {readFileSync} from "node:fs"; import {createHash} from "node:crypto"; console.log(createHash("sha256").update(JSON.stringify(JSON.parse(readFileSync(process.argv[1], "utf8")))).digest("hex"))' /path/to/reviewed-member-index.json
+```
+
+Do not point this at the unreviewed internal index. Missing configuration, a changed
+index (including a resync), or a digest mismatch disables member answers before any
+model call. Review new content before updating the approved digest; no automatic
+approval or fallback to the internal index exists. Keep the index outside the repo
+with owner-only permissions. The same parsed object is checked and used for retrieval.
+
+By default embeddings and answers use the existing local guidebook model configuration.
+`ADMINBOT_MEMBER_GUIDEBOOK_EMBEDDING_URL` and `ADMINBOT_MEMBER_GUIDEBOOK_ANSWER_URL` can
+override their endpoints, but both must remain loopback. The existing internal
+`/guidebook/ask` caller contract is unchanged. This panel is a focused guidebook lookup,
+not a general-purpose agent or an external-action interface.
