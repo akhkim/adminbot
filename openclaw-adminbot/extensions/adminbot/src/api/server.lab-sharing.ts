@@ -10,6 +10,24 @@ export async function handleLabSharingRoute(
   service: AdminBotService,
   memberId: string,
 ): Promise<void> {
+  if (url.pathname === "/lab-sharing/invites") {
+    if (req.method === "GET") {
+      sendServiceResult(res, service.labSharingInvites().list(memberId));
+      return;
+    }
+    if (req.method === "POST") {
+      let body: unknown;
+      try {
+        body = await readJson(req, 4096);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        sendJson(res, 400, { error: { message: "Expected an invitation as JSON." } });
+        return;
+      }
+      sendServiceResult(res, service.labSharingInvites().request(memberId, body));
+      return;
+    }
+  }
   if (req.method === "POST" && url.pathname === "/lab-sharing/ask") {
     let body: unknown;
     try {

@@ -122,8 +122,9 @@ export class LabSharingStatus extends LitElement {
     if (!this.sessionToken) return nothing;
     const current =
       this.status && Date.parse(this.status.expires_at) > Date.now() ? this.status : null;
-    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Director status">
-      <h2 class="lab-sharing-seek__title">Director status</h2>
+    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Zhijing’s availability">
+      <h2 class="lab-sharing-seek__title">Zhijing’s availability</h2>
+      <p class="lab-sharing-seek__sub">Check the latest shared update before reaching out. This is a manual update, not live calendar availability.</p>
       <button class="btn" ?disabled=${this.busy} @click=${() => this.refresh()}>
         Refresh status
       </button>
