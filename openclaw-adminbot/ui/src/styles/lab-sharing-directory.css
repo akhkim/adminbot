@@ -82,3 +82,84 @@ lab-sharing-invites {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Live panels share the neutral surfaces used by My Projects and Time Availability.
+   Keep the prototype palette scoped to the optional sample-data preview. */
+.lab-sharing-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.lab-sharing-page .lab-sharing-directory {
+  --ls-accent: var(--border-strong);
+  --ls-accent-hover: var(--border-hover);
+  --ls-accent-bright: var(--text);
+  --ls-accent-subtle: var(--bg-elevated);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  padding: var(--space-5);
+  gap: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.lab-sharing-page .lab-sharing-directory .btn.primary {
+  border-color: #45454d;
+  background: #2e2e34;
+  color: #e4e4e7;
+}
+
+.lab-sharing-page .lab-sharing-directory .btn.primary:hover {
+  border-color: #505059;
+  background: #3a3a42;
+}
+
+.lab-sharing-page .lab-sharing-directory .btn:focus-visible,
+.lab-sharing-page .lab-sharing-directory :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lab-sharing-page .lab-sharing-request {
+  border: 1px solid var(--border);
+  padding: var(--space-4);
+}
+
+.lab-sharing-page .lab-sharing-ask__field {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.lab-sharing-page .lab-sharing-ask__field > span {
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.lab-sharing-page .lab-sharing-directory :is(input, select, textarea) {
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+}
+
+.lab-sharing-page .lab-sharing-directory select {
+  padding-right: var(--space-8);
+}
+
+.lab-sharing-page > details {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .lab-sharing-page .lab-sharing-directory {
+    padding: var(--space-4);
+  }
+  .lab-sharing-page .lab-sharing-request__header {
+    flex-wrap: wrap;
+  }
+}
