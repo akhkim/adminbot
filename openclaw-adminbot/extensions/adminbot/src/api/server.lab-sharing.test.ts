@@ -292,3 +292,36 @@ it("gates director status and supports publish/read/clear with bounded JSON", as
   expect((await fetch(`${url}/clear`, { method: "POST", headers: admin })).status).toBe(200);
   expect(await (await fetch(url, { headers: member })).json()).toMatchObject({ status: null });
 });
+
+it("gates member guidebook questions and validates bounded input", async () => {
+  const { mock, baseUrl } = await startLab();
+  const url = `${baseUrl}/lab-sharing/ask`;
+  expect((await fetch(url, { method: "POST" })).status).toBe(401);
+  expect(
+    (await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } }))
+      .status,
+  ).toBe(403);
+  const headers = await memberSession(mock, baseUrl, "member");
+  expect(
+    (await fetch(url, { method: "POST", headers, body: JSON.stringify({ question: " " }) })).status,
+  ).toBe(400);
+  expect(
+    (
+      await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ question: "x".repeat(1001) }),
+      })
+    ).status,
+  ).toBe(400);
+  expect((await fetch(url, { method: "POST", headers, body: "{" })).status).toBe(400);
+  expect(
+    (
+      await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ question: "x".repeat(5000) }),
+      })
+    ).status,
+  ).toBe(413);
+});
