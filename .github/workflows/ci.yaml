@@ -1,0 +1,143 @@
+# What has to be true before a change lands.
+#
+# Until this existed the repo had no correctness gate at all: the only workflow was the Vercel
+# deploy trigger, which cannot authorize for a pull request from a fork, so every external PR showed
+# a red check that said nothing about its code and no green one that meant anything either. A PR
+# that broke six UI tests reached `main` unnoticed for exactly that reason.
+#
+# Two rules shape what is gated here:
+#
+#   1. Only lanes that are green today block. A gate that is red on arrival gets ignored within a
+#      week, and then it is worse than no gate, because a red check stops carrying information.
+#   2. The lanes with a documented known-red baseline (docs/refactor-baseline.md) still *run*, in
+#      the `baseline` job, and report without blocking. The baseline says to treat growth in those
+#      numbers as a regression, which needs the numbers visible on every run to be checkable at all.
+#
+# Safety notes, since this runs code from forks:
+#
+#   - `pull_request`, never `pull_request_target`. The latter runs with the base repo's secrets and
+#     write token against the *fork's* code, which is how a CI workflow becomes an exfiltration
+#     path. Nothing here needs a secret, so nothing here gets one.
+#   - `permissions: contents: read` at the top, inherited by every job. No job publishes, comments,
+#     or pushes.
+#   - `persist-credentials: false` on checkout, so the ambient token is not left in `.git/config`
+#     where a build script could reach it.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second push to a branch makes the first run's answer irrelevant; finishing it just delays the
+# one somebody is waiting on.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: openclaw-adminbot
+
+env:
+  # tsdown and the vitest lanes are the memory-hungry steps here, and the whole-project typecheck
+  # OOMs at the default heap. Raised once, centrally, rather than per step.
+  NODE_OPTIONS: --max-old-space-size=6144
+
+jobs:
+  test-node:
+    name: Tests (node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The two deadline-board specs are excluded, and that is a real gap rather than a tidy-up:
+      # they assert behaviour the Control UI has and the standalone board never got -- workshop
+      # groups rendered as standalone cards, and the removal of the priority facet. Three of their
+      # eleven tests fail on `main` today. Delete these two lines once the board is brought level;
+      # until then everything else in the suite is gated.
+      - name: AdminBot suite
+        run: >
+          pnpm exec vitest run --config test/vitest/vitest.node.config.ts extensions/adminbot
+          --exclude '**/workflows/deadlines/board.test.ts'
+          --exclude '**/workflows/deadlines/board.base.test.ts'
+
+  test-ui:
+    name: Tests (ui)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Scoped to the AdminBot surface. The wider `ui/src` lane carries the known-red i18n specs,
+      # which the baseline job reports instead.
+      - name: AdminBot UI suite
+        run: pnpm exec vitest run --config test/vitest/vitest.ui.config.ts ui/src/ui/adminbot
+
+  structure:
+    name: Structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # All three are green today and cheap, and each guards an invariant that is expensive to
+      # restore once broken: an import cycle, a domain edge the tree deliberately froze, and the
+      # ratcheted per-directory file count.
+      - run: pnpm run check:import-cycles
+      - run: pnpm run check:layering
+      - run: pnpm run check:dir-size
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # `pnpm build` runs tsdown and ui:build together, ~45s.
+      - run: pnpm build
+      # The deploy script git-archives the whole repo, so a tree that builds without producing the
+      # extension entrypoint ships wholesale and fails on Aurora instead of here.
+      - name: The extension entrypoint exists
+        run: test -f dist/extensions/adminbot/api.js
+
+  baseline:
+    name: Known-red baseline (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Never blocks. These lanes are red on `main` by documented decision, and the value is the
+    # number: docs/refactor-baseline.md asks that growth be treated as a regression, which is only
+    # checkable if each run prints where the counts stand.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # `format:check`, not `format` -- the latter writes.
+      - name: Formatting
+        if: always()
+        run: pnpm run format:check
+      - name: Lint
+        if: always()
+        run: pnpm run lint
+      - name: Typecheck (core)
+        if: always()
+        run: pnpm run tsgo:core
+      - name: Typecheck (extensions)
+        if: always()
+        run: pnpm run tsgo:extensions
