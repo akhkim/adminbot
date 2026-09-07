@@ -248,6 +248,8 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   detectLocationDrift,
@@ -838,6 +840,12 @@ const DEFAULT_ACTION_POLICIES = {
   // action in the system that proposed and approved itself in the same tick.
   "slack.rename_channel": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
+  // Same tier as a tentative hold: it writes one all-day event to the shared calendar and invites
+  // nobody, so it lands in the same place a hold does. It is still an approval rather than an auto
+  // policy because the member's own name and date go somewhere the whole lab can read, and an
+  // admin seeing that card is the last point at which somebody can catch a typo'd date or a person
+  // who filled the field in without realising where it would appear.
+  "calendar.create_birthday": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
   // Uninviting somebody is visible to them and reads as a judgement about whether they belong, so
@@ -1170,6 +1178,39 @@ export class AdminBotService {
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Propose the recurring all-day event for a member's birthday.
+   *
+   * A proposal rather than a direct write, because reaching Google is an external effect and every
+   * one of those goes through the approval gate. The card an admin sees is also the last place a
+   * typo'd date, or somebody who filled the field in without noticing where it would show up, can
+   * be caught before it is on a calendar the whole lab reads.
+   *
+   * Changing a birthday proposes an event for the new date and does not retract the old one --
+   * cancelling the previous event needs its Google event id, which the proposal only learns at
+   * execution time. Until that is wired, a corrected date leaves the first event to be removed by
+   * hand.
+   */
+  private proposeBirthdayEvent(member: AdminBotLabMember): void {
+    const calendar = resolveLabCalendar();
+    const payload = birthdayEventPayload(member, calendar.id, new Date());
+    if (!payload) {
+      return;
+    }
+    const name = member.preferred_name?.trim() || member.name.trim();
+    this.createProposal({
+      type: "calendar.create_birthday",
+      summary: `Add ${name}'s birthday to the lab calendar`,
+      target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
+      proposed_payload: payload,
+      rationale: "A member set their birthday on their profile so the lab can send wishes.",
+      undo_plan: "Delete the recurring event from the lab calendar and clear the profile field.",
+      // Keyed on the date as well as the member, so re-saving the same birthday collapses onto one
+      // proposal while a corrected date is genuinely a new one.
+      idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
+    });
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
@@ -2079,6 +2120,13 @@ export class AdminBotService {
         raw: moved.raw,
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
+    }
+    // Same hook, same reason: a birthday can be set from the member's own form, an admin's editor
+    // or the roster import, and all three land here. Only on an actual change -- re-saving a
+    // profile must not propose the same event again, and the idempotency key makes a retry of the
+    // *same* date collapse onto one proposal rather than stacking cards on an admin.
+    if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
+      this.proposeBirthdayEvent(stored);
     }
     this.recordAudit({
       // The account that typed this, not the account it is about. These used to be the same field:
@@ -10304,6 +10352,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "calendar_email",
   "joined_month",
   "graduated_month",
+  "birthday",
   "whatsapp",
   "correspondence_email",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
@@ -10804,6 +10853,12 @@ function validateLabMember(
     const openReviewError = validateOpenReviewId(member.openreview_id);
     if (openReviewError) {
       return openReviewError;
+    }
+  }
+  if (member.birthday !== undefined) {
+    const birthdayError = validateBirthday(member.birthday);
+    if (birthdayError) {
+      return birthdayError;
     }
   }
   // Slack channel names, not ids or links: the sync writes what `users.conversations` reports, and

@@ -2039,6 +2039,7 @@ export const en: TranslationMap = {
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
       personalCircumstances: "Personal circumstances and/or medical conditions",
+      birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
@@ -2103,6 +2104,8 @@ export const en: TranslationMap = {
       hoursPerWeek:
         "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",
       month: "Year and month, like 2026-03.",
+      birthday:
+        "Month and day, like 03-14 — no year, so your age stays yours. Filling this in adds a recurring all-day event to the shared lab calendar so people can wish you a happy birthday. Leave it blank if you would rather not.",
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
     },

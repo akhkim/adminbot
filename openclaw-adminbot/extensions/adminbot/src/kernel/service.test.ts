@@ -4878,6 +4878,67 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("birthday", () => {
+    function birthdayProposals(service: AdminBotService) {
+      return unwrap(service.listPending()).proposals.filter(
+        (proposal) => proposal.type === "calendar.create_birthday",
+      );
+    }
+
+    it("proposes a calendar event when a birthday is first set, and not on an unrelated re-save", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-14",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+
+      // Saving the profile again without touching the birthday must not stack a second card on an
+      // admin's approval queue.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada Attendee",
+          birthday: "03-14",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+    });
+
+    it("proposes again when the date is corrected", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-14" }),
+      );
+      unwrap(
+        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-15" }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(2);
+    });
+
+    it("proposes nothing for a member without a birthday", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada" }));
+      expect(birthdayProposals(service)).toHaveLength(0);
+    });
+
+    it("rejects a birthday carrying a year", () => {
+      const service = new AdminBotService();
+      const result = service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada",
+        birthday: "1990-03-14",
+      });
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe("refreshMemberDirectoryFromSlack", () => {
     it("backfills slack_user_id by email match and leaves an already-linked member alone", async () => {
       const service = new AdminBotService();

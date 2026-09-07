@@ -8,6 +8,12 @@ export const adminBotActionTypes = [
   "slack.channel_naming_notify_owner",
   "slack.rename_channel",
   "calendar.create_tentative_hold",
+  // The yearly all-day event for one member's birthday. Its own type rather than a
+  // `create_tentative_hold` because a birthday is not a hold on anybody's time and should not read
+  // as one in the audit trail -- and because "when did AdminBot put somebody's birthday on the
+  // shared calendar, and at whose request" is a question about personal data that deserves its own
+  // answerable row.
+  "calendar.create_birthday",
   "calendar.send_invite",
   // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
   // only other way to touch an existing event: that one writes the whole attendee list, so using it
@@ -1368,6 +1374,16 @@ export type AdminBotLabMemberInput = {
   // When they left, for alumni. Empty for everyone currently on the sheet, but it is the column the
   // roster will eventually age members out by, so it is stored rather than inferred from `status`.
   graduated_month?: string;
+  /**
+   * Month and day only, as `MM-DD`. Never a year.
+   *
+   * The lab's use for this is sending birthday wishes, which a month and a day answer completely.
+   * A year would additionally publish every member's age to the whole roster as a side effect of
+   * them wanting to be wished a happy birthday -- see workflows/members/birthday.ts. Filling it in
+   * puts a recurring all-day event on the shared lab calendar, which is the whole point of the
+   * field and is said plainly where it is typed rather than only here.
+   */
+  birthday?: string;
   whatsapp?: string;
   // The address the lab writes to for outreach, kept apart from `email` (the login identity) and
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
