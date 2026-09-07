@@ -169,7 +169,7 @@ export class LabSharingStatus extends LitElement {
                 }}
               >
                 ${["unknown", "available", "busy", "away"].map(
-                  (value) => html`<option value=${value}>${availabilityLabels[value]}</option>`,
+                  (value) => html`<option value=${value} ?selected=${value === this.draft.availability}>${availabilityLabels[value]}</option>`,
                 )}
               </select></label
             >
