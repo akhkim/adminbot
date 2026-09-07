@@ -30,9 +30,9 @@ describe("reading the sheet", () => {
     expect(addressesIn("not an address")).toEqual([]);
   });
 
-  // The lab address in column Q is the one a lead is cc'd at; several leads keep a personal
-  // address in column E that they do not use for lab correspondence.
-  it("prefers the lab address over the personal one, and takes the first namesake", () => {
+  // The personal address in column E is the one a lead is cc'd at, so the mail reaches a mailbox
+  // they actually read; column Q is the fallback for leads with no personal address on the sheet.
+  it("prefers the personal address over the lab one, and takes the first namesake", () => {
     const index = buildLeadIndex(
       [
         ["Andrew Kim", "andrewkihyun@gmail.com", "akim@cs.toronto.edu"],
@@ -43,7 +43,7 @@ describe("reading the sheet", () => {
       1,
       2,
     );
-    expect(index.get("andrew")?.email).toBe("akim@cs.toronto.edu");
+    expect(index.get("andrew")?.email).toBe("andrewkihyun@gmail.com");
     expect(index.get("kem")?.email).toBe("nlpa@umd.edu");
   });
 

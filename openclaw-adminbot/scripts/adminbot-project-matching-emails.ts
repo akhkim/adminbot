@@ -88,9 +88,10 @@ export function addressesIn(cell: string): string[] {
 /**
  * Every member the sheet knows, keyed by first name.
  *
- * Column Q (the CS Toronto address) wins over column E: a lead cc'd on lab correspondence is
- * reached at their lab address, and several leads have a personal address in E that they do not
- * use for this.
+ * Column E (the personal / correspondence address) wins over column Q: leads read their own mail
+ * there, and a cc that lands in a lab account they check rarely stalls the applicant. Andrew set
+ * this on 2026-09-07, reversing the earlier lab-address-first rule. Column Q remains the fallback
+ * for leads whose only address on the sheet is institutional.
  */
 export function buildLeadIndex(
   rows: string[][],
@@ -104,7 +105,7 @@ export function buildLeadIndex(
     if (!name) {
       continue;
     }
-    const email = addressesIn(row[slackAt] ?? "")[0] ?? addressesIn(row[corrAt] ?? "")[0];
+    const email = addressesIn(row[corrAt] ?? "")[0] ?? addressesIn(row[slackAt] ?? "")[0];
     if (!email) {
       continue;
     }
