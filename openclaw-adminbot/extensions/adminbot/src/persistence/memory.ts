@@ -43,6 +43,7 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -74,6 +75,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
   listHelpInterests(): LabHelpInterest[] {
     return [...this.helpInterests.values()].map((row) => structuredClone(row));
+  }
+  private directorStatus: LabDirectorStatus | null = null;
+  saveDirectorStatus(status: LabDirectorStatus | null): void {
+    this.directorStatus = structuredClone(status);
+  }
+  readDirectorStatus(): LabDirectorStatus | null {
+    return structuredClone(this.directorStatus);
   }
   private readonly helpRequests = new Map<string, LabHelpRequest>();
   saveHelpRequest(request: LabHelpRequest): void {

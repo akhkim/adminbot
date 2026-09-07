@@ -150,6 +150,7 @@ import {
   isGroupMeetingNudgeDue,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
+import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import {
   findDuplicateMembers,
@@ -349,6 +350,8 @@ export type AdminBotServiceResponse<T> =
 export type AdminBotServiceStore = {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
+  saveDirectorStatus(status: LabDirectorStatus | null): void;
+  readDirectorStatus(): LabDirectorStatus | null;
   saveHelpRequest(request: LabHelpRequest): void;
   listHelpRequests(): LabHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;
