@@ -11340,6 +11340,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // What the member wants from the next merch order. Theirs to state and theirs to change, right
   // up until somebody places it.
   "merch_requests",
+  "next_position",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
   "personal_circumstances",

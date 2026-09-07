@@ -2027,6 +2027,7 @@ export const id: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
+      nextPosition: "Next position you're looking for",
       personalCircumstances: "Medical conditions",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
@@ -2067,6 +2068,8 @@ export const id: TranslationMap = {
     },
     help: {
       trigger: "What is {field}?",
+      nextPosition:
+        "What is the next position/thing in life you are looking for? And when is your ideal move? How can Zhijing help you?",
       personalCircumstances:
         "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:
