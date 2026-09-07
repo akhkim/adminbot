@@ -262,3 +262,33 @@ describe("Lab Sharing routes", () => {
     expect((await fetch(url, { method: "POST", headers: member })).status).toBe(404);
   });
 });
+
+it("gates director status and supports publish/read/clear with bounded JSON", async () => {
+  const { mock, baseUrl } = await startLab();
+  const admin = await memberSession(mock, baseUrl, "admin");
+  const member = await memberSession(mock, baseUrl, "member");
+  const url = `${baseUrl}/lab-sharing/status`;
+  expect((await fetch(url)).status).toBe(401);
+  expect((await fetch(url, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } })).status).toBe(
+    403,
+  );
+  const body = JSON.stringify({
+    availability: "busy",
+    message: "Synthetic review",
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+    updated_by: "spoof",
+  });
+  expect((await fetch(url, { method: "PUT", headers: member, body })).status).toBe(403);
+  expect((await fetch(url, { method: "PUT", headers: admin, body: "{" })).status).toBe(400);
+  expect((await fetch(url, { method: "PUT", headers: admin, body: "x".repeat(4097) })).status).toBe(
+    413,
+  );
+  expect((await fetch(url, { method: "PUT", headers: admin, body })).status).toBe(200);
+  expect(await (await fetch(url, { headers: member })).json()).toMatchObject({
+    status: { message: "Synthetic review", updated_by: "admin" },
+    can_manage: false,
+  });
+  expect((await fetch(`${url}/clear`, { method: "POST", headers: member })).status).toBe(403);
+  expect((await fetch(`${url}/clear`, { method: "POST", headers: admin })).status).toBe(200);
+  expect(await (await fetch(url, { headers: member })).json()).toMatchObject({ status: null });
+});

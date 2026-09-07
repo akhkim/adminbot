@@ -1,3 +1,4 @@
+import "./lab-sharing-status.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 import { ref } from "lit/directives/ref.js";
 import "./lab-sharing-member-search.ts";
@@ -1199,7 +1200,8 @@ export function renderLabSharingPreview(state: AppViewState) {
 export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
   let directory: LabSharingDirectory | undefined;
-  return html`<lab-sharing-directory
+  return html`<lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
+    <lab-sharing-directory
       ${ref((element) => {
         directory = element as LabSharingDirectory | undefined;
       })}

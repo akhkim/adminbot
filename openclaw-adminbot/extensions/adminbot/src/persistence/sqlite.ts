@@ -1,3 +1,4 @@
+import { ensureDirectorStatusSchema, saveDirectorStatus, readDirectorStatus } from "./lab-sharing-status.js";
 import { ensureLabInterestSchema, saveHelpInterest, listHelpInterests } from "./lab-sharing-interest.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import fs from "node:fs";
@@ -42,6 +43,7 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -660,6 +662,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_workshop_match_runs(started_at DESC);
     `);
     ensureLabSharingSchema(this.db);
+    ensureDirectorStatusSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
@@ -2113,6 +2116,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   saveHelpInterest(interest: LabHelpInterest): void { saveHelpInterest(this.db, interest); }
   listHelpInterests(): LabHelpInterest[] { return listHelpInterests(this.db); }
+  saveDirectorStatus(status: LabDirectorStatus | null): void {
+    saveDirectorStatus(this.db, status);
+  }
+  readDirectorStatus(): LabDirectorStatus | null {
+    return readDirectorStatus(this.db);
+  }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);
   }
