@@ -74,17 +74,32 @@ export class LabSharingInvites extends LitElement {
     this.querySelector("select")?.focus();
   }
   private async request(path: string, body?: unknown) {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}${path}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: { Authorization: `Bearer ${this.sessionToken}`, "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message ?? "Could not load invitations.");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${this.sessionToken}`, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message ?? "Could not load invitations.");
+      }
+      return data;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(body === undefined
+          ? "Invitations took too long to load. Try Refresh invitations."
+          : "The request timed out. It may have been accepted. Refresh invitations before trying again.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-    return data;
   }
+
   private async load() {
     const generation = ++this.generation;
     this.busy = true;
