@@ -52,6 +52,7 @@ import {
   type ProfileField,
   type ProfileFieldGroup,
 } from "../member-fields.ts";
+import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
@@ -640,6 +641,37 @@ function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnTyp
   `;
 }
 
+/**
+ * One field of the fill-in form: its label, its control, and everything hanging off it.
+ *
+ * A `<label>` for every field but the multi-answer ones. A label forwards a click anywhere inside
+ * it to the first labelable control it contains, so a row whose control is a menu of checkboxes
+ * would tick a role -- possibly one behind a closed dropdown -- when somebody clicked the word
+ * "Role". Those rows get a plain container, and the checkbox group carries its own accessible name.
+ */
+function renderProfileFormRow(state: AppViewState, member: LabMember, field: EditableField) {
+  const body = html`
+    <span class="profile__form-label">
+      ${labelFor(field.key)}${renderMandatoryMark(
+        field,
+        displayValue(member, field),
+      )}${renderFieldHelp(field)}
+      ${field.adminOnly
+        ? html`<span class="profile__optional">${t("profile.basics.adminFilled")}</span>`
+        : isOptionalMemberField(field)
+          ? html`<span class="profile__optional">${t("profile.basics.optional")}</span>`
+          : nothing}
+    </span>
+    ${renderFieldInput(field, displayValue(member, field))} ${renderUrnStatus(member, field)}
+    ${renderFieldAction(field)} ${renderFieldHint(field)} ${renderFieldVisibility(field)}
+    ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
+    ${renderAccountCheckStatus(state, field)}
+  `;
+  return field.type === "multi_dropdown"
+    ? html`<div class="profile__form-row">${body}</div>`
+    : html`<label class="profile__form-row">${body}</label>`;
+}
+
 function renderFieldInput(field: EditableField, currentValue: string) {
   // An admin-owned answer the member may still supply. It was `disabled`, which is why this is
   // worth explaining: a disabled input cannot be focused, selected, or pasted into, so a member
@@ -697,50 +729,23 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         </select>
       `;
     case "multi_dropdown": {
-      // Checkboxes rather than a multi-select list box: a `<select multiple>` hides how many
-      // options there are behind a scroll and needs ctrl-click to pick a second one, which is
+      // A dropdown that opens checkboxes, rather than a `<select multiple>`: the list box hides how
+      // many options there are behind a scroll and needs ctrl-click to pick a second one, which is
       // exactly the interaction somebody recording "PhD Student" and "Lab Manager" would never
-      // guess at.
+      // guess at. Closed by default, because eleven boxes standing open are taller than the rest of
+      // the identity group put together and read as eleven separate questions.
       const held = parseAdminBotMemberRoles(currentValue);
-      const known = new Set(held.map((entry) => entry.toLowerCase()));
-      const options = field.options ?? [];
-      return html`
-        <div
-          class="profile__multi"
-          role="group"
-          aria-label=${t(field.labelKey)}
-          data-testid=${`profile-multi-${field.key}`}
-        >
-          ${options.map(
-            (option) => html`
-              <label class="profile__multi-option">
-                <input
-                  type="checkbox"
-                  name=${field.key}
-                  value=${option}
-                  .checked=${known.has(option.toLowerCase())}
-                />
-                <span>${option}</span>
-              </label>
-            `,
-          )}
-          <!-- An imported answer the vocabulary has no box for ("PhD Mentee / MSc") would vanish
-               the first time this form was saved, so it keeps a box of its own and is written back
-               untouched unless the member clears it themselves. -->
-          ${held
-            .filter(
-              (entry) => !options.some((option) => option.toLowerCase() === entry.toLowerCase()),
-            )
-            .map(
-              (entry) => html`
-                <label class="profile__multi-option profile__multi-option--legacy">
-                  <input type="checkbox" name=${field.key} value=${entry} checked />
-                  <span>${entry}</span>
-                </label>
-              `,
-            )}
-        </div>
-      `;
+      return renderMultiSelectField({
+        name: field.key,
+        label: t(field.labelKey),
+        placeholder: t("profile.basics.empty"),
+        options: multiSelectOptionsFor(field.options ?? [], held),
+        selected: new Set(held.map((entry) => entry.toLowerCase())),
+        rootClass: "profile__multi",
+        optionClass: "profile__multi-option",
+        legacyOptionClass: "profile__multi-option--legacy",
+        testId: `profile-multi-${field.key}`,
+      });
     }
     case "paragraph":
       return html`
@@ -910,30 +915,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                             ${renderProjectChips(state, props)}
                           </div>
                         `
-                      : html`
-                          <label class="profile__form-row">
-                            <span class="profile__form-label">
-                              ${labelFor(field.key)}${renderMandatoryMark(
-                                field,
-                                displayValue(member, field),
-                              )}${renderFieldHelp(field)}
-                              ${field.adminOnly
-                                ? html`<span class="profile__optional"
-                                    >${t("profile.basics.adminFilled")}</span
-                                  >`
-                                : isOptionalMemberField(field)
-                                  ? html`<span class="profile__optional"
-                                      >${t("profile.basics.optional")}</span
-                                    >`
-                                  : nothing}
-                            </span>
-                            ${renderFieldInput(field, displayValue(member, field))}
-                            ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
-                            ${renderFieldHint(field)} ${renderFieldVisibility(field)}
-                            ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
-                            ${renderAccountCheckStatus(state, field)}
-                          </label>
-                        `}
+                      : renderProfileFormRow(state, member, field)}
                   `,
                 )}
               </div>
