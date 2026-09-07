@@ -277,3 +277,18 @@ it("narrows a large directory by multiple terms and weekly hours", async () => {
   await el.updateComplete;
   expect(el.querySelectorAll("[data-project]")).toHaveLength(0);
 });
+
+it("reveals a distant project without expanding the entire directory", async () => {
+  const requests = Array.from({length: 100}, (_, i) => ({paper_id: `p${i}`, title: `Project ${i}`, owner_name: "Member", description: "Task", tags: [], members_needed: 1, hours_per_week: 2, timeline: "", status: "open", can_manage: false}));
+  vi.stubGlobal("fetch", vi.fn(async () => ({ok: true, json: async () => ({projects: [], requests})})));
+  const el = createDirectory(); el.sessionToken = "synthetic"; document.body.append(el); await settle(el);
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  try {
+    await el.showProject("p99");
+    expect(el.querySelectorAll("[data-project]")).toHaveLength(10);
+    expect(el.querySelector("[data-project]")?.getAttribute("data-project")).toBe("p99");
+    expect(document.activeElement).toBe(el.querySelector('[data-project="p99"]'));
+    expect(el.textContent).toContain("Selected project shown first.");
+  } finally { HTMLElement.prototype.scrollIntoView = original; }
+});

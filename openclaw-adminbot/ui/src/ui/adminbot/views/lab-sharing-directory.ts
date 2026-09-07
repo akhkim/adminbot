@@ -41,6 +41,7 @@ export class LabSharingDirectory extends LitElement {
   @state() private maxHours = "";
   @state() private sort = "title";
   @state() private visibleCount = 10;
+  @state() private revealedProject = "";
   @state() private draft = {
     paper_id: "",
     description: "",
@@ -60,6 +61,7 @@ export class LabSharingDirectory extends LitElement {
       this.data = null;
       this.offerDrafts = {};
       this.query = this.maxHours = "";
+      this.revealedProject = "";
       this.visibleCount = 10;
       this.error = "";
       this.notice = "";
@@ -83,7 +85,8 @@ export class LabSharingDirectory extends LitElement {
   }
   async showProject(paperId: string) {
     this.maxHours = "";
-    this.visibleCount = Number.MAX_SAFE_INTEGER;
+    this.visibleCount = 10;
+    this.revealedProject = paperId;
     const generation = this.generation;
     this.query = "";
     await this.updateComplete;
@@ -299,7 +302,7 @@ export class LabSharingDirectory extends LitElement {
       const text = `${request.title} ${request.owner_name} ${request.description} ${request.tags.join(" ")} ${request.timeline}`.toLowerCase();
       return terms.every((term) => text.includes(term)) &&
         (!this.maxHours || request.hours_per_week <= Number(this.maxHours));
-    }).toSorted((a, b) => this.sort === "hours"
+    }).toSorted((a, b) => a.paper_id === this.revealedProject ? -1 : b.paper_id === this.revealedProject ? 1 : this.sort === "hours"
       ? a.hours_per_week - b.hours_per_week || a.title.localeCompare(b.title)
       : a.title.localeCompare(b.title));
     return html`<section
@@ -327,21 +330,23 @@ export class LabSharingDirectory extends LitElement {
                 @input=${(event: Event) => {
                   this.query = (event.target as HTMLInputElement).value;
                   this.visibleCount = 10;
+                  this.revealedProject = "";
                 }}
             /></label>
             <div class="lab-sharing-directory__filters">
               <label class="lab-sharing-ask__field">Maximum hours per week
                 <input class="lab-sharing-ask__input" type="number" min="1" placeholder="Any" .value=${this.maxHours}
-                  @input=${(event: Event) => { this.maxHours = (event.target as HTMLInputElement).value; this.visibleCount = 10; }} />
+                  @input=${(event: Event) => { this.maxHours = (event.target as HTMLInputElement).value; this.visibleCount = 10; this.revealedProject = ""; }} />
               </label>
               <label class="lab-sharing-ask__field">Sort projects
                 <select class="lab-sharing-ask__select" .value=${this.sort}
-                  @change=${(event: Event) => { this.sort = (event.target as HTMLSelectElement).value; this.visibleCount = 10; }}>
+                  @change=${(event: Event) => { this.sort = (event.target as HTMLSelectElement).value; this.visibleCount = 10; this.revealedProject = ""; }}>
                   <option value="title">Project name</option><option value="hours">Lowest time commitment</option>
                 </select>
               </label>
-              <button class="btn" @click=${() => { this.query = this.maxHours = ""; this.visibleCount = 10; }}>Clear filters</button>
+              <button class="btn" @click=${() => { this.query = this.maxHours = ""; this.visibleCount = 10; this.revealedProject = ""; }}>Clear filters</button>
             </div>
+            ${this.revealedProject ? html`<p class="muted">Selected project shown first.</p>` : nothing}
             <p class="muted" role="status">${filtered.length} of ${open.length} open projects match · showing ${Math.min(this.visibleCount, filtered.length)}</p>
             ${filtered.length
               ? filtered.slice(0, this.visibleCount).map(
