@@ -7,6 +7,13 @@ type SharedStatus = {
   updated_at: string;
   expires_at: string;
 };
+const availabilityLabels: Record<string, string> = {
+  unknown: "Unknown",
+  available: "Available",
+  busy: "Busy",
+  away: "Away",
+};
+
 export class LabSharingStatus extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
@@ -124,16 +131,23 @@ export class LabSharingStatus extends LitElement {
       ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
       ${current
         ? html`<article class="lab-sharing-request">
-            <h3 class="lab-sharing-request__project">${current.availability}</h3>
+            <h3 class="lab-sharing-request__project">
+              ${availabilityLabels[current.availability] ?? "Unknown"}
+            </h3>
             <p>${current.message}</p>
-            <p class="muted">Updated ${new Date(current.updated_at).toLocaleString()}</p>
-            <p class="muted">Expires ${new Date(current.expires_at).toLocaleString()}</p>
+            <p class="lab-sharing-request__time">
+              Updated ${new Date(current.updated_at).toLocaleString()}
+            </p>
+            <p class="lab-sharing-request__time">
+              Expires ${new Date(current.expires_at).toLocaleString()}
+            </p>
           </article>`
         : !this.busy && !this.error
           ? html`<p>No current status shared.</p>`
           : nothing}
       ${this.canManage
         ? html`<form
+            class="lab-sharing-directory__form"
             @submit=${(event: Event) => {
               event.preventDefault();
               void this.publish();
@@ -155,7 +169,7 @@ export class LabSharingStatus extends LitElement {
                 }}
               >
                 ${["unknown", "available", "busy", "away"].map(
-                  (value) => html`<option value=${value}>${value}</option>`,
+                  (value) => html`<option value=${value}>${availabilityLabels[value]}</option>`,
                 )}
               </select></label
             >
@@ -185,15 +199,19 @@ export class LabSharingStatus extends LitElement {
                   this.draft = { ...this.draft, expiry: (event.target as HTMLInputElement).value };
                 }}
             /></label>
-            <button class="btn primary" type="submit" ?disabled=${this.busy}>Publish status</button>
-            <button
-              class="btn"
-              type="button"
-              ?disabled=${this.busy || !current}
-              @click=${() => this.publish(true)}
-            >
-              Clear status
-            </button>
+            <div class="lab-sharing-directory__actions">
+              <button class="btn primary" type="submit" ?disabled=${this.busy}>
+                Publish status
+              </button>
+              <button
+                class="btn"
+                type="button"
+                ?disabled=${this.busy || !current}
+                @click=${() => this.publish(true)}
+              >
+                Clear status
+              </button>
+            </div>
           </form>`
         : nothing}
     </section>`;

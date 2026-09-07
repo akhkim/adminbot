@@ -84,6 +84,7 @@ export class LabSharingHowTo extends LitElement {
         Check the cited sections before acting.
       </p>
       <form
+        class="lab-sharing-directory__form"
         @submit=${(event: Event) => {
           event.preventDefault();
           void this.ask();
@@ -110,9 +111,9 @@ export class LabSharingHowTo extends LitElement {
       ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
       ${this.answer
         ? html`<article class="lab-sharing-request">
-            <h3>Guidebook answer</h3>
-            <p style="white-space: pre-wrap">${this.answer}</p>
-            <h4>Source sections</h4>
+            <h3 class="lab-sharing-request__project">Guidebook answer</h3>
+            <p class="lab-sharing-request__note">${this.answer}</p>
+            <h4 class="lab-sharing-ask__label">Source sections</h4>
             <ul>
               ${this.sources.map((source) => html`<li>${source}</li>`)}
             </ul>
