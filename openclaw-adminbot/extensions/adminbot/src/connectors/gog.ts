@@ -361,6 +361,7 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return channel === "email" ? buildEmailArgs(proposal, false) : undefined;
     }
     case "calendar.create_tentative_hold":
+    case "calendar.create_birthday":
     case "calendar.send_invite":
       return buildCalendarCreateArgs(proposal);
     case "calendar.reschedule":
@@ -478,6 +479,9 @@ function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
   appendOptional(args, "--description", optionalString(payload, "description"));
   appendOptional(args, "--location", optionalString(payload, "location"));
   appendOptional(args, "--timezone", optionalString(payload, "timezone"));
+  // A recurring event is one row rather than one per year, which is what keeps a birthday on the
+  // calendar without an annual job that can be missed.
+  appendOptional(args, "--rrule", optionalString(payload, "rrule"));
   appendBoolean(args, "--all-day", payload.all_day);
   appendBoolean(args, "--with-meet", payload.with_meet);
   return args;

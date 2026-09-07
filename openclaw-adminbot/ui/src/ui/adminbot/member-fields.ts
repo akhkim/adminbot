@@ -236,6 +236,19 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "work",
   },
   {
+    // Month and day, never a year -- see the field note in contracts. It sits in `identity` rather
+    // than `work` because it is a fact about the person, not their post, and it carries a help
+    // bubble for the one thing nobody would guess from a label: filling it in puts a recurring
+    // event on the shared lab calendar. A field whose whole purpose is to publish something should
+    // say so where it is typed, not in a changelog.
+    key: "birthday",
+    labelKey: "profile.fields.birthday",
+    example: "03-14",
+    type: "short_text",
+    hintKey: "profile.hints.birthday",
+    group: "identity",
+  },
+  {
     key: "joined_month",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",

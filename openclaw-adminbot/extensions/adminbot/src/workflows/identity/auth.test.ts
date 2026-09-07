@@ -472,6 +472,56 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_at).toBeTruthy();
   });
 
+  it("samples the account's location on session use, and only when the address changed", async () => {
+    const geolocateIp = vi.fn(async (ip: string) => ({
+      country: ip === "8.8.8.8" ? "Switzerland" : "Canada",
+      continent: ip === "8.8.8.8" ? "Europe" : "North America",
+    }));
+    const { store, auth } = setup({ geolocateIp });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    const token = login.ok ? login.sessionToken : undefined;
+    const principal = auth.resolveSession(token ?? "");
+    expect(principal).toBeDefined();
+
+    auth.noteAccountUse(principal!, "8.8.8.8");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(geolocateIp).toHaveBeenCalledTimes(1);
+    expect(store.getLabMember("ada")?.last_login_country).toBe("Switzerland");
+
+    // A session that keeps being used from the same place must not spend a lookup per request.
+    auth.noteAccountUse(principal!, "8.8.8.8");
+    auth.noteAccountUse(principal!, "8.8.8.8");
+    await Promise.resolve();
+    expect(geolocateIp).toHaveBeenCalledTimes(1);
+
+    // A new address is the only thing that can mean a new location.
+    auth.noteAccountUse(principal!, "1.1.1.1");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(geolocateIp).toHaveBeenCalledTimes(2);
+    expect(store.getLabMember("ada")?.last_login_country).toBe("Canada");
+  });
+
+  it("never samples location from an impersonated session", async () => {
+    const geolocateIp = vi.fn(async () => ({ country: "Switzerland", continent: "Europe" }));
+    const { store, auth } = setup({ geolocateIp });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    const principal = auth.resolveSession(login.ok ? login.sessionToken : "");
+    expect(principal).toBeDefined();
+
+    // An admin viewing the lab as Ada is at their own desk. Recording that address as Ada's
+    // whereabouts would put a movement in her timeline that nobody made.
+    auth.noteAccountUse({ ...principal!, impersonator: principal!.member }, "8.8.8.8");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(geolocateIp).not.toHaveBeenCalled();
+    expect(store.getLabMember("ada")?.last_login_country).toBeUndefined();
+  });
+
   it("leaves the inferred location alone when no geolocator is configured, or it resolves to nothing", async () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");

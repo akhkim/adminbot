@@ -8,6 +8,12 @@ export const adminBotActionTypes = [
   "slack.channel_naming_notify_owner",
   "slack.rename_channel",
   "calendar.create_tentative_hold",
+  // The yearly all-day event for one member's birthday. Its own type rather than a
+  // `create_tentative_hold` because a birthday is not a hold on anybody's time and should not read
+  // as one in the audit trail -- and because "when did AdminBot put somebody's birthday on the
+  // shared calendar, and at whose request" is a question about personal data that deserves its own
+  // answerable row.
+  "calendar.create_birthday",
   "calendar.send_invite",
   // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
   // only other way to touch an existing event: that one writes the whole attendee list, so using it
@@ -263,6 +269,17 @@ export function adminBotHasBeenOnboardEmailed(member: {
  */
 export function adminBotIsFullMemberType(memberType: string | undefined): boolean {
   return adminBotMemberTypeTokens(memberType).includes("full");
+}
+
+/**
+ * A major coauthor: somebody carrying a paper with the lab rather than commenting on one.
+ *
+ * Separate from `coauthor-minor` and `disappearing-coauthor`, which are the same word for much
+ * less involvement -- the roster distinguishes them precisely so a sweep can address the people
+ * doing the work without also mailing everyone who read a draft once.
+ */
+export function adminBotIsCoauthorMajorType(memberType: string | undefined): boolean {
+  return adminBotMemberTypeTokens(memberType).includes("coauthor-major");
 }
 
 /**
@@ -1368,6 +1385,16 @@ export type AdminBotLabMemberInput = {
   // When they left, for alumni. Empty for everyone currently on the sheet, but it is the column the
   // roster will eventually age members out by, so it is stored rather than inferred from `status`.
   graduated_month?: string;
+  /**
+   * Month and day only, as `MM-DD`. Never a year.
+   *
+   * The lab's use for this is sending birthday wishes, which a month and a day answer completely.
+   * A year would additionally publish every member's age to the whole roster as a side effect of
+   * them wanting to be wished a happy birthday -- see workflows/members/birthday.ts. Filling it in
+   * puts a recurring all-day event on the shared lab calendar, which is the whole point of the
+   * field and is said plainly where it is typed rather than only here.
+   */
+  birthday?: string;
   whatsapp?: string;
   // The address the lab writes to for outreach, kept apart from `email` (the login identity) and
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
@@ -2093,6 +2120,11 @@ export type AdminBotAuditEvent = {
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
+    // The same calendar, reached from the other direction: `themed_meeting_invites` fills a theme
+    // meeting from its Slack channel, this one fills it from what members say they work on. Its own
+    // row because "why was I invited to this" has two different answers and the audit trail should
+    // say which.
+    | "research_theme_invites.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
@@ -2299,7 +2331,15 @@ export type AdminBotAuthSession = {
 export const adminBotLocationSources = [
   "self_reported",
   "login_ip",
+  // The free-text "location" on somebody's Slack profile. A statement they typed, like
+  // `self_reported`, just typed somewhere else.
   "slack_profile",
+  // Slack's `tz`, which their device sets and keeps current without them touching it. Kept apart
+  // from `slack_profile` because the two are different claims arriving on different schedules, and
+  // sharing a source would make each one's change-detection fight the other's: `isNewObservation`
+  // compares against the latest entry *per source*, so alternating a zone and a city under one
+  // name would make every write look new.
+  "slack_timezone",
   "admin",
 ] as const;
 
