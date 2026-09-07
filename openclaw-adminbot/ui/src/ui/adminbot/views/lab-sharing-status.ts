@@ -83,8 +83,14 @@ export class LabSharingStatus extends LitElement {
         },
       );
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message ?? "Could not load status.");
       if (generation !== this.generation) return;
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.canManage = false;
+          this.draft = { availability: "unknown", message: "", expiry: "" };
+        }
+        throw new Error(data.error?.message ?? "Could not load status.");
+      }
       this.status = data.status;
       this.canManage = data.can_manage === true;
       const date = data.status ? new Date(data.status.expires_at) : null;

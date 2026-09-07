@@ -74,3 +74,30 @@ it("preserves an admin draft after a failed publish and hides editor for members
   await el.updateComplete;
   expect(el.querySelector("form")).toBeNull();
 });
+
+it("removes the editor after server authorization is revoked", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: null, can_manage: true }) })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: { message: "Access revoked" } }),
+      }),
+  );
+  const el = document.createElement("lab-sharing-status") as LabSharingStatus;
+  el.sessionToken = "admin";
+  document.body.append(el);
+  await el.updateComplete;
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.querySelector("form")).not.toBeNull();
+  el.querySelector("button")!.click();
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.querySelector("form")).toBeNull();
+  expect(el.textContent).toContain("Access revoked");
+});
