@@ -1,6 +1,10 @@
 // Control UI view renders login gate screen content.
 import { html } from "lit";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { ConnectErrorDetailCodes } from "../../../../../packages/gateway-protocol/src/connect-error-details.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -451,24 +455,45 @@ function renderSignupFields(state: AppViewState) {
       />
     </label>
   `;
-  const selectField = (
+  // Somebody signing up is routinely two things at once -- a PhD student who is also the lab
+  // manager, a research assistant part-way through a master's -- and the answer is stored as one
+  // comma-joined string, so the form asks for it the same way the profile page does.
+  const multiSelectField = (
     label: string,
     value: string,
     apply: (next: string) => void,
     options: readonly string[],
-    placeholder: string,
-  ) => html`
-    <label class="field">
-      <span>${label}</span>
-      <select .value=${value} @change=${(e: Event) => apply((e.target as HTMLSelectElement).value)}>
-        <option value="" ?selected=${!value}>${placeholder}</option>
-        ${options.map(
-          (option) =>
-            html`<option value=${option} ?selected=${value === option}>${option}</option>`,
-        )}
-      </select>
-    </label>
-  `;
+  ) => {
+    const held = new Set(parseAdminBotMemberRoles(value).map((entry) => entry.toLowerCase()));
+    const toggle = (option: string, checked: boolean) => {
+      const next = options.filter(
+        (entry) =>
+          (held.has(entry.toLowerCase()) && entry !== option) || (checked && entry === option),
+      );
+      apply(formatAdminBotMemberRoles(next));
+    };
+    return html`
+      <div class="field login-gate__multi" role="group" aria-label=${label}>
+        <span>${label}</span>
+        <div class="login-gate__multi-options">
+          ${options.map(
+            (option) => html`
+              <label class="login-gate__multi-option">
+                <input
+                  type="checkbox"
+                  .checked=${held.has(option.toLowerCase())}
+                  @change=${(e: Event) => toggle(option, (e.target as HTMLInputElement).checked)}
+                />
+                <span>${option}</span>
+              </label>
+            `,
+          )}
+        </div>
+      </div>
+    `;
+  };
+  // The single-choice `selectField` helper stood here. Role was its only caller, so it went with
+  // the dropdown rather than being kept for a hypothetical second one.
   return html`
     ${field(
       t("login.member.signup.name"),
@@ -479,14 +504,13 @@ function renderSignupFields(state: AppViewState) {
       t("login.member.signup.namePlaceholder"),
       "name",
     )}
-    ${selectField(
+    ${multiSelectField(
       t("login.member.signup.role"),
       state.memberRole,
       (next) => {
         state.memberRole = next;
       },
       adminBotMemberRoles,
-      t("login.member.signup.rolePlaceholder"),
     )}
     ${field(
       t("login.member.signup.affiliation"),

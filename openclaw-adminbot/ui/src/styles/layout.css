@@ -3183,6 +3183,55 @@
 /* The country box is the short half of the row: the number is what a member is actually typing, so
    it gets the width. The dial code leads each suggestion (see renderFieldInput), which keeps the
    part that identifies the choice visible when a long country name truncates. */
+/* A field that takes several answers at once: eleven roles as wrapping chips rather than a column
+   of eleven rows, which would be taller than the rest of the identity group put together. Each box
+   keeps its label beside it, so the hit target is the whole chip and not a 13px square. */
+.profile__multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.profile__multi-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profile__multi-option:hover {
+  border-color: var(--border-hover);
+}
+
+.profile__multi-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text-strong);
+}
+
+.profile__multi-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.profile__multi-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* An imported answer the vocabulary has no box for. Dashed, because it is the one option here that
+   cannot be ticked back on once it is cleared. */
+.profile__multi-option--legacy {
+  border-style: dashed;
+}
+
 .profile__phone {
   display: grid;
   grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);

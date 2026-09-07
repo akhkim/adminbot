@@ -20,6 +20,10 @@ import {
   adminBotTimelineEntryTarget,
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { t } from "../../../i18n/index.ts";
 import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -519,6 +523,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
           value,
         ),
       );
+    } else if (field.type === "multi_dropdown") {
+      // getAll, not get: every checked box shares the field's name, and `get` would keep only the
+      // first -- which is the single-answer limit this field exists to undo.
+      setField(
+        fields,
+        field.key,
+        formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry))),
+      );
     } else if (field.type === "list") {
       setField(
         fields,
@@ -684,6 +696,52 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
         </select>
       `;
+    case "multi_dropdown": {
+      // Checkboxes rather than a multi-select list box: a `<select multiple>` hides how many
+      // options there are behind a scroll and needs ctrl-click to pick a second one, which is
+      // exactly the interaction somebody recording "PhD Student" and "Lab Manager" would never
+      // guess at.
+      const held = parseAdminBotMemberRoles(currentValue);
+      const known = new Set(held.map((entry) => entry.toLowerCase()));
+      const options = field.options ?? [];
+      return html`
+        <div
+          class="profile__multi"
+          role="group"
+          aria-label=${t(field.labelKey)}
+          data-testid=${`profile-multi-${field.key}`}
+        >
+          ${options.map(
+            (option) => html`
+              <label class="profile__multi-option">
+                <input
+                  type="checkbox"
+                  name=${field.key}
+                  value=${option}
+                  .checked=${known.has(option.toLowerCase())}
+                />
+                <span>${option}</span>
+              </label>
+            `,
+          )}
+          <!-- An imported answer the vocabulary has no box for ("PhD Mentee / MSc") would vanish
+               the first time this form was saved, so it keeps a box of its own and is written back
+               untouched unless the member clears it themselves. -->
+          ${held
+            .filter(
+              (entry) => !options.some((option) => option.toLowerCase() === entry.toLowerCase()),
+            )
+            .map(
+              (entry) => html`
+                <label class="profile__multi-option profile__multi-option--legacy">
+                  <input type="checkbox" name=${field.key} value=${entry} checked />
+                  <span>${entry}</span>
+                </label>
+              `,
+            )}
+        </div>
+      `;
+    }
     case "paragraph":
       return html`
         <textarea
@@ -1490,9 +1548,12 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
-            ${member.role?.trim()
-              ? html`<span class="profile__role-pill">${member.role.trim()}</span>`
-              : nothing}
+            <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
+                 two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
+                 as one oddly punctuated job title. -->
+            ${parseAdminBotMemberRoles(member.role).map(
+              (role) => html`<span class="profile__role-pill">${role}</span>`,
+            )}
             ${renderSlackActivity(member)}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>

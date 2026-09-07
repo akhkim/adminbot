@@ -790,17 +790,91 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 });
 
 describe("renderProfile field types", () => {
-  it("renders role as a dropdown restricted to the closed role list", () => {
-    const member = createMember({ role: "" });
-    const state = createState(member);
-    const container = renderPage(state, vi.fn());
+  const roleBoxes = (container: HTMLElement) => [
+    ...container.querySelectorAll<HTMLInputElement>('[data-testid="profile-multi-role"] input'),
+  ];
 
-    const select = container.querySelector<HTMLSelectElement>('select[name="role"]')!;
-    expect(select).not.toBeNull();
-    const options = [...select.options].map((option) => option.value).filter(Boolean);
-    expect(options.length).toBeGreaterThan(0);
+  it("renders role as checkboxes over the closed role list, so several can be held at once", () => {
+    const container = renderPage(createState(createMember({ role: "" })), vi.fn());
+
+    // A single-choice dropdown made anybody who is two things -- a PhD student who also manages
+    // the lab -- pick which half of the answer to record.
+    expect(container.querySelector('select[name="role"]')).toBeNull();
+    const values = roleBoxes(container).map((box) => box.value);
+    expect(values.length).toBeGreaterThan(0);
+    expect(values).toContain("PhD Student");
     // Nothing outside the closed vocabulary is offered.
-    expect(options).not.toContain("Definitely Not A Real Role");
+    expect(values).not.toContain("Definitely Not A Real Role");
+    expect(roleBoxes(container).every((box) => !box.checked)).toBe(true);
+  });
+
+  it("ticks every role the record already holds", () => {
+    const container = renderPage(
+      createState(createMember({ role: "PhD Student, Lab Manager" })),
+      vi.fn(),
+    );
+    const checked = roleBoxes(container)
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+
+    expect(checked).toEqual(["PhD Student", "Lab Manager"]);
+  });
+
+  it("keeps a box for an imported role the vocabulary has no option for", () => {
+    // 158 profiles predate the vocabulary. Rendering only the known options would drop "PhD
+    // Mentee / MSc" from the record the first time its owner saved anything at all.
+    const container = renderPage(createState(createMember({ role: "PhD Mentee / MSc" })), vi.fn());
+    const legacy = container.querySelector<HTMLInputElement>(
+      ".profile__multi-option--legacy input",
+    );
+
+    expect(legacy?.value).toBe("PhD Mentee / MSc");
+    expect(legacy?.checked).toBe(true);
+  });
+
+  it("saves every ticked role, in the vocabulary's order", () => {
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn();
+      const container = renderPage(createState(createMember({ role: "" })), onSave);
+      const boxes = roleBoxes(container);
+      const lab = boxes.find((box) => box.value === "Lab Manager")!;
+      const phd = boxes.find((box) => box.value === "PhD Student")!;
+
+      // Ticked in the other order on purpose: what is stored is the vocabulary's order, so two
+      // people who picked the same pair store the same string.
+      lab.checked = true;
+      lab.dispatchEvent(new Event("input", { bubbles: true }));
+      phd.checked = true;
+      phd.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      expect(onSave).toHaveBeenCalled();
+      const saved = onSave.mock.calls.at(-1)?.[1] as { role?: string };
+      expect(saved.role).toBe("PhD Student, Lab Manager");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the role when every box is unticked", () => {
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn();
+      const container = renderPage(createState(createMember({ role: "PhD Student" })), onSave);
+      const phd = roleBoxes(container).find((box) => box.value === "PhD Student")!;
+
+      phd.checked = false;
+      phd.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      // An empty string is "clear it", which the service accepts: a role nobody has recorded is a
+      // legal state, and a member who picked wrongly has to be able to take it back.
+      const saved = onSave.mock.calls.at(-1)?.[1] as { role?: string };
+      expect(saved.role).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders timezone as a dropdown, and carries no free-text notes field", () => {
@@ -1049,7 +1123,7 @@ describe("renderProfile visual structure", () => {
     // The record is editable on arrival: no click stands between the member and a correction.
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
     expect(basics.querySelector('input[name="name"]')).not.toBeNull();
-    expect(basics.querySelector('select[name="role"]')).not.toBeNull();
+    expect(basics.querySelector('[data-testid="profile-multi-role"]')).not.toBeNull();
 
     // The edit affordance and the duplicate fill-in-the-blanks form are both gone. The Save
     // button that remains is not one of them: it does not gate editing, it ends it.

@@ -9,6 +9,10 @@ import type {
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../contracts/member-roles.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
@@ -181,9 +185,25 @@ const SIGNUP_PROFILE_FIELDS = [
 
 // Case and spacing differences are the same answer, not a different one: "PhD student" typed by
 // an older client is the vocabulary's "PhD Student".
+//
+// A signup may name several roles, comma-joined. All of them have to match, because a half-matched
+// answer stored as one role would silently drop the other half -- the unmatched string goes to
+// notes instead, where an admin can see what the person actually wrote.
 function normalizeMemberRole(value: string): string | undefined {
-  const needle = value.trim().toLowerCase();
-  return adminBotMemberRoles.find((entry) => entry.toLowerCase() === needle);
+  const submitted = parseAdminBotMemberRoles(value);
+  if (!submitted.length) {
+    return undefined;
+  }
+  const matched: string[] = [];
+  for (const role of submitted) {
+    const needle = role.toLowerCase();
+    const known = adminBotMemberRoles.find((entry) => entry.toLowerCase() === needle);
+    if (!known) {
+      return undefined;
+    }
+    matched.push(known);
+  }
+  return formatAdminBotMemberRoles(matched);
 }
 
 const SIGNUP_STRING_ARRAY_FIELDS = new Set<string>(["research_topics", "projects"]);

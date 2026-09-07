@@ -26,7 +26,7 @@ export function adminBotConsoleMarkup(): string {
         </div>
         <div id="signup-fields" hidden>
           <label>Name<input name="name" autocomplete="name" placeholder="Zhijing"></label>
-          <label>Role<select name="role" id="signup-role"></select></label>
+          <div class="role-choices" id="signup-role" role="group" aria-label="Role"><span>Role</span></div>
           <label>Affiliation<input name="affiliation" placeholder="Jinesis / MIT"></label>
           <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
           <label>Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
@@ -116,7 +116,7 @@ export function adminBotConsoleMarkup(): string {
             <form id="member-form">
               <label>Member id<input name="id" required placeholder="zhijing"></label>
               <label>Name<input name="name" required placeholder="Zhijing"></label>
-              <label>Role<select name="role" id="member-role-select"></select></label>
+              <div class="role-choices" id="member-role-select" role="group" aria-label="Role"><span>Role</span></div>
               <label>Status<select name="status" id="member-status-select"></select></label>
               <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
               <label class="wide">Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
