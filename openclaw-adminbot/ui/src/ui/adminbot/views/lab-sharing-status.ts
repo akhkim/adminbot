@@ -13,6 +13,8 @@ export class LabSharingStatus extends LitElement {
   @state() private status: SharedStatus | null = null;
   @state() private busy = false;
   @state() private error = "";
+  @state() private canManage = false;
+  @state() private draft = { availability: "unknown", message: "", expiry: "" };
   private generation = 0;
   private expiryTimer?: ReturnType<typeof setTimeout>;
   protected override createRenderRoot() {
@@ -32,6 +34,8 @@ export class LabSharingStatus extends LitElement {
     this.generation++;
     clearTimeout(this.expiryTimer);
     this.status = null;
+    this.canManage = false;
+    this.draft = { availability: "unknown", message: "", expiry: "" };
     this.busy = false;
     this.error = "";
   }
@@ -45,18 +49,52 @@ export class LabSharingStatus extends LitElement {
     }
     this.expiryTimer = setTimeout(() => this.expire(), Math.min(remaining, 2_147_483_647));
   }
-  private async refresh() {
+  private async publish(clear = false) {
+    if (!this.canManage || this.busy) return;
+    let body: unknown;
+    if (!clear) {
+      const expiry = new Date(this.draft.expiry);
+      if (!Number.isFinite(expiry.getTime()) || expiry.getTime() <= Date.now()) {
+        this.error = "Choose an expiry in the future.";
+        return;
+      }
+      body = {
+        availability: this.draft.availability,
+        message: this.draft.message,
+        expires_at: expiry.toISOString(),
+      };
+    }
+    await this.refresh(clear ? "POST" : "PUT", body);
+  }
+  private async refresh(method = "GET", body?: unknown) {
     const generation = ++this.generation;
     this.busy = true;
     this.error = "";
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/status`, {
-        headers: { Authorization: `Bearer ${this.sessionToken}` },
-      });
+      const response = await fetch(
+        `${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/status${method === "POST" ? "/clear" : ""}`,
+        {
+          method,
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          headers: {
+            Authorization: `Bearer ${this.sessionToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error?.message ?? "Could not load status.");
       if (generation !== this.generation) return;
       this.status = data.status;
+      this.canManage = data.can_manage === true;
+      const date = data.status ? new Date(data.status.expires_at) : null;
+      this.draft = {
+        availability: data.status?.availability ?? "unknown",
+        message: data.status?.message ?? "",
+        expiry: date
+          ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+          : "",
+      };
       this.expire();
     } catch (error) {
       if (generation === this.generation) {
@@ -88,6 +126,70 @@ export class LabSharingStatus extends LitElement {
         : !this.busy && !this.error
           ? html`<p>No current status shared.</p>`
           : nothing}
+      ${this.canManage
+        ? html`<form
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              void this.publish();
+            }}
+          >
+            <p>
+              This status is visible to all signed-in lab members. Times use your device's timezone.
+            </p>
+            <label class="lab-sharing-ask__field"
+              ><span>Availability</span
+              ><select
+                class="lab-sharing-ask__input"
+                .value=${this.draft.availability}
+                @change=${(event: Event) => {
+                  this.draft = {
+                    ...this.draft,
+                    availability: (event.target as HTMLSelectElement).value,
+                  };
+                }}
+              >
+                ${["unknown", "available", "busy", "away"].map(
+                  (value) => html`<option value=${value}>${value}</option>`,
+                )}
+              </select></label
+            >
+            <label class="lab-sharing-ask__field"
+              ><span>Status message</span
+              ><textarea
+                class="lab-sharing-ask__input"
+                required
+                maxlength="500"
+                .value=${this.draft.message}
+                @input=${(event: Event) => {
+                  this.draft = {
+                    ...this.draft,
+                    message: (event.target as HTMLTextAreaElement).value,
+                  };
+                }}
+              ></textarea>
+            </label>
+            <label class="lab-sharing-ask__field"
+              ><span>Expires at (local time)</span
+              ><input
+                class="lab-sharing-ask__input"
+                type="datetime-local"
+                required
+                .value=${this.draft.expiry}
+                @input=${(event: Event) => {
+                  this.draft = { ...this.draft, expiry: (event.target as HTMLInputElement).value };
+                }}
+            /></label>
+            <button class="btn primary" type="submit" ?disabled=${this.busy}>Publish status</button>
+            <button
+              class="btn"
+              type="button"
+              ?disabled=${this.busy || !current}
+              @click=${() => this.publish(true)}
+            >
+              Clear status
+            </button>
+          </form>`
+        : nothing}
     </section>`;
   }
 }
