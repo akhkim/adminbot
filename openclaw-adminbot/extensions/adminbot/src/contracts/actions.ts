@@ -2295,7 +2295,15 @@ export type AdminBotAuthSession = {
 export const adminBotLocationSources = [
   "self_reported",
   "login_ip",
+  // The free-text "location" on somebody's Slack profile. A statement they typed, like
+  // `self_reported`, just typed somewhere else.
   "slack_profile",
+  // Slack's `tz`, which their device sets and keeps current without them touching it. Kept apart
+  // from `slack_profile` because the two are different claims arriving on different schedules, and
+  // sharing a source would make each one's change-detection fight the other's: `isNewObservation`
+  // compares against the latest entry *per source*, so alternating a zone and a city under one
+  // name would make every write look new.
+  "slack_timezone",
   "admin",
 ] as const;
 

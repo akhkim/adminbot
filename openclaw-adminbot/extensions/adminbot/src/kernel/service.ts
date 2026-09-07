@@ -6777,6 +6777,22 @@ export class AdminBotService {
         }
         this.store.saveLabMember(stored);
         timezonesUpdated += 1;
+        // The field above is the current zone and overwrites itself; this is the timeline. Slack's
+        // `tz` follows a laptop across a border without anyone typing anything, which makes it the
+        // only location-ish signal that keeps arriving for a member who never signs in to AdminBot
+        // -- and a member who never signs in is exactly who the login_ip path cannot see.
+        //
+        // Recorded only on change, like every other observation, so a daily sync of a roster that
+        // has not moved appends nothing. A cleared zone is deliberately not an observation: Slack
+        // having no answer is not evidence that somebody went anywhere.
+        if (next) {
+          this.recordMemberLocation({
+            memberId: stored.id,
+            source: "slack_timezone",
+            raw: next,
+            timezone: next,
+          });
+        }
       }
     }
     this.recordAudit({

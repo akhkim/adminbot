@@ -4987,6 +4987,61 @@ describe("AdminBotService", () => {
       expect(members.find((m) => m.id === "no-slack-tz")?.timezone).toBeUndefined();
     });
 
+    it("appends a slack_timezone observation when the zone changes, and none when it repeats", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "traveller",
+          name: "Zhijing",
+          slack_user_id: "U-ZJ",
+          timezone: "America/Toronto",
+        }),
+      );
+      const zone = { value: "Europe/Amsterdam" };
+      const fetchSlackTimezones = async () =>
+        new Map<string, string | null>([["U-ZJ", zone.value]]);
+
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      const afterMove = unwrap(service.listMemberLocations("traveller")).locations;
+      expect(afterMove).toHaveLength(1);
+      expect(afterMove[0]?.source).toBe("slack_timezone");
+      // Stored as a zone, under a source that says where it came from -- never as a country.
+      expect(afterMove[0]?.timezone).toBe("Europe/Amsterdam");
+      expect(afterMove[0]?.country).toBeUndefined();
+
+      // A daily sync of somebody who has not moved must append nothing.
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      expect(unwrap(service.listMemberLocations("traveller")).locations).toHaveLength(1);
+
+      zone.value = "America/Toronto";
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      expect(unwrap(service.listMemberLocations("traveller")).locations).toHaveLength(2);
+    });
+
+    it("records no observation when Slack clears the zone", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "cleared",
+          name: "Cleared",
+          slack_user_id: "U-C",
+          timezone: "Europe/Zurich",
+        }),
+      );
+
+      // Slack having no answer is not evidence that anyone went anywhere.
+      unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackTimezones: async () => new Map<string, string | null>([["U-C", null]]) },
+          "cron",
+        ),
+      );
+
+      expect(unwrap(service.listMemberLocations("cleared")).locations).toEqual([]);
+    });
+
     it("leaves timezone untouched for a member with no slack_user_id", async () => {
       const service = new AdminBotService();
       unwrap(
