@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -116,28 +116,43 @@ jobs:
         run: test -f dist/extensions/adminbot/api.js
 
   baseline:
-    name: Known-red baseline (informational)
+    name: Known-red baseline (report)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Never blocks. These lanes are red on `main` by documented decision, and the value is the
-    # number: docs/refactor-baseline.md asks that growth be treated as a regression, which is only
-    # checkable if each run prints where the counts stand.
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      # Reports; never fails. These four lanes are red on `main` by documented decision
+      # (docs/refactor-baseline.md), so gating on them would put a permanent red check on every PR
+      # -- which is the failure this workflow's header argues against, since a check that is always
+      # red has stopped saying anything. What is worth having is the *number*: the baseline asks
+      # that growth be treated as a regression, and that is only checkable if each run states where
+      # each lane stands. So each one runs, its exit code and tail land in the job summary, and the
+      # step exits 0 regardless.
+      #
       # `format:check`, not `format` -- the latter writes.
-      - name: Formatting
-        if: always()
-        run: pnpm run format:check
-      - name: Lint
-        if: always()
-        run: pnpm run lint
-      - name: Typecheck (core)
-        if: always()
-        run: pnpm run tsgo:core
-      - name: Typecheck (extensions)
-        if: always()
-        run: pnpm run tsgo:extensions
+      - name: Report where the known-red lanes stand
+        run: |
+          # GitHub runs `run` steps as `bash -e`, which would abort this loop at the first red
+          # lane and report only that one. Every lane has to be measured on every run.
+          set +e -u
+          {
+            echo "### Known-red baseline"
+            echo
+            echo "Non-blocking. Compare against docs/refactor-baseline.md; growth is a regression."
+            echo
+            echo "| lane | exit code |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for lane in format:check lint tsgo:core tsgo:extensions; do
+            log="/tmp/baseline-${lane//:/-}.log"
+            pnpm run "$lane" > "$log" 2>&1
+            code=$?
+            echo "| \`$lane\` | $code |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::group::$lane (exit $code)"
+            tail -60 "$log"
+            echo "::endgroup::"
+          done
+          exit 0

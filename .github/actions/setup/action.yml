@@ -11,12 +11,12 @@ runs:
   steps:
     # Reads the `packageManager` field rather than hard-coding a version, so bumping pnpm in
     # package.json cannot leave CI installing a different one than developers use.
-    - uses: pnpm/action-setup@v4
+    - uses: pnpm/action-setup@v6
       with:
         package_json_file: openclaw-adminbot/package.json
         run_install: false
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         # package.json requires >=22.19.0.
         node-version: 22
