@@ -264,6 +264,7 @@ import {
   isThemeMeetingEligible,
   memberThemeIds,
   RESEARCH_THEME_IDS,
+  RESEARCH_THEMES,
   type ResearchThemeId,
   themeMeetings,
   type ThemeMatch,
@@ -1269,19 +1270,22 @@ export class AdminBotService {
   sweepResearchThemeInvites(
     params: {
       calendarId: string;
-      meetings: readonly (AdminBotThemedMeeting & { attendees?: readonly string[] })[];
+      /** Wednesday's events. Optional: with none, the run does the Slack half only. */
+      meetings?: readonly (AdminBotThemedMeeting & { attendees?: readonly string[] })[];
     },
     actor: string,
   ): AdminBotServiceResponse<{
     invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }>;
+    joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }>;
     skipped: AdminBotMemberNudgeSkip[];
   }> {
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }> = [];
+    const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
     const eligible = this.store.listLabMembers().filter(isThemeMeetingEligible);
 
     for (const themeId of RESEARCH_THEME_IDS) {
-      const matches = themeMeetings(themeId, params.meetings);
+      const matches = themeMeetings(themeId, params.meetings ?? []);
       if (matches.length === 0) {
         continue;
       }
@@ -1336,17 +1340,99 @@ export class AdminBotService {
       invited.push({ event_id: meeting.event_id, theme: themeId, attendees: unique });
     }
 
+    // The Slack half, which is per-member and needs no calendar: a theme's channel is a fixed name
+    // this service already knows, so somebody joins #meeting-mech-interp whether or not Wednesday's
+    // events were passed in.
+    for (const member of eligible) {
+      const outcome = this.proposeThemeChannelInvites(member);
+      joined.push(...outcome.joined);
+      skipped.push(...outcome.skipped);
+    }
+
     this.recordAudit({
       type: "research_theme_invites.swept",
       actor,
       details: {
         eligible: eligible.length,
-        meetings: params.meetings.length,
-        proposed: invited.length,
+        meetings: params.meetings?.length ?? 0,
+        invited: invited.length,
+        joined: joined.length,
         skipped: skipped.length,
       },
     });
-    return { ok: true, status: 200, payload: { invited, skipped } };
+    return { ok: true, status: 200, payload: { invited, joined, skipped } };
+  }
+
+  /**
+   * Propose one member into the Slack channel for every theme their work places them in.
+   *
+   * Shared by the roster sweep and the profile-save hook, which is the whole reason it is a method:
+   * the two have to agree about who belongs where, and the way they stop agreeing is by being
+   * written twice.
+   *
+   * One proposal per person per channel, because that is the shape `slack.invite_to_channel` takes.
+   * Nothing here reaches Slack; an admin approves, as with every other external effect.
+   */
+  private proposeThemeChannelInvites(member: AdminBotLabMember): {
+    joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  } {
+    const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const themes = new Set(memberThemeIds(member));
+    if (themes.size === 0) {
+      return { joined, skipped };
+    }
+    const slackUserId = member.slack_user_id?.trim();
+    if (!slackUserId) {
+      skipped.push({ member_id: member.id, reason: "member has no slack_user_id" });
+      return { joined, skipped };
+    }
+    for (const theme of RESEARCH_THEMES) {
+      if (!themes.has(theme.id)) {
+        continue;
+      }
+      // What the directory sync last saw them in. Absence is not proof -- a private channel the bot
+      // cannot see is invisible to it -- but for a public #meeting-xxx it is the right check, and it
+      // is what keeps a weekly run from re-proposing the whole lab every time.
+      const inChannel = (member.slack_channels ?? []).some(
+        (name) => name.replace(/^#/u, "").toLowerCase() === theme.meetingChannel,
+      );
+      if (inChannel) {
+        continue;
+      }
+      const proposed = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${member.name} to #${theme.meetingChannel} (${theme.label})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: theme.meetingChannel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel: theme.meetingChannel, user_id: slackUserId },
+        rationale: "Their stated research interests place them in this theme.",
+        undo_plan: "Leave the channel, or have an admin remove the member from it.",
+        // Keyed on the pairing, so the save hook and the weekly sweep proposing the same invite
+        // collapse onto one card rather than two.
+        idempotency_key: `theme-channel:${member.id}:${theme.meetingChannel}`,
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: member.id, reason: proposed.error.message });
+        continue;
+      }
+      // `slack.invite_to_channel` is an auto policy (T1) for the reason its entry gives: the member
+      // and the channel are both computed here from the roster, so nothing about who goes where
+      // came from a caller. Auto-approved still means somebody has to run it, and this is the same
+      // fire-and-forget contract the login geolocation uses -- a profile save must not wait on
+      // Slack, and a Slack outage must not fail the save.
+      void this.execute(proposed.payload.id, { dry_run: false }).catch(() => {
+        // Nothing to do with a failure here: the proposal and its audit row stand, so an invite
+        // that did not land is visible and re-runnable rather than lost.
+      });
+      joined.push({ channel: theme.meetingChannel, theme: theme.id, member_id: member.id });
+    }
+    return { joined, skipped };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
@@ -2263,6 +2349,19 @@ export class AdminBotService {
     // *same* date collapse onto one proposal rather than stacking cards on an admin.
     if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
       this.proposeBirthdayEvent(stored);
+    }
+    // The same hook again, for theme membership. This is what makes onboarding automatic: a new
+    // member describing their research is a profile write, so the channels they belong in are
+    // proposed the moment they say what they work on, rather than waiting for a sweep.
+    //
+    // Only on a *gain*. Re-saving a profile, or dropping a topic, proposes nothing -- and losing a
+    // theme deliberately does not remove anybody, because leaving a room somebody has been talking
+    // in for a month is not a conclusion to draw from an edited interests field.
+    if (isThemeMeetingEligible(stored)) {
+      const before = new Set(existing ? memberThemeIds(existing) : []);
+      if (memberThemeIds(stored).some((theme) => !before.has(theme))) {
+        this.proposeThemeChannelInvites(stored);
+      }
     }
     this.recordAudit({
       // The account that typed this, not the account it is about. These used to be the same field:
@@ -9397,7 +9496,7 @@ export class AdminBotService {
       type: "themed_meeting_invites.swept",
       actor,
       details: {
-        meetings: params.meetings.length,
+        meetings: params.meetings?.length ?? 0,
         proposed: invited.length,
         skipped: skipped.length,
       },

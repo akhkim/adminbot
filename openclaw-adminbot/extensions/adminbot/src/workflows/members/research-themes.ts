@@ -51,6 +51,15 @@ export type ResearchTheme = {
    */
   meetingTopic: string;
   /**
+   * The Slack channel for this theme, named exactly rather than matched.
+   *
+   * Two of the six do not follow their theme's own wording -- causal LLM meets in
+   * #meeting-causality and post-training in #meeting-training -- so token matching against the
+   * theme name finds four channels and invents nothing for the other two. A channel name is an
+   * exact identifier; guessing at one puts people in the wrong room.
+   */
+  meetingChannel: string;
+  /**
    * Normalised phrases that place a member in the theme, matched whole rather than as substrings.
    *
    * Whole-phrase matching is what keeps "control" out of "controlled experiment" and "sae" out of
@@ -66,6 +75,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "loss_of_control",
     label: "Loss of control / power concentration",
     meetingTopic: "loss of control",
+    meetingChannel: "meeting-loss-of-control",
     patterns: [
       "loss of control",
       "losing control",
@@ -92,6 +102,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "multi_agent",
     label: "Multi-agent",
     meetingTopic: "multi agent",
+    meetingChannel: "meeting-multi-agent",
     patterns: [
       "multi agent",
       "multiagent",
@@ -117,6 +128,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "mech_interp",
     label: "Mech-interp",
     meetingTopic: "mech interp",
+    meetingChannel: "meeting-mech-interp",
     patterns: [
       "mech interp",
       "mechinterp",
@@ -141,6 +153,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "causal_llm",
     label: "Causal LLM",
     meetingTopic: "causal llm",
+    meetingChannel: "meeting-causality",
     patterns: [
       "causal",
       "causality",
@@ -161,6 +174,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "post_training",
     label: "Post-training",
     meetingTopic: "post training",
+    meetingChannel: "meeting-training",
     patterns: [
       "post training",
       "posttraining",
@@ -187,6 +201,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
     id: "adversarial_defense",
     label: "Adversarial defense",
     meetingTopic: "adversarial defense",
+    meetingChannel: "meeting-adversarial-defense",
     patterns: [
       "adversarial",
       "adversarial defense",

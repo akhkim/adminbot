@@ -4884,6 +4884,18 @@ describe("AdminBotService", () => {
       { event_id: "causal", summary: "Theme: Causal LLM Meeting" },
     ];
 
+    // slack.invite_to_channel is an auto policy, so these never sit in the pending queue. The
+    // audit trail is where an auto-approved proposal is observable.
+    function channelInvites(service: AdminBotService) {
+      return service
+        .listAuditEvents()
+        .filter(
+          (event) =>
+            event.type === "proposal.created" &&
+            String(event.details?.action_type ?? "") === "slack.invite_to_channel",
+        );
+    }
+
     function seed(service: AdminBotService): void {
       unwrap(
         service.upsertLabMember({
@@ -4976,6 +4988,137 @@ describe("AdminBotService", () => {
 
       expect(result.invited.map((row) => row.event_id)).toEqual(["multi"]);
       expect(result.skipped.some((skip) => skip.member_id === "causal_llm")).toBe(true);
+    });
+
+    it("proposes the #meeting-xxx invite for each theme, using the channel the lab actually uses", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "causal-person",
+          name: "Causal Person",
+          member_type: "full",
+          slack_user_id: "U-CAUSAL",
+          calendar_email: "causal@example.com",
+          research_topics: ["Causal Inference", "LLM Post-training"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com" }, "cron"),
+      );
+
+      // Neither channel is named after its theme: causal LLM meets in #meeting-causality and
+      // post-training in #meeting-training. Guessing from the theme name puts people elsewhere.
+      expect(result.joined.map((row) => row.channel).toSorted()).toEqual([
+        "meeting-causality",
+        "meeting-training",
+      ]);
+    });
+
+    it("does not re-invite somebody the directory already saw in the channel", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "already-in",
+          name: "Already In",
+          member_type: "full",
+          slack_user_id: "U-IN",
+          research_topics: ["Mechanistic Interpretability"],
+          slack_channels: ["meeting-mech-interp"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com" }, "cron"),
+      );
+
+      expect(result.joined).toEqual([]);
+    });
+
+    it("does the Slack half even with no calendar events passed in", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "interp",
+          name: "Interp",
+          member_type: "coauthor-major",
+          slack_user_id: "U-INTERP",
+          research_topics: ["Interp"],
+        }),
+      );
+
+      // A theme's channel is a fixed name this service knows; it does not need Wednesday's calendar.
+      const result = unwrap(service.sweepResearchThemeInvites({ calendarId: "lab@x" }, "cron"));
+
+      expect(result.invited).toEqual([]);
+      expect(result.joined.map((row) => row.channel)).toEqual(["meeting-mech-interp"]);
+    });
+
+    it("proposes channel invites the moment a member describes their research", () => {
+      const service = new AdminBotService();
+      // Onboarding: the member arrives with no interests, so there is nothing to classify yet.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "newcomer",
+          name: "Newcomer",
+          member_type: "full",
+          slack_user_id: "U-NEW",
+        }),
+      );
+      expect(channelInvites(service)).toEqual([]);
+
+      // They fill in the profile. No sweep has run; the invite is proposed on the write itself.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "newcomer",
+          name: "Newcomer",
+          member_type: "full",
+          slack_user_id: "U-NEW",
+          research_topics: ["Adversarial Robustness"],
+        }),
+      );
+      expect(channelInvites(service)).toHaveLength(1);
+    });
+
+    it("proposes nothing on a re-save, and removes nobody when a topic is dropped", () => {
+      const service = new AdminBotService();
+      const write = (topics: string[]) =>
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            id: "shifting",
+            name: "Shifting",
+            member_type: "full",
+            slack_user_id: "U-SHIFT",
+            research_topics: topics,
+          }),
+        );
+      write(["Adversarial Robustness"]);
+      write(["Adversarial Robustness"]);
+      // Dropping the topic is not a reason to take somebody out of a room they have been in.
+      write(["Reasoning"]);
+
+      expect(channelInvites(service)).toHaveLength(1);
+    });
+
+    it("proposes no channel invite for somebody outside the eligible types", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "minor",
+          name: "Minor",
+          member_type: "coauthor-minor",
+          slack_user_id: "U-MINOR",
+          research_topics: ["Adversarial Robustness"],
+        }),
+      );
+      expect(channelInvites(service)).toEqual([]);
     });
 
     it("reports a member with no calendar_email instead of dropping them silently", () => {
