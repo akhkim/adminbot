@@ -13,6 +13,7 @@ it("expires visible status without refresh and clears on logout", async () => {
     vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        can_manage: true,
         status: {
           availability: "busy",
           message: "Synthetic status",
@@ -29,6 +30,7 @@ it("expires visible status without refresh and clears on logout", async () => {
   await vi.advanceTimersByTimeAsync(0);
   await el.updateComplete;
   expect(el.textContent).toContain("Synthetic status");
+  expect(el.querySelector("select")!.value).toBe("busy");
   await vi.advanceTimersByTimeAsync(1000);
   await el.updateComplete;
   expect(el.textContent).not.toContain("Synthetic status");
