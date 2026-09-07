@@ -23,8 +23,7 @@ SQLite adds `adminbot_help_requests` without altering existing tables. The paper
 is its primary key. Deployment does not require manually modifying the database.
 
 Other Lab Sharing features are still clearly labeled sample previews in a collapsed
-section. Direct invitations, announcements and automatic notifications remain
-follow-up work.
+section. Announcements and automatic notifications remain follow-up work.
 
 
 ## Offers to help
@@ -138,3 +137,32 @@ By default embeddings and answers use the existing local guidebook model configu
 override their endpoints, but both must remain loopback. The existing internal
 `/guidebook/ask` caller contract is unchanged. This panel is a focused guidebook lookup,
 not a general-purpose agent or an external-action interface.
+
+## Collaboration and call invitations
+
+Use Find lab members, select Prepare invitation, choose a project you manage and
+enter a note. Collaboration requests propose an email with reply-to set to your
+saved address. Call requests propose a calendar event with both members as attendees;
+local input times are converted to UTC. Calls must start in the future and last at
+most eight hours. Open the project's help request before submitting.
+
+- `POST /lab-sharing/invites`: accepts `paper_id`, `recipient_id`, `kind`
+  (`collaboration` or `call`), and a 1–1000 character `note`; calls also require UTC
+  `start` and `end`. JSON bodies are limited to 4096 bytes.
+- `GET /lab-sharing/invites`: only the caller's request IDs, statuses, kinds, project
+  titles, recipient names and creation times. No contact addresses or proposal bodies.
+
+The server verifies current project authorship/admin privilege, an open request,
+other-member recipient and saved contact addresses. Caller-supplied addresses and
+actor IDs are ignored. Anonymous/service-token callers cannot use these routes.
+Identical actor/project/recipient/content requests reuse the same proposal and
+execution idempotency key, including after reload. Changing the content creates a
+new request requiring separate review.
+
+Requests create existing T3 `email.send` or `calendar.send_invite` proposals. They do
+not approve or execute them. Administrators review the exact recipient and payload
+in Pending Actions; the existing connector and approval rules apply. A request is
+not sent merely because it was submitted or approved. The member list shows the
+stored proposal status; only successful execution is `executed`. The call proposes
+an event on the connector's default calendar and does not create a video-call link.
+No new persistence table or direct connector entry point is introduced.

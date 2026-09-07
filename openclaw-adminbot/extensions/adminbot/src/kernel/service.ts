@@ -1,3 +1,4 @@
+import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -4129,6 +4130,10 @@ export class AdminBotService {
    * existed -- it is why the first save on an old paper quietly links it, after which this method
    * never has to guess about that paper again.
    */
+  labSharingInvites() {
+    return new LabSharingInvites(this.store, (member, paper) => this.memberOwnsPaper(member, paper), (proposal) => this.createProposal(proposal));
+  }
+
   labSharing() {
     return new LabSharingService(this.store, (member, paper) =>
       this.memberOwnsPaper(member, paper),

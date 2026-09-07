@@ -1,3 +1,4 @@
+import { LabSharingInvites } from "./lab-sharing-invites.ts";
 import "./lab-sharing-how-to.ts";
 import "./lab-sharing-status.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
@@ -1201,6 +1202,7 @@ export function renderLabSharingPreview(state: AppViewState) {
 export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
   let directory: LabSharingDirectory | undefined;
+  let invitations: LabSharingInvites | undefined;
   return html`<lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
     <lab-sharing-directory
       ${ref((element) => {
@@ -1210,12 +1212,14 @@ export function renderLabSharing(state: AppViewState) {
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-directory>
     <lab-sharing-member-search
+      .onInviteSelect=${(id: string, name: string) => { void invitations?.selectMember(id, name); }}
       .onProjectSelect=${(paperId: string) => {
         void directory?.showProject(paperId);
       }}
       .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-member-search>
+    <lab-sharing-invites ${ref((element) => { invitations = element as LabSharingInvites | undefined; })} .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-invites>
     <lab-sharing-how-to .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-how-to>
     ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     <details>

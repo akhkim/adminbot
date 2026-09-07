@@ -325,3 +325,78 @@ it("gates member guidebook questions and validates bounded input", async () => {
     ).status,
   ).toBe(413);
 });
+
+it("creates deduplicated approval-bound invitations without disclosing contacts", async () => {
+  const { mock, baseUrl } = await startLab();
+  const headers = await memberSession(mock, baseUrl, "member");
+  const adminHeaders = await memberSession(mock, baseUrl, "admin");
+  mock.service.labSharing().save("member", "paper-1", draft, false);
+  const url = `${baseUrl}/lab-sharing/invites`;
+  expect((await fetch(url)).status).toBe(401);
+  expect((await fetch(url, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } })).status).toBe(
+    403,
+  );
+  mock.service.upsertLabMember({
+    id: "observer",
+    name: "Observer",
+    email: "observer@lab.test",
+    privilege_level: "member",
+  });
+  expect(
+    mock.service.labSharingInvites().request("observer", {
+      paper_id: "paper-1",
+      recipient_id: "admin",
+      kind: "collaboration",
+      note: "Unauthorized",
+    }),
+  ).toMatchObject({ ok: false, status: 403 });
+  const input = {
+    paper_id: "paper-1",
+    recipient_id: "admin",
+    kind: "collaboration",
+    note: "Review synthetic traces",
+    actor_id: "spoofed",
+    to: "outsider@invalid.test",
+  };
+  const send = (body: unknown) =>
+    fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  const first = await (await send(input)).json();
+  expect(first.status).toBe("pending");
+  expect(await (await send(input)).json()).toEqual(first);
+  const stored = mock.store.listProposalsByType("email.send").find((row) => row.id === first.id)!;
+  expect(stored.proposed_payload).toMatchObject({
+    to: "admin@lab.test",
+    reply_to: "member@lab.test",
+  });
+  expect(stored.target).toMatchObject({ actor_id: "member" });
+  expect(stored.approvals).toEqual([]);
+  expect(await mock.service.execute(stored.id, { dry_run: true })).toMatchObject({
+    ok: false,
+    status: 409,
+  });
+  expect(
+    mock.service.approve(stored.id, { payload_hash: "wrong", approver_role: "admin" }),
+  ).toMatchObject({ ok: false, status: 409 });
+  const own = await (await fetch(url, { headers })).json();
+  expect(own.invites).toHaveLength(1);
+  expect(JSON.stringify(own)).not.toContain("@lab.test");
+  expect((await (await fetch(url, { headers: adminHeaders })).json()).invites).toEqual([]);
+  expect((await send({ ...input, paper_id: "missing" })).status).toBe(403);
+  expect((await send({ ...input, recipient_id: "member" })).status).toBe(400);
+  expect((await send({ ...input, kind: "call", start: "bad", end: "bad" })).status).toBe(400);
+  const call = await (
+    await send({
+      ...input,
+      kind: "call",
+      start: "2099-01-01T10:00:00Z",
+      end: "2099-01-01T11:00:00Z",
+    })
+  ).json();
+  expect(call.status).toBe("pending");
+  expect(
+    mock.store.listProposalsByType("calendar.send_invite").find((row) => row.id === call.id)
+      ?.proposed_payload,
+  ).toMatchObject({ attendees: ["member@lab.test", "admin@lab.test"], timezone: "UTC" });
+  mock.service.labSharing().save("member", "paper-1", {}, true);
+  expect((await send(input)).status).toBe(409);
+});
