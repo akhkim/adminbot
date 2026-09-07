@@ -170,6 +170,7 @@ export class LabSharingInvites extends LitElement {
         : nothing}
       ${this.recipient && this.projects.length
         ? html`<form
+            class="lab-sharing-directory__form"
             @submit=${(event: Event) => {
               event.preventDefault();
               void this.submit();
@@ -237,13 +238,18 @@ export class LabSharingInvites extends LitElement {
               ? "Select a member above to prepare an invitation."
               : "You need a project you manage to request invitations."}
           </p>`}
-      <h3>Your invitation requests</h3>
+      <h3 class="lab-sharing-request__project">Your invitation requests</h3>
       ${this.invites.length
         ? this.invites.map(
             (invite) =>
               html`<article class="lab-sharing-request">
-                <h4>${invite.project_title} · ${invite.recipient_name}</h4>
-                <p>${invite.kind} · ${invitationStatus(invite.status)}</p>
+                <h4 class="lab-sharing-request__project">
+                  ${invite.project_title} · ${invite.recipient_name}
+                </h4>
+                <p>
+                  ${invite.kind === "call" ? "Call invitation" : "Collaboration email"} ·
+                  ${invitationStatus(invite.status)}
+                </p>
               </article>`,
           )
         : html`<p>No invitation requests yet.</p>`}
