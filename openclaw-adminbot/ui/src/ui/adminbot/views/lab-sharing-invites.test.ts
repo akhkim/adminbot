@@ -12,7 +12,7 @@ it("creates a pending request, retains drafts on failure and clears on logout", 
     ok: true,
     json: async () =>
       url.endsWith("/lab-sharing")
-        ? { projects: [{ id: "project", title: "Synthetic project" }] }
+        ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
         : init?.method === "POST"
           ? { id: "proposal", status: "pending" }
           : { invites: [] },
@@ -73,7 +73,7 @@ it("keeps submission success distinct from a failed history refresh", async () =
     }
     if (accepted) throw new Error("Offline");
     return { ok: true, json: async () => url.endsWith("/lab-sharing")
-      ? { projects: [{ id: "project", title: "Synthetic project" }] }
+      ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
       : { invites: [] } };
   }));
   const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
@@ -91,4 +91,23 @@ it("keeps submission success distinct from a failed history refresh", async () =
   await el.updateComplete;
   expect(el.textContent).toContain("Invitation request: Pending administrator approval");
   expect(el.textContent).toContain("Your request was accepted, but history could not refresh");
+});
+
+it("offers only managed projects with open help requests and clears a closed selection", async () => {
+  vi.useFakeTimers();
+  let open = true;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ok: true, json: async () => url.endsWith("/lab-sharing")
+    ? {projects: [{id: "open", title: "Open project"}, {id: "closed", title: "Closed project"}], requests: [{paper_id: "open", status: open ? "open" : "closed"}, {paper_id: "closed", status: "closed"}]}
+    : {invites: []}})));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn(); el.sessionToken = "member"; document.body.append(el);
+  await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  expect(el.querySelector('option[value="open"]')).not.toBeNull();
+  expect(el.querySelector('option[value="closed"]')).toBeNull();
+  open = false;
+  [...el.querySelectorAll("button")].find(b => b.textContent?.includes("Refresh invitations"))!.click();
+  await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  expect(el.querySelector("form")).toBeNull();
+  expect(el.textContent).toContain("Open a help request for a project you manage");
 });

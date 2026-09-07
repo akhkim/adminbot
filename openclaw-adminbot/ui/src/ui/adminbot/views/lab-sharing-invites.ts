@@ -97,7 +97,14 @@ export class LabSharingInvites extends LitElement {
       if (generation !== this.generation) {
         return;
       }
-      this.projects = directory.projects;
+      const openProjects = new Set(
+        directory.requests.filter((request: { status: string }) => request.status === "open")
+          .map((request: { paper_id: string }) => request.paper_id),
+      );
+      this.projects = directory.projects.filter((project: { id: string }) => openProjects.has(project.id));
+      if (!this.projects.some((project) => project.id === this.paper)) {
+        this.paper = "";
+      }
       this.invites = data.invites;
     } catch (error) {
       if (generation === this.generation) {
@@ -178,6 +185,7 @@ export class LabSharingInvites extends LitElement {
       <button class="btn" ?disabled=${this.busy} @click=${() => this.load()}>
         Refresh invitations
       </button>
+      ${this.busy ? html`<p role="status">Loading invitation details…</p>` : nothing}
       ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}${this.result
         ? html`<p role="status">${this.result}</p>`
         : nothing}
@@ -246,10 +254,10 @@ export class LabSharingInvites extends LitElement {
               Request invitation
             </button>
           </form>`
-        : html`<p>
+        : this.busy || this.error ? nothing : html`<p>
             ${this.projects.length
               ? "Select a member above to prepare an invitation."
-              : "You need a project you manage to request invitations."}
+              : "Open a help request for a project you manage in Open projects above, then refresh invitations."}
           </p>`}
       <h3 class="lab-sharing-request__project">Your invitation requests</h3>
       ${this.invites.length
