@@ -272,6 +272,17 @@ export function adminBotIsFullMemberType(memberType: string | undefined): boolea
 }
 
 /**
+ * A major coauthor: somebody carrying a paper with the lab rather than commenting on one.
+ *
+ * Separate from `coauthor-minor` and `disappearing-coauthor`, which are the same word for much
+ * less involvement -- the roster distinguishes them precisely so a sweep can address the people
+ * doing the work without also mailing everyone who read a draft once.
+ */
+export function adminBotIsCoauthorMajorType(memberType: string | undefined): boolean {
+  return adminBotMemberTypeTokens(memberType).includes("coauthor-major");
+}
+
+/**
  * Has this person left?
  *
  * Checked *after* the batch, and it wins. A batch is a note about a term that has already
@@ -2105,6 +2116,11 @@ export type AdminBotAuditEvent = {
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
+    // The same calendar, reached from the other direction: `themed_meeting_invites` fills a theme
+    // meeting from its Slack channel, this one fills it from what members say they work on. Its own
+    // row because "why was I invited to this" has two different answers and the audit trail should
+    // say which.
+    | "research_theme_invites.swept"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"

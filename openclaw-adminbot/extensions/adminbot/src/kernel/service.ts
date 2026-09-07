@@ -259,7 +259,15 @@ import {
   selfReportedChange,
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
-import { classifyMemberThemes, type ThemeMatch } from "../workflows/members/research-themes.js";
+import {
+  classifyMemberThemes,
+  isThemeMeetingEligible,
+  memberThemeIds,
+  RESEARCH_THEME_IDS,
+  type ResearchThemeId,
+  themeMeetings,
+  type ThemeMatch,
+} from "../workflows/members/research-themes.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -268,6 +276,7 @@ import {
   type OnboardingFollowUpStep,
 } from "../workflows/members/onboarding-followup.js";
 import {
+  type AdminBotThemedMeeting,
   matchThemedMeetings,
   matchTopicChannels,
   topicOfChannel,
@@ -1229,12 +1238,115 @@ export class AdminBotService {
   listMemberResearchThemes(): AdminBotServiceResponse<{
     members: Array<{ member_id: string; name: string; themes: ThemeMatch[] }>;
   }> {
-    const members = this.store.listLabMembers().map((member) => ({
-      member_id: member.id,
-      name: member.name,
-      themes: classifyMemberThemes(member),
-    }));
+    // Full members and major coauthors only. The themes exist to fill the Wednesday meetings, and
+    // classifying an interviewee or a mailing-list address produces a row nobody can act on.
+    const members = this.store
+      .listLabMembers()
+      .filter(isThemeMeetingEligible)
+      .map((member) => ({
+        member_id: member.id,
+        name: member.name,
+        themes: classifyMemberThemes(member),
+      }));
     return { ok: true, status: 200, payload: { members } };
+  }
+
+  /**
+   * Invite each eligible member to the Wednesday meeting for every theme their work places them in.
+   *
+   * One proposal per meeting rather than per member: an admin approving "add 9 people to Theme:
+   * Multi-Agent" is reading one decision, where nine cards for the same event is nine chances to
+   * approve eight of them.
+   *
+   * Members already on an event are dropped before the proposal is built, so a sweep that runs
+   * weekly proposes nothing once the roster has settled. That is the same discipline the location
+   * timeline follows -- a sweep should be quiet when nothing changed -- and it is what makes this
+   * safe to schedule rather than run by hand.
+   *
+   * `meetings` is passed in rather than read here: the events live on Google, the service does not
+   * reach out, and the caller that already lists Wednesday's calendar is the one that has them.
+   */
+  sweepResearchThemeInvites(
+    params: {
+      calendarId: string;
+      meetings: readonly (AdminBotThemedMeeting & { attendees?: readonly string[] })[];
+    },
+    actor: string,
+  ): AdminBotServiceResponse<{
+    invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  }> {
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }> = [];
+    const eligible = this.store.listLabMembers().filter(isThemeMeetingEligible);
+
+    for (const themeId of RESEARCH_THEME_IDS) {
+      const matches = themeMeetings(themeId, params.meetings);
+      if (matches.length === 0) {
+        continue;
+      }
+      if (matches.length > 1) {
+        // Two events answering to one theme is a calendar to look at, not something to resolve by
+        // picking the first -- the lab has two "Theme: Causal LLM" entries in the same hour today.
+        skipped.push({
+          member_id: themeId,
+          reason: `matches ${matches.length} meetings: ${matches.map((m) => m.summary).join("; ")}`,
+        });
+        continue;
+      }
+      const meeting = matches[0] as AdminBotThemedMeeting & { attendees?: readonly string[] };
+      const already = new Set((meeting.attendees ?? []).map((email) => email.trim().toLowerCase()));
+      const attendees: string[] = [];
+      for (const member of eligible) {
+        if (!memberThemeIds(member).includes(themeId)) {
+          continue;
+        }
+        const email = member.calendar_email?.trim();
+        if (!email) {
+          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          continue;
+        }
+        if (already.has(email.toLowerCase())) {
+          continue;
+        }
+        attendees.push(email);
+      }
+      if (attendees.length === 0) {
+        continue;
+      }
+      const unique = [...new Set(attendees)].toSorted();
+      const proposed = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${unique.length} to ${meeting.summary}`,
+        target: { service: "calendar", channel: "calendar", target: meeting.event_id },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: meeting.event_id,
+          // The whole set that will be on the event, existing attendees included: this action type
+          // adds rather than replaces, but the approval card should show the result, not the delta.
+          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])].toSorted(),
+        },
+        rationale: "Members whose stated research interests place them in this theme.",
+        undo_plan: "Remove the attendees with calendar.remove_attendees.",
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: themeId, reason: proposed.error.message });
+        continue;
+      }
+      invited.push({ event_id: meeting.event_id, theme: themeId, attendees: unique });
+    }
+
+    this.recordAudit({
+      type: "research_theme_invites.swept",
+      actor,
+      details: {
+        eligible: eligible.length,
+        meetings: params.meetings.length,
+        proposed: invited.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { invited, skipped } };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {

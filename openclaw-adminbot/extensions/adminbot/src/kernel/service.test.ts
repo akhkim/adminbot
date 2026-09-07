@@ -4878,6 +4878,130 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("sweepResearchThemeInvites", () => {
+    const meetings = [
+      { event_id: "multi", summary: "Theme: Multi-Agent Weekly" },
+      { event_id: "causal", summary: "Theme: Causal LLM Meeting" },
+    ];
+
+    function seed(service: AdminBotService): void {
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "full-multi",
+          name: "Full Multi",
+          member_type: "full",
+          calendar_email: "full-multi@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "coauthor-major-causal",
+          name: "Major Causal",
+          member_type: "coauthor-major",
+          calendar_email: "major-causal@example.com",
+          research_topics: ["Causal Inference"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "coauthor-minor",
+          name: "Minor Coauthor",
+          member_type: "coauthor-minor",
+          calendar_email: "minor@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "departed",
+          name: "Departed",
+          member_type: "full, alumni",
+          calendar_email: "departed@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+    }
+
+    it("invites eligible members to the meeting for each theme they match", () => {
+      const service = new AdminBotService();
+      seed(service);
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com", meetings }, "cron"),
+      );
+
+      const multi = result.invited.find((row) => row.event_id === "multi");
+      // The minor coauthor and the departed member both list multi-agent and are both excluded.
+      expect(multi?.attendees).toEqual(["full-multi@example.com"]);
+      expect(result.invited.find((row) => row.event_id === "causal")?.attendees).toEqual([
+        "major-causal@example.com",
+      ]);
+    });
+
+    it("proposes nothing on a second sweep once everyone is already on the event", () => {
+      const service = new AdminBotService();
+      seed(service);
+      const settled = [
+        { ...meetings[0]!, attendees: ["full-multi@example.com"] },
+        { ...meetings[1]!, attendees: ["major-causal@example.com"] },
+      ];
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites(
+          { calendarId: "lab@example.com", meetings: settled },
+          "cron",
+        ),
+      );
+
+      // A weekly sweep must be silent when the roster has not moved.
+      expect(result.invited).toEqual([]);
+    });
+
+    it("skips a theme with two meetings rather than picking one", () => {
+      const service = new AdminBotService();
+      seed(service);
+      const doubled = [...meetings, { event_id: "causal-2", summary: "Theme: Causal LLM Meeting" }];
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites(
+          { calendarId: "lab@example.com", meetings: doubled },
+          "cron",
+        ),
+      );
+
+      expect(result.invited.map((row) => row.event_id)).toEqual(["multi"]);
+      expect(result.skipped.some((skip) => skip.member_id === "causal_llm")).toBe(true);
+    });
+
+    it("reports a member with no calendar_email instead of dropping them silently", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "no-email",
+          name: "No Email",
+          member_type: "full",
+          research_topics: ["Multi-Agent"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com", meetings }, "cron"),
+      );
+
+      expect(result.invited).toEqual([]);
+      expect(result.skipped).toContainEqual({
+        member_id: "no-email",
+        reason: "member has no calendar_email",
+      });
+    });
+  });
+
   describe("birthday", () => {
     function birthdayProposals(service: AdminBotService) {
       return unwrap(service.listPending()).proposals.filter(

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   classifyMemberThemes,
+  isThemeMeetingEligible,
   memberThemeIds,
   normalizeThemeText,
   RESEARCH_THEME_IDS,
   RESEARCH_THEMES,
+  themeMeetings,
 } from "./research-themes.js";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -124,6 +126,73 @@ describe("classifyMemberThemes", () => {
     expect(memberThemeIds(member({ research_topics: ["Interp"] }))).toContain("mech_interp");
     expect(memberThemeIds(member({ research_topics: ["RLHF"] }))).toContain("post_training");
     expect(memberThemeIds(member({ research_topics: ["DPO and SFT"] }))).toContain("post_training");
+  });
+});
+
+describe("isThemeMeetingEligible", () => {
+  it("admits full members and major coauthors", () => {
+    expect(isThemeMeetingEligible(member({ member_type: "full" }))).toBe(true);
+    expect(isThemeMeetingEligible(member({ member_type: "coauthor-major" }))).toBe(true);
+    // The roster stores several types in one string, which is how the live sheet spells it.
+    expect(
+      isThemeMeetingEligible(member({ member_type: "full, adminbot-admin, adminbot-developer" })),
+    ).toBe(true);
+  });
+
+  it("excludes everybody else, including the other kinds of coauthor", () => {
+    for (const type of [
+      "coauthor-minor",
+      "disappearing-coauthor",
+      "interviewee",
+      "mailing-list",
+      "external-prof",
+      "acquaintance",
+      undefined,
+    ]) {
+      expect(isThemeMeetingEligible(member({ member_type: type }))).toBe(false);
+    }
+  });
+
+  it("excludes alumni even when the type still says full", () => {
+    // The roster keeps the old type after somebody leaves; 22 of 24 alumni carry no status at all.
+    expect(isThemeMeetingEligible(member({ member_type: "full, alumni" }))).toBe(false);
+    expect(isThemeMeetingEligible(member({ member_type: "full", status: "alumni" }))).toBe(false);
+  });
+});
+
+describe("themeMeetings", () => {
+  const wednesday = [
+    { event_id: "e1", summary: "Theme: Loss of Control/Power Concentration" },
+    { event_id: "e2", summary: "Theme: Multi-Agent Weekly" },
+    { event_id: "e3", summary: "Theme: Mech-Interp Weekly" },
+    { event_id: "e4", summary: "Theme: Causal LLM Meeting" },
+    { event_id: "e5", summary: "Theme: Jinesis Post-Training" },
+    { event_id: "e6", summary: "Theme: Adversarial Defense" },
+    { event_id: "e7", summary: "Proj: Law-to-Bench Meeting" },
+    { event_id: "e8", summary: "Zurich: Jinesis Lunch@OAT" },
+  ];
+
+  it("finds the meeting for each of the six themes", () => {
+    const found = RESEARCH_THEME_IDS.map((id) =>
+      themeMeetings(id, wednesday).map((m) => m.event_id),
+    );
+    expect(found).toEqual([["e1"], ["e2"], ["e3"], ["e4"], ["e5"], ["e6"]]);
+  });
+
+  it("ignores events that are not themed meetings", () => {
+    // "Proj:" and the lunch share the calendar and must never be claimed by a theme.
+    const claimed = RESEARCH_THEME_IDS.flatMap((id) =>
+      themeMeetings(id, wednesday).map((m) => m.event_id),
+    );
+    expect(claimed).not.toContain("e7");
+    expect(claimed).not.toContain("e8");
+  });
+
+  it("returns both when two events answer to one theme", () => {
+    // The live calendar has two "Theme: Causal LLM" entries in the same hour. The caller is meant
+    // to see that rather than have one picked for it.
+    const doubled = [...wednesday, { event_id: "e9", summary: "Theme: Causal LLM Meeting" }];
+    expect(themeMeetings("causal_llm", doubled).map((m) => m.event_id)).toEqual(["e4", "e9"]);
   });
 });
 

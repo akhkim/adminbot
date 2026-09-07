@@ -20,7 +20,13 @@
 // cost of every property above: no stable evidence, no reproducibility, and a per-member API call
 // to answer a question that string matching answers correctly for this roster today. If the themes
 // grow past what phrases can separate, that trade is worth revisiting -- it is not worth it yet.
-import type { AdminBotLabMember } from "../../contracts/actions.js";
+import {
+  adminBotIsAlumniMember,
+  adminBotIsCoauthorMajorType,
+  adminBotIsFullMemberType,
+  type AdminBotLabMember,
+} from "../../contracts/actions.js";
+import { type AdminBotThemedMeeting, themeOfEvent, topicTokens } from "./topic-channels.js";
 
 export const RESEARCH_THEME_IDS = [
   "loss_of_control",
@@ -37,6 +43,14 @@ export type ResearchTheme = {
   id: ResearchThemeId;
   label: string;
   /**
+   * The topic used to find this theme's Wednesday meeting, matched against the event's own title.
+   *
+   * Carried separately from `label` rather than derived from it, because the label is prose for a
+   * human ("Loss of control / power concentration") and this is a matching key. Deriving one from
+   * the other means every re-wording of a label silently re-points a calendar sweep.
+   */
+  meetingTopic: string;
+  /**
    * Normalised phrases that place a member in the theme, matched whole rather than as substrings.
    *
    * Whole-phrase matching is what keeps "control" out of "controlled experiment" and "sae" out of
@@ -51,6 +65,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "loss_of_control",
     label: "Loss of control / power concentration",
+    meetingTopic: "loss of control",
     patterns: [
       "loss of control",
       "losing control",
@@ -76,6 +91,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "multi_agent",
     label: "Multi-agent",
+    meetingTopic: "multi agent",
     patterns: [
       "multi agent",
       "multiagent",
@@ -100,6 +116,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "mech_interp",
     label: "Mech-interp",
+    meetingTopic: "mech interp",
     patterns: [
       "mech interp",
       "mechinterp",
@@ -123,6 +140,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "causal_llm",
     label: "Causal LLM",
+    meetingTopic: "causal llm",
     patterns: [
       "causal",
       "causality",
@@ -142,6 +160,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "post_training",
     label: "Post-training",
+    meetingTopic: "post training",
     patterns: [
       "post training",
       "posttraining",
@@ -167,6 +186,7 @@ export const RESEARCH_THEMES: readonly ResearchTheme[] = [
   {
     id: "adversarial_defense",
     label: "Adversarial defense",
+    meetingTopic: "adversarial defense",
     patterns: [
       "adversarial",
       "adversarial defense",
@@ -279,4 +299,58 @@ function dedupe(
 /** Just the theme ids, for a caller that wants the labels and not the reasoning. */
 export function memberThemeIds(member: AdminBotLabMember): ResearchThemeId[] {
   return classifyMemberThemes(member).map((match) => match.theme);
+}
+
+/**
+ * Whether this person is one the theme meetings are for.
+ *
+ * Full members and major coauthors: the people carrying the lab's work, as the roster spreadsheet
+ * records it rather than as `privilege_level` guesses -- see adminBotIsFullMemberType for why that
+ * distinction has bitten a sweep before. Everyone else on the roster is a minor coauthor, an
+ * interviewee, a mailing-list address or an external professor, and a standing Wednesday invite is
+ * not what any of them signed up for.
+ *
+ * Alumni are excluded even when the type still says full, because the roster keeps the old type
+ * after somebody leaves -- the same trap adminBotIsAlumniMember exists to close.
+ */
+export function isThemeMeetingEligible(member: AdminBotLabMember): boolean {
+  if (adminBotIsAlumniMember(member)) {
+    return false;
+  }
+  return (
+    adminBotIsFullMemberType(member.member_type) || adminBotIsCoauthorMajorType(member.member_type)
+  );
+}
+
+/**
+ * The Wednesday meeting for a theme, out of the events handed in.
+ *
+ * The theme's topic has to be fully present in the event's title, not the reverse -- the same rule
+ * matchThemedMeetings uses for channels, so "Theme: Causal LLM Meeting" and "Theme: Causal
+ * Inference" both answer to the causal theme while a narrower event does not get claimed by it.
+ *
+ * Returns every match rather than picking one. Two events answering to one theme is a calendar
+ * somebody should look at -- the lab currently has two "Theme: Causal LLM" entries at the same
+ * hour -- and silently inviting people to the first would hide that.
+ */
+export function themeMeetings(
+  themeId: ResearchThemeId,
+  meetings: readonly AdminBotThemedMeeting[],
+): AdminBotThemedMeeting[] {
+  const theme = RESEARCH_THEMES.find((entry) => entry.id === themeId);
+  if (!theme) {
+    return [];
+  }
+  const wanted = topicTokens(theme.meetingTopic);
+  if (wanted.length === 0) {
+    return [];
+  }
+  return meetings.filter((meeting) => {
+    const title = themeOfEvent(meeting.summary);
+    if (!title) {
+      return false;
+    }
+    const have = new Set(topicTokens(title));
+    return wanted.every((token) => have.has(token));
+  });
 }
