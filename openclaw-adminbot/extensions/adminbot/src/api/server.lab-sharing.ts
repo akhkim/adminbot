@@ -20,6 +20,26 @@ export async function handleLabSharingRoute(
     );
     return;
   }
+  if (url.pathname === "/lab-sharing/status" && req.method === "GET") {
+    sendServiceResult(res, service.labSharing().directorStatus().read(memberId));
+    return;
+  }
+  if (
+    (url.pathname === "/lab-sharing/status" && req.method === "PUT") ||
+    (url.pathname === "/lab-sharing/status/clear" && req.method === "POST")
+  ) {
+    const clear = url.pathname.endsWith("/clear");
+    let body: unknown;
+    try {
+      body = clear ? null : await readJson(req, 4096);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      sendJson(res, 400, { error: { message: "Expected valid JSON for a shared status." } });
+      return;
+    }
+    sendServiceResult(res, service.labSharing().directorStatus().save(memberId, body, clear));
+    return;
+  }
   const interest = /^\/lab-sharing\/requests\/([^/]+)\/interest(\/withdraw)?$/u.exec(url.pathname);
   if (
     interest &&
