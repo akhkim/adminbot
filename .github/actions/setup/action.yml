@@ -1,0 +1,30 @@
+# Node, pnpm and a warm dependency install, shared by every CI job.
+#
+# The caller checks out first, because a composite action cannot decide the checkout options that
+# matter for safety (see persist-credentials in ci.yaml) and it should not be the thing that hides
+# them.
+name: Set up the AdminBot toolchain
+description: Installs pnpm and Node at the versions package.json pins, then installs dependencies.
+
+runs:
+  using: composite
+  steps:
+    # Reads the `packageManager` field rather than hard-coding a version, so bumping pnpm in
+    # package.json cannot leave CI installing a different one than developers use.
+    - uses: pnpm/action-setup@v6
+      with:
+        package_json_file: openclaw-adminbot/package.json
+        run_install: false
+
+    - uses: actions/setup-node@v7
+      with:
+        # package.json requires >=22.19.0.
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: openclaw-adminbot/pnpm-lock.yaml
+
+    # Frozen: a lockfile that does not match package.json is a failure worth seeing, not something
+    # CI should quietly resolve into an install nobody has run locally.
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: openclaw-adminbot

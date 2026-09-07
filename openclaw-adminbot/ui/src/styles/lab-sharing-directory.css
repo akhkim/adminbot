@@ -1,5 +1,9 @@
 /* Keep the service-backed directory on the existing Lab Sharing visual system. */
-lab-sharing-directory {
+lab-sharing-directory,
+lab-sharing-status,
+lab-sharing-member-search,
+lab-sharing-how-to,
+lab-sharing-invites {
   display: block;
   min-width: 0;
 }
@@ -8,6 +12,7 @@ lab-sharing-directory {
   min-width: 0;
 }
 .lab-sharing-directory h3,
+.lab-sharing-directory h4,
 .lab-sharing-directory p {
   margin: 0;
 }
@@ -59,4 +64,119 @@ lab-sharing-directory {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.lab-sharing-directory__form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.lab-sharing-directory__form > p {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.lab-sharing-directory .lab-sharing-ask__field > span {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Live panels share the neutral surfaces used by My Projects and Time Availability.
+   Keep the prototype palette scoped to the optional sample-data preview. */
+.lab-sharing-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.lab-sharing-page .lab-sharing-directory {
+  --ls-accent: var(--border-strong);
+  --ls-accent-hover: var(--border-hover);
+  --ls-accent-bright: var(--text);
+  --ls-accent-subtle: var(--bg-elevated);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  padding: var(--space-5);
+  gap: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.lab-sharing-page .lab-sharing-directory .btn.primary {
+  border-color: #45454d;
+  background: #2e2e34;
+  color: #e4e4e7;
+}
+
+.lab-sharing-page .lab-sharing-directory .btn.primary:hover {
+  border-color: #505059;
+  background: #3a3a42;
+}
+
+.lab-sharing-page .lab-sharing-directory .btn:focus-visible,
+.lab-sharing-page .lab-sharing-directory :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lab-sharing-page .lab-sharing-request {
+  border: 1px solid var(--border);
+  padding: var(--space-4);
+}
+
+.lab-sharing-page .lab-sharing-ask__field {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.lab-sharing-page .lab-sharing-ask__field > span {
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.lab-sharing-page .lab-sharing-directory :is(input, select, textarea) {
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+}
+
+.lab-sharing-page .lab-sharing-directory select {
+  padding: 0 var(--space-8) 0 var(--space-4);
+}
+
+.lab-sharing-page > details {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .lab-sharing-page .lab-sharing-directory {
+    padding: var(--space-4);
+  }
+  .lab-sharing-page .lab-sharing-request__header {
+    flex-wrap: wrap;
+  }
+}
+
+.lab-sharing-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.lab-sharing-directory__filters > label {
+  flex: 1 1 180px;
+  max-width: 320px;
+}
+@media (max-width: 600px) {
+  .lab-sharing-directory__filters > label {
+    max-width: none;
+    flex-basis: 100%;
+  }
 }

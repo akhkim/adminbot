@@ -1,3 +1,6 @@
+import { LabSharingInvites } from "./lab-sharing-invites.ts";
+import "./lab-sharing-how-to.ts";
+import "./lab-sharing-status.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 import { ref } from "lit/directives/ref.js";
 import "./lab-sharing-member-search.ts";
@@ -1199,7 +1202,9 @@ export function renderLabSharingPreview(state: AppViewState) {
 export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
   let directory: LabSharingDirectory | undefined;
-  return html`<lab-sharing-directory
+  let invitations: LabSharingInvites | undefined;
+  return html`<div class="lab-sharing-page">
+    <lab-sharing-directory
       ${ref((element) => {
         directory = element as LabSharingDirectory | undefined;
       })}
@@ -1207,15 +1212,19 @@ export function renderLabSharing(state: AppViewState) {
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-directory>
     <lab-sharing-member-search
+      .onInviteSelect=${(id: string, name: string) => { void invitations?.selectMember(id, name); }}
       .onProjectSelect=${(paperId: string) => {
         void directory?.showProject(paperId);
       }}
       .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-member-search>
+    <lab-sharing-invites ${ref((element) => { invitations = element as LabSharingInvites | undefined; })} .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-invites>
+    <lab-sharing-how-to .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-how-to>
+    <lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
     ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     <details>
       <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
       ${renderLabSharingPreview(state)}
-    </details>`;
+    </details></div>`;
 }

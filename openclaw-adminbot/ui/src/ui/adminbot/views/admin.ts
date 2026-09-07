@@ -56,6 +56,7 @@ import {
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
   PRE_REGISTRATION_VENUES,
@@ -965,26 +966,18 @@ function renderRegistryField(
       case "multi_dropdown": {
         // Same control as the member's own page, so an admin and the member see one answer shape.
         const held = parseAdminBotMemberRoles(value);
-        const known = new Set(held.map((entry) => entry.toLowerCase()));
-        const options = field.options ?? [];
-        const extra = held.filter(
-          (entry) => !options.some((option) => option.toLowerCase() === entry.toLowerCase()),
-        );
-        return html`<div class="adminbot-form__multi" role="group" aria-label=${t(field.labelKey)}>
-          ${[...options, ...extra].map(
-            (option) => html`
-              <label class="adminbot-form__multi-option">
-                <input
-                  type="checkbox"
-                  name=${field.key}
-                  value=${option}
-                  .checked=${known.has(option.toLowerCase())}
-                />
-                <span>${option}</span>
-              </label>
-            `,
-          )}
-        </div>`;
+        return renderMultiSelectField({
+          name: field.key,
+          label: t(field.labelKey),
+          // The same empty-answer wording the single-answer dropdown above uses, so a record with
+          // no role reads identically whichever control is asking.
+          placeholder: "Not set",
+          options: multiSelectOptionsFor(field.options ?? [], held),
+          selected: new Set(held.map((entry) => entry.toLowerCase())),
+          rootClass: "adminbot-form__multi",
+          optionClass: "adminbot-form__multi-option",
+          testId: `member-form-multi-${field.key}`,
+        });
       }
       case "paragraph":
         return html`<textarea name=${field.key} rows="3" .value=${value}></textarea>`;
@@ -1016,7 +1009,12 @@ function renderRegistryField(
         return html`<input name=${field.key} placeholder=${field.example} .value=${value} />`;
     }
   })();
-  return html`<label class="adminbot-form__field">${label}${control}</label>`;
+  // A `<label>` wrapping the multi-answer control would forward a click on the word "Role" to the
+  // first checkbox inside it, so that one gets a plain container and the group carries its own
+  // accessible name instead.
+  return field.type === "multi_dropdown"
+    ? html`<div class="adminbot-form__field">${label}${control}</div>`
+    : html`<label class="adminbot-form__field">${label}${control}</label>`;
 }
 
 // Shared roster fields for the admin add/edit-member popovers. When a member is

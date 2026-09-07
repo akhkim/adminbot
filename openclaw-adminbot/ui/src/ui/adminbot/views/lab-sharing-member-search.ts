@@ -11,6 +11,7 @@ type MemberMatch = {
 };
 
 export class LabSharingMemberSearch extends LitElement {
+  @property({ attribute: false }) onInviteSelect?: (id: string, name: string) => void;
   @property({ attribute: false }) onProjectSelect?: (paperId: string) => void;
   @property() baseUrl = "";
   @property() sessionToken = "";
@@ -127,6 +128,14 @@ export class LabSharingMemberSearch extends LitElement {
               (topic) => html`<span class="lab-sharing-request__need">${topic}</span>`,
             )}
           </div>
+          ${this.onInviteSelect
+            ? html`<button
+                class="btn"
+                @click=${() => this.onInviteSelect?.(member.id, member.name)}
+              >
+                Prepare invitation
+              </button>`
+            : nothing}
           <p class="muted">Matched: ${member.matched_fields.join(", ")}</p>
           ${member.projects.map(
             (project) =>

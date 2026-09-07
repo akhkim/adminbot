@@ -23,8 +23,7 @@ SQLite adds `adminbot_help_requests` without altering existing tables. The paper
 is its primary key. Deployment does not require manually modifying the database.
 
 Other Lab Sharing features are still clearly labeled sample previews in a collapsed
-section. Direct invitations, announcements, director status and automatic
-notifications remain follow-up work.
+section. Announcements and automatic notifications remain follow-up work.
 
 
 ## Offers to help
@@ -80,3 +79,90 @@ Signed-in members can use the resource cards on Collaborate to open meeting
 recordings, their profile and research topics, time availability, or project records.
 These are ordinary links to existing portal pages and respect the configured base
 path. They do not copy records, submit forms, or expose the internal guidebook.
+
+## Director status
+
+The Collaborate page displays a manually shared status to signed-in lab members.
+Administrators can publish or clear it. It does not infer availability from calendars,
+Slack, or private schedules. The editor explicitly identifies the lab-member audience.
+
+- `GET /lab-sharing/status`: current `status` or null, plus `can_manage`.
+- `PUT /lab-sharing/status`: administrator-only publication with `availability`
+  (`available`, `busy`, `away`, or `unknown`), a trimmed 1–500 character `message`,
+  and future timezone-qualified `expires_at`. JSON is limited to 4096 bytes.
+- `POST /lab-sharing/status/clear`: administrator-only removal.
+
+Anonymous callers receive 401; shared service-token callers and member writes receive
+403. The service supplies `updated_by` and `updated_at`, ignoring caller metadata.
+Audit events record the actor without copying status text. SQLite adds a singleton
+`adminbot_director_status` table; publishing replaces its row and clearing deletes it.
+
+The service returns null after expiry; the browser also removes expired status without
+a refresh. Expiry hides the stored text rather than deleting it. Explicit clear removes
+the row. Browser inputs use the editor's device timezone and convert to ISO for the API.
+Session changes clear status and drafts; denied authorization removes editing controls.
+Ordinary network failures retain an administrator's draft for retry.
+
+## Member how-to guidebook
+
+The Lab how-to panel answers one question at a time using the existing loopback-only
+retrieval and synthesis service and shows source section headings. Answers may quote
+source passages. Local generation does not sanitize them or authorize forwarding to
+hosted models. Questions and answers are not added to the audit log.
+
+`POST /lab-sharing/ask` requires a member session (anonymous 401, shared service token
+403). It accepts a question of 1–1000 trimmed characters in a 4096-byte JSON body.
+Retrieval uses at most four sections and a 30-second request timeout. Browser requests
+also time out and are cancelled on logout; stale answers never enter a new session.
+Model output is rendered as plain text, including any HTML it contains. Failures show
+resource-link guidance without exposing host paths, credentials or model errors.
+
+An operator must first review a dedicated index and confirm every section is suitable
+for all signed-in members. Configure `ADMINBOT_MEMBER_GUIDEBOOK_INDEX` to its absolute
+path and `ADMINBOT_MEMBER_GUIDEBOOK_SHA256` to the SHA-256 of
+`JSON.stringify(JSON.parse(indexFileText))`. For example, compute the digest locally:
+
+```sh
+node --input-type=module -e 'import {readFileSync} from "node:fs"; import {createHash} from "node:crypto"; console.log(createHash("sha256").update(JSON.stringify(JSON.parse(readFileSync(process.argv[1], "utf8")))).digest("hex"))' /path/to/reviewed-member-index.json
+```
+
+Do not point this at the unreviewed internal index. Missing configuration, a changed
+index (including a resync), or a digest mismatch disables member answers before any
+model call. Review new content before updating the approved digest; no automatic
+approval or fallback to the internal index exists. Keep the index outside the repo
+with owner-only permissions. The same parsed object is checked and used for retrieval.
+
+By default embeddings and answers use the existing local guidebook model configuration.
+`ADMINBOT_MEMBER_GUIDEBOOK_EMBEDDING_URL` and `ADMINBOT_MEMBER_GUIDEBOOK_ANSWER_URL` can
+override their endpoints, but both must remain loopback. The existing internal
+`/guidebook/ask` caller contract is unchanged. This panel is a focused guidebook lookup,
+not a general-purpose agent or an external-action interface.
+
+## Collaboration and call invitations
+
+Use Find lab members, select Prepare invitation, choose a project you manage and
+enter a note. Collaboration requests propose an email with reply-to set to your
+saved address. Call requests propose a calendar event with both members as attendees;
+local input times are converted to UTC. Calls must start in the future and last at
+most eight hours. Open the project's help request before submitting.
+
+- `POST /lab-sharing/invites`: accepts `paper_id`, `recipient_id`, `kind`
+  (`collaboration` or `call`), and a 1–1000 character `note`; calls also require UTC
+  `start` and `end`. JSON bodies are limited to 4096 bytes.
+- `GET /lab-sharing/invites`: only the caller's request IDs, statuses, kinds, project
+  titles, recipient names and creation times. No contact addresses or proposal bodies.
+
+The server verifies current project authorship/admin privilege, an open request,
+other-member recipient and saved contact addresses. Caller-supplied addresses and
+actor IDs are ignored. Anonymous/service-token callers cannot use these routes.
+Identical actor/project/recipient/content requests reuse the same proposal and
+execution idempotency key, including after reload. Changing the content creates a
+new request requiring separate review.
+
+Requests create existing T3 `email.send` or `calendar.send_invite` proposals. They do
+not approve or execute them. Administrators review the exact recipient and payload
+in Pending Actions; the existing connector and approval rules apply. A request is
+not sent merely because it was submitted or approved. The member list shows the
+stored proposal status; only successful execution is `executed`. The call proposes
+an event on the connector's default calendar and does not create a video-call link.
+No new persistence table or direct connector entry point is introduced.

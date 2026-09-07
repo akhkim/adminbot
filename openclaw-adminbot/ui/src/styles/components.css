@@ -1036,11 +1036,85 @@
 }
 
 /* The multi-answer control (role), same shape as the member's own page so an admin and the member
-   are looking at one kind of answer. */
-.adminbot-form__multi {
+   are looking at one kind of answer: a summary line naming what is held, with the chips behind it.
+
+   `.adminbot-multiselect` carries the dropdown and each surface keeps its own chip styling, which
+   is why the classes are split. The menu sits in normal flow rather than floating over the fields
+   below: both forms that use this live inside a card that scrolls (`.adminbot-popover` sets
+   `overflow: auto`), and an absolutely positioned menu opened on a field near the bottom of one
+   would be clipped by that card. */
+.adminbot-multiselect {
+  min-width: 0;
+}
+
+.adminbot-multiselect__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--control-ui-input-text-size);
+  cursor: pointer;
+  user-select: none;
+  /* No disclosure triangle: the chevron already tracks the open state, and both at once reads as
+     two controls. Needs the standard property and the WebKit pseudo-element. */
+  list-style: none;
+}
+
+.adminbot-multiselect__summary::-webkit-details-marker {
+  display: none;
+}
+
+.adminbot-multiselect__summary:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-multiselect__summary:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* One line, truncated: somebody holding four roles must not get a summary that reflows the form. */
+.adminbot-multiselect__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adminbot-multiselect__caret {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-bottom: 0.15rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.adminbot-multiselect[open] .adminbot-multiselect__caret {
+  margin-top: 0.15rem;
+  margin-bottom: 0;
+  transform: rotate(-135deg);
+}
+
+.adminbot-multiselect__menu {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  max-height: 15rem;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
 }
 
 .adminbot-form__multi-option {

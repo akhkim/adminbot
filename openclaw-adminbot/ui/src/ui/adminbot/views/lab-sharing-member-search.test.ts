@@ -43,7 +43,7 @@ it("discards stale queries and clears member results on session change", async (
       )
       .mockResolvedValueOnce(result("New member")),
   );
-  const el = new LabSharingMemberSearch();
+  const el = document.createElement("lab-sharing-member-search") as LabSharingMemberSearch;
   el.sessionToken = "old";
   document.body.append(el);
   await el.updateComplete;
@@ -66,7 +66,7 @@ it("retries failures and avoids fetching short queries", async () => {
     .mockRejectedValueOnce(new Error("Offline"))
     .mockResolvedValueOnce(result("Recovered member"));
   vi.stubGlobal("fetch", fetcher);
-  const el = new LabSharingMemberSearch();
+  const el = document.createElement("lab-sharing-member-search") as LabSharingMemberSearch;
   el.sessionToken = "synthetic";
   document.body.append(el);
   await el.updateComplete;
@@ -92,7 +92,7 @@ it("does not restore results from an in-flight request after logout", async () =
         }),
     ),
   );
-  const el = new LabSharingMemberSearch();
+  const el = document.createElement("lab-sharing-member-search") as LabSharingMemberSearch;
   el.sessionToken = "synthetic";
   document.body.append(el);
   await el.updateComplete;
@@ -113,7 +113,7 @@ it("cancels a pending debounce when disconnected", async () => {
   vi.useFakeTimers();
   const fetcher = vi.fn().mockResolvedValue(result("Unexpected"));
   vi.stubGlobal("fetch", fetcher);
-  const el = new LabSharingMemberSearch();
+  const el = document.createElement("lab-sharing-member-search") as LabSharingMemberSearch;
   el.sessionToken = "synthetic";
   document.body.append(el);
   await el.updateComplete;

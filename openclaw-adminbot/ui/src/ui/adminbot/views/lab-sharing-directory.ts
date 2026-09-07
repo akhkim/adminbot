@@ -38,6 +38,10 @@ export class LabSharingDirectory extends LitElement {
   @state() private error = "";
   @state() private notice = "";
   @state() private query = "";
+  @state() private maxHours = "";
+  @state() private sort = "title";
+  @state() private visibleCount = 10;
+  @state() private revealedProject = "";
   @state() private draft = {
     paper_id: "",
     description: "",
@@ -56,6 +60,9 @@ export class LabSharingDirectory extends LitElement {
       this.generation++;
       this.data = null;
       this.offerDrafts = {};
+      this.query = this.maxHours = "";
+      this.revealedProject = "";
+      this.visibleCount = 10;
       this.error = "";
       this.notice = "";
       this.draft = {
@@ -77,6 +84,9 @@ export class LabSharingDirectory extends LitElement {
     super.disconnectedCallback();
   }
   async showProject(paperId: string) {
+    this.maxHours = "";
+    this.visibleCount = 10;
+    this.revealedProject = paperId;
     const generation = this.generation;
     this.query = "";
     await this.updateComplete;
@@ -287,11 +297,14 @@ export class LabSharingDirectory extends LitElement {
     }
     const open = this.data?.requests.filter((request) => request.status === "open") ?? [];
     const query = this.query.trim().toLowerCase();
-    const filtered = open.filter((request) =>
-      `${request.title} ${request.description} ${request.tags.join(" ")}`
-        .toLowerCase()
-        .includes(query),
-    );
+    const terms = query.split(/\s+/u).filter(Boolean);
+    const filtered = open.filter((request) => {
+      const text = `${request.title} ${request.owner_name} ${request.description} ${request.tags.join(" ")} ${request.timeline}`.toLowerCase();
+      return terms.every((term) => text.includes(term)) &&
+        (!this.maxHours || request.hours_per_week <= Number(this.maxHours));
+    }).toSorted((a, b) => a.paper_id === this.revealedProject ? -1 : b.paper_id === this.revealedProject ? 1 : this.sort === "hours"
+      ? a.hours_per_week - b.hours_per_week || a.title.localeCompare(b.title)
+      : a.title.localeCompare(b.title));
     return html`<section
       class="lab-sharing lab-sharing-directory"
       aria-label="Project help requests"
@@ -309,17 +322,34 @@ export class LabSharingDirectory extends LitElement {
       ${this.data
         ? html`
             <label class="lab-sharing-ask__field"
-              >Search projects or tags
+              >Search by topic, project, person, or task
               <input
                 class="lab-sharing-ask__input"
                 type="search"
                 .value=${this.query}
                 @input=${(event: Event) => {
                   this.query = (event.target as HTMLInputElement).value;
+                  this.visibleCount = 10;
+                  this.revealedProject = "";
                 }}
             /></label>
+            <div class="lab-sharing-directory__filters">
+              <label class="lab-sharing-ask__field">Maximum hours per week
+                <input class="lab-sharing-ask__input" type="number" min="1" placeholder="Any" .value=${this.maxHours}
+                  @input=${(event: Event) => { this.maxHours = (event.target as HTMLInputElement).value; this.visibleCount = 10; this.revealedProject = ""; }} />
+              </label>
+              <label class="lab-sharing-ask__field">Sort projects
+                <select class="lab-sharing-ask__select" .value=${this.sort}
+                  @change=${(event: Event) => { this.sort = (event.target as HTMLSelectElement).value; this.visibleCount = 10; this.revealedProject = ""; }}>
+                  <option value="title">Project name</option><option value="hours">Lowest time commitment</option>
+                </select>
+              </label>
+              <button class="btn" @click=${() => { this.query = this.maxHours = ""; this.visibleCount = 10; this.revealedProject = ""; }}>Clear filters</button>
+            </div>
+            ${this.revealedProject ? html`<p class="muted">Selected project shown first.</p>` : nothing}
+            <p class="muted" role="status">${filtered.length} of ${open.length} open projects match · showing ${Math.min(this.visibleCount, filtered.length)}</p>
             ${filtered.length
-              ? filtered.map(
+              ? filtered.slice(0, this.visibleCount).map(
                   (request) => html`<article
                     class="lab-sharing-request"
                     id=${`lab-project-${encodeURIComponent(request.paper_id)}`}
@@ -372,9 +402,10 @@ export class LabSharingDirectory extends LitElement {
                 )
               : html`<p>
                   ${open.length
-                    ? "No projects match your search."
+                    ? "No projects match these filters. Try fewer search terms or increase the weekly hours."
                     : "No projects are asking for help yet."}
                 </p>`}
+            ${filtered.length > this.visibleCount ? html`<button class="btn" @click=${() => { this.visibleCount += 10; }}>Show 10 more projects</button>` : nothing}
             ${this.renderInterests()}
             <h3 class="lab-sharing-seek__title">Your project help request</h3>
             ${this.data.projects.length
