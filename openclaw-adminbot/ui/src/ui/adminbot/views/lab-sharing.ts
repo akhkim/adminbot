@@ -1,3 +1,4 @@
+import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 import { ref } from "lit/directives/ref.js";
 import "./lab-sharing-member-search.ts";
 import { LabSharingDirectory } from "./lab-sharing-directory.ts";
@@ -1212,6 +1213,7 @@ export function renderLabSharing(state: AppViewState) {
       .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
       .sessionToken=${session?.sessionToken ?? ""}
     ></lab-sharing-member-search>
+    ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     <details>
       <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
       ${renderLabSharingPreview(state)}
