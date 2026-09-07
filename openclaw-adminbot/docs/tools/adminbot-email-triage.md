@@ -29,6 +29,28 @@ administrator and decision time and, for PaperFlow evidence, the paper and stage
 It is an inspection surface rather than an undo button: reversing a stage close is a separate paper
 decision, while the original Gmail thread remains linked from every history row.
 
+## Calendar requests from the lab's own addresses
+
+The configured senders — `ADMINBOT_ONBOARDING_SENDERS` plus `ADMINBOT_CONTACT_EMAILS` — are taken
+at their word when they ask for a calendar event. The classifier's confidence threshold, which
+holds everything else below 0.8 for a person, does not apply to that one pairing of category and
+sender, and the classifier is now told outright whether the real `From` header is on the list
+rather than being left to infer authority from the writing. A note from one of those addresses
+saying "put this on the calendar" becomes an event on the lab calendar in the same pass, with no
+review step.
+
+That is a deliberate trade, and it is bounded on the only side that matters: **this pass can add to
+a calendar and read one, and can never remove anything from one.** The rule is an allowlist of
+verbs (`calendarCommandRefusal` in `scripts/adminbot-email-automation.ts`) applied at the single
+point every shell-out goes through, so a delete, a clear, or an event-emptying update is refused
+before it reaches the CLI — including one a wrongly-classified or spoofed-looking email asked for.
+A wrong event is a line somebody deletes by hand; a wrong deletion is a meeting nobody knows they
+have lost.
+
+Everything else a trusted sender can ask for — reimbursement forms, a CV talk entry, an onboarding
+decision — keeps the confidence threshold. Those write to forms, a CV, and people's accounts, where
+a low-confidence read is worth a human's glance.
+
 ## Why labels rather than deleting
 
 The pass used to trash a fully handled message. That got the shape right — a handled message is not
