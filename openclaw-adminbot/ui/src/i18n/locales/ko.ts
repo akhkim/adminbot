@@ -448,6 +448,7 @@ export const ko: TranslationMap = {
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
+    gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
     labSharing: "Lab Sharing",
     agents: "에이전트",
@@ -500,6 +501,7 @@ export const ko: TranslationMap = {
   subtitles: {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
+    gettingStarted: "Your setup checklist — what is left, and what you have already done.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "워크스페이스, 도구, 정체성.",
@@ -1121,6 +1123,15 @@ export const ko: TranslationMap = {
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
   },
+  gettingStarted: {
+    stillToDo: "Still to do",
+    done: "Already done ({count})",
+    requiredLeft: "{count} required",
+    empty: "You have no setup checklist. Nothing is waiting on you here.",
+    profilePointer: "{count} setup step(s) left",
+    profilePointerDone: "Your setup checklist is finished.",
+    open: "Open Getting Started",
+  },
   dashboard: {
     more: "+{count} more",
     nudgeWarning: {
@@ -1492,7 +1503,8 @@ export const ko: TranslationMap = {
     recipient: "Send to",
     preview: "미리보기",
     previewing: "Reading…",
-    empty: "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -1534,7 +1546,8 @@ export const ko: TranslationMap = {
       signIn: "편집 기록을 보려면 로그인하세요.",
       forbidden: "관리자만 편집 기록을 볼 수 있습니다.",
       unreachable: "{url} 의 AdminBot 서비스에 연결할 수 없습니다.",
-      notDeployed: "이 서비스 빌드에는 아직 편집 기록이 없습니다. Control UI는 병합 시 배포되고 서비스는 별도로 배포됩니다.",
+      notDeployed:
+        "이 서비스 빌드에는 아직 편집 기록이 없습니다. Control UI는 병합 시 배포되고 서비스는 별도로 배포됩니다.",
       failed: "편집 기록을 읽을 수 없습니다.",
     },
   },
@@ -2360,7 +2373,8 @@ export const ko: TranslationMap = {
       },
       memberClaim: {
         title: "계정을 등록하지 못했습니다",
-        summary: "계정을 등록하지 못했습니다. 이미 등록되었거나, 이메일이 대상이 아니거나, 비밀번호가 너무 약할 수 있습니다.",
+        summary:
+          "계정을 등록하지 못했습니다. 이미 등록되었거나, 이메일이 대상이 아니거나, 비밀번호가 너무 약할 수 있습니다.",
         stepPassword: "10자 이상의 비밀번호를 사용하세요.",
         stepSignIn: "이미 이 계정을 등록했다면 ‘Sign in’을 사용하세요.",
       },

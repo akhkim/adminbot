@@ -5,6 +5,10 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
 import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
+import {
   adminBotPaperSlotRegistry,
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
@@ -318,6 +322,16 @@ function getFormValue(formData: FormData, key: string): string {
 export function collectRegistryFields(data: FormData): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const field of PROFILE_FIELDS) {
+    if (field.type === "multi_dropdown") {
+      // Read before the blank check below, and with getAll rather than get: several boxes share
+      // one name, so `get` would keep only the first answer. An empty result is still skipped --
+      // an admin who touched nothing must not clear the roles already on the record.
+      const roles = formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry)));
+      if (roles) {
+        patch[field.key] = roles;
+      }
+      continue;
+    }
     const raw = getFormValue(data, field.key).trim();
     if (!raw) {
       continue;
@@ -948,6 +962,30 @@ function renderRegistryField(
               html`<option value=${option} ?selected=${option === value}>${option}</option>`,
           )}
         </select>`;
+      case "multi_dropdown": {
+        // Same control as the member's own page, so an admin and the member see one answer shape.
+        const held = parseAdminBotMemberRoles(value);
+        const known = new Set(held.map((entry) => entry.toLowerCase()));
+        const options = field.options ?? [];
+        const extra = held.filter(
+          (entry) => !options.some((option) => option.toLowerCase() === entry.toLowerCase()),
+        );
+        return html`<div class="adminbot-form__multi" role="group" aria-label=${t(field.labelKey)}>
+          ${[...options, ...extra].map(
+            (option) => html`
+              <label class="adminbot-form__multi-option">
+                <input
+                  type="checkbox"
+                  name=${field.key}
+                  value=${option}
+                  .checked=${known.has(option.toLowerCase())}
+                />
+                <span>${option}</span>
+              </label>
+            `,
+          )}
+        </div>`;
+      }
       case "paragraph":
         return html`<textarea name=${field.key} rows="3" .value=${value}></textarea>`;
       case "numeric":

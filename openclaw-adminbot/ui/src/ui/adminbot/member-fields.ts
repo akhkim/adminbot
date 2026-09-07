@@ -29,6 +29,11 @@ export type ProfileFieldType =
   | "short_text"
   | "paragraph"
   | "dropdown"
+  // The same closed vocabulary as `dropdown`, but a person may hold several of its answers at
+  // once. Stored as the one joined string the column already holds (see
+  // ADMINBOT_MEMBER_ROLE_SEPARATOR), not as an array, so nothing that reads the field for display
+  // has to learn a second shape.
+  | "multi_dropdown"
   | "date"
   | "link"
   | "numeric"
@@ -132,10 +137,13 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "identity",
   },
   {
+    // Several answers allowed: people here are routinely two things at once -- a PhD student who
+    // also manages the lab, a research assistant part-way through a master's -- and one dropdown
+    // made each of them pick which half of the truth to record.
     key: "role",
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
-    type: "dropdown",
+    type: "multi_dropdown",
     options: adminBotMemberRoles,
     group: "identity",
   },

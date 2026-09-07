@@ -610,6 +610,36 @@ describe("the already-a-member hint", () => {
 });
 
 describe("password reset steps", () => {
+  beforeEach(async () => {
+    await i18n.setLocale("en");
+  });
+
+  it("names the step in the card heading and explains it in the subtitle", () => {
+    const host = document.createElement("div");
+
+    render(renderLoginGate(createState({ loginMode: "reset-request" })), host);
+    expect(host.querySelector(".login-gate__title")?.textContent?.trim()).toBe(
+      "Forgot your password?",
+    );
+    expect(host.querySelector(".login-gate__sub")?.textContent).toContain(
+      "send you a link to choose a new password",
+    );
+
+    render(renderLoginGate(createState({ loginMode: "reset-confirm" })), host);
+    expect(host.querySelector(".login-gate__title")?.textContent?.trim()).toBe("Set new password");
+    expect(host.querySelector(".login-gate__sub")?.textContent).toContain(
+      "Choose a new password for your account",
+    );
+  });
+
+  it("offers the way back to sign-in rather than the claim toggle", () => {
+    const host = document.createElement("div");
+
+    render(renderLoginGate(createState({ loginMode: "reset-request" })), host);
+    expect(host.querySelector(".login-gate__reset-back")?.textContent).toContain("Back to sign in");
+    expect(host.textContent).not.toContain("Already have an account?");
+  });
+
   it("asks only for an email in the request step", () => {
     const state = createState({ loginMode: "reset-request" });
     const host = document.createElement("div");

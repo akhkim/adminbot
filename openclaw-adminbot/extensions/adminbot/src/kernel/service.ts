@@ -157,6 +157,7 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
+import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
   isAdminBotOpportunityDeadline,
@@ -10770,8 +10771,15 @@ function validateLabMember(
   // Role is a closed vocabulary, not free text: the roster is filtered and reported on by role,
   // and "PhD student" / "PhD Student" / "PhD" as three distinct values made those counts lie.
   // Empty stays legal — a role nobody has recorded yet is different from a wrong one.
+  //
+  // Several roles are legal too, comma-joined: somebody can be a PhD student and the lab manager,
+  // and every part is checked against the same vocabulary, so the counts stay honest.
   if (member.role !== undefined && member.role !== "") {
-    if (!adminBotMemberRoles.includes(member.role as (typeof adminBotMemberRoles)[number])) {
+    const roles = parseAdminBotMemberRoles(member.role);
+    const unknown = roles.find(
+      (role) => !adminBotMemberRoles.includes(role as (typeof adminBotMemberRoles)[number]),
+    );
+    if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
     }
   }

@@ -1610,6 +1610,25 @@ describe("AdminBotService", () => {
         role: "PhD Student",
       }).ok,
     ).toBe(true);
+    // Several roles at once: people here are routinely two things, and every part is checked
+    // against the same vocabulary so the counts stay honest.
+    expect(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "multi-role",
+        name: "Multi Role",
+        role: "PhD Student, Lab Manager",
+      }).ok,
+    ).toBe(true);
+    // One good half does not carry a bad one.
+    expect(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "half-invalid-role",
+        name: "Half Invalid Role",
+        role: "PhD Student, Chief Scientist",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
     // A role nobody has recorded yet is different from a wrong one.
     expect(
       service.upsertLabMember({ receives_nudges: true, id: "no-role", name: "No Role", role: "" })

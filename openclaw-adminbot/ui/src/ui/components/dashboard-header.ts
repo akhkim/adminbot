@@ -1,7 +1,7 @@
 // Control UI component implements the dashboard header element.
 import { LitElement, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { pathForTab, titleForTab, type Tab } from "../navigation.js";
+import { groupTitleForTab, titleForTab, type Tab } from "../navigation.js";
 
 export class DashboardHeader extends LitElement {
   override createRenderRoot() {
@@ -9,51 +9,23 @@ export class DashboardHeader extends LitElement {
   }
 
   @property() tab: Tab = "overview";
-  @property() basePath = "";
-  @property() agentLabel = "";
-
-  private readonly handleOverviewClick = (event: MouseEvent) => {
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    this.dispatchEvent(
-      new CustomEvent("navigate", { detail: "overview", bubbles: true, composed: true }),
-    );
-  };
 
   override render() {
     const label = titleForTab(this.tab);
-    const agentLabel = this.agentLabel.trim();
+    // The trail is where the member already reads the page from: the sidebar group, then the
+    // page. The old first two segments were an "OpenClaw" link home and the serving agent's name
+    // ("main"), which named the runtime rather than anything on the member's map.
+    const group = groupTitleForTab(this.tab);
 
     return html`
       <div class="dashboard-header">
         <div class="dashboard-header__breadcrumb">
-          <a
-            class="dashboard-header__breadcrumb-link"
-            href=${pathForTab("overview", this.basePath)}
-            @click=${this.handleOverviewClick}
-          >
-            OpenClaw
-          </a>
-          ${agentLabel
+          ${group
             ? html`
-                <span class="dashboard-header__breadcrumb-segment">
-                  <span class="dashboard-header__breadcrumb-sep">›</span>
-                  <span class="dashboard-header__breadcrumb-context" title=${agentLabel}>
-                    ${agentLabel}
-                  </span>
-                </span>
+                <span class="dashboard-header__breadcrumb-context">${group}</span>
+                <span class="dashboard-header__breadcrumb-sep">›</span>
               `
             : nothing}
-          <span class="dashboard-header__breadcrumb-sep">›</span>
           <span class="dashboard-header__breadcrumb-current">${label}</span>
         </div>
         <div class="dashboard-header__actions">

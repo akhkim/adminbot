@@ -169,6 +169,32 @@ export const adminBotConsoleStyles = `    :root {
       min-height: 72px;
       resize: vertical;
     }
+    /* Role takes several answers, so it is a group of boxes rather than one control. Wrapping
+       chips keep eleven options to two or three lines instead of a column half a form tall. */
+    .role-choices {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .role-choices > span {
+      flex: 1 0 100%;
+    }
+    .role-choice {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .role-choice input {
+      width: auto;
+      min-height: 0;
+      margin: 0;
+    }
     .row {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));

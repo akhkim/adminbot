@@ -82,6 +82,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
   // beyond having an account.
   profile: "member",
+  // The viewer's own onboarding checklist, which arrives inside their own member session and is
+  // marked done against their own record. Nothing on it reads another member.
+  gettingStarted: "member",
   myWork: "member",
   // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
   // browse open projects. No data on it requires operator privilege.

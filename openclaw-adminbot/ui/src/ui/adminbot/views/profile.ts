@@ -20,6 +20,10 @@ import {
   adminBotTimelineEntryTarget,
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { t } from "../../../i18n/index.ts";
 import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -519,6 +523,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
           value,
         ),
       );
+    } else if (field.type === "multi_dropdown") {
+      // getAll, not get: every checked box shares the field's name, and `get` would keep only the
+      // first -- which is the single-answer limit this field exists to undo.
+      setField(
+        fields,
+        field.key,
+        formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry))),
+      );
     } else if (field.type === "list") {
       setField(
         fields,
@@ -684,6 +696,52 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
         </select>
       `;
+    case "multi_dropdown": {
+      // Checkboxes rather than a multi-select list box: a `<select multiple>` hides how many
+      // options there are behind a scroll and needs ctrl-click to pick a second one, which is
+      // exactly the interaction somebody recording "PhD Student" and "Lab Manager" would never
+      // guess at.
+      const held = parseAdminBotMemberRoles(currentValue);
+      const known = new Set(held.map((entry) => entry.toLowerCase()));
+      const options = field.options ?? [];
+      return html`
+        <div
+          class="profile__multi"
+          role="group"
+          aria-label=${t(field.labelKey)}
+          data-testid=${`profile-multi-${field.key}`}
+        >
+          ${options.map(
+            (option) => html`
+              <label class="profile__multi-option">
+                <input
+                  type="checkbox"
+                  name=${field.key}
+                  value=${option}
+                  .checked=${known.has(option.toLowerCase())}
+                />
+                <span>${option}</span>
+              </label>
+            `,
+          )}
+          <!-- An imported answer the vocabulary has no box for ("PhD Mentee / MSc") would vanish
+               the first time this form was saved, so it keeps a box of its own and is written back
+               untouched unless the member clears it themselves. -->
+          ${held
+            .filter(
+              (entry) => !options.some((option) => option.toLowerCase() === entry.toLowerCase()),
+            )
+            .map(
+              (entry) => html`
+                <label class="profile__multi-option profile__multi-option--legacy">
+                  <input type="checkbox" name=${field.key} value=${entry} checked />
+                  <span>${entry}</span>
+                </label>
+              `,
+            )}
+        </div>
+      `;
+    }
     case "paragraph":
       return html`
         <textarea
@@ -1332,122 +1390,40 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
   `;
 }
 
-// What is still outstanding for this person, in one place: the onboarding steps they have not
-// finished, then the guidebook pointers derived from what their record is missing.
+// A line pointing at Getting Started, not the checklist itself.
 //
-// The onboarding steps come first because they are the lab actually waiting on someone, where a
-// guidebook pointer is only advice. Their labels, detail and links all come from the checklist the
-// service generated for this member, so this list and the checklist itself can never drift. The
-// section is named for them, not for the advice underneath: "Suggested for you" over a stack whose
-// top half is a list of things somebody is waiting on read as optional, which they are not.
-function renderSuggestions(state: AppViewState, member: LabMember) {
-  const blanks = new Set(blankFields(member).map((field) => field.key));
-
-  type Suggestion = {
-    id: string;
-    title: string;
-    body: string;
-    label: string;
-    href: string;
-    status?: string;
-  };
-
-  const onboardingSuggestions: Suggestion[] = [];
-  const otherSuggestions: Suggestion[] = [];
-
-  const onboarding = state.adminBotOnboarding;
-  const outstanding = [
-    ...(onboarding?.current_step ? [onboarding.current_step] : []),
-    ...(onboarding?.remaining ?? []),
-  ].filter(
-    (step, index, all) =>
-      step.status !== "complete" && all.findIndex((other) => other.id === step.id) === index,
-  );
-  for (const step of outstanding) {
-    const link = step.links?.[0];
-    onboardingSuggestions.push({
-      id: `onboarding-${step.id}`,
-      title: step.label,
-      body: step.detail ?? "",
-      label: link?.label ?? "",
-      href: link?.url ?? "",
-      status:
-        step.status === "current"
-          ? t("adminbotWelcome.status.current")
-          : t("adminbotWelcome.status.remaining"),
-    });
+// This page used to end in two stacked versions of the same list: an "Onboarding steps" section
+// that only linked out, and under it the folded checklist that was the only place a step could be
+// ticked off. Both live on the Getting Started tab now, which is a tracker rather than an appendix
+// to a page somebody edits every week. What stays here is the one fact a member reading their own
+// record wants: whether anything is still waiting on them.
+function renderOnboardingPointer(state: AppViewState, props: ProfileProps) {
+  const steps = state.adminBotOnboarding?.steps ?? [];
+  if (!steps.length) {
+    return nothing;
   }
-
-  const coveredByOnboarding = outstanding
-    .map((step) => `${step.id} ${step.label}`.toLowerCase())
-    .join(" ");
-
-  // No URN card here any more: the collector hand-off sits on the field it feeds (see
-  // renderFieldAction), where it stays reachable after the field is filled.
-
-  // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
-  // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
-  // read past it. It lives with the links now, where a permanent destination belongs.
-  // No GPU card. Cluster access is granted on the admin side, so a member could not act on this
-  // one even when it was right -- and it was shown to anyone whose topics and notes did not happen
-  // to contain the string "gpu", which is most of the lab. A suggestion nobody can complete is how
-  // a stack that means "still outstanding" gets read past.
-  if (blanks.has("personal_website") && !coveredByOnboarding.includes("website")) {
-    otherSuggestions.push({
-      id: "website",
-      title: t("profile.suggestions.websiteTitle"),
-      body: t("profile.suggestions.websiteBody"),
-      label: t("profile.suggestions.websiteLink"),
-      href: "https://github.com/akhkim/openclaw-adminbot-lab#member-pages",
-    });
-  }
-
-  const renderCard = (suggestion: Suggestion) => html`
-    <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
-      <h3 class="profile-suggestion__title">
-        ${suggestion.title}
-        ${suggestion.status
-          ? html`<span class="ab-chip profile-suggestion__status">${suggestion.status}</span>`
-          : nothing}
-      </h3>
-      ${suggestion.body
-        ? html`<p class="profile-suggestion__body">${suggestion.body}</p>`
-        : nothing}
-      ${suggestion.href
-        ? html`
-            <a
-              class="profile-suggestion__link"
-              href=${suggestion.href}
-              target=${EXTERNAL_LINK_TARGET}
-              rel=${buildExternalLinkRel()}
-            >
-              ${suggestion.label}
-              <span class="profile-suggestion__icon" aria-hidden="true">
-                ${icons.externalLink}
-              </span>
-            </a>
-          `
-        : nothing}
-    </article>
-  `;
-
+  const outstanding = steps.filter((step) => step.status !== "complete").length;
   return html`
-    <section class="profile__section" data-testid="profile-suggestions">
-      <h2 class="profile__section-title">${t("profile.suggestions.title")}</h2>
-      ${onboardingSuggestions.length
-        ? html`
-            <div class="profile__suggestions-group">
-              <h3 class="profile__suggestions-group-title">
-                ${t("profile.suggestions.fromOnboarding")}
-              </h3>
-              <div class="profile__suggestions">${onboardingSuggestions.map(renderCard)}</div>
-            </div>
-          `
-        : nothing}
-      <div class="profile__suggestions-group">
-        <h3 class="profile__suggestions-group-title">${t("profile.suggestions.other")}</h3>
-        <div class="profile__suggestions">${otherSuggestions.map(renderCard)}</div>
+    <section
+      class="profile__section profile__onboarding-pointer"
+      data-testid="profile-onboarding-pointer"
+    >
+      <div class="profile__onboarding-pointer-copy">
+        <h2 class="profile__section-title">${t("tabs.gettingStarted")}</h2>
+        <p class="profile__onboarding-pointer-line">
+          ${outstanding
+            ? t("gettingStarted.profilePointer", { count: String(outstanding) })
+            : t("gettingStarted.profilePointerDone")}
+        </p>
       </div>
+      <button
+        type="button"
+        class="btn ${outstanding ? "primary" : ""} profile__onboarding-pointer-action"
+        data-testid="profile-onboarding-pointer-open"
+        @click=${() => props.onNavigateToTab?.("gettingStarted")}
+      >
+        ${t("gettingStarted.open")}
+      </button>
     </section>
   `;
 }
@@ -1572,9 +1548,12 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
-            ${member.role?.trim()
-              ? html`<span class="profile__role-pill">${member.role.trim()}</span>`
-              : nothing}
+            <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
+                 two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
+                 as one oddly punctuated job title. -->
+            ${parseAdminBotMemberRoles(member.role).map(
+              (role) => html`<span class="profile__role-pill">${role}</span>`,
+            )}
             ${renderSlackActivity(member)}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>
@@ -1584,7 +1563,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       </header>
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
-      ${renderSuggestions(state, member)}
+      ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since
            "view as" landed, an admin editing this profile is a thing that happens, and this is
@@ -1592,8 +1571,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       ${renderRecentEdits({
         // Optional-chained for the reason the paper card is: this view is rendered against
         // partial state doubles in tests and against a host that may predate the field.
-        ...(state.adminBotRecentEdits?.[recentEditsKey("member", member.id)] ??
-          EMPTY_RECENT_EDITS),
+        ...(state.adminBotRecentEdits?.[recentEditsKey("member", member.id)] ?? EMPTY_RECENT_EDITS),
         subject: "member",
         onOpen: () => props.onLoadRecentEdits?.("member", member.id),
       })}
