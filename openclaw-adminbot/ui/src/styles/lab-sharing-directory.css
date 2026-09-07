@@ -1,5 +1,9 @@
 /* Keep the service-backed directory on the existing Lab Sharing visual system. */
-lab-sharing-directory {
+lab-sharing-directory,
+lab-sharing-status,
+lab-sharing-member-search,
+lab-sharing-how-to,
+lab-sharing-invites {
   display: block;
   min-width: 0;
 }
@@ -8,6 +12,7 @@ lab-sharing-directory {
   min-width: 0;
 }
 .lab-sharing-directory h3,
+.lab-sharing-directory h4,
 .lab-sharing-directory p {
   margin: 0;
 }
@@ -59,4 +64,14 @@ lab-sharing-directory {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.lab-sharing-directory__form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.lab-sharing-directory__form > p {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
