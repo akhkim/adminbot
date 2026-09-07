@@ -1437,7 +1437,7 @@ const TEMPLATE = `<meta charset="utf-8" />
         return \`<div class="card" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}">
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
       <div class="cname">\${title}</div>
-      <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
+      <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       \${classificationLabels(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
@@ -1465,6 +1465,15 @@ const TEMPLATE = `<meta charset="utf-8" />
       })
       .join("");
   }
+  // Same rewrite the Control UI applies (workshopGroupLabel in ui/.../views/deadlines.ts): the
+  // generated data spells these "EMNLP 2026 Workshops", which puts the least distinguishing word
+  // last and makes a column of headings read as a list of venues. Only a trailing "Workshops" is
+  // moved; anything else is left exactly as the data spells it.
+  function workshopGroupLabel(venueGroup) {
+    const trimmed = String(venueGroup ?? "").trim();
+    const parent = trimmed.replace(/\\s+workshops$/iu, "").trim();
+    return parent && parent !== trimmed ? \`Workshops of \${parent}\` : trimmed;
+  }
   function groupEntries(list) {
     const groups = new Map();
     list.forEach((entry) => {
@@ -1488,7 +1497,7 @@ const TEMPLATE = `<meta charset="utf-8" />
         sections[kind].push(entry);
         groups.set(id, {
           id,
-          label: id,
+          label: workshopGroupLabel(id),
           entries: [entry],
           sections,
         });
