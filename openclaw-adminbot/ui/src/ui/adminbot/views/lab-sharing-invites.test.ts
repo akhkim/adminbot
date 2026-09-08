@@ -11,7 +11,7 @@ it("creates a pending request, retains drafts on failure and clears on logout", 
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({
     ok: true,
     json: async () =>
-      url.endsWith("/lab-sharing")
+      url.endsWith("/lab-sharing/mine")
         ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
         : init?.method === "POST"
           ? { id: "proposal", status: "pending" }
@@ -72,7 +72,7 @@ it("keeps submission success distinct from a failed history refresh", async () =
       return { ok: true, json: async () => ({ status: "pending" }) };
     }
     if (accepted) throw new Error("Offline");
-    return { ok: true, json: async () => url.endsWith("/lab-sharing")
+    return { ok: true, json: async () => url.endsWith("/lab-sharing/mine")
       ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
       : { invites: [] } };
   }));
@@ -96,7 +96,7 @@ it("keeps submission success distinct from a failed history refresh", async () =
 it("offers only managed projects with open help requests and clears a closed selection", async () => {
   vi.useFakeTimers();
   let open = true;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ok: true, json: async () => url.endsWith("/lab-sharing")
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ok: true, json: async () => url.endsWith("/lab-sharing/mine")
     ? {projects: [{id: "open", title: "Open project"}, {id: "closed", title: "Closed project"}], requests: [{paper_id: "open", status: open ? "open" : "closed"}, {paper_id: "closed", status: "closed"}]}
     : {invites: []}})));
   const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
@@ -134,7 +134,7 @@ it("preserves the draft and uncertain outcome when submission times out", async 
         init.signal!.addEventListener("abort", () => reject(new Error("aborted")), {once: true});
       });
     }
-    return {ok: true, json: async () => url.endsWith("/lab-sharing")
+    return {ok: true, json: async () => url.endsWith("/lab-sharing/mine")
       ? {projects: [{id: "project", title: "Project"}], requests: [{paper_id: "project", status: "open"}]}
       : {invites: []}};
   }));

@@ -106,7 +106,7 @@ export class LabSharingInvites extends LitElement {
     this.error = "";
     try {
       const [directory, data] = await Promise.all([
-        this.request("/lab-sharing"),
+        this.request("/lab-sharing/mine"),
         this.request("/lab-sharing/invites"),
       ]);
       if (generation !== this.generation) {

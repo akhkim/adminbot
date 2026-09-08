@@ -457,3 +457,22 @@ it("preserves management flags across discovery pages and rejects changed cursor
  expect(second.next_cursor).toBeNull();
  expect((await fetch(`${continuation}&sort=hours`,{headers})).status).toBe(400);
 });
+
+it("separates managed requests from discovery while retaining private offers", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ mock.service.upsertPaper({id:"other",title:"Other",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","other",draft);
+ mock.service.labSharing().interest("member","other",{hours_per_week:2,note:"My private offer"});
+ const url=`${baseUrl}/lab-sharing/mine`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ const result=await (await fetch(url,{headers})).json();
+ expect(result.requests.map((row:{paper_id:string})=>row.paper_id)).toEqual(["paper-1"]);
+ expect(result.interests[0].note).toBe("My private offer");
+ expect(result.projects.map((row:{id:string})=>row.id)).toEqual(["paper-1"]);
+ mock.service.labSharing().save("member","paper-1",{},true);
+ const closed=await (await fetch(url,{headers})).json();
+ expect(closed.requests[0].status).toBe("closed");
+});

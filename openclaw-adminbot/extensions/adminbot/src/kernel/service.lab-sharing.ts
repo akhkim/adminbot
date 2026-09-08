@@ -57,7 +57,7 @@ export class LabSharingService {
     }) : null;
     return {ok: true as const, status: 200, payload: {requests, next_cursor: nextCursor}};
   }
-  list(memberId: string) {
+  list(memberId: string, managedOnly = false) {
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return failure(403, "A member session is required.");
@@ -87,8 +87,12 @@ export class LabSharingService {
           ];
         }),
         projects: papers.filter(canManage).map((paper) => ({ id: paper.id, title: paper.title })),
-        requests: this.store
-          .listHelpRequests()
+        requests: (managedOnly
+          ? papers.filter(canManage).flatMap(paper => {
+              const request = this.store.getHelpRequest(paper.id);
+              return request ? [request] : [];
+            })
+          : this.store.listHelpRequests())
           .flatMap((request) => {
             const paper = papers.find((p) => p.id === request.paper_id);
             if (!paper || (request.status !== "open" && !canManage(paper))) {
