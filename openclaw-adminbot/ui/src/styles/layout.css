@@ -3655,7 +3655,11 @@
 .profile__toast {
   position: fixed;
   right: var(--space-5);
-  bottom: var(--space-5);
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 160px);
+  overflow: auto;
+  overflow-wrap: anywhere;
   z-index: 60;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
@@ -9566,7 +9570,7 @@ adminbot-deadlines-view {
 }
 
 .decision-banner__label {
-  min-width: 5.5rem;
+  min-width: 9rem;
   color: var(--text-muted);
   font-size: 0.85em;
 }
@@ -10431,4 +10435,17 @@ select.target__select optgroup {
 .profile-overview__adoption-figure {
   font-size: 22px;
   font-weight: 600;
+}
+
+/* Keep bulk visibility controls in the document flow, including on narrow screens. */
+.paper-visibility__panel { padding: var(--space-3); max-width: min(520px, 100%); }
+.paper-visibility__list { max-height: 280px; overflow: auto; margin-block: var(--space-3); }
+.paper-visibility__list label { display: flex; align-items: start; gap: var(--space-2); margin-block: var(--space-2); overflow-wrap: anywhere; }
+.paper-visibility__panel > label { display: grid; gap: var(--space-2); margin-block: var(--space-2); }
+adminbot-paper-visibility { display: block; min-width: 0; margin-bottom: var(--space-3); }
+
+@media (max-width: 600px) {
+  .decision-banner__row > .decision-banner__label { flex-basis: 100%; }
+  .my-work__section-head { flex-direction: column; align-items: stretch; }
+  .my-work .my-work__section-actions { justify-content: flex-start; }
 }

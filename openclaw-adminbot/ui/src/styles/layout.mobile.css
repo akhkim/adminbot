@@ -1171,7 +1171,7 @@
   .profile__toast {
     right: max(var(--space-3), var(--safe-area-right));
     left: max(var(--space-3), var(--safe-area-left));
-    bottom: calc(var(--space-3) + var(--safe-area-bottom));
+    bottom: calc(80px + var(--safe-area-bottom));
   }
 }
 

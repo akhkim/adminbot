@@ -2710,7 +2710,12 @@ export async function fetchMemberSession(
   }
   const body = await readJson(response);
   if (!response.ok) {
-    return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
+    // Only an explicit authentication rejection invalidates a stored login. Proxy outages,
+    // rate limits and rolling-deploy 404s must not turn a refresh into a forced sign-in.
+    if (response.status !== 401 && response.status !== 403) {
+      return { ok: false, kind: "unreachable" };
+    }
+    return { ok: false, kind: "auth-failed" };
   }
   return { ok: true, value: body as MemberSessionInfo };
 }

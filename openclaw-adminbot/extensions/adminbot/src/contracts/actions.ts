@@ -1646,6 +1646,8 @@ export type AdminBotPaperTimeline = {
   items: AdminBotPaperTimelineItem[];
 };
 export type AdminBotPaperArtifactLinks = {
+  /** Publication track is independent of presentation_type; blank explicitly clears it. */
+  publication_track?: string;
   conference?: string;
   topic?: string;
   brainstorming_doc_url?: string;

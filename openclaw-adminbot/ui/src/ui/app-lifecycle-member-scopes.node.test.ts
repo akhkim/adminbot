@@ -113,6 +113,18 @@ describe("handleConnected member operator scopes", () => {
     vi.stubGlobal("window", { addEventListener: vi.fn() });
   });
 
+  it("waits for bootstrap before restoring a member session", async () => {
+    const host = createHost(null);
+    host.settings.token = "";
+    let ready!: () => void;
+    loadBootstrapMock.mockReturnValue(new Promise<void>((resolve) => { ready = resolve; }));
+    resumeMemberSessionMock.mockClear();
+    handleConnected(host as never);
+    expect(resumeMemberSessionMock).not.toHaveBeenCalled();
+    ready();
+    await vi.waitFor(() => expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1));
+  });
+
   it("reconnects when admin privilege resolves after the initial connect", async () => {
     const host = createHost(null);
     loadMemberPrivilegeMock.mockImplementation(async () => {
