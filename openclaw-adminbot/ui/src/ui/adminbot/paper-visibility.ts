@@ -11,7 +11,7 @@ export class PaperVisibility extends LitElement {
   override createRenderRoot() {
     return this;
   }
-  override updated(changed: Map<string, unknown>) {
+  override willUpdate(changed: Map<string, unknown>) {
     if (changed.has("memberId")) {
       this.selected = new Set();
       this.query = "";
