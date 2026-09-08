@@ -38,7 +38,8 @@ export class LabSharingService {
       owner_name: this.store.getLabMember(request.owner_id)?.name ?? "Lab member", can_manage: canManage}}};
   }
   discover(memberId: string, params: URLSearchParams) {
-    if (!this.store.getLabMember(memberId)) return failure(403, "A member session is required.");
+    const member = this.store.getLabMember(memberId);
+    if (!member) return failure(403, "A member session is required.");
     const query = parseLabSharingDiscoveryQuery(params);
     if (typeof query === "string") return failure(400, query);
     if (params.getAll("cursor").length > 1) return failure(400, "Provide cursor only once.");
@@ -46,7 +47,10 @@ export class LabSharingService {
     const after = token === null ? undefined : decodeDiscoveryCursor(query, token);
     if (typeof after === "string") return failure(400, after);
     const rows = this.store.discoverHelpRequests(query, after);
-    const requests = rows.slice(0, query.limit);
+    const requests = rows.slice(0, query.limit).map((request) => {
+      const paper = this.store.getPaper(request.paper_id);
+      return {...request, can_manage: Boolean(paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)))};
+    });
     const last = requests.at(-1);
     const nextCursor = rows.length > query.limit && last ? encodeDiscoveryCursor(query, {
       title: last.title, hours: last.hours_per_week, paperId: last.paper_id,

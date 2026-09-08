@@ -437,3 +437,23 @@ it("scopes direct project lookup and hides closed requests from non-managers", a
  expect((await fetch(url,{headers})).status).toBe(404);
  expect((await fetch(`${baseUrl}/lab-sharing/projects/%ZZ`,{headers})).status).toBe(400);
 });
+
+it("preserves management flags across discovery pages and rejects changed cursor filters", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ mock.service.upsertPaper({id:"admin-page",title:"AAA",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","admin-page",draft);
+ const url=`${baseUrl}/lab-sharing/discover?limit=1`;
+ const first=await (await fetch(url,{headers})).json();
+ expect(first.requests).toHaveLength(1);
+ expect(first.requests[0].paper_id).toBe("admin-page");
+ expect(first.requests[0].can_manage).toBe(false);
+ expect(typeof first.next_cursor).toBe("string");
+ const continuation=`${url}&cursor=${encodeURIComponent(first.next_cursor)}`;
+ const second=await (await fetch(continuation,{headers})).json();
+ expect(second.requests[0].paper_id).toBe("paper-1");
+ expect(second.requests[0].can_manage).toBe(true);
+ expect(second.next_cursor).toBeNull();
+ expect((await fetch(`${continuation}&sort=hours`,{headers})).status).toBe(400);
+});
