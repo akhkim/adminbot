@@ -125,3 +125,32 @@ it("releases a stalled load and offers a retry after timeout", async () => {
   expect(el.textContent).toContain("Invitations took too long to load");
   expect(el.querySelector("button")!.disabled).toBe(false);
 });
+
+it("preserves the draft and uncertain outcome when submission times out", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      return new Promise((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new Error("aborted")), {once: true});
+      });
+    }
+    return {ok: true, json: async () => url.endsWith("/lab-sharing")
+      ? {projects: [{id: "project", title: "Project"}], requests: [{paper_id: "project", status: "open"}]}
+      : {invites: []}};
+  }));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn(); el.sessionToken = "member";
+  document.body.append(el); await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  const project = el.querySelector("select")!;
+  project.value = "project"; project.dispatchEvent(new Event("change"));
+  const note = el.querySelector("textarea")!;
+  note.value = "Review synthetic traces"; note.dispatchEvent(new Event("input"));
+  el.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+  await vi.advanceTimersByTimeAsync(30_000); await el.updateComplete;
+  expect(el.textContent).toContain("It may have been accepted. Refresh invitations before trying again.");
+  expect(el.textContent).not.toContain("Invitation request: Pending");
+  expect(note.value).toBe("Review synthetic traces");
+  expect(project.value).toBe("project");
+  expect(el.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+});
