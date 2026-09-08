@@ -46,6 +46,10 @@ export async function handleLabSharingRoute(
     sendJson(res, 200, await askMemberGuidebook(question.trim()));
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab-sharing/discover") {
+    sendServiceResult(res, service.labSharing().discover(memberId, url.searchParams));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab-sharing") {
     sendServiceResult(res, service.labSharing().list(memberId));
     return;

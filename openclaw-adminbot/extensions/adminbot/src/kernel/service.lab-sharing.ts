@@ -1,3 +1,5 @@
+import {parseLabSharingDiscoveryQuery} from "../contracts/lab-sharing-discovery.js";
+import {decodeDiscoveryCursor, encodeDiscoveryCursor} from "../contracts/lab-sharing-discovery-cursor.js";
 import { randomUUID } from "node:crypto";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../contracts/actions.js";
 import { validateHelpInterest } from "../contracts/lab-sharing-interest.js";
@@ -24,6 +26,22 @@ export class LabSharingService {
   }
   searchMembers(memberId: string, query: string) {
     return searchLabSharingMembers(this.store, this.ownsPaper, memberId, query);
+  }
+  discover(memberId: string, params: URLSearchParams) {
+    if (!this.store.getLabMember(memberId)) return failure(403, "A member session is required.");
+    const query = parseLabSharingDiscoveryQuery(params);
+    if (typeof query === "string") return failure(400, query);
+    if (params.getAll("cursor").length > 1) return failure(400, "Provide cursor only once.");
+    const token = params.get("cursor");
+    const after = token === null ? undefined : decodeDiscoveryCursor(query, token);
+    if (typeof after === "string") return failure(400, after);
+    const rows = this.store.discoverHelpRequests(query, after);
+    const requests = rows.slice(0, query.limit);
+    const last = requests.at(-1);
+    const nextCursor = rows.length > query.limit && last ? encodeDiscoveryCursor(query, {
+      title: last.title, hours: last.hours_per_week, paperId: last.paper_id,
+    }) : null;
+    return {ok: true as const, status: 200, payload: {requests, next_cursor: nextCursor}};
   }
   list(memberId: string) {
     const member = this.store.getLabMember(memberId);

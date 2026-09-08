@@ -400,3 +400,23 @@ it("creates deduplicated approval-bound invitations without disclosing contacts"
   mock.service.labSharing().save("member", "paper-1", {}, true);
   expect((await send(input)).status).toBe(409);
 });
+
+it("gates discovery and rejects malformed pagination without exposing private offers", async () => {
+ const {mock, baseUrl} = await startLab();
+ const url = `${baseUrl}/lab-sharing/discover`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ const headers = await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ const response = await fetch(`${url}?limit=1`,{headers});
+ expect(response.status).toBe(200);
+ const body = await response.json();
+ expect(body.requests).toHaveLength(1);
+ expect(body.next_cursor).toBeNull();
+ expect(body.interests).toBeUndefined();
+ for(const query of ["limit=51","cursor=bad","cursor=a&cursor=b"]) {
+   expect((await fetch(`${url}?${query}`,{headers})).status).toBe(400);
+ }
+ mock.service.labSharing().save("member","paper-1",{},true);
+ expect((await (await fetch(url,{headers})).json()).requests).toEqual([]);
+});
