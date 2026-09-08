@@ -1,7 +1,8 @@
+import {discoverMemoryHelpRequests} from "./lab-sharing-discovery-memory.js";
 import { DatabaseSync } from "node:sqlite";
 import {expect, it} from "vitest";
 import {discoverHelpRequests} from "./lab-sharing-discovery.js";
-import {ensureLabSharingSchema, saveHelpRequest} from "./lab-sharing.js";
+import {ensureLabSharingSchema, saveHelpRequest, listHelpRequests} from "./lab-sharing.js";
 it("bounds rows and pages tied titles while excluding closed requests", () => {
  const db = new DatabaseSync(":memory:");
  try {
@@ -16,10 +17,12 @@ it("bounds rows and pages tied titles while excluding closed requests", () => {
   const query = {query:"élodie qa", terms:["élodie","qa"], maxHours:3, sort:"title" as const, limit:10};
   const first = discoverHelpRequests(db, query);
   expect(first).toHaveLength(11);
+  expect(discoverMemoryHelpRequests(listHelpRequests(db), () => ({title:"Agents"}), () => ({name:"Élodie"}), query)).toEqual(first);
   expect(first[0].paper_id).toBe("p01");
   const last = first[9];
   const second = discoverHelpRequests(db, query, {title:last.title, hours:last.hours_per_week, paperId:last.paper_id});
   expect(second[0].paper_id).toBe("p11");
+  expect(discoverMemoryHelpRequests(listHelpRequests(db), () => ({title:"Agents"}), () => ({name:"Élodie"}), query, {title:last.title,hours:last.hours_per_week,paperId:last.paper_id})).toEqual(second);
   expect(discoverHelpRequests(db, {...query,maxHours:1})).toEqual([]);
   expect(discoverHelpRequests(db, {...query,terms:["%"]})).toEqual([]);
  } finally {db.close();}

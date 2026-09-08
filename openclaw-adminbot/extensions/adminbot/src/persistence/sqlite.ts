@@ -1,3 +1,7 @@
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { discoverHelpRequests } from "./lab-sharing-discovery.js";
 import { ensureDirectorStatusSchema, saveDirectorStatus, readDirectorStatus } from "./lab-sharing-status.js";
 import { ensureLabInterestSchema, saveHelpInterest, listHelpInterests } from "./lab-sharing-interest.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
@@ -2124,6 +2128,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);
+  }
+  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
+    return discoverHelpRequests(this.db, query, after);
   }
   listHelpRequests(): LabHelpRequest[] {
     return listHelpRequests(this.db);

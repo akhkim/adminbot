@@ -1,3 +1,6 @@
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -369,6 +372,7 @@ export type AdminBotServiceStore = {
   readDirectorStatus(): LabDirectorStatus | null;
   saveHelpRequest(request: LabHelpRequest): void;
   listHelpRequests(): LabHelpRequest[];
+  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
