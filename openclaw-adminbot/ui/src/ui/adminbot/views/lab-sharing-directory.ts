@@ -386,7 +386,7 @@ export class LabSharingDirectory extends LitElement {
               <button class="btn" @click=${() => { this.query = this.maxHours = ""; this.revealedProject = ""; this.scheduleDiscovery(); }}>Clear filters</button>
             </div>
             ${this.revealedProject ? html`<p class="muted">Selected project shown first.</p>` : nothing}
-            <p class="muted" role="status">${filtered.length} projects loaded${this.nextCursor ? " · more available" : ""}</p>
+            <p class="muted" role="status">${filtered.length} ${filtered.length === 1 ? "project" : "projects"} loaded${this.nextCursor ? " · more available" : ""}</p>
             ${filtered.length
               ? filtered.map(
                   (request) => html`<article
