@@ -85,3 +85,22 @@ it("keeps an offer draft after failure and withdraws a private saved offer",asyn
  await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
  expect(fetcher.mock.calls.some(([url,init])=>url.endsWith("/interest/withdraw")&&init?.method==="POST")).toBe(true);
 });
+
+it("does not report a saved change as failed when management refresh fails",async()=>{
+ let saved=false;
+ const fetcher=vi.fn(async(url:string,init?:RequestInit)=>{
+  if(init?.method==="PUT"){saved=true;return response(mine);}
+  if(saved && url.endsWith("/mine"))throw new Error("Offline refresh");
+  return response(url.includes("/discover?")?{requests:[project()],next_cursor:null}:mine);
+ });
+ const {el}=await mount(fetcher);
+ const select=el.querySelector<HTMLSelectElement>("form select")!;select.value="p1";select.dispatchEvent(new Event("change"));
+ const note=el.querySelector<HTMLTextAreaElement>("form textarea")!;note.value="Saved text";note.dispatchEvent(new Event("input"));
+ el.querySelector("form")!.dispatchEvent(new Event("submit",{cancelable:true}));
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.textContent).toContain("Help request saved");
+ expect(el.textContent).toContain("Your change was saved, but the page could not refresh");
+ expect(note.value).toBe("Saved text");
+ expect(el.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
+ expect(fetcher.mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
+});

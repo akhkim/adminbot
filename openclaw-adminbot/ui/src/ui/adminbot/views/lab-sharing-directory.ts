@@ -172,7 +172,14 @@ export class LabSharingDirectory extends LitElement {
       if (generation !== this.generation) {
         return false;
       }
-      const managed = body === undefined ? result as Directory : await this.read("/mine") as Directory;
+      let managed: Directory;
+      try {
+        managed = body === undefined ? result as Directory : await this.read("/mine") as Directory;
+      } catch {
+        if (generation !== this.generation) return false;
+        this.error = "Your change was saved, but the page could not refresh. Use Refresh projects to see the latest state.";
+        return true;
+      }
       if (generation !== this.generation) return false;
       this.data = managed;
       void this.loadDiscovery();
