@@ -6,6 +6,9 @@ export function ensureLabSharingSchema(db: DatabaseSync): void {
   db.exec(`CREATE TABLE IF NOT EXISTS adminbot_help_requests (
     paper_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL
   )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS adminbot_help_requests_status_hours_idx
+    ON adminbot_help_requests(json_extract(payload_json, '$.status'),
+      json_extract(payload_json, '$.hours_per_week'), paper_id)`);
 }
 export function saveHelpRequest(db: DatabaseSync, request: LabHelpRequest): void {
   db.prepare(

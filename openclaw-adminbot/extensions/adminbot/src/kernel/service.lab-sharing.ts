@@ -1,7 +1,10 @@
-import {parseLabSharingDiscoveryQuery} from "../contracts/lab-sharing-discovery.js";
-import {decodeDiscoveryCursor, encodeDiscoveryCursor} from "../contracts/lab-sharing-discovery-cursor.js";
 import { randomUUID } from "node:crypto";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../contracts/actions.js";
+import {
+  decodeDiscoveryCursor,
+  encodeDiscoveryCursor,
+} from "../contracts/lab-sharing-discovery-cursor.js";
+import { parseLabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
 import { validateHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { validateHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotServiceStore } from "./service.js";
@@ -32,10 +35,23 @@ export class LabSharingService {
     if (!member) return failure(403, "A member session is required.");
     const paper = this.store.getPaper(paperId);
     const request = this.store.getHelpRequest(paperId);
-    const canManage = Boolean(paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)));
-    if (!paper || !request || (request.status !== "open" && !canManage)) return failure(404, "Project help request not found.");
-    return {ok: true as const, status: 200, payload: {request: {...request, title: paper.title,
-      owner_name: this.store.getLabMember(request.owner_id)?.name ?? "Lab member", can_manage: canManage}}};
+    const canManage = Boolean(
+      paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)),
+    );
+    if (!paper || !request || (request.status !== "open" && !canManage))
+      return failure(404, "Project help request not found.");
+    return {
+      ok: true as const,
+      status: 200,
+      payload: {
+        request: {
+          ...request,
+          title: paper.title,
+          owner_name: this.store.getLabMember(request.owner_id)?.name ?? "Lab member",
+          can_manage: canManage,
+        },
+      },
+    };
   }
   discover(memberId: string, params: URLSearchParams) {
     const member = this.store.getLabMember(memberId);
@@ -49,13 +65,23 @@ export class LabSharingService {
     const rows = this.store.discoverHelpRequests(query, after);
     const requests = rows.slice(0, query.limit).map((request) => {
       const paper = this.store.getPaper(request.paper_id);
-      return {...request, can_manage: Boolean(paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)))};
+      return {
+        ...request,
+        can_manage: Boolean(
+          paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)),
+        ),
+      };
     });
     const last = requests.at(-1);
-    const nextCursor = rows.length > query.limit && last ? encodeDiscoveryCursor(query, {
-      title: last.title, hours: last.hours_per_week, paperId: last.paper_id,
-    }) : null;
-    return {ok: true as const, status: 200, payload: {requests, next_cursor: nextCursor}};
+    const nextCursor =
+      rows.length > query.limit && last
+        ? encodeDiscoveryCursor(query, {
+            title: last.title,
+            hours: last.hours_per_week,
+            paperId: last.paper_id,
+          })
+        : null;
+    return { ok: true as const, status: 200, payload: { requests, next_cursor: nextCursor } };
   }
   list(memberId: string, managedOnly = false) {
     const member = this.store.getLabMember(memberId);
@@ -88,11 +114,12 @@ export class LabSharingService {
         }),
         projects: papers.filter(canManage).map((paper) => ({ id: paper.id, title: paper.title })),
         requests: (managedOnly
-          ? papers.filter(canManage).flatMap(paper => {
+          ? papers.filter(canManage).flatMap((paper) => {
               const request = this.store.getHelpRequest(paper.id);
               return request ? [request] : [];
             })
-          : this.store.listHelpRequests())
+          : this.store.listHelpRequests()
+        )
           .flatMap((request) => {
             const paper = papers.find((p) => p.id === request.paper_id);
             if (!paper || (request.status !== "open" && !canManage(paper))) {
@@ -111,7 +138,7 @@ export class LabSharingService {
       },
     };
   }
-  interest(memberId: string, paperId: string, input: unknown, withdraw = false) {
+  interest(memberId: string, paperId: string, input: unknown, withdraw = false, minimal = false) {
     const member = this.store.getLabMember(memberId);
     const paper = this.store.getPaper(paperId);
     if (!member) {
@@ -157,9 +184,11 @@ export class LabSharingService {
       actor: memberId,
       details: { paper_id: paperId },
     });
-    return this.list(memberId);
+    return minimal
+      ? { ok: true as const, status: 200, payload: { saved: true } }
+      : this.list(memberId);
   }
-  save(memberId: string, paperId: string, input: unknown, close = false) {
+  save(memberId: string, paperId: string, input: unknown, close = false, minimal = false) {
     const member = this.store.getLabMember(memberId);
     const paper = this.store.getPaper(paperId);
     if (!member) {
@@ -195,6 +224,8 @@ export class LabSharingService {
       actor: memberId,
       details: { paper_id: paperId },
     });
-    return this.list(memberId);
+    return minimal
+      ? { ok: true as const, status: 200, payload: { saved: true } }
+      : this.list(memberId);
   }
 }

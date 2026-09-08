@@ -175,3 +175,8 @@ Signed-in members can use `GET /lab-sharing/discover` with `q` (up to 200 charac
 `GET /lab-sharing/mine` returns managed project choices, managed requests (including closed ones), and privacy-scoped interests. `GET /lab-sharing/projects/:paperId` resolves a direct link without loading all discovery pages; closed requests are visible only to managers. The legacy combined endpoint is preserved for compatibility.
 
 The directory debounces filter changes, rejects stale responses, appends pages without duplicate project IDs and preserves loaded rows when a continuation fails. Offers are limited to loaded discovery projects. This bounds discovery response rows and avoids downloading all open requests during ordinary discovery. Management/interest scans and legacy mutation responses remain separate scaling limitations; this is not a claim that all queries are indexed or constant-time.
+
+
+The current directory sends `Prefer: return=minimal` on mutations. Successful responses contain `{ "saved": true }`; clients without that header keep the legacy combined response. The UI reloads private management and the current discovery page separately. Offer forms are attached to their matching project cards.
+
+An additive expression index covers request status and weekly hours. A local in-memory benchmark with10,000 synthetic projects (12 reads per query) measured lowest-hours search with a three-hour budget at approximately8.4ms median before the index and1.4ms after. This is a local observation, not a production latency guarantee; title sorting and free-text scans remain dataset-dependent.

@@ -49,8 +49,11 @@ export async function handleLabSharingRoute(
   const detail = /^\/lab-sharing\/projects\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "GET" && detail) {
     let paperId: string;
-    try { paperId = decodeURIComponent(detail[1]); } catch {
-      sendJson(res, 400, {error: {message: "Invalid project identifier."}}); return;
+    try {
+      paperId = decodeURIComponent(detail[1]);
+    } catch {
+      sendJson(res, 400, { error: { message: "Invalid project identifier." } });
+      return;
     }
     sendServiceResult(res, service.labSharing().projectDetail(memberId, paperId));
     return;
@@ -113,7 +116,13 @@ export async function handleLabSharingRoute(
       res,
       service
         .labSharing()
-        .interest(memberId, decodeURIComponent(interest[1]), body, Boolean(interest[2])),
+        .interest(
+          memberId,
+          decodeURIComponent(interest[1]),
+          body,
+          Boolean(interest[2]),
+          req.headers.prefer === "return=minimal",
+        ),
     );
     return;
   }
@@ -122,7 +131,15 @@ export async function handleLabSharingRoute(
     const body = match[2] ? {} : await readJson(req, 16_384);
     sendServiceResult(
       res,
-      service.labSharing().save(memberId, decodeURIComponent(match[1]), body, Boolean(match[2])),
+      service
+        .labSharing()
+        .save(
+          memberId,
+          decodeURIComponent(match[1]),
+          body,
+          Boolean(match[2]),
+          req.headers.prefer === "return=minimal",
+        ),
     );
     return;
   }

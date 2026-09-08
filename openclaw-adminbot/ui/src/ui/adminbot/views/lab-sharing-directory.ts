@@ -102,9 +102,13 @@ export class LabSharingDirectory extends LitElement {
     this.discoveryTimer = setTimeout(() => void this.loadDiscovery(), 250);
   }
   private async read(path: string) {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing${path || "/mine"}`, {
-      headers: {Authorization: `Bearer ${this.sessionToken}`}, signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetch(
+      `${this.baseUrl.replace(/\/$/u, "")}/lab-sharing${path || "/mine"}`,
+      {
+        headers: { Authorization: `Bearer ${this.sessionToken}` },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message ?? "Could not load projects.");
     return data;
@@ -114,17 +118,20 @@ export class LabSharingDirectory extends LitElement {
     const generation = ++this.discoveryGeneration;
     this.discoveryBusy = true;
     this.error = "";
-    const params = new URLSearchParams({q: this.query, sort: this.sort, limit: "10"});
+    const params = new URLSearchParams({ q: this.query, sort: this.sort, limit: "10" });
     if (this.maxHours) params.set("max_hours", this.maxHours);
     if (more && this.nextCursor) params.set("cursor", this.nextCursor);
     try {
       const page = await this.read(`/discover?${params}`);
       if (generation !== this.discoveryGeneration) return;
       const rows = more ? [...this.discovered, ...page.requests] : page.requests;
-      this.discovered = [...new Map(rows.map((row: HelpRequest) => [row.paper_id, row])).values()] as HelpRequest[];
+      this.discovered = [
+        ...new Map(rows.map((row: HelpRequest) => [row.paper_id, row])).values(),
+      ] as HelpRequest[];
       this.nextCursor = page.next_cursor;
     } catch (error) {
-      if (generation === this.discoveryGeneration) this.error = error instanceof Error ? error.message : "Could not load projects.";
+      if (generation === this.discoveryGeneration)
+        this.error = error instanceof Error ? error.message : "Could not load projects.";
     } finally {
       if (generation === this.discoveryGeneration) this.discoveryBusy = false;
     }
@@ -136,13 +143,22 @@ export class LabSharingDirectory extends LitElement {
       const data = await this.read(`/projects/${encodeURIComponent(paperId)}`);
       if (generation !== this.discoveryGeneration || !this.sessionToken) return;
       this.revealedProject = paperId;
-      this.discovered = [data.request, ...this.discovered.filter(row => row.paper_id !== paperId)];
+      this.discovered = [
+        data.request,
+        ...this.discovered.filter((row) => row.paper_id !== paperId),
+      ];
       await this.updateComplete;
-      const card = this.querySelector<HTMLElement>(`[id="lab-project-${encodeURIComponent(paperId)}"]`);
-      card?.scrollIntoView({block: "center"}); card?.focus({preventScroll: true});
+      const card = this.querySelector<HTMLElement>(
+        `[id="lab-project-${encodeURIComponent(paperId)}"]`,
+      );
+      card?.scrollIntoView({ block: "center" });
+      card?.focus({ preventScroll: true });
     } catch (error) {
-      if (generation === this.discoveryGeneration) this.error = error instanceof Error ? error.message : "Project unavailable.";
-    } finally { if (generation === this.discoveryGeneration) this.discoveryBusy = false; }
+      if (generation === this.discoveryGeneration)
+        this.error = error instanceof Error ? error.message : "Project unavailable.";
+    } finally {
+      if (generation === this.discoveryGeneration) this.discoveryBusy = false;
+    }
   }
   private async request(path = "", body?: unknown): Promise<boolean> {
     if (this.busy || !this.sessionToken) {
@@ -152,19 +168,23 @@ export class LabSharingDirectory extends LitElement {
     this.busy = true;
     this.error = "";
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing${path || "/mine"}`, {
-        method:
-          body === undefined
-            ? "GET"
-            : path.endsWith("/close") || path.endsWith("/withdraw")
-              ? "POST"
-              : "PUT",
-        headers: {
-          Authorization: `Bearer ${this.sessionToken}`,
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `${this.baseUrl.replace(/\/$/u, "")}/lab-sharing${path || "/mine"}`,
+        {
+          method:
+            body === undefined
+              ? "GET"
+              : path.endsWith("/close") || path.endsWith("/withdraw")
+                ? "POST"
+                : "PUT",
+          headers: {
+            Authorization: `Bearer ${this.sessionToken}`,
+            "Content-Type": "application/json",
+            ...(body === undefined ? {} : { Prefer: "return=minimal" }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
+      );
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error?.message ?? "Could not load Lab Sharing.");
@@ -174,10 +194,12 @@ export class LabSharingDirectory extends LitElement {
       }
       let managed: Directory;
       try {
-        managed = body === undefined ? result as Directory : await this.read("/mine") as Directory;
+        managed =
+          body === undefined ? (result as Directory) : ((await this.read("/mine")) as Directory);
       } catch {
         if (generation !== this.generation) return false;
-        this.error = "Your change was saved, but the page could not refresh. Use Refresh projects to see the latest state.";
+        this.error =
+          "Your change was saved, but the page could not refresh. Use Refresh projects to see the latest state.";
         return true;
       }
       if (generation !== this.generation) return false;
@@ -223,81 +245,80 @@ export class LabSharingDirectory extends LitElement {
       hours_per_week: request.hours_per_week,
       timeline: request.timeline,
     };
-    this.querySelector<HTMLSelectElement>("select")?.focus();
+    void this.updateComplete.then(() =>
+      this.querySelector<HTMLSelectElement>("form[data-help-editor] select")?.focus(),
+    );
+  }
+  private renderOffer(request: HelpRequest) {
+    if (request.can_manage || request.status !== "open") return nothing;
+    const own = (this.data?.interests ?? []).filter((interest) => interest.is_own);
+    const saved = own.find((interest) => interest.paper_id === request.paper_id);
+    const draft = this.offerDrafts[request.paper_id] ?? {
+      hours_per_week: String(saved?.hours_per_week ?? 1),
+      note: saved?.note ?? "",
+    };
+    const update = (field: "hours_per_week" | "note", value: string) => {
+      this.offerDrafts = {
+        ...this.offerDrafts,
+        [request.paper_id]: { ...draft, [field]: value },
+      };
+    };
+    return html`<form
+      aria-label=${`Offer for ${request.title}`}
+      @submit=${async (event: SubmitEvent) => {
+        event.preventDefault();
+        this.notice = "";
+        if (
+          await this.request(`/requests/${encodeURIComponent(request.paper_id)}/interest`, {
+            hours_per_week: Number(draft.hours_per_week),
+            note: draft.note,
+          })
+        ) {
+          this.notice = "Offer saved. Project authors and administrators can review it.";
+        }
+      }}
+    >
+      <fieldset class="lab-sharing-ask" ?disabled=${this.busy}>
+        <legend>${request.title}</legend>
+        <p>
+          Your availability and note are visible to you, project authors, and administrators.
+          Offering help does not add you to the project.
+        </p>
+        <label class="lab-sharing-ask__field"
+          ><span class="lab-sharing-ask__label">Your hours per week</span>
+          <input
+            class="lab-sharing-ask__input"
+            type="number"
+            required
+            min="0.5"
+            max="168"
+            step="0.5"
+            .value=${draft.hours_per_week}
+            @input=${(event: Event) =>
+              update("hours_per_week", (event.target as HTMLInputElement).value)}
+        /></label>
+        <label class="lab-sharing-ask__field"
+          ><span class="lab-sharing-ask__label">Note (optional)</span>
+          <textarea
+            class="lab-sharing-ask__textarea"
+            maxlength="1000"
+            .value=${draft.note}
+            @input=${(event: Event) => update("note", (event.target as HTMLTextAreaElement).value)}
+          ></textarea>
+        </label>
+        <button class="btn primary" type="submit">
+          ${saved?.status === "active" ? "Update offer" : "Offer to help"}
+        </button>
+      </fieldset>
+    </form>`;
   }
   private renderInterests() {
     if (!this.data) {
       return nothing;
     }
     const interests = this.data.interests ?? [];
-    const eligible = this.discovered.filter(
-      (request) => request.status === "open" && !request.can_manage,
-    );
     const own = interests.filter((interest) => interest.is_own);
     return html`
-      ${eligible.length ? html`<h3 class="lab-sharing-seek__title">Offer to help</h3>` : nothing}
-      ${eligible.map((request) => {
-        const saved = own.find((interest) => interest.paper_id === request.paper_id);
-        const draft = this.offerDrafts[request.paper_id] ?? {
-          hours_per_week: String(saved?.hours_per_week ?? 1),
-          note: saved?.note ?? "",
-        };
-        const update = (field: "hours_per_week" | "note", value: string) => {
-          this.offerDrafts = {
-            ...this.offerDrafts,
-            [request.paper_id]: { ...draft, [field]: value },
-          };
-        };
-        return html`<form
-          aria-label=${`Offer for ${request.title}`}
-          @submit=${async (event: SubmitEvent) => {
-            event.preventDefault();
-            this.notice = "";
-            if (
-              await this.request(`/requests/${encodeURIComponent(request.paper_id)}/interest`, {
-                hours_per_week: Number(draft.hours_per_week),
-                note: draft.note,
-              })
-            ) {
-              this.notice = "Offer saved. Project authors and administrators can review it.";
-            }
-          }}
-        >
-          <fieldset class="lab-sharing-ask" ?disabled=${this.busy}>
-            <legend>${request.title}</legend>
-            <p>
-              Your availability and note are visible to you, project authors, and administrators.
-              Offering help does not add you to the project.
-            </p>
-            <label class="lab-sharing-ask__field"
-              ><span class="lab-sharing-ask__label">Your hours per week</span>
-              <input
-                class="lab-sharing-ask__input"
-                type="number"
-                required
-                min="0.5"
-                max="168"
-                step="0.5"
-                .value=${draft.hours_per_week}
-                @input=${(event: Event) =>
-                  update("hours_per_week", (event.target as HTMLInputElement).value)}
-            /></label>
-            <label class="lab-sharing-ask__field"
-              ><span class="lab-sharing-ask__label">Note (optional)</span>
-              <textarea
-                class="lab-sharing-ask__textarea"
-                maxlength="1000"
-                .value=${draft.note}
-                @input=${(event: Event) =>
-                  update("note", (event.target as HTMLTextAreaElement).value)}
-              ></textarea>
-            </label>
-            <button class="btn primary" type="submit">
-              ${saved?.status === "active" ? "Update offer" : "Offer to help"}
-            </button>
-          </fieldset>
-        </form>`;
-      })}
       ${own.length ? html`<h3 class="lab-sharing-seek__title">Your offers</h3>` : nothing}
       ${own.map(
         (interest) => html`<article class="lab-sharing-request">
@@ -375,25 +396,61 @@ export class LabSharingDirectory extends LitElement {
                 .value=${this.query}
                 @input=${(event: Event) => {
                   this.query = (event.target as HTMLInputElement).value;
-                              this.revealedProject = "";
+                  this.revealedProject = "";
                   this.scheduleDiscovery();
                 }}
             /></label>
             <div class="lab-sharing-directory__filters">
-              <label class="lab-sharing-ask__field">Maximum hours per week
-                <input class="lab-sharing-ask__input" type="number" min="1" placeholder="Any" .value=${this.maxHours}
-                  @input=${(event: Event) => { this.maxHours = (event.target as HTMLInputElement).value; this.revealedProject = ""; this.scheduleDiscovery(); }} />
+              <label class="lab-sharing-ask__field"
+                >Maximum hours per week
+                <input
+                  class="lab-sharing-ask__input"
+                  type="number"
+                  min="0.5"
+                  max="168"
+                  step="0.5"
+                  placeholder="Any"
+                  .value=${this.maxHours}
+                  @input=${(event: Event) => {
+                    this.maxHours = (event.target as HTMLInputElement).value;
+                    this.revealedProject = "";
+                    this.scheduleDiscovery();
+                  }}
+                />
               </label>
-              <label class="lab-sharing-ask__field">Sort projects
-                <select class="lab-sharing-ask__select" .value=${this.sort}
-                  @change=${(event: Event) => { this.sort = (event.target as HTMLSelectElement).value; this.revealedProject = ""; this.scheduleDiscovery(); }}>
-                  <option value="title">Project name</option><option value="hours">Lowest time commitment</option>
+              <label class="lab-sharing-ask__field"
+                >Sort projects
+                <select
+                  class="lab-sharing-ask__select"
+                  .value=${this.sort}
+                  @change=${(event: Event) => {
+                    this.sort = (event.target as HTMLSelectElement).value;
+                    this.revealedProject = "";
+                    this.scheduleDiscovery();
+                  }}
+                >
+                  <option value="title">Project name</option>
+                  <option value="hours">Lowest time commitment</option>
                 </select>
               </label>
-              <button class="btn" @click=${() => { this.query = this.maxHours = ""; this.revealedProject = ""; this.scheduleDiscovery(); }}>Clear filters</button>
+              <button
+                class="btn"
+                @click=${() => {
+                  this.query = this.maxHours = "";
+                  this.revealedProject = "";
+                  this.scheduleDiscovery();
+                }}
+              >
+                Clear filters
+              </button>
             </div>
-            ${this.revealedProject ? html`<p class="muted">Selected project shown first.</p>` : nothing}
-            <p class="muted" role="status">${filtered.length} ${filtered.length === 1 ? "project" : "projects"} loaded${this.nextCursor ? " · more available" : ""}</p>
+            ${this.revealedProject
+              ? html`<p class="muted">Selected project shown first.</p>`
+              : nothing}
+            <p class="muted" role="status">
+              ${filtered.length} ${filtered.length === 1 ? "project" : "projects"}
+              loaded${this.nextCursor ? " · more available" : ""}
+            </p>
             ${filtered.length
               ? filtered.map(
                   (request) => html`<article
@@ -444,16 +501,27 @@ export class LabSharingDirectory extends LitElement {
                           </button>
                         </div>`
                       : nothing}
+                    ${this.renderOffer(request)}
                   </article>`,
                 )
               : html`<p>
-                  ${this.discoveryBusy ? "Searching projects…" : "No projects match these filters. Try fewer search terms or increase the weekly hours."}
+                  ${this.discoveryBusy
+                    ? "Searching projects…"
+                    : "No projects match these filters. Try fewer search terms or increase the weekly hours."}
                 </p>`}
-            ${this.nextCursor ? html`<button class="btn" ?disabled=${this.discoveryBusy} @click=${() => this.loadDiscovery(true)}>Show more projects</button>` : nothing}
+            ${this.nextCursor
+              ? html`<button
+                  class="btn"
+                  ?disabled=${this.discoveryBusy}
+                  @click=${() => this.loadDiscovery(true)}
+                >
+                  Show more projects
+                </button>`
+              : nothing}
             ${this.renderInterests()}
             <h3 class="lab-sharing-seek__title">Your project help request</h3>
             ${this.data.projects.length
-              ? html`<form @submit=${(event: SubmitEvent) => this.save(event)}>
+              ? html`<form data-help-editor @submit=${(event: SubmitEvent) => this.save(event)}>
                   <fieldset class="lab-sharing-ask" ?disabled=${this.busy}>
                     <label class="lab-sharing-ask__field"
                       ><span class="lab-sharing-ask__label">Project</span>
