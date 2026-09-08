@@ -190,25 +190,54 @@ REMOTE
 
   deploy)
     check_local_tools
+    # Fetch before anything is resolved, and resolve each side exactly once.
+    #
+    # Ordering is the whole correctness argument here. This used to fetch in the middle and write
+    # `${REF}^{commit}` at each use, so a `--ref origin/main` meant two different commits within
+    # one comparison: the stale remote-tracking ref in the "deploying" line, and the freshly
+    # fetched one in the check below. The ref was then compared against itself and reported as
+    # "0 commit(s) behind origin/main", refusing a deploy that was in fact exactly current, and
+    # advising the operator to "pass --ref origin/main" -- which is what they had passed.
+    if git -C "$REPO_ROOT" fetch --quiet origin main 2>/dev/null; then
+      fetched_upstream=1
+    else
+      fetched_upstream=0
+    fi
     git -C "$REPO_ROOT" rev-parse --verify "${REF}^{commit}" >/dev/null ||
       die "not a committed Git revision: $REF"
-    sha="$(git -C "$REPO_ROOT" rev-parse --short=12 "${REF}^{commit}")"
+    # Full object ids: every comparison below is against these two variables, never against a ref
+    # name that could resolve differently a line later.
+    ref_commit="$(git -C "$REPO_ROOT" rev-parse "${REF}^{commit}")"
+    sha="$(git -C "$REPO_ROOT" rev-parse --short=12 "$ref_commit")"
     # Say what is about to ship, and refuse a ref that is behind the shared main. The default is
     # HEAD of whatever clone this runs from, and a clone that was never pulled deploys its stale
     # main just as faithfully as a fresh one: on 2026-08-30 that re-shipped a three-day-old
     # service while the Vercel UI was already asking for routes it did not have, and every tab
     # blamed "the service needs a deploy" -- right after one. --allow-behind is for a deliberate
     # rollback.
-    printf 'deploying %s  %s\n' "$sha" "$(git -C "$REPO_ROOT" log -1 --format='%cd  %s' --date=short "${REF}^{commit}")" >&2
-    if git -C "$REPO_ROOT" fetch --quiet origin main 2>/dev/null; then
-      upstream="$(git -C "$REPO_ROOT" rev-parse --short=12 origin/main)"
-      if [[ "$upstream" != "$sha" ]] &&
-        git -C "$REPO_ROOT" merge-base --is-ancestor "${REF}^{commit}" origin/main; then
-        behind="$(git -C "$REPO_ROOT" rev-list --count "${REF}^{commit}..origin/main")"
-        if [[ "$ALLOW_BEHIND" != "1" ]]; then
-          die "ref $REF ($sha) is $behind commit(s) behind origin/main ($upstream); pull first, pass --ref origin/main, or --allow-behind for a deliberate rollback"
+    printf 'deploying %s  %s\n' "$sha" "$(git -C "$REPO_ROOT" log -1 --format='%cd  %s' --date=short "$ref_commit")" >&2
+    if ((fetched_upstream)); then
+      upstream_commit="$(git -C "$REPO_ROOT" rev-parse origin/main)"
+      upstream="$(git -C "$REPO_ROOT" rev-parse --short=12 "$upstream_commit")"
+      if [[ "$upstream_commit" != "$ref_commit" ]] &&
+        git -C "$REPO_ROOT" merge-base --is-ancestor "$ref_commit" "$upstream_commit"; then
+        behind="$(git -C "$REPO_ROOT" rev-list --count "${ref_commit}..${upstream_commit}")"
+        # Belt and braces after the bug above: a staleness refusal that cannot name at least one
+        # missing commit is not a refusal anybody can act on, so it is not one.
+        if ((behind > 0)); then
+          # The old advice was a list read out regardless of what was passed, which is how it came
+          # to tell an operator deploying origin/main to deploy origin/main. Say the thing that
+          # would actually move this particular ref forward.
+          if [[ "$REF" == "HEAD" ]]; then
+            hint="pull first, or pass --ref origin/main to deploy the fetched tip"
+          else
+            hint="pass --ref origin/main to deploy the fetched tip"
+          fi
+          if [[ "$ALLOW_BEHIND" != "1" ]]; then
+            die "ref $REF ($sha) is $behind commit(s) behind origin/main ($upstream); $hint, or --allow-behind for a deliberate rollback"
+          fi
+          printf 'warning: deploying %s, which is %s commit(s) behind origin/main (%s)\n' "$sha" "$behind" "$upstream" >&2
         fi
-        printf 'warning: deploying %s, which is %s commit(s) behind origin/main (%s)\n' "$sha" "$behind" "$upstream" >&2
       fi
     else
       printf 'note: could not fetch origin/main; not checking whether %s is stale\n' "$sha" >&2
