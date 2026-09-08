@@ -166,3 +166,12 @@ not sent merely because it was submitted or approved. The member list shows the
 stored proposal status; only successful execution is `executed`. The call proposes
 an event on the connector's default calendar and does not create a video-call link.
 No new persistence table or direct connector entry point is introduced.
+
+
+### Paged project discovery
+
+Signed-in members can use `GET /lab-sharing/discover` with `q` (up to 200 characters), `max_hours` (positive, at most 168), `sort=title|hours`, and `limit` (default 10, maximum 50). The response contains `requests` and `next_cursor`; pass the cursor with the same filters to continue. A null cursor ends the result set. Cursors are navigation state, not authorization. Every request uses the member-session guard. Ordering is stable by title/paper ID or hours/title/paper ID; edits during traversal can change results, so refresh starts a new search.
+
+`GET /lab-sharing/mine` returns managed project choices, managed requests (including closed ones), and privacy-scoped interests. `GET /lab-sharing/projects/:paperId` resolves a direct link without loading all discovery pages; closed requests are visible only to managers. The legacy combined endpoint is preserved for compatibility.
+
+The directory debounces filter changes, rejects stale responses, appends pages without duplicate project IDs and preserves loaded rows when a continuation fails. Offers are limited to loaded discovery projects. This bounds discovery response rows and avoids downloading all open requests during ordinary discovery. Management/interest scans and legacy mutation responses remain separate scaling limitations; this is not a claim that all queries are indexed or constant-time.

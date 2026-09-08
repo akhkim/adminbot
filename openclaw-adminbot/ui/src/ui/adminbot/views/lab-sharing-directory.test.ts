@@ -1,294 +1,106 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { LabSharingDirectory } from "./lab-sharing-directory.ts";
-const payload = { projects: [{ id: "p1", title: "Synthetic project" }], requests: [] };
-// The UI lane runs with `isolate: false`, so one jsdom -- and one customElements registry -- is
-// shared across every test file while each file still gets its own module graph. A second
-// evaluation of lab-sharing-directory.ts therefore produces a second class, which the name guard
-// around its `customElements.define` then declines to register, and `new` on that unregistered
-// class throws "the constructor is not part of the custom element registry". Going through the
-// registry always yields whichever class actually got defined.
-//
-// This only bites once enough files load the module for it to be evaluated twice, so it was
-// latent until the Lab Sharing tabs grew a fourth test file -- which is the worst shape for a
-// bug like this, because the file that breaks is never the file that changed.
-function createDirectory(): LabSharingDirectory {
-  return document.createElement("lab-sharing-directory") as LabSharingDirectory;
+import {afterEach, expect, it, vi} from "vitest";
+import type {LabSharingDirectory} from "./lab-sharing-directory.ts";
+import "./lab-sharing-directory.ts";
+const project = (id = "p1") => ({paper_id:id,title:`Project ${id}`,owner_name:"Member",description:"Review traces",tags:["qa"],members_needed:1,hours_per_week:2,timeline:"September",status:"open",can_manage:true});
+const mine = {projects:[{id:"p1",title:"Project p1"}],requests:[project()],interests:[]};
+const response = (data: unknown) => ({ok:true,json:async()=>data});
+async function mount(fetcher = vi.fn(async (url: string) => response(url.includes("/discover?") ? {requests:[project()],next_cursor:null} : mine))) {
+ vi.useFakeTimers(); vi.stubGlobal("fetch",fetcher);
+ const el=document.createElement("lab-sharing-directory") as LabSharingDirectory;
+ el.baseUrl="http://lab.test";el.sessionToken="synthetic";document.body.append(el);
+ await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+ return {el,fetcher};
 }
-
-async function settle(el: LabSharingDirectory) {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-  await el.updateComplete;
-}
-afterEach(() => {
-  document.body.replaceChildren();
-  vi.unstubAllGlobals();
+afterEach(()=>{document.body.replaceChildren();vi.unstubAllGlobals();vi.useRealTimers();});
+it("loads private management separately and appends a bounded next page",async()=>{
+ const fetcher=vi.fn(async(url:string)=>response(url.includes("/discover?") ? {requests:[project(url.includes("cursor=")?"p2":"p1")],next_cursor:url.includes("cursor=")?null:"next"} : mine));
+ const {el}=await mount(fetcher);
+ expect(fetcher.mock.calls.some(([url])=>url.endsWith("/mine"))).toBe(true);
+ expect(fetcher.mock.calls.some(([url])=>url==="http://lab.test/lab-sharing")).toBe(false);
+ [...el.querySelectorAll("button")].find(b=>b.textContent?.includes("Show more"))!.click();
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.querySelectorAll("[data-project]")).toHaveLength(2);
+ expect(fetcher.mock.calls.some(([url])=>url.includes("cursor=next"))).toBe(true);
 });
-describe("live directory", () => {
-  it("saves input and renders the server result", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => payload })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          ...payload,
-          requests: [
-            {
-              paper_id: "p1",
-              title: "Synthetic project",
-              description: "Review traces",
-              tags: [],
-              owner_name: "Member",
-              members_needed: 1,
-              hours_per_week: 2,
-              timeline: "",
-              status: "open",
-              can_manage: true,
-            },
-          ],
-        }),
-      });
-    vi.stubGlobal("fetch", fetcher);
-    const el = createDirectory();
-    el.baseUrl = "http://lab.test";
-    el.sessionToken = "synthetic";
-    document.body.append(el);
-    await settle(el);
-    expect(el.textContent).toContain("No projects are asking");
-    const select = el.querySelector("form select")!;
-    select.value = "p1";
-    select.dispatchEvent(new Event("change"));
-    const area = el.querySelector("textarea")!;
-    area.value = "Review traces";
-    area.dispatchEvent(new Event("input"));
-    el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(el);
-    expect(fetcher.mock.calls[1][0]).toBe("http://lab.test/lab-sharing/requests/p1");
-    expect(JSON.parse(fetcher.mock.calls[1][1].body).description).toBe("Review traces");
-    expect(el.querySelector('[data-project="p1"]')?.textContent).toContain("Review traces");
-  });
-  it("can retry a failed read", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockRejectedValueOnce(new Error("Offline"))
-        .mockResolvedValueOnce({ ok: true, json: async () => payload }),
-    );
-    const el = createDirectory();
-    el.sessionToken = "synthetic";
-    document.body.append(el);
-    await settle(el);
-    expect(el.querySelector('[role="alert"]')?.textContent).toBe("Offline");
-    el.querySelector("button")!.click();
-    await settle(el);
-    expect(el.querySelector('[role="alert"]')).toBeNull();
-    expect(el.textContent).toContain("No projects are asking");
-  });
-  it("discards late data after signing out", async () => {
-    let finish!: (value: unknown) => void;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        () =>
-          new Promise((resolve) => {
-            finish = resolve;
-          }),
-      ),
-    );
-    const el = createDirectory();
-    el.sessionToken = "old";
-    document.body.append(el);
-    await settle(el);
-    el.sessionToken = "";
-    await settle(el);
-    finish({ ok: true, json: async () => payload });
-    await settle(el);
-    expect(el.textContent).toContain("Sign in");
-    expect(el.textContent).not.toContain("Synthetic project");
-  });
-  it("keeps a failed save as a draft without claiming it was published", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => payload })
-        .mockResolvedValueOnce({
-          ok: false,
-          json: async () => ({ error: { message: "Permission changed" } }),
-        }),
-    );
-    const el = createDirectory();
-    el.sessionToken = "synthetic";
-    document.body.append(el);
-    await settle(el);
-    const select = el.querySelector("form select")!;
-    select.value = "p1";
-    select.dispatchEvent(new Event("change"));
-    const area = el.querySelector("textarea")!;
-    area.value = "Keep this draft";
-    area.dispatchEvent(new Event("input"));
-    el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(el);
-    expect(el.querySelector('[role="alert"]')?.textContent).toBe("Permission changed");
-    expect(el.querySelector("textarea")?.value).toBe("Keep this draft");
-    expect(el.textContent).not.toContain("Help request saved");
-  });
-  it("retains a failed offer draft and withdraws a saved offer with POST", async () => {
-    const interest = {
-      paper_id: "p1",
-      title: "Synthetic project",
-      member_name: "Reader",
-      hours_per_week: 2,
-      note: "Saved note",
-      status: "active",
-      updated_at: "2026-09-06",
-      is_own: true,
-    };
-    const data = {
-      projects: [],
-      requests: [
-        {
-          paper_id: "p1",
-          title: "Synthetic project",
-          owner_name: "Owner",
-          description: "Tasks",
-          tags: [],
-          members_needed: 1,
-          hours_per_week: 2,
-          timeline: "",
-          status: "open",
-          can_manage: false,
-        },
-      ],
-      interests: [interest],
-    };
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => data })
-      .mockRejectedValueOnce(new Error("Offline"))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ...data, interests: [{ ...interest, status: "withdrawn" }] }),
-      });
-    vi.stubGlobal("fetch", fetcher);
-    const el = createDirectory();
-    el.sessionToken = "synthetic";
-    document.body.append(el);
-    await settle(el);
-    const note = el.querySelector("textarea")!;
-    note.value = "My retained draft";
-    note.dispatchEvent(new Event("input"));
-    await settle(el);
-    el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(el);
-    expect(el.querySelector("textarea")!.value).toBe("My retained draft");
-    expect(el.textContent).not.toContain("Offer saved.");
-    const withdraw = [...el.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Withdraw offer"),
-    )!;
-    withdraw.click();
-    await settle(el);
-    expect(fetcher.mock.calls[2][0]).toContain("/interest/withdraw");
-    expect(fetcher.mock.calls[2][1].method).toBe("POST");
-    expect(el.textContent).toContain("Offer withdrawn.");
-    el.sessionToken = "";
-    await settle(el);
-    expect(el.textContent).not.toContain("Saved note");
-    expect(el.textContent).not.toContain("My retained draft");
-  });
+it("debounces server filters and discards a stale page after logout",async()=>{
+ let finish:((value:unknown)=>void)|undefined;
+ const fetcher=vi.fn(async(url:string)=>url.includes("q=agents")?new Promise(resolve=>{finish=resolve;}):response(url.includes("/discover?")?{requests:[project()],next_cursor:null}:mine));
+ const {el}=await mount(fetcher);
+ const search=el.querySelector<HTMLInputElement>('input[type="search"]')!;
+ search.value="agents";search.dispatchEvent(new Event("input"));
+ await vi.advanceTimersByTimeAsync(250);
+ el.sessionToken="";await el.updateComplete;
+ finish!(response({requests:[project("private")],next_cursor:null}));
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.querySelectorAll("[data-project]")).toHaveLength(0);
+ expect(el.textContent).not.toContain("private");
+});
+it("keeps a failed save draft and refreshes managed/discovery state after retry",async()=>{
+ let rejectSave=true;
+ const fetcher=vi.fn(async(url:string,init?:RequestInit)=>{
+  if(init?.method==="PUT") {if(rejectSave) throw new Error("Offline"); return response(mine);}
+  return response(url.includes("/discover?")?{requests:[project()],next_cursor:null}:mine);
+ });
+ const {el}=await mount(fetcher);
+ const select=el.querySelector<HTMLSelectElement>("form select")!;select.value="p1";select.dispatchEvent(new Event("change"));
+ const note=el.querySelector<HTMLTextAreaElement>("form textarea")!;note.value="Retained draft";note.dispatchEvent(new Event("input"));
+ el.querySelector("form")!.dispatchEvent(new Event("submit",{cancelable:true}));
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(note.value).toBe("Retained draft");expect(el.textContent).toContain("Offline");
+ rejectSave=false;el.querySelector("form")!.dispatchEvent(new Event("submit",{cancelable:true}));
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.textContent).toContain("Help request saved");
+ expect(fetcher.mock.calls.some(([url,init])=>url.endsWith("/requests/p1")&&init?.method==="PUT")).toBe(true);
+});
+it("retrieves an off-page project directly and focuses its card",async()=>{
+ const {el,fetcher}=await mount(vi.fn(async(url:string)=>response(url.includes("/projects/")?{request:project("p99")}:url.includes("/discover?")?{requests:[project()],next_cursor:null}:mine)));
+ const original=HTMLElement.prototype.scrollIntoView;HTMLElement.prototype.scrollIntoView=vi.fn();
+ try {await el.showProject("p99");expect(document.activeElement).toBe(el.querySelector('[data-project="p99"]'));expect(fetcher.mock.calls.some(([url])=>url.endsWith("/projects/p99"))).toBe(true);}finally{HTMLElement.prototype.scrollIntoView=original;}
+});
+it("retains loaded cards when the next page fails and permits retry",async()=>{
+ let offline=true;
+ const {el}=await mount(vi.fn(async(url:string)=>{
+ if(url.includes("cursor=")){if(offline)throw new Error("Offline");return response({requests:[project("p2")],next_cursor:null});}
+ return response(url.includes("/discover?")?{requests:[project()],next_cursor:"next"}:mine);
+ }));
+ const more=()=>[...el.querySelectorAll("button")].find(b=>b.textContent?.includes("Show more"))!;
+ more().click();await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.querySelectorAll("[data-project]")).toHaveLength(1);expect(more().disabled).toBe(false);
+ offline=false;more().click();await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.querySelectorAll("[data-project]")).toHaveLength(2);
 });
 
-it("reveals a project hidden by the directory filter and focuses its card", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        projects: [],
-        requests: [
-          {
-            paper_id: "p1",
-            title: "Synthetic project",
-            description: "Review traces",
-            tags: [],
-            owner_name: "Member",
-            members_needed: 1,
-            hours_per_week: 2,
-            timeline: "",
-            status: "open",
-            can_manage: false,
-          },
-        ],
-      }),
-    }),
-  );
-  const el = createDirectory();
-  el.sessionToken = "synthetic";
-  document.body.append(el);
-  await settle(el);
-  const input = el.querySelector<HTMLInputElement>('input[type="search"]')!;
-  input.value = "no match";
-  input.dispatchEvent(new Event("input"));
-  await el.updateComplete;
-  expect(el.querySelector('[data-project="p1"]')).toBeNull();
-  const scroll = vi.fn();
-  const original = HTMLElement.prototype.scrollIntoView;
-  HTMLElement.prototype.scrollIntoView = scroll;
-  try {
-    await el.showProject("p1");
-    expect(input.value).toBe("");
-    expect(document.activeElement).toBe(el.querySelector('[data-project="p1"]'));
-    expect(scroll).toHaveBeenCalled();
-  } finally {
-    HTMLElement.prototype.scrollIntoView = original;
-  }
+it("keeps an offer draft after failure and withdraws a private saved offer",async()=>{
+ const own={paper_id:"p1",title:"Project p1",member_name:"Member",hours_per_week:2,note:"Saved",status:"active",updated_at:"today",is_own:true};
+ const fetcher=vi.fn(async(url:string,init?:RequestInit)=>{
+  if(init?.method==="PUT")throw new Error("Offline offer");
+  return response(url.includes("/discover?")?{requests:[{...project(),can_manage:false}],next_cursor:null}:{...mine,projects:[],requests:[],interests:[own]});
+ });
+ const {el}=await mount(fetcher);
+ const form=el.querySelector<HTMLFormElement>('form[aria-label="Offer for Project p1"]')!;
+ const note=form.querySelector("textarea")!;note.value="Keep my offer";note.dispatchEvent(new Event("input"));
+ form.dispatchEvent(new Event("submit",{cancelable:true}));await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(note.value).toBe("Keep my offer");expect(el.textContent).toContain("Offline offer");
+ const withdraw=[...el.querySelectorAll("button")].find(b=>b.textContent?.includes("Withdraw"))!;withdraw.click();
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(fetcher.mock.calls.some(([url,init])=>url.endsWith("/interest/withdraw")&&init?.method==="POST")).toBe(true);
 });
 
-it("narrows a large directory by multiple terms and weekly hours", async () => {
-  const requests = Array.from({ length: 25 }, (_, i) => ({
-    paper_id: `p${i}`, title: `Project ${String(i).padStart(2, "0")}`, owner_name: "Ravi",
-    description: "Review traces", tags: ["agents"], members_needed: 1,
-    hours_per_week: i + 1, timeline: "September", status: "open", can_manage: false,
-  }));
-  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ projects: [], requests }) })));
-  const el = createDirectory();
-  el.sessionToken = "synthetic";
-  document.body.append(el);
-  await settle(el);
-  expect(el.querySelectorAll("[data-project]")).toHaveLength(10);
-  const more = [...el.querySelectorAll("button")].find(b => b.textContent?.includes("Show 10 more"))!;
-  more.click();
-  await el.updateComplete;
-  expect(el.querySelectorAll("[data-project]")).toHaveLength(20);
-  const search = el.querySelector('input[type="search"]') as HTMLInputElement;
-  search.value = "Ravi agents September";
-  search.dispatchEvent(new Event("input"));
-  const hours = el.querySelector('input[placeholder="Any"]') as HTMLInputElement;
-  hours.value = "3";
-  hours.dispatchEvent(new Event("input"));
-  await el.updateComplete;
-  expect(el.querySelectorAll("[data-project]")).toHaveLength(3);
-  expect(el.textContent).toContain("3 of 25 open projects match");
-  search.value = "unmatched";
-  search.dispatchEvent(new Event("input"));
-  await el.updateComplete;
-  expect(el.querySelectorAll("[data-project]")).toHaveLength(0);
-});
-
-it("reveals a distant project without expanding the entire directory", async () => {
-  const requests = Array.from({length: 100}, (_, i) => ({paper_id: `p${i}`, title: `Project ${i}`, owner_name: "Member", description: "Task", tags: [], members_needed: 1, hours_per_week: 2, timeline: "", status: "open", can_manage: false}));
-  vi.stubGlobal("fetch", vi.fn(async () => ({ok: true, json: async () => ({projects: [], requests})})));
-  const el = createDirectory(); el.sessionToken = "synthetic"; document.body.append(el); await settle(el);
-  const original = HTMLElement.prototype.scrollIntoView;
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  try {
-    await el.showProject("p99");
-    expect(el.querySelectorAll("[data-project]")).toHaveLength(10);
-    expect(el.querySelector("[data-project]")?.getAttribute("data-project")).toBe("p99");
-    expect(document.activeElement).toBe(el.querySelector('[data-project="p99"]'));
-    expect(el.textContent).toContain("Selected project shown first.");
-  } finally { HTMLElement.prototype.scrollIntoView = original; }
+it("does not report a saved change as failed when management refresh fails",async()=>{
+ let saved=false;
+ const fetcher=vi.fn(async(url:string,init?:RequestInit)=>{
+  if(init?.method==="PUT"){saved=true;return response(mine);}
+  if(saved && url.endsWith("/mine"))throw new Error("Offline refresh");
+  return response(url.includes("/discover?")?{requests:[project()],next_cursor:null}:mine);
+ });
+ const {el}=await mount(fetcher);
+ const select=el.querySelector<HTMLSelectElement>("form select")!;select.value="p1";select.dispatchEvent(new Event("change"));
+ const note=el.querySelector<HTMLTextAreaElement>("form textarea")!;note.value="Saved text";note.dispatchEvent(new Event("input"));
+ el.querySelector("form")!.dispatchEvent(new Event("submit",{cancelable:true}));
+ await vi.advanceTimersByTimeAsync(0);await el.updateComplete;
+ expect(el.textContent).toContain("Help request saved");
+ expect(el.textContent).toContain("Your change was saved, but the page could not refresh");
+ expect(note.value).toBe("Saved text");
+ expect(el.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
+ expect(fetcher.mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
 });

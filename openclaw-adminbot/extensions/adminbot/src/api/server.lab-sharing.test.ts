@@ -400,3 +400,79 @@ it("creates deduplicated approval-bound invitations without disclosing contacts"
   mock.service.labSharing().save("member", "paper-1", {}, true);
   expect((await send(input)).status).toBe(409);
 });
+
+it("gates discovery and rejects malformed pagination without exposing private offers", async () => {
+ const {mock, baseUrl} = await startLab();
+ const url = `${baseUrl}/lab-sharing/discover`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ const headers = await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ const response = await fetch(`${url}?limit=1`,{headers});
+ expect(response.status).toBe(200);
+ const body = await response.json();
+ expect(body.requests).toHaveLength(1);
+ expect(body.next_cursor).toBeNull();
+ expect(body.interests).toBeUndefined();
+ for(const query of ["limit=51","cursor=bad","cursor=a&cursor=b"]) {
+   expect((await fetch(`${url}?${query}`,{headers})).status).toBe(400);
+ }
+ mock.service.labSharing().save("member","paper-1",{},true);
+ expect((await (await fetch(url,{headers})).json()).requests).toEqual([]);
+});
+
+it("scopes direct project lookup and hides closed requests from non-managers", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ const admin=await memberSession(mock,baseUrl,"admin");
+ mock.service.upsertPaper({id:"admin-project",title:"Admin project",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","admin-project",draft);
+ const url=`${baseUrl}/lab-sharing/projects/admin-project`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ expect((await fetch(url,{headers})).status).toBe(200);
+ expect((await fetch(`${baseUrl}/lab-sharing/projects/missing`,{headers})).status).toBe(404);
+ mock.service.labSharing().save("admin","admin-project",{},true);
+ expect((await fetch(url,{headers:admin})).status).toBe(200);
+ expect((await fetch(url,{headers})).status).toBe(404);
+ expect((await fetch(`${baseUrl}/lab-sharing/projects/%ZZ`,{headers})).status).toBe(400);
+});
+
+it("preserves management flags across discovery pages and rejects changed cursor filters", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ mock.service.upsertPaper({id:"admin-page",title:"AAA",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","admin-page",draft);
+ const url=`${baseUrl}/lab-sharing/discover?limit=1`;
+ const first=await (await fetch(url,{headers})).json();
+ expect(first.requests).toHaveLength(1);
+ expect(first.requests[0].paper_id).toBe("admin-page");
+ expect(first.requests[0].can_manage).toBe(false);
+ expect(typeof first.next_cursor).toBe("string");
+ const continuation=`${url}&cursor=${encodeURIComponent(first.next_cursor)}`;
+ const second=await (await fetch(continuation,{headers})).json();
+ expect(second.requests[0].paper_id).toBe("paper-1");
+ expect(second.requests[0].can_manage).toBe(true);
+ expect(second.next_cursor).toBeNull();
+ expect((await fetch(`${continuation}&sort=hours`,{headers})).status).toBe(400);
+});
+
+it("separates managed requests from discovery while retaining private offers", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ mock.service.labSharing().save("member","paper-1",draft);
+ mock.service.upsertPaper({id:"other",title:"Other",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","other",draft);
+ mock.service.labSharing().interest("member","other",{hours_per_week:2,note:"My private offer"});
+ const url=`${baseUrl}/lab-sharing/mine`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ const result=await (await fetch(url,{headers})).json();
+ expect(result.requests.map((row:{paper_id:string})=>row.paper_id)).toEqual(["paper-1"]);
+ expect(result.interests[0].note).toBe("My private offer");
+ expect(result.projects.map((row:{id:string})=>row.id)).toEqual(["paper-1"]);
+ mock.service.labSharing().save("member","paper-1",{},true);
+ const closed=await (await fetch(url,{headers})).json();
+ expect(closed.requests[0].status).toBe("closed");
+});

@@ -1,3 +1,7 @@
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 /**
  * In-memory service store.
@@ -86,6 +90,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly helpRequests = new Map<string, LabHelpRequest>();
   saveHelpRequest(request: LabHelpRequest): void {
     this.helpRequests.set(request.paper_id, structuredClone(request));
+  }
+  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
+    return discoverMemoryHelpRequests(this.listHelpRequests(), id => this.getPaper(id), id => this.getLabMember(id), query, after);
+  }
+  getHelpRequest(paperId: string): LabHelpRequest | undefined {
+    return structuredClone(this.helpRequests.get(paperId));
   }
   listHelpRequests(): LabHelpRequest[] {
     return [...this.helpRequests.values()].map((row) => structuredClone(row));
