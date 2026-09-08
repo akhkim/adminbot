@@ -94,6 +94,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
     return discoverMemoryHelpRequests(this.listHelpRequests(), id => this.getPaper(id), id => this.getLabMember(id), query, after);
   }
+  getHelpRequest(paperId: string): LabHelpRequest | undefined {
+    return structuredClone(this.helpRequests.get(paperId));
+  }
   listHelpRequests(): LabHelpRequest[] {
     return [...this.helpRequests.values()].map((row) => structuredClone(row));
   }

@@ -46,6 +46,15 @@ export async function handleLabSharingRoute(
     sendJson(res, 200, await askMemberGuidebook(question.trim()));
     return;
   }
+  const detail = /^\/lab-sharing\/projects\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "GET" && detail) {
+    let paperId: string;
+    try { paperId = decodeURIComponent(detail[1]); } catch {
+      sendJson(res, 400, {error: {message: "Invalid project identifier."}}); return;
+    }
+    sendServiceResult(res, service.labSharing().projectDetail(memberId, paperId));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab-sharing/discover") {
     sendServiceResult(res, service.labSharing().discover(memberId, url.searchParams));
     return;

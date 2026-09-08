@@ -2132,6 +2132,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
     return discoverHelpRequests(this.db, query, after);
   }
+  getHelpRequest(paperId: string): LabHelpRequest | undefined {
+    const row = this.db.prepare("SELECT payload_json FROM adminbot_help_requests WHERE paper_id = ?").get(paperId) as {payload_json: string} | undefined;
+    return row ? JSON.parse(row.payload_json) as LabHelpRequest : undefined;
+  }
   listHelpRequests(): LabHelpRequest[] {
     return listHelpRequests(this.db);
   }

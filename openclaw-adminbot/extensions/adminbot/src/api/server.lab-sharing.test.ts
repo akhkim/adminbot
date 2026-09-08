@@ -420,3 +420,20 @@ it("gates discovery and rejects malformed pagination without exposing private of
  mock.service.labSharing().save("member","paper-1",{},true);
  expect((await (await fetch(url,{headers})).json()).requests).toEqual([]);
 });
+
+it("scopes direct project lookup and hides closed requests from non-managers", async () => {
+ const {mock,baseUrl}=await startLab();
+ const headers=await memberSession(mock,baseUrl,"member");
+ const admin=await memberSession(mock,baseUrl,"admin");
+ mock.service.upsertPaper({id:"admin-project",title:"Admin project",authors:["Ada Admin"],first_author_member_id:"admin",current_step:"brainstorming"});
+ mock.service.labSharing().save("admin","admin-project",draft);
+ const url=`${baseUrl}/lab-sharing/projects/admin-project`;
+ expect((await fetch(url)).status).toBe(401);
+ expect((await fetch(url,{headers:{Authorization:`Bearer ${SERVICE_TOKEN}`}})).status).toBe(403);
+ expect((await fetch(url,{headers})).status).toBe(200);
+ expect((await fetch(`${baseUrl}/lab-sharing/projects/missing`,{headers})).status).toBe(404);
+ mock.service.labSharing().save("admin","admin-project",{},true);
+ expect((await fetch(url,{headers:admin})).status).toBe(200);
+ expect((await fetch(url,{headers})).status).toBe(404);
+ expect((await fetch(`${baseUrl}/lab-sharing/projects/%ZZ`,{headers})).status).toBe(400);
+});

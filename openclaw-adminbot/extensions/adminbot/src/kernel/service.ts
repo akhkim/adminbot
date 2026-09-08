@@ -371,6 +371,7 @@ export type AdminBotServiceStore = {
   saveDirectorStatus(status: LabDirectorStatus | null): void;
   readDirectorStatus(): LabDirectorStatus | null;
   saveHelpRequest(request: LabHelpRequest): void;
+  getHelpRequest(paperId: string): LabHelpRequest | undefined;
   listHelpRequests(): LabHelpRequest[];
   discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;

@@ -27,6 +27,16 @@ export class LabSharingService {
   searchMembers(memberId: string, query: string) {
     return searchLabSharingMembers(this.store, this.ownsPaper, memberId, query);
   }
+  projectDetail(memberId: string, paperId: string) {
+    const member = this.store.getLabMember(memberId);
+    if (!member) return failure(403, "A member session is required.");
+    const paper = this.store.getPaper(paperId);
+    const request = this.store.getHelpRequest(paperId);
+    const canManage = Boolean(paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)));
+    if (!paper || !request || (request.status !== "open" && !canManage)) return failure(404, "Project help request not found.");
+    return {ok: true as const, status: 200, payload: {request: {...request, title: paper.title,
+      owner_name: this.store.getLabMember(request.owner_id)?.name ?? "Lab member", can_manage: canManage}}};
+  }
   discover(memberId: string, params: URLSearchParams) {
     if (!this.store.getLabMember(memberId)) return failure(403, "A member session is required.");
     const query = parseLabSharingDiscoveryQuery(params);
