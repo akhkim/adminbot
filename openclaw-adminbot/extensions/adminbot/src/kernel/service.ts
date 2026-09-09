@@ -93,6 +93,7 @@ import {
   adminBotPaperPresentationTypes,
   adminBotPaperVenueDecisions,
   ADMINBOT_DEADLINE_TIME_PATTERN,
+  ADMINBOT_ELEVATOR_PITCH_MAX,
   ADMINBOT_MAX_LABEL_LENGTH,
   adminBotTimeOffKinds,
   isAdminBotTimezone,
@@ -421,6 +422,8 @@ export type AdminBotServiceStore = {
   getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
   listBadgeNominations(params?: {
     memberId?: string;
+    involvingMemberId?: string;
+    nominatedBy?: string;
     status?: AdminBotBadgeNominationStatus;
   }): AdminBotBadgeNomination[];
   /** Removes one roster row. False when there was nothing to remove. */
@@ -782,6 +785,18 @@ import {
   graduationCeremony,
 } from "../workflows/members/graduation.js";
 import {
+  hasAccessConsequences,
+  memberTypeAccessDelta,
+  type MemberTypeAccessDelta,
+} from "../workflows/members/member-type-access.js";
+import {
+  planRosterSync,
+  rosterSyncRefusal,
+  type RosterMemberTypeChange,
+  type RosterSheetParse,
+  type RosterSyncPlan,
+} from "../workflows/members/roster-sync.js";
+import {
   surfaceMembershipPlan,
   type AdminBotInviteSurface,
   type AdminBotSurfaceRemoval,
@@ -1126,6 +1141,47 @@ export function buildNudgeEscalationMessage(params: {
     "If any of them are already done or no longer apply, say so here and I will close them out.",
   ].join("\n");
 }
+
+/** What a Member Type change did to one person's access, flattened for a summary and an audit row. */
+export type AdminBotRosterSyncAccess = {
+  lab_calendar: MemberTypeAccessDelta["lab_calendar"];
+  group_meeting: MemberTypeAccessDelta["group_meeting"];
+  portal: MemberTypeAccessDelta["portal"];
+  /** Access-matrix item ids, not labels: this is read by machines and diffed across runs. */
+  granted: string[];
+  revoked: string[];
+  slack_channels_to_remove: string[];
+  /**
+   * The record pins `collaborator_subgroup`, so the matrix rows did not follow the type change.
+   * Not an error -- an explicit field outranks a spreadsheet column -- but worth a person's eye.
+   */
+  subgroup_pinned: boolean;
+  /** Whether anything above actually moved, so a caller can filter the no-op majority. */
+  consequential: boolean;
+};
+
+export type AdminBotRosterSyncApplied = RosterMemberTypeChange & {
+  access: AdminBotRosterSyncAccess;
+};
+
+export type AdminBotRosterSyncProposal = {
+  member_id: string;
+  member_name: string;
+  channel: string;
+  proposal_id: string;
+};
+
+export type AdminBotRosterSyncResult = RosterSyncPlan & {
+  applied: AdminBotRosterSyncApplied[];
+  /** Changes the sync could not write, with the reason. Never silently dropped. */
+  failed: { member_id: string; reason: string }[];
+  proposals: AdminBotRosterSyncProposal[];
+  roster_size: number;
+  dry_run: boolean;
+  /** Set when the size guard stopped the pass; nothing was applied. See rosterSyncRefusal. */
+  refused?: string;
+  synced_at: string;
+};
 
 export class AdminBotService {
   constructor(
@@ -2673,6 +2729,9 @@ export class AdminBotService {
   listBadgeNominations(
     params: {
       memberId?: string;
+      /** Both directions for one member: proposed for them, and proposed by them. */
+      involvingMemberId?: string;
+      nominatedBy?: string;
       status?: AdminBotBadgeNominationStatus;
     } = {},
   ): AdminBotServiceResponse<{ nominations: AdminBotBadgeNominationView[] }> {
@@ -2683,13 +2742,34 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { nominations } };
   }
 
+  /**
+   * Put a badge forward, for yourself or for somebody else.
+   *
+   * `actorId` is the signed-in caller and `input.member_id` is who the badge would go to. They are
+   * separate because most of what these badges recognise is not something the person who did it is
+   * well placed to write up: the colleague who found the bug in your paper, the person who wired
+   * up the eval pipeline everyone now uses. A board only its subjects may nominate to systematically
+   * under-counts exactly the contributions it exists to make visible.
+   *
+   * The nominator is taken from the session, never from the body, so nobody can file a nomination
+   * under someone else's name. Everything the self-nomination path checked still holds and is now
+   * checked against the *subject*: no second badge in a family they already hold, no second pending
+   * nomination in a family already queued for them. Evidence stays required, and it matters more
+   * here than it did before -- an admin deciding a nomination about a third party has nothing else
+   * to go on.
+   */
   submitBadgeNomination(
-    memberId: string,
-    input: { badge_id: string; evidence?: string },
+    actorId: string,
+    input: { badge_id: string; member_id?: string; evidence?: string },
   ): AdminBotServiceResponse<{ nomination: AdminBotBadgeNominationView }> {
-    const member = this.store.getLabMember(memberId);
-    if (!member) {
+    const actor = this.store.getLabMember(actorId);
+    if (!actor) {
       return serviceError(404, "member not found");
+    }
+    const memberId = input.member_id?.trim() || actorId;
+    const member = memberId === actorId ? actor : this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "nominated member not found");
     }
     const badgeId = input.badge_id?.trim() ?? "";
     if (!badgeId) {
@@ -2699,14 +2779,19 @@ export class AdminBotService {
     if (!badge) {
       return serviceError(404, "badge not found");
     }
+    // Worded about the nominee rather than the caller: the same 409 now reaches somebody who is
+    // reading it about a colleague, and "you already hold" would be a plainly wrong sentence.
     if (this.store.getBadgeAssignment(memberId, badge.family_key)) {
-      return serviceError(409, "you already hold a badge in this badge family");
+      return serviceError(409, "that member already holds a badge in this badge family");
     }
     const existing = this.store
       .listBadgeNominations({ memberId, status: "pending" })
       .find((nomination) => nomination.family_key === badge.family_key);
     if (existing) {
-      return serviceError(409, "you already have a pending nomination for this badge family");
+      return serviceError(
+        409,
+        "there is already a pending nomination for that member in this badge family",
+      );
     }
     const evidence = input.evidence?.trim();
     if (!evidence) {
@@ -2723,6 +2808,9 @@ export class AdminBotService {
       badge_id: badge.id,
       family_key: badge.family_key,
       member_id: memberId,
+      // Left off a self-nomination, so a stored row keeps saying "the member put this forward
+      // themselves" rather than becoming ambiguous with one an admin filed for them.
+      ...(memberId === actorId ? {} : { nominated_by: actorId }),
       evidence,
       status: "pending",
       created_at: new Date().toISOString(),
@@ -2730,8 +2818,13 @@ export class AdminBotService {
     this.store.saveBadgeNomination(nomination);
     this.recordAudit({
       type: "badge.nomination_submitted",
-      actor: memberId,
-      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+      actor: actorId,
+      details: {
+        member_id: memberId,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        ...(memberId === actorId ? {} : { nominated_by: actorId }),
+      },
     });
     const view = this.badgeNominationView(nomination);
     if (!view) {
@@ -3191,6 +3284,9 @@ export class AdminBotService {
       ...(badge.criteria_url ? { badge_criteria_url: badge.criteria_url } : {}),
       ...(this.store.getLabMember(nomination.member_id)?.name
         ? { member_name: this.store.getLabMember(nomination.member_id)?.name }
+        : {}),
+      ...(nomination.nominated_by && this.store.getLabMember(nomination.nominated_by)?.name
+        ? { nominator_name: this.store.getLabMember(nomination.nominated_by)?.name }
         : {}),
     };
   }
@@ -8953,6 +9049,205 @@ export class AdminBotService {
   }
 
   /**
+   * Bring the roster's membership and Member Type into line with the lab's spreadsheet.
+   *
+   * The spreadsheet is where membership is decided and the database is what every sweep reads, and
+   * they drifted because keeping them together was somebody's job to remember. This is that job,
+   * run nightly.
+   *
+   * What it does and does not do is the whole design:
+   *
+   *   - **Applies** Member Type onto existing members. That column is governance-owned
+   *     (`SELF_PROFILE_PRIVILEGED_FIELDS`) and the spreadsheet *is* the governance record, so
+   *     copying it across is transcription, not a decision. Stamped `import`, so the adoption rate
+   *     does not credit it to the member.
+   *   - **Proposes** every external consequence. A Member Type change can take somebody out of a
+   *     Slack room, and a person losing a conversation they were part of is not something a cron
+   *     job gets to do quietly. `slack.remove_from_channel` is T3/admin, and nothing here executes.
+   *   - **Reports** joiners and leavers without touching either. A sheet row matching nobody is far
+   *     more often a person onboarding than a member to create -- and creating one is an access
+   *     grant, which is exactly what a sync must never make on its own. A member matching no sheet
+   *     row is far more often an address the sheet spells differently than a departure.
+   *
+   * The lab calendar and the Monday meeting are deliberately absent from the proposals, and that is
+   * not an omission: `adminbot-meeting-membership` already reconciles both against the roster every
+   * morning through `planInviteMembership`, reading the same `belongsOnSurface` this sync reports
+   * against. Filing calendar removals here as well would produce two proposals to drop one person
+   * from one meeting. The delta still reports the surfaces so the summary says what is coming.
+   */
+  syncMemberRoster(params: {
+    sheet: RosterSheetParse;
+    actor: string;
+    dryRun?: boolean;
+    /** Applies a plan that tripped the size guard. An admin who has looked at the sheet. */
+    force?: boolean;
+  }): AdminBotServiceResponse<AdminBotRosterSyncResult> {
+    const members = this.store.listLabMembers();
+    // An empty read is what every failure mode upstream looks like -- a bad range, a renamed tab, a
+    // revoked token -- and the plan built from it says every member has left and every type is
+    // cleared. Refuse before computing rather than after.
+    if (params.sheet.rows.length === 0) {
+      return serviceError(
+        422,
+        "the member sheet returned no usable rows -- refusing to sync a roster against an empty read",
+      );
+    }
+    const plan = planRosterSync({ sheet: params.sheet, members });
+    const refusal = params.force ? undefined : rosterSyncRefusal(plan, members.length);
+
+    const applied: AdminBotRosterSyncApplied[] = [];
+    const failed: { member_id: string; reason: string }[] = [];
+    const proposals: AdminBotRosterSyncProposal[] = [];
+
+    if (!refusal && !params.dryRun) {
+      for (const change of plan.member_type_changes) {
+        const existing = this.store.getLabMember(change.member_id);
+        if (!existing) {
+          failed.push({ member_id: change.member_id, reason: "member not found" });
+          continue;
+        }
+        // Computed before the write, from the record as stored: afterwards there is nothing left to
+        // diff against.
+        const delta = memberTypeAccessDelta(existing, change.to);
+        // A patch, not a replace. upsertLabMember merges over what is stored, so a sheet that knows
+        // one column cannot blank the twenty-nine it does not.
+        const saved = this.upsertLabMember(
+          // `name` is required by the input type and unchanged here: it is resent from the stored
+          // record rather than from the sheet, so a sync of one column cannot rename anybody.
+          { id: existing.id, name: existing.name, member_type: change.to },
+          { source: "import", actor: params.actor },
+        );
+        if (!saved.ok) {
+          failed.push({ member_id: change.member_id, reason: saved.error.message });
+          continue;
+        }
+        applied.push({ ...change, access: this.summarizeAccessDelta(delta) });
+        this.recordAudit({
+          type: "roster_sync.member_type_changed",
+          actor: params.actor,
+          details: {
+            member_id: change.member_id,
+            sheet_row: change.sheet_row,
+            from: change.from ?? "",
+            to: change.to,
+            lab_calendar: delta.lab_calendar,
+            group_meeting: delta.group_meeting,
+            portal: delta.portal,
+            revoked: delta.revoked.map((grant) => grant.item),
+            granted: delta.granted.map((grant) => grant.item),
+          },
+        });
+        proposals.push(...this.proposeAccessRevocations(existing, change, delta, params.actor));
+      }
+    }
+
+    this.recordAudit({
+      type: "roster_sync.completed",
+      actor: params.actor,
+      details: {
+        sheet_rows: params.sheet.rows.length,
+        roster_size: members.length,
+        changes_planned: plan.member_type_changes.length,
+        applied: applied.length,
+        failed: failed.length,
+        proposals: proposals.length,
+        additions: plan.additions.length,
+        absent: plan.absent.length,
+        dry_run: params.dryRun === true,
+        ...(refusal ? { refused: refusal } : {}),
+      },
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        ...plan,
+        applied,
+        failed,
+        proposals,
+        roster_size: members.length,
+        dry_run: params.dryRun === true,
+        ...(refusal ? { refused: refusal } : {}),
+        synced_at: new Date().toISOString(),
+      },
+    };
+  }
+
+  /** The parts of an access delta worth carrying back to a caller and an audit row. */
+  private summarizeAccessDelta(delta: MemberTypeAccessDelta): AdminBotRosterSyncAccess {
+    return {
+      lab_calendar: delta.lab_calendar,
+      group_meeting: delta.group_meeting,
+      portal: delta.portal,
+      granted: delta.granted.map((grant) => grant.item),
+      revoked: delta.revoked.map((grant) => grant.item),
+      slack_channels_to_remove: delta.slack_channels_to_remove,
+      subgroup_pinned: delta.subgroup_pinned,
+      consequential: hasAccessConsequences(delta),
+    };
+  }
+
+  /**
+   * The Slack removals a Member Type change implies, as proposals.
+   *
+   * Only removals. A newly granted room is an invitation, and inviting somebody into a conversation
+   * off the back of a spreadsheet edit is a different decision with a different failure mode --
+   * `adminbot-topic-channels` and the onboarding flow already own that direction, with the context
+   * to say which rooms actually apply.
+   *
+   * A member with no linked Slack account produces no proposal and no error: there is nothing to
+   * remove them from, and a sweep that failed on it would fail every night for the same 40 people.
+   */
+  private proposeAccessRevocations(
+    member: AdminBotLabMember,
+    change: RosterMemberTypeChange,
+    delta: MemberTypeAccessDelta,
+    actor: string,
+  ): AdminBotRosterSyncProposal[] {
+    const slackUserId = member.slack_user_id?.trim();
+    if (!slackUserId || delta.slack_channels_to_remove.length === 0) {
+      return [];
+    }
+    const proposals: AdminBotRosterSyncProposal[] = [];
+    for (const channel of delta.slack_channels_to_remove) {
+      const proposed = this.createProposal({
+        type: "slack.remove_from_channel",
+        summary: `Remove ${member.name} from #${channel} (member type ${
+          change.from?.trim() || "unset"
+        } -> ${change.to.trim() || "unset"})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel, user_id: slackUserId },
+        undo_plan: "Invite the member back to the channel.",
+      });
+      if (!proposed.ok) {
+        continue;
+      }
+      proposals.push({
+        member_id: member.id,
+        member_name: member.name,
+        channel,
+        proposal_id: proposed.payload.id,
+      });
+    }
+    this.recordAudit({
+      type: "roster_sync.access_revocations_proposed",
+      actor,
+      details: {
+        member_id: member.id,
+        channels: delta.slack_channels_to_remove,
+        proposals: proposals.length,
+      },
+    });
+    return proposals;
+  }
+
+  /**
    * Who belongs in the recommendation-letter help channel right now, and who no longer does.
    *
    * In: anybody with a letter request the lab has not finished with. Out: anybody whose letters
@@ -10598,6 +10893,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "role",
   "research_branch",
   "research_topics",
+  // The member's own account of their work. Self-editable by definition: a pitch an admin wrote
+  // for somebody is not the thing the field is for.
+  "elevator_pitch",
   "projects",
   "hours_per_week",
   "availability",
@@ -10630,6 +10928,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "birthday",
   "whatsapp",
   "correspondence_email",
+  // What the member wants from the next merch order. Theirs to state and theirs to change, right
+  // up until somebody places it.
+  "merch_requests",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
   "personal_circumstances",
@@ -11128,6 +11429,16 @@ function validateLabMember(
     const openReviewError = validateOpenReviewId(member.openreview_id);
     if (openReviewError) {
       return openReviewError;
+    }
+  }
+  // Free text on a record every member can read, so it needs a ceiling for the same reason
+  // availability notes do: without one it is an unbounded write to the roster.
+  if (member.elevator_pitch !== undefined) {
+    if (typeof member.elevator_pitch !== "string") {
+      return "member elevator pitch must be a string";
+    }
+    if (member.elevator_pitch.length > ADMINBOT_ELEVATOR_PITCH_MAX) {
+      return `member elevator pitch cannot exceed ${ADMINBOT_ELEVATOR_PITCH_MAX} characters`;
     }
   }
   if (member.birthday !== undefined) {

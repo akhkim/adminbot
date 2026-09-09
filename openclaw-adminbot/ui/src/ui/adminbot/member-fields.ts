@@ -17,6 +17,7 @@ import {
   adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
+  ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
 import type { icons } from "../icons.ts";
 
@@ -86,6 +87,9 @@ export type ProfileField = {
   // the control instead of coming back as a rejected save the member has to interpret.
   min?: number;
   max?: number;
+  // Text-only ceiling, for the fields the service caps tighter than the generic paragraph limit.
+  // Same reason as min/max: the rule belongs where the answer is typed, not in a rejected save.
+  maxLength?: number;
   group: ProfileFieldGroup;
 };
 
@@ -194,6 +198,20 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "research",
   },
   {
+    // The paragraph the topic tags above cannot be: what this person works on, in their own words.
+    // Optional, and deliberately so -- a required pitch is a form asking somebody to be
+    // interesting on demand, and what comes back is a restatement of the tags.
+    key: "elevator_pitch",
+    labelKey: "profile.fields.elevatorPitch",
+    example:
+      "I work out when a language model's answer is actually caused by the evidence it was given, and when it just looks that way.",
+    type: "paragraph",
+    hintKey: "profile.hints.elevatorPitch",
+    // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
+    maxLength: ADMINBOT_ELEVATOR_PITCH_MAX,
+    group: "research",
+  },
+  {
     key: "projects",
     labelKey: "profile.fields.projects",
     example: "AdminBot",
@@ -266,6 +284,17 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     example: "2027-06",
     type: "short_text",
     hintKey: "profile.hints.offboardingMonth",
+    group: "work",
+  },
+  {
+    // What the member wants out of the next merch run. Free text rather than a size dropdown: the
+    // orders are not uniform term to term, and a closed list would need editing before each one.
+    // Optional, and blank is a real answer -- somebody who wants nothing should not have to say so.
+    key: "merch_requests",
+    labelKey: "profile.fields.merchRequests",
+    example: "T-shirt (L), and a few stickers",
+    type: "short_text",
+    hintKey: "profile.hints.merchRequests",
     group: "work",
   },
   {

@@ -3,6 +3,38 @@ import { describe, expect, it, vi } from "vitest";
 import { renderAdminBotBadges } from "./badges.ts";
 
 describe("renderAdminBotBadges", () => {
+  // A colleague's account of somebody's work and a claim about your own read differently, and the
+  // queue used to present them identically because only the second kind could exist.
+  it("names the colleague who put a nomination forward", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        nominations: [
+          {
+            id: "nom-2",
+            badge_id: "team_contributor__bug_hunter",
+            family_key: "team_contributor__bug_hunter",
+            member_id: "pat",
+            member_name: "Pat Doe",
+            nominated_by: "mei",
+            nominator_name: "Mei Chen",
+            status: "pending",
+            created_at: "2026-08-03T00:00:00.000Z",
+            badge_category: "Team Contributor",
+            badge_name: "Bug Hunter",
+            badge_description: "Found a substantive error.",
+          },
+        ],
+      }),
+      container,
+    );
+
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-nominator"]')?.textContent,
+    ).toContain("Nominated by Mei Chen");
+  });
+
   it("renders the badge catalog, assignments, and nomination queue", () => {
     const container = document.createElement("div");
     render(
@@ -78,7 +110,12 @@ describe("renderAdminBotBadges", () => {
     expect(container.textContent).toContain("Badges");
     expect(container.textContent).toContain("Causality · Level 1");
     expect(container.textContent).toContain("Pat Doe");
-    expect(container.textContent).toContain("Pending self-nominations");
+    expect(container.textContent).toContain("Pending nominations");
+    // A nomination with no nominator is one the member filed themselves, which is a different
+    // thing for a reviewer to read than a colleague's account of somebody's work.
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-nominator"]')?.textContent,
+    ).toContain("Self-nominated");
   });
 
   it("shows the selected member's badges, including evidence, in the per-member view", () => {

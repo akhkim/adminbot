@@ -1040,6 +1040,12 @@ export type AdminBotTimeOffKind = (typeof adminBotTimeOffKinds)[number];
 // short enough that it cannot be used as a storage channel.
 export const ADMINBOT_MAX_LABEL_LENGTH = 120;
 
+// Longest an elevator pitch may run. Roughly a paragraph somebody reads out loud in half a minute,
+// which is the only length that makes the field usable for what it is for -- an introduction, not
+// a biography. The profile control counts against this same number so an over-long answer is
+// refused where it is typed rather than coming back as a rejected save.
+export const ADMINBOT_ELEVATOR_PITCH_MAX = 600;
+
 // Reserved project name for hours a member has explicitly declared as spare
 // capacity ("can take on something new / help others"). It is a sentinel, not a
 // real project, so it never earns a categorical colour slot in the charts and
@@ -1306,6 +1312,15 @@ export type AdminBotLabMemberInput = {
   calendar_email?: string;
   slack_user_id?: string;
   /**
+   * What this member would like from the next lab merch order -- a size, an item, a quantity.
+   *
+   * Free text rather than a size dropdown because the orders are not uniform: one term it is
+   * t-shirts, the next it is hoodies and stickers for a reading group, and a closed vocabulary
+   * would have to be edited before every run. Public to the lab like the rest of the record; there
+   * is nothing here worth hiding, and whoever is placing the order needs to read it.
+   */
+  merch_requests?: string;
+  /**
    * Free text a member may share about health or family circumstances. Confidential: see
    * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.
    */
@@ -1325,6 +1340,20 @@ export type AdminBotLabMemberInput = {
   status?: AdminBotMemberStatus;
   research_branch?: string;
   research_topics?: string[];
+  /**
+   * The member's own one-paragraph account of what they work on and why it matters.
+   *
+   * `research_topics` is a list of tags, which is what a roster filter needs and exactly what a
+   * person introducing a colleague cannot use: "causal inference, NLP" says nothing about the
+   * question somebody is actually chasing. This is that sentence, written by the person it is
+   * about, so an introduction, a grant blurb or a conference bio quotes them rather than
+   * paraphrasing three keywords.
+   *
+   * Public to the lab like the rest of the research group: it is written to be read by other
+   * members. Capped at ADMINBOT_ELEVATOR_PITCH_MAX -- a pitch that runs past that is a bio, and
+   * the field stops doing the one job it was added for.
+   */
+  elevator_pitch?: string;
   projects?: string[];
   hours_per_week?: number;
   // Where the member lives. The member map and the timezone suggestion are keyed on this one.
@@ -2121,6 +2150,14 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // The nightly roster sync. Three rows rather than one because they answer three different
+    // questions after the fact: what one person's Member Type became and what that cost them, what
+    // Slack removals it filed, and whether the pass ran at all (a refused pass records a
+    // `roster_sync.completed` with `refused` set, so a guard that trips is visible rather than
+    // looking like a night nothing changed).
+    | "roster_sync.member_type_changed"
+    | "roster_sync.access_revocations_proposed"
+    | "roster_sync.completed"
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"

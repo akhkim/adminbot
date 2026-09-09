@@ -411,6 +411,52 @@ has expired. A `404` from the route itself is reported as what it is: the Contro
 Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
 talking to a service that predates it and needs a deploy, not a broken spreadsheet.
 
+### Roster sync
+
+`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
+the same tab as the grid above, through the same configuration, and reconciles exactly two things
+against the database: who is on the roster, and each member's **Member Type**. Profile fields are
+`adminbot-member-sheet-poller`'s job -- widening this would let a spreadsheet typo overwrite what a
+member typed about themselves on their own profile page.
+
+What it does with what it finds is the whole design:
+
+- **Member Type is written** onto members it can match. That column is governance-owned and the
+  spreadsheet *is* the governance record, so copying it across is transcription. Writes are stamped
+  `import`, so the adoption rate does not credit them to the member, and they are a patch -- a sync
+  that knows one column cannot blank the twenty-nine it does not.
+- **Access consequences are proposed, never executed.** A type change can revoke a row of the
+  External Collab Access Design matrix, and where that row names a standing Slack room the sync
+  files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
+  is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
+- **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
+  often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
+  a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
+  matching no sheet row is far more often an address the sheet spells differently than a departure.
+
+The lab calendar and the Monday group meeting are deliberately not proposed here.
+`adminbot-meeting-membership` already reconciles both against the roster at 06:35, reading the same
+`belongsOnSurface` predicate, so the sync runs 25 minutes ahead of it and a type change lands in
+time for that morning's pass. The response still reports the surfaces each member gained or lost.
+
+Two guards, because a bad read is indistinguishable from a real mass change:
+
+- A sheet with no `Member Type` column is a `422`. Without it every row reads as "type cleared",
+  which is a mass revocation dressed up as a sync; a renamed tab, a truncated read and a permissions
+  error all arrive as exactly that.
+- A pass that would change more than a quarter of the roster (floor: 10) is refused and applies
+  nothing. `{"force": true}` overrides it, and takes an admin session -- the service principal the
+  cron uses is refused, because "I have looked at the spreadsheet" is not something a cron job can
+  assert. A refused pass exits non-zero so it shows up in the run list rather than reading as a
+  quiet night.
+
+`{"dry_run": true}` returns the whole diff and writes nothing.
+
+One case worth knowing: when a member's record carries an explicit `collaborator_subgroup`, that
+outranks the member-type token, so the matrix rows do not follow a type change. The response flags
+those with `subgroup_pinned` and the cron summary names them, rather than reporting "no
+consequences" for a change that genuinely had none only because the answer came from elsewhere.
+
 ### Member map
 
 `GET /member-map` groups active members by city. It's rendered two places: the

@@ -668,6 +668,13 @@ export type AppViewState = {
   profileBadgeNominationsError: import("./adminbot/data/badges.ts").BadgeLoadError | null;
   profileBadgeBusy: boolean;
   profileBadgeNotice: { kind: "success" | "error"; text: string } | null;
+  /**
+   * Who the profile page's nomination form is about. Empty means the viewer themselves.
+   *
+   * View state rather than form state because the badge list below the picker depends on it: the
+   * families already held by the person being nominated are the ones that cannot be nominated for.
+   */
+  profileBadgeNomineeId: string;
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;

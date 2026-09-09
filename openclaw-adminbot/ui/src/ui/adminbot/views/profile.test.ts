@@ -1,6 +1,9 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { adminBotMandatoryProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  adminBotMandatoryProfileFields,
+  ADMINBOT_ELEVATOR_PITCH_MAX,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
 import { renderProfile, type ProfileProps } from "./profile.ts";
@@ -77,6 +80,49 @@ describe("renderProfile autosave", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
+  // line in `notes`: the lab quotes it back in introductions and directory entries.
+  it("collects an elevator pitch, capped where the service caps it", () => {
+    const member = createMember();
+    const state = createState(member);
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const pitch = container.querySelector<HTMLTextAreaElement>('textarea[name="elevator_pitch"]')!;
+    expect(pitch).not.toBeNull();
+    expect(pitch.maxLength).toBe(ADMINBOT_ELEVATOR_PITCH_MAX);
+
+    pitch.value = "I work out when a model's answer is caused by its evidence.";
+    pitch.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({
+        elevator_pitch: "I work out when a model's answer is caused by its evidence.",
+      }),
+    );
+  });
+
+  it("collects a merch request as plain text on the record", () => {
+    const member = createMember();
+    const state = createState(member);
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const merch = container.querySelector<HTMLInputElement>('input[name="merch_requests"]')!;
+    expect(merch).not.toBeNull();
+
+    merch.value = "T-shirt (L), and a few stickers";
+    merch.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ merch_requests: "T-shirt (L), and a few stickers" }),
+    );
   });
 
   it("saves basics fields on their own, without a Save button click", () => {
@@ -1113,6 +1159,158 @@ describe("renderProfile visual structure", () => {
     expect(container.querySelector('input[name="badge_id"]')).not.toBeNull();
     expect(container.querySelector('textarea[name="evidence"][required]')).not.toBeNull();
     expect(container.textContent).toContain("Built or maintains shared lab infrastructure.");
+  });
+
+  // The board is meant to record what the lab noticed, and most of that is not something the
+  // person who did it writes up about themselves.
+  describe("nominating somebody else", () => {
+    const definitions = [
+      {
+        id: "team_contributor__bug_hunter",
+        family_key: "team_contributor__bug_hunter",
+        category: "Team Contributor",
+        name: "Bug Hunter",
+        description: "Found a substantive error in a lab paper.",
+        sort_order: 20,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ];
+    const lab = (overrides: Partial<AppViewState> = {}) => {
+      const member = createMember();
+      const colleague = createMember({ id: "mei", name: "Mei Chen", email: "mei@example.com" });
+      return {
+        member,
+        state: createState(member, {
+          adminBotData: { members: [member, colleague], papers: [] },
+          adminBotBadgeDefinitions: definitions,
+          profileBadgeNominations: [],
+          ...overrides,
+        } as unknown as Partial<AppViewState>),
+      };
+    };
+
+    it("defaults to the viewer and leaves them out of the roster picker", () => {
+      const { state } = lab();
+      const container = renderPage(state, vi.fn());
+
+      const picker = container.querySelector("adminbot-member-select") as HTMLElement & {
+        options: Array<{ id: string }>;
+      };
+      expect(picker).not.toBeNull();
+      expect(picker.options.map((option) => option.id)).toEqual(["mei"]);
+      // No "nominating X" line while it is about you: the default case costs no reading either.
+      expect(container.querySelector('[data-testid="profile-badge-nominee-name"]')).toBeNull();
+    });
+
+    it("submits with no member id for the viewer's own nomination", () => {
+      const { state } = lab();
+      const onSubmit = vi.fn();
+      const container = renderPage(state, vi.fn(), { onSubmitBadgeNomination: onSubmit });
+
+      const form = container.querySelector<HTMLFormElement>(".profile-badge-form")!;
+      container.querySelector<HTMLInputElement>('input[name="badge_id"]')!.checked = true;
+      container.querySelector<HTMLTextAreaElement>('textarea[name="evidence"]')!.value =
+        "I did it.";
+      form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+
+      expect(onSubmit).toHaveBeenCalledWith("team_contributor__bug_hunter", "I did it.", undefined);
+    });
+
+    it("submits for the picked colleague once one is chosen", () => {
+      const { state } = lab({ profileBadgeNomineeId: "mei" } as Partial<AppViewState>);
+      const onSubmit = vi.fn();
+      const container = renderPage(state, vi.fn(), { onSubmitBadgeNomination: onSubmit });
+
+      expect(
+        container.querySelector('[data-testid="profile-badge-nominee-name"]')?.textContent,
+      ).toContain("Mei Chen");
+
+      const form = container.querySelector<HTMLFormElement>(".profile-badge-form")!;
+      container.querySelector<HTMLInputElement>('input[name="badge_id"]')!.checked = true;
+      container.querySelector<HTMLTextAreaElement>('textarea[name="evidence"]')!.value =
+        "Caught the proof error.";
+      form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        "team_contributor__bug_hunter",
+        "Caught the proof error.",
+        "mei",
+      );
+    });
+
+    it("offers the badges the nominee is free for, not the ones the viewer is", () => {
+      const held = {
+        member_id: "mei",
+        badge_id: "team_contributor__bug_hunter",
+        family_key: "team_contributor__bug_hunter",
+        awarded_at: "2026-08-01T00:00:00.000Z",
+        awarded_by: "admin",
+        source: "admin" as const,
+        category: "Team Contributor",
+        name: "Bug Hunter",
+        description: "Found a substantive error in a lab paper.",
+        sort_order: 20,
+      };
+      const member = createMember();
+      const colleague = createMember({
+        id: "mei",
+        name: "Mei Chen",
+        assigned_badges: [held],
+      } as Partial<LabMember>);
+      const state = createState(member, {
+        adminBotData: { members: [member, colleague], papers: [] },
+        adminBotBadgeDefinitions: definitions,
+        profileBadgeNominations: [],
+        profileBadgeNomineeId: "mei",
+      } as unknown as Partial<AppViewState>);
+
+      const container = renderPage(state, vi.fn());
+
+      expect(container.querySelector('input[name="badge_id"]')).toBeNull();
+      expect(container.textContent).toContain("Mei Chen already holds");
+    });
+
+    it("says which way round each nomination in the list runs", () => {
+      const { state } = lab({
+        profileBadgeNominations: [
+          {
+            id: "sent",
+            badge_id: "team_contributor__bug_hunter",
+            family_key: "team_contributor__bug_hunter",
+            member_id: "mei",
+            member_name: "Mei Chen",
+            nominated_by: "pat",
+            status: "pending",
+            created_at: "2026-08-02T00:00:00.000Z",
+            badge_category: "Team Contributor",
+            badge_name: "Bug Hunter",
+            badge_description: "Found a substantive error.",
+          },
+          {
+            id: "received",
+            badge_id: "community_building__ambassador",
+            family_key: "community_building__ambassador",
+            member_id: "pat",
+            nominated_by: "mei",
+            nominator_name: "Mei Chen",
+            status: "pending",
+            created_at: "2026-08-03T00:00:00.000Z",
+            badge_category: "Community Building",
+            badge_name: "Ambassador",
+            badge_description: "Ran the booth.",
+          },
+        ],
+      } as unknown as Partial<AppViewState>);
+      const container = renderPage(state, vi.fn());
+
+      expect(
+        container.querySelector('[data-testid="profile-badge-nomination-sent"]')?.textContent,
+      ).toContain("You nominated Mei Chen");
+      expect(
+        container.querySelector('[data-testid="profile-badge-nomination-received"]')?.textContent,
+      ).toContain("Nominated by Mei Chen");
+    });
   });
 
   it("edits the record in place, with no edit button and no separate blanks card", () => {

@@ -3297,8 +3297,12 @@ export function renderApp(state: AppViewState) {
                 onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
                 onApplyPolishedPhoto: (variantId) =>
                   void applyAdminBotOwnProfilePhoto(state, variantId),
-                onSubmitBadgeNomination: (badgeId, evidence) =>
-                  void submitOwnBadgeNomination(state, badgeId, evidence),
+                onSubmitBadgeNomination: (badgeId, evidence, memberId) =>
+                  void submitOwnBadgeNomination(state, badgeId, evidence, memberId),
+                onPickBadgeNominee: (memberId) => {
+                  state.profileBadgeNomineeId = memberId;
+                  requestHostUpdate?.();
+                },
                 onNavigateToTab: (tab) => state.setTab(tab),
               })}
             `

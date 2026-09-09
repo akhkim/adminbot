@@ -482,6 +482,17 @@ function renderNominations(props: AdminBotBadgesProps) {
                       <div class="adminbot-form__meta">
                         ${t("adminbotBadges.field.submittedAt")}: ${submittedAt(nomination.created_at)}
                       </div>
+                      <!-- Who put it forward, when that is not the member themselves. It is the
+                           first thing an admin needs here: a claim about your own work and a
+                           colleague's account of it are read differently, and the queue used to
+                           present them identically because only the first kind existed. -->
+                      <div class="adminbot-form__meta" data-testid="adminbot-badge-nominator">
+                        ${nomination.nominated_by
+                          ? t("adminbotBadges.field.nominatedBy", {
+                              name: nomination.nominator_name ?? nomination.nominated_by,
+                            })
+                          : t("adminbotBadges.field.selfNominated")}
+                      </div>
                     </div>
                     <div class="adminbot-form__actions">
                       <button
