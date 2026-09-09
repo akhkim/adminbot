@@ -46,11 +46,19 @@ export type ConferencesProps = {
   notice: string | null;
   onEdit: (conferenceKey: string, patch: Partial<ConferenceTripDraft>) => void;
   onSave: (conferenceKey: string) => void;
+  /** Delete the viewer's row, putting them back in the not-going default. */
+  onWithdraw: (conferenceKey: string) => void;
 };
 
+/**
+ * The two states worth storing.
+ *
+ * Not going is not among them: it is the absence of a row, which is what most of the lab is for
+ * most conferences. Somebody who signed up and changed their mind uses Withdraw, which deletes
+ * their row and puts them back in that default.
+ */
 const INTENT_LABELS: Record<ConferenceTripIntent, string> = {
   going: "I'm going in person",
-  not_going: "I'm not going",
   undecided: "Still deciding",
 };
 
@@ -330,7 +338,16 @@ function renderSignup(props: ConferencesProps, conference: ConferenceSummary) {
           ${saving ? "Saving…" : props.mine[conference.key] ? "Update" : "Sign up"}
         </button>
         ${props.mine[conference.key]
-          ? html`<span class="conferences__saved">Your answer is recorded.</span>`
+          ? html`<button
+                type="button"
+                class="btn btn--sm"
+                ?disabled=${saving}
+                data-testid=${`conference-withdraw-${conference.key}`}
+                @click=${() => props.onWithdraw(conference.key)}
+              >
+                I'm not going after all
+              </button>
+              <span class="conferences__saved">Your answer is recorded.</span>`
           : nothing}
       </div>
     </form>
@@ -350,10 +367,9 @@ function renderRoster(conference: ConferenceSummary) {
   }
   return html`
     <div class="conferences__roster" data-testid=${`conference-roster-${conference.key}`}>
-      <h4 class="conferences__roster-title">Who is going</h4>
+      <h4 class="conferences__roster-title">Who is going, and what they need covered</h4>
       <p class="conferences__counts">
-        <strong>${roster.going}</strong> going · ${roster.undecided} undecided · ${roster.not_going}
-        not going
+        <strong>${roster.going}</strong> going · ${roster.undecided} still deciding
         ${roster.visa_letters > 0
           ? html`· <span class="conferences__flag">${roster.visa_letters} need a visa letter</span>`
           : nothing}
@@ -374,30 +390,53 @@ function renderRoster(conference: ConferenceSummary) {
           .join(" · ") || "No funding asks yet."}
       </p>
       ${roster.trips.length
-        ? html`<ul class="conferences__trips">
-            ${roster.trips.map(
-              (trip) => html`
-                <li data-testid=${`conference-trip-${conference.key}-${trip.member_id}`}>
-                  <strong>${trip.member_name}</strong>
-                  <span>${INTENT_LABELS[trip.intent]}</span>
-                  ${trip.intent === "going"
-                    ? html`<span>${FUNDING_LABELS[trip.funding]}</span> ${trip.needs_lodging
-                          ? html`<span
-                              >bed ${trip.arrival_on ?? "?"}–${trip.departure_on ?? "?"}</span
-                            >`
-                          : nothing}
-                        ${trip.paper_title
-                          ? html`<span>presenting ${trip.paper_title}</span>`
-                          : nothing}
-                        ${trip.needs_visa_letter ? html`<span>visa letter</span>` : nothing}`
-                    : nothing}
+        ? html`<table
+            class="conferences__people"
+            data-testid=${`conference-people-${conference.key}`}
+          >
+            <thead>
+              <tr>
+                <th scope="col">Who</th>
+                <th scope="col">Financial support needed</th>
+                <th scope="col">Bed</th>
+                <th scope="col">Presenting</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${roster.trips.map(
+                (trip) => html`
+                  <tr
+                    class=${trip.intent === "going" ? "" : "conferences__row--undecided"}
+                    data-testid=${`conference-trip-${conference.key}-${trip.member_id}`}
+                  >
+                    <th scope="row">
+                      ${trip.member_name}
+                      ${trip.intent === "going"
+                        ? nothing
+                        : html`<span class="conferences__tag">still deciding</span>`}
+                      ${trip.needs_visa_letter
+                        ? html`<span class="conferences__tag conferences__tag--flag"
+                            >visa letter</span
+                          >`
+                        : nothing}
+                    </th>
+                    <td>${FUNDING_LABELS[trip.funding]}</td>
+                    <td>
+                      ${trip.needs_lodging
+                        ? html`${trip.arrival_on ?? "?"} – ${trip.departure_on ?? "?"}`
+                        : "—"}
+                    </td>
+                    <td>${trip.paper_title ?? "—"}</td>
+                  </tr>
                   ${trip.notes
-                    ? html`<span class="conferences__trip-note">${trip.notes}</span>`
+                    ? html`<tr class="conferences__note-row">
+                        <td colspan="4" class="conferences__trip-note">${trip.notes}</td>
+                      </tr>`
                     : nothing}
-                </li>
-              `,
-            )}
-          </ul>`
+                `,
+              )}
+            </tbody>
+          </table>`
         : nothing}
     </div>
   `;

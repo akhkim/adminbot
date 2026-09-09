@@ -3784,7 +3784,8 @@ export async function fetchConferenceRosters(
   return { ok: true, value: body?.conferences ?? [] };
 }
 
-export type ConferenceTripIntent = "going" | "not_going" | "undecided";
+/** Not going is the absence of a row, never a value. Withdrawing deletes; see deleteConferenceTrip. */
+export type ConferenceTripIntent = "going" | "undecided";
 export type ConferenceFundingNeed = "none" | "fee_only" | "flight_only" | "full_travel";
 
 /** One member's own plan for one conference. Mirrors AdminBotConferenceTripRecord. */
@@ -3816,7 +3817,6 @@ export type ConferenceSummary = {
   workshop_count: number;
   roster?: {
     going: number;
-    not_going: number;
     undecided: number;
     funding: Record<ConferenceFundingNeed, number>;
     visa_letters: number;
@@ -3898,6 +3898,31 @@ export async function saveConferenceTrip(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: (result.body as { trip: ConferenceTrip }).trip };
+}
+
+/**
+ * Withdraw from a conference: the member's row is removed and they are simply not going.
+ *
+ * Idempotent on the service side, so a double press is not an error.
+ */
+export async function deleteConferenceTrip(
+  conferenceKey: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { withdrawn: boolean } };
 }
 
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */

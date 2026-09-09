@@ -42,6 +42,7 @@ function draw(overrides: Partial<ConferencesProps> = {}) {
   document.body.replaceChildren();
   const edits: Array<[string, Partial<ConferenceTripDraft>]> = [];
   const saves: string[] = [];
+  const withdrawals: string[] = [];
   const props: ConferencesProps = {
     conferences: [conference()],
     mine: {},
@@ -53,12 +54,13 @@ function draw(overrides: Partial<ConferencesProps> = {}) {
     notice: null,
     onEdit: (key, patch) => edits.push([key, patch]),
     onSave: (key) => saves.push(key),
+    onWithdraw: (key) => withdrawals.push(key),
     ...overrides,
   };
   const container = document.createElement("div");
   document.body.append(container);
   render(renderConferences(props), container);
-  return { container, edits, saves };
+  return { container, edits, saves, withdrawals };
 }
 
 describe("the conference card", () => {
@@ -91,6 +93,29 @@ describe("the sign-up form", () => {
     const { container } = draw({ signedIn: false });
     expect(container.querySelector('[data-testid="conference-signup-emnlp-2026"]')).toBeNull();
     expect(container.textContent).toContain("Sign in to say whether you are going");
+  });
+
+  it("offers only going and still deciding — not going is withdrawing, not an option", () => {
+    const { container } = draw();
+    const intent = container.querySelector('[data-testid="conference-intent-emnlp-2026"]');
+    expect(intent?.textContent).toContain("I'm going in person");
+    expect(intent?.textContent).toContain("Still deciding");
+    expect(intent?.textContent).not.toContain("I'm not going");
+  });
+
+  it("offers no way to withdraw until there is something to withdraw from", () => {
+    const { container } = draw();
+    expect(container.querySelector('[data-testid="conference-withdraw-emnlp-2026"]')).toBeNull();
+  });
+
+  it("offers withdrawal once a trip is recorded, and reports it", () => {
+    const { container, withdrawals } = draw({ mine: { "emnlp-2026": trip() } });
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="conference-withdraw-emnlp-2026"]',
+    );
+    expect(button).not.toBeNull();
+    button?.click();
+    expect(withdrawals).toEqual(["emnlp-2026"]);
   });
 
   it("opens on undecided rather than on going", () => {
@@ -212,7 +237,6 @@ describe("the sign-up form", () => {
 describe("the admin roster", () => {
   const roster: NonNullable<ConferenceSummary["roster"]> = {
     going: 2,
-    not_going: 1,
     undecided: 3,
     funding: { none: 1, fee_only: 0, flight_only: 0, full_travel: 1 },
     visa_letters: 1,
@@ -258,12 +282,23 @@ describe("the admin roster", () => {
     ).toContain("Nobody has asked for a bed");
   });
 
-  it("names who is going, what they need and what they are presenting", () => {
+  it("lists who is going against what each of them needs covered", () => {
     const { container } = draw({ conferences: [conference({ roster })] });
+    const table = container.querySelector('[data-testid="conference-people-emnlp-2026"]');
+    // The column an admin reads down when the question is "who is asking for full travel".
+    expect(table?.textContent).toContain("Financial support needed");
     const row = container.querySelector('[data-testid="conference-trip-emnlp-2026-ada"]');
     expect(row?.textContent).toContain("Ada Lovelace");
     expect(row?.textContent).toContain("Full travel");
     expect(row?.textContent).toContain("Causal abstraction");
     expect(container.textContent).toContain("1 need a visa letter");
+  });
+
+  it("counts only going and still deciding, because not going is nobody's row", () => {
+    const { container } = draw({ conferences: [conference({ roster })] });
+    const counts = container.querySelector(".conferences__counts");
+    expect(counts?.textContent).toContain("2");
+    expect(counts?.textContent).toContain("still deciding");
+    expect(counts?.textContent).not.toContain("not going");
   });
 });

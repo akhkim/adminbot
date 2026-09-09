@@ -7,6 +7,7 @@
 
 import type { UiSettings } from "../../storage.ts";
 import {
+  deleteConferenceTrip,
   fetchConferenceOverview,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
@@ -156,5 +157,53 @@ export async function saveAdminBotConferenceTrip(
   };
   // The admin roster on the card is computed by the service, so a fresh read is the only way to
   // see one's own answer reflected in the headcounts.
+  await loadAdminBotConferences(host);
+}
+
+/**
+ * Withdraw: drop the member's row so they are simply not going.
+ *
+ * `mine` is cleared here rather than waiting for the reload behind it, so the form falls straight
+ * back to its blank state instead of showing the old answer for another round-trip.
+ */
+export async function withdrawAdminBotConferenceTrip(
+  host: AdminBotConferencesHost,
+  conferenceKey: string,
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotConferences = {
+      ...host.adminBotConferences,
+      error: "Sign in to change whether you are going.",
+    };
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.adminBotConferences = {
+    ...host.adminBotConferences,
+    savingKey: conferenceKey,
+    error: null,
+    notice: null,
+  };
+  const result = await deleteConferenceTrip(conferenceKey, stored.sessionToken, baseUrl);
+  if (!result.ok) {
+    host.adminBotConferences = {
+      ...host.adminBotConferences,
+      savingKey: null,
+      error: failureText(result.kind, baseUrl),
+    };
+    return;
+  }
+  const mine = { ...host.adminBotConferences.mine };
+  delete mine[conferenceKey];
+  const drafts = { ...host.adminBotConferences.drafts };
+  delete drafts[conferenceKey];
+  host.adminBotConferences = {
+    ...host.adminBotConferences,
+    mine,
+    drafts,
+    savingKey: null,
+    notice: "Withdrawn. You are down as not going.",
+  };
   await loadAdminBotConferences(host);
 }

@@ -67,6 +67,7 @@ import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
   editAdminBotConferenceTrip,
   saveAdminBotConferenceTrip,
+  withdrawAdminBotConferenceTrip,
 } from "./adminbot/controllers/conferences.ts";
 import {
   downloadAdminBotLogisticsDocument,
@@ -4083,6 +4084,11 @@ export function renderApp(state: AppViewState) {
                     state as unknown as Parameters<typeof saveAdminBotConferenceTrip>[0],
                     key,
                     state.adminBotConferences.drafts[key] ?? conferenceDraftFor(state, key),
+                  ),
+                onWithdraw: (key) =>
+                  void withdrawAdminBotConferenceTrip(
+                    state as unknown as Parameters<typeof withdrawAdminBotConferenceTrip>[0],
+                    key,
                   ),
               }),
             )

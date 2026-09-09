@@ -158,13 +158,25 @@ describe("setConferenceTrip", () => {
       service.setConferenceTrip({
         conferenceKey: key,
         memberId: "ada",
-        intent: "not_going",
+        intent: "undecided",
         funding: "none",
       }),
     );
     const mine = unwrap(service.listConferenceOverview({ memberId: "ada" })).mine;
     expect(mine).toHaveLength(1);
-    expect(mine[0]?.intent).toBe("not_going");
+    expect(mine[0]?.intent).toBe("undecided");
+  });
+
+  it("refuses not_going, which is the absence of a row rather than a value", () => {
+    const service = seeded();
+    expect(
+      service.setConferenceTrip({
+        conferenceKey: firstConference(service),
+        memberId: "ada",
+        intent: "not_going",
+        funding: "none",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
   });
 
   it("refuses a reversed date span rather than widening everyone else's booking", () => {
@@ -211,5 +223,83 @@ describe("setConferenceTrip", () => {
       .filter((event) => event.type === "conference_trip.updated");
     expect(audit).toHaveLength(1);
     expect(audit[0]?.actor).toBe("ada");
+  });
+});
+
+describe("withdrawConferenceTrip", () => {
+  it("puts the member back in the not-going default by removing their row", () => {
+    const service = seeded();
+    const key = firstConference(service);
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: key,
+        memberId: "ada",
+        intent: "going",
+        funding: "full_travel",
+        needsLodging: true,
+      }),
+    );
+    unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }));
+
+    expect(unwrap(service.listConferenceOverview({ memberId: "ada" })).mine).toEqual([]);
+    const roster = unwrap(service.listConferenceOverview({ isAdmin: true })).conferences.find(
+      (entry) => entry.key === key,
+    )?.roster;
+    expect(roster?.going).toBe(0);
+    // The bed goes with them: a withdrawal the booking did not hear about is a paid-for empty room.
+    expect(roster?.lodging.guests).toBe(0);
+  });
+
+  it("is idempotent, because withdrawing twice is still not going", () => {
+    const service = seeded();
+    const key = firstConference(service);
+    expect(unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }))).toEqual(
+      { withdrawn: false },
+    );
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: key,
+        memberId: "ada",
+        intent: "going",
+        funding: "none",
+      }),
+    );
+    expect(unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }))).toEqual(
+      { withdrawn: true },
+    );
+    expect(unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }))).toEqual(
+      { withdrawn: false },
+    );
+  });
+
+  it("records a withdrawal, but not a no-op", () => {
+    const service = seeded();
+    const key = firstConference(service);
+    service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" });
+    expect(
+      service.listAuditEvents().filter((event) => event.type === "conference_trip.withdrawn"),
+    ).toHaveLength(0);
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: key,
+        memberId: "ada",
+        intent: "going",
+        funding: "none",
+      }),
+    );
+    unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }));
+    expect(
+      service.listAuditEvents().filter((event) => event.type === "conference_trip.withdrawn"),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a member who is not on the roster", () => {
+    const service = seeded();
+    expect(
+      service.withdrawConferenceTrip({
+        conferenceKey: firstConference(service),
+        memberId: "nobody",
+      }),
+    ).toMatchObject({ ok: false, status: 404 });
   });
 });

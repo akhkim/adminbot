@@ -154,6 +154,7 @@ function renderPublicPanel(state: AppViewState) {
       notice: conferences.notice,
       onEdit: () => undefined,
       onSave: () => undefined,
+      onWithdraw: () => undefined,
     });
   }
   if (state.tab === "adminbotConferencePapers") {

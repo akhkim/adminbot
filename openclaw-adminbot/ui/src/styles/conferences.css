@@ -110,6 +110,60 @@
   color: var(--warning, #a67c00);
 }
 
+/* Who is going, against what each of them needs paid for. A table rather than the run of inline
+   spans this used to be: an admin reads it down one column — "who is asking for full travel" —
+   and a list of chips makes that a scan of every row instead of a glance at one. */
+.conferences__people {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.conferences__people th,
+.conferences__people td {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.conferences__people thead th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.9em;
+  border-bottom: 1px solid var(--border);
+}
+
+.conferences__people tbody tr + tr th,
+.conferences__people tbody tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Somebody still deciding is on the list but is not a commitment, so the row recedes rather than
+   being hidden — the lab may still gain them. */
+.conferences__row--undecided {
+  color: var(--text-muted);
+}
+
+.conferences__tag {
+  margin-left: var(--space-1);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 14%, var(--bg));
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+.conferences__tag--flag {
+  background: color-mix(in srgb, #a67c00 18%, var(--bg));
+  color: var(--warning, #a67c00);
+}
+
+/* The note hangs under its own row, so it never widens the columns beside it. */
+.conferences__note-row td {
+  padding-top: 0;
+}
+
 .conferences__trips {
   list-style: none;
   margin: var(--space-2) 0 0;

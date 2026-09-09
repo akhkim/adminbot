@@ -3821,6 +3821,22 @@ async function handleAuthenticatedRoute(
     return;
   }
   const conferenceTrip = /^\/conferences\/([^/]+)\/trip$/u.exec(url.pathname);
+  if (req.method === "DELETE" && conferenceTrip?.[1]) {
+    // Withdrawing. A member session and their own row only, exactly like the write below: the id
+    // comes from the session, so one member cannot withdraw another.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.withdrawConferenceTrip({
+        conferenceKey: decodeURIComponent(conferenceTrip[1]),
+        memberId: principal.member.id,
+      }),
+    );
+    return;
+  }
   if (req.method === "PUT" && conferenceTrip?.[1]) {
     // A member session and nothing else -- not the service token, not an admin acting for someone.
     // Every field is a statement about this person's own circumstances, and the id comes from the

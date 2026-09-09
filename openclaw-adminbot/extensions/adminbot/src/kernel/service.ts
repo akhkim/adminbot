@@ -517,6 +517,8 @@ export type AdminBotServiceStore = {
   /** One row per member per conference: their own plan for the trip. See contracts/conference-trips.ts. */
   saveConferenceTrip(record: AdminBotConferenceTripRecord): void;
   listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
+  /** Withdrawing is deleting: not going is the absence of a row, never a stored value. */
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean;
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
@@ -5003,7 +5005,13 @@ export class AdminBotService {
   }> {
     const now = viewer?.now ? new Date(viewer.now) : new Date();
     const conferences = conferenceCatalog(DEADLINE_VENUES, now);
-    const trips = this.store.listConferenceTrips();
+    // Rows written before not-going stopped being a stored state read as absent, which is what
+    // they now mean. Filtered rather than migrated: the value is gone from the contract, so a row
+    // still carrying it is the old spelling of "no row" and the cheapest correct reading is to
+    // treat it as one.
+    const trips = this.store
+      .listConferenceTrips()
+      .filter((trip) => isAdminBotConferenceTripIntent(trip.intent));
     const members = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
     const papers = new Map(this.store.listPapers().map((paper) => [paper.id, paper]));
     const nameOf = (memberId: string) => members.get(memberId)?.name ?? memberId;
@@ -5024,19 +5032,26 @@ export class AdminBotService {
         ...conference,
         roster: {
           going: here.filter((trip) => trip.intent === "going").length,
-          not_going: here.filter((trip) => trip.intent === "not_going").length,
           undecided: here.filter((trip) => trip.intent === "undecided").length,
           funding,
           visa_letters: here.filter((trip) => trip.intent === "going" && trip.needs_visa_letter)
             .length,
           lodging: lodgingNeedFrom(here, nameOf),
-          trips: here.map((trip) => ({
-            ...trip,
-            member_name: nameOf(trip.member_id),
-            ...(trip.paper_id && papers.get(trip.paper_id)
-              ? { paper_title: papers.get(trip.paper_id)?.title }
-              : {}),
-          })),
+          // Going first, then by name. This is the list somebody reads with a booking form open,
+          // and the people who are definitely coming are the ones they are booking for.
+          trips: here
+            .map((trip) => ({
+              ...trip,
+              member_name: nameOf(trip.member_id),
+              ...(trip.paper_id && papers.get(trip.paper_id)
+                ? { paper_title: papers.get(trip.paper_id)?.title }
+                : {}),
+            }))
+            .toSorted(
+              (left, right) =>
+                Number(right.intent === "going") - Number(left.intent === "going") ||
+                left.member_name.localeCompare(right.member_name),
+            ),
         },
       };
     });
@@ -5079,7 +5094,9 @@ export class AdminBotService {
       return serviceError(404, `unknown member ${params.memberId}`);
     }
     if (!isAdminBotConferenceTripIntent(params.intent)) {
-      return serviceError(400, "intent must be going, not_going or undecided");
+      // Not going is deliberately not among them: it is the absence of a row, and a caller asking
+      // for it wants withdrawConferenceTrip below.
+      return serviceError(400, "intent must be going or undecided");
     }
     if (!isAdminBotConferenceFundingNeed(params.funding)) {
       return serviceError(400, "funding must be none, fee_only, flight_only or full_travel");
@@ -5116,6 +5133,42 @@ export class AdminBotService {
       details: { conference_key: conferenceKey, intent: trip.intent, funding: trip.funding },
     });
     return { ok: true, status: 200, payload: { trip } };
+  }
+
+  /**
+   * Withdrawing from a conference: the member's row is removed.
+   *
+   * Deleting rather than storing a third state, because not going is already what an absent row
+   * means. Storing it as well would give one fact two spellings, and every count downstream would
+   * have to remember to handle both -- the kind of thing that is right the day it is written and
+   * wrong the first time somebody adds a query.
+   *
+   * Idempotent: withdrawing when there is nothing to withdraw is a member saying they are not
+   * going, which was already true. Answering 404 would make the page report a failure for a state
+   * it successfully arrived at.
+   */
+  withdrawConferenceTrip(params: {
+    conferenceKey: string;
+    memberId: string;
+  }): AdminBotServiceResponse<{ withdrawn: boolean }> {
+    const conferenceKey = params.conferenceKey.trim();
+    if (!conferenceKey) {
+      return serviceError(400, "a conference is required");
+    }
+    if (!this.store.getLabMember(params.memberId)) {
+      return serviceError(404, `unknown member ${params.memberId}`);
+    }
+    const withdrawn = this.store.deleteConferenceTrip(conferenceKey, params.memberId);
+    if (withdrawn) {
+      // Only when something was actually removed: an audit line for a no-op would make the trail
+      // say somebody changed their mind when they did not.
+      this.recordAudit({
+        type: "conference_trip.withdrawn",
+        actor: params.memberId,
+        details: { conference_key: conferenceKey },
+      });
+    }
+    return { ok: true, status: 200, payload: { withdrawn } };
   }
 
   /**
