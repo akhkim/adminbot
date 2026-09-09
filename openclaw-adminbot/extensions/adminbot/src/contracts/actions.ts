@@ -2143,6 +2143,7 @@ export type AdminBotAuditEvent = {
     | "paper_social_draft.circulated"
     | "paper_social_consent.recorded"
     | "paper_attendee.updated"
+    | "conference_trip.updated"
     | "paper_reimbursement.updated"
     | "paper_slots.backfilled"
     // One author's account of one week. The prose stays out of `details` -- see the service.

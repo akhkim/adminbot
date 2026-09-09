@@ -391,6 +391,12 @@ const ANONYMOUS_ROUTES = new Set([
   // approved entries reach an anonymous caller; the handler resolves that from the principal, so
   // being on this list buys the read and nothing else. Every write below needs a member session.
   "GET /opportunities",
+  // The conference overview, for the same reason and on the same terms as Deadlines: the
+  // conferences on it are derived from the deadline dataset this service already publishes
+  // unauthenticated, and the descriptions are static prose about public venues. What is *not*
+  // public is who is going -- the handler resolves that from the principal, so an anonymous
+  // caller gets the cards and nothing about a single member. Signing up needs a member session.
+  "GET /conferences",
 ]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
@@ -3761,6 +3767,47 @@ async function handleAuthenticatedRoute(
         memberId: principal.member.id,
         decision: String(body.decision ?? ""),
         ...(typeof body.comment === "string" ? { comment: body.comment } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/conferences") {
+    // Anonymous-readable (see ANONYMOUS_ROUTES). The payload narrows itself: a visitor gets the
+    // conference cards, a member also gets their own trips back so the form opens filled in, and
+    // only an admin gets the roster of who else is going and what they asked the lab to pay for.
+    sendServiceResult(
+      res,
+      service.listConferenceOverview({
+        ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+        isAdmin: isPrivileged(principal),
+        ...(url.searchParams.get("now") ? { now: url.searchParams.get("now") as string } : {}),
+      }),
+    );
+    return;
+  }
+  const conferenceTrip = /^\/conferences\/([^/]+)\/trip$/u.exec(url.pathname);
+  if (req.method === "PUT" && conferenceTrip?.[1]) {
+    // A member session and nothing else -- not the service token, not an admin acting for someone.
+    // Every field is a statement about this person's own circumstances, and the id comes from the
+    // session rather than the body so one member cannot sign another up.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setConferenceTrip({
+        conferenceKey: decodeURIComponent(conferenceTrip[1]),
+        memberId: principal.member.id,
+        intent: String(body.intent ?? ""),
+        funding: String(body.funding ?? ""),
+        needsLodging: body.needs_lodging === true,
+        needsVisaLetter: body.needs_visa_letter === true,
+        ...(typeof body.arrival_on === "string" ? { arrivalOn: body.arrival_on } : {}),
+        ...(typeof body.departure_on === "string" ? { departureOn: body.departure_on } : {}),
+        ...(typeof body.paper_id === "string" ? { paperId: body.paper_id } : {}),
+        ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
       }),
     );
     return;
