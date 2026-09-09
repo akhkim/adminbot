@@ -7,6 +7,7 @@
 // The order here is the order on screen, and the bands (`COLUMN_GROUPS`) are the unit the sheet
 // shows and hides.
 
+import { publicationTrack, presentationFormat, PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "./paper-classification.ts";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperSteps,
@@ -214,7 +215,7 @@ const ARCHIVAL_OPTIONS = [
 
 const PRESENTATION_OPTIONS = [
   { value: "", label: "Not said" },
-  ...["poster", "findings", "main", "spotlight", "oral", "award"].map((type) => ({
+  ...PRESENTATION_FORMATS.map((type) => ({
     value: type,
     label: `${type[0]?.toUpperCase() ?? ""}${type.slice(1)}`,
   })),
@@ -478,12 +479,23 @@ const RECORD_COLUMNS: Column[] = [
     format: "Whether it counts as a publication",
   },
   {
+    key: "publication_track",
+    group: "decision",
+    kind: "select",
+    options: [{ value: "", label: "Not said" }, ...PUBLICATION_TRACKS.map((value) => ({value, label: value[0].toUpperCase() + value.slice(1)}))],
+    save: "publicationTrack",
+    read: publicationTrack,
+    label: "Publication track",
+    short: "Track",
+    format: "Main or Findings; independent of presentation format",
+  },
+  {
     key: "presentation_type",
     group: "decision",
     kind: "select",
     options: PRESENTATION_OPTIONS,
     save: "presentationType",
-    read: (paper) => paper.presentation_type ?? "",
+    read: presentationFormat,
     label: "Presentation",
     short: "Presented as",
     format: "Poster, oral, and so on",

@@ -4016,16 +4016,24 @@ export class AdminBotService {
         (patch as Record<string, unknown>)[field] = input[field];
       }
     }
-    // Drop the parsed availability when rebuilding the input: leaving it undefined makes
-    // upsertLabMember keep what is stored unless this request actually sent new text.
-    const { availability: _stored, ...existingFields } = existing;
-    const merged: AdminBotLabMemberInput = {
-      ...existingFields,
-      ...patch,
-      id: memberId,
-      privilege_level: existing.privilege_level,
-    };
-    const saved = this.upsertLabMember(merged, origin);
+    // Validate the changed fields, not unrelated imported values. The upsert already merges
+    // stored fields; resending a legacy malformed intake link must not block a new CV URL.
+    const changedFields = patch as Record<string, unknown>;
+    const storedFields = existing as unknown as Record<string, unknown>;
+    for (const field of SELF_PROFILE_EDITABLE_FIELDS) {
+      if (JSON.stringify(changedFields[field]) === JSON.stringify(storedFields[field])) {
+        delete changedFields[field];
+      }
+    }
+    const saved = this.upsertLabMember(
+      {
+        ...patch,
+        id: memberId,
+        name: patch.name ?? existing.name,
+        privilege_level: existing.privilege_level,
+      },
+      origin,
+    );
     // The member has just answered; anything still chasing them for an answer they have now given
     // is noise. Retracted here rather than only on the next sweep so the bell, the dashboard card
     // and the toast all go quiet on the save that fixed them, which is when the member is looking.
@@ -4292,6 +4300,12 @@ export class AdminBotService {
           }),
       artifacts: {
         ...existing?.artifacts,
+        // Older clients combined track and format. Preserve the track before a format edit
+        // replaces that legacy value; an explicit new track (including blank) still wins.
+        ...(existing?.artifacts?.publication_track === undefined &&
+          (existing?.presentation_type === "main" || existing?.presentation_type === "findings")
+          ? { publication_track: existing.presentation_type }
+          : {}),
         ...paper.artifacts,
       },
       checks: {

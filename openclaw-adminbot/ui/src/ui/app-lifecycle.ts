@@ -131,14 +131,19 @@ export function handleConnected(host: LifecycleHost) {
     const memberHost = host as unknown as MemberAuthHost;
     const gatewayTokenPresent = Boolean(memberHost.settings?.token?.trim());
     if (!gatewayTokenPresent && hasStoredMemberSession()) {
-      void resumeMemberSession(memberHost).then((outcome) => {
-        // "cleared": stored session was rejected — run the normal connect so the
-        // gate shows standard diagnostics. "unreachable" keeps its hint and skips
-        // a doomed tokenless connect. "resumed" already connected.
-        if (outcome === "cleared" && host.connectGeneration === connectGeneration) {
-          connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
-        }
-      });
+      void Promise.resolve(host.controlUiBootstrapReady)
+        .then(() => {
+          if (host.connectGeneration !== connectGeneration) {
+            return "no-session";
+          }
+          return resumeMemberSession(memberHost);
+        })
+        .then((outcome) => {
+          // A rejected session returns to the gate; an unreachable service retains the login.
+          if (outcome === "cleared" && host.connectGeneration === connectGeneration) {
+            connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+          }
+        });
     } else {
       // Gateway token already present (break-glass/URL-param or same-tab reload):
       // the full resume is skipped, so eagerly load privilege from any stored

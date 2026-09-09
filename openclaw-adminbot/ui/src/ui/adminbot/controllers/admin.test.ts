@@ -556,6 +556,7 @@ describe("saveAdminBotPaper", () => {
       acceptedYear: "2027",
       isArchival: "true",
       presentationType: "spotlight",
+      publicationTrack: "main",
       decisionEmailSent: "accept:ICLR 2027",
     });
 
@@ -576,6 +577,7 @@ describe("saveAdminBotPaper", () => {
       artifacts: {
         conference: "NeurIPS 2026",
         decision_coauthor_email_sent: "accept:ICLR 2027",
+        publication_track: "main",
       },
       venue_decision: "accept",
       accepted_venue: "ICLR 2027",

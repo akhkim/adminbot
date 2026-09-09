@@ -32,20 +32,14 @@ import type {
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
 } from "./controllers/admin.ts";
+import { PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "./paper-classification.ts";
 import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 
 /** Set once the author has seen the popup for this decision, so it never reopens. */
 const SEEN_KEY = "decision_seen";
 const EMAIL_SENT_KEY = "decision_coauthor_email_sent";
 
-export const PRESENTATION_TYPES = [
-  "main",
-  "findings",
-  "poster",
-  "spotlight",
-  "oral",
-  "award",
-] as const;
+export const PRESENTATION_TYPES = PRESENTATION_FORMATS;
 
 /** The venue's answer, if it has given one. Independent of whether the author has replied. */
 export function decisionOf(paper: AdminBotPaperRecord): "accept" | "reject" | null {
@@ -119,7 +113,7 @@ export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;
   decision: "accept" | "reject";
   /** What the author has picked so far. Held by the caller so a re-render does not lose it. */
-  draft: { presentation: string; attending: "yes" | "no" | ""; nextVenue: string };
+  draft: { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string };
   onDraft: (patch: Partial<DecisionBannerProps["draft"]>) => void;
   /** Puts every choice back to unselected. The write still needs Update. */
   onReset: () => void;
@@ -172,6 +166,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
       // Always sent, empty included: what is on screen is what gets written, so clearing a
       // choice and pressing Update removes it rather than silently keeping the old one.
       input.presentationType = draft.presentation;
+      input.publicationTrack = draft.track ?? "";
     }
     props.onSavePaper(input);
     if (decision === "accept") {
@@ -184,10 +179,17 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
     }
   };
 
-  const hasAnswer = Boolean(draft.presentation || draft.attending || draft.nextVenue);
+  const hasAnswer = Boolean(
+    draft.track || draft.presentation || draft.attending || draft.nextVenue,
+  );
 
   const choice = (label: string, on: boolean, pick: () => void) => html`
-    <button type="button" class="decision__choice ${on ? "is-on" : ""}" @click=${pick}>
+    <button
+      type="button"
+      class="decision__choice ${on ? "is-on" : ""}"
+      aria-pressed=${on}
+      @click=${pick}
+    >
       ${label}
     </button>
   `;
@@ -242,7 +244,15 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
       ${decision === "accept"
         ? html`
             <div class="decision-banner__row">
-              <span class="decision-banner__label">Track</span>
+              <span class="decision-banner__label">Publication track</span>
+              ${PUBLICATION_TRACKS.map((track) =>
+                choice(`${track[0].toUpperCase()}${track.slice(1)}`, draft.track === track, () =>
+                  props.onDraft({ track }),
+                ),
+              )}
+            </div>
+            <div class="decision-banner__row">
+              <span class="decision-banner__label">Presentation format</span>
               ${PRESENTATION_TYPES.map((type) =>
                 choice(
                   `${type[0]?.toUpperCase()}${type.slice(1)}`,

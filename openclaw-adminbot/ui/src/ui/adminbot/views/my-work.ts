@@ -19,6 +19,8 @@
 //
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
+import "../paper-visibility.ts";
+import { publicationTrack, presentationFormat, PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "../paper-classification.ts";
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import {
@@ -964,17 +966,25 @@ function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
               </select>
             </label>
             <label class="paper-acceptance__field">
-              <span class="register__label">Presentation</span>
+              <span class="register__label">Publication track</span>
+              <select class="input" data-testid=${`paper-track-${paper.id}`}
+                @change=${(event: Event) => save({ publicationTrack: (event.target as HTMLSelectElement).value })}>
+                <option value="" ?selected=${!publicationTrack(paper)}>Not said</option>
+                ${PUBLICATION_TRACKS.map((track) => html`<option value=${track} ?selected=${publicationTrack(paper) === track}>${track[0].toUpperCase()}${track.slice(1)}</option>`)}
+              </select>
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Presentation format</span>
               <select
                 class="input"
                 data-testid=${`paper-presentation-${paper.id}`}
                 @change=${(event: Event) =>
                   save({ presentationType: (event.target as HTMLSelectElement).value })}
               >
-                <option value="" ?selected=${!paper.presentation_type}>Not said</option>
-                ${["poster", "findings", "main", "spotlight", "oral", "award"].map(
+                <option value="" ?selected=${!presentationFormat(paper)}>Not said</option>
+                ${PRESENTATION_FORMATS.map(
                   (type) => html`
-                    <option value=${type} ?selected=${type === paper.presentation_type}>
+                    <option value=${type} ?selected=${type === presentationFormat(paper)}>
                       ${type[0]?.toUpperCase()}${type.slice(1)}
                     </option>
                   `,
@@ -2287,7 +2297,7 @@ const dirtyDecisions = new Set<string>();
 const emailTasks = new Map<string, { open: boolean; body: string }>();
 const decisionDrafts = new Map<
   string,
-  { presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
+  { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
 >();
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
@@ -2320,7 +2330,8 @@ function renderDecisionBanners(
     const saved =
       !dirtyDecisions.has(paper.id) && (savedDecisions.has(paper.id) || isDecisionAnswered(paper));
     const draft = decisionDrafts.get(paper.id) ?? {
-      presentation: paper.presentation_type ?? "",
+      track: publicationTrack(paper),
+      presentation: presentationFormat(paper),
       attending: "" as const,
       nextVenue: "",
     };
@@ -2376,7 +2387,7 @@ function renderDecisionBanners(
           decisionEmailSent: sent ? decisionEmailSentStamp(paper) : "",
         }),
       onReset: () => {
-        decisionDrafts.set(paper.id, { presentation: "", attending: "", nextVenue: "" });
+        decisionDrafts.set(paper.id, { track: "", presentation: "", attending: "", nextVenue: "" });
         savedDecisions.delete(paper.id);
         dirtyDecisions.add(paper.id);
         props.onRerender?.();
@@ -2522,6 +2533,12 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
            list, which is a column of prose, while a sheet of sixty columns wants every pixel.
            The cap was leaving a third of the window empty beside a table that scrolls. -->
       <div class="my-work my-work--sheet">
+        <div class="my-work__section-actions">
+          ${renderAddButton(state)}
+        </div>
+        <adminbot-paper-visibility .papers=${items} .memberId=${props.memberId}
+          @visibility-changed=${rerender}></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
         ${renderPaperGrid({
           state: gridState,
           papers: items,
@@ -2599,10 +2616,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${props.personal
-        ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
-        : nothing}
-      ${renderBlockers(state, items)}
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${props.title ?? t("myWork.items.title")}</h2>
@@ -2623,6 +2636,11 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             ${renderNudgeButton(props)} ${renderAddButton(state)}
           </div>
         </div>
+        <adminbot-paper-visibility .papers=${items} .memberId=${props.memberId}
+          @visibility-changed=${rerender}></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        ${props.personal ? renderDecisionBanners(items, props, state.adminBotData?.members ?? []) : nothing}
+        ${renderBlockers(state, items)}
         ${renderNudgePreview(props)}
         ${props.slotsNotice
           ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
@@ -2680,7 +2698,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             </p>`
           : nothing}
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
-        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
       </section>
     </div>
   `;

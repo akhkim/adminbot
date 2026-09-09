@@ -537,6 +537,7 @@ export type AdminBotPaperSaveInput = {
   acceptedYear?: string;
   isArchival?: string;
   presentationType?: string;
+  publicationTrack?: string;
 };
 
 export type AdminBotSettingsSaveInput = {
@@ -2566,6 +2567,7 @@ export async function saveAdminBotPaper(
     ...(paper.posterUrl ? { poster_url: paper.posterUrl } : {}),
     // Sent even when empty, because clearing every venue has to be able to erase the key.
     ...(paper.venueTargets === undefined ? {} : { venue_targets: paper.venueTargets }),
+    ...(paper.publicationTrack === undefined ? {} : { publication_track: paper.publicationTrack }),
     ...(paper.decisionSeen ? { decision_seen: paper.decisionSeen } : {}),
     // Sent even when empty so an accidental acknowledgement can be undone.
     ...(paper.decisionEmailSent === undefined

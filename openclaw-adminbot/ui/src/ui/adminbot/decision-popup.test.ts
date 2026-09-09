@@ -48,15 +48,8 @@ describe("when the popup should open", () => {
     expect(pendingDecision(resubmitted)).toBe("accept");
   });
 
-  it("offers the tracks the lab actually publishes in", () => {
-    expect([...PRESENTATION_TYPES]).toEqual([
-      "main",
-      "findings",
-      "poster",
-      "spotlight",
-      "oral",
-      "award",
-    ]);
+  it("offers presentation formats independently of publication track", () => {
+    expect([...PRESENTATION_TYPES]).toEqual(["poster", "spotlight", "oral", "award"]);
   });
 });
 
