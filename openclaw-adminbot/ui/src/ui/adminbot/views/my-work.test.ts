@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
-import { renderMyWork, type MyWorkProps, ownPapers } from "./my-work.ts";
+import {
+  renderMyWork,
+  resetMyWorkViewModeForTest,
+  type MyWorkProps,
+  ownPapers,
+} from "./my-work.ts";
 
 function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
   return {
@@ -1457,5 +1462,50 @@ describe("project details autosave", () => {
     expect(container.querySelector(".my-work-details__autosave-hint")?.textContent?.trim()).toBe(
       "Changes save automatically.",
     );
+  });
+});
+
+describe("the flat view", () => {
+  // Both full-page modes are module state the app never resets, so a spec that opens one would
+  // otherwise leave every later spec looking at it.
+  afterEach(() => {
+    resetMyWorkViewModeForTest();
+  });
+
+  it("offers the button beside the spreadsheet one", () => {
+    const { container } = draw();
+    expect(container.querySelector('[data-testid="my-work-open-legacy"]')).not.toBeNull();
+  });
+
+  it("offers it on a single paper, unlike the sheet", () => {
+    // The sheet is a bulk tool and is worse than one card; this is the same card drawn flat.
+    const { container } = draw({ papers: [paper()] });
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-open-legacy"]')).not.toBeNull();
+  });
+
+  it("swaps the card list for the flat form and back", () => {
+    const drawn = draw();
+    drawn.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')
+      ?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    expect(drawn.container.querySelector('[data-testid="my-work-item-p1"]')).toBeNull();
+
+    drawn.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy"]')).toBeNull();
+    expect(drawn.container.querySelector('[data-testid="my-work-item-p1"]')).not.toBeNull();
+  });
+
+  it("hides nothing: every paper on the list is on the flat form", () => {
+    const drawn = draw({ papers: [paper(), paper({ id: "p2", title: "Second paper" })] });
+    drawn.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')
+      ?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy-paper-p1"]')).not.toBeNull();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy-paper-p2"]')).not.toBeNull();
   });
 });
