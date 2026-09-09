@@ -63,6 +63,11 @@ import {
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
 import {
+  createEmptyConferencesState,
+  loadAdminBotConferences,
+  type AdminBotConferencesState,
+} from "./adminbot/controllers/conferences.ts";
+import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
@@ -334,6 +339,7 @@ export class OpenClawApp extends LitElement {
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
   @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  @state() adminBotConferences: AdminBotConferencesState = createEmptyConferencesState();
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;
@@ -1698,6 +1704,12 @@ export class OpenClawApp extends LitElement {
   loadLocationPrompt(): Promise<void> {
     return loadAdminBotLocationPrompt(
       this as unknown as Parameters<typeof loadAdminBotLocationPrompt>[0],
+    );
+  }
+
+  loadConferences(): Promise<void> {
+    return loadAdminBotConferences(
+      this as unknown as Parameters<typeof loadAdminBotConferences>[0],
     );
   }
 

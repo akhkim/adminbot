@@ -65,6 +65,10 @@ import {
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
+  editAdminBotConferenceTrip,
+  saveAdminBotConferenceTrip,
+} from "./adminbot/controllers/conferences.ts";
+import {
   downloadAdminBotLogisticsDocument,
   loadAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
@@ -98,8 +102,8 @@ import {
   remindAdminBotIncompleteProfiles,
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
-import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import "./components/feedback-widget.ts";
+import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -828,6 +832,33 @@ const lazyConferencePapers = createLazyView(
 );
 const lazyWorkshopNudges = createLazyView(
   () => import("./adminbot/views/workshop-nudges.ts"),
+  notifyLazyViewChanged,
+);
+/**
+ * The form's starting point for one conference: what the member said last time, or the blanks.
+ *
+ * Here rather than in the view because both the edit and the save need the same base, and a view
+ * that computed it twice would let a half-typed answer disagree with what Save sends.
+ */
+function conferenceDraftFor(
+  state: AppViewState,
+  key: string,
+): import("./adminbot/views/conferences.ts").ConferenceTripDraft {
+  const trip = state.adminBotConferences.mine[key];
+  return {
+    intent: trip?.intent ?? "undecided",
+    funding: trip?.funding ?? "none",
+    needs_lodging: trip?.needs_lodging ?? false,
+    needs_visa_letter: trip?.needs_visa_letter ?? false,
+    arrival_on: trip?.arrival_on ?? "",
+    departure_on: trip?.departure_on ?? "",
+    paper_id: trip?.paper_id ?? "",
+    notes: trip?.notes ?? "",
+  };
+}
+
+const lazyConferences = createLazyView(
+  () => import("./adminbot/views/conferences.ts"),
   notifyLazyViewChanged,
 );
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
@@ -2680,6 +2711,17 @@ export function renderApp(state: AppViewState) {
   ) {
     void state.loadLocationDrifts?.().finally(() => requestHostUpdate?.());
   }
+  // Read on open, and read publicly: the board is anonymous like Deadlines, so this is not gated
+  // on a session. `loadedAt` is the "never loaded" test rather than a truthy array -- a lab with
+  // no conferences on file would otherwise re-request on every render.
+  if (
+    state.tab === "adminbotConferences" &&
+    !state.adminBotConferences.loading &&
+    state.adminBotConferences.loadedAt === null &&
+    state.adminBotConferences.error === null
+  ) {
+    void state.loadConferences?.().finally(() => requestHostUpdate?.());
+  }
   // Asked once, when the member opens their own profile -- which is where the banner renders and
   // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing
   // to ask" and must not re-trigger.
@@ -4012,6 +4054,36 @@ export function renderApp(state: AppViewState) {
                 onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
                 onSearch: () => void searchAdminBotVenuePapers(state),
                 onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+              }),
+            )
+          : nothing}
+        ${state.tab === "adminbotConferences"
+          ? renderLazyView(lazyConferences, (m) =>
+              m.renderConferences({
+                conferences: state.adminBotConferences.conferences,
+                mine: state.adminBotConferences.mine,
+                drafts: state.adminBotConferences.drafts,
+                // Their own papers, to name what they are presenting. The admin view of this tab
+                // reuses the same list rather than every paper in the lab: the question is "which
+                // of yours are you presenting", which is a question about the viewer.
+                papers: ownPapers(state).map((paper) => ({ id: paper.id, title: paper.title })),
+                signedIn: Boolean(state.memberId),
+                savingKey: state.adminBotConferences.savingKey,
+                error: state.adminBotConferences.error,
+                notice: state.adminBotConferences.notice,
+                onEdit: (key, patch) =>
+                  editAdminBotConferenceTrip(
+                    state as unknown as Parameters<typeof editAdminBotConferenceTrip>[0],
+                    key,
+                    patch,
+                    conferenceDraftFor(state, key),
+                  ),
+                onSave: (key) =>
+                  void saveAdminBotConferenceTrip(
+                    state as unknown as Parameters<typeof saveAdminBotConferenceTrip>[0],
+                    key,
+                    state.adminBotConferences.drafts[key] ?? conferenceDraftFor(state, key),
+                  ),
               }),
             )
           : nothing}

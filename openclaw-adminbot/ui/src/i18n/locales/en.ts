@@ -490,6 +490,7 @@ export const en: TranslationMap = {
     adminbotMeetingRequests: "Meeting Request",
     adminbotPapers: "Active Papers",
     adminbotWorkshopNudges: "Workshop Matches",
+    adminbotConferences: "Conferences",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
     adminbotCalendar: "Calendar",
@@ -544,6 +545,7 @@ export const en: TranslationMap = {
     adminbotMeetingRequests: "Ask for a slot, and say what the call is for.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
+    adminbotConferences: "Upcoming conferences, and a place to sign up to go in person.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",

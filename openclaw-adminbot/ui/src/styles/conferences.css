@@ -1,0 +1,133 @@
+/* Conference Overview. One card per venue: what it is, then your own answer, then — for an admin —
+   what the lab has taken on. The order is the reading order: a member stops at their own form and
+   never sees the third block, so the roster is last rather than beside the description. */
+
+.conferences__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.conferences__where {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.conferences__description {
+  margin: var(--space-2) 0;
+  max-width: 70ch;
+}
+
+.conferences__facts {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.conferences__signup {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* A checkbox and its explanation read as one control, so the box sits beside the label rather
+   than above it like the typed fields do. */
+.conferences__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.conferences__check input {
+  margin-top: 3px;
+}
+
+.conferences__check small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.conferences__notes textarea {
+  min-height: 3rem;
+}
+
+.conferences__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.conferences__saved,
+.conferences__signed-out,
+.conferences__empty {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.conferences__roster {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-muted) 8%, var(--bg));
+}
+
+.conferences__roster-title {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95em;
+}
+
+.conferences__counts,
+.conferences__funding {
+  margin: 0 0 var(--space-1);
+  font-size: 0.9em;
+}
+
+/* The booking line. Given its own weight because it is the one thing on the card with a deadline
+   of its own — the beds have to be reserved, and the headcount is useless without the nights.
+   The weight is a tinted panel and nothing else: a colored bar down one side would be a second
+   emphasis doing the same job as the fill, and the fill already separates this line from the two
+   plain count rows above it. */
+.conferences__lodging {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, #22c55e 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #22c55e 10%, var(--bg));
+}
+
+.conferences__flag {
+  color: var(--warning, #a67c00);
+}
+
+.conferences__trips {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.9em;
+}
+
+.conferences__trips li {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.conferences__trip-note {
+  color: var(--text-muted);
+  font-style: italic;
+}

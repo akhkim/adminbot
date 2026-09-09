@@ -1,8 +1,3 @@
-import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
-import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
-import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
-import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 /**
  * In-memory service store.
  *
@@ -40,6 +35,7 @@ import type {
   AdminBotBadgeNomination,
   AdminBotBadgeNominationStatus,
 } from "../contracts/badges.js";
+import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type {
   AdminBotEmailReviewItem,
@@ -47,6 +43,9 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
@@ -66,6 +65,8 @@ import type {
   AdminBotSlackChannelNamingRecord,
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
 function slackConnectInviteKey(email: string, channelId: string): string {
@@ -75,7 +76,10 @@ function slackConnectInviteKey(email: string, channelId: string): string {
 export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly helpInterests = new Map<string, LabHelpInterest>();
   saveHelpInterest(interest: LabHelpInterest): void {
-    this.helpInterests.set(JSON.stringify([interest.paper_id, interest.member_id]), structuredClone(interest));
+    this.helpInterests.set(
+      JSON.stringify([interest.paper_id, interest.member_id]),
+      structuredClone(interest),
+    );
   }
   listHelpInterests(): LabHelpInterest[] {
     return [...this.helpInterests.values()].map((row) => structuredClone(row));
@@ -91,8 +95,17 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   saveHelpRequest(request: LabHelpRequest): void {
     this.helpRequests.set(request.paper_id, structuredClone(request));
   }
-  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
-    return discoverMemoryHelpRequests(this.listHelpRequests(), id => this.getPaper(id), id => this.getLabMember(id), query, after);
+  discoverHelpRequests(
+    query: LabSharingDiscoveryQuery,
+    after?: DiscoveryPosition,
+  ): DiscoveredHelpRequest[] {
+    return discoverMemoryHelpRequests(
+      this.listHelpRequests(),
+      (id) => this.getPaper(id),
+      (id) => this.getLabMember(id),
+      query,
+      after,
+    );
   }
   getHelpRequest(paperId: string): LabHelpRequest | undefined {
     return structuredClone(this.helpRequests.get(paperId));
@@ -674,6 +687,26 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.socialConsents.values()].filter(
       (consent) => draftId === undefined || consent.draft_id === draftId,
     );
+  }
+
+  private readonly conferenceTrips = new Map<string, AdminBotConferenceTripRecord>();
+
+  saveConferenceTrip(record: AdminBotConferenceTripRecord): void {
+    this.conferenceTrips.set(
+      JSON.stringify([record.conference_key, record.member_id]),
+      structuredClone(record),
+    );
+  }
+
+  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
+    return [...this.conferenceTrips.values()]
+      .filter((trip) => !conferenceKey || trip.conference_key === conferenceKey)
+      .map((trip) => structuredClone(trip))
+      .toSorted(
+        (left, right) =>
+          left.conference_key.localeCompare(right.conference_key) ||
+          left.member_id.localeCompare(right.member_id),
+      );
   }
 
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {

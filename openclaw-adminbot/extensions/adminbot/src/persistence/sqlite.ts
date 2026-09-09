@@ -1,10 +1,3 @@
-import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
-import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
-import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { discoverHelpRequests } from "./lab-sharing-discovery.js";
-import { ensureDirectorStatusSchema, saveDirectorStatus, readDirectorStatus } from "./lab-sharing-status.js";
-import { ensureLabInterestSchema, saveHelpInterest, listHelpInterests } from "./lab-sharing-interest.js";
-import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -40,6 +33,7 @@ import type {
   AdminBotBadgeNomination,
   AdminBotBadgeNominationStatus,
 } from "../contracts/badges.js";
+import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type {
   AdminBotEmailReviewItem,
@@ -47,6 +41,9 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
@@ -73,12 +70,24 @@ import {
   type AdminBotSlackChannelNamingRecord,
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import { discoverHelpRequests } from "./lab-sharing-discovery.js";
+import {
+  ensureLabInterestSchema,
+  saveHelpInterest,
+  listHelpInterests,
+} from "./lab-sharing-interest.js";
+import {
+  ensureDirectorStatusSchema,
+  saveDirectorStatus,
+  readDirectorStatus,
+} from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
 
 const require = createRequire(import.meta.url);
@@ -430,6 +439,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         attending TEXT NOT NULL,
         confirmed_at TEXT,
         PRIMARY KEY (paper_id, attendee_key)
+      );
+
+      -- One member's plan for one conference, keyed by both: a person takes one trip to EMNLP
+      -- however many papers they have there, which is exactly what the per-paper attendee table
+      -- above cannot express.
+      CREATE TABLE IF NOT EXISTS adminbot_conference_trips (
+        conference_key TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        intent TEXT NOT NULL,
+        funding TEXT NOT NULL,
+        needs_lodging INTEGER NOT NULL DEFAULT 0,
+        arrival_on TEXT,
+        departure_on TEXT,
+        needs_visa_letter INTEGER NOT NULL DEFAULT 0,
+        paper_id TEXT,
+        notes TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (conference_key, member_id)
       );
 
       CREATE TABLE IF NOT EXISTS adminbot_paper_reimbursements (
@@ -2046,6 +2073,66 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  saveConferenceTrip(record: AdminBotConferenceTripRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_conference_trips
+          (conference_key, member_id, intent, funding, needs_lodging, arrival_on, departure_on,
+           needs_visa_letter, paper_id, notes, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(conference_key, member_id) DO UPDATE SET
+           intent = excluded.intent,
+           funding = excluded.funding,
+           needs_lodging = excluded.needs_lodging,
+           arrival_on = excluded.arrival_on,
+           departure_on = excluded.departure_on,
+           needs_visa_letter = excluded.needs_visa_letter,
+           paper_id = excluded.paper_id,
+           notes = excluded.notes,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        record.conference_key,
+        record.member_id,
+        record.intent,
+        record.funding,
+        record.needs_lodging ? 1 : 0,
+        record.arrival_on ?? null,
+        record.departure_on ?? null,
+        record.needs_visa_letter ? 1 : 0,
+        record.paper_id ?? null,
+        record.notes ?? null,
+        record.updated_at,
+      );
+  }
+
+  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
+    const rows = (
+      conferenceKey
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_conference_trips WHERE conference_key = ? ORDER BY member_id",
+            )
+            .all(conferenceKey)
+        : this.db
+            .prepare("SELECT * FROM adminbot_conference_trips ORDER BY conference_key, member_id")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      conference_key: String(row.conference_key),
+      member_id: String(row.member_id),
+      intent: String(row.intent) as AdminBotConferenceTripRecord["intent"],
+      funding: String(row.funding) as AdminBotConferenceTripRecord["funding"],
+      needs_lodging: Boolean(row.needs_lodging),
+      needs_visa_letter: Boolean(row.needs_visa_letter),
+      updated_at: String(row.updated_at),
+      ...optionalText(row, "arrival_on"),
+      ...optionalText(row, "departure_on"),
+      ...optionalText(row, "paper_id"),
+      ...optionalText(row, "notes"),
+    }));
+  }
+
   listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[] {
     const rows = (
       paperId
@@ -2170,8 +2257,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     });
   }
 
-  saveHelpInterest(interest: LabHelpInterest): void { saveHelpInterest(this.db, interest); }
-  listHelpInterests(): LabHelpInterest[] { return listHelpInterests(this.db); }
+  saveHelpInterest(interest: LabHelpInterest): void {
+    saveHelpInterest(this.db, interest);
+  }
+  listHelpInterests(): LabHelpInterest[] {
+    return listHelpInterests(this.db);
+  }
   saveDirectorStatus(status: LabDirectorStatus | null): void {
     saveDirectorStatus(this.db, status);
   }
@@ -2181,12 +2272,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);
   }
-  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
+  discoverHelpRequests(
+    query: LabSharingDiscoveryQuery,
+    after?: DiscoveryPosition,
+  ): DiscoveredHelpRequest[] {
     return discoverHelpRequests(this.db, query, after);
   }
   getHelpRequest(paperId: string): LabHelpRequest | undefined {
-    const row = this.db.prepare("SELECT payload_json FROM adminbot_help_requests WHERE paper_id = ?").get(paperId) as {payload_json: string} | undefined;
-    return row ? JSON.parse(row.payload_json) as LabHelpRequest : undefined;
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_help_requests WHERE paper_id = ?")
+      .get(paperId) as { payload_json: string } | undefined;
+    return row ? (JSON.parse(row.payload_json) as LabHelpRequest) : undefined;
   }
   listHelpRequests(): LabHelpRequest[] {
     return listHelpRequests(this.db);

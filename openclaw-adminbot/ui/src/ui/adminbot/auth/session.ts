@@ -3784,6 +3784,122 @@ export async function fetchConferenceRosters(
   return { ok: true, value: body?.conferences ?? [] };
 }
 
+export type ConferenceTripIntent = "going" | "not_going" | "undecided";
+export type ConferenceFundingNeed = "none" | "fee_only" | "flight_only" | "full_travel";
+
+/** One member's own plan for one conference. Mirrors AdminBotConferenceTripRecord. */
+export type ConferenceTrip = {
+  conference_key: string;
+  member_id: string;
+  intent: ConferenceTripIntent;
+  funding: ConferenceFundingNeed;
+  needs_lodging: boolean;
+  arrival_on?: string;
+  departure_on?: string;
+  needs_visa_letter: boolean;
+  paper_id?: string;
+  notes?: string;
+  updated_at: string;
+};
+
+/** One conference card. `roster` arrives only for an admin; see listConferenceOverview. */
+export type ConferenceSummary = {
+  key: string;
+  label: string;
+  family: string;
+  year?: number;
+  location?: string;
+  description: string;
+  homepage_url?: string;
+  next_deadline_aoe?: string;
+  next_deadline_label?: string;
+  workshop_count: number;
+  roster?: {
+    going: number;
+    not_going: number;
+    undecided: number;
+    funding: Record<ConferenceFundingNeed, number>;
+    visa_letters: number;
+    lodging: {
+      guests: number;
+      first_night?: string;
+      last_night?: string;
+      members: Array<{
+        member_id: string;
+        name: string;
+        arrival_on?: string;
+        departure_on?: string;
+      }>;
+    };
+    trips: Array<ConferenceTrip & { member_name: string; paper_title?: string }>;
+  };
+};
+
+export type ConferenceOverview = {
+  conferences: ConferenceSummary[];
+  /** The viewer's own trips. Empty when signed out. */
+  mine: ConferenceTrip[];
+};
+
+/**
+ * The conference overview.
+ *
+ * Readable signed out, like the deadline board it is derived from -- so this takes an optional
+ * token rather than requiring one, and the service narrows the payload to whoever is asking.
+ */
+export async function fetchConferenceOverview(
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceOverview>> {
+  // `authedJson` takes a null token, which is how the Opportunities board reads publicly too.
+  const result = await authedJson(baseUrl, "/conferences", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    // The service predates this route: the Control UI ships on merge and the service is deployed
+    // separately, so a new tab can reach a host that has never heard of it.
+    return { ok: true, value: { conferences: [], mine: [] } };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as Partial<ConferenceOverview> | null;
+  return { ok: true, value: { conferences: body?.conferences ?? [], mine: body?.mine ?? [] } };
+}
+
+/** Sign the signed-in member up, or change what they said. Always their own row. */
+export async function saveConferenceTrip(
+  conferenceKey: string,
+  input: {
+    intent: ConferenceTripIntent;
+    funding: ConferenceFundingNeed;
+    needs_lodging: boolean;
+    needs_visa_letter: boolean;
+    arrival_on?: string;
+    departure_on?: string;
+    paper_id?: string;
+    notes?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceTrip>> {
+  const result = await authedJson(
+    baseUrl,
+    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: (result.body as { trip: ConferenceTrip }).trip };
+}
+
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
 export type RecentUpdateRow = {
   id: string;

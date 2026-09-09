@@ -466,6 +466,8 @@ export type AppViewState = {
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
+  adminBotConferences: import("./adminbot/controllers/conferences.ts").AdminBotConferencesState;
+  loadConferences?: () => Promise<void>;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;

@@ -118,6 +118,14 @@ import {
   type AdminBotBadgeNominationStatus,
   type AdminBotBadgeNominationView,
 } from "../contracts/badges.js";
+import {
+  adminBotConferenceFundingNeeds,
+  isAdminBotConferenceFundingNeed,
+  isAdminBotConferenceTripIntent,
+  type AdminBotConferenceFundingNeed,
+  type AdminBotConferenceSummary,
+  type AdminBotConferenceTripRecord,
+} from "../contracts/conference-trips.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import {
   deadlineProposalDuplicateKey,
@@ -215,6 +223,8 @@ import {
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { conferenceCatalog, lodgingNeedFrom } from "../workflows/conferences/catalog.js";
+import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
   reconcileDeadlineMilestones,
@@ -504,6 +514,9 @@ export type AdminBotServiceStore = {
   listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
   listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
+  /** One row per member per conference: their own plan for the trip. See contracts/conference-trips.ts. */
+  saveConferenceTrip(record: AdminBotConferenceTripRecord): void;
+  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
@@ -4965,6 +4978,144 @@ export class AdminBotService {
         attendees: this.store.listConferenceAttendees(paper.id),
       }));
     return { ok: true, status: 200, payload: { conferences: buildConferenceAttendance(entries) } };
+  }
+
+  /**
+   * The conference overview: what is coming up, and what the lab has committed to.
+   *
+   * Three audiences, one read, and the shape changes with who is asking. Everyone -- including a
+   * signed-out visitor -- gets the conferences themselves, because they are derived from the same
+   * public deadline dataset `GET /deadlines` already serves. A member also gets their own trip
+   * back, so the form opens filled in. Only an admin gets `roster`: who else is going, what they
+   * asked the lab to pay for and where they are sleeping is the lab's planning data, not
+   * something every member is owed about every colleague.
+   *
+   * `roster` being absent is therefore a fact about the reader, never about the conference.
+   */
+  listConferenceOverview(viewer?: {
+    memberId?: string;
+    isAdmin?: boolean;
+    now?: string;
+  }): AdminBotServiceResponse<{
+    conferences: AdminBotConferenceSummary[];
+    /** The viewer's own trips by conference key. Empty for a signed-out reader. */
+    mine: AdminBotConferenceTripRecord[];
+  }> {
+    const now = viewer?.now ? new Date(viewer.now) : new Date();
+    const conferences = conferenceCatalog(DEADLINE_VENUES, now);
+    const trips = this.store.listConferenceTrips();
+    const members = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const papers = new Map(this.store.listPapers().map((paper) => [paper.id, paper]));
+    const nameOf = (memberId: string) => members.get(memberId)?.name ?? memberId;
+
+    const withRoster = conferences.map((conference) => {
+      if (!viewer?.isAdmin) {
+        return conference;
+      }
+      const here = trips.filter((trip) => trip.conference_key === conference.key);
+      const funding = Object.fromEntries(
+        adminBotConferenceFundingNeeds.map((need) => [
+          need,
+          // Only people who are going: an undecided member's funding answer is a plan, not a cost.
+          here.filter((trip) => trip.intent === "going" && trip.funding === need).length,
+        ]),
+      ) as Record<AdminBotConferenceFundingNeed, number>;
+      return {
+        ...conference,
+        roster: {
+          going: here.filter((trip) => trip.intent === "going").length,
+          not_going: here.filter((trip) => trip.intent === "not_going").length,
+          undecided: here.filter((trip) => trip.intent === "undecided").length,
+          funding,
+          visa_letters: here.filter((trip) => trip.intent === "going" && trip.needs_visa_letter)
+            .length,
+          lodging: lodgingNeedFrom(here, nameOf),
+          trips: here.map((trip) => ({
+            ...trip,
+            member_name: nameOf(trip.member_id),
+            ...(trip.paper_id && papers.get(trip.paper_id)
+              ? { paper_title: papers.get(trip.paper_id)?.title }
+              : {}),
+          })),
+        },
+      };
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        conferences: withRoster,
+        mine: viewer?.memberId ? trips.filter((trip) => trip.member_id === viewer.memberId) : [],
+      },
+    };
+  }
+
+  /**
+   * One member signing themselves up for one conference.
+   *
+   * Always their own row. There is no admin override here and that is deliberate: every field is
+   * a statement about the member's own circumstances -- whether they have funding elsewhere, where
+   * they are sleeping, whether they need a visa letter -- and an admin filling those in for
+   * somebody is the lab inventing answers it will then book against.
+   */
+  setConferenceTrip(params: {
+    conferenceKey: string;
+    memberId: string;
+    intent: string;
+    funding: string;
+    needsLodging?: boolean;
+    arrivalOn?: string;
+    departureOn?: string;
+    needsVisaLetter?: boolean;
+    paperId?: string;
+    notes?: string;
+  }): AdminBotServiceResponse<{ trip: AdminBotConferenceTripRecord }> {
+    const conferenceKey = params.conferenceKey.trim();
+    if (!conferenceKey) {
+      return serviceError(400, "a conference is required");
+    }
+    if (!this.store.getLabMember(params.memberId)) {
+      return serviceError(404, `unknown member ${params.memberId}`);
+    }
+    if (!isAdminBotConferenceTripIntent(params.intent)) {
+      return serviceError(400, "intent must be going, not_going or undecided");
+    }
+    if (!isAdminBotConferenceFundingNeed(params.funding)) {
+      return serviceError(400, "funding must be none, fee_only, flight_only or full_travel");
+    }
+    const arrival = params.arrivalOn?.trim();
+    const departure = params.departureOn?.trim();
+    if (arrival && departure && departure < arrival) {
+      // Caught here rather than left to the booking: a reversed span silently widens the lodging
+      // window for everybody else on the trip, and nothing downstream would say which row did it.
+      return serviceError(400, "the departure date cannot be before the arrival date");
+    }
+    // A paper that does not exist is a typo or a stale id, and recording it would put a dangling
+    // reference on the roster the admin reads before booking.
+    if (params.paperId?.trim() && !this.store.getPaper(params.paperId.trim())) {
+      return serviceError(404, `unknown paper ${params.paperId.trim()}`);
+    }
+    const trip: AdminBotConferenceTripRecord = {
+      conference_key: conferenceKey,
+      member_id: params.memberId,
+      intent: params.intent,
+      funding: params.funding,
+      needs_lodging: Boolean(params.needsLodging),
+      needs_visa_letter: Boolean(params.needsVisaLetter),
+      updated_at: new Date().toISOString(),
+      ...(arrival ? { arrival_on: arrival } : {}),
+      ...(departure ? { departure_on: departure } : {}),
+      ...(params.paperId?.trim() ? { paper_id: params.paperId.trim() } : {}),
+      ...(params.notes?.trim() ? { notes: params.notes.trim() } : {}),
+    };
+    this.store.saveConferenceTrip(trip);
+    this.recordAudit({
+      type: "conference_trip.updated",
+      actor: params.memberId,
+      details: { conference_key: conferenceKey, intent: trip.intent, funding: trip.funding },
+    });
+    return { ok: true, status: 200, payload: { trip } };
   }
 
   /**
