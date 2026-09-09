@@ -148,6 +148,7 @@ import {
 import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
+  runScheduledWorkshopNudges,
   sendWorkshopNudges,
   startWorkshopNudgeRun,
   listWorkshopConferences,
@@ -1629,6 +1630,40 @@ async function handleAuthenticatedRoute(
           now: ctx.workshopNudgeNow(),
           actor: principalActor(principal),
           recipientMemberIds,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, message === "no upcoming workshop profiles are available" ? 409 : 502, {
+        error: { message },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/workshop-nudges/run") {
+    // The scheduled pass, which scripts/adminbot-workshop-nudge-cron.sh authenticates to.
+    //
+    // requirePrivileged rather than requireMemberPrivileged, like the other cron-triggered sweeps:
+    // the route takes no recipient list and no message. Which conference is due comes from the
+    // deadline dataset, who hears about it comes from the matcher and the roster, and whether it
+    // has happened before comes from the nudge ledger -- so there is no admin-composed content for
+    // the member-session gate to protect.
+    //
+    // Safe to call repeatedly. The ledger, not the crontab, is what makes a conference happen
+    // once: a second call the same day sends nothing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    try {
+      sendJson(
+        res,
+        200,
+        await runScheduledWorkshopNudges({
+          service,
+          match: ctx.workshopMatcher,
+          now: ctx.workshopNudgeNow(),
+          actor: principalActor(principal),
         }),
       );
     } catch (error) {

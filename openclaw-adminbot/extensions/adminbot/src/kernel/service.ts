@@ -179,6 +179,7 @@ import {
   adminBotReimbursementStates,
   type AdminBotConferenceAttendeeRecord,
   ADMINBOT_ALUMNI_TEMPLATE_ID,
+  ADMINBOT_WORKSHOP_NUDGE_PASS_MARKER,
   adminBotAlumniSlackInviteDelayDays,
   type AdminBotNudgeDomain,
   type AdminBotNudgeLedgerRecord,
@@ -5830,6 +5831,64 @@ export class AdminBotService {
    */
   listNudgeLedgerForTest(domain?: string): AdminBotNudgeLedgerRecord[] {
     return this.store.listNudgeLedger(domain);
+  }
+
+  /**
+   * What the lab has already said about workshops, per conference.
+   *
+   * Two answers from one read, because the sweep needs both and they mean different things.
+   * `passed` is the set of conferences whose pass has run at all -- checked first, so a second
+   * pass is never started for a conference already done, whatever it found. `messaged` is who
+   * actually received a message for each, checked per recipient immediately before sending, so a
+   * pass that died halfway and is retried by hand cannot text the people it already reached.
+   *
+   * Reading rather than deciding: the window is the schedule's business, this is only the record.
+   */
+  workshopNudgeHistory(): {
+    passed: Set<string>;
+    messaged: Map<string, Set<string>>;
+  } {
+    const passed = new Set<string>();
+    const messaged = new Map<string, Set<string>>();
+    for (const entry of this.store.listNudgeLedger("workshop_nudge")) {
+      if (!entry.last_nudged_at) {
+        continue;
+      }
+      if (entry.member_id === ADMINBOT_WORKSHOP_NUDGE_PASS_MARKER) {
+        passed.add(entry.subject_id);
+        continue;
+      }
+      const people = messaged.get(entry.subject_id) ?? new Set<string>();
+      people.add(entry.member_id);
+      messaged.set(entry.subject_id, people);
+      // A member row is also proof the pass ran, for a conference stamped before the marker
+      // existed. Cheaper than a migration and exactly as correct.
+      passed.add(entry.subject_id);
+    }
+    return { passed, messaged };
+  }
+
+  /**
+   * Record that the workshop pass for one conference has happened.
+   *
+   * The marker is written whether or not anybody was messaged -- that is what it is for. Members
+   * are stamped one at a time by the sweep as each send succeeds rather than in a batch at the
+   * end, because a crash between the send and the stamp is exactly the case that produces a double
+   * text, and the smaller that window is the better.
+   */
+  recordWorkshopNudgeSent(params: {
+    conferenceKey: string;
+    memberId?: string;
+    nowIso?: string;
+  }): void {
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    this.store.saveNudgeLedgerEntry({
+      domain: "workshop_nudge",
+      subject_id: params.conferenceKey,
+      member_id: params.memberId ?? ADMINBOT_WORKSHOP_NUDGE_PASS_MARKER,
+      last_nudged_at: nowIso,
+      nudge_count: 1,
+    });
   }
 
   /** Push one thing off for a while. The author's own call, and bounded by the service. */

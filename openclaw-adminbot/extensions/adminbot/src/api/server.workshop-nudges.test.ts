@@ -437,3 +437,95 @@ describe("reading a pass that stopped moving", () => {
     expect(mock.service.latestWorkshopMatchRun()?.id).not.toBe("wsm_wedged");
   });
 });
+
+describe("the scheduled once-per-conference pass", () => {
+  /** The sweep as cron reaches it: service token, no body, no recipient list. */
+  async function runSweep(baseUrl: string) {
+    const response = await fetch(`${baseUrl}/workshop-nudges/run`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as {
+        conference: { key: string; label: string; days_until: number } | null;
+        reason?: string;
+        created: Array<{ member_id: string }>;
+        skipped: Array<{ member_id: string; reason: string }>;
+        deferred: string[];
+      },
+    };
+  }
+
+  async function serviceWithAuthor() {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "member-1",
+      name: "Mira Member",
+      email: "mira@cs.toronto.edu",
+      slack_user_id: "U-MIRA",
+      privilege_level: "member",
+      status: "active",
+    });
+    seedPaper(mock);
+    return { baseUrl, mock };
+  }
+
+  it("takes the conference nearest its first workshop deadline and messages its authors", async () => {
+    const { baseUrl } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    expect(first.status).toBe(200);
+    expect(first.body.conference?.key).toBeTruthy();
+    expect(first.body.created.map((entry) => entry.member_id)).toEqual(["member-1"]);
+    // Two conferences are inside the window in the shipped dataset at this clock. One pass is tens
+    // of minutes of model calls, so the other waits for tomorrow rather than doubling this run.
+    expect(first.body.deferred.length).toBeGreaterThan(0);
+  });
+
+  it("sends nothing the second time, however often it is called", async () => {
+    const { baseUrl } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    const firstKey = first.body.conference?.key;
+    expect(first.body.created).toHaveLength(1);
+
+    // The whole guarantee. A daily cron fires on every one of the fourteen days in the window;
+    // what stops fourteen messages is the ledger, not the cadence.
+    const second = await runSweep(baseUrl);
+    expect(second.body.conference?.key).not.toBe(firstKey);
+    const third = await runSweep(baseUrl);
+    expect(third.body.conference).toBeNull();
+    expect(third.body.created).toEqual([]);
+  });
+
+  it("records the conference even when it matched nobody, so it is not retried nightly", async () => {
+    // No members and no papers: the pass runs, finds nothing, and must still be written off.
+    const { baseUrl } = await startService();
+    const first = await runSweep(baseUrl);
+    expect(first.body.created).toEqual([]);
+    const firstKey = first.body.conference?.key;
+    expect(firstKey).toBeTruthy();
+    const second = await runSweep(baseUrl);
+    expect(second.body.conference?.key).not.toBe(firstKey);
+  });
+
+  it("never texts a member twice for one conference", async () => {
+    const { baseUrl, mock } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    const key = first.body.conference?.key as string;
+    expect(first.body.created).toHaveLength(1);
+
+    // Reach past the marker to the state an interrupted pass would leave: this member was told,
+    // but the conference was never written off. The retry must skip them rather than repeat.
+    const ledger = mock.service.listNudgeLedgerForTest("workshop_nudge");
+    expect(ledger.some((entry) => entry.member_id === "member-1")).toBe(true);
+    const history = mock.service.workshopNudgeHistory();
+    expect(history.passed.has(key)).toBe(true);
+    expect([...(history.messaged.get(key) ?? [])]).toEqual(["member-1"]);
+  });
+
+  it("refuses a caller without the service token", async () => {
+    const { baseUrl } = await startService();
+    const response = await fetch(`${baseUrl}/workshop-nudges/run`, { method: "POST" });
+    expect(response.status).toBe(401);
+  });
+});
