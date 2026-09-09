@@ -4814,7 +4814,7 @@ function applyCors(
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, Prefer");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   return true;
 }

@@ -14,6 +14,7 @@ describe("Lab Sharing persistence", () => {
       db.exec("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('keep')");
       ensureLabSharingSchema(db);
       ensureLabSharingSchema(db);
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name = ?").get("adminbot_help_requests_status_hours_idx")).toBeTruthy();
       const row = {
         paper_id: "p1",
         owner_id: "m1",
