@@ -15,6 +15,7 @@ import {
   formatFileSize,
   lettersRequestInput,
   meetingRequestInput,
+  meetingFromWire,
   meetingToWire,
   oversizedFile,
   requestToFormState,
@@ -98,6 +99,41 @@ describe("row conversion", () => {
     expect(
       meetingToWire(createMeetingRow({ purpose: "sync", lengthMinutes: "" })),
     ).not.toHaveProperty("length_minutes");
+  });
+
+  it("sends the call-queue columns a member filled in", () => {
+    const wire = meetingToWire(
+      createMeetingRow({
+        purpose: "sync",
+        city: " Toronto ",
+        docPrepUrl: " https://docs.google.com/document/d/abc123def456/edit ",
+        latestOkDate: "2026-09-30",
+        whatsappHello: "yes",
+      }),
+    );
+    expect(wire).toMatchObject({
+      city: "Toronto",
+      doc_prep_url: "https://docs.google.com/document/d/abc123def456/edit",
+      latest_ok_date: "2026-09-30",
+      whatsapp_hello: true,
+    });
+  });
+
+  // The sheet's column distinguishes "no" from a blank, so an unanswered select must not become
+  // `false` on the way out -- that would answer for the member.
+  it("sends no whatsapp answer at all when the member left it unanswered", () => {
+    expect(meetingToWire(createMeetingRow({ purpose: "sync" }))).not.toHaveProperty(
+      "whatsapp_hello",
+    );
+    expect(
+      meetingToWire(createMeetingRow({ purpose: "sync", whatsappHello: "no" })).whatsapp_hello,
+    ).toBe(false);
+  });
+
+  it("round-trips the whatsapp answer back into the form's three states", () => {
+    expect(meetingFromWire({ purpose: "sync" }).whatsappHello).toBe("");
+    expect(meetingFromWire({ purpose: "sync", whatsapp_hello: false }).whatsappHello).toBe("no");
+    expect(meetingFromWire({ purpose: "sync", whatsapp_hello: true }).whatsappHello).toBe("yes");
   });
 
   it("trims a fact down to what the writer reads", () => {

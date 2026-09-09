@@ -2696,6 +2696,38 @@ export type AdminBotLogisticsMeeting = {
   length_minutes?: number;
   /** When the member added the row, which is what decides order of service. */
   submitted_at?: string;
+  /**
+   * Where the member is, in their own words -- "Zurich", "IST time zone", "Pacific".
+   *
+   * Kept as free text next to the machine-readable `timezone` rather than folded into it, because
+   * the call is placed by a human between flights: "Toronto" and "flexible after 6pm" are both
+   * answers she can act on, and neither survives being parsed into an IANA zone.
+   */
+  city?: string;
+  /**
+   * The document of questions written before the call.
+   *
+   * Stored as the member typed it and validated separately -- see `doc-prep-link.ts`. A link that
+   * nobody but its author can open is the failure this field exists to catch, so an unreachable
+   * one is kept on the request rather than rejected at submit: the member needs to see what they
+   * gave in order to fix its sharing.
+   */
+  doc_prep_url?: string;
+  /**
+   * Whether the member has messaged a "hello" on WhatsApp, so their number is findable there.
+   *
+   * Tri-state on purpose: `undefined` is "not answered", which is a different thing from "no" and
+   * is what most rows in the sheet actually hold today.
+   */
+  whatsapp_hello?: boolean;
+  /**
+   * yyyy-mm-dd after which the call is no longer worth placing.
+   *
+   * Distinct from `preferred_time`: these calls are not booked into a slot, they are placed at a
+   * trip break, so the useful question is not "when would you like it" but "how long does this
+   * stay worth doing".
+   */
+  latest_ok_date?: string;
 };
 
 export type AdminBotLogisticsRequestInput = {

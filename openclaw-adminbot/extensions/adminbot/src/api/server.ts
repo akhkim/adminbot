@@ -117,11 +117,13 @@ import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
+import { type CallSheetSource, defaultCallSheet } from "./call-sheet-config.js";
 import {
   describeMemberSheetReadFailure,
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { previewCallSheetPush, proposeCallSheetPush } from "./server.call-sheet.js";
 import {
   PayloadTooLargeError,
   asString,
@@ -268,6 +270,10 @@ export type AdminBotMockServiceOptions = {
    * wiring. Absent means this deployment has no roster to show, and the route says so.
    */
   memberSheet?: AdminBotMemberSheetSource;
+  /**
+   * The tab Zhijing's WhatsApp call queue lives on. Injected on the same terms as `memberSheet`.
+   */
+  callSheet?: CallSheetSource;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -511,6 +517,7 @@ type AdminBotRouteContext = {
    */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   memberSheet?: AdminBotMemberSheetSource;
+  callSheet?: CallSheetSource;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -619,6 +626,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // deployment that has not named a spreadsheet has no grid at all, which is a clearer answer
   // than a tab that fails at the CLI when somebody opens it.
   const memberSheet = options.memberSheet ?? defaultMemberSheet(process.env);
+  // The call queue's own tab in the same workbook. Separate from `memberSheet` because a
+  // deployment can point the two at different files, and because the roster's tab title is not
+  // this one's.
+  const callSheet = options.callSheet ?? defaultCallSheet(process.env);
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
   // request identically. Undefined when no script path is configured, which the sender reports
   // rather than silently skipping.
@@ -705,6 +716,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
+    ...(callSheet ? { callSheet } : {}),
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -3944,6 +3956,38 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, editResult);
     return;
   }
+  // The WhatsApp call queue: which open `book_meeting` requests have a doc prep document that can
+  // actually be opened, and a proposal to put those on Zhijing's tab. Admin-gated on both verbs --
+  // GET names every member with an open call request and what they want to talk about, which is
+  // not the requester's own data, and POST reaches Google.
+  if (url.pathname === "/logistics/call-sheet" && (req.method === "GET" || req.method === "POST")) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.callSheet) {
+      sendJson(res, 503, {
+        error: {
+          message: "this deployment has no call spreadsheet configured; set ADMINBOT_CALL_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const requestIds =
+      req.method === "POST"
+        ? ((await readJsonOrEmpty(req)) as { request_ids?: string[] }).request_ids
+        : undefined;
+    const options = requestIds?.length ? { request_ids: requestIds } : {};
+    const callResult =
+      req.method === "GET"
+        ? await previewCallSheetPush(service, ctx.callSheet, options)
+        : await proposeCallSheetPush(service, ctx.callSheet, principalActor(principal), options);
+    if ("error" in callResult) {
+      sendJson(res, callResult.error.status, { error: { message: callResult.error.message } });
+      return;
+    }
+    sendJson(res, 200, callResult);
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/membership/sheet/onboard/preview") {
     // Composes the very mails onboarding would queue, so it shows member addresses and rendered
     // email bodies: the same gate as executing, even though it writes nothing.
@@ -4878,7 +4922,10 @@ function applyCors(
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, Prefer");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type, Idempotency-Key, Prefer",
+  );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   return true;
 }

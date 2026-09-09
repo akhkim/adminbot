@@ -764,20 +764,36 @@ function submittedLabel(submittedAt: number): string {
 /**
  * Book Meeting, as a spreadsheet rather than a form.
  *
- * A meeting request is four short facts, and the people who schedule them read many at once: which
- * call, when it suits, on whose clock, and how long. A form per request meant opening each one to
+ * A meeting request is a handful of short facts, and the people who schedule them read many at
+ * once: which call, when it suits, on whose clock, how long, and -- for the calls placed at a trip
+ * break rather than booked into a slot -- where the person is, until when the call is still worth
+ * making, and the document of questions to read first. A form per request meant opening each one to
  * find out whether it was a fifteen-minute check-in or an hour-long committee call, which is the
- * question that decides where it goes in a week. One row per request puts all four side by side.
+ * question that decides where it goes in a week. One row per request puts them side by side.
+ *
+ * The doc prep link is the one column with a consequence beyond this table: a request whose link
+ * nobody can open never reaches the call queue, so it is asked for here rather than chased later.
  *
  * "Submitted" is stamped when the row is created and shown read-only. It is the column that decides
  * order of service, so it is the one field a requester must not be able to write.
  */
 function renderMeetingSection(props: MeetingProps) {
   const update =
-    (row: MeetingRequestRow, key: "purpose" | "preferredTime" | "timezone" | "lengthMinutes") =>
+    (
+      row: MeetingRequestRow,
+      key:
+        | "purpose"
+        | "preferredTime"
+        | "timezone"
+        | "lengthMinutes"
+        | "city"
+        | "docPrepUrl"
+        | "whatsappHello"
+        | "latestOkDate",
+    ) =>
     (event: Event) => {
       const control = event.currentTarget;
-      if (!(control instanceof HTMLInputElement)) {
+      if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLSelectElement)) {
         return;
       }
       props.onRowsChange(
@@ -805,6 +821,10 @@ function renderMeetingSection(props: MeetingProps) {
                 t("logistics.meeting.preferredTime"),
                 t("logistics.meeting.timezone"),
                 t("logistics.meeting.length"),
+                t("logistics.meeting.city"),
+                t("logistics.meeting.docPrep"),
+                t("logistics.meeting.whatsappHello"),
+                t("logistics.meeting.latestOk"),
               ].map(
                 (heading) => html`
                   <th scope="col" class="logistics-schools__head">
@@ -869,6 +889,47 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "lengthMinutes")}
                         />
                       </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${cellLabel(t("logistics.meeting.city"), index)}
+                          placeholder=${t("logistics.meeting.cityPlaceholder")}
+                          .value=${row.city}
+                          @input=${update(row, "city")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="url"
+                          aria-label=${cellLabel(t("logistics.meeting.docPrep"), index)}
+                          placeholder=${t("logistics.meeting.docPrepPlaceholder")}
+                          .value=${row.docPrepUrl}
+                          @input=${update(row, "docPrepUrl")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <select
+                          class="logistics-schools__input"
+                          aria-label=${cellLabel(t("logistics.meeting.whatsappHello"), index)}
+                          .value=${row.whatsappHello}
+                          @change=${update(row, "whatsappHello")}
+                        >
+                          <option value="">${t("logistics.meeting.whatsappUnanswered")}</option>
+                          <option value="yes">${t("logistics.meeting.whatsappYes")}</option>
+                          <option value="no">${t("logistics.meeting.whatsappNo")}</option>
+                        </select>
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="date"
+                          aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
+                          .value=${row.latestOkDate}
+                          @input=${update(row, "latestOkDate")}
+                        />
+                      </td>
                       <td class="logistics-schools__cell logistics-schools__cell--remove">
                         <button
                           class="btn btn--icon btn--xs"
@@ -887,7 +948,7 @@ function renderMeetingSection(props: MeetingProps) {
                 )
               : html`
                   <tr>
-                    <td class="logistics-schools__empty" colspan="6">
+                    <td class="logistics-schools__empty" colspan="10">
                       ${t("logistics.meeting.empty")}
                     </td>
                   </tr>
@@ -1045,42 +1106,32 @@ function renderLettersRequest(props: LettersProps) {
 
 // The same container shape again for Book Meeting: one table, then Save and Submit.
 /**
- * The meeting tab, which no longer collects anything.
+ * The meeting tab, which collects again.
  *
- * Requests are filed on the contact spreadsheet's own tab, so this points at it rather than
- * duplicating four columns into the service -- the same trade the signature form made, and the
- * reason both look alike. Column D is called out here rather than only on the sheet: it is the one
- * field a member can leave blank and not discover until their call never gets scheduled, and the
- * sheet's own header cannot say "mandatory" loudly enough to fix that.
+ * It used to point at the call spreadsheet and collect nothing, on the reasoning that duplicating
+ * four columns into the service bought nothing the sheet did not already do. That held only while
+ * the columns were four and the sheet was the only reader. It now collects all of them, because
+ * the doc prep link has to be checked before it reaches Zhijing -- a link that opens for its author
+ * and nobody else is the failure that wastes the call, and only the service can tell the two apart.
+ * A request filed here is checked and then proposed onto her tab; one filed by hand on the sheet
+ * still works and is left alone.
+ *
+ * The link to the sheet stays, demoted: it is how somebody reads the queue, which is a different
+ * job from joining it.
  */
 function renderMeetingRequest(props: MeetingProps) {
-  // The table is kept for one case only, exactly as the signature upload is: a request that was
-  // already submitted and is being corrected. Those rows are stored in the service, and dropping
-  // the editor would strand the member with a sent request they can no longer fix. Nothing new is
-  // ever created through it -- the tab only reaches this branch from "edit" on an existing request.
-  if (props.editing) {
-    return html`
-      <div
-        class="card adminbot-card adminbot-card--wide logistics-request"
-        data-testid="logistics-meeting-request"
-      >
-        ${renderMeetingSection(props)} ${renderRequestActions(props)}
-      </div>
-    `;
-  }
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-meeting-request"
     >
+      <p class="logistics-meeting__mandatory" data-testid="logistics-meeting-mandatory">
+        <strong>${t("logistics.meeting.mandatory")}</strong>
+      </p>
+      ${renderMeetingSection(props)} ${renderRequestActions(props)}
       <section class="logistics-request__section">
-        <h3 class="card-title">${t("logistics.meeting.title")}</h3>
-        <p class="card-sub">${t("logistics.meeting.sub")}</p>
-        <p class="logistics-meeting__mandatory" data-testid="logistics-meeting-mandatory">
-          <strong>${t("logistics.meeting.mandatory")}</strong>
-        </p>
         <a
-          class="btn primary logistics-signature__link"
+          class="btn logistics-signature__link"
           href=${MEETING_SHEET_URL}
           target="_blank"
           rel="noreferrer noopener"
