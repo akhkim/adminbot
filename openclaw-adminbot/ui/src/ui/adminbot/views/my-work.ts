@@ -20,7 +20,6 @@
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
 import "../paper-visibility.ts";
-import { publicationTrack, presentationFormat, PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "../paper-classification.ts";
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import {
@@ -82,6 +81,12 @@ import {
 } from "../hidden-papers.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
+  publicationTrack,
+  presentationFormat,
+  PUBLICATION_TRACKS,
+  PRESENTATION_FORMATS,
+} from "../paper-classification.ts";
+import {
   completedOnLabel,
   completionReadiness,
   isPaperCompleted,
@@ -108,6 +113,7 @@ import {
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderPaperCycle } from "./paper-cycle.ts";
+import { emptyPaperLegacyState, renderPaperLegacy, type PaperLegacyState } from "./paper-legacy.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
@@ -967,10 +973,19 @@ function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
             </label>
             <label class="paper-acceptance__field">
               <span class="register__label">Publication track</span>
-              <select class="input" data-testid=${`paper-track-${paper.id}`}
-                @change=${(event: Event) => save({ publicationTrack: (event.target as HTMLSelectElement).value })}>
+              <select
+                class="input"
+                data-testid=${`paper-track-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ publicationTrack: (event.target as HTMLSelectElement).value })}
+              >
                 <option value="" ?selected=${!publicationTrack(paper)}>Not said</option>
-                ${PUBLICATION_TRACKS.map((track) => html`<option value=${track} ?selected=${publicationTrack(paper) === track}>${track[0].toUpperCase()}${track.slice(1)}</option>`)}
+                ${PUBLICATION_TRACKS.map(
+                  (track) =>
+                    html`<option value=${track} ?selected=${publicationTrack(paper) === track}>
+                      ${track[0].toUpperCase()}${track.slice(1)}
+                    </option>`,
+                )}
               </select>
             </label>
             <label class="paper-acceptance__field">
@@ -2147,6 +2162,10 @@ function renderBlockers(state: AppViewState, items: AdminBotPaperRecord[]) {
 // not throw away half-typed cells.
 let gridState: PaperGridState | null = null;
 
+// The flat view, held the same way and for the same reason as the sheet above it. The two are
+// mutually exclusive -- both take the whole page -- so opening either closes the other.
+let legacyState: PaperLegacyState | null = null;
+
 // Which cards have been expanded to their full checklist. Per session and per card: it is a
 // viewing preference, not a fact about the paper.
 const showAllSlots = new Set<string>();
@@ -2154,6 +2173,20 @@ const showAllSlots = new Set<string>();
 function exitGrid(rerender: () => void): void {
   gridState = null;
   rerender();
+}
+
+function exitLegacy(rerender: () => void): void {
+  legacyState = null;
+  rerender();
+}
+
+/**
+ * For the tests, and named as such: both view modes are module state the app itself never resets,
+ * so a spec that opens one would otherwise leave the next spec looking at it.
+ */
+export function resetMyWorkViewModeForTest(): void {
+  gridState = null;
+  legacyState = null;
 }
 
 /**
@@ -2527,17 +2560,50 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   const gridOffered = items.length > PAPER_GRID_THRESHOLD;
   const rerender = () => props.onRerender?.();
 
+  if (legacyState) {
+    return html`
+      <!-- Takes the page like the sheet does, and for the opposite reason: this is one long
+           column of label-and-control rows, which wants the same readable measure the profile
+           uses rather than the card list's summaries. -->
+      <div class="my-work my-work--legacy">
+        <div class="my-work__section-actions">${renderAddButton(state)}</div>
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
+        ${renderPaperLegacy({
+          state: legacyState,
+          papers: items,
+          // The card's own two data sources and two writes, handed to the flat view: same state,
+          // same endpoints. This is a third drawing of the card, not a third store.
+          slots: props.slots,
+          onLoadSlots: props.onLoadSlots,
+          onSavePaper: props.onSavePaper,
+          onSaveSlot: props.onSaveSlot,
+          onChange: rerender,
+          onExit: () => exitLegacy(rerender),
+        })}
+      </div>
+    `;
+  }
+
   if (gridOffered && gridState) {
     return html`
       <!-- The sheet takes the page: my-work caps itself at a readable measure for the card
            list, which is a column of prose, while a sheet of sixty columns wants every pixel.
            The cap was leaving a third of the window empty beside a table that scrolls. -->
       <div class="my-work my-work--sheet">
-        <div class="my-work__section-actions">
-          ${renderAddButton(state)}
-        </div>
-        <adminbot-paper-visibility .papers=${items} .memberId=${props.memberId}
-          @visibility-changed=${rerender}></adminbot-paper-visibility>
+        <div class="my-work__section-actions">${renderAddButton(state)}</div>
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
         ${renderPaperGrid({
           state: gridState,
@@ -2633,15 +2699,39 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   Fill in as a spreadsheet (${items.length})
                 </button>`
               : nothing}
+            <!-- No paper-count threshold, unlike the sheet beside it. The sheet is a bulk tool and
+                 is worse than the cards below three papers; this one is just the same paper drawn
+                 flat, and somebody with one paper has as much reason to want every field on one
+                 page as somebody with nine. -->
+            ${items.length
+              ? html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid="my-work-open-legacy"
+                  @click=${() => {
+                    legacyState = emptyPaperLegacyState();
+                    // The two full-page views are mutually exclusive: leaving the sheet open
+                    // underneath would restore it on Back to cards.
+                    gridState = null;
+                    rerender();
+                  }}
+                >
+                  View legacy view (${items.length})
+                </button>`
+              : nothing}
             ${renderNudgeButton(props)} ${renderAddButton(state)}
           </div>
         </div>
-        <adminbot-paper-visibility .papers=${items} .memberId=${props.memberId}
-          @visibility-changed=${rerender}></adminbot-paper-visibility>
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
-        ${props.personal ? renderDecisionBanners(items, props, state.adminBotData?.members ?? []) : nothing}
-        ${renderBlockers(state, items)}
-        ${renderNudgePreview(props)}
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${renderBlockers(state, items)} ${renderNudgePreview(props)}
         ${props.slotsNotice
           ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
           : nothing}

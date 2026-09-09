@@ -1,0 +1,87 @@
+/* The flat view of My Projects & Papers: every field of every paper, drawn like the profile.
+   Deliberately thin. The rows themselves reuse the profile's own classes (`profile__field-group`,
+   `profile__form-row`, `profile__form-label`), so what is here is only the wrapper, the two
+   controls the profile has no equivalent of, and the per-field refusal. Restyling the rows would
+   defeat the point -- the whole promise of this view is that it looks like the page the reader has
+   already filled in once. */
+
+.my-work.my-work--legacy {
+  /* The card list's readable measure, kept: this is a column of label-and-control rows, not the
+     sheet's sixty columns. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.paper-legacy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.paper-legacy__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.paper-legacy__lead {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.paper-legacy__notice {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+/* One paper reads as one document. Without the rule they run together, and on a member with nine
+   papers the page becomes an unbroken column in which nobody can tell where a paper ends. */
+.paper-legacy__paper + .paper-legacy__paper {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.paper-legacy__hint {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* A refusal, not a rejection: the field keeps what was typed and everything beside it still
+   saves, so this has to read as advice rather than as a blocked form. */
+.paper-legacy__error {
+  color: var(--danger, #b42318);
+  font-size: 0.85em;
+}
+
+/* A boolean slot. Left-aligned and at its natural size rather than stretched to the row width the
+   text inputs use, which would draw a checkbox the size of a text field. */
+.paper-legacy__check {
+  align-self: flex-start;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* The free-text half of the poster slot, under its own dropdown. */
+.paper-legacy__note {
+  display: block;
+}
+
+/* Status this slot does not own: it comes from the social drafts and the service rejects a direct
+   write, so it renders as a fact rather than as a control that would silently do nothing. */
+.paper-legacy__derived {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+.paper-legacy__loading {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 400;
+}
