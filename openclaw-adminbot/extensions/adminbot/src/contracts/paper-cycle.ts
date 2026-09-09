@@ -161,6 +161,12 @@ export const adminBotNudgeDomains = [
   // from `dormant_account` because it is a bounded sequence with an end, not a standing reminder --
   // and while it is running it owns the member, so the two cannot both chase the same person.
   "onboarding_followup",
+  // The workshop recommendations for one conference, sent in the fortnight before its first
+  // workshop deadline. A say-once domain rather than a counting one: this is an announcement about
+  // an event, not a request repeated until somebody answers, so the ledger question is "have we
+  // told them about this conference" and the answer is permanent. `subject_id` is the parent
+  // conference key, which is what makes "once per conference" a lookup rather than a convention.
+  "workshop_nudge",
 ] as const;
 
 /**
@@ -262,6 +268,17 @@ export const adminBotNudgeMaxSnoozeDays = 14;
 export function adminBotPaperSlotSubjectId(paperId: string, slot: string): string {
   return `${paperId}:${slot}`;
 }
+
+/**
+ * The `member_id` on the row that records a workshop pass having run for a conference.
+ *
+ * Not a member, and deliberately shaped so it can never collide with one. The per-member rows
+ * beside it say who was messaged; this one says the pass happened at all, which is the difference
+ * between "nobody has been told" and "the pass ran and matched nobody". Without it a conference
+ * whose pass found no recipients would look untouched and be re-run -- tens of minutes of model
+ * time, every night, until its deadline passed.
+ */
+export const ADMINBOT_WORKSHOP_NUDGE_PASS_MARKER = "__pass__";
 
 /**
  * A stable key for an attendee who may or may not be on the roster.

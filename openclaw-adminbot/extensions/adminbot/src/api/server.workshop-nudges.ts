@@ -14,6 +14,7 @@ import {
   type WorkshopNudgeCoverage,
   type WorkshopNudgeResult,
 } from "../workflows/papers/workshop-nudges.js";
+import { conferencesDueForWorkshopNudge } from "../workflows/papers/workshop-schedule.js";
 
 export type WorkshopNudgePreview = Omit<WorkshopNudgeResult, "recipients"> & {
   recipients: Array<
@@ -270,9 +271,7 @@ export function startWorkshopNudgeRun(params: {
         service: params.service,
         match: params.match,
         now: params.now,
-        ...(params.conferenceKey?.trim()
-          ? { conferenceKey: params.conferenceKey.trim() }
-          : {}),
+        ...(params.conferenceKey?.trim() ? { conferenceKey: params.conferenceKey.trim() } : {}),
         signal: controller.signal,
         onProgress: (done, total, failed, detail) => {
           progress = { done, total, failed: failed ?? 0, detail: detail ?? progress.detail };
@@ -350,7 +349,7 @@ export async function previewWorkshopNudges(params: {
     throw new Error(`no upcoming workshops are available for ${conferenceKey}`);
   }
   const conferenceLabel = conferenceKey
-    ? (workshops[0]?.parent_conference?.trim() || conferenceKey)
+    ? workshops[0]?.parent_conference?.trim() || conferenceKey
     : undefined;
   const headProfessorMemberId = servicePayload(
     params.service.getSettings(),
@@ -438,38 +437,197 @@ export async function sendWorkshopNudges(params: {
   const created: WorkshopNudgeSendResult["created"] = [];
   const skipped: WorkshopNudgeSendResult["skipped"] = [];
   for (const memberId of [...new Set(params.recipientMemberIds)]) {
-    const recipient = recipients.get(memberId);
-    if (!recipient?.draft || !recipient.delivery_ready) {
-      skipped.push({
-        member_id: memberId,
-        reason:
-          recipient?.delivery_blocked_reason ?? "No current workshop recommendation is available.",
-      });
-      continue;
-    }
-    const sent = await params.service.sendMemberNudge(
-      {
-        channel: "slack",
-        recipient_member_ids: [memberId],
-        message: recipient.draft.text,
-        kind: "workshop",
-        title: "Workshops that may fit your papers",
-        tab: "myWork",
-        // Not important: this is a suggestion an administrator chose to pass on, not something the
-        // lab is owed. Escalating an unread suggestion would be the lab chasing its own idea.
-      },
-      params.actor,
-    );
-    if (!sent.ok) {
-      skipped.push({ member_id: memberId, reason: sent.error.message });
-      continue;
-    }
-    created.push(...sent.payload.created.map((proposal) => sentProposal(memberId, proposal)));
-    skipped.push(...sent.payload.skipped);
+    const outcome = await deliverWorkshopNudge({
+      service: params.service,
+      actor: params.actor,
+      memberId,
+      recipient: recipients.get(memberId),
+    });
+    created.push(...outcome.created);
+    skipped.push(...outcome.skipped);
   }
   // The pass these drafts came from, not the moment Send was pressed: what the reader wants to know
   // is which answer went out.
   return { recomputed_at: preview.generated_at, created, skipped };
+}
+
+export type ScheduledWorkshopNudgeResult = {
+  /** The conference this tick handled, or null when none was due. */
+  conference: { key: string; label: string; first_deadline_aoe: string; days_until: number } | null;
+  /** Why nothing happened, when nothing did. */
+  reason?: string;
+  created: WorkshopNudgeSendResult["created"];
+  skipped: WorkshopNudgeSendResult["skipped"];
+  /** Conferences inside the window that this tick did not get to. They keep until the next one. */
+  deferred: string[];
+};
+
+/**
+ * The scheduled pass: match and message one conference's workshops, once, ever.
+ *
+ * Called from cron (scripts/adminbot-workshop-nudge-cron.sh). Everything that decides whether it
+ * does anything is a lookup -- the deadline dataset for the window, the nudge ledger for whether
+ * this conference has already been done -- so running it twice in a minute, or every hour, sends
+ * nothing the second time. That is the guarantee the lab asked for and it lives here rather than
+ * in the crontab, because a cadence is not a guarantee.
+ *
+ * One conference per tick, even when three are due. A pass is thousands of model calls and tens of
+ * minutes; three back to back inside one cron invocation is a request that times out and a job
+ * that looks hung. The rest are named in `deferred` and taken by the next tick, which on a daily
+ * cron costs a day and stays comfortably inside a fourteen-day window.
+ *
+ * The order of the two ledger writes matters. Each member is stamped the moment their own send
+ * succeeds, so a crash mid-pass loses at most the marker and never re-texts somebody already
+ * reached; the conference marker is written at the end, whether or not anybody was messaged, so a
+ * pass that matched nothing is not re-run nightly until the deadline.
+ */
+export async function runScheduledWorkshopNudges(params: {
+  service: AdminBotService;
+  match: WorkshopMatcher;
+  now: Date;
+  actor: string;
+  /** Override the fortnight, for tests. */
+  leadDays?: number;
+}): Promise<ScheduledWorkshopNudgeResult> {
+  const history = params.service.workshopNudgeHistory();
+  const due = conferencesDueForWorkshopNudge({
+    records: DEADLINE_VENUES,
+    now: params.now,
+    alreadyNudged: history.passed,
+    ...(params.leadDays === undefined ? {} : { leadDays: params.leadDays }),
+  });
+  const target = due[0];
+  if (!target) {
+    return { conference: null, created: [], skipped: [], deferred: [] };
+  }
+  // An administrator's own pass is in flight. Stand down rather than run a second one beside it:
+  // the model time is real, and the conference keeps -- the window is two weeks and this job ticks
+  // daily, so there is no urgency that justifies doubling the load on a shared matcher.
+  const running = params.service.latestWorkshopMatchRun();
+  if (running?.status === "running" && !workshopRunIsAbandoned(running, params.now)) {
+    return {
+      conference: null,
+      reason: "a workshop match is already running; standing down until the next tick",
+      created: [],
+      skipped: [],
+      deferred: due.map((entry) => entry.key),
+    };
+  }
+
+  const preview = await previewWorkshopNudges({
+    service: params.service,
+    match: params.match,
+    now: params.now,
+    conferenceKey: target.key,
+  });
+  const nowIso = params.now.toISOString();
+  const alreadyMessaged = history.messaged.get(target.key) ?? new Set<string>();
+  const created: WorkshopNudgeSendResult["created"] = [];
+  const skipped: WorkshopNudgeSendResult["skipped"] = [];
+
+  for (const recipient of preview.recipients) {
+    const memberId = recipient.recipient_member_id;
+    if (alreadyMessaged.has(memberId)) {
+      // Only reachable when an earlier pass for this conference died after sending to them but
+      // before its marker was written. Saying so rather than silently skipping: a sweep that
+      // quietly drops recipients is indistinguishable from one that matched nobody.
+      skipped.push({
+        member_id: memberId,
+        reason: `Already told about ${target.label} workshops.`,
+      });
+      continue;
+    }
+    const outcome = await deliverWorkshopNudge({
+      service: params.service,
+      actor: params.actor,
+      memberId,
+      recipient,
+    });
+    created.push(...outcome.created);
+    skipped.push(...outcome.skipped);
+    if (outcome.delivered) {
+      params.service.recordWorkshopNudgeSent({
+        conferenceKey: target.key,
+        memberId,
+        nowIso,
+      });
+    }
+  }
+  params.service.recordWorkshopNudgeSent({ conferenceKey: target.key, nowIso });
+
+  return {
+    conference: {
+      key: target.key,
+      label: target.label,
+      first_deadline_aoe: target.first_deadline_aoe,
+      days_until: target.days_until,
+    },
+    created,
+    skipped,
+    deferred: due.slice(1).map((entry) => entry.key),
+  };
+}
+
+/**
+ * One recipient's message, composed and sent.
+ *
+ * Shared by the administrator's Send button and the scheduled sweep so the two cannot drift: the
+ * lab should not be able to tell, from the message, whether a person pressed the button. The
+ * delivery decision -- ready, or blocked and why -- stays with the preview that computed it.
+ */
+async function deliverWorkshopNudge(params: {
+  service: AdminBotService;
+  actor: string;
+  memberId: string;
+  recipient: WorkshopNudgePreview["recipients"][number] | undefined;
+}): Promise<{
+  created: WorkshopNudgeSendResult["created"];
+  skipped: WorkshopNudgeSendResult["skipped"];
+  delivered: boolean;
+}> {
+  const { recipient, memberId } = params;
+  if (!recipient?.draft || !recipient.delivery_ready) {
+    return {
+      created: [],
+      skipped: [
+        {
+          member_id: memberId,
+          reason:
+            recipient?.delivery_blocked_reason ??
+            "No current workshop recommendation is available.",
+        },
+      ],
+      delivered: false,
+    };
+  }
+  const sent = await params.service.sendMemberNudge(
+    {
+      channel: "slack",
+      recipient_member_ids: [memberId],
+      message: recipient.draft.text,
+      kind: "workshop",
+      title: "Workshops that may fit your papers",
+      tab: "myWork",
+      // Not important: this is a suggestion, not something the lab is owed. Escalating an unread
+      // suggestion would be the lab chasing its own idea.
+    },
+    params.actor,
+  );
+  if (!sent.ok) {
+    return {
+      created: [],
+      skipped: [{ member_id: memberId, reason: sent.error.message }],
+      delivered: false,
+    };
+  }
+  return {
+    created: sent.payload.created.map((proposal) => sentProposal(memberId, proposal)),
+    skipped: [...sent.payload.skipped],
+    // Whether a message actually reached them, which is the only thing worth stamping a ledger
+    // for: a member with no Slack id on file has not been told, and recording them as told would
+    // permanently suppress the one message this conference ever gets.
+    delivered: sent.payload.created.length > 0,
+  };
 }
 
 function servicePayload<T>(

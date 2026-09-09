@@ -181,6 +181,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-workshop-nudges",
+      "description": "Workshop matches for one conference, two weeks before its first workshop deadline",
+      "cron": "0 7 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-workshop-nudge-cron.sh"
+      ],
+      "timeoutSeconds": 3600
+    },
+    {
       "name": "adminbot-paperflow-nudges",
       "description": "PaperFlow venue-stage nudges, once a week",
       "cron": "0 9 * * 1",
