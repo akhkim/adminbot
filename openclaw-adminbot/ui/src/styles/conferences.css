@@ -91,14 +91,17 @@
 }
 
 /* The booking line. Given its own weight because it is the one thing on the card with a deadline
-   of its own — the beds have to be reserved, and the headcount is useless without the nights. */
+   of its own — the beds have to be reserved, and the headcount is useless without the nights.
+   The weight is a tinted panel and nothing else: a colored bar down one side would be a second
+   emphasis doing the same job as the fill, and the fill already separates this line from the two
+   plain count rows above it. */
 .conferences__lodging {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-2) 0;
   padding: var(--space-2) var(--space-3);
-  border-left: 3px solid #22c55e;
+  border: 1px solid color-mix(in srgb, #22c55e 30%, transparent);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, #22c55e 10%, var(--bg));
 }
