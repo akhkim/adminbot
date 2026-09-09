@@ -109,7 +109,10 @@
     z-index: 70;
     width: min(86vw, 320px);
     min-width: 0;
-    border-right: none;
+    /* Docked, the nav is transparent so the shell's texture reads through it. Floating over the
+       page it cannot be: the content it covers shows straight through the nav items. */
+    background: var(--panel);
+    border-right: 1px solid var(--border);
     box-shadow: var(--shadow-lg);
     transform: translateX(-100%);
     opacity: 0;

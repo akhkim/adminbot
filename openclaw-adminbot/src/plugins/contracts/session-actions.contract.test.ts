@@ -546,7 +546,10 @@ describe("plugin session actions", () => {
     });
     const missingApprovalScopeError = requireHookError(missingApprovalScope);
     expect(missingApprovalScopeError.code).toBe("INVALID_REQUEST");
-    expect(missingApprovalScopeError.message).toBe(`missing scope: ${APPROVALS_SCOPE}`);
+    expect(missingApprovalScopeError.message).toMatch(
+      new RegExp(`^missing scope: ${APPROVALS_SCOPE.replace(".", "\\.")}\\b`),
+    );
+    expect(missingApprovalScopeError.message).toContain("this connection has operator.read");
     expect(handlerCalls).toEqual([
       { scopes: [APPROVALS_SCOPE], sessionKey: undefined },
       { scopes: [WRITE_SCOPE], action: "view" },

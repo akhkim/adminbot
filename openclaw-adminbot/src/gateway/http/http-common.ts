@@ -7,6 +7,7 @@ import {
 } from "../../logging/diagnostic-payload.js";
 import type { GatewayAuthResult } from "../auth/auth.js";
 import { readJsonBody } from "../hooks/hooks.js";
+import { formatMissingScopeMessage, type MissingScopeDetails } from "../missing-scope-message.js";
 
 /**
  * Apply baseline security headers that are safe for all response types (API JSON,
@@ -76,18 +77,25 @@ export function sendInvalidRequest(res: ServerResponse, message: string) {
   });
 }
 
-export function buildMissingScopeForbiddenBody(missingScope: string | undefined) {
+export function buildMissingScopeForbiddenBody(
+  missingScope: string | undefined,
+  details?: Omit<MissingScopeDetails, "missingScope">,
+) {
   return {
     ok: false,
     error: {
       type: "forbidden",
-      message: `missing scope: ${missingScope}`,
+      message: formatMissingScopeMessage({ ...details, missingScope }),
     },
   };
 }
 
-export function sendMissingScopeForbidden(res: ServerResponse, missingScope: string | undefined) {
-  sendJson(res, 403, buildMissingScopeForbiddenBody(missingScope));
+export function sendMissingScopeForbidden(
+  res: ServerResponse,
+  missingScope: string | undefined,
+  details?: Omit<MissingScopeDetails, "missingScope">,
+) {
+  sendJson(res, 403, buildMissingScopeForbiddenBody(missingScope, details));
 }
 
 export async function readJsonBodyOrError(

@@ -121,12 +121,14 @@ function mockWorkerSession() {
   });
 }
 
-async function expectForbiddenMissingScope(response: Response, message: string) {
+async function expectForbiddenMissingScope(response: Response, missingScope: string) {
   expect(response.status).toBe(403);
-  expectErrorResponse(await response.json(), {
-    type: "forbidden",
-    message,
-  });
+  const body = (await response.json()) as { error?: { message?: unknown } };
+  expectErrorResponse(body, { type: "forbidden" });
+  // The denial message carries an operator-facing explanation after the machine-readable prefix.
+  expect(body.error?.message).toMatch(
+    new RegExp(`^missing scope: ${missingScope.replace(/\./g, "\\.")}\\b`),
+  );
 }
 
 function expectErrorResponse(body: unknown, expected: { type: string; message?: string }) {
@@ -224,14 +226,14 @@ describe("POST /sessions/:sessionKey/kill", () => {
 
   it("rejects local bearer-auth kills without a trusted admin scope surface", async () => {
     const response = await postWorkerKill();
-    await expectForbiddenMissingScope(response, "missing scope: operator.admin");
+    await expectForbiddenMissingScope(response, "operator.admin");
     expect(loadSessionEntryMock).not.toHaveBeenCalled();
     expect(killSubagentRunAdminMock).not.toHaveBeenCalled();
   });
 
   it("does not trust x-openclaw-scopes on shared-secret bearer auth", async () => {
     const response = await postWorkerKill(TEST_GATEWAY_TOKEN, ADMIN_SCOPE_HEADERS);
-    await expectForbiddenMissingScope(response, "missing scope: operator.admin");
+    await expectForbiddenMissingScope(response, "operator.admin");
     expect(loadSessionEntryMock).not.toHaveBeenCalled();
     expect(killSubagentRunAdminMock).not.toHaveBeenCalled();
   });
@@ -248,7 +250,7 @@ describe("POST /sessions/:sessionKey/kill", () => {
   it("rejects trusted-proxy requester-session kills without admin scope", async () => {
     allowTrustedProxyAuth();
     const response = await postWorkerKill("", REQUESTER_WRITE_HEADERS);
-    await expectForbiddenMissingScope(response, "missing scope: operator.admin");
+    await expectForbiddenMissingScope(response, "operator.admin");
     expect(loadSessionEntryMock).not.toHaveBeenCalled();
     expect(killSubagentRunAdminMock).not.toHaveBeenCalled();
   });
@@ -273,11 +275,7 @@ describe("POST /sessions/:sessionKey/kill", () => {
       TEST_GATEWAY_TOKEN,
       { "x-openclaw-requester-session-key": "agent:other:main" },
     );
-    expect(response.status).toBe(403);
-    expectErrorResponse(await response.json(), {
-      type: "forbidden",
-      message: "missing scope: operator.admin",
-    });
+    await expectForbiddenMissingScope(response, "operator.admin");
     expect(loadSessionEntryMock).not.toHaveBeenCalled();
     expect(killSubagentRunAdminMock).not.toHaveBeenCalled();
   });

@@ -16,6 +16,7 @@ import {
   ADMIN_SCOPE,
   authorizeOperatorScopesForMethod,
   authorizeOperatorScopesForRequiredScope,
+  isGatewayMethodClassified,
 } from "../method-scopes.js";
 import {
   createCoreGatewayMethodDescriptors,
@@ -25,6 +26,7 @@ import {
   isCoreGatewayMethodClassified,
   type GatewayMethodRegistry,
 } from "../methods/registry.js";
+import { formatMissingScopeMessage } from "../missing-scope-message.js";
 import { isOperatorScope } from "../operator-scopes.js";
 import { isRoleAuthorizedForMethod, parseGatewayRole } from "../role-policy.js";
 import type {
@@ -256,7 +258,15 @@ function authorizeGatewayMethod(
     ? authorizeOperatorScopesForRequiredScope(registeredScope, scopes)
     : authorizeOperatorScopesForMethod(method, scopes, params);
   if (!scopeAuth.allowed) {
-    return errorShape(ErrorCodes.INVALID_REQUEST, `missing scope: ${scopeAuth.missingScope}`);
+    return errorShape(
+      ErrorCodes.INVALID_REQUEST,
+      formatMissingScopeMessage({
+        missingScope: scopeAuth.missingScope,
+        method,
+        presentedScopes: scopes,
+        unclassifiedMethod: !isGatewayMethodClassified(method),
+      }),
+    );
   }
   return null;
 }

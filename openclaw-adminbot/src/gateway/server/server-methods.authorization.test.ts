@@ -59,7 +59,11 @@ describe("gateway method authorization", () => {
     expect(denied).toHaveBeenCalledWith(
       false,
       undefined,
-      expect.objectContaining({ message: "missing scope: operator.write" }),
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /^missing scope: operator\.write\b.*this connection has operator\.read/,
+        ),
+      }),
     );
   });
 });

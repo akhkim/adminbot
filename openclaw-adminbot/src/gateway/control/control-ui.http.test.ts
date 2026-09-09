@@ -236,13 +236,15 @@ describe("handleControlUiHttpRequest", () => {
   }) {
     expect(params.handled).toBe(true);
     expect(params.res.statusCode).toBe(403);
-    expect(responseJson(params.end)).toEqual({
-      ok: false,
-      error: {
-        type: "forbidden",
-        message: "missing scope: operator.read",
-      },
-    });
+    const body = responseJson(params.end) as {
+      ok?: boolean;
+      error?: { type?: string; message?: string };
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error?.type).toBe("forbidden");
+    // The message keeps the machine-readable prefix and adds the operator-facing explanation.
+    expect(body.error?.message).toMatch(/^missing scope: operator\.read\b/);
+    expect(body.error?.message).toContain("assistant.media.get");
   }
 
   async function writeAssetFile(rootPath: string, filename: string, contents: string) {

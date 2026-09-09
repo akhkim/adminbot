@@ -175,7 +175,10 @@ export async function authorizeScopedGatewayHttpRequestOrReply(params: {
   const operatorScopes = params.resolveOperatorScopes(params.req, requestAuth);
   const scopeAuth = authorizeOperatorScopesForMethod(params.operatorMethod, operatorScopes);
   if (!scopeAuth.allowed) {
-    sendMissingScopeForbidden(params.res, scopeAuth.missingScope);
+    sendMissingScopeForbidden(params.res, scopeAuth.missingScope, {
+      method: params.operatorMethod,
+      presentedScopes: operatorScopes,
+    });
     return null;
   }
 

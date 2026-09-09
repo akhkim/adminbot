@@ -64,7 +64,10 @@ export async function handleGatewayPostJsonEndpoint(
       requestedScopes,
     );
     if (!scopeAuth.allowed) {
-      sendMissingScopeForbidden(res, scopeAuth.missingScope);
+      sendMissingScopeForbidden(res, scopeAuth.missingScope, {
+        method: opts.requiredOperatorMethod,
+        presentedScopes: requestedScopes,
+      });
       return undefined;
     }
   }

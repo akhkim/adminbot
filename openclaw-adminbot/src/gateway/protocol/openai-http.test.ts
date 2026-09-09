@@ -399,7 +399,8 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
         expect(res.status).toBe(403);
         const json = (await res.json()) as { error?: { message?: string; type?: string } };
         expect(json.error?.type).toBe("forbidden");
-        expect(json.error?.message).toBe("missing scope: operator.admin");
+        expect(json.error?.message).toMatch(/^missing scope: operator\.admin\b/);
+        expect(json.error?.message).toContain("x-openclaw-model");
         expect(agentCommand).toHaveBeenCalledTimes(0);
       }
 
