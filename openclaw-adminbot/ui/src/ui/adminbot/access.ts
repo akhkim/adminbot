@@ -53,13 +53,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotDeadlines: "anonymous",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
-  // Conference Overview sits with the rest of General Tools and on the same terms. The cards are
-  // derived from the deadline dataset the service already publishes unauthenticated, and the
-  // descriptions are static prose about public venues -- nothing on the page as a visitor sees it
-  // is filtered by who is looking, which is this group's own test. The two halves that *are*
-  // filtered come from the service, not from this table: the sign-up form needs a member session
-  // and the roster of who is going needs an admin one, and the route re-checks both.
-  adminbotConferences: "anonymous",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.

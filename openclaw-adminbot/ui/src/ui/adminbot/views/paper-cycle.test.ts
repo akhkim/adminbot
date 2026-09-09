@@ -183,7 +183,9 @@ describe("the linkedin panel's absorbed generator", () => {
     if (!venue || !note) throw new Error("no context inputs");
     venue.value = "ICML 2026, poster Wed Jul 8 Hall A #3015";
     note.value = "Best paper award";
-    li.querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-linkedin"]')?.click();
+    li.querySelector<HTMLButtonElement>(
+      '[data-testid="paper-draft-generate-p1-linkedin"]',
+    )?.click();
     expect(calls.generated).toEqual([
       ["ICML 2026, poster Wed Jul 8 Hall A #3015", "Best paper award"],
     ]);
@@ -192,7 +194,9 @@ describe("the linkedin panel's absorbed generator", () => {
   it("keeps circulation beside generation once a linkedin draft exists", () => {
     const { container, calls } = draw({ drafts: [draft({ platform: "linkedin" })] });
     const actions = container.querySelector(".paper-cycle__draft-actions");
-    expect(actions?.querySelector('[data-testid="paper-draft-circulate-p1-linkedin"]')).not.toBeNull();
+    expect(
+      actions?.querySelector('[data-testid="paper-draft-circulate-p1-linkedin"]'),
+    ).not.toBeNull();
     actions
       ?.querySelector<HTMLButtonElement>('[data-testid="paper-draft-circulate-p1-linkedin"]')
       ?.click();
@@ -266,5 +270,114 @@ describe("the closing line", () => {
   it("appears only when the whole cycle is closed, expenses included", () => {
     expect(draw().container.textContent).not.toContain("expenses included");
     expect(draw({ cycleClosed: true }).container.textContent).toContain("expenses included");
+  });
+});
+
+describe("what you need for this trip", () => {
+  /** The card with the trip block wired: conference open, and the handlers present. */
+  function withTrip(overrides: Partial<PaperCycleProps> = {}) {
+    const edits: Array<Partial<import("./paper-cycle.ts").PaperTripDraft>> = [];
+    const saves: number[] = [];
+    const withdrawals: number[] = [];
+    const drawn = draw({
+      conferenceOpen: true,
+      myTrip: null,
+      onEditTrip: (patch) => edits.push(patch),
+      onSaveTrip: () => saves.push(1),
+      onWithdrawTrip: () => withdrawals.push(1),
+      ...overrides,
+    });
+    return { ...drawn, edits, saves, withdrawals };
+  }
+
+  it("is absent on a paper whose conference is not settled", () => {
+    const { container } = draw({ conferenceOpen: false });
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+  });
+
+  it("is absent on a surface that wired no trip handlers, like somebody else's card", () => {
+    const { container } = draw({ conferenceOpen: true });
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+  });
+
+  it("opens on undecided and asks nothing further until they say they are going", () => {
+    const { container } = withTrip();
+    const intent = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-trip-intent-p1"]',
+    );
+    expect(intent?.value).toBe("undecided");
+    expect(container.querySelector('[data-testid="paper-trip-funding-p1"]')).toBeNull();
+  });
+
+  it("asks the money, bed and visa questions once they are going", () => {
+    const { container } = withTrip({
+      tripDraft: {
+        intent: "going",
+        funding: "none",
+        needs_lodging: false,
+        needs_visa_letter: false,
+        arrival_on: "",
+        departure_on: "",
+        notes: "",
+      },
+    });
+    const funding = container.querySelector('[data-testid="paper-trip-funding-p1"]');
+    expect(funding?.textContent).toContain("No financial aid needed");
+    expect(funding?.textContent).toContain("Conference fee only");
+    expect(funding?.textContent).toContain("Flight only");
+    expect(funding?.textContent).toContain("Full travel");
+    expect(container.querySelector('[data-testid="paper-trip-lodging-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-visa-p1"]')).not.toBeNull();
+    // Dates only once a bed is wanted: a headcount alone books the wrong thing.
+    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).toBeNull();
+  });
+
+  it("asks for nights once a bed is wanted", () => {
+    const { container } = withTrip({
+      tripDraft: {
+        intent: "going",
+        funding: "full_travel",
+        needs_lodging: true,
+        needs_visa_letter: false,
+        arrival_on: "",
+        departure_on: "",
+        notes: "",
+      },
+    });
+    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-departure-p1"]')).not.toBeNull();
+  });
+
+  it("offers withdrawal only once something is recorded", () => {
+    const empty = withTrip();
+    expect(empty.container.querySelector('[data-testid="paper-trip-withdraw-p1"]')).toBeNull();
+    const filled = withTrip({
+      myTrip: {
+        conference_key: "emnlp:2026",
+        member_id: "ada",
+        intent: "going",
+        funding: "fee_only",
+        needs_lodging: false,
+        needs_visa_letter: false,
+      },
+    });
+    filled.container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-trip-withdraw-p1"]')
+      ?.click();
+    expect(filled.withdrawals).toEqual([1]);
+  });
+
+  it("reports an edit and a save", () => {
+    const { container, edits, saves } = withTrip();
+    const intent = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-trip-intent-p1"]',
+    );
+    if (intent) {
+      intent.value = "going";
+      intent.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    expect(edits).toEqual([{ intent: "going" }]);
+    container.querySelector<HTMLButtonElement>('[data-testid="paper-trip-save-p1"]')?.click();
+    expect(saves).toEqual([1]);
   });
 });

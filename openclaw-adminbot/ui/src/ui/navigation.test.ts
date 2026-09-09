@@ -80,7 +80,6 @@ describe("iconForTab", () => {
       adminbotPapers: "barChart",
       adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
-      adminbotConferences: "globe",
       adminbotAnnouncements: "send",
       adminbotCalendar: "clock",
       adminbotDeadlines: "loader",
@@ -141,7 +140,6 @@ describe("titleForTab", () => {
       adminbotPapers: "Active Papers",
       adminbotWorkshopNudges: "Workshop Matches",
       adminbotConferencePapers: "Find Interesting Papers",
-      adminbotConferences: "Conferences",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
       adminbotDeadlines: "Deadlines",
@@ -201,7 +199,6 @@ describe("subtitleForTab", () => {
       adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
       adminbotConferencePapers:
         "Search a conference's accepted papers, ranked against what you work on.",
-      adminbotConferences: "Upcoming conferences, and a place to sign up to go in person.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
       adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
       adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
@@ -317,7 +314,6 @@ describe("tabFromPath", () => {
       "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
       "/adminbot/announcements": "adminbotAnnouncements",
       "/adminbot/conference-papers": "adminbotConferencePapers",
-      "/adminbot/conferences": "adminbotConferences",
       "/adminbot/calendar": "adminbotCalendar",
       "/adminbot/deadlines": "adminbotDeadlines",
       // The tab that became three, aliased long before the prefix was dropped.

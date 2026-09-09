@@ -4083,6 +4083,10 @@ export type PaperCycle = {
   weeklyUpdates: PaperWeeklyUpdate[];
   cycleClosed: boolean;
   missingAcceptanceDetails: string[];
+  /** The conference this paper goes to. Absent until the acceptance details are in. */
+  conferenceKey?: string;
+  /** The reader's own trip to that conference, when they have recorded one. */
+  myTrip?: ConferenceTrip;
 };
 
 /** One paper's slots and venue ladder, blanks included -- the card renders the whole cycle. */
@@ -4113,6 +4117,8 @@ export async function fetchPaperSlots(
     weekly_updates?: PaperWeeklyUpdate[];
     cycle_closed?: boolean;
     missing_acceptance_details?: string[];
+    conference_key?: string;
+    my_trip?: ConferenceTrip;
   } | null;
   return {
     ok: true,
@@ -4126,6 +4132,8 @@ export async function fetchPaperSlots(
       weeklyUpdates: body?.weekly_updates ?? [],
       cycleClosed: Boolean(body?.cycle_closed),
       missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
+      ...(body?.conference_key ? { conferenceKey: body.conference_key } : {}),
+      ...(body?.my_trip ? { myTrip: body.my_trip } : {}),
     },
   };
 }

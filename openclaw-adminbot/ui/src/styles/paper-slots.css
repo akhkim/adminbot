@@ -1220,3 +1220,49 @@
 .ptl__step--waiting {
   opacity: 0.6;
 }
+
+/* "What you need for this trip" — the reader's own travel answers, under "Who is going" on an
+   accepted paper's card. A stacked column like the profile's field rows rather than the grid the
+   slot checklist uses: these are six questions asked once, not a list of artifacts to work down. */
+.paper-trip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.paper-trip__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.paper-trip__field > span {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+}
+
+/* A checkbox and its explanation read as one control, so the box sits beside the label rather
+   than above it like the typed fields do. */
+.paper-trip__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.paper-trip__check input {
+  margin-top: 3px;
+}
+
+.paper-trip__check small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.paper-trip__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}

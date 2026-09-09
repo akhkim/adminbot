@@ -19,6 +19,8 @@ import {
   recordPaperSocialConsent,
   resolveAdminBotBaseUrl,
   runPaperSlotReminder,
+  deleteConferenceTrip,
+  saveConferenceTrip,
   savePaperAttendee,
   savePaperReimbursementStatus,
   savePaperSlot,
@@ -28,6 +30,7 @@ import {
   type PaperNudgeBatch,
   type PaperSlotOverviewRow,
 } from "../auth/session.ts";
+import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
@@ -56,6 +59,9 @@ export type AdminBotPaperSlotsHost = {
   adminBotPaperSlotsLoadedAt: number | null;
   adminBotPaperSlotsNudging: boolean;
   adminBotPaperSlotsNotice: string | null;
+  /** Half-typed trip answers, keyed by conference. One answer covers every paper at that venue. */
+  adminBotTripDrafts: Record<string, PaperTripDraft>;
+  adminBotTripSavingKey: string | null;
   /** The preview. Null until an admin asks to see what would go out. */
   adminBotPaperNudgeBatches: PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading: boolean;
@@ -504,5 +510,108 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     host.adminBotPaperSlotsLoadedAt = null;
   } finally {
     host.adminBotPaperSlotsNudging = false;
+  }
+}
+
+/** Hold one field of the reader's trip answer. Nothing is sent until Save. */
+export function editAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+  patch: Partial<PaperTripDraft>,
+  base: PaperTripDraft,
+): void {
+  const current = host.adminBotTripDrafts[conferenceKey] ?? base;
+  host.adminBotTripDrafts = {
+    ...host.adminBotTripDrafts,
+    [conferenceKey]: { ...current, ...patch },
+  };
+}
+
+/**
+ * Reload every open card that shares this conference.
+ *
+ * One trip covers every paper at a venue, so a save made on one card is the answer on all of them.
+ * Refetching only the card that was saved would leave a sibling showing the old answer until
+ * somebody closed and reopened it.
+ */
+async function refreshCardsForConference(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+): Promise<void> {
+  const affected = Object.entries(host.adminBotPaperSlots)
+    .filter(([, cycle]) => cycle.conferenceKey === conferenceKey)
+    .map(([paperId]) => paperId);
+  for (const paperId of affected) {
+    await loadAdminBotPaperSlots(host, paperId);
+  }
+}
+
+export async function saveAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+  draft: PaperTripDraft,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  host.adminBotTripSavingKey = conferenceKey;
+  host.adminBotPaperSlotsError = null;
+  try {
+    const result = await saveConferenceTrip(
+      conferenceKey,
+      {
+        intent: draft.intent,
+        funding: draft.funding,
+        needs_lodging: draft.needs_lodging,
+        needs_visa_letter: draft.needs_visa_letter,
+        // Blank is "not answered", and the service treats an absent field that way. Sending ""
+        // would store an empty string where the column means "no date given".
+        ...(draft.arrival_on ? { arrival_on: draft.arrival_on } : {}),
+        ...(draft.departure_on ? { departure_on: draft.departure_on } : {}),
+        ...(draft.notes.trim() ? { notes: draft.notes } : {}),
+      },
+      wire.token,
+      wire.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const drafts = { ...host.adminBotTripDrafts };
+    // Dropped rather than kept in step with the response: the stored row is the answer now, and
+    // two copies of it is how a form starts disagreeing with the server.
+    delete drafts[conferenceKey];
+    host.adminBotTripDrafts = drafts;
+    await refreshCardsForConference(host, conferenceKey);
+  } finally {
+    host.adminBotTripSavingKey = null;
+  }
+}
+
+export async function withdrawAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  host.adminBotTripSavingKey = conferenceKey;
+  host.adminBotPaperSlotsError = null;
+  try {
+    const result = await deleteConferenceTrip(conferenceKey, wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const drafts = { ...host.adminBotTripDrafts };
+    delete drafts[conferenceKey];
+    host.adminBotTripDrafts = drafts;
+    await refreshCardsForConference(host, conferenceKey);
+  } finally {
+    host.adminBotTripSavingKey = null;
   }
 }

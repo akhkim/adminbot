@@ -12,11 +12,16 @@ function unwrap<T>(
   return result.payload;
 }
 
-/** The first conference the shipped deadline dataset knows about, whatever it happens to be. */
+/**
+ * The conference key an accepted paper resolves to.
+ *
+ * Read back off the card rather than spelled by hand, so the test agrees with the service about
+ * how a paper maps to a conference instead of asserting against a second copy of the rule.
+ */
 function firstConference(service: AdminBotService): string {
-  const key = unwrap(service.listConferenceOverview()).conferences[0]?.key;
+  const key = unwrap(service.listPaperSlots("p1")).conference_key;
   if (!key) {
-    throw new Error("the deadline dataset carries no conferences");
+    throw new Error("the seeded paper has no conference key");
   }
   return key;
 }
@@ -37,22 +42,34 @@ function seeded(): AdminBotService {
       title: "Causal abstraction",
       authors: ["Ada Lovelace"],
       current_step: "submission",
+      // Accepted with all four details, which is what gives the paper a conference to travel to.
+      venue_decision: "accept",
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster",
     }),
   );
   return service;
 }
 
-describe("listConferenceOverview", () => {
-  it("offers conferences with a description to a signed-out reader", () => {
-    const { conferences, mine } = unwrap(new AdminBotService().listConferenceOverview());
-    expect(conferences.length).toBeGreaterThan(0);
-    expect(conferences[0]?.description.length).toBeGreaterThan(0);
-    expect(mine).toEqual([]);
-    // Who is going is nobody's business but the lab's; a visitor gets the cards and no roster.
-    expect(conferences[0]?.roster).toBeUndefined();
+describe("the trip on the paper card", () => {
+  it("names the conference only once the acceptance details are in", () => {
+    const service = seeded();
+    expect(unwrap(service.listPaperSlots("p1")).conference_key).toBeTruthy();
+    unwrap(
+      service.upsertPaper({
+        id: "p2",
+        title: "Not accepted yet",
+        authors: ["Ada Lovelace"],
+        current_step: "submission",
+      }),
+    );
+    // No venue to travel to, so no key and no block on the card.
+    expect(unwrap(service.listPaperSlots("p2")).conference_key).toBeUndefined();
   });
 
-  it("hands a member their own trip back and nobody else's", () => {
+  it("hands the reader their own trip and nobody else's", () => {
     const service = seeded();
     const key = firstConference(service);
     unwrap(
@@ -71,74 +88,45 @@ describe("listConferenceOverview", () => {
         funding: "none",
       }),
     );
-    const view = unwrap(service.listConferenceOverview({ memberId: "ada" }));
-    expect(view.mine.map((trip) => trip.member_id)).toEqual(["ada"]);
-    expect(view.conferences.find((entry) => entry.key === key)?.roster).toBeUndefined();
+    expect(unwrap(service.listPaperSlots("p1", { memberId: "ada" })).my_trip?.funding).toBe(
+      "full_travel",
+    );
+    expect(unwrap(service.listPaperSlots("p1", { memberId: "bob" })).my_trip?.funding).toBe("none");
+    // A signed-out or unidentified reader gets nobody's answer.
+    expect(unwrap(service.listPaperSlots("p1")).my_trip).toBeUndefined();
   });
 
-  it("gives an admin the headcounts, the funding split and the booking span", () => {
+  it("gives two papers at one venue the same key, so one answer covers both", () => {
     const service = seeded();
-    const key = firstConference(service);
     unwrap(
-      service.setConferenceTrip({
-        conferenceKey: key,
-        memberId: "ada",
-        intent: "going",
-        funding: "full_travel",
-        needsLodging: true,
-        arrivalOn: "2026-11-04",
-        departureOn: "2026-11-09",
-        needsVisaLetter: true,
-        paperId: "p1",
+      service.upsertPaper({
+        id: "p2",
+        title: "Second EMNLP paper",
+        authors: ["Ada Lovelace"],
+        current_step: "submission",
+        venue_decision: "accept",
+        // A different spelling of the same venue, which the key has to fold together.
+        accepted_venue: "emnlp",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "oral",
       }),
     );
+    const first = unwrap(service.listPaperSlots("p1")).conference_key;
+    expect(unwrap(service.listPaperSlots("p2")).conference_key).toBe(first);
+
     unwrap(
       service.setConferenceTrip({
-        conferenceKey: key,
-        memberId: "bob",
+        conferenceKey: first as string,
+        memberId: "ada",
         intent: "going",
         funding: "fee_only",
-        needsLodging: true,
-        arrivalOn: "2026-11-02",
-        departureOn: "2026-11-07",
       }),
     );
-    const roster = unwrap(service.listConferenceOverview({ isAdmin: true })).conferences.find(
-      (entry) => entry.key === key,
-    )?.roster;
-    expect(roster?.going).toBe(2);
-    expect(roster?.funding).toEqual({ none: 0, fee_only: 1, flight_only: 0, full_travel: 1 });
-    expect(roster?.visa_letters).toBe(1);
-    // The Airbnb answer: two beds, spanning everybody's nights.
-    expect(roster?.lodging.guests).toBe(2);
-    expect(roster?.lodging.first_night).toBe("2026-11-02");
-    expect(roster?.lodging.last_night).toBe("2026-11-09");
-    // The paper is resolved to its title, so the roster reads without a second lookup.
-    expect(roster?.trips.find((trip) => trip.member_id === "ada")?.paper_title).toBe(
-      "Causal abstraction",
+    // Answered on one card, present on the other.
+    expect(unwrap(service.listPaperSlots("p2", { memberId: "ada" })).my_trip?.funding).toBe(
+      "fee_only",
     );
-  });
-
-  it("counts an undecided member as undecided rather than as a bed", () => {
-    const service = seeded();
-    const key = firstConference(service);
-    unwrap(
-      service.setConferenceTrip({
-        conferenceKey: key,
-        memberId: "ada",
-        intent: "undecided",
-        funding: "full_travel",
-        needsLodging: true,
-      }),
-    );
-    const roster = unwrap(service.listConferenceOverview({ isAdmin: true })).conferences.find(
-      (entry) => entry.key === key,
-    )?.roster;
-    expect(roster?.undecided).toBe(1);
-    expect(roster?.going).toBe(0);
-    expect(roster?.lodging.guests).toBe(0);
-    // Their funding answer is a plan, not a cost the lab has taken on.
-    expect(roster?.funding.full_travel).toBe(0);
   });
 });
 
@@ -162,9 +150,9 @@ describe("setConferenceTrip", () => {
         funding: "none",
       }),
     );
-    const mine = unwrap(service.listConferenceOverview({ memberId: "ada" })).mine;
-    expect(mine).toHaveLength(1);
-    expect(mine[0]?.intent).toBe("undecided");
+    expect(unwrap(service.listPaperSlots("p1", { memberId: "ada" })).my_trip?.intent).toBe(
+      "undecided",
+    );
   });
 
   it("refuses not_going, which is the absence of a row rather than a value", () => {
@@ -241,13 +229,7 @@ describe("withdrawConferenceTrip", () => {
     );
     unwrap(service.withdrawConferenceTrip({ conferenceKey: key, memberId: "ada" }));
 
-    expect(unwrap(service.listConferenceOverview({ memberId: "ada" })).mine).toEqual([]);
-    const roster = unwrap(service.listConferenceOverview({ isAdmin: true })).conferences.find(
-      (entry) => entry.key === key,
-    )?.roster;
-    expect(roster?.going).toBe(0);
-    // The bed goes with them: a withdrawal the booking did not hear about is a paid-for empty room.
-    expect(roster?.lodging.guests).toBe(0);
+    expect(unwrap(service.listPaperSlots("p1", { memberId: "ada" })).my_trip).toBeUndefined();
   });
 
   it("is idempotent, because withdrawing twice is still not going", () => {
