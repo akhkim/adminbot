@@ -19,7 +19,7 @@ import {
   type JsonSchemaValidationError,
   type JsonSchemaValue,
 } from "../../plugins/schema-validator.js";
-import { formatMissingScopeMessage } from "../missing-scope-message.js";
+import { formatMissingScopeMessage } from "../auth/missing-scope-message.js";
 import { ADMIN_SCOPE, READ_SCOPE, WRITE_SCOPE } from "../operator-scopes.js";
 import type { GatewayRequestHandlers } from "./types.js";
 

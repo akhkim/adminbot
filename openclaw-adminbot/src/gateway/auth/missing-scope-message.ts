@@ -4,7 +4,7 @@
 // self-declared scopes cleared. The bare `missing scope: <scope>` line could not tell those cases
 // apart, so this module turns a denial into a message that names the method, what the connection
 // actually presented, and the next step.
-import { ADMIN_SCOPE, READ_SCOPE, WRITE_SCOPE } from "./operator-scopes.js";
+import { ADMIN_SCOPE, READ_SCOPE, WRITE_SCOPE } from "../operator-scopes.js";
 
 /** Everything a denial site knows about a failed scope check. */
 export type MissingScopeDetails = {

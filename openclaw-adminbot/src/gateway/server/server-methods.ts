@@ -26,7 +26,7 @@ import {
   isCoreGatewayMethodClassified,
   type GatewayMethodRegistry,
 } from "../methods/registry.js";
-import { formatMissingScopeMessage } from "../missing-scope-message.js";
+import { formatMissingScopeMessage } from "../auth/missing-scope-message.js";
 import { isOperatorScope } from "../operator-scopes.js";
 import { isRoleAuthorizedForMethod, parseGatewayRole } from "../role-policy.js";
 import type {

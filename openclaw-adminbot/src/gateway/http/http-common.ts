@@ -7,7 +7,7 @@ import {
 } from "../../logging/diagnostic-payload.js";
 import type { GatewayAuthResult } from "../auth/auth.js";
 import { readJsonBody } from "../hooks/hooks.js";
-import { formatMissingScopeMessage, type MissingScopeDetails } from "../missing-scope-message.js";
+import { formatMissingScopeMessage, type MissingScopeDetails } from "../auth/missing-scope-message.js";
 
 /**
  * Apply baseline security headers that are safe for all response types (API JSON,
