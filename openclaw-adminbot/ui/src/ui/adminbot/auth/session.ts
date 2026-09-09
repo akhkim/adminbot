@@ -3737,6 +3737,53 @@ export async function fetchPaperSlotOverview(
   return { ok: true, value: body?.papers ?? [] };
 }
 
+/** One person at one conference. Mirrors ConferenceAttendancePerson in the service. */
+export type ConferenceRosterPerson = {
+  attendee_key: string;
+  member_id?: string;
+  name: string;
+  attending: "yes" | "no" | "unknown";
+  papers: Array<{ paper_id: string; title: string; attending: "yes" | "no" | "unknown" }>;
+};
+
+/** One conference the lab has an accepted paper at, and everyone on its roll-call. */
+export type ConferenceRoster = {
+  key: string;
+  venue: string;
+  year: number;
+  label: string;
+  paper_count: number;
+  people: ConferenceRosterPerson[];
+  going_count: number;
+  unanswered_count: number;
+  papers_awaiting: Array<{ paper_id: string; title: string; unanswered: number }>;
+};
+
+/**
+ * Who is going to each conference, across every accepted paper.
+ *
+ * A 404 means the service predates this route -- the Control UI ships on merge and the service is
+ * deployed separately, so a new tab can reach a server that has never heard of it. Empty rather
+ * than an error, so the page says "nothing recorded" instead of "unreachable".
+ */
+export async function fetchConferenceRosters(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceRoster[]>> {
+  const result = await authedJson(baseUrl, "/papers/conference-rosters", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { conferences?: ConferenceRoster[] } | null;
+  return { ok: true, value: body?.conferences ?? [] };
+}
+
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
 export type RecentUpdateRow = {
   id: string;

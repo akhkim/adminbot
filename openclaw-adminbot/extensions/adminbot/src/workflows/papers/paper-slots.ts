@@ -454,10 +454,15 @@ export function paperSlotProgress(
 /**
  * Is this paper finished?
  *
- * Every required artifact in, and every author who actually went to the conference square on their
- * expenses. The second half is the one that matters: "the paper looks done" is a judgement someone
- * makes and then forgets to revisit, and the reimbursement is the thing that is genuinely
- * outstanding for weeks after everything else is finished.
+ * Every required artifact in, everybody on the paper accounted for at the conference, and every
+ * author who actually went square on their expenses. The last two are the ones that matter: "the
+ * paper looks done" is a judgement someone makes and then forgets to revisit, and travel is what
+ * stays genuinely outstanding for weeks after everything else is finished.
+ *
+ * `attendees` is the merged roll-call from workflows/papers/conference-attendance.ts, not the
+ * stored rows -- an author nobody has answered for arrives here as `unknown`, which is what lets
+ * an unanswered roll-call hold the cycle open. Passing raw store rows would read a paper nobody
+ * has filled in as one where nobody is travelling.
  *
  * Derived, never stored -- see the note at the top of contracts/paper-slots.ts.
  */
@@ -470,6 +475,15 @@ export function isCycleClosed(params: {
 }): boolean {
   const { provided, total } = paperSlotProgress(params.paper.id, params.slots, params.drafts);
   if (provided < total) {
+    return false;
+  }
+  // Only once the branch is open. Before that nobody has been asked who is travelling, so an
+  // unanswered roll-call is the acceptance details being missing, not the authors being slow --
+  // and the card already says so through `missingAcceptanceDetails`.
+  if (
+    isConferenceBranchOpen(params.paper) &&
+    params.attendees.some((entry) => entry.attending === "unknown")
+  ) {
     return false;
   }
   const attending = params.attendees.filter((entry) => entry.attending === "yes");

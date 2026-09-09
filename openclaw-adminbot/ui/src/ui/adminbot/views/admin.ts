@@ -17,6 +17,7 @@ import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
 import type {
   AdminBotEmailReviewResolution,
+  ConferenceRoster,
   MemberNudgeChannel,
   MemberProfileUpdate,
   PaperSlotOverviewRow,
@@ -2084,7 +2085,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   return html`
     ${table} ${editPopovers}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
-    ${board(t("paperOverview.details.travel"), renderTravelBoard(props, papers))}
+    ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
     ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
@@ -2194,54 +2195,86 @@ function copyNudge(event: Event, message: string) {
  * is still chasing, and folding them into "not going" would make the lab look decided when it is
  * only unasked.
  */
-function renderTravelBoard(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
-  const byId = new Map(papers.map((paper) => [paper.id, paper]));
-  const byVenue = new Map<string, { going: Set<string>; unknown: number; papers: number }>();
-  for (const row of props.paperSlotOverview ?? []) {
-    const paper = byId.get(row.paper_id);
-    const venue = paper?.accepted_venue?.trim();
-    if (!venue || !row.attendance) {
-      continue;
-    }
-    const entry = byVenue.get(venue) ?? {
-      going: new Set<string>(),
-      unknown: 0,
-      papers: 0,
-    };
-    for (const name of row.attendance.going ?? []) {
-      entry.going.add(name);
-    }
-    entry.unknown += row.attendance.unknown;
-    entry.papers += 1;
-    byVenue.set(venue, entry);
-  }
-  if (byVenue.size === 0) {
+/**
+ * Who is going to each conference the lab has an accepted paper at.
+ *
+ * The roster is computed by the service rather than reassembled here from per-paper counts, which
+ * is what this board used to do. Two things that costs: a conference is `accepted_venue` *and*
+ * year, so two years of EMNLP were one row and a lab that goes every year could never read it; and
+ * a per-paper count of unanswered rows cannot say *who* has not answered, which is the only thing
+ * a reader can act on. The service walks every accepted paper's author list, so an unanswered
+ * person is a name here rather than a number.
+ *
+ * Everyone appears, not just the people who said yes -- the answer a reader needs before booking
+ * anything is which of these names are still question marks.
+ */
+function renderTravelBoard(props: AdminBotProps) {
+  const conferences = props.data.conferenceRosters ?? [];
+  if (conferences.length === 0) {
     return nothing;
   }
   return html`
     <article class="travel-board" data-testid="travel-board">
       <div class="card-title">Conference travel</div>
-      ${[...byVenue.entries()].map(
-        ([venue, entry]) => html`
-          <section class="travel-board__venue">
-            <div class="travel-board__head">
-              <strong>${venue}</strong>
-              <span class="travel-board__count">
-                ${entry.going.size} going · ${entry.papers} paper${entry.papers === 1 ? "" : "s"}
-                ${entry.unknown > 0
-                  ? html`· <span class="travel-board__open">${entry.unknown} not answered</span>`
-                  : nothing}
-              </span>
-            </div>
-            ${entry.going.size === 0
-              ? html`<p class="travel-board__empty">Nobody has said yes yet.</p>`
-              : html`<ul class="travel-board__people">
-                  ${[...entry.going].sort().map((name) => html`<li>${name}</li>`)}
-                </ul>`}
-          </section>
-        `,
-      )}
+      <div class="card-sub">
+        Everyone on an accepted paper, and whether they have said if they are going. Authors are
+        asked for this as part of the paper's nudges, so a question mark here is somebody who has
+        not answered yet.
+      </div>
+      ${conferences.map((conference) => renderTravelConference(conference))}
     </article>
+  `;
+}
+
+const TRAVEL_ATTENDING_LABELS: Record<string, string> = {
+  yes: "Going",
+  no: "Not going",
+  unknown: "No answer yet",
+};
+
+function renderTravelConference(conference: ConferenceRoster) {
+  return html`
+    <section class="travel-board__venue" data-testid=${`travel-board-conference-${conference.key}`}>
+      <div class="travel-board__head">
+        <strong>${conference.label}</strong>
+        <span class="travel-board__count">
+          ${conference.going_count} going · ${conference.paper_count}
+          paper${conference.paper_count === 1 ? "" : "s"}
+          ${conference.unanswered_count > 0
+            ? html`·
+                <span class="travel-board__open">${conference.unanswered_count} not answered</span>`
+            : nothing}
+        </span>
+      </div>
+      ${conference.people.length === 0
+        ? html`<p class="travel-board__empty">Nobody on the papers here yet.</p>`
+        : html`<ul class="travel-board__people">
+            ${conference.people.map(
+              (person) => html`
+                <li
+                  class=${`travel-board__person travel-board__person--${person.attending}`}
+                  data-testid=${`travel-board-person-${conference.key}-${person.attendee_key}`}
+                >
+                  <span class="travel-board__name">${person.name}</span>
+                  <span class="travel-board__state"
+                    >${TRAVEL_ATTENDING_LABELS[person.attending]}</span
+                  >
+                  <span class="travel-board__papers"
+                    >${person.papers.map((entry) => entry.title).join(" · ")}</span
+                  >
+                </li>
+              `,
+            )}
+          </ul>`}
+      ${conference.papers_awaiting.length > 0
+        ? html`<p class="travel-board__awaiting">
+            Still waiting on:
+            ${conference.papers_awaiting
+              .map((paper) => `${paper.title} (${paper.unanswered})`)
+              .join(", ")}
+          </p>`
+        : nothing}
+    </section>
   `;
 }
 

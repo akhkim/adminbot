@@ -1549,3 +1549,81 @@ describe("renderAdminBot members panel — edit history", () => {
     expect(container.querySelector('[data-testid="member-edits-pat"]')).toBeNull();
   });
 });
+
+describe("renderAdminBot papers panel — conference travel", () => {
+  const roster = {
+    key: "emnlp:2026",
+    venue: "EMNLP",
+    year: 2026,
+    label: "EMNLP 2026",
+    paper_count: 2,
+    going_count: 1,
+    unanswered_count: 1,
+    people: [
+      {
+        attendee_key: "member:ada",
+        member_id: "ada",
+        name: "Ada Lovelace",
+        attending: "yes" as const,
+        papers: [
+          { paper_id: "p1", title: "Causal abstraction", attending: "yes" as const },
+          { paper_id: "p2", title: "Robustness bounds", attending: "unknown" as const },
+        ],
+      },
+      {
+        attendee_key: "name:jo-park",
+        name: "Jo Park",
+        attending: "unknown" as const,
+        papers: [{ paper_id: "p2", title: "Robustness bounds", attending: "unknown" as const }],
+      },
+    ],
+    papers_awaiting: [{ paper_id: "p2", title: "Robustness bounds", unanswered: 1 }],
+  };
+
+  function withRoster() {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members, conferenceRosters: [roster] },
+      }),
+    );
+  }
+
+  it("names everyone at the conference, not only the people who said yes", () => {
+    const container = withRoster();
+    const ada = container.querySelector(
+      '[data-testid="travel-board-person-emnlp:2026-member:ada"]',
+    );
+    const jo = container.querySelector(
+      '[data-testid="travel-board-person-emnlp:2026-name:jo-park"]',
+    );
+    expect(ada?.textContent).toContain("Ada Lovelace");
+    expect(ada?.textContent).toContain("Going");
+    // The whole point of the board: an unanswered person is a name to chase, not a count.
+    expect(jo?.textContent).toContain("Jo Park");
+    expect(jo?.textContent).toContain("No answer yet");
+  });
+
+  it("carries the year, so two years of the same conference cannot merge", () => {
+    const section = withRoster().querySelector(
+      '[data-testid="travel-board-conference-emnlp:2026"]',
+    );
+    expect(section?.textContent).toContain("EMNLP 2026");
+  });
+
+  it("names the papers still owing an answer", () => {
+    expect(withRoster().textContent).toContain("Robustness bounds (1)");
+  });
+
+  it("renders nothing when the service returned no conferences", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members },
+      }),
+    );
+    expect(container.querySelector('[data-testid="travel-board"]')).toBeNull();
+  });
+});
