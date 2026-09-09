@@ -3400,6 +3400,16 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
     return;
   }
+  if (req.method === "GET" && url.pathname === "/papers/conference-rosters") {
+    // Who is going to each conference the lab has a paper at. Privileged: a member's own papers'
+    // rolls are on their own cards, and the whole lab's travel -- including who has not answered
+    // yet -- is a governance read rather than something every member is owed.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listConferenceRosters());
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/nudge-batches") {
     // The preview. Read-only and computed by the same walk the send uses, so what an admin reads
     // here is what would actually go out rather than a rehearsal of it.
@@ -4878,7 +4888,10 @@ function applyCors(
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, Prefer");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type, Idempotency-Key, Prefer",
+  );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   return true;
 }

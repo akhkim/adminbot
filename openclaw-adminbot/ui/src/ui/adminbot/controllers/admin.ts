@@ -49,6 +49,7 @@ import {
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
   upsertLabMemberAsAdmin,
+  type ConferenceRoster,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
@@ -701,6 +702,14 @@ export type AdminBotDashboardData = {
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   nudges: AdminBotPaperNudge[];
+  /**
+   * Who is going to each conference the lab has an accepted paper at.
+   *
+   * Optional because the route is admin-gated and newer than the service a browser may be talking
+   * to: a member session and an older host both leave it empty, and the travel board simply does
+   * not render rather than reporting a failure the reader can do nothing about.
+   */
+  conferenceRosters?: ConferenceRoster[];
   settings: AdminBotSettings | null;
   sensitiveInfo: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
@@ -989,13 +998,15 @@ async function loadAdminBotOverSession(
       };
       return;
     }
-    const [pending, emailReview, nudges, settings, sensitiveInfo] = await Promise.all([
-      optional("/proposals/pending?limit=50"),
-      optional("/automation/email/review"),
-      optional("/papers/nudges"),
-      optional("/settings"),
-      optional("/sensitive-info"),
-    ]);
+    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
+      await Promise.all([
+        optional("/proposals/pending?limit=50"),
+        optional("/automation/email/review"),
+        optional("/papers/nudges"),
+        optional("/papers/conference-rosters"),
+        optional("/settings"),
+        optional("/sensitive-info"),
+      ]);
     const settingsRecord = readRecord(settings);
     const sensitiveInfoRecord = readRecord(sensitiveInfo);
     const markdown = readString(sensitiveInfoRecord, "markdown");
@@ -1014,6 +1025,7 @@ async function loadAdminBotOverSession(
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
+      conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,

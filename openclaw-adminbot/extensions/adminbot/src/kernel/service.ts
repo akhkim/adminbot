@@ -1,8 +1,3 @@
-import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
-import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
-import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { LabSharingInvites } from "./service.lab-sharing-invites.js";
-import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
@@ -155,6 +150,9 @@ import {
   isGroupMeetingNudgeDue,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import {
@@ -214,6 +212,8 @@ import {
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import {
   isDeadlineMilestoneId,
   reconcileDeadlineMilestones,
@@ -256,7 +256,6 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
-import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
@@ -268,6 +267,13 @@ import {
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
 import {
+  dormantChaseDue,
+  isChaseableMember,
+  planOnboardingFollowUp,
+  type OnboardingFollowUpPlan,
+  type OnboardingFollowUpStep,
+} from "../workflows/members/onboarding-followup.js";
+import {
   classifyMemberThemes,
   isThemeMeetingEligible,
   memberThemeIds,
@@ -277,13 +283,6 @@ import {
   themeMeetings,
   type ThemeMatch,
 } from "../workflows/members/research-themes.js";
-import {
-  dormantChaseDue,
-  isChaseableMember,
-  planOnboardingFollowUp,
-  type OnboardingFollowUpPlan,
-  type OnboardingFollowUpStep,
-} from "../workflows/members/onboarding-followup.js";
 import {
   type AdminBotThemedMeeting,
   matchThemedMeetings,
@@ -306,6 +305,12 @@ import {
   authorNamesFromLinks,
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
+import {
+  buildConferenceAttendance,
+  expectedConferenceAttendees,
+  mergeConferenceAttendance,
+  type ConferenceAttendanceView,
+} from "../workflows/papers/conference-attendance.js";
 import {
   memberRelevanceNeedles,
   textMatchesNeedles,
@@ -347,6 +352,7 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
@@ -374,7 +380,10 @@ export type AdminBotServiceStore = {
   saveHelpRequest(request: LabHelpRequest): void;
   getHelpRequest(paperId: string): LabHelpRequest | undefined;
   listHelpRequests(): LabHelpRequest[];
-  discoverHelpRequests(query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[];
+  discoverHelpRequests(
+    query: LabSharingDiscoveryQuery,
+    after?: DiscoveryPosition,
+  ): DiscoveredHelpRequest[];
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -4240,7 +4249,11 @@ export class AdminBotService {
    * never has to guess about that paper again.
    */
   labSharingInvites() {
-    return new LabSharingInvites(this.store, (member, paper) => this.memberOwnsPaper(member, paper), (proposal) => this.createProposal(proposal));
+    return new LabSharingInvites(
+      this.store,
+      (member, paper) => this.memberOwnsPaper(member, paper),
+      (proposal) => this.createProposal(proposal),
+    );
   }
 
   labSharing() {
@@ -4399,7 +4412,7 @@ export class AdminBotService {
         // Older clients combined track and format. Preserve the track before a format edit
         // replaces that legacy value; an explicit new track (including blank) still wins.
         ...(existing?.artifacts?.publication_track === undefined &&
-          (existing?.presentation_type === "main" || existing?.presentation_type === "findings")
+        (existing?.presentation_type === "main" || existing?.presentation_type === "findings")
           ? { publication_track: existing.presentation_type }
           : {}),
         ...paper.artifacts,
@@ -4482,7 +4495,10 @@ export class AdminBotService {
     }
     const drafts = this.store.listSocialDrafts(paperId);
     const stored = this.store.listPaperSlots(paperId);
-    const attendees = this.store.listConferenceAttendees(paperId);
+    // The roll-call, not the stored rows: every author appears on the card as `unknown` until
+    // somebody answers for them, so "who is going" is a list to work down rather than an empty box
+    // nobody remembers to fill. See workflows/papers/conference-attendance.ts.
+    const attendees = this.conferenceRollCall(paper);
     const reimbursements = this.store.listPaperReimbursements(paperId);
     const entitled = Boolean(
       viewer?.isAdmin || (viewer?.memberId && this.memberOwnsPaperId(viewer.memberId, paper)),
@@ -4880,12 +4896,26 @@ export class AdminBotService {
     if (!name && !params.memberId) {
       return serviceError(400, "an attendee needs a name");
     }
+    // Answer the roll-call rather than sit beside it. Typing "Ada Lovelace" into the add box
+    // supplies no member id, which would key the answer by name while the roll-call keys the same
+    // author by their roster id -- two rows for one person, and a nudge that never stops because
+    // the row it is chasing is still unanswered. Matching the author list first means the caller
+    // may key an attendee however they know them.
+    const key = adminBotAttendeeKey(params.memberId, name);
+    const author = expectedConferenceAttendees(paper).find(
+      (entry) =>
+        entry.attendee_key === key ||
+        // The same person spelled rather than linked: a name-keyed write lands on the author whose
+        // printed name folds down the same way, whichever key the roll-call gave them.
+        (!params.memberId && adminBotAttendeeKey(undefined, entry.name) === key),
+    );
+    const memberId = params.memberId ?? author?.member_id;
     const attendee: AdminBotConferenceAttendeeRecord = {
       paper_id: params.paperId,
-      attendee_key: adminBotAttendeeKey(params.memberId, name),
-      name: name || (this.store.getLabMember(params.memberId ?? "")?.name ?? ""),
+      attendee_key: author?.attendee_key ?? key,
+      name: author?.name || name || (this.store.getLabMember(memberId ?? "")?.name ?? ""),
       attending: params.attending,
-      ...(params.memberId ? { member_id: params.memberId } : {}),
+      ...(memberId ? { member_id: memberId } : {}),
       ...(params.attending === "unknown" ? {} : { confirmed_at: new Date().toISOString() }),
     };
     this.store.saveConferenceAttendee(attendee);
@@ -4895,6 +4925,45 @@ export class AdminBotService {
       details: { paper_id: params.paperId, attending: params.attending },
     });
     return { ok: true, status: 200, payload: { attendee } };
+  }
+
+  /**
+   * One paper's attendance roll-call: every author, with whatever answer exists for them.
+   *
+   * Gated on the conference branch for the same reason the nudge pass is. Before the acceptance
+   * details are in nobody has been asked, so materialising a list of unknowns would put a red
+   * count on every paper in the lab and describe the acceptance form rather than the travel.
+   */
+  private conferenceRollCall(paper: AdminBotPaperRecord): AdminBotConferenceAttendeeRecord[] {
+    const stored = this.store.listConferenceAttendees(paper.id);
+    return isConferenceBranchOpen(paper) ? mergeConferenceAttendance(paper, stored) : stored;
+  }
+
+  /**
+   * Every conference the lab has an accepted paper at, and who is going to each.
+   *
+   * The one read that is about a conference rather than a paper. Everything else in the venue
+   * cycle is keyed by paper, which answers "who is going to this" but never "who is going to
+   * EMNLP" -- and the second is the question somebody actually has, whether they are booking a
+   * lab dinner, pairing a first-timer with somebody experienced, or working out who can carry a
+   * poster tube. It is derived on read, so there is nothing to keep in sync: a paper accepted this
+   * morning is on the roster this morning.
+   *
+   * Admin-gated at the route. A member sees their own papers' rolls on their own cards; the whole
+   * lab's travel is a governance read, and one member's undecided answer is not the rest of the
+   * roster's business.
+   */
+  listConferenceRosters(): AdminBotServiceResponse<{
+    conferences: ConferenceAttendanceView[];
+  }> {
+    const entries = this.store
+      .listPapers()
+      .filter((paper) => isConferenceBranchOpen(paper))
+      .map((paper) => ({
+        paper,
+        attendees: this.store.listConferenceAttendees(paper.id),
+      }));
+    return { ok: true, status: 200, payload: { conferences: buildConferenceAttendance(entries) } };
   }
 
   /**
@@ -4962,7 +5031,9 @@ export class AdminBotService {
     const papers = this.store.listPapers().map((paper) => {
       const stored = this.store.listPaperSlots(paper.id);
       const drafts = this.store.listSocialDrafts(paper.id);
-      const attendees = this.store.listConferenceAttendees(paper.id);
+      // Merged, so the header's `unknown` count is the number of authors still owing an answer
+      // rather than the number of half-filled rows -- see the note on the card read above.
+      const attendees = this.conferenceRollCall(paper);
       const reimbursements = this.store.listPaperReimbursements(paper.id);
       const actionable = actionablePaperSlots(paper, stored, now, drafts);
       const progress = paperSlotProgress(paper.id, stored, drafts);
@@ -5255,7 +5326,13 @@ export class AdminBotService {
       if (!isConferenceBranchOpen(paper)) {
         continue;
       }
-      for (const attendee of this.store.listConferenceAttendees(paper.id)) {
+      // The whole roll-call, not the rows somebody remembered to add. This is what makes "tell us
+      // who is attending" mandatory rather than optional: an accepted paper nobody has answered
+      // for produces one line per author here, and keeps producing them until it is answered.
+      for (const attendee of mergeConferenceAttendance(
+        paper,
+        this.store.listConferenceAttendees(paper.id),
+      )) {
         if (attendee.attending !== "unknown") {
           continue;
         }

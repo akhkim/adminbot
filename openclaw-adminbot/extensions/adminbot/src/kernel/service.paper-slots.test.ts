@@ -441,3 +441,147 @@ describe("attendance on the slot overview", () => {
     expect(row?.attendance).toEqual({ yes: 0, no: 0, unknown: 0, going: [] });
   });
 });
+
+describe("the conference roll-call", () => {
+  /** An accepted paper with all four acceptance details, so the conference branch is open. */
+  function acceptedService(): AdminBotService {
+    const service = serviceWithDelivery();
+    seed(service);
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+        venue_decision: "accept",
+        accepted_venue: "EMNLP",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "poster",
+      }),
+    );
+    return service;
+  }
+
+  it("puts every author on the card before anybody has been added by hand", () => {
+    const { attendees } = unwrap(acceptedService().listPaperSlots("p1"));
+    expect(attendees.map((row) => [row.name, row.attending])).toEqual([
+      ["Ada Lovelace", "unknown"],
+      ["Bob Coauthor", "unknown"],
+    ]);
+  });
+
+  it("leaves a paper alone until its acceptance details are in", () => {
+    const service = serviceWithDelivery();
+    seed(service);
+    // Accepted, but the venue, year, archival flag and presentation type are all missing, so
+    // nobody has been asked anything yet.
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+      }),
+    );
+    expect(unwrap(service.listPaperSlots("p1")).attendees).toEqual([]);
+  });
+
+  it("chases the first author about every author nobody has answered for", () => {
+    const { batches } = unwrap(acceptedService().collectPaperNudgeBatches());
+    // The first author owns the answer for the whole paper, so one message names everybody.
+    const ada = batches.find((batch) => batch.member_id === "ada");
+    expect(ada?.message).toContain("Confirm whether Ada Lovelace is attending");
+    expect(ada?.message).toContain("Confirm whether Bob Coauthor is attending");
+    expect(batches.find((batch) => batch.member_id === "bob")?.message ?? "").not.toContain(
+      "is attending",
+    );
+  });
+
+  it("stops asking once the answer is recorded", () => {
+    const service = acceptedService();
+    for (const name of ["Ada Lovelace", "Bob Coauthor"]) {
+      unwrap(
+        service.setConferenceAttendee({
+          paperId: "p1",
+          name,
+          attending: name === "Ada Lovelace" ? "yes" : "no",
+          actorId: "ada",
+          privileged: false,
+        }),
+      );
+    }
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.map((batch) => batch.message).join("\n")).not.toContain("is attending");
+  });
+
+  it("answers the roll-call when the name is typed rather than picked", () => {
+    const service = acceptedService();
+    // No member id, and a different casing: the add box only ever knows a name, and a second row
+    // keyed by that name would leave the linked author unanswered forever.
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p1",
+        name: "ada lovelace",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    const { attendees } = unwrap(service.listPaperSlots("p1"));
+    expect(attendees.map((row) => [row.name, row.attending])).toEqual([
+      ["Ada Lovelace", "yes"],
+      ["Bob Coauthor", "unknown"],
+    ]);
+  });
+
+  it("gathers everyone at one conference across every accepted paper", () => {
+    const service = acceptedService();
+    unwrap(
+      service.upsertPaper({
+        id: "p2",
+        title: "Robustness bounds",
+        authors: ["Ada Lovelace", "Jo Park"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+        // A different spelling of the same conference, which the roster has to fold together.
+        accepted_venue: "emnlp",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "oral",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p1",
+        name: "Ada Lovelace",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    const { conferences } = unwrap(service.listConferenceRosters());
+    expect(conferences).toHaveLength(1);
+    expect(conferences[0]).toMatchObject({
+      label: "EMNLP 2026",
+      paper_count: 2,
+      going_count: 1,
+      unanswered_count: 2,
+    });
+    expect(conferences[0]?.people.map((person) => [person.name, person.attending])).toEqual([
+      ["Ada Lovelace", "yes"],
+      ["Bob Coauthor", "unknown"],
+      ["Jo Park", "unknown"],
+    ]);
+  });
+
+  it("holds the paper open while anybody is still unaccounted for", () => {
+    const service = acceptedService();
+    const row = () =>
+      unwrap(service.listPaperSlotOverview()).papers.find((paper) => paper.paper_id === "p1");
+    expect(row()?.attendance).toEqual({ yes: 0, no: 0, unknown: 2, going: [] });
+    expect(row()?.cycle_closed).toBe(false);
+  });
+});
