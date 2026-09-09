@@ -2621,6 +2621,29 @@
   gap: var(--space-3);
 }
 
+/* Who the nomination is about: the self shortcut and the roster search, side by side, because
+   picking yourself is one click and picking a colleague is a search -- two different gestures for
+   the same question, and folding them into one control would make the common case the slow one. */
+.profile-badge-nominee {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.profile-badge-nominee adminbot-member-select {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+/* Which direction a nomination runs. Quiet: the badge and its decision are what the row is for,
+   and this is the line that stops "Bug Hunter · pending" being ambiguous once the list holds both. */
+.profile-badge-nominations__who {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
 .profile-badge-picker {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

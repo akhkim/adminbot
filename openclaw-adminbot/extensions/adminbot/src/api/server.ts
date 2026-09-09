@@ -143,6 +143,7 @@ import {
   previewOnboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
+  readRosterSheet,
 } from "./server.member-sheet.js";
 import {
   cancelWorkshopNudgeRun,
@@ -2625,8 +2626,11 @@ async function handleAuthenticatedRoute(
     sendServiceResult(
       res,
       service.listBadgeNominations({
+        // A member sees both directions: badges put forward for them, and badges they put forward
+        // for other people. Without the second half somebody's own nomination would vanish the
+        // moment they submitted it, which reads as the form having failed.
         ...(!isAdmin
-          ? { memberId: principal.member.id }
+          ? { involvingMemberId: principal.member.id }
           : url.searchParams.get("member_id")
             ? { memberId: url.searchParams.get("member_id") ?? undefined }
             : {}),
@@ -2643,8 +2647,11 @@ async function handleAuthenticatedRoute(
     const body = readRecord(await readJson(req));
     sendServiceResult(
       res,
+      // The nominator is the session, never the body. `member_id` names who the badge is *for*,
+      // which any member may nominate; who it came *from* is not theirs to claim.
       service.submitBadgeNomination(principal.member.id, {
         badge_id: asString(body.badge_id),
+        ...(typeof body.member_id === "string" ? { member_id: body.member_id } : {}),
         ...(typeof body.evidence === "string" ? { evidence: body.evidence } : {}),
       }),
     );
@@ -4008,6 +4015,63 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendJson(res, 200, onboardResult);
+    return;
+  }
+  // The nightly reconciliation of the roster against the lab's spreadsheet.
+  //
+  // `requirePrivileged` rather than `requireMemberPrivileged`, like the other cron-triggered
+  // sweeps: nothing is caller-supplied. The sheet is read here, the diff is computed from it and
+  // the store, and the only external effects are proposals an admin still has to approve.
+  //
+  // `force` is the exception and takes a real admin session. It skips the guard that stops a
+  // truncated read from rewriting the roster, which is a judgement about a spreadsheet somebody has
+  // looked at -- not something a cron job can assert on its own.
+  if (req.method === "POST" && url.pathname === "/members/roster-sync") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const syncBody = readRecord(await readJson(req));
+    const force = syncBody.force === true;
+    if (force && principal.kind === "service") {
+      sendJson(res, 403, {
+        error: {
+          message:
+            "force requires an admin session: it overrides the guard that stops a bad sheet read from rewriting the roster",
+        },
+      });
+      return;
+    }
+    let sheet;
+    try {
+      sheet = await readRosterSheet(ctx.memberSheet);
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in sheet) {
+      sendJson(res, sheet.error.status, { error: { message: sheet.error.message } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.syncMemberRoster({
+        sheet: sheet.parsed,
+        actor: principalActor(principal),
+        dryRun: syncBody.dry_run === true,
+        force,
+      }),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/onboarding/guide") {

@@ -19,6 +19,7 @@ import {
   toSheetGrid,
   touchesAccess,
 } from "../workflows/members/member-sheet-grid.js";
+import { parseRosterSheet, type RosterSheetParse } from "../workflows/members/roster-sync.js";
 import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 
@@ -85,6 +86,40 @@ export async function readMemberSheet(source: MemberSheetSource): Promise<Member
     rows: grid.rows.map((row) => ({ sheet_row: row.sheetRow, cells: row.cells })),
     read_at: new Date().toISOString(),
   };
+}
+
+/**
+ * The roster tab, parsed into the rows the nightly sync diffs against the database.
+ *
+ * Reads the same tab through the same source as the Membership grid -- one configuration, one
+ * resolved tab title, one set of failure messages -- so a deployment cannot end up with the grid
+ * showing one sheet and the sync reconciling another.
+ *
+ * A missing Member Type column comes back as a 422 rather than an exception, because it is the one
+ * failure an admin can fix in the spreadsheet: every other read failure is Google's and is already
+ * described by `describeMemberSheetReadFailure`.
+ */
+export async function readRosterSheet(
+  source: MemberSheetSource,
+): Promise<{ parsed: RosterSheetParse; tab: string; url: string } | {
+  error: { status: number; message: string };
+}> {
+  const target = await resolveTarget(source);
+  const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
+  try {
+    return {
+      parsed: parseRosterSheet(
+        grid.header,
+        grid.rows.map((row) => ({ sheetRow: row.sheetRow, cells: row.cells })),
+      ),
+      tab: target.tab,
+      url: target.url,
+    };
+  } catch (error) {
+    return {
+      error: { status: 422, message: error instanceof Error ? error.message : String(error) },
+    };
+  }
 }
 
 export type MemberSheetEditRequest = {

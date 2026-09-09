@@ -19,6 +19,7 @@ import {
   type JsonSchemaValidationError,
   type JsonSchemaValue,
 } from "../../plugins/schema-validator.js";
+import { formatMissingScopeMessage } from "../auth/missing-scope-message.js";
 import { ADMIN_SCOPE, READ_SCOPE, WRITE_SCOPE } from "../operator-scopes.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -124,7 +125,14 @@ export const pluginHostHookHandlers: GatewayRequestHandlers = {
       respond(
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `missing scope: ${missingScope}`),
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          formatMissingScopeMessage({
+            missingScope,
+            attemptedAction: `plugin session action "${pluginId}/${actionId}"`,
+            presentedScopes: scopes,
+          }),
+        ),
       );
       return;
     }

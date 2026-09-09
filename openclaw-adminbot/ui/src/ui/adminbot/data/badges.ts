@@ -363,10 +363,17 @@ export async function decideAdminBadgeNomination(
   }
 }
 
+/**
+ * Submit a nomination from the profile page, for the viewer or for a colleague.
+ *
+ * `memberId` is left off when it is the viewer's own, so the service stores a self-nomination as
+ * exactly that rather than as one somebody filed on their behalf.
+ */
 export async function submitOwnBadgeNomination(
   host: AdminBotBadgesHost,
   badgeId: string,
   evidence: string,
+  memberId?: string,
 ): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
@@ -377,7 +384,7 @@ export async function submitOwnBadgeNomination(
   host.profileBadgeNotice = null;
   try {
     const result = await submitBadgeNomination(
-      { badgeId, evidence },
+      { badgeId, evidence, ...(memberId ? { memberId } : {}) },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );

@@ -980,7 +980,12 @@ function renderRegistryField(
         });
       }
       case "paragraph":
-        return html`<textarea name=${field.key} rows="3" .value=${value}></textarea>`;
+        return html`<textarea
+          name=${field.key}
+          rows="3"
+          maxlength=${ifDefined(field.maxLength)}
+          .value=${value}
+        ></textarea>`;
       case "numeric":
         return html`<input
           name=${field.key}

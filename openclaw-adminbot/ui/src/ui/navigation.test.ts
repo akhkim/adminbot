@@ -179,7 +179,7 @@ describe("subtitleForTab", () => {
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
       adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
-      adminbotBadges: "Manage badge definitions, assignments, and self-nominations.",
+      adminbotBadges: "Manage badge definitions, assignments, and nominations.",
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",

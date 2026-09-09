@@ -883,7 +883,8 @@ describe("session history HTTP endpoints", () => {
         limit: 1,
       });
       expect(wsHistory.ok).toBe(false);
-      expect(wsHistory.error?.message).toBe("missing scope: operator.read");
+      expect(wsHistory.error?.message).toMatch(/^missing scope: operator\.read\b/);
+      expect(wsHistory.error?.message).toContain("chat.history");
     } finally {
       ws.close();
       await server.close();

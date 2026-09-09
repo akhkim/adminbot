@@ -1070,7 +1070,10 @@ export async function handleManagedOutgoingImageHttpRequest(
   const requestedScopes = resolveOpenAiCompatibleHttpOperatorScopes(req, requestAuth);
   const scopeAuth = authorizeOperatorScopesForMethod("chat.history", requestedScopes);
   if (!scopeAuth.allowed) {
-    sendMissingScopeForbidden(res, scopeAuth.missingScope);
+    sendMissingScopeForbidden(res, scopeAuth.missingScope, {
+      method: "chat.history",
+      presentedScopes: requestedScopes,
+    });
     return true;
   }
 

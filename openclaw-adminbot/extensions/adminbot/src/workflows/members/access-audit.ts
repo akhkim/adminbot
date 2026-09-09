@@ -146,14 +146,25 @@ const SUBGROUP_BY_TOKEN: readonly (readonly [string, AdminBotExternalCollaborato
   ["acquaintance", "acquaintance"],
 ];
 
-/** The Slack Connect room the matrix calls #friends-and-collaborators, as the export names it. */
-const FRIENDS_CHANNELS = [
+/**
+ * The Slack Connect room the matrix calls #friends-and-collaborators, as the export names it.
+ *
+ * Exported because the roster sync files the channel removals that follow a member-type change and
+ * has to name the same rooms this audit grades. Two lists would drift the moment one is renamed,
+ * and the failure would be silent in both directions: an audit passing a room nobody was removed
+ * from, and a removal from a room the audit does not know about.
+ */
+export const ADMINBOT_FRIENDS_CHANNELS = [
   "jinesis-with-friends-and-collaborators",
   "jinesis-friends",
   "general-channel-with-external-collaborators-and-alumni",
 ];
 
-const ACTIVE_CHANNELS = ["jinesis-active", "random-active"];
+export const ADMINBOT_ACTIVE_CHANNELS = ["jinesis-active", "random-active"];
+
+const FRIENDS_CHANNELS = ADMINBOT_FRIENDS_CHANNELS;
+
+const ACTIVE_CHANNELS = ADMINBOT_ACTIVE_CHANNELS;
 
 /** Member types the Vector sponsor roster is actually built from. See VECTOR_ROSTER_MEMBER_TYPES. */
 const VECTOR_ROSTER_TOKENS = ["full", "coauthor-major"];

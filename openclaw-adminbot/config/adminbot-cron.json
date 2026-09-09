@@ -120,6 +120,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-roster-sync",
+      "description": "Reconcile roster membership and Member Type against the lab spreadsheet, and propose the access removals a type change implies",
+      "cron": "10 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-roster-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-meeting-membership",
       "description": "Reconcile the standing invite against the roster and file the removals as proposals",
       "cron": "35 6 * * *",

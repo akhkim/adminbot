@@ -11,6 +11,8 @@ import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   incompleteProfiles,
   overleafReadingQueue,
+  recLetterDeadlineQueue,
+  recLetterGroups,
   recLetterQueue,
   renderProfessorView,
   thinTimelines,
@@ -97,6 +99,74 @@ describe("recLetterQueue", () => {
       request({ id: "dated", deadline_at: "2026-02-01T00:00:00Z" }),
     ]);
     expect(queue.map((entry) => entry.id)).toEqual(["dated", "undated"]);
+  });
+});
+
+describe("recLetterDeadlineQueue", () => {
+  // Fixed, because "overdue" is a claim about a moment and a test that reads the clock makes it
+  // one about the day it happens to run on.
+  const now = new Date("2026-02-01T12:00:00Z");
+
+  it("places each request against today without reordering the queue", () => {
+    const queue = recLetterDeadlineQueue(
+      [
+        request({ id: "later", deadline_at: "2026-06-01T00:00:00Z" }),
+        request({ id: "undated" }),
+        request({ id: "late", deadline_at: "2026-01-20T00:00:00Z" }),
+        request({ id: "soon", deadline_at: "2026-02-05T00:00:00Z" }),
+        request({ id: "month", deadline_at: "2026-02-20T00:00:00Z" }),
+      ],
+      now,
+    );
+    expect(queue.map((entry) => entry.request.id)).toEqual([
+      "late",
+      "soon",
+      "month",
+      "later",
+      "undated",
+    ]);
+    expect(queue.map((entry) => entry.bucket)).toEqual([
+      "overdue",
+      "week",
+      "month",
+      "later",
+      "undated",
+    ]);
+  });
+
+  it("counts the days out, and back for one already past", () => {
+    const queue = recLetterDeadlineQueue(
+      [
+        request({ id: "past", deadline_at: "2026-01-30T12:00:00Z" }),
+        request({ id: "future", deadline_at: "2026-02-04T12:00:00Z" }),
+        request({ id: "undated" }),
+      ],
+      now,
+    );
+    expect(queue.map((entry) => entry.daysAway)).toEqual([-2, 3, undefined]);
+  });
+
+  it("files an unparseable deadline as undated rather than at the top of the overdue list", () => {
+    const queue = recLetterDeadlineQueue([request({ id: "typo", deadline_at: "soon" })], now);
+    expect(queue[0]?.bucket).toBe("undated");
+    expect(queue[0]?.daysAway).toBeUndefined();
+  });
+
+  it("caps the rows across the whole queue but still counts each bucket in full", () => {
+    const queue = recLetterDeadlineQueue(
+      [
+        request({ id: "late", deadline_at: "2026-01-20T00:00:00Z" }),
+        ...Array.from({ length: 6 }, (_, index) =>
+          request({ id: `m${index}`, deadline_at: `2026-02-2${index}T00:00:00Z` }),
+        ),
+      ],
+      now,
+    );
+    const groups = recLetterGroups(queue, 3);
+    expect(groups.map((group) => [group.bucket, group.total, group.rows.length])).toEqual([
+      ["overdue", 1, 1],
+      ["month", 6, 2],
+    ]);
   });
 });
 
@@ -254,8 +324,41 @@ describe("renderProfessorView", () => {
       ),
     });
     const items = container.querySelectorAll('[data-testid="professor-letters"] li');
-    expect(items).toHaveLength(6);
-    expect(items[5]?.textContent).toContain("3 more");
+    expect(items).toHaveLength(5);
+    expect(
+      container.querySelector('[data-testid="professor-letters"] .professor__bucket-more')
+        ?.textContent,
+    ).toContain("3 more");
+  });
+
+  it("groups the letter queue into deadline windows and says how far off each one is", () => {
+    // Deadlines relative to the clock the page is actually read on, so the buckets are the ones a
+    // reader would compute themselves.
+    const days = (count: number) =>
+      new Date(Date.now() + count * 24 * 60 * 60 * 1000).toISOString();
+    const { container } = draw({
+      requests: [
+        request({ id: "late", member_name: "Late Ling", deadline_at: days(-3) }),
+        request({ id: "soon", member_name: "Soon Sun", deadline_at: days(2) }),
+        request({ id: "undated", member_name: "Undated Uma" }),
+      ],
+    });
+    const section = container.querySelector('[data-testid="professor-letters"]');
+    expect(
+      section?.querySelector('[data-testid="professor-letters-overdue"]')?.textContent,
+    ).toContain("Late Ling");
+    expect(section?.querySelector('[data-testid="professor-letters-week"]')?.textContent).toContain(
+      "Soon Sun",
+    );
+    expect(
+      section?.querySelector('[data-testid="professor-letters-undated"]')?.textContent,
+    ).toContain("no deadline given");
+    // A window nobody is in is not drawn: "Later this term 0" is furniture.
+    expect(section?.querySelector('[data-testid="professor-letters-later"]')).toBeNull();
+    expect(
+      section?.querySelector('[data-testid="professor-letters-overdue"] .professor__when')
+        ?.textContent,
+    ).toContain("3 day(s) ago");
   });
 
   it("says it is still reading rather than claiming an empty queue", () => {

@@ -119,7 +119,10 @@ export type BadgeNominationView = {
   id: string;
   badge_id: string;
   family_key: string;
+  /** Who the badge would go to, which is not always who asked for it. */
   member_id: string;
+  /** Who put it forward, absent when the member put it forward themselves. */
+  nominated_by?: string;
   evidence?: string;
   status: BadgeNominationStatus;
   created_at: string;
@@ -131,6 +134,7 @@ export type BadgeNominationView = {
   badge_tier?: string;
   badge_criteria_url?: string;
   member_name?: string;
+  nominator_name?: string;
 };
 
 // Lab member record returned by the AdminBot service. Extra fields beyond these
@@ -2559,14 +2563,21 @@ function readOpportunityResult(
   return opportunity ? { ok: true, value: opportunity } : { ok: false, kind: "auth-failed" };
 }
 
+/**
+ * Put a badge forward, for yourself or for a colleague.
+ *
+ * `memberId` names who the badge is *for*; who it is from is the session, which is why it is not in
+ * this payload. Omitted for a self-nomination so the service files it as one.
+ */
 export async function submitBadgeNomination(
-  input: { badgeId: string; evidence: string },
+  input: { badgeId: string; evidence: string; memberId?: string },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<BadgeNominationView>> {
   const result = await authedJson(baseUrl, "/badges/nominations", "POST", sessionToken, {
     badge_id: input.badgeId,
     evidence: input.evidence,
+    ...(input.memberId ? { member_id: input.memberId } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

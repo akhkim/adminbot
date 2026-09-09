@@ -784,6 +784,7 @@ export class OpenClawApp extends LitElement {
   @state() profileBadgeNominationsError: BadgeLoadError | null = null;
   @state() profileBadgeBusy = false;
   @state() profileBadgeNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() profileBadgeNomineeId = "";
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;

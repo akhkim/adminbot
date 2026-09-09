@@ -54,6 +54,7 @@ import {
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { renderCountrySelect } from "./country-select.ts";
+import { renderMemberSelect } from "./member-select.ts";
 import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
@@ -64,7 +65,9 @@ export type ProfileProps = {
   onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
   onPolishPhoto?: () => void;
   onApplyPolishedPhoto?: (variantId: string) => void;
-  onSubmitBadgeNomination?: (badgeId: string, evidence: string) => void;
+  /** `memberId` is who the badge is for; omitted means the viewer themselves. */
+  onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
+  onPickBadgeNominee?: (memberId: string) => void;
   onNavigateToTab?: (tab: Tab) => void;
 };
 
@@ -266,6 +269,7 @@ const FIELD_HELP: Record<string, string> = {
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
   cv_url: "profile.help.cvUrl",
+  elevator_pitch: "profile.help.elevatorPitch",
 };
 
 // Hover or focus reveals it; `aria-describedby` is what makes it reachable without a pointer.
@@ -487,17 +491,47 @@ function nominationBadgeLabel(nomination: BadgeNominationView): string {
     : nomination.badge_name;
 }
 
-function availableBadgeDefinitions(state: AppViewState, member: LabMember): BadgeDefinition[] {
+/**
+ * The badges still open to whoever the form is currently about.
+ *
+ * Keyed on the nominee rather than the viewer: a family the nominee already holds, or already has
+ * queued, is not nominable for them, and those are different sets for different people. The pending
+ * side is only as complete as what this viewer can see -- a member reads their own nominations and
+ * the ones they filed, not the whole queue -- so a badge somebody else has already put forward can
+ * still be offered here. The service refuses that with a 409, which is the right place for it: the
+ * alternative is publishing the pending queue to the whole lab to save one rejected submit.
+ */
+function availableBadgeDefinitions(state: AppViewState, nominee: LabMember): BadgeDefinition[] {
   const assignedFamilies = new Set(
-    ((member.assigned_badges ?? []) as AssignedBadge[]).map((badge) => badge.family_key),
+    ((nominee.assigned_badges ?? []) as AssignedBadge[]).map((badge) => badge.family_key),
   );
   const pendingFamilies = new Set(
     (state.profileBadgeNominations ?? [])
-      .filter((nomination) => nomination.status === "pending")
+      .filter(
+        (nomination) => nomination.status === "pending" && nomination.member_id === nominee.id,
+      )
       .map((nomination) => nomination.family_key),
   );
   return (state.adminBotBadgeDefinitions ?? []).filter(
     (badge) => !assignedFamilies.has(badge.family_key) && !pendingFamilies.has(badge.family_key),
+  );
+}
+
+/**
+ * Who the nomination form is about right now.
+ *
+ * Falls back to the viewer whenever the picked id names nobody the roster knows -- a stale
+ * selection left over from a roster reload should put the form back on the safe, self case rather
+ * than render a badge list for a member who is not there.
+ */
+function badgeNominee(state: AppViewState, member: LabMember): LabMember {
+  const pickedId = state.profileBadgeNomineeId ?? "";
+  if (!pickedId || pickedId === member.id) {
+    return member;
+  }
+  return (
+    ((state.adminBotData?.members ?? []) as LabMember[]).find((row) => row.id === pickedId) ??
+    member
   );
 }
 
@@ -753,7 +787,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           rows="3"
-          maxlength=${PARAGRAPH_MAX_LENGTH}
+          maxlength=${field.maxLength ?? PARAGRAPH_MAX_LENGTH}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
         ></textarea>
@@ -1143,13 +1177,64 @@ function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | u
   return html`<span>${t(`profile.badges.${labelKey}`, { date: text })}</span>`;
 }
 
+/**
+ * The nomination form, and the nominations this viewer can see.
+ *
+ * It used to be self-only, which quietly made the board a record of what people were willing to
+ * claim about themselves. Most of what these badges recognise is somebody else's to notice -- the
+ * colleague who caught the error in your paper is not the person who writes that up -- so the form
+ * now opens with who it is about, defaulting to the viewer so the self case still costs no clicks.
+ * Nothing about approval changes: it is still an admin who decides.
+ */
 function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props: ProfileProps) {
-  const available = availableBadgeDefinitions(state, member);
+  const nominee = badgeNominee(state, member);
+  const forSelf = nominee.id === member.id;
+  const nomineeName = nominee.name ?? nominee.id ?? "";
+  const available = availableBadgeDefinitions(state, nominee);
   const nominations = state.profileBadgeNominations ?? [];
+  // Alumni are on the roster and can absolutely be nominated for something they did; only the
+  // viewer is filtered out, because they are already the default and a picker that lists you twice
+  // is a picker that reads as broken.
+  // A roster row with no id is not addressable, so it is dropped rather than offered as an option
+  // that cannot be submitted; a row with no name falls back to its id, which is at least searchable.
+  const rosterOptions = ((state.adminBotData?.members ?? []) as LabMember[])
+    .flatMap((row) =>
+      row.id && row.id !== member.id
+        ? [{ id: row.id, name: row.name ?? row.id, ...(row.email ? { hint: row.email } : {}) }]
+        : [],
+    )
+    .toSorted((left, right) => left.name.localeCompare(right.name));
   return html`
     <section class="profile__section" data-testid="profile-badge-nominations">
       <h2 class="profile__section-title">${t("profile.badges.nominateTitle")}</h2>
       <p class="profile__section-subtitle">${t("profile.badges.nominateHint")}</p>
+      <div class="profile__form-row" data-testid="profile-badge-nominee">
+        <span class="profile__form-label">${t("profile.badges.nominateWho")}</span>
+        <div class="profile-badge-nominee">
+          <button
+            class=${`btn btn--sm ${forSelf ? "primary" : ""}`}
+            type="button"
+            data-testid="profile-badge-nominee-self"
+            ?disabled=${state.profileBadgeBusy}
+            @click=${() => props.onPickBadgeNominee?.("")}
+          >
+            ${t("profile.badges.nominateSelf")}
+          </button>
+          ${renderMemberSelect({
+            options: rosterOptions,
+            value: forSelf ? "" : (nominee.id ?? ""),
+            placeholder: t("profile.badges.nominateSearch"),
+            label: t("profile.badges.nominateWho"),
+            disabled: state.profileBadgeBusy || rosterOptions.length === 0,
+            onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+          })}
+        </div>
+        ${forSelf
+          ? nothing
+          : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
+              ${t("profile.badges.nominateFor", { name: nomineeName })}
+            </p>`}
+      </div>
       ${state.profileBadgeNotice
         ? html`<div
             class="callout ${state.profileBadgeNotice.kind === "error" ? "danger" : "success"}"
@@ -1167,6 +1252,7 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
               props.onSubmitBadgeNomination?.(
                 String(new FormData(form).get("badge_id") ?? ""),
                 String(new FormData(form).get("evidence") ?? ""),
+                forSelf ? undefined : nominee.id,
               );
             }}
           >
@@ -1219,7 +1305,11 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
               </button>
             </div>
           </form>`
-        : html`<p class="profile__badges-empty">${t("profile.badges.nominateNoneAvailable")}</p>`}
+        : html`<p class="profile__badges-empty">
+            ${forSelf
+              ? t("profile.badges.nominateNoneAvailable")
+              : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
+          </p>`}
       <div class="profile-badge-nominations">
         <h3 class="profile__group-title">${t("profile.badges.nominationsTitle")}</h3>
         ${nominations.length
@@ -1235,6 +1325,27 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
                       ${t(`profile.badges.status.${nomination.status}`)}
                     </span>
                   </div>
+                  <!-- The list now holds both directions, so every row that is not the plain
+                       self-nomination says which one it is. -->
+                  ${nomination.member_id !== member.id
+                    ? html`<p
+                        class="profile-badge-nominations__who"
+                        data-testid="profile-badge-nomination-sent"
+                      >
+                        ${t("profile.badges.nominationFor", {
+                          name: nomination.member_name || nomination.member_id,
+                        })}
+                      </p>`
+                    : nomination.nominated_by
+                      ? html`<p
+                          class="profile-badge-nominations__who"
+                          data-testid="profile-badge-nomination-received"
+                        >
+                          ${t("profile.badges.nominationBy", {
+                            name: nomination.nominator_name ?? nomination.nominated_by,
+                          })}
+                        </p>`
+                      : nothing}
                   <p class="profile-badge-nominations__description">
                     ${nomination.badge_description}
                   </p>

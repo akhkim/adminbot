@@ -293,6 +293,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         created_at TEXT NOT NULL,
         decided_at TEXT,
         decided_by TEXT,
+        nominated_by TEXT,
         payload_json TEXT NOT NULL
       );
 
@@ -674,6 +675,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migratePaperSlotColumns();
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
+    this.migrateBadgeNominationColumns();
   }
 
   /**
@@ -703,6 +705,38 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     if (!columns.has("impersonated_by")) {
       this.db.exec("ALTER TABLE adminbot_sessions ADD COLUMN impersonated_by TEXT");
     }
+  }
+
+  /**
+   * Give `adminbot_badge_nominations` written before nominating somebody else was possible the
+   * `nominated_by` column.
+   *
+   * Nullable with no default, which is exactly right for the rows already there: every one of them
+   * is a self-nomination, and an absent nominator is how a self-nomination is stored now too. The
+   * column exists so the member scope can be answered with an index rather than by reading every
+   * nomination in the table and filtering the JSON.
+   *
+   * The index is created here rather than beside the table's other two, and that is not tidiness:
+   * `CREATE TABLE IF NOT EXISTS` is a no-op against a database that already has the table, so an
+   * index on `nominated_by` declared in the same statement batch runs before the column exists and
+   * takes the whole service down at startup with "no such column". Here it runs after the ALTER,
+   * on every boot, so a database that gained the column but somehow lost the index gets it back.
+   */
+  private migrateBadgeNominationColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_badge_nominations)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("nominated_by")) {
+      this.db.exec("ALTER TABLE adminbot_badge_nominations ADD COLUMN nominated_by TEXT");
+    }
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_nominated_by_idx
+        ON adminbot_badge_nominations(nominated_by, created_at DESC)`,
+    );
   }
 
   private migrateWorkshopMatchRuns(): void {
@@ -1236,8 +1270,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           created_at,
           decided_at,
           decided_by,
+          nominated_by,
           payload_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           member_id = excluded.member_id,
           badge_id = excluded.badge_id,
@@ -1246,6 +1281,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           created_at = excluded.created_at,
           decided_at = excluded.decided_at,
           decided_by = excluded.decided_by,
+          nominated_by = excluded.nominated_by,
           payload_json = excluded.payload_json`,
       )
       .run(
@@ -1257,6 +1293,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         nomination.created_at,
         nomination.decided_at ?? null,
         nomination.decided_by ?? null,
+        nomination.nominated_by ?? null,
         JSON.stringify(nomination),
       );
   }
@@ -1347,6 +1384,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   listBadgeNominations(params?: {
     memberId?: string;
+    /**
+     * Everything one member can see about themselves: badges proposed for them, and badges they
+     * proposed for other people. One clause rather than two queries the caller merges, so the
+     * `created_at DESC` order below is the order the reader gets.
+     */
+    involvingMemberId?: string;
+    nominatedBy?: string;
     status?: AdminBotBadgeNominationStatus;
   }): AdminBotBadgeNomination[] {
     const clauses: string[] = [];
@@ -1354,6 +1398,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     if (params?.memberId) {
       clauses.push("member_id = ?");
       values.push(params.memberId);
+    }
+    if (params?.involvingMemberId) {
+      clauses.push("(member_id = ? OR nominated_by = ?)");
+      values.push(params.involvingMemberId, params.involvingMemberId);
+    }
+    if (params?.nominatedBy) {
+      clauses.push("nominated_by = ?");
+      values.push(params.nominatedBy);
     }
     if (params?.status) {
       clauses.push("status = ?");

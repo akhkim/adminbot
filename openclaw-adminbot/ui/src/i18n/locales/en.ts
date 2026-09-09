@@ -426,6 +426,20 @@ export const en: TranslationMap = {
       noSchools: "No schools listed yet",
       empty: "Nothing outstanding.",
       open: "Open the request queue",
+      // Relative windows, not months: the section has to say the same thing in November as in June.
+      bucket: {
+        overdue: "Overdue",
+        week: "Next 7 days",
+        month: "Next 30 days",
+        later: "Later this term",
+        undated: "No deadline yet",
+      },
+      due: {
+        today: "due today",
+        in: "in {count} day(s)",
+        ago: "{count} day(s) ago",
+        none: "no deadline given",
+      },
     },
     drafts: {
       title: "Overleaf reading queue",
@@ -515,7 +529,7 @@ export const en: TranslationMap = {
     agents: "Workspaces, tools, identities.",
     adminbot: "Approval queue and execution controls.",
     adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
-    adminbotBadges: "Manage badge definitions, assignments, and self-nominations.",
+    adminbotBadges: "Manage badge definitions, assignments, and nominations.",
     adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
@@ -1048,7 +1062,7 @@ export const en: TranslationMap = {
   },
   adminbotBadges: {
     title: "Badges",
-    sub: "Create badges, assign them to members, and review self-nominations.",
+    sub: "Create badges, assign them to members, and review nominations.",
     refresh: "Refresh",
     create: "Create badge",
     save: "Save badge",
@@ -1060,7 +1074,7 @@ export const en: TranslationMap = {
     loading: "Loading badges…",
     catalog: "Badge catalog",
     assignments: "Assignments",
-    nominations: "Pending self-nominations",
+    nominations: "Pending nominations",
     emptyAssignments: "No badges assigned yet.",
     emptyNominations: "No pending badge nominations.",
     emptyCatalog: "No badges defined yet.",
@@ -1107,6 +1121,8 @@ export const en: TranslationMap = {
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
+      nominatedBy: "Nominated by {name}",
+      selfNominated: "Self-nominated",
       currentBadges: "Current badges",
     },
   },
@@ -1954,15 +1970,23 @@ export const en: TranslationMap = {
       author: "Author",
       mentor: "Mentor",
       managedTitle: "Lab badges",
-      nominateTitle: "Self-nominate for badges",
-      nominateHint: "Choose a badge, add evidence if it helps, and an admin will review it.",
+      nominateTitle: "Nominate for badges",
+      nominateHint:
+        "For yourself, or for somebody whose work you have seen. Pick who it is for, choose a badge, say what they did, and an admin will review it.",
       nominateButton: "Submit nomination",
       nominateSubmitted: "Nomination submitted for review.",
       nominateFailed: "Couldn't submit that nomination.",
+      nominateWho: "Who is this for?",
+      nominateSelf: "Myself",
+      nominateSearch: "Search the lab roster…",
+      nominateFor: "Nominating {name}. They will see it once an admin decides it.",
       nominateSelect: "Choose a badge",
       nominateEvidence: "Evidence",
       nominateNoneAvailable: "No badge families are available to nominate right now.",
-      nominationsTitle: "Your badge nominations",
+      nominateNoneAvailableFor: "{name} already holds or is queued for every badge family.",
+      nominationsTitle: "Badge nominations",
+      nominationFor: "You nominated {name}.",
+      nominationBy: "Nominated by {name}.",
       criteriaLink: "Criteria",
       submittedAt: "Submitted {date}",
       decidedAt: "Decided {date}",
@@ -2038,6 +2062,7 @@ export const en: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
+      merchRequests: "Merch requests",
       personalCircumstances: "Personal circumstances and/or medical conditions",
       birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
@@ -2053,6 +2078,7 @@ export const en: TranslationMap = {
       scholar: "Google Scholar",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
+      elevatorPitch: "Elevator pitch",
       projects: "Projects",
       notes: "Notes",
     },
@@ -2089,6 +2115,8 @@ export const en: TranslationMap = {
         "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
         'A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to "anyone with the link can view", otherwise it will open for you but not for anyone else.',
+      elevatorPitch:
+        "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
@@ -2108,6 +2136,10 @@ export const en: TranslationMap = {
         "Month and day, like 03-14 — no year, so your age stays yours. Filling this in adds a recurring all-day event to the shared lab calendar so people can wish you a happy birthday. Leave it blank if you would rather not.",
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
+      elevatorPitch:
+        "One paragraph, in your own words — what you work on and why it is worth doing.",
+      merchRequests:
+        "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
     },
   },
   // My Projects & Papers' evidence checklist, and the global nudge that chases it.

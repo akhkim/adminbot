@@ -56,7 +56,20 @@ export type AdminBotBadgeNomination = {
   id: string;
   badge_id: string;
   family_key: string;
+  /** Who the badge would go to. Not necessarily who asked for it -- see `nominated_by`. */
   member_id: string;
+  /**
+   * Who put the nomination in, when that is not the member themselves.
+   *
+   * Absent on a self-nomination, which is what every nomination written before this field existed
+   * was: an absent nominator reads as "the member", not as "unknown". Storing the member's own id
+   * here instead would make a stored self-nomination indistinguishable from one an admin filed on
+   * their behalf, and the whole reason to keep the field is that the difference is worth reading.
+   *
+   * It is not a permission. The service takes the nominator from the caller's session, never from
+   * the request body, so this records what happened rather than deciding what may.
+   */
+  nominated_by?: string;
   evidence?: string;
   status: AdminBotBadgeNominationStatus;
   created_at: string;
@@ -71,6 +84,8 @@ export type AdminBotBadgeNominationView = AdminBotBadgeNomination & {
   badge_tier?: string;
   badge_criteria_url?: string;
   member_name?: string;
+  /** The nominator's display name, resolved the same way `member_name` is. */
+  nominator_name?: string;
 };
 
 export function normalizeBadgeFamilyKey(category: string, name: string): string {

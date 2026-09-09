@@ -1139,7 +1139,7 @@
 }
 
 .paper-overview__progress [data-waiting="resubmission"] {
-  color: var(--danger, var(--warn));
+  color: var(--danger);
 }
 
 .paper-overview__progress [data-waiting="nothing"] {
@@ -1463,6 +1463,28 @@
 .professor__column[data-empty="true"] .professor__column-head {
   color: var(--muted);
   font-weight: 500;
+}
+
+/* The letter buckets stack rather than sitting in a grid like the adoption columns: they are one
+   ordered queue cut into windows, and reading them left to right would lose the order that is the
+   whole point of cutting it up. */
+.professor__buckets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* Overdue is the one window that is not a plan, so it is the one that is coloured. */
+.professor__bucket[data-bucket="overdue"] .professor__column-head {
+  color: var(--danger, var(--warn));
+}
+
+/* Everything past the visible slice, counted once under the last bucket rather than per window --
+   a "+2 more" inside each of four buckets says nothing about how long the queue actually is. */
+.professor__bucket-more {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
 }
 
 .professor__open {

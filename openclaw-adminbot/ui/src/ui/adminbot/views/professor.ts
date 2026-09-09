@@ -62,6 +62,110 @@ export function recLetterQueue(requests: readonly LogisticsRequest[]): Logistics
     );
 }
 
+/**
+ * How far off a letter is, as the four answers that change what she does about it.
+ *
+ * A sorted list already put the soonest letter at the top, which is not the same as saying it is
+ * late. "2026-02-01" reads as a date whatever today is; "overdue" and "in 3 days" read as an
+ * instruction. The names are relative windows rather than months so the section says the same thing
+ * in November as it does in June.
+ */
+export const REC_LETTER_BUCKETS = ["overdue", "week", "month", "later", "undated"] as const;
+
+export type RecLetterBucket = (typeof REC_LETTER_BUCKETS)[number];
+
+/** Days out at which "soon" stops and the rest of the term begins. */
+const REC_LETTER_WEEK_DAYS = 7;
+const REC_LETTER_MONTH_DAYS = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type RecLetterDue = {
+  request: LogisticsRequest;
+  bucket: RecLetterBucket;
+  /**
+   * Whole days between now and the deadline, negative once it is past.
+   *
+   * Absent when the request carries no deadline yet, which is a real state and not a zero: a
+   * member who has not filled in a school's dates has still asked for the letter.
+   */
+  daysAway?: number;
+};
+
+/**
+ * The letter queue with each request placed against today.
+ *
+ * Order is unchanged -- soonest first, undated last -- because it is the same queue the Requests
+ * page serves and reordering it here would give the lab two answers to "what is next". The only
+ * thing added is where each request falls relative to now, which is what the deadline was for.
+ */
+export function recLetterDeadlineQueue(
+  requests: readonly LogisticsRequest[],
+  now: Date = new Date(),
+): RecLetterDue[] {
+  const nowMs = now.getTime();
+  return recLetterQueue(requests).map((request) => {
+    const deadlineMs = request.deadline_at ? Date.parse(request.deadline_at) : Number.NaN;
+    if (!Number.isFinite(deadlineMs)) {
+      // An unparseable stamp is treated as no stamp rather than as the epoch, which would file a
+      // typo at the top of the overdue list and bury the letters that really are late.
+      return { request, bucket: "undated" };
+    }
+    const daysAway = Math.ceil((deadlineMs - nowMs) / DAY_MS);
+    const bucket: RecLetterBucket =
+      deadlineMs < nowMs
+        ? "overdue"
+        : daysAway <= REC_LETTER_WEEK_DAYS
+          ? "week"
+          : daysAway <= REC_LETTER_MONTH_DAYS
+            ? "month"
+            : "later";
+    return { request, bucket, daysAway };
+  });
+}
+
+export type RecLetterGroup = {
+  bucket: RecLetterBucket;
+  /** Everything in the bucket, which is not the same as everything drawn: see `rows`. */
+  total: number;
+  /** The slice this section has room for, already taken from the front of the whole queue. */
+  rows: RecLetterDue[];
+};
+
+/**
+ * The queue as buckets, capped as one list rather than bucket by bucket.
+ *
+ * The cap is taken across the whole queue before grouping, so a term with eleven letters due next
+ * month cannot push an overdue one off the screen, and `total` still reports the real size of each
+ * bucket -- a heading that said "3" while listing 3 of 11 would be the lie the cap exists to avoid.
+ * Empty buckets are dropped: "Overdue 0" is a row of furniture, and the count above the section
+ * already says when there is nothing at all.
+ */
+export function recLetterGroups(
+  due: readonly RecLetterDue[],
+  limit = PREVIEW_ROWS,
+): RecLetterGroup[] {
+  const shown = due.slice(0, limit);
+  return REC_LETTER_BUCKETS.map((bucket) => ({
+    bucket,
+    total: due.filter((entry) => entry.bucket === bucket).length,
+    rows: shown.filter((entry) => entry.bucket === bucket),
+  })).filter((group) => group.total > 0);
+}
+
+/** "in 3 days" / "2 days ago" / "today", or nothing at all when there is no deadline to describe. */
+export function recLetterDueLabel(due: RecLetterDue): string {
+  if (due.daysAway === undefined) {
+    return t("professor.letters.due.none");
+  }
+  if (due.daysAway === 0) {
+    return t("professor.letters.due.today");
+  }
+  return due.daysAway > 0
+    ? t("professor.letters.due.in", { count: String(due.daysAway) })
+    : t("professor.letters.due.ago", { count: String(-due.daysAway) });
+}
+
 export type OverleafRead = {
   paper: AdminBotPaperRecord;
   url: string;
@@ -226,6 +330,58 @@ function rows(items: unknown[], empty: string) {
   </ul>`;
 }
 
+/**
+ * The letter queue drawn as its deadline buckets.
+ *
+ * Every row still names the member and how many schools are on the request -- that has not changed,
+ * and it is what decides how long the letter takes to write. What is new is the heading it sits
+ * under and the relative date beside it, so "Overdue" is answerable at a glance instead of being
+ * something she works out from four ISO dates.
+ */
+function letterBody(due: readonly RecLetterDue[]) {
+  if (!due.length) {
+    return html`<p class="professor__empty">${t("professor.letters.empty")}</p>`;
+  }
+  const groups = recLetterGroups(due);
+  const hidden = due.length - groups.reduce((sum, group) => sum + group.rows.length, 0);
+  return html`<div class="professor__buckets">
+    ${groups.map(
+      (group) => html`<div
+        class="professor__bucket"
+        data-testid=${`professor-letters-${group.bucket}`}
+        data-bucket=${group.bucket}
+      >
+        <div class="professor__column-head">
+          <span>${t(`professor.letters.bucket.${group.bucket}`)}</span>
+          <span class="ab-num">${group.total}</span>
+        </div>
+        ${group.rows.length
+          ? html`<ul class="professor__list">
+              ${group.rows.map(
+                (entry) => html`<li>
+                  <strong>${entry.request.member_name}</strong>
+                  <span class="muted"
+                    >${entry.request.schools?.length
+                      ? t("professor.letters.schools", {
+                          count: String(entry.request.schools.length),
+                        })
+                      : t("professor.letters.noSchools")}</span
+                  >
+                  <span class="professor__when">${recLetterDueLabel(entry)}</span>
+                </li>`,
+              )}
+            </ul>`
+          : nothing}
+      </div>`,
+    )}
+    ${hidden > 0
+      ? html`<p class="professor__bucket-more muted">
+          ${t("professor.more", { count: String(hidden) })}
+        </p>`
+      : nothing}
+  </div>`;
+}
+
 function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
   return html`<div class="professor__columns">
     ${adoptionColumns(profiles).map(
@@ -253,7 +409,7 @@ function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
 }
 
 export function renderProfessorView(props: ProfessorViewProps) {
-  const letters = recLetterQueue(props.requests);
+  const letters = recLetterDeadlineQueue(props.requests);
   const drafts = overleafReadingQueue(props.papers);
   // Somebody short on two counts is still one person to remind, so the headline number is people,
   // not rows.
@@ -303,22 +459,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         onOpen: props.onOpen,
         body: props.requestsLoading
           ? html`<p class="professor__empty">${t("professor.loading")}</p>`
-          : rows(
-              letters.map(
-                (request) => html`<li>
-                  <strong>${request.member_name}</strong>
-                  <span class="muted"
-                    >${request.schools?.length
-                      ? t("professor.letters.schools", { count: String(request.schools.length) })
-                      : t("professor.letters.noSchools")}</span
-                  >
-                  ${request.deadline_at
-                    ? html`<span class="professor__when">${request.deadline_at.slice(0, 10)}</span>`
-                    : nothing}
-                </li>`,
-              ),
-              t("professor.letters.empty"),
-            ),
+          : letterBody(letters),
       }),
     },
     {

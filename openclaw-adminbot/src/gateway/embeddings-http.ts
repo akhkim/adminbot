@@ -256,7 +256,9 @@ export async function handleOpenAiEmbeddingsHttpRequest(
   }
   const modelOverrideAuth = authorizeOpenAiCompatibleHttpModelOverride(req, handled.requestAuth);
   if (!modelOverrideAuth.allowed) {
-    sendMissingScopeForbidden(res, modelOverrideAuth.missingScope);
+    sendMissingScopeForbidden(res, modelOverrideAuth.missingScope, {
+      attemptedAction: 'the "x-openclaw-model" model override header',
+    });
     return true;
   }
 

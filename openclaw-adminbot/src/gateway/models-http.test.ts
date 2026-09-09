@@ -49,13 +49,12 @@ async function expectFirstModelId(): Promise<string> {
 
 async function expectMissingReadScope(res: Response) {
   expect(res.status).toBe(403);
-  await expect(res.json()).resolves.toEqual({
-    ok: false,
-    error: {
-      type: "forbidden",
-      message: "missing scope: operator.read",
-    },
-  });
+  const body = (await res.json()) as { ok?: boolean; error?: { type?: string; message?: string } };
+  expect(body.ok).toBe(false);
+  expect(body.error?.type).toBe("forbidden");
+  // The denial message carries an operator-facing explanation after the machine-readable prefix.
+  expect(body.error?.message).toMatch(/^missing scope: operator\.read\b/);
+  expect(body.error?.message).toContain("models.list");
 }
 
 describe("OpenAI-compatible models HTTP API (e2e)", () => {
