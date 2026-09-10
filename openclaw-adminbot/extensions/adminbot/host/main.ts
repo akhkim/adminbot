@@ -835,6 +835,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     emailAutomationRunner: deps.runEmailAutomation,
     reimbursementWorkflow: createAdminBotReimbursementWorkflow({
       formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
+      mpiScriptPath: path.join(repoRoot, "scripts/adminbot_mpi_reimbursement.py"),
     }),
     cvScanDeps: createAdminBotCvScanDeps({
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),

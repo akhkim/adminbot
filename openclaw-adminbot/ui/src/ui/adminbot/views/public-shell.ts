@@ -29,6 +29,7 @@ import {
   generateGuestReimbursement,
   loadAdminBotVenueSources,
   resetAdminBotReimbursement,
+  setAdminBotReimbursementFunder,
   searchAdminBotVenuePapers,
   sendGuestReimbursementMessage,
   setAdminBotVenue,
@@ -126,6 +127,7 @@ function renderPublicPanel(state: AppViewState) {
       onMessage: (message, receipts) => void sendGuestReimbursementMessage(host, message, receipts),
       onGenerate: () => void generateGuestReimbursement(host),
       onReset: () => resetAdminBotReimbursement(host),
+      onFunderChange: (funder) => setAdminBotReimbursementFunder(host, funder),
     });
   }
   if (state.tab === "adminbotOpportunities") {

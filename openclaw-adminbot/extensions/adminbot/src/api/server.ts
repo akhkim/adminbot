@@ -113,6 +113,9 @@ import {
   searchVenue,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+// The error class is a runtime value (the generate route catches it), so it cannot ride on the
+// type-only import beside it.
+import { AdminBotReimbursementBlocked } from "../workflows/reimbursements/workflow.js";
 import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
@@ -2036,7 +2039,18 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
-    sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+    try {
+      sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+    } catch (error) {
+      // A blocked package is an answer, not a fault: 422 with the report, so the page can name
+      // every rule that failed and what to supply. Letting this fall through to a 500 would tell
+      // the claimant only that something went wrong, which is the state the check exists to end.
+      if (error instanceof AdminBotReimbursementBlocked) {
+        sendJson(res, 422, { error: { message: error.message }, check: error.check });
+        return;
+      }
+      throw error;
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/deadline-proposals") {

@@ -9,6 +9,7 @@ import { resolveAdminBotBaseUrl } from "../adminbot/auth/session.ts";
 import {
   generateGuestReimbursement,
   resetAdminBotReimbursement,
+  setAdminBotReimbursementFunder,
   sendGuestReimbursementMessage,
   type GuestReimbursementHost,
 } from "../adminbot/controllers/admin.ts";
@@ -52,6 +53,7 @@ export function renderGuestReimbursements(state: AppViewState) {
             void sendGuestReimbursementMessage(host, message, receipts),
           onGenerate: () => void generateGuestReimbursement(host),
           onReset: () => resetAdminBotReimbursement(host),
+          onFunderChange: (funder) => setAdminBotReimbursementFunder(host, funder),
         })}
         <button
           type="button"

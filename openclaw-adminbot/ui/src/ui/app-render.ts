@@ -42,6 +42,7 @@ import {
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
+  setAdminBotReimbursementFunder,
   resolveAdminBotEmailReview,
   mergeAdminBotMembers,
   loadSlackChannelNames,
@@ -3875,6 +3876,8 @@ export function renderApp(state: AppViewState) {
                 void sendAdminBotReimbursementMessage(state, message, files),
               onGenerateReimbursement: () => void generateAdminBotReimbursement(state),
               onResetReimbursement: () => resetAdminBotReimbursement(state),
+              onReimbursementFunderChange: (funder) =>
+                setAdminBotReimbursementFunder(state, funder),
               memberNudge: state.adminBotMemberNudge,
               blockerSort: state.adminBotBlockerSort,
               onBlockerSort: (key) => {
