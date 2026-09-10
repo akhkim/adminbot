@@ -414,7 +414,10 @@ export function adminBotHasPortalAccess(memberType: string | undefined): boolean
     : undefined;
 }
 
-function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
+// Exported so a caller outside this file can ask the same question the type predicates above ask.
+// The Member Type column is multi-valued ("alumni, coauthor-major"), and every consumer that
+// splits it itself is a consumer that will eventually split it differently.
+export function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
   return (memberType ?? "").split(",").map((part) => part.trim().toLowerCase());
 }
 
