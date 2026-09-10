@@ -173,6 +173,33 @@ export function conferenceKey(venue: string, year: number): string {
     .replace(/[^a-z0-9]+/gu, "")}:${year}`;
 }
 
+/**
+ * The trip key for one paper, or undefined when it has no conference yet.
+ *
+ * Gated on the same four acceptance details the rest of the conference branch is: before those are
+ * in, the paper has no venue to travel to. Keyed by venue and year rather than by paper, because a
+ * person with three papers at one conference takes one trip -- all three cards resolve to the same
+ * key, so answering on one fills in the others.
+ */
+export function paperConferenceKey(paper: {
+  venue_decision?: string;
+  accepted_venue?: string;
+  accepted_year?: number;
+  is_archival?: boolean;
+  presentation_type?: string;
+}): string | undefined {
+  if (
+    paper.venue_decision !== "accept" ||
+    !paper.accepted_venue?.trim() ||
+    typeof paper.accepted_year !== "number" ||
+    typeof paper.is_archival !== "boolean" ||
+    !paper.presentation_type
+  ) {
+    return undefined;
+  }
+  return conferenceKey(paper.accepted_venue, paper.accepted_year);
+}
+
 /** "EMNLP 2026", without saying 2026 twice when the venue text already carries it. */
 export function conferenceLabel(venue: string, year: number): string {
   const trimmed = venue.trim();

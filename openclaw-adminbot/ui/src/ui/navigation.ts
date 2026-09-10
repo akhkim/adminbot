@@ -44,7 +44,6 @@ export const TAB_GROUPS = [
     tabs: [
       "adminbotReimbursements",
       "adminbotDeadlines",
-      "adminbotConferences",
       "adminbotOpportunities",
       "adminbotConferencePapers",
     ],
@@ -209,7 +208,6 @@ export type Tab =
   | "adminbotMeetingRequests"
   | "adminbotPapers"
   | "adminbotWorkshopNudges"
-  | "adminbotConferences"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
   | "adminbotCalendar"
@@ -297,7 +295,6 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotMeetingRequests: "/meeting-requests",
   adminbotPapers: "/papers",
   adminbotWorkshopNudges: "/workshop-nudges",
-  adminbotConferences: "/conferences",
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
   adminbotCalendar: "/calendar",
@@ -355,7 +352,6 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/signatures": "adminbotSignatures",
   "/adminbot/time-availability": "adminbotTimeAvailability",
   "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
-  "/adminbot/conferences": "adminbotConferences",
 };
 
 const PATH_TO_TAB = new Map<string, Tab>([
@@ -536,9 +532,6 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "adminbotWorkshopNudges":
       return "send";
-    // A place, which is what the card is really about: where the lab is going and who is going.
-    case "adminbotConferences":
-      return "globe";
     // The landing tab of the Nudges page, so this is the whole page's icon: what AdminBot sends.
     case "adminbotAnnouncements":
       return "send";

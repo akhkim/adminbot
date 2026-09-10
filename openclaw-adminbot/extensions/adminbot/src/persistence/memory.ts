@@ -698,6 +698,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean {
+    return this.conferenceTrips.delete(JSON.stringify([conferenceKey, memberId]));
+  }
+
   listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
     return [...this.conferenceTrips.values()]
       .filter((trip) => !conferenceKey || trip.conference_key === conferenceKey)

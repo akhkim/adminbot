@@ -38,7 +38,6 @@ import {
   type GuestReimbursementHost,
 } from "../controllers/admin.ts";
 import { renderConferencePapers } from "./conference-papers.ts";
-import { renderConferences } from "./conferences.ts";
 import { renderDeadlines } from "./deadlines.ts";
 import { renderOpportunities } from "./opportunities.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
@@ -137,29 +136,6 @@ function renderPublicPanel(state: AppViewState) {
     // Self-contained: the board reads a bundled snapshot, so there is nothing to load and nothing
     // that differs between a visitor and a member.
     return renderOpportunities();
-  }
-  if (state.tab === "adminbotConferences") {
-    // Kicked from here for the same reason the conference-paper search below is: a visitor has no
-    // gateway connection, so `refreshActiveTab` never runs for them. Guarded on `loadedAt` and
-    // `error` so neither a slow service nor a dead one turns this into a request loop.
-    const conferences = state.adminBotConferences;
-    if (!conferences.loading && conferences.loadedAt === null && conferences.error === null) {
-      void state.loadConferences?.();
-    }
-    return renderConferences({
-      conferences: conferences.conferences,
-      mine: conferences.mine,
-      drafts: conferences.drafts,
-      // A visitor has no papers and no session, so the form is not offered at all -- the cards
-      // and the descriptions are the whole of what this page is to them.
-      papers: [],
-      signedIn: false,
-      savingKey: conferences.savingKey,
-      error: conferences.error,
-      notice: conferences.notice,
-      onEdit: () => undefined,
-      onSave: () => undefined,
-    });
   }
   if (state.tab === "adminbotConferencePapers") {
     // The signed-in app loads this list from refreshActiveTab, which only runs behind a gateway

@@ -2106,6 +2106,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_conference_trips WHERE conference_key = ? AND member_id = ?")
+      .run(conferenceKey, memberId);
+    return result.changes > 0;
+  }
+
   listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
     const rows = (
       conferenceKey

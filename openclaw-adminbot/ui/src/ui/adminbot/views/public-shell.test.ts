@@ -38,7 +38,6 @@ describe("renderPublicShell", () => {
     expect(items.map((item) => item.getAttribute("href"))).toEqual([
       "/reimbursements",
       "/deadlines",
-      "/conferences",
       "/opportunities",
       "/conference-papers",
     ]);

@@ -119,11 +119,8 @@ import {
   type AdminBotBadgeNominationView,
 } from "../contracts/badges.js";
 import {
-  adminBotConferenceFundingNeeds,
   isAdminBotConferenceFundingNeed,
   isAdminBotConferenceTripIntent,
-  type AdminBotConferenceFundingNeed,
-  type AdminBotConferenceSummary,
   type AdminBotConferenceTripRecord,
 } from "../contracts/conference-trips.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
@@ -224,8 +221,6 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
-import { conferenceCatalog, lodgingNeedFrom } from "../workflows/conferences/catalog.js";
-import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
   reconcileDeadlineMilestones,
@@ -321,6 +316,7 @@ import {
   buildConferenceAttendance,
   expectedConferenceAttendees,
   mergeConferenceAttendance,
+  paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
 import {
@@ -518,6 +514,8 @@ export type AdminBotServiceStore = {
   /** One row per member per conference: their own plan for the trip. See contracts/conference-trips.ts. */
   saveConferenceTrip(record: AdminBotConferenceTripRecord): void;
   listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
+  /** Withdrawing is deleting: not going is the absence of a row, never a stored value. */
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean;
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
@@ -4520,6 +4518,9 @@ export class AdminBotService {
     weekly_updates: AdminBotPaperWeeklyUpdate[];
     cycle_closed: boolean;
     missing_acceptance_details: string[];
+    /** Absent until the paper is accepted with all four acceptance details in. */
+    conference_key?: string;
+    my_trip?: AdminBotConferenceTripRecord;
   }> {
     const paper = this.store.getPaper(paperId);
     if (!paper) {
@@ -4535,6 +4536,13 @@ export class AdminBotService {
     const entitled = Boolean(
       viewer?.isAdmin || (viewer?.memberId && this.memberOwnsPaperId(viewer.memberId, paper)),
     );
+    const tripKey = paperConferenceKey(paper);
+    // Only ever the reader's own. What a colleague needs paid for is between them and the admins,
+    // and a card that leaked it would be doing so on every paper they share.
+    const myTrip =
+      tripKey && viewer?.memberId
+        ? this.store.listConferenceTrips(tripKey).find((trip) => trip.member_id === viewer.memberId)
+        : undefined;
     return {
       ok: true,
       status: 200,
@@ -4558,6 +4566,13 @@ export class AdminBotService {
           reimbursements,
         }),
         missing_acceptance_details: missingAcceptanceDetails(paper),
+        // The conference this paper is going to, and what the reader said about their own trip to
+        // it. Keyed off the paper's own accepted venue and year rather than the deadline dataset:
+        // the card is the only place this is asked now, and the paper is what the reader is
+        // looking at. A person with three papers at one venue answers once -- the key is the same
+        // for all three, so the second card opens already filled in.
+        ...(tripKey ? { conference_key: tripKey } : {}),
+        ...(myTrip ? { my_trip: myTrip } : {}),
       },
     };
   }
@@ -4999,75 +5014,12 @@ export class AdminBotService {
   }
 
   /**
-   * The conference overview: what is coming up, and what the lab has committed to.
+   * One paper's conference, as a trip key.
    *
-   * Three audiences, one read, and the shape changes with who is asking. Everyone -- including a
-   * signed-out visitor -- gets the conferences themselves, because they are derived from the same
-   * public deadline dataset `GET /deadlines` already serves. A member also gets their own trip
-   * back, so the form opens filled in. Only an admin gets `roster`: who else is going, what they
-   * asked the lab to pay for and where they are sleeping is the lab's planning data, not
-   * something every member is owed about every colleague.
-   *
-   * `roster` being absent is therefore a fact about the reader, never about the conference.
+   * Undefined until the acceptance details are in, which is the same gate the rest of the
+   * conference branch uses: before that the paper has no venue to travel to, and asking somebody
+   * to book a flight to a decision that has not arrived is noise.
    */
-  listConferenceOverview(viewer?: {
-    memberId?: string;
-    isAdmin?: boolean;
-    now?: string;
-  }): AdminBotServiceResponse<{
-    conferences: AdminBotConferenceSummary[];
-    /** The viewer's own trips by conference key. Empty for a signed-out reader. */
-    mine: AdminBotConferenceTripRecord[];
-  }> {
-    const now = viewer?.now ? new Date(viewer.now) : new Date();
-    const conferences = conferenceCatalog(DEADLINE_VENUES, now);
-    const trips = this.store.listConferenceTrips();
-    const members = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
-    const papers = new Map(this.store.listPapers().map((paper) => [paper.id, paper]));
-    const nameOf = (memberId: string) => members.get(memberId)?.name ?? memberId;
-
-    const withRoster = conferences.map((conference) => {
-      if (!viewer?.isAdmin) {
-        return conference;
-      }
-      const here = trips.filter((trip) => trip.conference_key === conference.key);
-      const funding = Object.fromEntries(
-        adminBotConferenceFundingNeeds.map((need) => [
-          need,
-          // Only people who are going: an undecided member's funding answer is a plan, not a cost.
-          here.filter((trip) => trip.intent === "going" && trip.funding === need).length,
-        ]),
-      ) as Record<AdminBotConferenceFundingNeed, number>;
-      return {
-        ...conference,
-        roster: {
-          going: here.filter((trip) => trip.intent === "going").length,
-          not_going: here.filter((trip) => trip.intent === "not_going").length,
-          undecided: here.filter((trip) => trip.intent === "undecided").length,
-          funding,
-          visa_letters: here.filter((trip) => trip.intent === "going" && trip.needs_visa_letter)
-            .length,
-          lodging: lodgingNeedFrom(here, nameOf),
-          trips: here.map((trip) => ({
-            ...trip,
-            member_name: nameOf(trip.member_id),
-            ...(trip.paper_id && papers.get(trip.paper_id)
-              ? { paper_title: papers.get(trip.paper_id)?.title }
-              : {}),
-          })),
-        },
-      };
-    });
-
-    return {
-      ok: true,
-      status: 200,
-      payload: {
-        conferences: withRoster,
-        mine: viewer?.memberId ? trips.filter((trip) => trip.member_id === viewer.memberId) : [],
-      },
-    };
-  }
 
   /**
    * One member signing themselves up for one conference.
@@ -5097,7 +5049,9 @@ export class AdminBotService {
       return serviceError(404, `unknown member ${params.memberId}`);
     }
     if (!isAdminBotConferenceTripIntent(params.intent)) {
-      return serviceError(400, "intent must be going, not_going or undecided");
+      // Not going is deliberately not among them: it is the absence of a row, and a caller asking
+      // for it wants withdrawConferenceTrip below.
+      return serviceError(400, "intent must be going or undecided");
     }
     if (!isAdminBotConferenceFundingNeed(params.funding)) {
       return serviceError(400, "funding must be none, fee_only, flight_only or full_travel");
@@ -5134,6 +5088,42 @@ export class AdminBotService {
       details: { conference_key: conferenceKey, intent: trip.intent, funding: trip.funding },
     });
     return { ok: true, status: 200, payload: { trip } };
+  }
+
+  /**
+   * Withdrawing from a conference: the member's row is removed.
+   *
+   * Deleting rather than storing a third state, because not going is already what an absent row
+   * means. Storing it as well would give one fact two spellings, and every count downstream would
+   * have to remember to handle both -- the kind of thing that is right the day it is written and
+   * wrong the first time somebody adds a query.
+   *
+   * Idempotent: withdrawing when there is nothing to withdraw is a member saying they are not
+   * going, which was already true. Answering 404 would make the page report a failure for a state
+   * it successfully arrived at.
+   */
+  withdrawConferenceTrip(params: {
+    conferenceKey: string;
+    memberId: string;
+  }): AdminBotServiceResponse<{ withdrawn: boolean }> {
+    const conferenceKey = params.conferenceKey.trim();
+    if (!conferenceKey) {
+      return serviceError(400, "a conference is required");
+    }
+    if (!this.store.getLabMember(params.memberId)) {
+      return serviceError(404, `unknown member ${params.memberId}`);
+    }
+    const withdrawn = this.store.deleteConferenceTrip(conferenceKey, params.memberId);
+    if (withdrawn) {
+      // Only when something was actually removed: an audit line for a no-op would make the trail
+      // say somebody changed their mind when they did not.
+      this.recordAudit({
+        type: "conference_trip.withdrawn",
+        actor: params.memberId,
+        details: { conference_key: conferenceKey },
+      });
+    }
+    return { ok: true, status: 200, payload: { withdrawn } };
   }
 
   /**

@@ -32,6 +32,19 @@ export type PaperCycleProps = {
   onGenerateLinkedInDraft?: (venue: string, note: string) => void;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
+  /**
+   * The reader's own trip to this paper's conference, and the controls to change it.
+   *
+   * Optional as a set: a surface with no trip wiring simply does not draw the block, rather than
+   * drawing one whose buttons do nothing. Active Papers reuses this renderer over other people's
+   * papers, and "what do *you* need paid for" is not a question to put on somebody else's card.
+   */
+  myTrip?: PaperTrip | null;
+  tripDraft?: PaperTripDraft;
+  tripSaving?: boolean;
+  onEditTrip?: (patch: Partial<PaperTripDraft>) => void;
+  onSaveTrip?: () => void;
+  onWithdrawTrip?: () => void;
   onSetReimbursement: (memberId: string, status: string) => void;
 };
 
@@ -150,7 +163,12 @@ function renderDraft(props: PaperCycleProps, platform: string) {
             </label>
             <label class="paper-cycle__field">
               <span>Extra context <em>(optional)</em></span>
-              <input class="input" type="text" data-el="note" placeholder="anything the abstract does not say" />
+              <input
+                class="input"
+                type="text"
+                data-el="note"
+                placeholder="anything the abstract does not say"
+              />
             </label>
           `
         : nothing}
@@ -288,6 +306,226 @@ function renderAttendees(props: PaperCycleProps) {
   `;
 }
 
+/** One member's own plan for the conference this paper was accepted to. */
+export type PaperTrip = {
+  conference_key: string;
+  member_id: string;
+  intent: "going" | "undecided";
+  funding: "none" | "fee_only" | "flight_only" | "full_travel";
+  needs_lodging: boolean;
+  arrival_on?: string;
+  departure_on?: string;
+  needs_visa_letter: boolean;
+  notes?: string;
+};
+
+export type PaperTripDraft = {
+  intent: PaperTrip["intent"];
+  funding: PaperTrip["funding"];
+  needs_lodging: boolean;
+  needs_visa_letter: boolean;
+  arrival_on: string;
+  departure_on: string;
+  notes: string;
+};
+
+const TRIP_INTENT_LABELS: Record<PaperTrip["intent"], string> = {
+  going: "I'm going in person",
+  undecided: "Still deciding",
+};
+
+/**
+ * The four funding buckets, in what they cost the lab.
+ *
+ * "No financial aid needed" is offered explicitly rather than left as the blank default: somebody
+ * funded by their own scholarship and somebody who has not answered look identical otherwise, and
+ * the difference between them is a plane ticket.
+ */
+const TRIP_FUNDING_LABELS: Record<PaperTrip["funding"], string> = {
+  none: "No financial aid needed",
+  fee_only: "Conference fee only",
+  flight_only: "Flight only",
+  full_travel: "Full travel (fee, flights and accommodation)",
+};
+
+export function paperTripDraftFrom(trip: PaperTrip | null | undefined): PaperTripDraft {
+  return {
+    // Undecided rather than going: a form that opens on "yes" collects agreement rather than an
+    // answer, and this one books flights.
+    intent: trip?.intent ?? "undecided",
+    funding: trip?.funding ?? "none",
+    needs_lodging: trip?.needs_lodging ?? false,
+    needs_visa_letter: trip?.needs_visa_letter ?? false,
+    arrival_on: trip?.arrival_on ?? "",
+    departure_on: trip?.departure_on ?? "",
+    notes: trip?.notes ?? "",
+  };
+}
+
+/**
+ * What the reader needs for this conference: money, a bed, a visa letter.
+ *
+ * On the paper card rather than a conference page of its own, because the paper is what somebody
+ * is looking at when they find out they are going somewhere. It sits under "Who is going" for the
+ * same reason: that block records who travels, and this one records what their travel needs.
+ *
+ * Keyed by conference, not by paper. Somebody with three accepted papers at one venue takes one
+ * trip, so answering here fills the block in on the other two cards as well.
+ */
+function renderMyTrip(props: PaperCycleProps) {
+  if (!props.onSaveTrip || !props.onEditTrip) {
+    return nothing;
+  }
+  const draft = props.tripDraft ?? paperTripDraftFrom(props.myTrip);
+  const edit = props.onEditTrip;
+  const going = draft.intent === "going";
+  return html`
+    <details class="paper-cycle__group" open>
+      <summary class="paper-slots__group-head">
+        <h4 class="paper-slots__group-title">
+          <span class="paper-slots__group-icon" aria-hidden="true">${icons.globe}</span>
+          What you need for this trip
+        </h4>
+        <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+      </summary>
+      <p class="paper-slot__note">
+        Your own answer, for the whole conference rather than this one paper. The lab books against
+        it — headcount, nights and who needs what covered.
+      </p>
+      <div class="paper-trip">
+        <label class="paper-trip__field">
+          <span>Are you going?</span>
+          <select
+            class="input"
+            data-testid=${`paper-trip-intent-${props.paperId}`}
+            @change=${(event: Event) =>
+              edit({ intent: (event.target as HTMLSelectElement).value as PaperTrip["intent"] })}
+          >
+            ${(Object.keys(TRIP_INTENT_LABELS) as PaperTrip["intent"][]).map(
+              (value) => html`<option value=${value} ?selected=${value === draft.intent}>
+                ${TRIP_INTENT_LABELS[value]}
+              </option>`,
+            )}
+          </select>
+        </label>
+        ${going
+          ? html`
+              <label class="paper-trip__field">
+                <span>What do you need the lab to cover?</span>
+                <select
+                  class="input"
+                  data-testid=${`paper-trip-funding-${props.paperId}`}
+                  @change=${(event: Event) =>
+                    edit({
+                      funding: (event.target as HTMLSelectElement).value as PaperTrip["funding"],
+                    })}
+                >
+                  ${(Object.keys(TRIP_FUNDING_LABELS) as PaperTrip["funding"][]).map(
+                    (value) => html`<option value=${value} ?selected=${value === draft.funding}>
+                      ${TRIP_FUNDING_LABELS[value]}
+                    </option>`,
+                  )}
+                </select>
+              </label>
+              <label class="paper-trip__check">
+                <input
+                  type="checkbox"
+                  data-testid=${`paper-trip-lodging-${props.paperId}`}
+                  .checked=${draft.needs_lodging}
+                  @change=${(event: Event) =>
+                    edit({ needs_lodging: (event.target as HTMLInputElement).checked })}
+                />
+                <span
+                  >I want a bed in whatever the lab books
+                  <small
+                    >Asked separately from the money: you might need no funding and still want to
+                    stay with everyone.</small
+                  ></span
+                >
+              </label>
+              ${draft.needs_lodging
+                ? html`
+                    <!-- Both dates: a headcount alone books the wrong thing. The lab needs how
+                         many beds *and* for which nights. -->
+                    <label class="paper-trip__field">
+                      <span>Arriving</span>
+                      <input
+                        class="input"
+                        type="date"
+                        data-testid=${`paper-trip-arrival-${props.paperId}`}
+                        .value=${draft.arrival_on}
+                        @input=${(event: Event) =>
+                          edit({ arrival_on: (event.target as HTMLInputElement).value })}
+                      />
+                    </label>
+                    <label class="paper-trip__field">
+                      <span>Leaving</span>
+                      <input
+                        class="input"
+                        type="date"
+                        data-testid=${`paper-trip-departure-${props.paperId}`}
+                        .value=${draft.departure_on}
+                        @input=${(event: Event) =>
+                          edit({ departure_on: (event.target as HTMLInputElement).value })}
+                      />
+                    </label>
+                  `
+                : nothing}
+              <label class="paper-trip__check">
+                <input
+                  type="checkbox"
+                  data-testid=${`paper-trip-visa-${props.paperId}`}
+                  .checked=${draft.needs_visa_letter}
+                  @change=${(event: Event) =>
+                    edit({ needs_visa_letter: (event.target as HTMLInputElement).checked })}
+                />
+                <span
+                  >I need a visa invitation letter
+                  <small>Say so early — these take weeks to arrange.</small></span
+                >
+              </label>
+              <label class="paper-trip__field">
+                <span>Anything else</span>
+                <textarea
+                  class="input"
+                  rows="2"
+                  placeholder="Arriving early for a workshop, sharing a room, funded by my scholarship…"
+                  data-testid=${`paper-trip-notes-${props.paperId}`}
+                  .value=${draft.notes}
+                  @input=${(event: Event) =>
+                    edit({ notes: (event.target as HTMLTextAreaElement).value })}
+                ></textarea>
+              </label>
+            `
+          : nothing}
+        <div class="paper-trip__actions">
+          <button
+            type="button"
+            class="btn btn--sm primary"
+            ?disabled=${props.tripSaving}
+            data-testid=${`paper-trip-save-${props.paperId}`}
+            @click=${() => props.onSaveTrip?.()}
+          >
+            ${props.tripSaving ? "Saving…" : props.myTrip ? "Update" : "Save"}
+          </button>
+          ${props.myTrip
+            ? html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  ?disabled=${props.tripSaving}
+                  data-testid=${`paper-trip-withdraw-${props.paperId}`}
+                  @click=${() => props.onWithdrawTrip?.()}
+                >
+                  I'm not going after all
+                </button>
+                <span class="paper-slot__note">Recorded.</span>`
+            : nothing}
+        </div>
+      </div>
+    </details>
+  `;
+}
+
 /**
  * Reimbursements, and the sentence that says whether the paper is finished.
  *
@@ -366,6 +604,7 @@ export function renderPaperCycle(props: PaperCycleProps) {
           </p>`
         : nothing}
       ${props.conferenceOpen ? renderAttendees(props) : nothing}
+      ${props.conferenceOpen ? renderMyTrip(props) : nothing}
       ${props.conferenceOpen ? renderReimbursements(props) : nothing}
       ${props.cycleClosed
         ? html`<p class="paper-cycle__closed">
