@@ -392,12 +392,6 @@ const ANONYMOUS_ROUTES = new Set([
   // approved entries reach an anonymous caller; the handler resolves that from the principal, so
   // being on this list buys the read and nothing else. Every write below needs a member session.
   "GET /opportunities",
-  // The conference overview, for the same reason and on the same terms as Deadlines: the
-  // conferences on it are derived from the deadline dataset this service already publishes
-  // unauthenticated, and the descriptions are static prose about public venues. What is *not*
-  // public is who is going -- the handler resolves that from the principal, so an anonymous
-  // caller gets the cards and nothing about a single member. Signing up needs a member session.
-  "GET /conferences",
 ]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
@@ -3806,21 +3800,23 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
-  if (req.method === "GET" && url.pathname === "/conferences") {
-    // Anonymous-readable (see ANONYMOUS_ROUTES). The payload narrows itself: a visitor gets the
-    // conference cards, a member also gets their own trips back so the form opens filled in, and
-    // only an admin gets the roster of who else is going and what they asked the lab to pay for.
+  const conferenceTrip = /^\/conferences\/([^/]+)\/trip$/u.exec(url.pathname);
+  if (req.method === "DELETE" && conferenceTrip?.[1]) {
+    // Withdrawing. A member session and their own row only, exactly like the write below: the id
+    // comes from the session, so one member cannot withdraw another.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
     sendServiceResult(
       res,
-      service.listConferenceOverview({
-        ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
-        isAdmin: isPrivileged(principal),
-        ...(url.searchParams.get("now") ? { now: url.searchParams.get("now") as string } : {}),
+      service.withdrawConferenceTrip({
+        conferenceKey: decodeURIComponent(conferenceTrip[1]),
+        memberId: principal.member.id,
       }),
     );
     return;
   }
-  const conferenceTrip = /^\/conferences\/([^/]+)\/trip$/u.exec(url.pathname);
   if (req.method === "PUT" && conferenceTrip?.[1]) {
     // A member session and nothing else -- not the service token, not an admin acting for someone.
     // Every field is a statement about this person's own circumstances, and the id comes from the

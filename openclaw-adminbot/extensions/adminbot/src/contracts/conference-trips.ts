@@ -15,11 +15,21 @@
 /**
  * Whether the member is going, in their own words.
  *
- * `undecided` is a real answer and the default is *no row at all*, which is a different thing:
- * nobody has asked yet. Keeping them apart is what lets the roster say "four of nine have not
- * replied" instead of counting silence as a no and booking too small.
+ * Not going is the default and is not stored: no row means not going. Most of the lab does not go
+ * to most conferences, so a row per person per venue saying so would be almost all of this table,
+ * and every one of those rows would have to be written by somebody who had no reason to open the
+ * page. Silence is the common case and the common case should cost nothing.
+ *
+ * `undecided` therefore does not mean "has not answered" -- it means somebody came, looked, and
+ * said they are weighing it up. That is worth storing precisely because it is not the default: it
+ * marks a person the lab may still gain or lose, which is the difference between a booking that is
+ * nearly settled and one that is not.
+ *
+ * Withdrawing is deleting the row rather than storing a third state; see `withdrawConferenceTrip`
+ * in the service. Keeping a `not_going` value alongside an absent row would give the same fact two
+ * spellings, and every count would have to remember to handle both.
  */
-export const adminBotConferenceTripIntents = ["going", "not_going", "undecided"] as const;
+export const adminBotConferenceTripIntents = ["going", "undecided"] as const;
 
 export type AdminBotConferenceTripIntent = (typeof adminBotConferenceTripIntents)[number];
 
@@ -125,12 +135,23 @@ export type AdminBotConferenceSummary = {
   /** Headcounts, admin-only. A member sees their own row and nothing about anybody else. */
   roster?: {
     going: number;
-    not_going: number;
     undecided: number;
-    /** Funding asks, so the card can say what this conference costs before anybody books. */
+    /**
+     * Funding asks, so the card can say what this conference costs before anybody books.
+     *
+     * Counts only the people going. An undecided member's answer is a plan, not a cost the lab has
+     * taken on, and adding it to the budget line would over-state what this conference is worth.
+     */
     funding: Record<AdminBotConferenceFundingNeed, number>;
     visa_letters: number;
     lodging: AdminBotConferenceLodgingNeed;
+    /**
+     * Everyone with a row, going first.
+     *
+     * The list an admin reads before booking: who is coming and what each of them needs paid for.
+     * There is no row for the people not going, because not going is the absence of a row -- so
+     * this is a list of the lab's commitments rather than a roll-call of the whole roster.
+     */
     trips: Array<AdminBotConferenceTripRecord & { member_name: string; paper_title?: string }>;
   };
 };

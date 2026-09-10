@@ -112,7 +112,7 @@ import {
   venueTargetMatches,
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
-import { renderPaperCycle } from "./paper-cycle.ts";
+import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
 import { emptyPaperLegacyState, renderPaperLegacy, type PaperLegacyState } from "./paper-legacy.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
@@ -164,6 +164,18 @@ export type MyWorkProps = {
     slot: string,
     input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
+  /**
+   * The reader's own conference-trip answers, keyed by conference rather than by paper.
+   *
+   * Optional as a set, like the rest of the cycle wiring: Active Papers reuses this renderer over
+   * everybody's papers, and "what do you need paid for" is not a question to put on somebody
+   * else's card.
+   */
+  tripDrafts?: Record<string, PaperTripDraft>;
+  tripSavingKey?: string | null;
+  onEditTrip?: (conferenceKey: string, patch: Partial<PaperTripDraft>) => void;
+  onSaveTrip?: (conferenceKey: string) => void;
+  onWithdrawTrip?: (conferenceKey: string) => void;
   onNudgeAuthors: () => void;
   /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
   /**
@@ -1108,6 +1120,21 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     conferenceOpen:
       paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
     missingAcceptanceDetails: cycle.missingAcceptanceDetails,
+    // Only when the service named a conference for this paper and the surface wired the writes.
+    // Both halves matter: without the key there is nothing to key an answer to, and without the
+    // handlers the block would draw controls that do nothing.
+    ...(cycle.conferenceKey && props.onSaveTrip && props.onEditTrip
+      ? {
+          myTrip: cycle.myTrip ?? null,
+          tripDraft:
+            props.tripDrafts?.[cycle.conferenceKey] ?? paperTripDraftFrom(cycle.myTrip ?? null),
+          tripSaving: props.tripSavingKey === cycle.conferenceKey,
+          onEditTrip: (patch: Partial<PaperTripDraft>) =>
+            props.onEditTrip?.(cycle.conferenceKey as string, patch),
+          onSaveTrip: () => props.onSaveTrip?.(cycle.conferenceKey as string),
+          onWithdrawTrip: () => props.onWithdrawTrip?.(cycle.conferenceKey as string),
+        }
+      : {}),
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,
     memberName: props.memberName,

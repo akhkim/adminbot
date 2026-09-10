@@ -466,8 +466,6 @@ export type AppViewState = {
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
-  adminBotConferences: import("./adminbot/controllers/conferences.ts").AdminBotConferencesState;
-  loadConferences?: () => Promise<void>;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
@@ -550,6 +548,8 @@ export type AppViewState = {
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];
+  adminBotTripDrafts: Record<string, import("./adminbot/views/paper-cycle.ts").PaperTripDraft>;
+  adminBotTripSavingKey: string | null;
   adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperCycle>;
   adminBotPaperSlotsOpen: string[];
   adminBotPaperSlotsLoading: boolean;

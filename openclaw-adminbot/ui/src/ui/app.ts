@@ -63,11 +63,6 @@ import {
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
 import {
-  createEmptyConferencesState,
-  loadAdminBotConferences,
-  type AdminBotConferencesState,
-} from "./adminbot/controllers/conferences.ts";
-import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
@@ -107,6 +102,7 @@ import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
+import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   type PaperOverviewFilter,
@@ -339,7 +335,6 @@ export class OpenClawApp extends LitElement {
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
   @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
-  @state() adminBotConferences: AdminBotConferencesState = createEmptyConferencesState();
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;
@@ -687,6 +682,8 @@ export class OpenClawApp extends LitElement {
     state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
+  @state() adminBotTripDrafts: Record<string, PaperTripDraft> = {};
+  @state() adminBotTripSavingKey: string | null = null;
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
   // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
   // what you go into rather than what you land in.
@@ -1704,12 +1701,6 @@ export class OpenClawApp extends LitElement {
   loadLocationPrompt(): Promise<void> {
     return loadAdminBotLocationPrompt(
       this as unknown as Parameters<typeof loadAdminBotLocationPrompt>[0],
-    );
-  }
-
-  loadConferences(): Promise<void> {
-    return loadAdminBotConferences(
-      this as unknown as Parameters<typeof loadAdminBotConferences>[0],
     );
   }
 
