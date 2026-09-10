@@ -24,15 +24,18 @@
  * lives (the roster, the audit log, the Slack export). That keeps the rules testable without a
  * database, a Slack token, or a spreadsheet.
  */
-import type {
-  AdminBotExternalCollaboratorSubgroup,
-  AdminBotLabMember,
+import {
+  adminBotHasPortalAccess,
+  type AdminBotExternalCollaboratorSubgroup,
+  type AdminBotLabMember,
 } from "../../contracts/actions.js";
+import { templateForMemberType } from "../onboarding/member-type-template.js";
 import {
   type AdminBotCollaboratorAccessItemId,
   type AdminBotCollaboratorGrantedCell,
   adminBotCollaboratorAccessItems,
 } from "./collaborator-subgroups.js";
+import { belongsOnSurface } from "./surface-membership.js";
 
 export type AccessAuditVerdict =
   /** Evidence the item was carried out. */
@@ -425,25 +428,59 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
  * `approveRegistration` fires for anybody it approves. A full member has no subgroup row at all,
  * so without these the audit would have nothing to say about the largest group on the roster.
  */
+/**
+ * Whether a baseline item applies to this person at all.
+ *
+ * `true` grades it, `false` reports `not_applicable`, and `undefined` reports `unverifiable` --
+ * the roster cannot say, which is a different answer from "no" and must not read as a failure.
+ *
+ * This exists because the four items below were graded for *everybody*. They are the onboarding
+ * side effects, and onboarding is not one thing: a coauthor-minor is never invited to the lab
+ * calendar, so "no lab calendar invite recorded" was reported as a failure against 155 people, of
+ * whom most were never supposed to get one. A report where nearly every row fails is a report
+ * nobody reads, and it buried the rows that are genuinely wrong.
+ *
+ * Each predicate asks the module that already owns the decision rather than restating it, so the
+ * audit cannot disagree with the code that does the inviting.
+ */
+type BaselineApplicability = (member: AdminBotLabMember) => boolean | undefined;
+
+/** Onboarding mail and portal credentials follow portal eligibility. */
+const portalEligible: BaselineApplicability = (member) =>
+  adminBotHasPortalAccess(member.member_type);
+
 const BASELINE_ITEMS = [
   {
     id: "baseline_approval_email" as const,
     label: "Account-approved email",
+    // Sent when a portal registration is approved, so somebody who cannot hold a portal account
+    // never had one to be sent.
+    applies: portalEligible,
     check: attemptCheck((evidence) => evidence.approval_email, "account-approved email"),
   },
   {
     id: "baseline_calendar_invite" as const,
     label: "Lab calendar reader invite",
+    // `belongsOnSurface` is what the invite sweep itself asks: the lab calendar is the lab's own
+    // people. Major coauthors get the group meeting, not the calendar.
+    applies: (member: AdminBotLabMember) => belongsOnSurface(member, "lab_calendar"),
     check: attemptCheck((evidence) => evidence.calendar_invite, "lab calendar invite"),
   },
   {
     id: "baseline_dcs_form" as const,
     label: "DCS Slack-access form",
+    // Filed by one onboarding template -- the full-member one (DCS_FORM_TEMPLATE_ID = "member").
+    // Every other member type's onboarding never files it.
+    applies: (member: AdminBotLabMember) => {
+      const template = templateForMemberType(member.member_type);
+      return template.ok ? template.templateId === "member" : undefined;
+    },
     check: attemptCheck((evidence) => evidence.dcs_form, "DCS form submission"),
   },
   {
     id: "baseline_portal_login" as const,
     label: "Portal sign-in credential",
+    applies: portalEligible,
     check: CHECKS.adminbot_portal_access,
   },
 ];
@@ -465,6 +502,29 @@ export function auditMemberAccess(
   const findings: AccessAuditFinding[] = [];
 
   for (const item of BASELINE_ITEMS) {
+    const applies = item.applies(member);
+    if (applies === false) {
+      findings.push({
+        item: item.id as unknown as AdminBotCollaboratorAccessItemId,
+        label: item.label,
+        verdict: "not_applicable",
+        detail: `${member.member_type?.trim() || "this member type"} does not get this`,
+      });
+      continue;
+    }
+    if (applies === undefined) {
+      // The roster cannot say -- a blank Member Type, or one no predicate recognises. Reported as
+      // unverifiable rather than graded, so a missing column never reads as a failed onboarding.
+      findings.push({
+        item: item.id as unknown as AdminBotCollaboratorAccessItemId,
+        label: item.label,
+        verdict: "unverifiable",
+        detail: member.member_type?.trim()
+          ? `no rule says whether "${member.member_type.trim()}" gets this`
+          : "Member Type is blank, so entitlement is unknown",
+      });
+      continue;
+    }
     findings.push({
       item: item.id as unknown as AdminBotCollaboratorAccessItemId,
       label: item.label,
