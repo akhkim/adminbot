@@ -54,6 +54,9 @@ export function renderGuestReimbursements(state: AppViewState) {
           onGenerate: () => void generateGuestReimbursement(host),
           onReset: () => resetAdminBotReimbursement(host),
           onFunderChange: (funder) => setAdminBotReimbursementFunder(host, funder),
+          // No session on the visitor path, so there is nobody to attribute a send to
+          // or to set reply-to from. The forms download instead.
+          onSubmit: () => undefined,
         })}
         <button
           type="button"

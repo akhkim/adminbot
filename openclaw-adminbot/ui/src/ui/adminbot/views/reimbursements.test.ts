@@ -23,6 +23,7 @@ function state(overrides: Partial<AdminBotReimbursementState> = {}): AdminBotRei
 function draw(overrides: Partial<AdminBotReimbursementProps> = {}) {
   document.body.replaceChildren();
   const funders: string[] = [];
+  const submits: number[] = [];
   const props: AdminBotReimbursementProps = {
     canSubmit: true,
     state: state(),
@@ -30,12 +31,13 @@ function draw(overrides: Partial<AdminBotReimbursementProps> = {}) {
     onGenerate: () => undefined,
     onReset: () => undefined,
     onFunderChange: (funder) => funders.push(funder),
+    onSubmit: () => submits.push(1),
     ...overrides,
   };
   const container = document.createElement("div");
   document.body.append(container);
   render(renderAdminBotReimbursements(props), container);
-  return { container, funders };
+  return { container, funders, submits };
 }
 
 describe("choosing the institute", () => {
@@ -166,5 +168,54 @@ describe("the pre-submission report", () => {
     const panel = container.querySelector('[data-testid="reimbursement-check"]');
     expect(panel?.textContent).toContain("Ready to submit");
     expect(panel?.textContent).toContain("UofT DCS");
+  });
+});
+
+describe("sending the package", () => {
+  const artifacts = [
+    { filename: "MPI_IS_Reimbursement_Ada.pdf", media_type: "application/pdf", data_base64: "x" },
+  ];
+
+  it("offers nothing until forms exist", () => {
+    const { container } = draw({ state: state({ funder: "MPI-IS" }) });
+    expect(container.querySelector('[data-testid="reimbursement-submit"]')).toBeNull();
+  });
+
+  it("names the office before it is pressed", () => {
+    const { container } = draw({ state: state({ funder: "MPI-IS", artifacts }) });
+    const button = container.querySelector('[data-testid="reimbursement-submit"]');
+    // A send button that does not say where it goes is one people press without knowing.
+    expect(button?.textContent).toContain("MPI IS secretariat");
+    // Whitespace-normalised: the copy wraps across lines in the template.
+    const text = (container.textContent ?? "").replace(/\s+/gu, " ");
+    expect(text).toContain("reply-to to your correspondence address");
+  });
+
+  it("names the other office for the other funder", () => {
+    const { container } = draw({ state: state({ funder: "DCS", artifacts }) });
+    expect(container.querySelector('[data-testid="reimbursement-submit"]')?.textContent).toContain(
+      "DCS finance office",
+    );
+  });
+
+  it("reports the press", () => {
+    const { container, submits } = draw({ state: state({ funder: "DCS", artifacts }) });
+    container.querySelector<HTMLButtonElement>('[data-testid="reimbursement-submit"]')?.click();
+    expect(submits).toEqual([1]);
+  });
+
+  it("says where it went and who replies once sent", () => {
+    const { container } = draw({
+      state: state({
+        funder: "MPI-IS",
+        artifacts,
+        submission: { to: "secretariat@tue.mpg.de", reply_to: "ada@example.org" },
+      }),
+    });
+    const sent = container.querySelector('[data-testid="reimbursement-sent"]');
+    expect(sent?.textContent).toContain("secretariat@tue.mpg.de");
+    expect(sent?.textContent).toContain("ada@example.org");
+    // And offers no second send.
+    expect(container.querySelector('[data-testid="reimbursement-submit"]')).toBeNull();
   });
 });

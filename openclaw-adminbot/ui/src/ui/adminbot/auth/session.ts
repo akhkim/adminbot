@@ -3900,6 +3900,32 @@ export async function saveConferenceTrip(
   return { ok: true, value: (result.body as { trip: ConferenceTrip }).trip };
 }
 
+/**
+ * Ask AdminBot to mail a cleared reimbursement package to the funder's office.
+ *
+ * Sends only the artifacts and which funder they are for. The recipient and the reply-to are the
+ * service's to resolve -- from settings and from the member's own record -- so a browser cannot
+ * redirect somebody's financial paperwork by editing a request.
+ */
+export async function submitReimbursementPackage(
+  input: {
+    funder: "DCS" | "MPI-IS";
+    artifacts: Array<{ filename: string; data_base64: string }>;
+    trip_title?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ proposal_id: string; to: string; reply_to: string }>> {
+  const result = await authedJson(baseUrl, "/reimbursements/submit", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
+}
+
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
 export type RecentUpdateRow = {
   id: string;

@@ -20,6 +20,8 @@ export type AdminBotReimbursementProps = {
   onReset: () => void;
   /** Which finance office is paying. Nothing is prepared until this is answered. */
   onFunderChange: (funder: AdminBotReimbursementFunder) => void;
+  /** Mail the generated package to that office, reply-to the claimant. */
+  onSubmit: () => void;
 };
 
 function submitMessage(event: Event, props: AdminBotReimbursementProps): void {
@@ -51,7 +53,9 @@ function field(draft: Record<string, unknown>, key: string): string {
   return typeof value === "string" && value.trim() ? value : "Not provided";
 }
 
-function renderDraft(state: AdminBotReimbursementState, onGenerate: () => void) {
+function renderDraft(props: AdminBotReimbursementProps) {
+  const state = props.state;
+  const onGenerate = props.onGenerate;
   const expenses = Array.isArray(state.draft.expenses)
     ? state.draft.expenses.filter(
         (value): value is Record<string, unknown> => Boolean(value) && typeof value === "object",
@@ -152,6 +156,7 @@ function renderDraft(state: AdminBotReimbursementState, onGenerate: () => void) 
             )}
           </div>`
         : nothing}
+      ${renderSubmit(props)}
     </section>
   `;
 }
@@ -209,6 +214,46 @@ function renderComplianceWarning() {
         </li>
       </ol>
     </section>
+  `;
+}
+
+/**
+ * Send the package to the funder's office.
+ *
+ * Only once forms exist, which means only once every blocker cleared -- generation refuses
+ * otherwise, so there is no state in which this button appears over an unchecked claim.
+ *
+ * Says where it is going and who it will come back to before it is pressed. This mails an external
+ * finance office under the lab's name, and a send button that does not name its recipient is one
+ * people press without knowing what they just did.
+ */
+function renderSubmit(props: AdminBotReimbursementProps) {
+  const state = props.state;
+  if (!state.artifacts.length || !state.funder) {
+    return nothing;
+  }
+  if (state.submission) {
+    return html`<p class="adminbot-reimbursement-sent" data-testid="reimbursement-sent">
+      Sent to ${state.submission.to}. Replies go to ${state.submission.reply_to}.
+    </p>`;
+  }
+  const office = state.funder === "MPI-IS" ? "the MPI IS secretariat" : "the DCS finance office";
+  return html`
+    <div class="adminbot-reimbursement-submit">
+      <button
+        class="btn btn--sm primary"
+        type="button"
+        ?disabled=${state.busy}
+        data-testid="reimbursement-submit"
+        @click=${props.onSubmit}
+      >
+        ${state.busy ? "Sending…" : `Email ${office}`}
+      </button>
+      <small>
+        AdminBot sends it from its own mailbox with the forms attached, and sets reply-to to your
+        correspondence address so anything they ask comes back to you.
+      </small>
+    </div>
   `;
 }
 
@@ -422,7 +467,7 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
           </button>
         </form>
       </section>
-      ${renderDraft(props.state, props.onGenerate)}
+      ${renderDraft(props)}
     </div>
   `;
 }

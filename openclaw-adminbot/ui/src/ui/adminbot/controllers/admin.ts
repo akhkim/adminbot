@@ -52,6 +52,7 @@ import {
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
+  submitReimbursementPackage,
   upsertLabMemberAsAdmin,
   type ConferenceRoster,
 } from "../auth/session.ts";
@@ -701,6 +702,8 @@ export type AdminBotReimbursementState = {
   funder?: AdminBotReimbursementFunder;
   /** The pre-submission report, once a check has run. */
   check?: AdminBotReimbursementCheck;
+  /** Where the package went, once AdminBot mailed it. */
+  submission?: { to: string; reply_to: string };
 };
 
 export type AdminBotDashboardData = {
@@ -2878,6 +2881,67 @@ export async function generateAdminBotReimbursement(host: AdminBotHost): Promise
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
+}
+
+/**
+ * Mail the generated package to the funder's office.
+ *
+ * The member's own session, always: the service resolves both the recipient (from settings, by
+ * funder) and the reply-to (from that member's record), so nothing about where this goes or who
+ * answers it comes from the browser.
+ */
+export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<void> {
+  const state = host.adminBotReimbursement;
+  if (!state.funder || !state.artifacts.length || state.busy) {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotReimbursement = {
+      ...state,
+      error: "Sign in to have AdminBot send this for you.",
+    };
+    return;
+  }
+  host.adminBotReimbursement = { ...state, busy: true, error: null };
+  try {
+    const result = await submitReimbursementPackage(
+      {
+        funder: state.funder,
+        artifacts: state.artifacts.map((artifact) => ({
+          filename: artifact.filename,
+          data_base64: artifact.data_base64,
+        })),
+        ...(typeof state.draft.trip_title === "string"
+          ? { trip_title: state.draft.trip_title }
+          : {}),
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.adminBotReimbursement = {
+        ...host.adminBotReimbursement,
+        busy: false,
+        error:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : "Couldn't send the package. Check the office address in settings and try again.",
+      };
+      return;
+    }
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      submission: { to: result.value.to, reply_to: result.value.reply_to },
     };
   } catch (err) {
     host.adminBotReimbursement = {

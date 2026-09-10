@@ -9774,6 +9774,30 @@ details[open] > .ov-expandable-toggle::after {
   font-size: 0.85em;
 }
 
+/* The send. Sits under the downloads because it is the step after them, and carries its own
+   explanation: this mails an external finance office under the lab's name, and a button that does
+   not say where it goes is one people press without knowing what they did. */
+.adminbot-reimbursement-submit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.adminbot-reimbursement-submit small {
+  flex: 1 1 18rem;
+  color: var(--text-muted);
+}
+
+.adminbot-reimbursement-sent {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #22c55e 10%, var(--bg));
+  font-size: 0.9em;
+}
+
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);

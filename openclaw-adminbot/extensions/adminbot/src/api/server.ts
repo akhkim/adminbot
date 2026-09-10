@@ -2033,6 +2033,43 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, await ctx.reimbursementWorkflow.converse(body));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/reimbursements/submit") {
+    // Mails a cleared package to the funder's office. A member session and their own claim: the
+    // id comes from the session, so nobody can submit in somebody else's name, and reply-to is
+    // resolved from that member's record rather than from the request.
+    //
+    // Deliberately not on ANONYMOUS_ROUTES, unlike the converse/generate pair above. Those two
+    // only ever hand a document back to whoever asked; this one sends mail to an external office
+    // under the lab's name, which needs to be attributable to a person.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const funder = String(body.funder ?? "");
+    if (funder !== "DCS" && funder !== "MPI-IS") {
+      sendJson(res, 400, { error: { message: "funder must be DCS or MPI-IS" } });
+      return;
+    }
+    const artifacts = Array.isArray(body.artifacts)
+      ? body.artifacts.flatMap((entry) => {
+          const row = readRecord(entry);
+          return typeof row.filename === "string" && typeof row.data_base64 === "string"
+            ? [{ filename: row.filename, data_base64: row.data_base64 }]
+            : [];
+        })
+      : [];
+    sendServiceResult(
+      res,
+      await service.submitReimbursement({
+        funder,
+        memberId: principal.member.id,
+        artifacts,
+        ...(typeof body.trip_title === "string" ? { tripTitle: body.trip_title } : {}),
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/reimbursements/generate") {
     if (!ctx.reimbursementWorkflow) {
       sendJson(res, 503, { error: { message: "reimbursement workflow is not configured" } });

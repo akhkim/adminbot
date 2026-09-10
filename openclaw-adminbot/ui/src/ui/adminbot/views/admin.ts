@@ -193,6 +193,7 @@ export type AdminBotProps = {
   onReimbursementFunderChange: (
     funder: import("../../../../../extensions/adminbot/src/contracts/reimbursement-rules.js").AdminBotReimbursementFunder,
   ) => void;
+  onSubmitReimbursement: () => void;
   memberNudge: AdminBotMemberNudgeState;
   onNudgeChannelChange: (channel: MemberNudgeChannel) => void;
   onNudgeMessageChange: (message: string) => void;
@@ -3051,6 +3052,7 @@ function renderPanel(props: AdminBotProps) {
           onGenerate: props.onGenerateReimbursement,
           onReset: props.onResetReimbursement,
           onFunderChange: props.onReimbursementFunderChange,
+          onSubmit: props.onSubmitReimbursement,
         })}
       </div>`;
     case "actions":
