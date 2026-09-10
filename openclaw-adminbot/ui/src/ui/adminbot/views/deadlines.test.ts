@@ -408,11 +408,21 @@ describe("venue schedule", () => {
     id: "iclr2027_paper",
     notification_aoe: "",
     schedule: [
-      { milestone: "conference", label: "Conference", kind: "period",
-        starts: "2027-04-26", ends: "2027-04-30" },
+      {
+        milestone: "conference",
+        label: "Conference",
+        kind: "period",
+        starts: "2027-04-26",
+        ends: "2027-04-30",
+      },
       { milestone: "notification", label: "Final decisions", kind: "date", date: "2026-12-16" },
-      { milestone: "rebuttal", label: "Author-reviewer discussion", kind: "period",
-        starts: "2026-11-05", ends: "2026-11-18" },
+      {
+        milestone: "rebuttal",
+        label: "Author-reviewer discussion",
+        kind: "period",
+        starts: "2026-11-05",
+        ends: "2026-11-18",
+      },
       { milestone: "reviews", label: "Reviews released", kind: "date", date: "2026-11-05" },
     ],
   } as unknown as DeadlineVenue;
@@ -449,9 +459,7 @@ describe("venue schedule", () => {
     // "Meta-reviews released" is what ARR calls it, and two decision rows would be worse than
     // either one alone.
     const withBoth = { ...iclr, notification_aoe: "2026-12-01 23:59:59" } as DeadlineVenue;
-    const decisions = venueSchedule(withBoth).filter(
-      (entry) => entry.milestone === "notification",
-    );
+    const decisions = venueSchedule(withBoth).filter((entry) => entry.milestone === "notification");
     expect(decisions).toEqual([
       { milestone: "notification", label: "Final decisions", kind: "date", date: "2026-12-16" },
     ]);
@@ -488,13 +496,14 @@ describe("venue schedule", () => {
     // a regeneration that dropped the field would otherwise only show up as an empty card.
     const paper = DEADLINE_VENUES.find((entry) => entry.id === "iclr2027_paper");
     expect(paper?.deadline_aoe).toBe("2026-09-25 23:59:59");
-    expect(venueSchedule(paper!).map((entry) => [entry.milestone, milestoneDateLabel(entry)]))
-      .toEqual([
-        ["reviews", "Nov 5, 2026"],
-        ["rebuttal", "Nov 5 – Nov 18, 2026"],
-        ["notification", "Dec 16, 2026"],
-        ["conference", "Apr 26 – Apr 30, 2027"],
-      ]);
+    expect(
+      venueSchedule(paper!).map((entry) => [entry.milestone, milestoneDateLabel(entry)]),
+    ).toEqual([
+      ["reviews", "Nov 5, 2026"],
+      ["rebuttal", "Nov 5 – Nov 18, 2026"],
+      ["notification", "Dec 16, 2026"],
+      ["conference", "Apr 26 – Apr 30, 2027"],
+    ]);
   });
 });
 
@@ -1058,7 +1067,7 @@ describe("renderDeadlines", () => {
     expect(buttonNamed(container, "Table").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("keeps the countdown on the submission and the rest of the schedule beside it", async () => {
+  it("keeps the countdown on the submission and the whole timeline beside it", async () => {
     const container = await renderView();
     const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
       (card) =>
@@ -1069,20 +1078,21 @@ describe("renderDeadlines", () => {
     // The highlighted date and the countdown are still the submission, and nothing else on the
     // card counts down: a rebuttal window six months out must not compete with what is due next.
     expect(iclr.querySelector(".deadline-card__date")?.textContent).toContain("Sep 25, 2026");
-    expect(iclr.querySelector(".deadline-card__countdown")?.textContent?.trim()).toMatch(
-      /^\d+d /u,
-    );
+    expect(iclr.querySelector(".deadline-card__countdown")?.textContent?.trim()).toMatch(/^\d+d /u);
 
-    // Four entries, so the list is behind a disclosure rather than doubling the card's height.
+    // Five entries, so the list is behind a disclosure rather than doubling the card's height.
     const schedule = iclr.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
     expect(schedule.tagName).toBe("DETAILS");
-    expect(schedule.querySelector("summary")?.textContent).toContain("Rest of the schedule (4)");
+    expect(schedule.querySelector("summary")?.textContent).toContain("Full timeline (5)");
     expect(
       [...schedule.querySelectorAll(".deadline-card__milestone")].map((row) => [
         row.querySelector(".deadline-card__milestone-label")?.textContent?.trim(),
         row.querySelector(".deadline-card__milestone-date")?.textContent?.trim(),
       ]),
     ).toEqual([
+      // The submission leads its own timeline, so the list reads as a whole sequence rather than
+      // starting mid-story. It is the same date the card counts down to above, not a second one.
+      ["Full paper", "Sep 25, 2026 AoE"],
       ["Reviews released", "Nov 5, 2026"],
       ["Author-reviewer discussion", "Nov 5 – Nov 18, 2026"],
       ["Final decisions", "Dec 16, 2026"],
