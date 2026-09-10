@@ -30,11 +30,7 @@ import {
   urgencyOf,
   type Urgency,
 } from "../data/deadline-time.ts";
-import {
-  DEADLINE_VENUES,
-  type DeadlineMilestone,
-  type DeadlineVenue,
-} from "../data/deadlines.ts";
+import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../data/deadlines.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderAoeDateTime } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
@@ -160,6 +156,7 @@ export function mergeArrSubmissionDuplicates(
  * than being dropped: a venue inventing a stage is a thing to show, not to hide.
  */
 const MILESTONE_ORDER = [
+  "submission",
   "reviews",
   "rebuttal",
   "notification",
@@ -187,9 +184,30 @@ function milestoneStart(entry: DeadlineMilestone): string {
  * comes off the venue's own calendar with a label the venue chose ("Meta-reviews released" is not
  * "Accept/reject"), where the folded-in one is only a date with no words of its own.
  */
-export function venueSchedule(venue: DeadlineVenue): DeadlineMilestone[] {
+export function venueSchedule(
+  venue: DeadlineVenue,
+  options: { includeSubmission?: boolean } = {},
+): DeadlineMilestone[] {
   const curated = venue.schedule ?? [];
   const entries = [...curated];
+  // The submission itself, at the head of its own timeline.
+  //
+  // Folded in rather than curated: every row already carries `deadline_aoe`, so deriving it costs
+  // nothing and cannot go stale against the date the card counts down to. The card still leads
+  // with that date -- this is the same fact taking its place in the sequence, so a reader looking
+  // at "when do reviews land, when is camera ready" sees what those follow rather than a list that
+  // begins mid-story.
+  if (options.includeSubmission && venue.deadline_aoe) {
+    entries.push({
+      milestone: "submission",
+      // Capitalised: the dataset spells these as the venue does ("full paper", "ARR submission"),
+      // and the card's own stage line already shows the same string capitalised. Two spellings of
+      // one label on one card reads as two different things.
+      label: capitaliseFirst(venue.deadline_label?.trim() || "Submission"),
+      kind: "deadline",
+      date: venue.deadline_aoe,
+    });
+  }
   if (venue.notification_aoe && !curated.some((entry) => entry.milestone === "notification")) {
     entries.push({
       milestone: "notification",
@@ -204,6 +222,11 @@ export function venueSchedule(venue: DeadlineVenue): DeadlineMilestone[] {
       milestoneStart(left).localeCompare(milestoneStart(right)) ||
       left.label.localeCompare(right.label),
   );
+}
+
+/** First letter up, rest untouched -- "ARR submission" must not become "Arr submission". */
+function capitaliseFirst(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
 /** One schedule entry's date, read the way its `kind` says to read it. */
@@ -1232,7 +1255,9 @@ class AdminbotDeadlinesView extends LitElement {
               >${renderAoeDateTime(entry.venue.deadline_aoe)}</time
             >
             ${this.renderHistory(entry.venue, "hero")} ·
-            <span class="deadline-board__hero-urgency">${daysLeftLabel(entry.instant, this.now)}</span>
+            <span class="deadline-board__hero-urgency"
+              >${daysLeftLabel(entry.instant, this.now)}</span
+            >
             ${renderClassification(entry.venue)}
           </div>
         </div>
@@ -1526,8 +1551,10 @@ class AdminbotDeadlinesView extends LitElement {
    * of a card whose point is a single date.
    */
   private renderSchedule(venue: DeadlineVenue) {
-    const entries = venueSchedule(venue);
-    if (entries.length === 0) {
+    const entries = venueSchedule(venue, { includeSubmission: true });
+    // One entry means the submission alone, which the card already shows above. A disclosure
+    // whose only content repeats the headline is a control that costs a click to learn nothing.
+    if (entries.length <= 1) {
       return nothing;
     }
     const rows = entries.map(
@@ -1536,13 +1563,13 @@ class AdminbotDeadlinesView extends LitElement {
         <span class="deadline-card__milestone-date">${milestoneDateLabel(entry)}</span>
       </li>`,
     );
-    if (entries.length <= 2) {
+    if (entries.length <= 3) {
       return html`<ul class="deadline-card__schedule" data-testid="deadline-schedule">
         ${rows}
       </ul>`;
     }
     return html`<details class="deadline-card__schedule-details" data-testid="deadline-schedule">
-      <summary>Rest of the schedule (${entries.length})</summary>
+      <summary>Full timeline (${entries.length})</summary>
       <ul class="deadline-card__schedule">
         ${rows}
       </ul>
@@ -1589,8 +1616,7 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-card__countdown">
           ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
         </p>
-        ${this.renderSchedule(venue)}
-        ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
+        ${this.renderSchedule(venue)} ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
     `;
   }

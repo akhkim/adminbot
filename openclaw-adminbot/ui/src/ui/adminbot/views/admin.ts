@@ -190,6 +190,10 @@ export type AdminBotProps = {
   onReimbursementMessage: (message: string, files: File[]) => void;
   onGenerateReimbursement: () => void;
   onResetReimbursement: () => void;
+  onReimbursementFunderChange: (
+    funder: import("../../../../../extensions/adminbot/src/contracts/reimbursement-rules.js").AdminBotReimbursementFunder,
+  ) => void;
+  onSubmitReimbursement: () => void;
   memberNudge: AdminBotMemberNudgeState;
   onNudgeChannelChange: (channel: MemberNudgeChannel) => void;
   onNudgeMessageChange: (message: string) => void;
@@ -3047,6 +3051,8 @@ function renderPanel(props: AdminBotProps) {
           onMessage: props.onReimbursementMessage,
           onGenerate: props.onGenerateReimbursement,
           onReset: props.onResetReimbursement,
+          onFunderChange: props.onReimbursementFunderChange,
+          onSubmit: props.onSubmitReimbursement,
         })}
       </div>`;
     case "actions":

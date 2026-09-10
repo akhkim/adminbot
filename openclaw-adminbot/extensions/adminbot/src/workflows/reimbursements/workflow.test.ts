@@ -59,21 +59,75 @@ function completeDraft() {
 }
 
 describe("AdminBot reimbursement workflow", () => {
-  it("keeps intake on the loopback model and marks a complete draft ready", async () => {
+  it("keeps intake on the loopback model and fills the draft", async () => {
     const fetchImpl = vi.fn(async () => modelResponse(completeDraft()));
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: fetchImpl as typeof fetch,
       env: { ADMINBOT_LOCAL_BASE_URL: "http://127.0.0.1:8000/v1" },
     });
 
     const result = await workflow.converse({ message: "The trip was for our workshop." });
 
-    expect(result.ready).toBe(true);
     expect(result.missing_fields).toEqual([]);
     expect(result.draft).not.toHaveProperty("assistant_message");
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("http://127.0.0.1:8000/v1/chat/completions");
+    // A complete draft is no longer ready on its own: with no institute chosen there is no
+    // ruleset to check it against, and R0.1 makes that a blocker in its own right.
+    expect(result.ready).toBe(false);
+    expect(result.check.verdict).toBe("do_not_submit");
+    expect(result.check.blockers.map((finding) => finding.rule_id)).toEqual(["R0.1"]);
+  });
+
+  it("stays unready while a rule is outstanding, however complete the draft is", async () => {
+    const draft = completeDraft();
+    // Everything the forms need, and one blocker the ruleset needs: nobody has said the claim was
+    // personally incurred.
+    draft.evidence = {
+      form_signed: true,
+      business_purpose_per_item: true,
+      unclaimed_sections_cleared: true,
+      receipts_ordered: true,
+      dcs_forms_complete: true,
+      trip_end_date: "2026-09-05",
+      payment_address_confirmed: true,
+      institutional_email: true,
+      finance_contact_available: true,
+      amounts: [],
+      non_reimbursable_items: [],
+    };
+    const workflow = createAdminBotReimbursementWorkflow({
+      formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
+      fetchImpl: vi.fn(async () => modelResponse(draft)) as typeof fetch,
+    });
+
+    const result = await workflow.converse({ message: "Ready?", funder: "DCS" });
+
+    expect(result.missing_fields).toEqual([]);
+    expect(result.ready).toBe(false);
+    expect(result.check.blockers.map((finding) => finding.rule_id)).toContain("R1.9");
+    // The assistant says why, rather than reporting a bare failure.
+    expect(result.assistant_message).toContain("Do not submit");
+  });
+
+  it("refuses to generate a blocked package, and says which rules blocked it", async () => {
+    const workflow = createAdminBotReimbursementWorkflow({
+      formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
+      fetchImpl: vi.fn(async () => modelResponse(completeDraft())) as typeof fetch,
+    });
+
+    // The gate. Complete draft, no funder, so nothing is produced -- the script is never reached,
+    // which is what the unusable paths above prove.
+    await expect(
+      workflow.generate({ draft: completeDraft() as unknown as Record<string, unknown> }),
+    ).rejects.toMatchObject({
+      name: "AdminBotReimbursementBlocked",
+      check: { verdict: "do_not_submit" },
+    });
   });
 
   it("reports missing form fields without inventing them", async () => {
@@ -82,6 +136,7 @@ describe("AdminBot reimbursement workflow", () => {
     incomplete.expenses = [];
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: vi.fn(async () => modelResponse(incomplete)) as typeof fetch,
     });
 
@@ -95,6 +150,7 @@ describe("AdminBot reimbursement workflow", () => {
     const fetchImpl = vi.fn();
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: fetchImpl as typeof fetch,
     });
 
@@ -117,6 +173,7 @@ describe("AdminBot reimbursement workflow", () => {
     const fetchImpl = vi.fn();
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: fetchImpl as typeof fetch,
     });
 
@@ -139,6 +196,7 @@ describe("AdminBot reimbursement workflow", () => {
   it("names the model endpoint when it is not listening", async () => {
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: vi.fn(async () => {
         throw new TypeError("fetch failed");
       }) as typeof fetch,
@@ -246,6 +304,7 @@ print(json.dumps({"receipts": [
     const fetchImpl = vi.fn(async () => modelResponse(completeDraft()));
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: fetchImpl as typeof fetch,
     });
 
@@ -313,6 +372,7 @@ print(json.dumps({"receipts": [
   it("keeps the HTTP status when the model returns a non-JSON error body", async () => {
     const workflow = createAdminBotReimbursementWorkflow({
       formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
       fetchImpl: vi.fn(
         async () => new Response("<html>Bad Gateway</html>", { status: 502 }),
       ) as typeof fetch,

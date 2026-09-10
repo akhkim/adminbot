@@ -113,6 +113,9 @@ import {
   searchVenue,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+// The error class is a runtime value (the generate route catches it), so it cannot ride on the
+// type-only import beside it.
+import { AdminBotReimbursementBlocked } from "../workflows/reimbursements/workflow.js";
 import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
@@ -2024,13 +2027,61 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, await ctx.reimbursementWorkflow.converse(body));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/reimbursements/submit") {
+    // Mails a cleared package to the funder's office. A member session and their own claim: the
+    // id comes from the session, so nobody can submit in somebody else's name, and reply-to is
+    // resolved from that member's record rather than from the request.
+    //
+    // Deliberately not on ANONYMOUS_ROUTES, unlike the converse/generate pair above. Those two
+    // only ever hand a document back to whoever asked; this one sends mail to an external office
+    // under the lab's name, which needs to be attributable to a person.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const funder = String(body.funder ?? "");
+    if (funder !== "DCS" && funder !== "MPI-IS") {
+      sendJson(res, 400, { error: { message: "funder must be DCS or MPI-IS" } });
+      return;
+    }
+    const artifacts = Array.isArray(body.artifacts)
+      ? body.artifacts.flatMap((entry) => {
+          const row = readRecord(entry);
+          return typeof row.filename === "string" && typeof row.data_base64 === "string"
+            ? [{ filename: row.filename, data_base64: row.data_base64 }]
+            : [];
+        })
+      : [];
+    sendServiceResult(
+      res,
+      await service.submitReimbursement({
+        funder,
+        memberId: principal.member.id,
+        artifacts,
+        ...(typeof body.trip_title === "string" ? { tripTitle: body.trip_title } : {}),
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/reimbursements/generate") {
     if (!ctx.reimbursementWorkflow) {
       sendJson(res, 503, { error: { message: "reimbursement workflow is not configured" } });
       return;
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
-    sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+    try {
+      sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+    } catch (error) {
+      // A blocked package is an answer, not a fault: 422 with the report, so the page can name
+      // every rule that failed and what to supply. Letting this fall through to a 500 would tell
+      // the claimant only that something went wrong, which is the state the check exists to end.
+      if (error instanceof AdminBotReimbursementBlocked) {
+        sendJson(res, 422, { error: { message: error.message }, check: error.check });
+        return;
+      }
+      throw error;
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/deadline-proposals") {

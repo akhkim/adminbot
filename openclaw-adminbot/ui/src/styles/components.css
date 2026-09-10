@@ -9656,6 +9656,148 @@ details[open] > .ov-expandable-toggle::after {
   color: inherit;
 }
 
+/* Which finance office is paying. First on the page and deliberately prominent: the two rulesets
+   contradict each other in places, so this is not a preference but the thing that decides which
+   rules run and which form comes out. */
+.adminbot-reimbursement-funder {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.adminbot-reimbursement-funder__options {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.adminbot-reimbursement-funder__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex: 1 1 16rem;
+}
+
+.adminbot-reimbursement-funder__option--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+.adminbot-reimbursement-funder__option small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.adminbot-reimbursement-funder__locked {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* The pre-submission report. Shown whether it passed or failed: a panel that only appeared on
+   failure would leave a reader unable to tell "cleared" from "never ran". */
+.adminbot-reimbursement-check {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.adminbot-reimbursement-check--blocked {
+  border-color: color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
+  background: color-mix(in srgb, var(--danger, #b42318) 6%, var(--bg));
+}
+
+.adminbot-reimbursement-check--ready {
+  border-color: color-mix(in srgb, #22c55e 40%, transparent);
+  background: color-mix(in srgb, #22c55e 7%, var(--bg));
+}
+
+.adminbot-reimbursement-check__funder {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+.adminbot-reimbursement-check__lead {
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.adminbot-reimbursement-check__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adminbot-reimbursement-check__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-3);
+  border-left: 2px solid color-mix(in srgb, var(--danger, #b42318) 40%, transparent);
+  font-size: 0.9em;
+}
+
+.adminbot-reimbursement-check__list--warn li {
+  border-left-color: color-mix(in srgb, var(--warning, #a67c00) 45%, transparent);
+}
+
+/* The rule id, because the finance office quotes them back. */
+.adminbot-reimbursement-check__id {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.adminbot-reimbursement-check__list small {
+  color: var(--text-muted);
+}
+
+.adminbot-reimbursement-check__unrecoverable {
+  color: var(--danger, #b42318);
+  font-size: 0.9em;
+}
+
+.adminbot-reimbursement-check__amounts {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* The send. Sits under the downloads because it is the step after them, and carries its own
+   explanation: this mails an external finance office under the lab's name, and a button that does
+   not say where it goes is one people press without knowing what they did. */
+.adminbot-reimbursement-submit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.adminbot-reimbursement-submit small {
+  flex: 1 1 18rem;
+  color: var(--text-muted);
+}
+
+.adminbot-reimbursement-sent {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #22c55e 10%, var(--bg));
+  font-size: 0.9em;
+}
+
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);

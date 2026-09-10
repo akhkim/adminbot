@@ -3,6 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import {
+  emptyReimbursementEvidence,
+  type AdminBotReimbursementCheck,
+  type AdminBotReimbursementEvidence,
+  type AdminBotReimbursementFunder,
+} from "../../contracts/reimbursement-rules.js";
+import { checkReimbursementPackage, describeCheck } from "./check.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_RECEIPTS = 12;
@@ -36,6 +43,14 @@ export type AdminBotReimbursementMessage = {
 
 export type AdminBotReimbursementRequest = {
   message: string;
+  /**
+   * Which finance office is paying.
+   *
+   * Chosen by the claimant before anything else, per R0.1, and never inferred: the two rulesets
+   * contradict each other (MPI IS requires a credit card statement, DCS says never to ask for
+   * one), so a wrong guess applies the wrong ruleset wholesale rather than being a near miss.
+   */
+  funder?: AdminBotReimbursementFunder;
   receipts?: AdminBotReimbursementReceipt[];
   messages?: AdminBotReimbursementMessage[];
   draft?: Record<string, unknown>;
@@ -45,8 +60,17 @@ export type AdminBotReimbursementConversationResult = {
   assistant_message: string;
   draft: Record<string, unknown>;
   missing_fields: string[];
+  /**
+   * Whether the forms may be generated.
+   *
+   * Now two conditions, not one: the draft has every field the forms need *and* the package
+   * clears every blocker in the funder's ruleset. A package that is complete but fails a rule is
+   * not ready, because generating a form for it would produce a submission that comes back.
+   */
   ready: boolean;
   receipt_names: string[];
+  /** The §6 report. Present as soon as a funder is chosen. */
+  check: AdminBotReimbursementCheck;
 };
 
 export type AdminBotReimbursementArtifact = {
@@ -61,12 +85,14 @@ export type AdminBotReimbursementWorkflow = {
     signal?: AbortSignal,
   ): Promise<AdminBotReimbursementConversationResult>;
   generate(
-    request: Pick<AdminBotReimbursementRequest, "draft">,
+    request: Pick<AdminBotReimbursementRequest, "draft" | "funder">,
   ): Promise<{ artifacts: AdminBotReimbursementArtifact[] }>;
 };
 
 export type AdminBotReimbursementWorkflowOptions = {
   formScriptPath: string;
+  /** The MPI IS AcroForm filler. Separate script: it shares no code with the DCS workbook path. */
+  mpiScriptPath: string;
   pythonCommand?: string;
   fetchImpl?: typeof globalThis.fetch;
   env?: NodeJS.ProcessEnv;
@@ -90,16 +116,35 @@ export function createAdminBotReimbursementWorkflow(
       const missingFields = reimbursementMissingFields(draft);
       const assistantMessage = readString(draft, "assistant_message");
       delete draft.assistant_message;
+      // The funder rides on the draft as well as the request so a posted-back draft keeps it: the
+      // client assembles the draft once and returns it on later turns.
+      const funder =
+        request.funder ?? (readString(draft, "funder") as AdminBotReimbursementFunder | undefined);
+      if (funder) {
+        draft.funder = funder;
+      }
+      const check = checkReimbursementPackage({
+        ...(funder ? { funder } : {}),
+        evidence: evidenceFromDraft(draft),
+      });
+      const ready = missingFields.length === 0 && check.verdict === "ready_to_submit";
       return {
-        assistant_message:
-          assistantMessage ??
-          (missingFields.length
-            ? `Please provide ${missingFields.map(friendlyField).join(", ")}.`
-            : "I have enough information to fill both reimbursement forms. Review the details and generate the packet when ready."),
+        // Ordering matters, and the middle branch is the point. The model writes its own summary
+        // without knowing the ruleset exists, so it will happily say "both forms are ready for
+        // review" on a package the check has blocked. Letting that stand would be the tab telling
+        // a claimant the opposite of what it just decided, so a blocking verdict outranks it.
+        // A still-incomplete draft outranks both: asking for the missing fields is more useful
+        // than reciting rules that cannot be evaluated until they arrive.
+        assistant_message: missingFields.length
+          ? (assistantMessage ?? `Please provide ${missingFields.map(friendlyField).join(", ")}.`)
+          : check.verdict === "ready_to_submit"
+            ? (assistantMessage ?? describeCheck(check))
+            : describeCheck(check),
         draft,
         missing_fields: missingFields,
-        ready: missingFields.length === 0,
+        ready,
         receipt_names: receipts.map((receipt) => receipt.name),
+        check,
       };
     },
     async generate(request) {
@@ -111,7 +156,21 @@ export function createAdminBotReimbursementWorkflow(
       if (missingFields.length > 0) {
         throw new Error(`reimbursement details are incomplete: ${missingFields.join(", ")}`);
       }
-      return generateForms(draft, options.formScriptPath, options.pythonCommand ?? "python3");
+      const funder =
+        request.funder ?? (readString(draft, "funder") as AdminBotReimbursementFunder | undefined);
+      // The gate. Re-run here rather than trusting the `ready` the conversation last reported:
+      // generate is a separate request, the draft may have been edited in between, and the whole
+      // point of the check is that no form is produced for a package that would be returned.
+      const check = checkReimbursementPackage({
+        ...(funder ? { funder } : {}),
+        evidence: evidenceFromDraft(draft),
+      });
+      if (check.verdict !== "ready_to_submit") {
+        throw new AdminBotReimbursementBlocked(check);
+      }
+      return funder === "MPI-IS"
+        ? generateMpiForm(draft, options.mpiScriptPath, options.pythonCommand ?? "python3")
+        : generateForms(draft, options.formScriptPath, options.pythonCommand ?? "python3");
     },
   };
 }
@@ -309,7 +368,49 @@ list them as things you need. Ask only for what the receipts genuinely cannot sh
 claimant's mailing address and job title.
 
 Ask one concise natural-language follow-up covering the most important missing facts. When complete,
-say both forms are ready for review. Return JSON only.`,
+say both forms are ready for review.
+
+Also return an "evidence" object recording what the receipts and the conversation have actually
+established about the package. This drives a pre-submission rule check, so answer it as an
+observer, not as an advocate: a flag you set to true is a claim that you saw the evidence.
+
+Only set a flag true when something in the receipts or the conversation positively establishes it.
+Leave it out when you do not know. Omitting a flag makes the check ask the claimant for it, which
+is the right outcome; setting it true on a guess produces a package that the finance office
+returns weeks later.
+
+evidence fields (all optional booleans unless noted):
+  amounts: array of {label, date (ISO), reconciled (bool), note} -- one entry per claimed line.
+    Set reconciled true only after recomputing the figure against the attached document, including
+    any currency conversion. Put the reason in note when it does not reconcile.
+  non_reimbursable_items: array of strings naming anything in the claim that is not reimbursable
+    (cellphones, passport/NEXUS fees, fines, personal insurance, entertainment, memberships,
+    family travel, reward-point airfare, unapproved premium fare, non-business stopovers).
+  Triggers -- set true when the claim contains this kind of expense:
+    claims_accommodation, claims_air_or_rail, claims_meals_or_hospitality, claims_per_diem,
+    claims_registration, claims_group_meal, mixed_personal_business, has_legs_away_from_home,
+    trip_extends_beyond_event, premium_cabin, accommodation_booked_for_others,
+    accommodation_shared, evidence_by_link, split_funding, grant_restricted,
+    uses_missing_receipt_form, has_non_eur_amounts
+  Evidence -- set true when you have seen it:
+    form_signed, accommodation_folio_attached (the hotel's own itemised check-out folio, not a
+    booking confirmation), travel_occurred_evidence, business_purpose_per_item,
+    attendees_per_receipt, per_diem_not_covered_elsewhere, unclaimed_sections_cleared,
+    personally_incurred, links_verified_logged_out, receipts_ordered,
+    business_portion_quote_at_booking, quote_and_invoice_comparable, purpose_per_leg,
+    no_personal_day_claims, approver_notified_before_booking, premium_pre_authorised,
+    booked_14_days_ahead, accommodation_payer_seniority_ok, airfare_self_purchased,
+    group_meal_paid_by_senior, dcs_forms_complete, old_transaction_justification,
+    payment_address_confirmed, registration_confirmation_and_payment, missing_receipt_form_signed,
+    split_funding_declared, institutional_email, finance_contact_available, grant_category_open,
+    private_address_matches_bank, reason_for_refund_stated, all_amounts_in_eur,
+    oanda_conversions_attached, card_statement_attached, receipts_attached_as_files,
+    totals_within_cap, director_email_forwarded, supervisor_justification_attached,
+    guest_signature_and_date, director_approved_before_trip
+  trip_end_date: ISO date the trip ended.
+  director_cap_amount: number, only when a maximum refund was approved.
+
+Return JSON only.`,
         },
         {
           role: "user",
@@ -600,4 +701,97 @@ function readString(value: Record<string, unknown>, key: string): string | undef
 
 function friendlyField(field: string): string {
   return field.replaceAll("_", " ");
+}
+
+/**
+ * Thrown instead of producing forms when the package would be returned.
+ *
+ * Carries the report rather than a message so the caller can render every blocker with its rule id
+ * and remedy. A bare error string here would leave the claimant knowing only that something was
+ * wrong, which is the state the check exists to end.
+ */
+export class AdminBotReimbursementBlocked extends Error {
+  constructor(readonly check: AdminBotReimbursementCheck) {
+    super(describeCheck(check));
+    this.name = "AdminBotReimbursementBlocked";
+  }
+}
+
+/**
+ * Read the evidence flags the model filled in off the draft.
+ *
+ * Anything absent or not a boolean stays absent, which the checker reads as not established. That
+ * is the fail-closed half of the design: a model that omits a flag, or a stored draft written
+ * before the flag existed, must not read as a pass.
+ */
+export function evidenceFromDraft(draft: Record<string, unknown>): AdminBotReimbursementEvidence {
+  const raw = readRecord(draft.evidence);
+  const evidence: AdminBotReimbursementEvidence = {
+    ...emptyReimbursementEvidence(),
+    ...(typeof draft.funder === "string"
+      ? { funder: draft.funder as AdminBotReimbursementFunder }
+      : {}),
+  };
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === "amounts" || key === "non_reimbursable_items") {
+      continue;
+    }
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+      (evidence as Record<string, unknown>)[key] = value;
+    }
+  }
+  evidence.amounts = Array.isArray(raw.amounts)
+    ? raw.amounts.flatMap((entry) => {
+        const row = readRecord(entry);
+        const label = typeof row.label === "string" ? row.label : "";
+        return label
+          ? [
+              {
+                label,
+                reconciled: row.reconciled === true,
+                ...(typeof row.date === "string" ? { date: row.date } : {}),
+                ...(typeof row.note === "string" ? { note: row.note } : {}),
+              },
+            ]
+          : [];
+      })
+    : [];
+  evidence.non_reimbursable_items = Array.isArray(raw.non_reimbursable_items)
+    ? raw.non_reimbursable_items.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return evidence;
+}
+
+/** The MPI IS branch: one filled PDF plus the signable copy, from its own script. */
+async function generateMpiForm(
+  draft: Record<string, unknown>,
+  scriptPath: string,
+  pythonCommand: string,
+): Promise<{ artifacts: AdminBotReimbursementArtifact[] }> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "adminbot-mpi-"));
+  try {
+    const input = path.join(dir, "draft.json");
+    await writeFile(input, JSON.stringify(draft), "utf8");
+    const result = await execFileAsync(pythonCommand, [scriptPath, "fill", input, dir], {
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    const files = readStringArray(readRecord(JSON.parse(result.stdout)).files);
+    const artifacts: AdminBotReimbursementArtifact[] = [];
+    for (const file of files) {
+      artifacts.push({
+        filename: path.basename(file),
+        media_type: "application/pdf",
+        data_base64: (await readFile(file)).toString("base64"),
+      });
+    }
+    return { artifacts };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }

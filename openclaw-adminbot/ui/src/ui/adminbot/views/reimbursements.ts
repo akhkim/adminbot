@@ -1,4 +1,10 @@
 import { html, nothing } from "lit";
+import {
+  ADMINBOT_FUNDER_LABELS,
+  adminBotReimbursementFunders,
+  type AdminBotReimbursementCheck,
+  type AdminBotReimbursementFunder,
+} from "../../../../../extensions/adminbot/src/contracts/reimbursement-rules.js";
 import type {
   AdminBotReimbursementArtifact,
   AdminBotReimbursementState,
@@ -12,6 +18,10 @@ export type AdminBotReimbursementProps = {
   onMessage: (message: string, receipts: File[]) => void;
   onGenerate: () => void;
   onReset: () => void;
+  /** Which finance office is paying. Nothing is prepared until this is answered. */
+  onFunderChange: (funder: AdminBotReimbursementFunder) => void;
+  /** Mail the generated package to that office, reply-to the claimant. */
+  onSubmit: () => void;
 };
 
 function submitMessage(event: Event, props: AdminBotReimbursementProps): void {
@@ -43,7 +53,9 @@ function field(draft: Record<string, unknown>, key: string): string {
   return typeof value === "string" && value.trim() ? value : "Not provided";
 }
 
-function renderDraft(state: AdminBotReimbursementState, onGenerate: () => void) {
+function renderDraft(props: AdminBotReimbursementProps) {
+  const state = props.state;
+  const onGenerate = props.onGenerate;
   const expenses = Array.isArray(state.draft.expenses)
     ? state.draft.expenses.filter(
         (value): value is Record<string, unknown> => Boolean(value) && typeof value === "object",
@@ -144,6 +156,7 @@ function renderDraft(state: AdminBotReimbursementState, onGenerate: () => void) 
             )}
           </div>`
         : nothing}
+      ${renderSubmit(props)}
     </section>
   `;
 }
@@ -204,6 +217,181 @@ function renderComplianceWarning() {
   `;
 }
 
+/**
+ * Send the package to the funder's office.
+ *
+ * Only once forms exist, which means only once every blocker cleared -- generation refuses
+ * otherwise, so there is no state in which this button appears over an unchecked claim.
+ *
+ * Says where it is going and who it will come back to before it is pressed. This mails an external
+ * finance office under the lab's name, and a send button that does not name its recipient is one
+ * people press without knowing what they just did.
+ */
+function renderSubmit(props: AdminBotReimbursementProps) {
+  const state = props.state;
+  if (!state.artifacts.length || !state.funder) {
+    return nothing;
+  }
+  if (state.submission) {
+    return html`<p class="adminbot-reimbursement-sent" data-testid="reimbursement-sent">
+      Sent to ${state.submission.to}. Replies go to ${state.submission.reply_to}.
+    </p>`;
+  }
+  const office = state.funder === "MPI-IS" ? "the MPI IS secretariat" : "the DCS finance office";
+  return html`
+    <div class="adminbot-reimbursement-submit">
+      <button
+        class="btn btn--sm primary"
+        type="button"
+        ?disabled=${state.busy}
+        data-testid="reimbursement-submit"
+        @click=${props.onSubmit}
+      >
+        ${state.busy ? "Sending…" : `Email ${office}`}
+      </button>
+      <small>
+        AdminBot sends it from its own mailbox with the forms attached, and sets reply-to to your
+        correspondence address so anything they ask comes back to you.
+      </small>
+    </div>
+  `;
+}
+
+/**
+ * Which finance office is paying, asked before anything else.
+ *
+ * First on the page and not defaulted, because R0.1 makes it a blocker in its own right and R0.2
+ * says the two rulesets are not interchangeable -- they disagree on at least one requirement, so
+ * picking the wrong one does not produce a nearly-right package, it produces the other office's
+ * package. Locked once the conversation has started: switching funder mid-claim would re-check
+ * the same evidence against a different ruleset without re-asking for what the new one needs.
+ */
+function renderFunderPicker(props: AdminBotReimbursementProps) {
+  const chosen = props.state.funder;
+  const started = props.state.messages.length > 0;
+  return html`
+    <section class="adminbot-reimbursement-funder" data-testid="reimbursement-funder">
+      <div class="card-title">Where are you claiming from?</div>
+      <div class="card-sub">
+        The two institutes have different — and in places contradictory — requirements, so this
+        decides which rules apply and which form is prepared.
+      </div>
+      <div class="adminbot-reimbursement-funder__options">
+        ${adminBotReimbursementFunders.map(
+          (funder) => html`
+            <label
+              class=${`adminbot-reimbursement-funder__option ${
+                chosen === funder ? "adminbot-reimbursement-funder__option--on" : ""
+              }`}
+            >
+              <input
+                type="radio"
+                name="reimbursement-funder"
+                value=${funder}
+                ?checked=${chosen === funder}
+                ?disabled=${started}
+                data-testid=${`reimbursement-funder-${funder}`}
+                @change=${() => props.onFunderChange(funder)}
+              />
+              <span>
+                <strong>${funder === "DCS" ? "UofT" : "MPI IS"}</strong>
+                <small>${ADMINBOT_FUNDER_LABELS[funder]}</small>
+              </span>
+            </label>
+          `,
+        )}
+      </div>
+      ${started
+        ? html`<p class="adminbot-reimbursement-funder__locked">
+            Start over to change institute — the rules and the questions differ.
+          </p>`
+        : nothing}
+    </section>
+  `;
+}
+
+/**
+ * The pre-submission report: what would come back, and what to supply.
+ *
+ * Rendered whenever a check exists, passing or failing. A check that only appeared on failure
+ * would leave a claimant unable to tell "cleared" from "not run", and the cleared case is the one
+ * carrying the warnings worth fixing first.
+ */
+function renderCheck(check: AdminBotReimbursementCheck | null) {
+  if (!check?.funder) {
+    return nothing;
+  }
+  const blocked = check.verdict !== "ready_to_submit";
+  return html`
+    <section
+      class=${`adminbot-reimbursement-check ${
+        blocked ? "adminbot-reimbursement-check--blocked" : "adminbot-reimbursement-check--ready"
+      }`}
+      data-testid="reimbursement-check"
+    >
+      <div class="card-title">
+        ${blocked ? "Do not submit" : "Ready to submit"}
+        <span class="adminbot-reimbursement-check__funder"
+          >${check.funder === "DCS" ? "UofT DCS" : "MPI IS"}</span
+        >
+      </div>
+      ${blocked
+        ? html`<p class="adminbot-reimbursement-check__lead">
+            No forms were generated. ${check.blockers.length} blocker(s) must be cleared first.
+          </p>`
+        : nothing}
+      ${check.blockers.length
+        ? html`<ul class="adminbot-reimbursement-check__list" data-testid="reimbursement-blockers">
+            ${check.blockers.map(
+              (finding) => html`
+                <li>
+                  <span class="adminbot-reimbursement-check__id">${finding.rule_id}</span>
+                  <strong>${finding.title}</strong>
+                  <span>${finding.detail}</span>
+                  <small>${finding.remedy}</small>
+                  ${finding.unrecoverable
+                    ? html`<em class="adminbot-reimbursement-check__unrecoverable"
+                        >Cannot be produced after the fact — decide whether to submit a weakened
+                        claim or drop the line.</em
+                      >`
+                    : nothing}
+                </li>
+              `,
+            )}
+          </ul>`
+        : nothing}
+      ${check.warnings.length
+        ? html`<ul
+            class="adminbot-reimbursement-check__list adminbot-reimbursement-check__list--warn"
+            data-testid="reimbursement-warnings"
+          >
+            ${check.warnings.map(
+              (finding) => html`
+                <li>
+                  <span class="adminbot-reimbursement-check__id">${finding.rule_id}</span>
+                  <strong>${finding.title}</strong>
+                  <span>${finding.detail}</span>
+                  <small>${finding.remedy}</small>
+                </li>
+              `,
+            )}
+          </ul>`
+        : nothing}
+      ${check.amounts_checked.length
+        ? html`<p class="adminbot-reimbursement-check__amounts">
+            Amounts checked:
+            ${check.amounts_checked
+              .map(
+                (amount) =>
+                  `${amount.label} — ${amount.reconciled ? "reconciled" : `not reconciled${amount.note ? ` (${amount.note})` : ""}`}`,
+              )
+              .join(" · ")}
+          </p>`
+        : nothing}
+    </section>
+  `;
+}
+
 export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) {
   const messages = props.state.messages.length
     ? props.state.messages
@@ -215,7 +403,8 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
         },
       ];
   return html`
-    ${renderComplianceWarning()}
+    ${renderComplianceWarning()} ${renderFunderPicker(props)}
+    ${renderCheck(props.state.check ?? null)}
     <div class="adminbot-reimbursement-workspace">
       <section class="adminbot-reimbursement-chat" aria-label="Reimbursement assistant">
         <div class="adminbot-reimbursement-chat__heading">
@@ -278,7 +467,7 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
           </button>
         </form>
       </section>
-      ${renderDraft(props.state, props.onGenerate)}
+      ${renderDraft(props)}
     </div>
   `;
 }

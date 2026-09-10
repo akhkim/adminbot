@@ -1,3 +1,7 @@
+import type {
+  AdminBotReimbursementCheck,
+  AdminBotReimbursementFunder,
+} from "../../../../../extensions/adminbot/src/contracts/reimbursement-rules.js";
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
@@ -48,6 +52,7 @@ import {
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
+  submitReimbursementPackage,
   upsertLabMemberAsAdmin,
   type ConferenceRoster,
 } from "../auth/session.ts";
@@ -688,10 +693,17 @@ export type AdminBotReimbursementState = {
   draft: Record<string, unknown>;
   missingFields: string[];
   receiptNames: string[];
+  /** Both halves: every field the forms need, and every blocker in the funder's ruleset cleared. */
   ready: boolean;
   busy: boolean;
   error: string | null;
   artifacts: AdminBotReimbursementArtifact[];
+  /** Which finance office is paying. Undefined until the claimant chooses; nothing runs before. */
+  funder?: AdminBotReimbursementFunder;
+  /** The pre-submission report, once a check has run. */
+  check?: AdminBotReimbursementCheck;
+  /** Where the package went, once AdminBot mailed it. */
+  submission?: { to: string; reply_to: string };
 };
 
 export type AdminBotDashboardData = {
@@ -2799,6 +2811,8 @@ type ReimbursementConversationResult = {
   missing_fields: string[];
   ready: boolean;
   receipt_names: string[];
+  /** The pre-submission report the service ran against the chosen funder's ruleset. */
+  check?: AdminBotReimbursementCheck;
 };
 
 type ReimbursementGenerationResult = {
@@ -2844,6 +2858,8 @@ export async function sendAdminBotReimbursementMessage(
       busy: false,
       error: null,
       artifacts: [],
+      ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
+      ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
     host.adminBotReimbursement = {
@@ -2873,6 +2889,82 @@ export async function generateAdminBotReimbursement(host: AdminBotHost): Promise
       error: formatAdminBotToolError(err),
     };
   }
+}
+
+/**
+ * Mail the generated package to the funder's office.
+ *
+ * The member's own session, always: the service resolves both the recipient (from settings, by
+ * funder) and the reply-to (from that member's record), so nothing about where this goes or who
+ * answers it comes from the browser.
+ */
+export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<void> {
+  const state = host.adminBotReimbursement;
+  if (!state.funder || !state.artifacts.length || state.busy) {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotReimbursement = {
+      ...state,
+      error: "Sign in to have AdminBot send this for you.",
+    };
+    return;
+  }
+  host.adminBotReimbursement = { ...state, busy: true, error: null };
+  try {
+    const result = await submitReimbursementPackage(
+      {
+        funder: state.funder,
+        artifacts: state.artifacts.map((artifact) => ({
+          filename: artifact.filename,
+          data_base64: artifact.data_base64,
+        })),
+        ...(typeof state.draft.trip_title === "string"
+          ? { trip_title: state.draft.trip_title }
+          : {}),
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.adminBotReimbursement = {
+        ...host.adminBotReimbursement,
+        busy: false,
+        error:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : "Couldn't send the package. Check the office address in settings and try again.",
+      };
+      return;
+    }
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      submission: { to: result.value.to, reply_to: result.value.reply_to },
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
+}
+
+/**
+ * Choose the finance office, and start the claim over on that ruleset.
+ *
+ * Changing funder clears the conversation rather than re-checking what is there: the two rulesets
+ * ask for different evidence, so a draft assembled under one has gaps the other never prompted
+ * for. Carrying it across would produce a package that looks checked and is not. The picker
+ * disables itself once a conversation exists, so this only ever runs on an empty one.
+ */
+export function setAdminBotReimbursementFunder(
+  host: Pick<AdminBotHost, "adminBotReimbursement">,
+  funder: AdminBotReimbursementFunder,
+): void {
+  host.adminBotReimbursement = { ...createEmptyAdminBotReimbursementState(), funder };
 }
 
 // Narrowed to the slice it writes so the guest host (which has no client/session) can reuse it.
@@ -2959,6 +3051,9 @@ export async function sendGuestReimbursementMessage(
         message: userMessage,
         messages: host.adminBotReimbursement.messages,
         draft: host.adminBotReimbursement.draft,
+        // Sent on every turn, not just the first: the service re-runs the rule check each time and
+        // there is no ruleset to apply without it.
+        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
         ...(receipts.length ? { receipts } : {}),
       },
     )) as ReimbursementConversationResult;
@@ -2997,7 +3092,10 @@ export async function generateGuestReimbursement(host: GuestReimbursementHost): 
     const result = (await guestReimbursementRequest(
       host.guestReimbursementBaseUrl,
       "/reimbursements/generate",
-      { draft: host.adminBotReimbursement.draft },
+      {
+        draft: host.adminBotReimbursement.draft,
+        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
+      },
     )) as ReimbursementGenerationResult;
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,

@@ -217,6 +217,7 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
+import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -918,6 +919,15 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
+  // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
+  // came from a caller. The recipient is the funder's office address from settings, the
+  // attachments are the forms the service just generated, and the send only happens once every
+  // blocker in that funder's ruleset has cleared -- which is a stricter gate than an approval
+  // click, because it is checked rather than remembered.
+  //
+  // Auto-approved still means somebody has to run it: the proposal and its audit row exist either
+  // way, so a submission that failed to send is visible and re-runnable rather than lost.
+  "reimbursement.submit": autoPolicy("T1"),
   "social_media.post_publicly": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.prepare": autoPolicy("T1"),
   "paper.overleaf_edit": approvalPolicy("T4", ["admin"], 2),
@@ -2233,6 +2243,8 @@ export class AdminBotService {
     const headProfessorWhatsapp = normalizeOptionalString(settings.head_professor_whatsapp);
     const labManagerMemberId = normalizeOptionalString(settings.lab_manager_member_id);
     const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
+    const reimbursementDcsEmail = normalizeOptionalString(settings.reimbursement_dcs_email);
+    const reimbursementMpiEmail = normalizeOptionalString(settings.reimbursement_mpi_email);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
@@ -2241,6 +2253,12 @@ export class AdminBotService {
       ...(typeof settings.cv_recency_window_months === "number"
         ? { cv_recency_window_months: settings.cv_recency_window_months }
         : {}),
+      ...(reimbursementDcsEmail === undefined
+        ? {}
+        : { reimbursement_dcs_email: reimbursementDcsEmail }),
+      ...(reimbursementMpiEmail === undefined
+        ? {}
+        : { reimbursement_mpi_email: reimbursementMpiEmail }),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
@@ -5106,6 +5124,94 @@ export class AdminBotService {
       });
     }
     return { ok: true, status: 200, payload: { withdrawn } };
+  }
+
+  /**
+   * Mail a cleared reimbursement package to the funder's office.
+   *
+   * Only ever called after the ruleset cleared: the workflow refuses to produce forms for a
+   * package with an outstanding blocker, so there is nothing to send for one. The check is not
+   * re-run here because there is nothing left to check -- the artifacts are the evidence that it
+   * passed.
+   *
+   * Reply-to is the member's correspondence address, not the bot's. A finance office that reads
+   * this and has a question has to be able to answer the person whose claim it is; a reply landing
+   * in a bot mailbox is a question nobody answers, which is the failure mode this whole feature
+   * exists to shorten.
+   */
+  async submitReimbursement(params: {
+    funder: AdminBotReimbursementFunder;
+    memberId: string;
+    artifacts: Array<{ filename: string; data_base64: string }>;
+    /** For the subject line: what the claim is about. */
+    tripTitle?: string;
+  }): Promise<AdminBotServiceResponse<{ proposal_id: string; to: string; reply_to: string }>> {
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${params.memberId}`);
+    }
+    if (params.artifacts.length === 0) {
+      return serviceError(400, "a reimbursement submission needs at least one form attached");
+    }
+    const settings = this.resolveSettings();
+    const to =
+      params.funder === "MPI-IS"
+        ? settings.reimbursement_mpi_email?.trim()
+        : settings.reimbursement_dcs_email?.trim();
+    if (!to) {
+      // Fail closed, like the ruleset: an unset office address is not a reason to fall back to
+      // somebody plausible.
+      return serviceError(
+        400,
+        `no reimbursement recipient is configured for ${params.funder}. Set ${
+          params.funder === "MPI-IS" ? "reimbursement_mpi_email" : "reimbursement_dcs_email"
+        } in settings.`,
+      );
+    }
+    // The correspondence address is the one the member nominated for exactly this -- post about
+    // their own affairs -- and falls back to their account address rather than to nothing.
+    const replyTo = member.correspondence_email?.trim() || member.email?.trim();
+    if (!replyTo) {
+      return serviceError(
+        400,
+        "the claimant has no correspondence or account email, so a reply would have nowhere to go",
+      );
+    }
+    const label = params.tripTitle?.trim() || "travel";
+    const proposed = this.createProposal({
+      type: "reimbursement.submit",
+      summary: `Submit ${member.name}'s ${label} reimbursement to ${params.funder}`,
+      proposed_payload: {
+        to,
+        reply_to: replyTo,
+        subject: `Reimbursement claim — ${member.name} — ${label}`,
+        body: reimbursementSubmissionBody({
+          memberName: member.name,
+          funder: params.funder,
+          label,
+          replyTo,
+          attachments: params.artifacts.map((artifact) => artifact.filename),
+        }),
+        attachments: params.artifacts.map((artifact) => ({
+          name: artifact.filename,
+          data_base64: artifact.data_base64,
+        })),
+      },
+      // One submission per member per claim: a double press must not mail the office twice.
+      idempotency_key: `reimbursement:${params.funder}:${member.id}:${label}`,
+    });
+    if (!proposed.ok) {
+      return proposed;
+    }
+    const executed = await this.execute(proposed.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      return executed;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { proposal_id: proposed.payload.id, to, reply_to: replyTo },
+    };
   }
 
   /**
@@ -12834,3 +12940,33 @@ function isActiveRosterMember(member: AdminBotLabMember): boolean {
 
 /** See bulkMemberWriteSeconds. Distinct members written in one second before it reads as a sync. */
 const BULK_MEMBER_WRITE_THRESHOLD = 5;
+
+/**
+ * The covering note.
+ *
+ * Deliberately short and factual. The office needs to know whose claim it is, what it is for, what
+ * is attached and who to answer -- everything else they will read off the forms, and a longer mail
+ * is a longer thing to skim before finding the one number they wanted.
+ */
+function reimbursementSubmissionBody(params: {
+  memberName: string;
+  funder: AdminBotReimbursementFunder;
+  label: string;
+  replyTo: string;
+  attachments: string[];
+}): string {
+  const office =
+    params.funder === "MPI-IS" ? "MPI IS" : "the Department of Computer Science finance office";
+  return [
+    `Dear ${office === "MPI IS" ? "colleagues" : "Gizelda"},`,
+    "",
+    `Please find attached ${params.memberName}'s reimbursement claim for ${params.label}.`,
+    "",
+    "Attached:",
+    ...params.attachments.map((name) => `  - ${name}`),
+    "",
+    `${params.memberName} is on reply-to (${params.replyTo}) and is the person to ask about anything in the claim.`,
+    "",
+    "Sent by AdminBot on their behalf.",
+  ].join("\n");
+}

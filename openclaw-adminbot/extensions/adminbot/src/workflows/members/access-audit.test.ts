@@ -156,7 +156,13 @@ describe("auditMemberAccess — refusing to grade what it cannot see", () => {
   });
 
   it("goes silent on trail-backed rows rather than failing them with no trail", () => {
-    const row = auditMemberAccess(coauthor, evidence({ audit_trail_available: false }));
+    // A full member, because the row has to be *applicable* before "can it be graded" is even the
+    // question -- a coauthor-major is not on the lab calendar at all, and would report
+    // not_applicable for a reason that has nothing to do with the trail.
+    const row = auditMemberAccess(
+      member({ member_type: "full" }),
+      evidence({ audit_trail_available: false }),
+    );
     expect(finding(row, "baseline_calendar_invite").verdict).toBe("unverifiable");
   });
 
@@ -283,5 +289,90 @@ describe("summarizeAccessAudit", () => {
     // Two failing rows on one person is one person to chase, which is the number a reader acts on.
     expect(summary.members_with_failures).toBe(1);
     expect(summary.fail).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("auditMemberAccess — onboarding side effects apply to who gets them", () => {
+  // The bug this covers: all four baseline items were graded for everybody, so "no lab calendar
+  // invite recorded" failed against 155 contacts, most of whom are never invited to it. A report
+  // where nearly every row fails is one nobody reads.
+  it("does not fault a coauthor-minor for a lab calendar invite they never get", () => {
+    const row = auditMemberAccess(member({ member_type: "coauthor-minor" }), evidence());
+    const calendar = finding(row, "baseline_calendar_invite");
+    expect(calendar.verdict).toBe("not_applicable");
+    expect(calendar.detail).toContain("coauthor-minor");
+  });
+
+  it("still grades the lab calendar for a full member", () => {
+    // Applicable, so it is graded rather than excused: the fixture records a successful invite.
+    expect(
+      finding(
+        auditMemberAccess(member({ member_type: "full" }), evidence()),
+        "baseline_calendar_invite",
+      ).verdict,
+    ).toBe("pass");
+    // And a full member with nothing recorded is a real failure, which is the row worth keeping.
+    expect(
+      finding(
+        auditMemberAccess(
+          member({ member_type: "full" }),
+          evidence({ calendar_invite: "no_record" }),
+        ),
+        "baseline_calendar_invite",
+      ).verdict,
+    ).toBe("fail");
+  });
+
+  it("grades the group-meeting-only subgroups off the calendar, not on it", () => {
+    // A major coauthor is seated at the group meeting but is not on the lab calendar. The audit
+    // has to agree with `belongsOnSurface`, which is what the invite sweep itself asks.
+    const row = auditMemberAccess(member({ member_type: "coauthor-major" }), evidence());
+    expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
+  });
+
+  it("asks the DCS form only of the template that files it", () => {
+    expect(
+      finding(auditMemberAccess(member({ member_type: "full" }), evidence()), "baseline_dcs_form")
+        .verdict,
+    ).toBe("pass");
+    // Every other template's onboarding never files the form.
+    for (const type of ["coauthor-major", "coauthor-minor", "alumni", "interviewee"]) {
+      expect(
+        finding(auditMemberAccess(member({ member_type: type }), evidence()), "baseline_dcs_form")
+          .verdict,
+        type,
+      ).toBe("not_applicable");
+    }
+  });
+
+  it("follows portal eligibility for the approval mail and the credential", () => {
+    // own-pace-advisee holds portal access; interviewee does not.
+    for (const item of ["baseline_approval_email", "baseline_portal_login"]) {
+      expect(
+        finding(auditMemberAccess(member({ member_type: "own-pace-advisee" }), evidence()), item)
+          .verdict,
+        item,
+      ).not.toBe("not_applicable");
+      expect(
+        finding(auditMemberAccess(member({ member_type: "interviewee" }), evidence()), item)
+          .verdict,
+        item,
+      ).toBe("not_applicable");
+    }
+  });
+
+  it("reports unknown entitlement as unverifiable, never as a failure", () => {
+    // A blank Member Type cannot say whether onboarding owed this person these. Grading them
+    // would turn a gap in the spreadsheet into a fault against the person.
+    const row = auditMemberAccess(member({ member_type: "" }), evidence());
+    for (const item of ["baseline_approval_email", "baseline_dcs_form", "baseline_portal_login"]) {
+      const entry = finding(row, item);
+      expect(entry.verdict, item).toBe("unverifiable");
+      expect(entry.detail.length).toBeGreaterThan(0);
+    }
+    // The calendar is the exception, and deliberately: `isFullMember` unions `privilege_level`
+    // with the member-type token, so the roster still has a signal when the column is blank. A
+    // blank type is not "unknown" for this row -- it is answered by the other field.
+    expect(finding(row, "baseline_calendar_invite").verdict).not.toBe("unverifiable");
   });
 });

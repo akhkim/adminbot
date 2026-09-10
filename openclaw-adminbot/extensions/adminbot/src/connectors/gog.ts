@@ -255,7 +255,12 @@ export function createGogAdminBotExecutor(
   const run = options.run ?? createGogRunner(options.env);
   return {
     async execute(proposal) {
-      if (proposal.type === "logistics.send_signed_document") {
+      if (
+        proposal.type === "logistics.send_signed_document" ||
+        // Same shape: bytes rather than paths, because the forms exist only as base64 on the
+        // proposal and `--attach` wants files on disk.
+        proposal.type === "reimbursement.submit"
+      ) {
         await sendWithAttachments(proposal, run);
         return { handled: true };
       }
@@ -311,6 +316,13 @@ async function sendWithAttachments(proposal: AdminBotStoredProposal, run: GogRun
       // into two paths that do not exist.
       args.push("--attach", filePath);
     }
+    // The same three optionals the path-based sender takes. This branch used to drop them, which
+    // was invisible while `logistics.send_signed_document` was its only caller and set none of
+    // them -- but a reimbursement submitted with no reply-to lands in a finance inbox with the
+    // bot as the only way to answer it, which is the one thing this send must not do.
+    appendOptional(args, "--cc", recipients(payload.cc));
+    appendOptional(args, "--bcc", recipients(payload.bcc));
+    appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));
     await run(args);
   } finally {
     await fs.promises.rm(scratch, { recursive: true, force: true });

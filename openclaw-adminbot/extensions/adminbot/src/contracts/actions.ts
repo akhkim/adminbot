@@ -29,6 +29,14 @@ export const adminBotActionTypes = [
   "calendar.cancel",
   "email.draft",
   "email.send",
+  // The finished reimbursement package, mailed to the funder's office with the forms attached.
+  //
+  // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
+  // by funder and is never caller-supplied, which is what makes an auto policy defensible where
+  // `email.send` (T3, arbitrary recipient and body) is not; and the audit row for "we submitted
+  // Ada's EMNLP claim to MPI IS" is worth being able to find without reading every email the lab
+  // has ever sent.
+  "reimbursement.submit",
   "social_media.post_publicly",
   "paper_publish.prepare",
   "paper.overleaf_edit",
@@ -406,7 +414,10 @@ export function adminBotHasPortalAccess(memberType: string | undefined): boolean
     : undefined;
 }
 
-function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
+// Exported so a caller outside this file can ask the same question the type predicates above ask.
+// The Member Type column is multi-valued ("alumni, coauthor-major"), and every consumer that
+// splits it itself is a consumer that will eventually split it differently.
+export function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
   return (memberType ?? "").split(",").map((part) => part.trim().toLowerCase());
 }
 
@@ -1576,6 +1587,16 @@ export type AdminBotSettingsInput = {
   lab_manager_member_id?: string;
   applicant_sheet_id?: string;
   /**
+   * Where a finished reimbursement package is mailed, per funder.
+   *
+   * Settings rather than constants because these are people: a secretariat changes hands and a
+   * hardcoded address in a release is a claim that silently goes nowhere. Unset means the submit
+   * step refuses rather than guessing -- the same fail-closed rule the ruleset check follows, and
+   * for the same reason: a reimbursement sent to the wrong office is worse than one not sent.
+   */
+  reimbursement_dcs_email?: string;
+  reimbursement_mpi_email?: string;
+  /**
    * When the weekly group meeting is, for the reminders that are aimed at it.
    *
    * Settings rather than a constant: the meeting moves, and a nudge that fires against a
@@ -1612,6 +1633,16 @@ export type AdminBotSettings = {
    */
   lab_manager_member_id?: string;
   applicant_sheet_id?: string;
+  /**
+   * Where a finished reimbursement package is mailed, per funder.
+   *
+   * Settings rather than constants because these are people: a secretariat changes hands and a
+   * hardcoded address in a release is a claim that silently goes nowhere. Unset means the submit
+   * step refuses rather than guessing -- the same fail-closed rule the ruleset check follows, and
+   * for the same reason: a reimbursement sent to the wrong office is worse than one not sent.
+   */
+  reimbursement_dcs_email?: string;
+  reimbursement_mpi_email?: string;
   /** See the note on AdminBotSettingsInput. Defaults live in contracts/group-meeting.ts. */
   group_meeting_weekday?: number;
   group_meeting_time?: string;
