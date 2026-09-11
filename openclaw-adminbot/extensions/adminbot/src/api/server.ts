@@ -82,6 +82,7 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
+import { isTravelHistorySubject } from "../workflows/members/travel-history.js";
 import {
   ADMINBOT_LAB_EMAIL_ENV,
   adminBotLabCalendarId,
@@ -2928,13 +2929,22 @@ async function handleAuthenticatedRoute(
   const memberTravel = /^\/lab\/members\/([^/]+)\/travel$/u.exec(url.pathname);
   if (req.method === "GET" && memberTravel) {
     const memberId = decodeURIComponent(memberTravel[1]!);
-    // Your own movements, or an admin's read of anyone's -- the same rule as recent-edits, and
-    // for a stronger reason. This is a location history: it is the most sensitive read in the
-    // service, and the tab that shows it being admin-only in the Control UI is visibility, not a
-    // check. A member is always entitled to their own, which is what makes the PI's own travel
-    // page work whether or not they hold the admin role.
+    // Your own, and only if you are the one member the lab keeps a travel history for. This is the
+    // most sensitive read in the service, so it is narrower than every other member route: not
+    // "self or an admin" but "self, and the head professor". An admin reading somebody else's
+    // movements is the thing this feature must not become, and it was asked for so one person could
+    // track her own trips -- so that is exactly what it serves and no more.
+    //
+    // A 404 rather than a 403: to anyone who is not the subject this route does not exist, which is
+    // also true of the data behind it, since nobody else's sign-ins are stamped with a place
+    // (isTravelHistorySubject, and the write side in workflows/identity/auth.ts).
     const isSelf = principal.kind === "member" && principal.member.id === memberId;
-    if (!isSelf && !requirePrivileged(res, principal)) {
+    // Unwrapped explicitly so a settings read that somehow failed denies rather than defaults: an
+    // unreadable configuration is not a reason to widen the one route that must never widen.
+    const settings = service.getSettings();
+    const subject = isTravelHistorySubject(memberId, settings.ok ? settings.payload : undefined);
+    if (!isSelf || !subject) {
+      sendJson(res, 404, { error: { message: "no travel history for this member" } });
       return;
     }
     sendServiceResult(

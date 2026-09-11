@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLoginEvent } from "../../contracts/activity-log.js";
-import { buildTravelHistory, tripsFrom } from "./travel-history.js";
+import { buildTravelHistory, isTravelHistorySubject, tripsFrom } from "./travel-history.js";
 
 let seq = 0;
 function login(
@@ -133,5 +133,29 @@ describe("tripsFrom", () => {
       { memberId: "zhijing" },
     );
     expect(tripsFrom(history)).toEqual([]);
+  });
+});
+
+describe("isTravelHistorySubject", () => {
+  it("keeps a history for the configured head professor and nobody else", () => {
+    const settings = { head_professor_member_id: "zhijing" };
+    expect(isTravelHistorySubject("zhijing", settings)).toBe(true);
+    expect(isTravelHistorySubject("ada", settings)).toBe(false);
+  });
+
+  it("fails closed when no head professor is configured", () => {
+    // The dangerous default is the other way round: an unnamed subject must mean "nobody", not
+    // "anybody". A deployment that never set this has not opted into keeping movement records.
+    expect(isTravelHistorySubject("zhijing", {})).toBe(false);
+    expect(isTravelHistorySubject("zhijing", undefined)).toBe(false);
+    expect(isTravelHistorySubject("", {})).toBe(false);
+  });
+
+  it("ignores the whitespace an operator leaves in a settings field", () => {
+    expect(isTravelHistorySubject("zhijing", { head_professor_member_id: "  zhijing  " })).toBe(
+      true,
+    );
+    // A field holding only spaces is unconfigured, not a member whose id is a space.
+    expect(isTravelHistorySubject("   ", { head_professor_member_id: "   " })).toBe(false);
   });
 });

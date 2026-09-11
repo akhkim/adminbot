@@ -16,6 +16,7 @@ import {
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
+import { isTravelHistorySubject } from "../members/travel-history.js";
 import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
 
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
@@ -425,7 +426,12 @@ export class AdminBotAuthService {
       // record rather than a stamp, so if the process dies between these two writes the timeline
       // is the half that survives. The member fields below can be re-derived from it; the reverse
       // is not true, because the next login overwrites them.
-      if (loginEventId) {
+      // Only the head professor's sign-ins carry a place, because hers is the only travel history
+      // the lab keeps (isTravelHistorySubject). Everybody else's login row stays what it has always
+      // been: a time and nothing more. Gating the write and not just the read is the point -- a
+      // location history nobody may read is still a location history, and the cheapest way not to
+      // hold 200 people's movements is not to record them.
+      if (loginEventId && isTravelHistorySubject(memberId, this.store.getSettings())) {
         this.store.attachLoginEventLocation(loginEventId, location);
       }
       // Re-read rather than reuse the `member` from login(): logins can race, and this must

@@ -68,6 +68,31 @@ export type AdminBotTravelHistory = {
   unlocated_login_count: number;
 };
 
+/**
+ * Whether this member is the one person whose travel history the lab keeps.
+ *
+ * The login log has always recorded *when* somebody signed in; what travel history adds is keeping
+ * *where* each of those sign-ins came from, indefinitely and per row. That is a movement record,
+ * and the lab decided to keep one for exactly one person -- the head professor, who asked for it to
+ * track her own trips -- rather than for all 200 members because one of them needed it.
+ *
+ * So this gates both ends, and they have to agree: the read (nobody else may fetch it) and the
+ * write (nobody else's sign-ins are stamped with a place at all). Gating only the read would leave
+ * the lab holding a location history for everybody that merely nobody is allowed to look at, which
+ * is the same liability with a nicer story.
+ *
+ * Fails closed on an unconfigured `head_professor_member_id`: no subject means no travel history
+ * kept and none readable, rather than every member's. A deployment that has not named its head
+ * professor has not opted into this, and silence must not read as consent.
+ */
+export function isTravelHistorySubject(
+  memberId: string,
+  settings: { head_professor_member_id?: string } | undefined,
+): boolean {
+  const subject = settings?.head_professor_member_id?.trim();
+  return Boolean(subject) && memberId === subject;
+}
+
 const DAY_MS = 86_400_000;
 
 /**
