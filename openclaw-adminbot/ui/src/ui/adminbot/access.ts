@@ -104,6 +104,13 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",
+  // A location history, and the narrowest read in the service: GET /lab/members/:id/travel serves
+  // the head professor her own record and 404s everybody else, admins included, because hers is the
+  // only travel history the lab keeps. This entry is visibility only and is deliberately looser
+  // than the route -- another admin can reach the tab and will find nothing behind it, which is the
+  // honest outcome and not a leak. Tightening it here would need the session to carry who the head
+  // professor is, which is a wider change than a tab label is worth.
+  adminbotTravel: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
