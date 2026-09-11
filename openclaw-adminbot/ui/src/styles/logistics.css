@@ -1437,6 +1437,64 @@
   font-size: var(--control-ui-text-sm);
 }
 
+/* The broadcast composer. Carries the accent edge the dashboard banner does, so the box she types
+   into and the strip the lab reads are visibly the same object seen from both ends. */
+.professor__broadcast {
+  border-inline-start: 3px solid var(--accent, currentColor);
+}
+
+.professor__broadcast-box {
+  margin-top: var(--space-3);
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: inherit;
+}
+
+/* Wraps to one control per row on a narrow screen rather than squeezing a date input to nothing. */
+.professor__broadcast-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.professor__broadcast-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted-strong);
+}
+
+/* Pushed to the trailing edge so the buttons sit together, and drop below the fields when the row
+   wraps rather than stranding a lone button beside a date. */
+.professor__broadcast-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.professor__broadcast-notice {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__broadcast-notice--error {
+  color: var(--danger, var(--warn));
+}
+
+.professor__broadcast-notice--success {
+  color: var(--muted-strong);
+}
+
 /* The adoption columns. `auto-fit` rather than three fixed tracks: at a narrow width three columns
    of names wrap into an unreadable stack, and one column per row reads the same as the list each
    one links out to. */

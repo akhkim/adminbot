@@ -412,6 +412,22 @@ export const en: TranslationMap = {
   },
 
   professor: {
+    broadcast: {
+      title: "Broadcast to the lab",
+      hint: "Shown at the top of every member's dashboard until the date below.",
+      placeholder: "e.g. Sept 11-17: Zürich. Sept 18-20: Toronto. Then back to Europe.",
+      none: "Nothing being broadcast",
+      until: "Showing until {date}",
+      showsUntil: "Show until",
+      availability: "Status",
+      availability_away: "Away",
+      availability_busy: "Busy",
+      availability_available: "Available",
+      availability_unknown: "Not stated",
+      post: "Post to the lab",
+      update: "Update broadcast",
+      takeDown: "Take it down",
+    },
     loading: "Reading…",
     more: "+{count} more",
     escalated: {

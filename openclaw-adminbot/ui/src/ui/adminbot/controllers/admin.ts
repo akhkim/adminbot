@@ -816,6 +816,9 @@ export type AdminBotHost = {
   adminBotNotificationsError?: string | null;
   adminBotBroadcast?: LabBroadcast | null;
   adminBotBroadcastHistory?: LabBroadcast[];
+  adminBotBroadcastDraft?: string;
+  adminBotBroadcastBusy?: boolean;
+  adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;

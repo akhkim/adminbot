@@ -3098,6 +3098,30 @@ export async function fetchLabBroadcasts(
   };
 }
 
+/**
+ * Publish a broadcast, or take the current one down.
+ *
+ * Admin-only server-side; this is the write half of `fetchLabBroadcasts`. `clear` retracts rather
+ * than deletes -- see the contract note -- so the archive keeps it either way.
+ */
+export async function publishLabBroadcast(
+  draft: { availability: LabBroadcast["availability"]; message: string; expires_at: string } | null,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = draft
+    ? await authedJson(baseUrl, "/lab-sharing/status", "PUT", sessionToken, draft)
+    : await authedJson(baseUrl, "/lab-sharing/status/clear", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return { ok: true, value: { status: body?.status ?? null, history: body?.history ?? [] } };
+}
+
 export type MemberNotification = {
   id: string;
   member_id: string;

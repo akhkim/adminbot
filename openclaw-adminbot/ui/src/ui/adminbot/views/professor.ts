@@ -8,6 +8,13 @@
 // So it aggregates and links; it does not re-implement. Every section is a count, the few rows
 // worth seeing, and the way through to the page that actually does the work. A section that grew
 // its own editing controls would be a second place to do the same job, drifting from the first.
+//
+// The broadcast box at the top is the one exception, and it is not a second place: the composer was
+// *moved* here out of Lab Sharing rather than copied, so there is still exactly one surface that
+// writes it. It belongs here because it is the only thing on this page that is hers to *author*
+// rather than to work through -- every other section is a queue somebody else filled -- and because
+// the page it used to live on is the one members read, where an editor only she could see was three
+// controls of dead weight for everybody else.
 import { html, nothing } from "lit";
 import {
   adminBotLogisticsSettledStatuses,
@@ -18,6 +25,7 @@ import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
 import type {
   EscalatedNudgeRow,
+  LabBroadcast,
   LogisticsRequest,
   MemberProfileOverviewRow,
 } from "../auth/session.ts";
@@ -38,6 +46,19 @@ export type ProfessorViewProps = {
    */
   escalated: EscalatedNudgeRow[];
   onOpen: (tab: Tab) => void;
+  /** The live broadcast, or null when nothing is being said. */
+  broadcast: LabBroadcast | null;
+  /** The compose box's contents. Undefined means it has not been touched since the page loaded. */
+  broadcastDraft?: string;
+  broadcastExpiry?: string;
+  broadcastAvailability?: string;
+  broadcastBusy?: boolean;
+  broadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  onBroadcastDraftChange: (value: string) => void;
+  onBroadcastExpiryChange: (value: string) => void;
+  onBroadcastAvailabilityChange: (value: string) => void;
+  /** Post what is in the box, or take the current broadcast down with null. */
+  onBroadcastPublish: (draft: { message: string; availability: string; expiresOn: string } | null) => void;
 };
 
 /** How many rows a section shows before it stops being a summary. */
@@ -408,6 +429,128 @@ function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
   </div>`;
 }
 
+const AVAILABILITY_CHOICES = ["away", "busy", "available", "unknown"] as const;
+
+/**
+ * The box she types the lab's broadcast into.
+ *
+ * A plain textarea and a post button, not a form: the thing being written is one paragraph of
+ * prose, and the three-field dialog it replaces asked for an availability enum and an RFC3339
+ * expiry before it would take a sentence.
+ *
+ * The box starts holding whatever is live, so the common edit -- "same message, one date changed"
+ * -- is a correction rather than a retype, and posting replaces rather than appends. `undefined`
+ * rather than `""` is the untouched sentinel, because an empty box is a real state: it is what
+ * clearing leaves behind, and it must not silently refill itself from the broadcast just taken down.
+ *
+ * No confirm step. Posting is one click and so is taking it back down, the text is visible in the
+ * box before either, and the alternative -- a modal between her and a sentence she rewrites weekly
+ * -- is the kind of friction that gets routed around by not using the feature.
+ */
+function broadcastBox(props: ProfessorViewProps) {
+  const live = props.broadcast;
+  const draft = props.broadcastDraft ?? live?.message ?? "";
+  const expiresOn =
+    props.broadcastExpiry ?? (live ? live.expires_at.slice(0, 10) : defaultExpiryDate());
+  const availability = props.broadcastAvailability ?? live?.availability ?? "away";
+  const busy = Boolean(props.broadcastBusy);
+  const dirty = draft.trim() !== (live?.message ?? "").trim();
+
+  return html`
+    <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
+      <div class="professor__head">
+        <div class="card-title">${t("professor.broadcast.title")}</div>
+        ${live
+          ? html`<span class="professor__when" data-testid="professor-broadcast-until"
+              >${t("professor.broadcast.until", { date: live.expires_at.slice(0, 10) })}</span
+            >`
+          : html`<span class="professor__when muted">${t("professor.broadcast.none")}</span>`}
+      </div>
+
+      <p class="professor__empty">${t("professor.broadcast.hint")}</p>
+
+      <textarea
+        class="professor__broadcast-box"
+        data-testid="professor-broadcast-text"
+        rows="4"
+        maxlength="500"
+        .value=${draft}
+        placeholder=${t("professor.broadcast.placeholder")}
+        ?disabled=${busy}
+        @input=${(event: Event) =>
+          props.onBroadcastDraftChange((event.target as HTMLTextAreaElement).value)}
+      ></textarea>
+
+      <div class="professor__broadcast-controls">
+        <label class="professor__broadcast-field">
+          <span>${t("professor.broadcast.showsUntil")}</span>
+          <input
+            type="date"
+            data-testid="professor-broadcast-expiry"
+            .value=${expiresOn}
+            ?disabled=${busy}
+            @input=${(event: Event) =>
+              props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="professor__broadcast-field">
+          <span>${t("professor.broadcast.availability")}</span>
+          <select
+            data-testid="professor-broadcast-availability"
+            ?disabled=${busy}
+            @change=${(event: Event) =>
+              props.onBroadcastAvailabilityChange((event.target as HTMLSelectElement).value)}
+          >
+            ${AVAILABILITY_CHOICES.map(
+              (value) =>
+                html`<option value=${value} ?selected=${value === availability}>
+                  ${t(`professor.broadcast.availability_${value}`)}
+                </option>`,
+            )}
+          </select>
+        </label>
+        <div class="professor__broadcast-actions">
+          <button
+            class="btn btn--sm primary"
+            type="button"
+            data-testid="professor-broadcast-post"
+            ?disabled=${busy || !draft.trim() || (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
+            @click=${() => props.onBroadcastPublish({ message: draft, availability, expiresOn })}
+          >
+            ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
+          </button>
+          ${live
+            ? html`<button
+                class="btn btn--sm"
+                type="button"
+                data-testid="professor-broadcast-clear"
+                ?disabled=${busy}
+                @click=${() => props.onBroadcastPublish(null)}
+              >
+                ${t("professor.broadcast.takeDown")}
+              </button>`
+            : nothing}
+        </div>
+      </div>
+
+      ${props.broadcastNotice
+        ? html`<p
+            class=${`professor__broadcast-notice professor__broadcast-notice--${props.broadcastNotice.kind}`}
+            role=${props.broadcastNotice.kind === "error" ? "alert" : "status"}
+            data-testid="professor-broadcast-notice"
+          >
+            ${props.broadcastNotice.text}
+          </p>`
+        : nothing}
+    </section>
+  `;
+}
+
+/** A week out, which is the span "broadcast from Zhijing for this week" actually means. */
+function defaultExpiryDate(now = new Date()): string {
+  return new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
 export function renderProfessorView(props: ProfessorViewProps) {
   const letters = recLetterDeadlineQueue(props.requests);
   const drafts = overleafReadingQueue(props.papers);
@@ -505,6 +648,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // page is read top down, and nothing outstanding should not cost the first screen.
   return html`
     <div class="professor">
+      ${broadcastBox(props)}
       ${sections
         .toSorted((left, right) => Number(left.settled) - Number(right.settled))
         .map((entry) => entry.body)}
