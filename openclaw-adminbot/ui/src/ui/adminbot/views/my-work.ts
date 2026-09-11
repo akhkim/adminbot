@@ -96,6 +96,7 @@ import {
   clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
+  PAPER_GRID_DEFAULT_THRESHOLD,
   PAPER_GRID_THRESHOLD,
   recordHistory,
   renderPaperGrid,
@@ -187,6 +188,20 @@ export type MyWorkProps = {
    * and the second one invites an admin to answer a question that was asked of the author.
    */
   personal?: boolean;
+  /**
+   * Whether the reader administers the lab, which is the other half of the rule that decides
+   * whether this page opens on the sheet or on the cards.
+   *
+   * An administrator arrives at their own papers the way they arrive at everyone else's -- to file
+   * the links they collected and move what moved -- so the sweep surface is the right first screen
+   * for them at three papers, where a member reading their own work still wants the cards until
+   * there are five. It changes nothing about what they may edit: the sheet writes through the same
+   * two endpoints the cards do, and the service decides what each write is allowed to touch.
+   *
+   * Absent means not an administrator, so a page rendered before privilege has loaded opens on the
+   * cards rather than flipping surfaces underneath somebody mid-read.
+   */
+  viewerIsAdmin?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
   onSaveDraft: (paperId: string, platform: string, body: string) => void;
@@ -2193,12 +2208,30 @@ let gridState: PaperGridState | null = null;
 // mutually exclusive -- both take the whole page -- so opening either closes the other.
 let legacyState: PaperLegacyState | null = null;
 
+/**
+ * Which surface this reader has asked for, when they have asked at all.
+ *
+ * `auto` means they have not, and the paper count and their role decide (`opensOnSheet`). The
+ * other two are a standing answer for the rest of the session, and the reason this exists as a
+ * third value rather than as `gridState !== null`: now that the sheet can open by itself, pressing
+ * Back to cards has to be remembered somewhere. Dropping `gridState` alone would leave the next
+ * render looking at the same paper count and re-opening the sheet on top of somebody who just
+ * closed it.
+ *
+ * Per session and not persisted, like everything else here -- a preference typed by pressing a
+ * button in one sitting, not a setting.
+ */
+let gridChoice: "auto" | "sheet" | "cards" = "auto";
+
 // Which cards have been expanded to their full checklist. Per session and per card: it is a
 // viewing preference, not a fact about the paper.
 const showAllSlots = new Set<string>();
 
 function exitGrid(rerender: () => void): void {
   gridState = null;
+  // Remembered, not just closed: see `gridChoice`. Without this the default would re-open the
+  // sheet on the very next render for the readers it opens for.
+  gridChoice = "cards";
   rerender();
 }
 
@@ -2214,6 +2247,31 @@ function exitLegacy(rerender: () => void): void {
 export function resetMyWorkViewModeForTest(): void {
   gridState = null;
   legacyState = null;
+}
+
+/**
+ * Forgets which surface the reader asked for, so the next render decides again.
+ *
+ * For the tests, and named as such: `gridChoice` is module state that the app itself never needs
+ * to clear -- a reload starts a new session and a new module -- but a suite renders this page a
+ * hundred times in one module, and one "Back to cards" would otherwise be the standing answer for
+ * every test that follows it.
+ */
+export function resetPaperSheetChoice(): void {
+  gridState = null;
+  gridChoice = "auto";
+}
+
+/**
+ * Whether the page opens on the sheet rather than offering it.
+ *
+ * Two audiences, one rule: an administrator once the sheet is offered at all -- the caller has
+ * already checked that -- and anybody carrying enough papers that the visit is a sweep rather than
+ * a read. Everyone else gets the cards and the button, exactly as before -- nothing is taken away
+ * from either side, the sheet just stops being something one group has to ask for every visit.
+ */
+function opensOnSheet(params: { count: number; admin: boolean }): boolean {
+  return params.admin || params.count >= PAPER_GRID_DEFAULT_THRESHOLD;
 }
 
 /**
@@ -2585,6 +2643,13 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   // A grid for three papers is worse than three cards; the threshold is where the per-paper
   // surface stops paying for itself.
   const gridOffered = items.length > PAPER_GRID_THRESHOLD;
+  // Asked for, or opened for them: `gridChoice` is the reader's own answer where they have given
+  // one, and the count and their role stand in where they have not.
+  const showsGrid =
+    gridOffered &&
+    (gridChoice === "sheet" ||
+      (gridChoice === "auto" &&
+        opensOnSheet({ count: items.length, admin: props.viewerIsAdmin ?? false })));
   const rerender = () => props.onRerender?.();
 
   if (legacyState) {
@@ -2619,7 +2684,10 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
     `;
   }
 
-  if (gridOffered && gridState) {
+  if (showsGrid) {
+    // Made on the way in rather than by the button, because the sheet now has two ways to open
+    // and only one of them is a press. Kept across renders so half-typed cells survive a repaint.
+    gridState ??= emptyPaperGridState();
     return html`
       <!-- The sheet takes the page: my-work caps itself at a readable measure for the card
            list, which is a column of prose, while a sheet of sixty columns wants every pixel.
@@ -2632,6 +2700,17 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
           @visibility-changed=${rerender}
         ></adminbot-paper-visibility>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        <!-- The two things on the card list that are addressed to the reader rather than filed by
+             them, carried onto the sheet: a venue decision waiting for an answer, and a save that
+             failed. They used to be safe to leave behind because the sheet was somewhere you went
+             deliberately, from a page that had already shown them -- now it is where five papers
+             land you first, so a question nobody sees is a question nobody answers. The blockers
+             board and the nudge preview stay on the cards: neither is asking this reader for
+             anything. -->
+        ${props.personal ? renderDecisionBanners(items, props, state.adminBotData?.members ?? []) : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
         ${renderPaperGrid({
           state: gridState,
           papers: items,
@@ -2720,6 +2799,9 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   data-testid="my-work-open-grid"
                   @click=${() => {
                     gridState = emptyPaperGridState();
+                    // A press outranks the default in both directions: this is how somebody who
+                    // pressed Back to cards earlier gets the sheet again.
+                    gridChoice = "sheet";
                     rerender();
                   }}
                 >

@@ -22,6 +22,7 @@ import {
   pendingSaves,
   recordHistory,
   renderPaperGrid,
+  PAPER_GRID_DEFAULT_THRESHOLD,
   PAPER_GRID_THRESHOLD,
   mergeAuthorLinks,
   parseVenueTargets,
@@ -171,6 +172,14 @@ describe("threshold", () => {
     // this used `> 3`, which hid the sheet from exactly that person.
     expect(2 > PAPER_GRID_THRESHOLD).toBe(false);
     expect(3 > PAPER_GRID_THRESHOLD).toBe(true);
+  });
+
+  // Two numbers, and the gap between them is the design: offered from the third paper, opened
+  // first from the fifth. Collapsing them would either open a sheet on three cards or make the
+  // people who live in it press a button every visit.
+  it("opens the sheet later than it offers it", () => {
+    expect(PAPER_GRID_DEFAULT_THRESHOLD).toBe(5);
+    expect(PAPER_GRID_DEFAULT_THRESHOLD).toBeGreaterThan(PAPER_GRID_THRESHOLD + 1);
   });
 });
 

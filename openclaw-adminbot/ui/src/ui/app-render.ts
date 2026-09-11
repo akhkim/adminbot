@@ -3760,6 +3760,12 @@ export function renderApp(state: AppViewState) {
               // The pre-registration and decision banners belong to whoever is reading. Active
               // Papers, which shares this renderer, does not set this.
               personal: true,
+              // Which surface the page opens on, not what it lets anyone do: an administrator
+              // arrives here to file links across every paper at once, so the sheet is their first
+              // screen from the third paper on, where a member gets it from the fifth. The role is
+              // the one already resolved for the whole render, so this cannot disagree with the
+              // tabs beside it.
+              viewerIsAdmin: accessRole === "admin",
             })
           : nothing}
         <!-- Active Papers opens one card, from the row that names it. It used to render the whole

@@ -53,6 +53,24 @@ import {
  */
 export const PAPER_GRID_THRESHOLD = 2;
 
+/**
+ * From this many papers on, the sheet is what the page opens with rather than what it offers.
+ *
+ * Five, and the gap from the offer threshold is the whole point: three papers is where pasting
+ * starts to beat three forms, and five is where the card list stops being the thing somebody came
+ * to read. Below five a reader still arrives to look at one paper and act on it, which is what the
+ * cards are for; at five a screenful of cards no longer fits and the visit is almost always a
+ * sweep across all of them -- a column of links to fill, a stage to move, a venue to correct.
+ * Opening on the surface built for the sweep saves that reader a press every single time, and the
+ * cards are one "Back to cards" away for the visits that are not.
+ *
+ * Deliberately not applied to somebody who has only ever seen the cards on this page: the reader
+ * who presses Back to cards keeps them for the rest of the session (see `gridChoice` in
+ * `views/my-work.ts`), because a default that reasserts itself on the next render is not a default,
+ * it is a lock.
+ */
+export const PAPER_GRID_DEFAULT_THRESHOLD = 5;
+
 // The registry moved to `paper-columns.ts`; the sheet stays its front door, so nothing that
 // imports a column from here has to know that.
 export {
