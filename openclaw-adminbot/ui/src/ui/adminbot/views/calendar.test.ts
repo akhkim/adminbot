@@ -182,7 +182,88 @@ describe("the invite panel", () => {
       '[data-testid="calendar-send-invite"]',
     );
     expect(button?.disabled).toBe(false);
-    expect(button?.textContent).toContain("(1)");
+    expect(button?.textContent).toContain("+1");
+  });
+
+  // The filters are the guest list, so the panel has to show what leaves as plainly as what joins
+  // -- before the confirm click, not in the notice afterwards.
+  it("names the roster members the filters take off the event", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({ id: "here", name: "Here", email: "here@cs.toronto.edu", location: "Toronto" }),
+            member({ id: "away", name: "Away", email: "away@cs.toronto.edu", location: "Berlin" }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "speaker@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+
+    const removals = container.querySelector('[data-testid="calendar-removals"]');
+    expect(removals?.textContent).toContain("Away");
+    expect(removals?.textContent).toContain("does not match the filters");
+    // The guest is reported as kept, never offered as a removal.
+    expect(removals?.textContent).not.toContain("speaker@elsewhere.org");
+    expect(container.querySelector('[data-testid="calendar-kept-guests"]')?.textContent).toContain(
+      "speaker@elsewhere.org",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
+        ?.textContent,
+    ).toContain("−1");
+  });
+
+  // Removing people is a real send even when nobody is joining, so the button cannot stay disabled
+  // on an invite count of zero.
+  it("enables the button for a send that only removes", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({ id: "away", name: "Away", email: "away@cs.toronto.edu", location: "Berlin" }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "stays@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="calendar-send-invite"]',
+    );
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent).toContain("−1");
   });
 
   // Someone with no address would otherwise be counted on screen and then quietly missing from the
@@ -716,6 +797,66 @@ describe("calendarInviteSelection", () => {
       } as Partial<AppViewState>),
     );
     expect(selection.emails).toEqual([]);
+  });
+
+  it("carries the removals and the exact list the event is left with", () => {
+    const selection = calendarInviteSelection(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({ id: "here", name: "Here", email: "here@cs.toronto.edu", location: "Toronto" }),
+            member({ id: "away", name: "Away", email: "away@cs.toronto.edu", location: "Berlin" }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "speaker@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+
+    expect(selection.emails).toEqual(["here@cs.toronto.edu"]);
+    expect(selection.remove).toEqual(["away@cs.toronto.edu"]);
+    // The write replaces rather than subtracts, so everyone being invited has to be in here.
+    expect(selection.remaining.toSorted()).toEqual([
+      "here@cs.toronto.edu",
+      "speaker@elsewhere.org",
+    ]);
+    // The half a reader will question later is the half the ledger has to explain.
+    expect(selection.reason).toContain("removed");
+  });
+
+  // The refusal that matters most: no filter means no audience has been chosen, which must never
+  // read as "the audience is nobody, so take everybody off".
+  it("removes nobody when no filter is set", () => {
+    const selection = calendarInviteSelection(
+      state({
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["ada@cs.toronto.edu", "someone@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+    expect(selection.emails).toEqual([]);
+    expect(selection.remove).toEqual([]);
   });
 });
 

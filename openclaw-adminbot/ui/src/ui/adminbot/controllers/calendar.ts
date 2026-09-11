@@ -258,9 +258,18 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
 
 export async function inviteAdminBotCalendarAudience(
   host: AdminBotHost,
-  params: { event: CalendarEvent; emails: string[]; reason: string },
+  params: {
+    event: CalendarEvent;
+    emails: string[];
+    remove?: string[];
+    remaining?: string[];
+    reason: string;
+  },
 ): Promise<void> {
-  if (!params.emails.length) {
+  // A send that removes people but adds none is a real send -- syncing a guest list down to the
+  // filters is the whole point of the exclusive pass -- so an empty invite list alone is no longer
+  // a reason to do nothing.
+  if (!params.emails.length && !params.remove?.length) {
     return;
   }
   const stored = loadStoredMemberSession();
@@ -275,6 +284,9 @@ export async function inviteAdminBotCalendarAudience(
       params.event.id,
       {
         attendees: params.emails,
+        ...(params.remove?.length
+          ? { remove: params.remove, remaining_attendees: params.remaining ?? [] }
+          : {}),
         summary: params.event.summary,
         // The filter that produced this list, recorded on the action so the ledger says who was
         // mailed and why without reconstructing it from the address list.
@@ -290,11 +302,14 @@ export async function inviteAdminBotCalendarAudience(
       };
       return;
     }
+    const removed = params.remove?.length ?? 0;
+    const invited = params.emails.length
+      ? `Invited ${params.emails.length} ${params.emails.length === 1 ? "person" : "people"}`
+      : "";
+    const dropped = removed ? `removed ${removed} ${removed === 1 ? "person" : "people"}` : "";
     host.adminBotNotice = {
       kind: "success",
-      text: `Invited ${params.emails.length} ${
-        params.emails.length === 1 ? "person" : "people"
-      } to "${params.event.summary}".`,
+      text: `${[invited, dropped].filter(Boolean).join(" and ")} — "${params.event.summary}".`,
     };
     await loadAdminBotCalendar(host);
   } finally {

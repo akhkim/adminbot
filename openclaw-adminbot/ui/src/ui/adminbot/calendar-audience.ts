@@ -196,6 +196,196 @@ export function invitableEmail(member: AdminBotLabMember): string | undefined {
   return undefined;
 }
 
+const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+
+/**
+ * Every address the roster knows for a member.
+ *
+ * An invite may carry any one of them: somebody invited two years ago is on the event at their
+ * `email`, and `invitableEmail` would send today's invite to their `calendar_email`. Matching on
+ * one field alone is how an exclusive pass decides a person is not on an event they are on, and
+ * then adds them a second time while removing the first.
+ */
+function addressesOf(member: AdminBotLabMember): string[] {
+  return [member.calendar_email, member.email, member.correspondence_email]
+    .map((email) => (typeof email === "string" ? normalizeEmail(email) : ""))
+    .filter(Boolean);
+}
+
+/** Somebody on the event who is coming off it, and why. */
+export type AudienceRemoval = {
+  /** The address exactly as the event spells it, so the write can match it back. */
+  email: string;
+  member_id: string;
+  name: string;
+  /** Why they are being dropped, in the words the panel shows before the send. */
+  reason: string;
+};
+
+/**
+ * What one exclusive send does to an event: who joins, who stays, who comes off.
+ *
+ * `remaining` is the whole list the event ends up with rather than a diff, because the underlying
+ * `gog calendar update` has no remove-attendee flag -- the only way to drop somebody is to write
+ * the entire attendee list back. So the plan has to name the exact set it intends to leave behind,
+ * which is also the set worth reading before saying yes.
+ */
+export type AudiencePlan = {
+  /** Chosen, and not on the event yet. */
+  invite: string[];
+  /** Chosen, and already on it. Nothing is written for these; they are here so the panel can say so. */
+  keep: string[];
+  remove: AudienceRemoval[];
+  /**
+   * Addresses on the event that match nobody on the roster. Kept, never removed, and reported.
+   *
+   * The same rule the nightly membership sweep follows (workflows/members/surface-membership.ts),
+   * and it matters more here, not less: this audience is an ad-hoc filter rather than a membership
+   * predicate, so an unrecognized address is overwhelmingly a guest speaker, a room resource, or
+   * somebody whose calendar account differs from the one on file. Uninviting a real guest from a
+   * real meeting is not a cost worth paying to tidy a list.
+   */
+  unrecognized: string[];
+  /** Exactly who is on the event afterwards: `keep` + `unrecognized` + `invite`. */
+  remaining: string[];
+};
+
+/**
+ * Reconcile an event's guest list against the chosen audience.
+ *
+ * The filters answer "who should be on this event", and this makes the event say that -- it adds
+ * the people the filters chose and takes off the roster members they did not. That is a different
+ * question from `selectAudience` alone, which only ever answered the first half; an event kept
+ * current by repeated additive sends accumulates everyone who ever matched any filter.
+ *
+ * Two things are never removed, and both are deliberate:
+ *
+ *   - An address no roster row explains. See `unrecognized` above.
+ *   - Anything in `protectedEmails` -- the organizer and the calendar the event lives on. Google
+ *     lists the organizing calendar among the attendees on plenty of events, and a list built to
+ *     exclude it would hand the connector a write that drops the organizer off the meeting.
+ *
+ * A member the operator unticked is treated as not chosen, removals included: the ticked list is
+ * the guest list this send means to leave behind, and a checkbox that suppresses the invite while
+ * quietly keeping somebody on the event would make the panel's own count wrong. Nothing about that
+ * is silent -- every removal is named in the panel before the confirm click.
+ */
+export function reconcileAudience(params: {
+  members: readonly AdminBotLabMember[];
+  papers: readonly AdminBotPaperRecord[];
+  filter: AudienceFilter;
+  /** Currently on the event, as Google spells them. */
+  attendees: readonly string[];
+  /** Matches the operator unticked; they are neither invited nor kept. */
+  excludedMemberIds?: readonly string[];
+  /** Addresses that must survive whatever the filters say -- organizer, calendar, rooms. */
+  protectedEmails?: readonly string[];
+}): AudiencePlan {
+  // No filter set is "no audience has been chosen", not "the audience is nobody". Read the second
+  // way -- which is what falling through to the loop below would do -- this returns a plan that
+  // takes every attendee off the event, and the panel would offer it as a click.
+  if (!hasAudienceFilter(params.filter)) {
+    return {
+      invite: [],
+      keep: [],
+      remove: [],
+      unrecognized: [],
+      remaining: [...params.attendees],
+    };
+  }
+  const excluded = new Set(params.excludedMemberIds ?? []);
+  const chosen = selectAudience(params.members, params.papers, params.filter).matches.filter(
+    (match) => !excluded.has(match.member_id),
+  );
+  const chosenIds = new Set(chosen.map((match) => match.member_id));
+
+  const byAddress = new Map<string, AdminBotLabMember>();
+  for (const member of params.members) {
+    for (const address of addressesOf(member)) {
+      // First writer wins, so the plan does not depend on roster ordering; two rows sharing an
+      // address is a duplicate to fix on the roster.
+      if (!byAddress.has(address)) {
+        byAddress.set(address, member);
+      }
+    }
+  }
+
+  const protectedSet = new Set(
+    (params.protectedEmails ?? []).map((email) => normalizeEmail(email)).filter(Boolean),
+  );
+
+  const keep: string[] = [];
+  const remove: AudienceRemoval[] = [];
+  const unrecognized: string[] = [];
+  const onEvent = new Set<string>();
+  const seen = new Set<string>();
+
+  for (const raw of params.attendees) {
+    const email = raw.trim();
+    if (!email) {
+      continue;
+    }
+    const key = normalizeEmail(email);
+    // An event listing the same person twice must not produce two removals of one address.
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    onEvent.add(key);
+
+    const member = byAddress.get(key);
+    if (!member) {
+      unrecognized.push(email);
+      continue;
+    }
+    if (chosenIds.has(member.id) || protectedSet.has(key)) {
+      keep.push(email);
+      continue;
+    }
+    remove.push({
+      email,
+      member_id: member.id,
+      name: member.name,
+      // Unticked and unmatched are different mistakes to spot, so they read differently.
+      reason: excluded.has(member.id) ? "unticked on this send" : "does not match the filters",
+    });
+  }
+
+  // Somebody already on the event at another of their addresses is not invited again -- that is
+  // what the address union above is for.
+  const invite: string[] = [];
+  for (const match of chosen) {
+    const member = params.members.find((row) => row.id === match.member_id);
+    const known = member ? addressesOf(member) : [normalizeEmail(match.email)];
+    if (known.some((address) => onEvent.has(address))) {
+      continue;
+    }
+    invite.push(match.email);
+    onEvent.add(normalizeEmail(match.email));
+  }
+
+  return { invite, keep, remove, unrecognized, remaining: [...keep, ...unrecognized, ...invite] };
+}
+
+/**
+ * Whether the operator has actually chosen an audience.
+ *
+ * Exported and shared rather than recomputed, because two readings of "no filters set" is the
+ * difference between a no-op and clearing an event. `selectAudience` treats it as "nobody is
+ * chosen", which is the safe answer for an additive send; `reconcileAudience` has to see the same
+ * thing and stop, because "nobody is chosen" run exclusively means "take everybody off".
+ */
+export function hasAudienceFilter(filter: AudienceFilter): boolean {
+  return Boolean(
+    filter.conference?.trim() ||
+      filter.currentCity?.trim() ||
+      filter.homeCity?.trim() ||
+      filter.timezone?.trim() ||
+      filter.privilegeLevels?.some((level) => level.trim()) ||
+      filter.statuses?.some((status) => status.trim()),
+  );
+}
+
 /**
  * Members matching every filter given. An empty filter set matches nobody rather than everybody:
  * "invite the whole lab" is a decision an operator should have to state, not the thing that happens
@@ -213,14 +403,7 @@ export function selectAudience(
   const placeMode = filter.placeMode ?? "and";
   const privileges = filter.privilegeLevels?.filter((level) => level.trim()) ?? [];
   const statuses = filter.statuses?.filter((status) => status.trim()) ?? [];
-  const active =
-    Boolean(conference) ||
-    Boolean(currentCity) ||
-    Boolean(homeCity) ||
-    Boolean(timezone) ||
-    privileges.length > 0 ||
-    statuses.length > 0;
-  if (!active) {
+  if (!hasAudienceFilter(filter)) {
     return { matches: [], unreachable: [] };
   }
 
