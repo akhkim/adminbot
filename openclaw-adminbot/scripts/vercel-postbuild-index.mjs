@@ -57,6 +57,7 @@ Allow: /assets/
 Allow: /favicon.svg
 Allow: /favicon-32.png
 Allow: /apple-touch-icon.png
+Allow: /google808ad109656be5be.html
 Sitemap: https://jinesis-admin.vercel.app/sitemap.xml
 `;
 export const DEADLINES_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>

@@ -77,6 +77,8 @@ describe("Vercel deadline indexing", () => {
   it("publishes only the requested deadline URL as the crawl target", () => {
     expect(DEADLINES_PUBLIC_URL).toBe("https://jinesis-admin.vercel.app/deadlines");
     expect(DEADLINES_ROBOTS_TEXT).toMatch(/^Allow: \/deadlines$/mu);
+    // Search Console fetches the ownership token from the root; `Disallow: /` must not hide it.
+    expect(DEADLINES_ROBOTS_TEXT).toMatch(/^Allow: \/google808ad109656be5be\.html$/mu);
     // The old prefixed path still resolves for existing links, but it is deliberately not
     // advertised to crawlers: two URLs serving one page is duplicate content.
     expect(DEADLINES_ROBOTS_TEXT).not.toMatch(/^Allow: \/adminbot\/deadlines$/mu);
