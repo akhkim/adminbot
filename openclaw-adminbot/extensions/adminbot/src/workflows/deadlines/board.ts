@@ -240,9 +240,6 @@ const TEMPLATE = `<meta charset="utf-8" />
   #archival-status {
     width: 220px;
   }
-  #priority {
-    width: 170px;
-  }
   .search::placeholder {
     color: var(--muted);
   }
@@ -377,7 +374,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     white-space: nowrap;
   }
   .badge,
-  .priority,
   .archival {
     display: inline-flex;
     align-items: center;
@@ -396,16 +392,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     border-color: color-mix(in srgb, var(--ink) 55%, var(--border));
     background: color-mix(in srgb, var(--ink) 10%, transparent);
     color: var(--ink);
-  }
-  .priority[data-priority="primary"] {
-    border-color: var(--classification-primary);
-    background: color-mix(in srgb, var(--classification-primary) 14%, transparent);
-    color: var(--classification-primary);
-  }
-  .priority[data-priority="secondary"] {
-    border-color: var(--classification-secondary);
-    background: color-mix(in srgb, var(--classification-secondary) 10%, transparent);
-    color: var(--classification-secondary);
   }
   .archival {
     background: var(--surface-2);
@@ -943,18 +929,11 @@ const TEMPLATE = `<meta charset="utf-8" />
         <option value="mixed">Archival + non-archival</option>
         <option value="unknown">Archival status unknown</option>
       </select>
-      <select class="search filter" id="priority" aria-label="Filter by priority">
-        <option value="all">All priorities</option>
-        <option value="primary">Primary priority</option>
-        <option value="secondary">Secondary priority</option>
-        <option value="standard">Standard priority</option>
-      </select>
       <div class="chips" id="chips" role="group" aria-label="Filter by venue"></div>
     </div>
 
     <details class="archival-guide">
-      <summary>What priority and archival status mean</summary>
-      <p>Primary and Secondary are the lab's venue priorities. Archival status is a separate publication-policy classification.</p>
+      <summary>What archival status means</summary>
       <p>Workshop status follows its own CFP or an official parent policy. A workshop can offer archival, non-archival, or separate archival and non-archival routes.</p>
       <dl>
         <div>
@@ -1169,7 +1148,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     period = "upcoming",
     entryType = "all",
     archivalStatus = "all",
-    priority = "all",
     query = "",
     renderedAoeDay = "";
   const expandedGroups = new Set();
@@ -1215,10 +1193,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     archivalStatus = e.target.value;
     render();
   });
-  document.getElementById("priority").addEventListener("change", (e) => {
-    priority = e.target.value;
-    render();
-  });
   function setView(v) {
     view = v;
     document.getElementById("v-cards").setAttribute("aria-pressed", v === "cards");
@@ -1244,13 +1218,11 @@ const TEMPLATE = `<meta charset="utf-8" />
   function matching(now, overrides = {}) {
     const selectedEntryType = overrides.entryType ?? entryType;
     const selectedArchivalStatus = overrides.archivalStatus ?? archivalStatus;
-    const selectedPriority = overrides.priority ?? priority;
     return DATA.filter(
       (x) =>
         (period === "upcoming" ? x._sub > now : x._sub <= now) &&
         (selectedEntryType === "all" || x.entry_type === selectedEntryType) &&
         (selectedArchivalStatus === "all" || x.archival_status === selectedArchivalStatus) &&
-        (selectedPriority === "all" || x.venue_priority === selectedPriority) &&
         (!query ||
           (
             x.name +
@@ -1273,7 +1245,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     [
       ["entry-type", "entryType"],
       ["archival-status", "archivalStatus"],
-      ["priority", "priority"],
     ].forEach(([id, key]) => {
       const select = document.getElementById(id);
       [...select.options].forEach((option) => {
@@ -1373,14 +1344,6 @@ const TEMPLATE = `<meta charset="utf-8" />
   function entryTypeLabel(x) {
     return ENTRY_TYPE_LABELS[x.entry_type] || ENTRY_TYPE_LABELS.other;
   }
-  function priorityLabel(x) {
-    if (x.venue_priority === "primary") {
-      return '<span class="priority" data-priority="primary">Primary</span>';
-    }
-    return x.venue_priority === "secondary"
-      ? '<span class="priority" data-priority="secondary">Secondary</span>'
-      : "";
-  }
   function archivalLabel(x) {
     if (x.archival_status === "unknown") {
       return '<span class="archival" data-archival="unknown">Archival status not established</span>';
@@ -1392,7 +1355,7 @@ const TEMPLATE = `<meta charset="utf-8" />
     return \`<span class="archival" data-archival="\${esc(x.archival_status)}">\${label}</span>\`;
   }
   function classificationLabels(x) {
-    const labels = priorityLabel(x) + archivalLabel(x);
+    const labels = archivalLabel(x);
     return labels ? \`<span class="classification">\${labels}</span>\` : "";
   }
   function titleUrl(x) {
