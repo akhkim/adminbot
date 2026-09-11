@@ -25,6 +25,7 @@ You need a local AdminBot service listening on loopback, for example
 
 | Endpoint                              | Purpose                                                           |
 | ------------------------------------- | ----------------------------------------------------------------- |
+| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                       |
 | `POST /proposals`                     | Create one typed action proposal.                                 |
 | `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
 | `GET /proposals/pending`              | Return pending approval items.                                    |
@@ -1163,3 +1164,11 @@ The zone comes from `resolveAttendeeZoneAt`, resolved against the event's own da
 first: a logged trip covering that day, then an explicit `timezone`, then a zone guessed from
 `current_city`, then from `location`. So September invites read in Berlin time and October invites
 read in home time without the member touching anything twice.
+
+## Visitor deadline proposals
+
+Visitors can use **Propose a new deadline** without signing in and optionally provide their name and email for follow-up. Proposal card headers show a **Visitor** or **Lab member** badge. Reviewing administrators can see those details; they are not included in the public deadline feed. Signed-in submissions use the member's existing name and email. Contact details are stored separately from deadline fields and retained across revisions. Administrators can revise, reject, or publish submissions; publication requires approval of the current payload hash.
+
+`POST /public/deadline-proposals` accepts the deadline fields as JSON and optional `submitter_contact: { name, email }`. Successful requests return `202 {"status":"received"}`. An optional `Idempotency-Key` header (up to 200 characters) supports retries; the UI supplies it automatically. Reusing a key preserves the original submission and contact details, including across restarts.
+
+Requests are subject to the origin allowlist, a 16 KiB body limit, and field validation. Each address can make five submission attempts per hour. Rate-limited requests return `429` with `Retry-After`. Address resolution follows the existing trusted-proxy configuration. Rate limits are held in memory and reset on restart.

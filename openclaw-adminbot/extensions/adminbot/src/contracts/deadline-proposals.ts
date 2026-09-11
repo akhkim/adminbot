@@ -26,11 +26,41 @@ export type DeadlineProposalInput = {
   note: string;
 };
 
+export type DeadlineSubmitterContact = { name?: string; email?: string };
+
+export function validateDeadlineSubmitterContact(
+  input: unknown,
+): { ok: true; value: DeadlineSubmitterContact } | { ok: false; error: string } {
+  if (input === undefined) {
+    return { ok: true, value: {} };
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "Invalid submitter details." };
+  }
+  const contact = input as Record<string, unknown>;
+  if (
+    (contact.name !== undefined && typeof contact.name !== "string") ||
+    (contact.email !== undefined && typeof contact.email !== "string")
+  ) {
+    return { ok: false, error: "Name and email must be text." };
+  }
+  const name = (contact.name as string | undefined)?.trim() ?? "";
+  const email = (contact.email as string | undefined)?.trim() ?? "";
+  if (name.length > 200) {
+    return { ok: false, error: "Use at most 200 characters for your name." };
+  }
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email))) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  return { ok: true, value: { ...(name ? { name } : {}), ...(email ? { email } : {}) } };
+}
+
 export type DeadlinePublicationPayload = {
   proposal_id: string;
   deadline_id: string;
   revision: number;
   submitter_member_id: string;
+  submitter_contact?: DeadlineSubmitterContact;
   duplicate_deadline_ids: string[];
   deadline: DeadlineProposalInput;
 };
@@ -50,6 +80,7 @@ export type DeadlineProposalView = {
   deadline_id: string;
   submitter_member_id: string;
   submitter_name: string;
+  submitter_email?: string;
   status: "pending" | "approved" | "published" | "rejected";
   current_revision: number;
   action_id: string;
@@ -128,6 +159,12 @@ export function validateDeadlineProposalInput(
     note: input.note.trim(),
   };
   const errors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  for (const field of Object.keys(value) as Array<keyof DeadlineProposalInput>) {
+    const limit = field === "note" ? 2000 : field.endsWith("Url") ? 2048 : 200;
+    if (value[field].length > limit) {
+      errors[field] = `Use at most ${limit} characters.`;
+    }
+  }
   if (!value.name) {
     errors.name = "Enter the conference or workshop name.";
   }
@@ -194,6 +231,7 @@ export function isDeadlinePublicationPayload(value: unknown): value is DeadlineP
     typeof payload.revision === "number" &&
     typeof payload.submitter_member_id === "string" &&
     Array.isArray(payload.duplicate_deadline_ids) &&
+    validateDeadlineSubmitterContact(payload.submitter_contact).ok &&
     Boolean(payload.deadline) &&
     validateDeadlineProposalInput(payload.deadline as DeadlineProposalInput).ok
   );

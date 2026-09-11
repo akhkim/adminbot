@@ -114,6 +114,14 @@ class TestProposalStore implements DeadlineProposalStore {
     return proposal;
   }
 
+  async submitPublic(
+    input: DeadlineProposalInput,
+    key: string,
+    _contact?: { name?: string; email?: string },
+  ) {
+    await this.submit(input, key);
+  }
+
   async revise(id: string, input: DeadlineProposalInput) {
     const proposal = this.proposals.find((row) => row.id === id)!;
     const revised: DeadlineProposal = {
@@ -508,26 +516,63 @@ describe("venue schedule", () => {
 });
 
 describe("renderDeadlines", () => {
-  it("disables anonymous proposals without adding a notice row", async () => {
+  it("lets a visitor submit without exposing proposal history", async () => {
     const container = document.createElement("div");
     document.body.append(container);
-    render(
-      renderDeadlines({ role: "anonymous", proposalStore: new TestProposalStore() }),
-      container,
-    );
+    const store = new TestProposalStore();
+    const submitPublic = vi.spyOn(store, "submitPublic");
+    const list = vi.spyOn(store, "list");
+    render(renderDeadlines({ role: "anonymous", proposalStore: store }), container);
     await settle(container);
-
     const propose = buttonNamed(container, "Propose a new deadline");
-    expect(propose.disabled).toBe(true);
-    expect(propose.closest<HTMLElement>(".deadline-proposal-trigger")?.title).toBe(
-      "Sign in to use deadline proposals.",
-    );
-    expect(propose.getAttribute("aria-describedby")).toBe("deadline-proposal-sign-in-hint");
-    expect(container.querySelector(".deadline-proposal__notice")).toBeNull();
+    expect(propose.disabled).toBe(false);
     expect(container.querySelector('[data-testid="deadline-my-proposals"]')).toBeNull();
     expect(container.querySelector('[data-testid="deadline-review-proposals"]')).toBeNull();
     propose.click();
+    await settle(container);
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    for (const [name, value] of Object.entries(proposalInput())) {
+      (form.elements.namedItem(name) as HTMLInputElement).value = value;
+    }
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(submitPublic).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Example Workshop" }),
+      expect.any(String),
+      { name: "", email: "" },
+    );
+    expect(list).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("It is not public until approved.");
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
+  });
+
+  it("forwards optional visitor contact details and does not render a spam field", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    const submit = vi.spyOn(store, "submitPublic");
+    render(renderDeadlines({ role: "anonymous", proposalStore: store }), container);
+    await settle(container);
+    buttonNamed(container, "Propose a new deadline").click();
+    await settle(container);
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    expect(form.elements.namedItem("website")).toBeNull();
+    for (const [name, value] of Object.entries(proposalInput())) {
+      (form.elements.namedItem(name) as HTMLInputElement).value = value;
+    }
+    const name = form.elements.namedItem("submitterName") as HTMLInputElement;
+    const email = form.elements.namedItem("submitterEmail") as HTMLInputElement;
+    expect(name.required).toBe(false);
+    expect(email.required).toBe(false);
+    expect(email.type).toBe("email");
+    name.value = "Taylor Visitor";
+    email.value = "taylor@example.org";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(submit).toHaveBeenCalledWith(expect.any(Object), expect.any(String), {
+      name: "Taylor Visitor",
+      email: "taylor@example.org",
+    });
   });
 
   it("lets a signed-in member submit a pending server-backed proposal", async () => {
@@ -549,6 +594,8 @@ describe("renderDeadlines", () => {
     ).toBe(true);
 
     const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    expect(form.elements.namedItem("submitterName")).toBeNull();
+    expect(form.elements.namedItem("submitterEmail")).toBeNull();
     const homepage = form.elements.namedItem("homepageUrl") as HTMLInputElement;
     const cfp = form.elements.namedItem("cfpUrl") as HTMLInputElement;
     expect(homepage.required).toBe(true);
@@ -602,6 +649,40 @@ describe("renderDeadlines", () => {
     expect(ownProposals.querySelector(".deadline-proposal-row__actions")).toBeNull();
   });
 
+  it("labels named and unnamed visitor submissions in the review queue", async () => {
+    const store = new TestProposalStore();
+    const proposal = await store.submit(proposalInput(), "visitor-label");
+    store.proposals = [
+      { ...proposal, submitter_member_id: "visitor:deadline:named", submitter_name: "Taylor Reed" },
+      {
+        ...proposal,
+        id: "unnamed",
+        submitter_member_id: "visitor:deadline:unnamed",
+        submitter_name: "External visitor",
+      },
+    ];
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderDeadlines({ role: "admin", memberId: "admin-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="deadline-review-proposals"]')!
+      .click();
+    await settle(container);
+    const review = container.querySelector('[data-testid="deadline-proposal-review-panel"]')!;
+    const badges = review.querySelectorAll('[data-testid="deadline-proposal-source"]');
+    expect(badges).toHaveLength(2);
+    for (const badge of badges) {
+      expect(badge.textContent?.trim()).toBe("Visitor");
+      expect(badge.closest(".deadline-proposal-row__meta")).not.toBeNull();
+    }
+    expect(review.textContent).toContain("Submitted by Taylor Reed");
+    expect(review.textContent).not.toContain("visitor:deadline:");
+  });
+
   it("lets administrators publish the payload shown in the review queue", async () => {
     const input = proposalInput();
     const memberProposal: DeadlineProposal = {
@@ -610,6 +691,7 @@ describe("renderDeadlines", () => {
       status: "pending",
       submitter_member_id: "member-1",
       submitter_name: "Ada Member",
+      submitter_email: "ada@example.org",
       current_revision: 1,
       action_id: "action-1",
       payload_hash: "hash-1",
@@ -647,6 +729,7 @@ describe("renderDeadlines", () => {
     expect(own.textContent).toContain("Submitted by you");
     expect(own.textContent).not.toContain("Example Workshop");
     expect(own.querySelector(".deadline-proposal-row__actions")).toBeNull();
+    expect(own.textContent).not.toContain("ada@example.org");
     buttonNamed(container, "Close").click();
     await settle(container);
 
@@ -659,7 +742,13 @@ describe("renderDeadlines", () => {
     ).toBe(true);
     const review = container.querySelector('[data-testid="deadline-proposal-review-panel"]')!;
     expect(review.textContent).toContain("Example Workshop");
+    expect(
+      [...review.querySelectorAll('[data-testid="deadline-proposal-source"]')].every(
+        (badge) => badge.textContent?.trim() === "Lab member",
+      ),
+    ).toBe(true);
     expect(review.textContent).toContain("Submitted by Ada Member");
+    expect(review.textContent).toContain("ada@example.org");
     expect(review.textContent).not.toContain("member-1");
     expect(review.textContent).toContain("adds it to every deadline board");
 

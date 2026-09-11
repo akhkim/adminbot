@@ -109,3 +109,41 @@ describe("AdminBot deadline proposal store", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+it("submits a visitor request without credentials and surfaces rate-limit failures", async () => {
+  const fetchImpl = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: "received" }), { status: 202 }))
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { message: "Too many deadline proposals. Please try again later." },
+        }),
+        { status: 429 },
+      ),
+    );
+  const store = new AdminBotDeadlineProposalStore(
+    () => "https://admin.example",
+    () => "unused-session",
+    fetchImpl,
+  );
+  await store.submitPublic(input(), "public-key", { name: "Taylor", email: "taylor@example.org" });
+  expect(fetchImpl).toHaveBeenCalledWith(
+    "https://admin.example/public/deadline-proposals",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        ...input(),
+        submitter_contact: { name: "Taylor", email: "taylor@example.org" },
+      }),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "public-key",
+      },
+    }),
+  );
+  await expect(
+    store.submitPublic(input(), "public-key", { name: "Taylor", email: "taylor@example.org" }),
+  ).rejects.toThrow("Too many deadline proposals");
+});
