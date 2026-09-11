@@ -4648,16 +4648,45 @@ async function handleAuthenticatedRoute(
           return channel ? [{ channel, slack_user_ids: ids }] : [];
         })
       : [];
-    if (meetings.length === 0 || channels.length === 0) {
-      sendJson(res, 400, {
-        error: { message: "meetings and channels must both be non-empty" },
-      });
+    if (channels.length === 0) {
+      sendJson(res, 400, { error: { message: "channels must be non-empty" } });
       return;
+    }
+    // `meetings` is now optional: the service host has a calendar client of its own, so a caller
+    // that can see Slack but not Google -- which is every cron wrapper -- sends the channels alone
+    // and the events are read here. An explicit list still wins, which is what keeps the tests and
+    // any existing caller working.
+    let resolvedMeetings = meetings;
+    if (resolvedMeetings.length === 0) {
+      if (!ctx.readCalendarEvents) {
+        sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+        return;
+      }
+      try {
+        const events = await ctx.readCalendarEvents({
+          calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+          max: 250,
+        });
+        resolvedMeetings = events.flatMap((event) =>
+          event.summary ? [{ event_id: event.id, summary: event.summary }] : [],
+        );
+      } catch (error) {
+        // A failed read must not become "no meetings matched", which is a silent no-op that reads
+        // like a clean run. Same reasoning as the invite-membership route above.
+        sendJson(res, 502, {
+          error: {
+            message: `could not read the calendar: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        });
+        return;
+      }
     }
     sendServiceResult(
       res,
       await service.syncThemedMeetingInvites(principalActor(principal), {
-        meetings,
+        meetings: resolvedMeetings,
         channels,
         calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
       }),

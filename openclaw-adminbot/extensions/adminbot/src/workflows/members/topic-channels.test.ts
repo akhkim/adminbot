@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  matchMeetingsForChannel,
   matchThemedMeetings,
+  projectOfEvent,
   matchTopicChannels,
   memberTopicVocabulary,
   themeOfEvent,
@@ -178,5 +180,56 @@ describe("themed meetings", () => {
       { event_id: "b", summary: "Theme: Mechanism Design (bi-weekly)" },
     ];
     expect(matchThemedMeetings("meeting-mechanism-design", duplicated)).toHaveLength(2);
+  });
+});
+
+describe("project meetings", () => {
+  const meetings = [
+    { event_id: "p1", summary: "Proj: Law to Benchmark Weekly" },
+    { event_id: "t1", summary: "Theme: Causal Inference and Agents" },
+    { event_id: "x1", summary: "Lab lunch" },
+  ];
+
+  it("reads the project out of a Proj: title and nothing else", () => {
+    expect(projectOfEvent("Proj: Law to Benchmark Weekly")).toBe("Law to Benchmark Weekly");
+    expect(projectOfEvent("Theme: Causal Inference")).toBeNull();
+    expect(projectOfEvent("Lab lunch")).toBeNull();
+  });
+
+  it("matches a #proj-xxx channel to its own meeting", () => {
+    expect(matchMeetingsForChannel("proj-law-to-benchmark", meetings)).toEqual([
+      { event_id: "p1", summary: "Proj: Law to Benchmark Weekly" },
+    ]);
+  });
+
+  it("keeps the two families apart", () => {
+    // The whole point of the two prefixes: a project channel must never fill the Wednesday topic
+    // meeting, and a topic channel must never fill a project's standing call.
+    expect(matchMeetingsForChannel("proj-causal-inference", meetings)).toEqual([]);
+    expect(matchMeetingsForChannel("meeting-law-to-benchmark", meetings)).toEqual([]);
+  });
+
+  it("still matches themed meetings, and ignores channels in neither family", () => {
+    expect(matchMeetingsForChannel("meeting-causal-inference", meetings)).toEqual([
+      { event_id: "t1", summary: "Theme: Causal Inference and Agents" },
+    ]);
+    expect(matchMeetingsForChannel("group-toronto", meetings)).toEqual([]);
+    expect(matchMeetingsForChannel("random-active", meetings)).toEqual([]);
+  });
+
+  it("refuses a channel and an event that disagree on the word", () => {
+    // #proj-law-to-benchmark gives the single token "benchmark" ("law" and "to" are under the
+    // length floor); "Proj: Law-to-Bench Weekly" gives "bench" and "weekly". No match, and that is
+    // the rule working: the two names are genuinely different, and the fix is to make them agree
+    // rather than to teach the matcher to guess at stems.
+    expect(
+      matchMeetingsForChannel("proj-law-to-benchmark", [
+        { event_id: "p2", summary: "Proj: Law-to-Bench Weekly" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("matchThemedMeetings stays scoped to its own family", () => {
+    expect(matchThemedMeetings("proj-law-to-benchmark", meetings)).toEqual([]);
   });
 });

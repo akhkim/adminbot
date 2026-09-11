@@ -295,7 +295,7 @@ import {
 } from "../workflows/members/research-themes.js";
 import {
   type AdminBotThemedMeeting,
-  matchThemedMeetings,
+  matchMeetingsForChannel,
   matchTopicChannels,
   topicOfChannel,
   type AdminBotTopicChannelPrefix,
@@ -10232,7 +10232,10 @@ export class AdminBotService {
     const skipped: AdminBotMemberNudgeSkip[] = [];
 
     for (const row of params.channels) {
-      const meetings = matchThemedMeetings(row.channel, params.meetings);
+      // Whichever family the channel is from: #meeting-xxx against a "Theme:" event, #proj-xxx
+      // against a "Proj:" one. One sweep covers both because the decision is identical either way
+      // -- the channel is the lab's own statement of who is on this work.
+      const meetings = matchMeetingsForChannel(row.channel, params.meetings);
       if (meetings.length === 0) {
         continue;
       }
