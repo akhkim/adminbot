@@ -438,6 +438,10 @@ export class AdminBotAuthService {
           source: "login_ip",
           raw: location.country,
           observedAt: this.now().toISOString(),
+          // The zone IPinfo returned for this IP, used only to stamp the collection time in local
+          // wall-clock -- it is never written to the entry's `timezone`, which stays reserved for a
+          // stated zone. Absent on the Lite tier, which leaves `observed_at_local` unset.
+          zone: location.timezone,
         });
         const latest = latestBySource(this.store.listMemberLocations(memberId, 20)).get("login_ip");
         if (entry && isNewObservation(latest, entry)) {

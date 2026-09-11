@@ -31,7 +31,11 @@ function setup(
       lastName: string;
       email: string;
     }) => Promise<void>;
-    geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+    geolocateIp?: (
+      ip: string,
+    ) => Promise<
+      { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    >;
     sendPasswordResetEmail?: (params: {
       email: string;
       name?: string;
@@ -470,6 +474,32 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_country).toBe("Switzerland");
     expect(updated?.last_login_continent).toBe("Europe");
     expect(updated?.last_login_at).toBeTruthy();
+  });
+
+  it("stamps the login observation's collection time in the zone the IP resolved to", async () => {
+    // The zone IPinfo returns is used only to render the collection instant in local wall-clock --
+    // it must never land in the entry's `timezone`, which stays reserved for a stated zone.
+    const geolocateIp = vi.fn(async () => ({
+      country: "Canada",
+      continent: "North America",
+      timezone: "America/Toronto",
+    }));
+    const { store, auth } = setup({
+      geolocateIp,
+      now: () => new Date("2026-08-12T03:30:00.000Z"),
+    });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const [observation] = store.listMemberLocations("ada", 5);
+    expect(observation?.source).toBe("login_ip");
+    expect(observation?.observed_at).toBe("2026-08-12T03:30:00.000Z");
+    // 03:30 UTC is 23:30 the evening before in Toronto -- the local day a residency count needs.
+    expect(observation?.observed_at_local).toBe("2026-08-11T23:30:00-04:00");
+    expect(observation?.timezone).toBeUndefined();
   });
 
   it("samples the account's location on session use, and only when the address changed", async () => {

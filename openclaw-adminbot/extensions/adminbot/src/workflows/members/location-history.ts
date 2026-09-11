@@ -50,11 +50,22 @@ export function observationFor(params: {
   raw: string;
   observedAt: string;
   timezone?: string;
+  /**
+   * The IANA zone to render `observed_at` into for `observed_at_local`, when the source knows one.
+   *
+   * Separate from `timezone`, which is the *claim* stored on the entry and only for the sources
+   * allowed to make it. `zone` makes no claim -- it is only the clock used to tell the collection
+   * instant in local time, so an IP lookup may pass the zone IPinfo returned without that zone ever
+   * becoming a stated fact about the member. Omitted, or unparseable, leaves `observed_at_local`
+   * unset rather than guessing an offset.
+   */
+  zone?: string;
 }): AdminBotMemberLocationEntry | undefined {
   const raw = params.raw.trim();
   if (!raw) {
     return undefined;
   }
+  const observedAtLocal = params.zone ? renderInZone(params.observedAt, params.zone) : undefined;
   // A zone is never resolved to a place, and the reason is that it *would* resolve. An IANA name
   // carries a city ("Europe/Amsterdam"), so the gazetteer happily answers "Netherlands" -- for a
   // string that only ever meant "this laptop is set to CET". Half of Europe shares that zone, and
@@ -84,7 +95,53 @@ export function observationFor(params: {
     ...(params.timezone && (params.source === "self_reported" || params.source === "slack_timezone")
       ? { timezone: params.timezone }
       : {}),
+    ...(observedAtLocal ? { observed_at_local: observedAtLocal } : {}),
   };
+}
+
+/**
+ * A UTC instant told in `zone`, as an offset-bearing ISO string, or undefined if either is bad.
+ *
+ * The offset is read from the zone at that instant rather than assumed, so a summer sign-in in
+ * Toronto renders `-04:00` and a winter one `-05:00` -- DST is exactly the error a fixed offset
+ * would introduce, and residency days are counted across whole years. `longOffset` gives the
+ * bracketed offset ("GMT-04:00"); "GMT" alone is UTC and becomes `+00:00`.
+ *
+ * Returns undefined on an unparseable instant or an unknown zone (Intl throws a RangeError on the
+ * latter) so a bad input drops the field rather than fabricating a time -- see the field note on
+ * `observed_at_local` for why an invented offset is worse than an absent one.
+ */
+export function renderInZone(instantIso: string, zone: string): string | undefined {
+  const instant = new Date(instantIso);
+  if (Number.isNaN(instant.getTime())) {
+    return undefined;
+  }
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "longOffset",
+    }).formatToParts(instant);
+  } catch {
+    return undefined;
+  }
+  const at = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const gmt = at("timeZoneName") ?? "GMT";
+  // "GMT-04:00" -> "-04:00"; a bare "GMT" is UTC. A zone Intl accepts but cannot offset would leave
+  // this without a numeric tail, which is not a rendering we should store.
+  const offset = gmt === "GMT" ? "+00:00" : gmt.replace(/^GMT/u, "");
+  if (!/^[+-]\d{2}:\d{2}$/u.test(offset)) {
+    return undefined;
+  }
+  return `${at("year")}-${at("month")}-${at("day")}T${at("hour")}:${at("minute")}:${at("second")}${offset}`;
 }
 
 /**

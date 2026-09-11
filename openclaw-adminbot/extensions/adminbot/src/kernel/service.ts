@@ -6508,6 +6508,8 @@ export class AdminBotService {
     source: AdminBotLocationSource;
     raw: string;
     timezone?: string;
+    /** The zone to stamp the collection time in local wall-clock; see `observationFor`'s note. */
+    zone?: string;
   }): AdminBotServiceResponse<{ recorded: boolean; entry?: AdminBotMemberLocationEntry }> {
     const entry = observationFor({
       memberId: params.memberId,
@@ -6515,6 +6517,7 @@ export class AdminBotService {
       raw: params.raw,
       observedAt: new Date().toISOString(),
       ...(params.timezone ? { timezone: params.timezone } : {}),
+      ...(params.zone ? { zone: params.zone } : {}),
     });
     if (!entry) {
       return { ok: true, status: 200, payload: { recorded: false } };
@@ -7504,6 +7507,10 @@ export class AdminBotService {
           memberId: stored.id,
           source: "slack_profile",
           raw: stored.slack_location,
+          // A Slack profile string names a place, not a zone, so there is usually nothing to render
+          // the collection time in; the member's own stated zone is used when they have set one, and
+          // otherwise the local stamp is left off rather than guessed from the place text.
+          ...(stored.timezone ? { zone: stored.timezone } : {}),
         });
       }
       updated += 1;
@@ -7615,6 +7622,9 @@ export class AdminBotService {
             source: "slack_timezone",
             raw: next,
             timezone: next,
+            // The Slack `tz` is itself the IANA zone, so the collection instant is stamped in the
+            // very clock this observation is about.
+            zone: next,
           });
         }
       }

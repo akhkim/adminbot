@@ -2462,6 +2462,22 @@ export type AdminBotMemberLocationEntry = {
    * not the same claim, and countries with several zones would make it a guess presented as fact.
    */
   timezone?: string;
+  /**
+   * The same instant as `observed_at`, rendered in the local wall-clock of wherever the
+   * observation came from, offset included (`2026-08-11T23:30:00-04:00`).
+   *
+   * `observed_at` is UTC, which is the right key for ordering and dedup but the wrong one for the
+   * one question this data is kept to answer: a residency day is a *local* calendar day. A sign-in
+   * at 23:30 in Toronto is one Canada day; recorded only as `...T03:30:00Z` it lands on the next
+   * UTC date and would be miscounted at every month boundary. This field is that instant told in
+   * the zone that owns the day, so the count is done against the clock the border uses.
+   *
+   * A rendering, not a second claim: it carries a numeric offset, never a zone name, so it says
+   * nothing `timezone` does not and cannot be mistaken for a self-reported zone. Absent whenever
+   * the collecting source had no zone to render it in -- an offset invented from a country would
+   * be the exact guess the `timezone` note above refuses.
+   */
+  observed_at_local?: string;
 };
 
 /** What the member is being asked to confirm, and the evidence for asking. */

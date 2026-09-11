@@ -7,6 +7,7 @@ import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers
 import {
   renderMyWork,
   resetMyWorkViewModeForTest,
+  resetPaperSheetChoice,
   type MyWorkProps,
   ownPapers,
 } from "./my-work.ts";
@@ -71,6 +72,8 @@ type DrawOptions = {
   notice?: string | null;
   error?: string | null;
   personal?: boolean;
+  /** Omitted by default, so a plain member is what every other test in this file draws as. */
+  viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
 };
@@ -136,6 +139,7 @@ function draw(options: DrawOptions = {}) {
     onNudgeAuthors: () => nudges.push(1),
     memberId: "ada",
     personal: options.personal ?? false,
+    viewerIsAdmin: options.viewerIsAdmin ?? false,
     memberName: (id: string) => id,
     onSaveDraft: () => {},
     onCirculateDraft: () => {},
@@ -1323,21 +1327,98 @@ describe("editing a project's own details", () => {
 // The sheet is the page, not a column in it. `.my-work` caps itself at a readable measure for the
 // card list; a sixty-column table wants the window, and the cap was leaving a third of it empty.
 describe("the sheet's width", () => {
+  // The surface is module state that outlives a render, so it is cleared rather than left for the
+  // next test in this file to inherit.
+  afterEach(() => resetPaperSheetChoice());
+
   it("drops the reading-measure cap the card list keeps", () => {
     const papers = [paper(), paper({ id: "p2" }), paper({ id: "p3" })];
     const first = draw({ papers });
-    // The sheet is opt-in: the cards are still the surface until somebody asks for it.
+    // Three papers and a plain member: still opt-in, so the press is what opens it.
     first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!.click();
     const { container } = draw({ papers });
     expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(true);
-    // And back out again, so the next test in this file does not inherit an open sheet.
-    container.querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")?.click();
   });
 
   it("keeps the cap on the card list", () => {
     const { container } = draw({ papers: [paper()] });
     const cards = container.querySelector(".my-work");
     expect(cards?.classList.contains("my-work--sheet")).toBe(false);
+  });
+});
+
+// Which surface the page opens on. The sheet stopped being purely opt-in: an administrator gets it
+// as soon as it exists, and so does anybody carrying five papers, because at that size the visit is
+// a sweep across every row rather than a read of one card. Nobody loses the other surface -- the
+// button and "Back to cards" are the same two presses they always were.
+describe("the surface the page opens on", () => {
+  afterEach(() => resetPaperSheetChoice());
+
+  const papers = (count: number) =>
+    Array.from({ length: count }, (_unused, index) => paper({ id: `p${index + 1}` }));
+  const onSheet = (container: HTMLElement) =>
+    container.querySelector(".my-work")?.classList.contains("my-work--sheet") ?? false;
+
+  it("opens a member on the cards below five papers, and still offers the sheet", () => {
+    const { container } = draw({ papers: papers(4) });
+    expect(onSheet(container)).toBe(false);
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).not.toBeNull();
+  });
+
+  it("opens a member on the sheet at five papers", () => {
+    const { container } = draw({ papers: papers(5) });
+    expect(onSheet(container)).toBe(true);
+  });
+
+  it("opens an admin on the sheet as soon as it is offered at all", () => {
+    const { container } = draw({ papers: papers(3), viewerIsAdmin: true });
+    expect(onSheet(container)).toBe(true);
+  });
+
+  // Two papers is below the offer threshold, and the default cannot reach past it: a sheet of two
+  // rows is worse than two cards for an administrator too.
+  it("leaves an admin on the cards when the sheet is not offered", () => {
+    const { container } = draw({ papers: papers(2), viewerIsAdmin: true });
+    expect(onSheet(container)).toBe(false);
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).toBeNull();
+  });
+
+  // A decision waiting for an answer is addressed to the reader, and the sheet is now where the
+  // reader lands. Losing the prompt behind a press would be the one real cost of opening here.
+  it("carries a waiting venue decision onto the sheet", () => {
+    const decided = {
+      id: "p1",
+      title: "A decided paper",
+      authors: ["Ada Lovelace"],
+      current_step: "submission",
+      // The page reads the member's own papers out of state, so the fixture has to be one.
+      submitted_by_member_id: "ada",
+      venue_decision: "accept",
+      accepted_venue: "EMNLP 2026",
+    } as never;
+    const { container } = draw({
+      papers: [decided, ...papers(5).slice(1)],
+      personal: true,
+    });
+    expect(onSheet(container)).toBe(true);
+    expect(container.querySelector('[data-testid="decision-banner-p1"]')).not.toBeNull();
+  });
+
+  // The whole reason the choice is remembered: a default that reasserted itself on the next render
+  // would make "Back to cards" a button that does nothing.
+  it("keeps the cards once the reader asks for them, and reopens on request", () => {
+    const list = papers(6);
+    const first = draw({ papers: list });
+    expect(onSheet(first.container)).toBe(true);
+    first.container
+      .querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
+      .click();
+
+    const second = draw({ papers: list });
+    expect(onSheet(second.container)).toBe(false);
+    second.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!.click();
+
+    expect(onSheet(draw({ papers: list }).container)).toBe(true);
   });
 });
 

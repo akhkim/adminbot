@@ -5413,6 +5413,9 @@ describe("AdminBotService", () => {
       // Stored as a zone, under a source that says where it came from -- never as a country.
       expect(afterMove[0]?.timezone).toBe("Europe/Amsterdam");
       expect(afterMove[0]?.country).toBeUndefined();
+      // The Slack zone is itself the clock, so the collection instant is stamped in it: a local
+      // stamp that ends in the observed zone's offset, not a bare UTC Z.
+      expect(afterMove[0]?.observed_at_local).toMatch(/[+-]\d{2}:\d{2}$/u);
 
       // A daily sync of somebody who has not moved must append nothing.
       unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
