@@ -39,15 +39,34 @@ const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
 
 export type DeadlineBoardEntry = { venue: DeadlineVenue; instant: number };
 type DeadlineGroupKind = "archival" | "nonArchival" | "mixed" | "unknown" | "other";
+/**
+ * One dated row of a conference's timeline: either a submission the board counts down to, or a
+ * later stage the venue published behind it (decisions, camera-ready, the conference itself).
+ */
+export type DeadlineTimelineItem =
+  | { kind: "entry"; day: string; rank: number; entry: DeadlineBoardEntry }
+  | {
+      kind: "milestone";
+      day: string;
+      rank: number;
+      label: string;
+      milestone: DeadlineMilestone;
+      venue: DeadlineVenue;
+    };
 export type DeadlineBoardGroup = {
   id: string;
   label: string;
   entries: DeadlineBoardEntry[];
   instant: number;
   sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]>;
+  /** A workshop bundle lists its members; a conference lists its whole calendar in order. */
+  kind: "workshops" | "conference";
+  /** Populated for `kind: "conference"` only; empty for a workshop bundle. */
+  timeline: DeadlineTimelineItem[];
   /**
-   * Render as a single card rather than a collapsible group. True for everything that is not a
-   * workshop, and for a workshop group that ended up holding one entry.
+   * Render as a single card rather than a collapsible group. True for a group whose entire
+   * contents are one row: a workshop bundle that attracted one entry, or a conference that
+   * published a lone deadline with no calendar behind it.
    */
   standalone: boolean;
 };
@@ -241,6 +260,87 @@ export function milestoneDateLabel(entry: DeadlineMilestone): string {
     : plainDateLabel(entry.date ?? "");
 }
 
+/** What a timeline row is called, for a stable tie-break between two same-day rows. */
+function timelineLabel(item: DeadlineTimelineItem): string {
+  return item.kind === "entry" ? item.entry.venue.name : item.label;
+}
+
+/**
+ * Disambiguate two stages that share a label but not a date.
+ *
+ * AACL-IJCNLP 2026 wants camera-ready copy on 30 September through the ARR commitment and on
+ * 1 October for the demo track. Each source labels its own row "Camera-ready due", so a merged
+ * timeline would print the same words against two dates with nothing to tell them apart. The
+ * submission the stage hangs off is what actually differs, so it names the row.
+ */
+function qualifyRepeatedMilestones(items: readonly DeadlineTimelineItem[]): DeadlineTimelineItem[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (item.kind === "milestone") {
+      counts.set(item.label, (counts.get(item.label) ?? 0) + 1);
+    }
+  }
+  return items.map((item) =>
+    item.kind === "milestone" && (counts.get(item.label) ?? 0) > 1
+      ? { ...item, label: `${item.label} (${item.venue.deadline_label.trim() || "submission"})` }
+      : item,
+  );
+}
+
+/**
+ * One conference's whole calendar in the order it happens: every submission it takes, plus every
+ * stage its venues published behind them.
+ *
+ * Sorted by date rather than by stage, unlike `venueSchedule`. A single venue's schedule is one
+ * story told in stage order; a conference's is several submissions interleaved with shared
+ * downstream dates, and only the calendar can say whether the demo track closes before or after
+ * the main track's camera-ready. Stage rank survives as the tie-break for a day that carries two
+ * of them, and a submission outranks everything else on its own day because that is the thing
+ * somebody has to act on.
+ *
+ * Deduplicated across the group's venues: ICLR 2027's abstract and full-paper rows carry the same
+ * four downstream dates, and printing them twice would double the length of the panel to say
+ * nothing new. Two rows survive deduplication only when they genuinely differ.
+ */
+export function conferenceTimeline(entries: readonly DeadlineBoardEntry[]): DeadlineTimelineItem[] {
+  const items: DeadlineTimelineItem[] = entries.map((entry) => ({
+    kind: "entry",
+    day: entry.venue.deadline_aoe.slice(0, 10),
+    rank: -1,
+    entry,
+  }));
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    for (const milestone of venueSchedule(entry.venue)) {
+      const key = [
+        milestone.milestone,
+        milestone.label,
+        milestone.date ?? "",
+        milestone.starts ?? "",
+        milestone.ends ?? "",
+      ].join("|");
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      items.push({
+        kind: "milestone",
+        day: milestoneStart(milestone),
+        rank: milestoneRank(milestone.milestone),
+        label: milestone.label,
+        milestone,
+        venue: entry.venue,
+      });
+    }
+  }
+  return qualifyRepeatedMilestones(items).toSorted(
+    (left, right) =>
+      left.day.localeCompare(right.day) ||
+      left.rank - right.rank ||
+      timelineLabel(left).localeCompare(timelineLabel(right)),
+  );
+}
+
 /**
  * The entry the countdown leads with.
  *
@@ -327,23 +427,27 @@ export function workshopGroupLabel(venueGroup: string): string {
 }
 
 /**
- * Bundle workshops by parent conference; leave everything else as its own card.
+ * Bundle every venue_group into one heading: workshops by parent conference, conferences by
+ * themselves.
  *
- * Grouping earned its place for the 140 workshops, where one EMNLP heading replaces ten near
- * identical rows. It never earned it for conferences: ICLR 2027's abstract and full-paper
- * deadlines are two dates a person plans around separately, and folding them behind one collapsed
- * heading hid the abstract deadline entirely. A group of one is likewise just a card wearing a
- * disclosure triangle, so it is flattened back into one.
+ * Grouping earned its place for the 140 workshops first, where one EMNLP heading replaces ten
+ * near identical rows. Conferences were left flat for a while because folding ICLR 2027's
+ * abstract and full-paper deadlines behind a collapsed heading hid the abstract deadline
+ * entirely — but that was a fault in the summary, not in the grouping. A conference group now
+ * names its next stage on the collapsed row and lists its whole calendar when opened, which is
+ * the only place the board has ever been able to show camera-ready and conference dates beside
+ * the submissions they belong to.
  *
- * `standalone` carries that decision to the renderer rather than the renderer re-deriving it, so
- * the flat list and the grouped list cannot disagree about what counts as a group.
+ * `standalone` carries the "this is really just a card" decision to the renderer rather than the
+ * renderer re-deriving it, so the flat list and the grouped list cannot disagree about what counts
+ * as a group.
  */
 export function groupDeadlineBoardEntries(
   entries: readonly DeadlineBoardEntry[],
 ): DeadlineBoardGroup[] {
   const groups = new Map<string, DeadlineBoardGroup>();
-  // One ordered list, appended to as each group or card is first seen. Sorting the result by
-  // instant instead would silently reverse the "Past" view, which arrives newest-first.
+  // One ordered list, appended to as each group is first seen. Sorting the result by instant
+  // instead would silently reverse the "Past" view, which arrives newest-first.
   const ordered: DeadlineBoardGroup[] = [];
   for (const entry of entries) {
     const id = entry.venue.venue_group.trim();
@@ -357,54 +461,45 @@ export function groupDeadlineBoardEntries(
             : entry.venue.archival_status === "mixed"
               ? "mixed"
               : "unknown";
-    const makeSections = (): Record<DeadlineGroupKind, DeadlineBoardEntry[]> => {
-      const sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]> = {
-        archival: [],
-        nonArchival: [],
-        mixed: [],
-        unknown: [],
-        other: [],
-      };
-      sections[kind].push(entry);
-      return sections;
-    };
-
-    // Anything that is not a workshop is its own card, keyed by venue id so two entries from the
-    // same conference (ICLR's abstract and full paper) can never collide into one heading.
-    if (entry.venue.entry_type !== "workshop") {
-      ordered.push({
-        id: `${id}::${entry.venue.id}::${entry.instant}`,
-        label: id,
-        entries: [entry],
-        instant: entry.instant,
-        sections: makeSections(),
-        standalone: true,
-      });
-      continue;
-    }
-
-    const current = groups.get(id);
+    // Workshops and conferences never share a heading. "EMNLP 2026" and "EMNLP 2026 Workshops"
+    // are already distinct venue_groups, but keying on the axis too keeps one mislabelled row
+    // from dropping a workshop into a conference timeline.
+    const axis = entry.venue.entry_type === "workshop" ? "workshops" : "conference";
+    const key = `${axis}::${id}`;
+    const current = groups.get(key);
     if (current) {
       current.entries.push(entry);
       current.sections[kind].push(entry);
-    } else {
-      const created: DeadlineBoardGroup = {
-        id,
-        label: workshopGroupLabel(id),
-        entries: [entry],
-        instant: entry.instant,
-        sections: makeSections(),
-        standalone: false,
-      };
-      groups.set(id, created);
-      ordered.push(created);
+      continue;
     }
+    const sections: Record<DeadlineGroupKind, DeadlineBoardEntry[]> = {
+      archival: [],
+      nonArchival: [],
+      mixed: [],
+      unknown: [],
+      other: [],
+    };
+    sections[kind].push(entry);
+    const created: DeadlineBoardGroup = {
+      id: key,
+      label: workshopGroupLabel(id),
+      entries: [entry],
+      instant: entry.instant,
+      sections,
+      kind: axis,
+      timeline: [],
+      standalone: false,
+    };
+    groups.set(key, created);
+    ordered.push(created);
   }
-  // A workshop group that attracted only one entry is a card, not a group.
-  for (const group of groups.values()) {
-    if (group.entries.length === 1) {
-      group.standalone = true;
+  for (const group of ordered) {
+    if (group.kind === "conference") {
+      group.timeline = conferenceTimeline(group.entries);
     }
+    // A group whose whole contents are one row is a card, not a group: nothing to disclose.
+    group.standalone =
+      group.kind === "conference" ? group.timeline.length === 1 : group.entries.length === 1;
   }
   return ordered;
 }
@@ -582,8 +677,23 @@ function capitalize(value: string): string {
   return value ? `${value[0].toLocaleUpperCase()}${value.slice(1)}` : "Deadline";
 }
 
-function groupRowTitle(venue: DeadlineVenue, conference: string) {
+/**
+ * What one row calls itself under a group heading.
+ *
+ * Under a conference the row is a stage of that conference, so the stage is the whole name:
+ * "EMNLP 2026 (main, ARR commitment)" repeats the heading back at the reader where "Commitment"
+ * says the one thing that distinguishes it from the rows above and below. Under a workshop
+ * bundle the row is a separate venue, so its own name survives with the parent trimmed off.
+ */
+function groupRowTitle(
+  venue: DeadlineVenue,
+  conference: string,
+  groupKind: DeadlineBoardGroup["kind"] = "workshops",
+) {
   const stage = capitalize(venue.deadline_label);
+  if (groupKind === "conference") {
+    return { name: stage, stage: "" };
+  }
   const titleContext = venue.venue_group.trim().replace(/\s+workshops$/iu, "") || conference;
   let name = venue.name.trim();
   for (const affix of [` (${titleContext})`, ` [${titleContext}]`]) {
@@ -1754,12 +1864,20 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderGroupRow(entry: DeadlineBoardEntry, conference: string) {
+  private renderGroupRow(
+    entry: DeadlineBoardEntry,
+    conference: string,
+    groupKind: DeadlineBoardGroup["kind"] = "workshops",
+  ) {
     const { venue, instant } = entry;
-    const title = groupRowTitle(venue, conference);
+    const title = groupRowTitle(venue, conference, groupKind);
     const change = deadlineChangeSummary(venue);
     const details = [
-      venue.notification_aoe ? `Accept/reject ${aoeDateLabel(venue.notification_aoe)} AoE` : "",
+      // A conference timeline already carries the decision date as its own row, a few lines
+      // below. Repeating it here would print the same date twice in one panel.
+      venue.notification_aoe && groupKind !== "conference"
+        ? `Accept/reject ${aoeDateLabel(venue.notification_aoe)} AoE`
+        : "",
       venue.stale ? "Source not observed in the latest sweep" : "",
     ]
       .filter(Boolean)
@@ -1785,7 +1903,9 @@ class AdminbotDeadlinesView extends LitElement {
           ${this.renderHistory(venue, "group")}
         </span>
         <div class="deadline-group__row-main">
-          <h3 class="deadline-group__row-name">${renderDeadlineTitle(venue, title.name)}</h3>
+          <h3 class="deadline-group__row-name" title=${venue.name}>
+            ${renderDeadlineTitle(venue, title.name)}
+          </h3>
           <p class="deadline-group__row-note">
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels">
@@ -1817,6 +1937,44 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
+  /**
+   * A stage the venue acts on rather than one the lab submits to.
+   *
+   * Shares the row grid with the submissions above and below it so the dates line up in one
+   * column, but leaves the countdown cell empty: nothing is due, and a ticking clock against
+   * "Main conference" would read as a deadline. There is no source button either — the link
+   * belongs to the submission the stage hangs off, which is already on this panel.
+   */
+  private renderTimelineMilestone(item: Extract<DeadlineTimelineItem, { kind: "milestone" }>) {
+    return html`
+      <div
+        class="deadline-group__row deadline-group__row--milestone"
+        data-milestone=${item.milestone.milestone}
+      >
+        <span class="deadline-group__row-countdown" aria-hidden="true"></span>
+        <span class="deadline-group__row-date-wrap">
+          <span class="deadline-group__row-date">${milestoneDateLabel(item.milestone)}</span>
+        </span>
+        <div class="deadline-group__row-main">
+          <p class="deadline-group__row-name">${item.label}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /** The conference's whole calendar, submissions and published stages in one order. */
+  private renderConferenceTimeline(group: DeadlineBoardGroup) {
+    return html`
+      <section class="deadline-group__section" data-testid="deadline-conference-timeline">
+        ${group.timeline.map((item) =>
+          item.kind === "entry"
+            ? this.renderGroupRow(item.entry, group.label, "conference")
+            : this.renderTimelineMilestone(item),
+        )}
+      </section>
+    `;
+  }
+
   private renderGroups(entries: readonly DeadlineBoardEntry[]) {
     return html`<div class="deadline-board__group-list">
       ${groupDeadlineBoardEntries(entries).map((group, index) => {
@@ -1831,25 +1989,38 @@ class AdminbotDeadlinesView extends LitElement {
             data-urgency=${urgency(solo, this.now)}
             data-period=${this.period}
           >
+            <!-- Full venue name, not the stage: a standalone row carries no group heading
+                 above it, so it is the only place the venue gets named. -->
             ${this.renderGroupRow(solo, group.label)}
           </section>`;
         }
         const open = this.expandedGroups.has(group.id);
         const panelId = `deadline-group-panel-${index}`;
-        const counts = [
-          group.sections.archival.length ? `${group.sections.archival.length} archival` : "",
-          group.sections.nonArchival.length
-            ? `${group.sections.nonArchival.length} non-archival`
-            : "",
-          group.sections.mixed.length
-            ? `${group.sections.mixed.length} archival + non-archival`
-            : "",
-          group.sections.unknown.length ? `${group.sections.unknown.length} unknown` : "",
-          group.sections.other.length ? `${group.sections.other.length} other` : "",
-        ].filter(Boolean);
+        // A conference counts its own calendar. Splitting one venue's rows by archival status
+        // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
+        // reader what is behind the triangle before they open it.
+        const laterDates = group.timeline.length - group.entries.length;
+        const counts =
+          group.kind === "conference"
+            ? [
+                `${group.entries.length} deadline${group.entries.length === 1 ? "" : "s"}`,
+                laterDates > 0 ? `${laterDates} more date${laterDates === 1 ? "" : "s"}` : "",
+              ].filter(Boolean)
+            : [
+                group.sections.archival.length ? `${group.sections.archival.length} archival` : "",
+                group.sections.nonArchival.length
+                  ? `${group.sections.nonArchival.length} non-archival`
+                  : "",
+                group.sections.mixed.length
+                  ? `${group.sections.mixed.length} archival + non-archival`
+                  : "",
+                group.sections.unknown.length ? `${group.sections.unknown.length} unknown` : "",
+                group.sections.other.length ? `${group.sections.other.length} other` : "",
+              ].filter(Boolean);
         return html`
           <section
             class="deadline-group"
+            data-group-kind=${group.kind}
             data-count=${group.entries.length}
             data-urgency=${urgency(group.entries[0], this.now)}
             data-period=${this.period}
@@ -1870,24 +2041,38 @@ class AdminbotDeadlinesView extends LitElement {
               >
               <span class="deadline-group__heading">
                 <strong>${group.label}</strong>
-                <small>${renderAoeDateTime(group.entries[0].venue.deadline_aoe)}</small>
+                <small>
+                  ${group.kind === "conference"
+                    ? html`<span class="deadline-group__next-stage"
+                          >${capitalize(group.entries[0].venue.deadline_label)}</span
+                        ><span aria-hidden="true"> · </span>`
+                    : nothing}${renderAoeDateTime(group.entries[0].venue.deadline_aoe)}
+                </small>
               </span>
               <span class="deadline-group__count">${counts.join(" · ")}</span>
             </button>
             <div class="deadline-group__panel" id=${panelId} ?hidden=${!open}>
-              ${this.renderGroupSection("Archival", group.sections.archival, group.label)}
-              ${this.renderGroupSection("Non-archival", group.sections.nonArchival, group.label)}
-              ${this.renderGroupSection(
-                "Archival + non-archival",
-                group.sections.mixed,
-                group.label,
-              )}
-              ${this.renderGroupSection(
-                "Archival status unknown",
-                group.sections.unknown,
-                group.label,
-              )}
-              ${this.renderGroupSection("Other dates", group.sections.other, group.label)}
+              ${group.kind === "conference"
+                ? this.renderConferenceTimeline(group)
+                : html`
+                    ${this.renderGroupSection("Archival", group.sections.archival, group.label)}
+                    ${this.renderGroupSection(
+                      "Non-archival",
+                      group.sections.nonArchival,
+                      group.label,
+                    )}
+                    ${this.renderGroupSection(
+                      "Archival + non-archival",
+                      group.sections.mixed,
+                      group.label,
+                    )}
+                    ${this.renderGroupSection(
+                      "Archival status unknown",
+                      group.sections.unknown,
+                      group.label,
+                    )}
+                    ${this.renderGroupSection("Other dates", group.sections.other, group.label)}
+                  `}
             </div>
           </section>
         `;

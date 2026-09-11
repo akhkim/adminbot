@@ -625,6 +625,11 @@ const TEMPLATE = `<meta charset="utf-8" />
     border-radius: 999px;
     white-space: nowrap;
   }
+  /* Which stage the collapsed row counts down to, so folding a conference cannot hide it. */
+  .deadline-group__next-stage {
+    color: var(--ink);
+    font-weight: 600;
+  }
   .deadline-group__panel {
     border-top: 1px solid var(--border);
   }
@@ -663,6 +668,22 @@ const TEMPLATE = `<meta charset="utf-8" />
   }
   .deadline-group__row[data-entry-type="workshop"] {
     background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+  }
+  /* A stage the venue acts on, not one the lab submits to: same grid, quieter ink, no countdown
+     and no source button. The empty countdown cell keeps the date column aligned with the
+     submissions it sits between. */
+  .deadline-group__row--milestone {
+    background: color-mix(in srgb, var(--surface) 88%, var(--muted));
+  }
+  .deadline-group__row--milestone .deadline-group__row-name {
+    color: var(--muted);
+    font-weight: 500;
+  }
+  /* A conference span ("Apr 26 – Apr 30, 2027") is longer than any AoE cutoff and must wrap
+     rather than push the name column off the row. */
+  .deadline-group__row--milestone .deadline-group__row-date {
+    color: var(--muted);
+    white-space: normal;
   }
   .deadline-group__row-main {
     grid-area: main;
@@ -1488,25 +1509,89 @@ const TEMPLATE = `<meta charset="utf-8" />
               : entry.archival_status === "mixed"
                 ? "mixed"
                 : "unknown";
-      const current = groups.get(id);
+      // Workshops and conferences never share a heading, so one mislabelled row cannot drop a
+      // workshop into a conference timeline.
+      const axis = entry.entry_type === "workshop" ? "workshops" : "conference";
+      const key = axis + "::" + id;
+      const current = groups.get(key);
       if (current) {
         current.entries.push(entry);
         current.sections[kind].push(entry);
       } else {
         const sections = { archival: [], nonArchival: [], mixed: [], unknown: [], other: [] };
         sections[kind].push(entry);
-        groups.set(id, {
-          id,
+        groups.set(key, {
+          id: key,
           label: workshopGroupLabel(id),
+          kind: axis,
           entries: [entry],
           sections,
+          timeline: [],
         });
       }
     });
-    return [...groups.values()];
+    const ordered = [...groups.values()];
+    ordered.forEach((group) => {
+      if (group.kind === "conference") group.timeline = conferenceTimeline(group.entries);
+    });
+    return ordered;
   }
-  function groupRowTitle(entry, conference) {
+  // Same timeline the Control UI builds (conferenceTimeline in ui/.../views/deadlines.ts): one
+  // conference's whole calendar in the order it happens, submissions interleaved with the stages
+  // published behind them. Sorted by date rather than by stage, unlike venueSchedule -- only the
+  // calendar can say whether the demo track closes before or after the main track's camera-ready
+  // -- with stage rank as the tie-break and a submission outranking everything on its own day.
+  // Deduplicated across the group's venues: ICLR's abstract and full-paper rows carry the same
+  // four downstream dates, and printing both would double the panel to say nothing new.
+  function conferenceTimeline(entries) {
+    const items = entries.map((entry) => ({
+      kind: "entry",
+      day: String(entry.deadline_aoe || "").slice(0, 10),
+      rank: -1,
+      label: entry.name,
+      entry,
+    }));
+    const seen = new Set();
+    entries.forEach((entry) => {
+      venueSchedule(entry).forEach((m) => {
+        const key = [m.milestone, m.label, m.date || "", m.starts || "", m.ends || ""].join("|");
+        if (seen.has(key)) return;
+        seen.add(key);
+        items.push({
+          kind: "milestone",
+          day: String(m.starts || m.date || m.ends || ""),
+          rank: milestoneRank(m.milestone),
+          label: m.label,
+          milestone: m,
+          entry,
+        });
+      });
+    });
+    // AACL-IJCNLP 2026 wants camera-ready copy a day apart for its demo track and its ARR
+    // commitment, and each source calls its own row "Camera-ready due". The submission the stage
+    // hangs off is what differs, so it names the row.
+    const counts = new Map();
+    items.forEach((item) => {
+      if (item.kind === "milestone") counts.set(item.label, (counts.get(item.label) || 0) + 1);
+    });
+    items.forEach((item) => {
+      if (item.kind === "milestone" && counts.get(item.label) > 1) {
+        item.label = item.label + " (" + (String(item.entry.deadline_label).trim() || "submission") + ")";
+      }
+    });
+    return items.sort(
+      (a, b) =>
+        String(a.day).localeCompare(String(b.day)) ||
+        a.rank - b.rank ||
+        String(a.label).localeCompare(String(b.label)),
+    );
+  }
+  // Under a conference the row is a stage of that conference, so the stage is the whole name:
+  // "EMNLP 2026 (main, ARR commitment)" repeats the heading back at the reader where "Commitment"
+  // says the one thing that distinguishes it from the rows above and below.
+  function groupRowTitle(entry, conference, groupKind) {
     const stage = cap(entry.deadline_label);
+    if (groupKind === "conference") return { name: stage, stage: "" };
     const titleContext = entry.venue_group.trim().replace(/\\s+workshops$/iu, "") || conference;
     let name = entry.name.trim();
     [\` (\${titleContext})\`, \` [\${titleContext}]\`].forEach((affix) => {
@@ -1522,34 +1607,55 @@ const TEMPLATE = `<meta charset="utf-8" />
       name = name.replace(/\\s*(?:\\(ARR commitment\\)|[-—–:]?\\s*ARR commitment)$/iu, "").trim();
     return { name: name || entry.name, stage };
   }
-  function renderGroupSection(label, entries, group, now) {
-    if (!entries.length) return "";
-    const rows = entries
-      .map((x) => {
-        const rowUrgency =
-          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
-        const p = parts(x._sub - now);
-        const title = groupRowTitle(x, group.label);
-        const call = titleUrl(x);
-        const linkedTitle = call
-          ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
-          : esc(title.name);
-        const actions = sourceLinks(x);
-        const detail = [
-          x._notif ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
-          deadlineChangeText(x),
-          x.stale ? "Source not observed in the latest sweep" : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        const note = [title.stage, detail].filter(Boolean).join(" · ");
-        return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
+  function renderGroupRow(x, group, now, groupKind) {
+    const rowUrgency =
+      period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
+    const p = parts(x._sub - now);
+    const title = groupRowTitle(x, group.label, groupKind);
+    const call = titleUrl(x);
+    const linkedTitle = call
+      ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(title.name)}</a>\`
+      : esc(title.name);
+    const actions = sourceLinks(x);
+    const detail = [
+      // A conference timeline carries the decision date as its own row a few lines below;
+      // repeating it here would print the same date twice in one panel.
+      x._notif && groupKind !== "conference" ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
+      deadlineChangeText(x),
+      x.stale ? "Source not observed in the latest sweep" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const note = [title.stage, detail].filter(Boolean).join(" · ");
+    return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
           <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
-          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
+          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
-      })
+  }
+  // A stage the venue acts on rather than one the lab submits to. Shares the row grid so the
+  // dates line up in one column, but the countdown cell stays empty: nothing is due, and a
+  // ticking clock against "Main conference" would read as a deadline.
+  function renderTimelineMilestone(item) {
+    return \`<div class="deadline-group__row deadline-group__row--milestone" data-milestone="\${esc(item.milestone.milestone)}" style="--u:var(--muted)">
+          <span class="deadline-group__row-countdown" aria-hidden="true"></span>
+          <time class="deadline-group__row-date">\${esc(milestoneDate(item.milestone))}</time>
+          <div class="deadline-group__row-main"><p class="deadline-group__row-name">\${esc(item.label)}</p></div>
+        </div>\`;
+  }
+  function renderConferenceTimeline(group, now) {
+    const rows = group.timeline
+      .map((item) =>
+        item.kind === "entry"
+          ? renderGroupRow(item.entry, group, now, "conference")
+          : renderTimelineMilestone(item),
+      )
       .join("");
+    return \`<section class="deadline-group__section" data-testid="deadline-conference-timeline">\${rows}</section>\`;
+  }
+  function renderGroupSection(label, entries, group, now) {
+    if (!entries.length) return "";
+    const rows = entries.map((x) => renderGroupRow(x, group, now, group.kind)).join("");
     return \`<section class="deadline-group__section"><p class="deadline-group__section-head"><strong>\${label}</strong><span>\${entries.length}</span></p>\${rows}</section>\`;
   }
   function renderGroups(list, now) {
@@ -1563,30 +1669,44 @@ const TEMPLATE = `<meta charset="utf-8" />
         const firstParts = parts(first._sub - now);
         const open = expandedGroups.has(group.id);
         const panelId = \`deadline-group-panel-\${index}\`;
-        const counts = [
-          group.sections.archival.length ? \`\${group.sections.archival.length} archival\` : "",
-          group.sections.nonArchival.length
-            ? \`\${group.sections.nonArchival.length} non-archival\`
-            : "",
-          group.sections.mixed.length
-            ? \`\${group.sections.mixed.length} archival + non-archival\`
-            : "",
-          group.sections.unknown.length ? \`\${group.sections.unknown.length} unknown\` : "",
-          group.sections.other.length ? \`\${group.sections.other.length} other\` : "",
-        ]
+        const conference = group.kind === "conference";
+        // A conference counts its own calendar. Splitting one venue's rows by archival status
+        // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
+        // reader what is behind the triangle before they open it.
+        const laterDates = group.timeline.length - group.entries.length;
+        const counts = (
+          conference
+            ? [
+                \`\${group.entries.length} deadline\${group.entries.length === 1 ? "" : "s"}\`,
+                laterDates > 0 ? \`\${laterDates} more date\${laterDates === 1 ? "" : "s"}\` : "",
+              ]
+            : [
+                group.sections.archival.length ? \`\${group.sections.archival.length} archival\` : "",
+                group.sections.nonArchival.length
+                  ? \`\${group.sections.nonArchival.length} non-archival\`
+                  : "",
+                group.sections.mixed.length
+                  ? \`\${group.sections.mixed.length} archival + non-archival\`
+                  : "",
+                group.sections.unknown.length ? \`\${group.sections.unknown.length} unknown\` : "",
+                group.sections.other.length ? \`\${group.sections.other.length} other\` : "",
+              ]
+        )
           .filter(Boolean)
           .join(" · ");
-        const panel = [
-          renderGroupSection("Archival", group.sections.archival, group, now),
-          renderGroupSection("Non-archival", group.sections.nonArchival, group, now),
-          renderGroupSection("Archival + non-archival", group.sections.mixed, group, now),
-          renderGroupSection("Archival status unknown", group.sections.unknown, group, now),
-          renderGroupSection("Other dates", group.sections.other, group, now),
-        ].join("");
-        return \`<section class="deadline-group" data-count="\${group.entries.length}" style="--u:\${firstUrgency.cvar}"\${open ? " data-open" : ""}>
+        const panel = conference
+          ? renderConferenceTimeline(group, now)
+          : [
+              renderGroupSection("Archival", group.sections.archival, group, now),
+              renderGroupSection("Non-archival", group.sections.nonArchival, group, now),
+              renderGroupSection("Archival + non-archival", group.sections.mixed, group, now),
+              renderGroupSection("Archival status unknown", group.sections.unknown, group, now),
+              renderGroupSection("Other dates", group.sections.other, group, now),
+            ].join("");
+        return \`<section class="deadline-group" data-group-kind="\${esc(group.kind)}" data-count="\${group.entries.length}" style="--u:\${firstUrgency.cvar}"\${open ? " data-open" : ""}>
           <button class="deadline-group__summary" data-group="\${esc(group.id)}" aria-expanded="\${open}" aria-controls="\${panelId}">
             <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"\${period === "upcoming" ? \` data-t="\${first._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}\`}</span>
-            <span class="deadline-group__heading"><strong>\${esc(group.label)}</strong><small>\${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">\${counts}</span>
+            <span class="deadline-group__heading"><strong>\${esc(group.label)}</strong><small>\${conference ? \`<span class="deadline-group__next-stage">\${esc(cap(first.deadline_label))}</span> · \` : ""}\${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">\${counts}</span>
           </button><div class="deadline-group__panel\${open ? "" : " hidden"}" id="\${panelId}">\${panel}</div>
         </section>\`;
       })

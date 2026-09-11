@@ -152,10 +152,71 @@ describe("standalone deadline board foundation", () => {
       );
       expect(headings).toContain("Workshops of EMNLP 2026");
       expect(headings).toContain("Workshops of NeurIPS 2026");
-      // Conferences are standalone cards now: no collapsible heading of their own.
-      expect(headings).not.toContain("ICLR 2027");
-      expect(headings).not.toContain("EACL 2027");
-      expect(document.querySelectorAll(".deadline-group--standalone").length).toBeGreaterThan(0);
+      // A conference heads its own collapsible group, spelled the way the data spells it.
+      expect(headings).toContain("ICLR 2027");
+      expect(headings).toContain("EACL 2027");
+      expect(headings).not.toContain("Workshops of ICLR 2027");
+    } finally {
+      dom.window.close();
+    }
+  });
+
+  it("drops a conference open onto its camera-ready and conference dates", () => {
+    const dom = new JSDOM(renderDeadlinesWebUi(DEADLINE_VENUES), {
+      runScripts: "dangerously",
+      url: "http://localhost/deadlines",
+      beforeParse(window) {
+        window.Date.now = () => Date.UTC(2026, 6, 25, 0, 0, 0);
+      },
+    });
+    try {
+      const document = dom.window.document;
+      document.querySelector<HTMLButtonElement>("#v-groups")!.click();
+      const iclr = [...document.querySelectorAll<HTMLElement>(".deadline-group")].find(
+        (group) =>
+          group.querySelector(".deadline-group__heading strong")?.textContent?.trim() ===
+          "ICLR 2027",
+      )!;
+      expect(iclr.dataset.groupKind).toBe("conference");
+
+      // Collapsing a conference must not hide which deadline the countdown belongs to.
+      expect(iclr.querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
+        "Abstract deadline",
+      );
+      expect(iclr.querySelector(".deadline-group__count")?.textContent?.trim()).toBe(
+        "2 deadlines · 4 more dates",
+      );
+
+      iclr.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+      const timeline = [...document.querySelectorAll<HTMLElement>(".deadline-group")]
+        .find(
+          (group) =>
+            group.querySelector(".deadline-group__heading strong")?.textContent?.trim() ===
+            "ICLR 2027",
+        )!
+        .querySelector<HTMLElement>('[data-testid="deadline-conference-timeline"]')!;
+      expect(
+        [...timeline.querySelectorAll(".deadline-group__row-name")].map((row) =>
+          row.textContent?.trim(),
+        ),
+      ).toEqual([
+        "Abstract deadline",
+        "Full paper",
+        "Reviews released",
+        "Author-reviewer discussion",
+        "Final decisions",
+        "Conference",
+      ]);
+
+      // A stage the venue acts on carries its date but no countdown: nothing is due on it.
+      const conference = [...timeline.querySelectorAll<HTMLElement>(".deadline-group__row")].at(
+        -1,
+      )!;
+      expect(conference.className).toContain("deadline-group__row--milestone");
+      expect(conference.querySelector(".deadline-group__row-date")?.textContent).toContain(
+        "Apr 26",
+      );
+      expect(conference.querySelector(".deadline-group__row-countdown")?.textContent).toBe("");
     } finally {
       dom.window.close();
     }

@@ -11,6 +11,7 @@ import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
+  conferenceTimeline,
   deadlineChangeLabel,
   deadlineChangeSummary,
   entriesForDeadlinePeriod,
@@ -308,7 +309,7 @@ describe("deadline board model", () => {
     expect(archivalLabelOf({ ...venue, archival_status: "mixed" })).toBe("Archival + non-archival");
   });
 
-  it("groups workshops only, and never loses or duplicates a deadline", () => {
+  it("groups both axes, and never loses or duplicates a deadline", () => {
     const entries = buildDeadlineBoardEntries();
     const groups = groupDeadlineBoardEntries(entries);
 
@@ -321,17 +322,25 @@ describe("deadline board model", () => {
         .toSorted(),
     ).toEqual(entries.map((entry) => entry.venue.id).toSorted());
 
-    // Every real group is a workshop bundle holding more than one entry.
-    for (const group of groups.filter((candidate) => !candidate.standalone)) {
-      expect(group.entries.length).toBeGreaterThan(1);
-      expect(group.entries.every((entry) => entry.venue.entry_type === "workshop")).toBe(true);
+    // A group never mixes the two axes: a workshop bundle holds only workshops, a conference
+    // holds none.
+    for (const group of groups) {
+      const workshops = group.entries.filter((entry) => entry.venue.entry_type === "workshop");
+      expect(workshops.length).toBe(group.kind === "workshops" ? group.entries.length : 0);
+      // A timeline is a conference affordance; a workshop bundle never pays for building one.
+      if (group.kind === "workshops") {
+        expect(group.timeline).toEqual([]);
+      } else {
+        expect(group.timeline.length).toBeGreaterThanOrEqual(group.entries.length);
+      }
     }
 
-    // Conferences never group, however many deadlines they carry.
+    // A conference's deadlines now share one heading rather than scattering into loose cards.
     const iclr = groups.filter((group) => group.entries[0]?.venue.venue_group === "ICLR 2027");
-    expect(iclr).toHaveLength(2);
-    expect(iclr.every((group) => group.standalone)).toBe(true);
-    expect(iclr.map((group) => group.entries[0]?.venue.deadline_label).toSorted()).toEqual([
+    expect(iclr).toHaveLength(1);
+    expect(iclr[0]?.kind).toBe("conference");
+    expect(iclr[0]?.standalone).toBe(false);
+    expect(iclr[0]?.entries.map((entry) => entry.venue.deadline_label).toSorted()).toEqual([
       "abstract deadline",
       "full paper",
     ]);
@@ -345,6 +354,51 @@ describe("deadline board model", () => {
 
     const emnlpGroup = groups.find((group) => group.label === "Workshops of EMNLP 2026");
     expect(emnlpGroup?.sections.mixed.length).toBeGreaterThan(0);
+  });
+
+  it("orders a conference timeline by date and deduplicates the shared stages", () => {
+    const groups = groupDeadlineBoardEntries(buildDeadlineBoardEntries());
+    const iclr = groups.find((group) => group.label === "ICLR 2027")!;
+
+    // The two submissions first, then the calendar behind them -- and the four downstream dates
+    // ICLR repeats on both of its rows appear once each, not twice.
+    expect(
+      iclr.timeline.map((item) =>
+        item.kind === "entry"
+          ? [item.entry.venue.deadline_label, item.entry.venue.deadline_aoe.slice(0, 10)]
+          : [item.label, item.day],
+      ),
+    ).toEqual([
+      ["abstract deadline", "2026-09-18"],
+      ["full paper", "2026-09-25"],
+      ["Reviews released", "2026-11-05"],
+      ["Author-reviewer discussion", "2026-11-05"],
+      ["Final decisions", "2026-12-16"],
+      ["Conference", "2027-04-26"],
+    ]);
+  });
+
+  it("names the submission behind a stage two tracks date differently", () => {
+    const groups = groupDeadlineBoardEntries(buildDeadlineBoardEntries());
+    const aacl = groups.find((group) => group.label === "AACL-IJCNLP 2026")!;
+    const cameraReady = aacl.timeline.filter(
+      (item) => item.kind === "milestone" && item.milestone.milestone === "camera_ready",
+    );
+
+    // The demo track and the ARR commitment want camera-ready copy a day apart, and each source
+    // calls its own row "Camera-ready due". Undisambiguated the panel would print the same words
+    // against two dates.
+    expect(cameraReady.map((item) => (item.kind === "milestone" ? item.label : ""))).toEqual([
+      "Camera-ready due (commitment)",
+      "Camera-ready due (demo submission)",
+    ]);
+
+    // A stage every submission shares still collapses to one row.
+    expect(
+      aacl.timeline.filter(
+        (item) => item.kind === "milestone" && item.milestone.milestone === "conference",
+      ),
+    ).toHaveLength(1);
   });
 
   it("renames a workshop group after its parent, and leaves other labels alone", () => {
@@ -863,10 +917,10 @@ describe("renderDeadlines", () => {
     );
     expect(headings).toContain("Workshops of EMNLP 2026");
     expect(headings).toContain("Workshops of NeurIPS 2026");
-    // Conferences are standalone cards now, so they have no collapsible group heading at all.
-    expect(headings).not.toContain("ICLR 2027");
-    expect(headings).not.toContain("EACL 2027");
-    expect(container.querySelectorAll(".deadline-group--standalone").length).toBeGreaterThan(0);
+    // A conference now heads its own collapsible group, spelled the way the data spells it.
+    expect(headings).toContain("ICLR 2027");
+    expect(headings).toContain("EACL 2027");
+    expect(headings).not.toContain("Workshops of ICLR 2027");
   });
 
   it("shows publication policy on cards, and no venue-priority badge anywhere", async () => {
@@ -1092,6 +1146,56 @@ describe("renderDeadlines", () => {
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
     ).toHaveLength(2);
+  });
+
+  it("drops a conference open onto its camera-ready and conference dates", async () => {
+    const container = await renderView("default");
+    const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+      (group) =>
+        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+    )!;
+    expect(iclr.dataset.groupKind).toBe("conference");
+
+    // Collapsing a conference must not hide which deadline the countdown belongs to -- that was
+    // the whole reason conferences stayed flat before.
+    expect(iclr.querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
+      "Abstract deadline",
+    );
+    expect(iclr.querySelector(".deadline-group__count")?.textContent?.trim()).toBe(
+      "2 deadlines · 4 more dates",
+    );
+
+    iclr.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    await settle(container);
+    const open = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+      (group) =>
+        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+    )!;
+    const timeline = open.querySelector<HTMLElement>(
+      '[data-testid="deadline-conference-timeline"]',
+    )!;
+    expect(
+      [...timeline.querySelectorAll(".deadline-group__row-name")].map((row) =>
+        row.textContent?.trim(),
+      ),
+    ).toEqual([
+      "Abstract deadline",
+      "Full paper",
+      "Reviews released",
+      "Author-reviewer discussion",
+      "Final decisions",
+      "Conference",
+    ]);
+
+    // A stage the venue acts on carries its date but no countdown: nothing is due on it.
+    const conference = [...timeline.querySelectorAll<HTMLElement>(".deadline-group__row")].at(-1)!;
+    expect(conference.classList).toContain("deadline-group__row--milestone");
+    expect(conference.dataset.milestone).toBe("conference");
+    expect(conference.querySelector(".deadline-group__row-date")?.textContent).toMatch(/Apr 26/u);
+    expect(conference.querySelector(".deadline-group__row-countdown")?.textContent?.trim()).toBe(
+      "",
+    );
+    expect(conference.querySelector(".deadline-card__actions")).toBeNull();
   });
 
   it("switches among cards, grouped disclosures, and a complete table", async () => {
