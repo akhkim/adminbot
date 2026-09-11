@@ -67,14 +67,17 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interview_invite_theme_meeting",
     kind: "candidate",
     subject: `Interview with the Jinesis Lab`,
-    required: [],
+    // Declared, so a send that cannot mint the invite refuses instead of going out promising one.
+    required: ["slack_connect_link"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! We have reviewed your Google Form response and would like to have a trial period for us to match your interests and skill sets to appropriate projects in our lab.
 
 Roughly, this will be a 3-4 week interaction with our existing project members and project meetings to see how seamlessly you integrate into our projects.
 
-You will be invited to the relevant discussion Slack channel and receive a calendar invite to the discussion meeting on the relevant topic. If you have never used Slack before, please join our temporary workspace through the link below to be invited to our main UofT Slack: {slack_invite_url}
+You will be invited to the relevant discussion Slack channel and receive a calendar invite to the discussion meeting on the relevant topic. Here is your Slack invitation: {slack_connect_link}
+
+If you have never used Slack before, you can join our temporary workspace through this link instead, and we will invite you to our main UofT Slack from there: {slack_invite_url}
 
 If you have any questions, feel free to ask Zhijing on Slack after the group meeting. We look forward to speaking with you!
 
@@ -99,7 +102,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     // (.../viewform?edit2=<token>), never the bare form and never the response sheet: the mail is
     // addressed to one applicant and cc's the lead, so a link to everyone's answers would put the
     // rest of the batch in front of both.
-    required: ["application_form_link", "task_recommendation"],
+    required: ["application_form_link", "task_recommendation", "slack_connect_link"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
@@ -107,6 +110,8 @@ Thank you for your interest in working with the Jinesis Lab! Zhijing has persona
 If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead, cc'ed. They will review and reach out if they welcome a helping hand. {task_recommendation}
 
 If the lead finds it a fit, they will reply to this email thread. Your main point of contact will be the lead cc'ed, who will check your technical contributions after you share your code implementation and report with them. There might still be a chance that either they are at full capacity or the project is not a match.
+
+So you can reach the team while that happens, here is your Slack invitation: {slack_connect_link}
 
 Good luck!
 
