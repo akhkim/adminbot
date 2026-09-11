@@ -261,6 +261,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-meeting-invites",
+      "description": "Put each #meeting-xxx and #proj-xxx channel's members on that meeting's calendar invite; proposes, never invites",
+      "cron": "50 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-meeting-invites-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-project-channels",
       "description": "Open #proj-<alias> for each project and invite its external collaborators",
       "cron": "30 10 * * 1-5",
