@@ -47,7 +47,7 @@ export const ADMINBOT_ONBOARDING_TEMPLATES = [
     kind: "candidate",
     subject: `Interview with the Jinesis Lab`,
     required: [],
-    body: `Hi!
+    body: `Hi {first_name},
 
 Thank you for your interest in working with the Jinesis Lab! We have reviewed your Google Form response and would like to proceed to the interview stage with the lab.
 
@@ -68,7 +68,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     kind: "candidate",
     subject: `Interview with the Jinesis Lab`,
     required: [],
-    body: `Hi!
+    body: `Hi {first_name},
 
 Thank you for your interest in working with the Jinesis Lab! We have reviewed your Google Form response and would like to have a trial period for us to match your interests and skill sets to appropriate projects in our lab.
 
@@ -100,7 +100,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     // addressed to one applicant and cc's the lead, so a link to everyone's answers would put the
     // rest of the batch in front of both.
     required: ["application_form_link", "task_recommendation"],
-    body: `Hi!
+    body: `Hi {first_name},
 
 Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
 
