@@ -128,6 +128,8 @@ import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
   validateDeadlineProposalInput,
+  validateDeadlineSubmitterContact,
+  type DeadlineSubmitterContact,
   type DeadlineProposalInput,
   type DeadlineProposalView,
   type DeadlinePublicationPayload,
@@ -1590,6 +1592,7 @@ export class AdminBotService {
     submitterMemberId: string,
     idempotencyKey: string,
     existingDeadlines: readonly unknown[] = [],
+    submitterContact?: DeadlineSubmitterContact,
   ): AdminBotServiceResponse<DeadlineProposalView> {
     const memberId = submitterMemberId.trim();
     const key = idempotencyKey.trim();
@@ -1603,6 +1606,10 @@ export class AdminBotService {
     if (!validation.ok) {
       return serviceError(400, firstDeadlineValidationError(validation.errors));
     }
+    const contact = validateDeadlineSubmitterContact(submitterContact);
+    if (!contact.ok) {
+      return serviceError(400, contact.error);
+    }
     const proposalId = `dlp_${randomUUID()}`;
     const deadlineId = `community_${randomUUID()}`;
     const duplicateIds = this.findDeadlineDuplicates(validation.value, existingDeadlines);
@@ -1611,6 +1618,9 @@ export class AdminBotService {
       deadlineId,
       revision: 1,
       submitterMemberId: memberId,
+      ...(memberId.startsWith("visitor:deadline:") && Object.keys(contact.value).length
+        ? { submitterContact: contact.value }
+        : {}),
       duplicateIds,
       deadline: validation.value,
       createdByMemberId: memberId,
@@ -1670,6 +1680,9 @@ export class AdminBotService {
       deadlineId: currentPayload.deadline_id,
       revision: currentPayload.revision + 1,
       submitterMemberId: currentPayload.submitter_member_id,
+      ...(currentPayload.submitter_contact
+        ? { submitterContact: currentPayload.submitter_contact }
+        : {}),
       duplicateIds,
       deadline: validation.value,
       createdByMemberId: actorMemberId,
@@ -1767,6 +1780,7 @@ export class AdminBotService {
     deadlineId: string;
     revision: number;
     submitterMemberId: string;
+    submitterContact?: DeadlineSubmitterContact;
     duplicateIds: string[];
     deadline: DeadlineProposalInput;
     createdByMemberId: string;
@@ -1777,6 +1791,7 @@ export class AdminBotService {
       deadline_id: params.deadlineId,
       revision: params.revision,
       submitter_member_id: params.submitterMemberId,
+      ...(params.submitterContact ? { submitter_contact: params.submitterContact } : {}),
       duplicate_deadline_ids: params.duplicateIds,
       deadline: params.deadline,
     };
@@ -1799,7 +1814,7 @@ export class AdminBotService {
           : []),
       ],
       proposed_payload: payload,
-      rationale: "Publish a member-submitted deadline after administrator review.",
+      rationale: "Publish a submitted deadline after administrator review.",
       undo_plan: "Publish a corrected revision; prior revisions remain in the audit history.",
       ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
     });
@@ -1865,12 +1880,17 @@ export class AdminBotService {
       .listPublishedDeadlines()
       .filter((record) => record.proposal_id === payload.proposal_id)
       .toSorted((left, right) => right.revision - left.revision)[0];
+    const visitor = payload.submitter_member_id.startsWith("visitor:deadline:");
+    const member = visitor ? undefined : this.store.getLabMember(payload.submitter_member_id);
+    const email = visitor ? payload.submitter_contact?.email : member?.email;
     return {
       id: payload.proposal_id,
       deadline_id: payload.deadline_id,
       submitter_member_id: payload.submitter_member_id,
-      submitter_name:
-        this.store.getLabMember(payload.submitter_member_id)?.name.trim() || "Lab member",
+      submitter_name: visitor
+        ? payload.submitter_contact?.name || "External visitor"
+        : member?.name.trim() || "Lab member",
+      ...(email ? { submitter_email: email } : {}),
       status: current.status === "executed" ? "published" : current.status,
       current_revision: payload.revision,
       action_id: current.id,

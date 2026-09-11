@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdminBotPrivilegeLevel } from "../contracts/actions.js";
 import type {
@@ -22,8 +25,9 @@ function input(): DeadlineProposalInput {
   };
 }
 
-async function startService() {
+async function startService(databasePath?: string) {
   const mock = createAdminBotMockService({
+    ...(databasePath ? { databasePath } : {}),
     serviceToken: "service-token",
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
@@ -104,11 +108,18 @@ describe("deadline proposal API", () => {
           "Content-Type": "application/json",
           "Idempotency-Key": "api-submit-1",
         },
-        body: JSON.stringify(input()),
+        body: JSON.stringify({
+          ...input(),
+          submitter_contact: { name: "Impersonator", email: "wrong@example.org" },
+        }),
       });
       expect(submittedResponse.status).toBe(201);
       const submitted = (await submittedResponse.json()) as DeadlineProposalView;
       expect(submitted.status).toBe("pending");
+      expect(submitted).toMatchObject({
+        submitter_name: "member-one",
+        submitter_email: "member-one@cs.toronto.edu",
+      });
 
       const otherSubmittedResponse = await fetch(`${baseUrl}/deadline-proposals`, {
         method: "POST",
@@ -271,4 +282,240 @@ describe("deadline proposal API", () => {
       mock.close();
     }
   });
+});
+
+describe("public deadline proposals", () => {
+  const key = "7ab6fa62-3419-43b7-b3c8-0a266277ef6a";
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": key };
+
+  it("keeps visitor proposals private through revision and exact-hash publication", async () => {
+    const { mock, baseUrl } = await startService();
+    try {
+      const submit = (body = input()) =>
+        fetch(`${baseUrl}/public/deadline-proposals`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...body,
+            submitter_member_id: "admin-one",
+            submitter_contact: { name: "  Taylor Visitor  ", email: " taylor@example.org " },
+          }),
+        });
+      const response = await submit();
+      expect(response.status).toBe(202);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      await expect(response.json()).resolves.toEqual({ status: "received" });
+      await expect((await submit()).json()).resolves.toEqual({ status: "received" });
+      const queue = mock.service.listDeadlineProposals();
+      if (!queue.ok) {
+        throw new Error("missing queue");
+      }
+      expect(queue.payload.proposals).toHaveLength(1);
+      const proposal = queue.payload.proposals[0]!;
+      expect(proposal).toMatchObject({
+        status: "pending",
+        submitter_name: "Taylor Visitor",
+        submitter_email: "taylor@example.org",
+      });
+      expect(proposal.submitter_member_id).toMatch(/^visitor:deadline:/u);
+      const publicBefore = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      expect(publicBefore).not.toContain("API Workshop");
+      const memberToken = createSession(mock, "member-visitor-test", "member");
+      const adminToken = createSession(mock, "admin-visitor-test", "admin");
+      const ownQueue = await fetch(`${baseUrl}/deadline-proposals`, {
+        headers: { Authorization: `Bearer ${memberToken}` },
+      });
+      await expect(ownQueue.json()).resolves.toEqual({ proposals: [] });
+      expect((await fetch(`${baseUrl}/deadline-proposals`)).status).toBe(401);
+      const adminQueue = await fetch(`${baseUrl}/deadline-proposals`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      await expect(adminQueue.json()).resolves.toMatchObject({
+        proposals: [{ submitter_name: "Taylor Visitor", submitter_email: "taylor@example.org" }],
+      });
+      for (const operation of ["revisions", "reject", "publish"]) {
+        for (const token of [undefined, memberToken, "service-token"]) {
+          const denied = await fetch(`${baseUrl}/deadline-proposals/${proposal.id}/${operation}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ ...input(), payload_hash: proposal.payload_hash }),
+          });
+          expect([401, 403]).toContain(denied.status);
+        }
+      }
+      const revisionResponse = await fetch(
+        `${baseUrl}/deadline-proposals/${proposal.id}/revisions`,
+        {
+          method: "POST",
+          headers: { ...headers, Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ ...input(), name: "Reviewed Visitor Workshop" }),
+        },
+      );
+      expect(revisionResponse.status).toBe(200);
+      const revision = (await revisionResponse.json()) as DeadlineProposalView;
+      expect(revision).toMatchObject({
+        submitter_name: "Taylor Visitor",
+        submitter_email: "taylor@example.org",
+      });
+      const publish = (hash: string) =>
+        fetch(`${baseUrl}/deadline-proposals/${proposal.id}/publish`, {
+          method: "POST",
+          headers: { ...headers, Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ payload_hash: hash }),
+        });
+      expect((await publish(proposal.payload_hash)).status).toBe(409);
+      expect((await publish(revision.payload_hash)).status).toBe(200);
+      const published = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      expect(published).toContain("Reviewed Visitor Workshop");
+      expect(published).not.toContain("visitor:deadline:");
+      expect(published).not.toContain(proposal.payload_hash);
+      expect(published).not.toContain("taylor@example.org");
+      expect(published).not.toContain("Taylor Visitor");
+      await expect((await submit()).json()).resolves.toEqual({ status: "received" });
+    } finally {
+      await new Promise<void>((resolve) => {
+        mock.server.close(() => resolve());
+      });
+      mock.close();
+    }
+  });
+
+  it("rejects invalid input and oversized bodies before enqueueing", async () => {
+    const { mock, baseUrl } = await startService();
+    try {
+      const post = (body: string, extra = {}) =>
+        fetch(`${baseUrl}/public/deadline-proposals`, {
+          method: "POST",
+          headers: { ...headers, ...extra },
+          body,
+        });
+      expect(
+        (await post(JSON.stringify(input()), { Origin: "https://untrusted.example" })).status,
+      ).toBe(403);
+      expect(
+        (await post(JSON.stringify({ ...input(), submitter_contact: { email: "invalid" } })))
+          .status,
+      ).toBe(400);
+      expect((await post("{")).status).toBe(400);
+      expect((await post(JSON.stringify({ ...input(), note: "x".repeat(2001) }))).status).toBe(400);
+      expect((await post(JSON.stringify({ ...input(), note: "x".repeat(17000) }))).status).toBe(
+        413,
+      );
+      expect((await post(JSON.stringify(input()), { "Content-Type": "text/plain" })).status).toBe(
+        415,
+      );
+      const limited = await post(JSON.stringify(input()), { "X-Forwarded-For": "198.51.100.99" });
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+      expect(mock.service.listDeadlineProposals()).toMatchObject({ payload: { proposals: [] } });
+    } finally {
+      await new Promise<void>((resolve) => {
+        mock.server.close(() => resolve());
+      });
+      mock.close();
+    }
+  });
+
+  it("accepts missing or non-UUID retry keys and keeps the public route write-only", async () => {
+    const { mock, baseUrl } = await startService();
+    try {
+      for (const validKey of [undefined, "browser-retry", "browser-retry"]) {
+        const response = await fetch(`${baseUrl}/public/deadline-proposals`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(validKey ? { "Idempotency-Key": validKey } : {}),
+          },
+          body: JSON.stringify({ ...input(), submitter_contact: { name: "", email: "" } }),
+        });
+        expect(response.status).toBe(202);
+      }
+      const queue = mock.service.listDeadlineProposals();
+      if (!queue.ok) {
+        throw new Error("missing queue");
+      }
+      expect(queue.payload.proposals).toHaveLength(2);
+      expect(queue.payload.proposals[0]).toMatchObject({ submitter_name: "External visitor" });
+      expect(queue.payload.proposals[0]?.submitter_email).toBeUndefined();
+      const oversizedKey = await fetch(`${baseUrl}/public/deadline-proposals`, {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "x".repeat(201) },
+        body: JSON.stringify(input()),
+      });
+      expect(oversizedKey.status).toBe(400);
+      expect((await fetch(`${baseUrl}/public/deadline-proposals`)).status).toBe(401);
+    } finally {
+      await new Promise<void>((resolve) => {
+        mock.server.close(() => resolve());
+      });
+      mock.close();
+    }
+  });
+});
+
+it("persists a visitor submission and its retry key across restarts without creating a member", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "adminbot-visitor-"));
+  const databasePath = path.join(directory, "test.sqlite");
+  let originalId = "";
+  try {
+    for (let run = 0; run < 2; run++) {
+      const { mock, baseUrl } = await startService(databasePath);
+      try {
+        const response = await fetch(`${baseUrl}/public/deadline-proposals`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": "c69641df-f7f9-4e9b-bdbf-7466401193f2",
+          },
+          body: JSON.stringify({
+            ...input(),
+            name: run === 0 ? "Durable Visitor Workshop" : "Changed retry",
+            submitter_contact:
+              run === 0
+                ? { name: "Taylor", email: "taylor@example.org" }
+                : { name: "Changed contact" },
+          }),
+        });
+        expect(response.status).toBe(202);
+        await expect(response.json()).resolves.toEqual({ status: "received" });
+        const queue = mock.service.listDeadlineProposals();
+        if (!queue.ok) {
+          throw new Error("missing queue");
+        }
+        expect(queue.payload.proposals).toHaveLength(1);
+        const proposal = queue.payload.proposals[0]!;
+        expect(proposal.deadline.name).toBe("Durable Visitor Workshop");
+        expect(proposal).toMatchObject({
+          submitter_name: "Taylor",
+          submitter_email: "taylor@example.org",
+        });
+        expect(mock.store.getLabMember(proposal.submitter_member_id)).toBeUndefined();
+        if (run === 0) {
+          originalId = proposal.id;
+        } else {
+          expect(proposal.id).toBe(originalId);
+          const adminToken = createSession(mock, "admin-durable-test", "admin");
+          const rejection = await fetch(`${baseUrl}/deadline-proposals/${proposal.id}/reject`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+            body: "{}",
+          });
+          expect(rejection.status).toBe(200);
+          expect(await (await fetch(`${baseUrl}/deadlines/venues.json`)).text()).not.toContain(
+            "Durable Visitor Workshop",
+          );
+        }
+      } finally {
+        await new Promise<void>((resolve) => {
+          mock.server.close(() => resolve());
+        });
+        mock.close();
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

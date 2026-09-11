@@ -159,3 +159,40 @@ describe("deadline proposals", () => {
     ]);
   });
 });
+
+it("validates visitor contact details and supports name-only or email-only submissions", () => {
+  const service = new AdminBotService(new AdminBotMemoryStore());
+  for (const invalid of [
+    null,
+    [],
+    { name: 42 },
+    { email: 42 },
+    { name: "x".repeat(201) },
+    { email: "not-an-email" },
+  ]) {
+    expect(
+      service.submitDeadlineProposal(
+        input(),
+        "visitor:deadline:test",
+        "invalid",
+        [],
+        invalid as never,
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+  }
+  expect(unwrap(service.listDeadlineProposals()).proposals).toHaveLength(0);
+  expect(
+    unwrap(
+      service.submitDeadlineProposal(input(), "visitor:deadline:one", "one", [], {
+        name: " Taylor ",
+      }),
+    ),
+  ).toMatchObject({ submitter_name: "Taylor" });
+  expect(
+    unwrap(
+      service.submitDeadlineProposal(input(), "visitor:deadline:two", "two", [], {
+        email: " taylor@example.org ",
+      }),
+    ),
+  ).toMatchObject({ submitter_name: "External visitor", submitter_email: "taylor@example.org" });
+});

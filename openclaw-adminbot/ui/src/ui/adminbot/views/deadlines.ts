@@ -792,9 +792,6 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private openProposalForm(): void {
-    if (!this.memberId) {
-      return;
-    }
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
     this.editingProposalId = "";
@@ -805,7 +802,7 @@ class AdminbotDeadlinesView extends LitElement {
 
   private async submitProposal(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (!this.memberId || this.proposalBusy) {
+    if (this.proposalBusy) {
       return;
     }
     const form = event.currentTarget as HTMLFormElement;
@@ -839,7 +836,14 @@ class AdminbotDeadlinesView extends LitElement {
         await this.proposalStore.revise(this.editingProposalId, validation.value);
       } else {
         this.proposalSubmissionKey ||= crypto.randomUUID();
-        await this.proposalStore.submit(validation.value, this.proposalSubmissionKey);
+        if (this.memberId && this.accessRole !== "anonymous") {
+          await this.proposalStore.submit(validation.value, this.proposalSubmissionKey);
+        } else {
+          await this.proposalStore.submitPublic(validation.value, this.proposalSubmissionKey, {
+            name: String(data.get("submitterName") ?? ""),
+            email: String(data.get("submitterEmail") ?? ""),
+          });
+        }
       }
       form.reset();
       this.proposalFormOpen = false;
@@ -848,7 +852,9 @@ class AdminbotDeadlinesView extends LitElement {
         : "Proposal submitted for administrator review. It is not public until approved.";
       this.editingProposalId = "";
       this.proposalSubmissionKey = "";
-      await this.loadProposals();
+      if (this.memberId && this.accessRole !== "anonymous") {
+        await this.loadProposals();
+      }
     } catch (error) {
       this.proposalFailure = error instanceof Error ? error.message : String(error);
     } finally {
@@ -906,7 +912,7 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private renderProposalForm() {
-    if (!this.proposalFormOpen || !this.memberId) {
+    if (!this.proposalFormOpen) {
       return nothing;
     }
     const editing = this.proposals.find((proposal) => proposal.id === this.editingProposalId);
@@ -932,6 +938,19 @@ class AdminbotDeadlinesView extends LitElement {
           Proposals remain private until an administrator approves and publishes them.
         </p>
         <form class="deadline-proposal__form" @submit=${this.submitProposal}>
+          ${!this.memberId || this.accessRole === "anonymous"
+            ? html`
+                <label style="align-content: start">
+                  <span>Name <small>optional</small></span>
+                  <input name="submitterName" autocomplete="name" maxlength="200" />
+                </label>
+                <label style="align-content: start">
+                  <span>Email <small>optional</small></span>
+                  <input name="submitterEmail" type="email" autocomplete="email" maxlength="254" />
+                  <small>Only used if we need to ask about your submission.</small>
+                </label>
+              `
+            : nothing}
           <label>
             <span>Conference or workshop name</span>
             <input
@@ -1091,17 +1110,26 @@ class AdminbotDeadlinesView extends LitElement {
     );
     const renderRow = (proposal: DeadlineProposal) => {
       const deadline = proposal.deadline;
+      const isVisitor = proposal.submitter_member_id.startsWith("visitor:deadline:");
       const submitterLabel =
         proposal.submitter_member_id === this.memberId
           ? "Submitted by you"
           : `Submitted by ${proposal.submitter_name || "a lab member"}`;
       return html`
         <article class="deadline-proposal-row" data-status=${proposal.status}>
+          <div class="deadline-proposal-row__meta">
+            <span class="deadline-proposal-row__status">${capitalize(proposal.status)}</span>
+            <span
+              class="deadline-proposal-row__source"
+              data-source=${isVisitor ? "visitor" : "member"}
+              data-testid="deadline-proposal-source"
+            >
+              <span aria-hidden="true">${isVisitor ? icons.user : icons.users}</span>
+              ${isVisitor ? "Visitor" : "Lab member"}
+            </span>
+          </div>
           <div class="deadline-proposal-row__heading">
-            <div>
-              <span class="deadline-proposal-row__status">${capitalize(proposal.status)}</span>
-              <h3>${deadline.name}</h3>
-            </div>
+            <h3>${deadline.name}</h3>
             <span>${deadline.deadlineDate} · ${deadline.deadlineTime} · ${deadline.timezone}</span>
           </div>
           <p>
@@ -1111,6 +1139,9 @@ class AdminbotDeadlinesView extends LitElement {
               : ""}
             · ${submitterLabel} · Revision ${proposal.current_revision}
           </p>
+          ${canReview && proposal.submitter_email
+            ? html`<p>${proposal.submitter_email}</p>`
+            : nothing}
           ${deadline.note ? html`<p>${deadline.note}</p>` : nothing}
           ${proposal.duplicate_deadline_ids.length
             ? html`<p class="deadline-proposal-row__duplicate">
@@ -1926,26 +1957,16 @@ class AdminbotDeadlinesView extends LitElement {
                   >
                 </button>`
               : nothing}
-            <span
-              class="deadline-proposal-trigger"
-              title=${canPropose ? nothing : "Sign in to use deadline proposals."}
-            >
+            <span class="deadline-proposal-trigger">
               <button
                 class="btn btn--sm primary"
                 type="button"
                 data-testid="deadline-propose"
-                aria-describedby=${canPropose ? nothing : "deadline-proposal-sign-in-hint"}
-                ?disabled=${!canPropose}
                 @click=${this.openProposalForm}
               >
                 Propose a new deadline
               </button>
             </span>
-            ${canPropose
-              ? nothing
-              : html`<span id="deadline-proposal-sign-in-hint" class="sr-only">
-                  Sign in to use deadline proposals.
-                </span>`}
           </div>
         </header>
         ${this.proposalNotice

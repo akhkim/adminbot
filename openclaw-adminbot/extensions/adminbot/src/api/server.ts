@@ -149,6 +149,10 @@ import {
   readRosterSheet,
 } from "./server.member-sheet.js";
 import {
+  createPublicDeadlineLimiter,
+  handlePublicDeadlineProposal,
+} from "./server.public-deadline-proposals.js";
+import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
   runScheduledWorkshopNudges,
@@ -523,6 +527,7 @@ type AdminBotRouteContext = {
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
+  publicDeadlineLimiter: ReturnType<typeof createPublicDeadlineLimiter>;
   // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
@@ -753,6 +758,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     allowedOrigins,
     refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
+    publicDeadlineLimiter: createPublicDeadlineLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
@@ -877,6 +883,18 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
   }
   if (url.pathname.startsWith("/auth/")) {
     await handleAuthRoute(req, res, ctx, url);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/public/deadline-proposals") {
+    await handlePublicDeadlineProposal(
+      req,
+      res,
+      ctx.service,
+      ctx.publicDeadlineLimiter,
+      remoteIp(req, ctx.trustProxyHeaders),
+      DEADLINE_VENUES,
+    );
     return;
   }
 

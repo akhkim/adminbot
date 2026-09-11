@@ -4779,6 +4779,47 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
 }
 
+.deadline-proposal-row__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.deadline-proposal-row__source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.deadline-proposal-row__source[data-source="visitor"] {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.deadline-proposal-row__source > span,
+.deadline-proposal-row__source svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.deadline-proposal-row__source svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
 .deadline-proposal-row__heading > span,
 .deadline-proposal-row__status {
   color: var(--muted);
