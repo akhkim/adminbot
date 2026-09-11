@@ -79,6 +79,8 @@ describe("Vercel deadline indexing", () => {
     expect(DEADLINES_ROBOTS_TEXT).toMatch(/^Allow: \/deadlines$/mu);
     // Search Console fetches the ownership token from the root; `Disallow: /` must not hide it.
     expect(DEADLINES_ROBOTS_TEXT).toMatch(/^Allow: \/google808ad109656be5be\.html$/mu);
+    // The sitemap is fetched like any other URL, so `Disallow: /` must not cover it either.
+    expect(DEADLINES_ROBOTS_TEXT).toMatch(/^Allow: \/sitemap\.xml$/mu);
     // The old prefixed path still resolves for existing links, but it is deliberately not
     // advertised to crawlers: two URLs serving one page is duplicate content.
     expect(DEADLINES_ROBOTS_TEXT).not.toMatch(/^Allow: \/adminbot\/deadlines$/mu);
