@@ -2705,6 +2705,68 @@ describe("AdminBotService", () => {
     }
   });
 
+  it("takes a Google Drive folder for the 1:1 folder link and nothing else", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "oneone",
+        name: "One One",
+        privilege_level: "member",
+      }),
+    );
+
+    const folder = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: folder }))
+      .one_on_one_folder_url).toBe(folder);
+
+    // The address bar's multi-account form is the same folder, and is what most people copy.
+    const multiAccount = "https://drive.google.com/drive/u/1/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: multiAccount }))
+      .one_on_one_folder_url).toBe(multiAccount);
+
+    // A query string is how Drive's own Share dialog hands the link over.
+    expect(
+      unwrap(
+        service.updateOwnProfile("oneone", {
+          one_on_one_folder_url: `${folder}?usp=drive_link`,
+        }),
+      ).one_on_one_folder_url,
+    ).toBe(`${folder}?usp=drive_link`);
+
+    // Empty clears it, like every other link on the record.
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: "" }))
+        .one_on_one_folder_url,
+    ).toBe("");
+
+    for (const bad of [
+      // The notes from one meeting, filed as if they were the series.
+      "https://docs.google.com/document/d/abc/edit",
+      // A Drive file, not a Drive folder.
+      "https://drive.google.com/file/d/1AbCdEf/view",
+      // Right host, wrong route.
+      "https://drive.google.com/drive/my-drive",
+      // A folder somewhere that is not Drive.
+      "https://dropbox.com/drive/folders/1AbCdEf",
+      "http://drive.google.com/drive/folders/1AbCdEf",
+      "not a url",
+    ]) {
+      expect(service.updateOwnProfile("oneone", { one_on_one_folder_url: bad })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+
+    // The rejection has to name the actual mistake: the default shape message talks about
+    // usernames, which tells somebody who pasted a Doc nothing they can act on.
+    const rejected = service.updateOwnProfile("oneone", {
+      one_on_one_folder_url: "https://docs.google.com/document/d/abc/edit",
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.ok ? "" : rejected.error.message).toContain("Drive folder");
+  });
+
   it("prefers a @cs.toronto.edu email but stores whatever address the lab actually has", () => {
     const service = new AdminBotService();
 
@@ -4162,6 +4224,20 @@ describe("AdminBotService", () => {
       expect(
         "personal_circumstances" in redactConfidentialMemberFields(ada, { isAdmin: false }),
       ).toBe(false);
+    });
+    it("hides where a member's 1:1 notes live from the rest of the lab", () => {
+      const withFolder = {
+        ...ada,
+        one_on_one_folder_url: "https://drive.google.com/drive/folders/1AbCdEf",
+      };
+      expect(
+        "one_on_one_folder_url" in
+          redactConfidentialMemberFields(withFolder, { memberId: "bob", isAdmin: false }),
+      ).toBe(false);
+      expect(
+        redactConfidentialMemberFields(withFolder, { memberId: "ada", isAdmin: false })
+          .one_on_one_folder_url,
+      ).toBe("https://drive.google.com/drive/folders/1AbCdEf");
     });
   });
 

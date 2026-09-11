@@ -125,6 +125,36 @@ describe("renderProfile autosave", () => {
     );
   });
 
+  // The folder, not a document: the service only accepts a Drive /drive/folders/ URL, and the hint
+  // says which shape that is before anyone pastes last week's meeting notes into it.
+  it("collects the 1:1 folder as a Drive folder link", () => {
+    const member = createMember();
+    const state = createState(member);
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const folder = container.querySelector<HTMLInputElement>(
+      'input[name="one_on_one_folder_url"]',
+    )!;
+    expect(folder).not.toBeNull();
+
+    const url = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    folder.value = url;
+    folder.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ one_on_one_folder_url: url }),
+    );
+
+    expect(
+      container
+        .querySelector('[data-testid="profile-hint-one_on_one_folder_url"]')
+        ?.textContent?.trim(),
+    ).toContain("folder link, not a document");
+  });
+
   it("saves basics fields on their own, without a Save button click", () => {
     const member = createMember();
     const state = createState(member);

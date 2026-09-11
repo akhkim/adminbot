@@ -335,6 +335,19 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "links",
   },
   {
+    // Where this member's one-on-one notes live. A Drive folder and only a Drive folder: the
+    // service checks the /drive/folders/ shape (SOCIAL_URL_FIELDS in kernel/service.ts), so the
+    // hint says so before anyone pastes the Doc from last week's meeting instead. Optional --
+    // not everybody has one-on-ones, and a folder that has not been made yet is a blank that is
+    // simply true.
+    key: "one_on_one_folder_url",
+    labelKey: "profile.fields.oneOnOneFolderUrl",
+    example: "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    type: "link",
+    hintKey: "profile.hints.oneOnOneFolderUrl",
+    group: "links",
+  },
+  {
     key: "github_url",
     labelKey: "profile.fields.github",
     example: "https://github.com/zhijing-jin",

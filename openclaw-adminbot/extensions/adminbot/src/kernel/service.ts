@@ -387,6 +387,8 @@ export type AdminBotServiceStore = {
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
   readDirectorStatus(): LabDirectorStatus | null;
+  /** The broadcast archive, newest first. */
+  listDirectorStatusHistory(limit?: number): LabDirectorStatus[];
   saveHelpRequest(request: LabHelpRequest): void;
   getHelpRequest(paperId: string): LabHelpRequest | undefined;
   listHelpRequests(): LabHelpRequest[];
@@ -11311,6 +11313,10 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "avatar_url",
   "cv_url",
   "intake_form_url",
+  // The member's own one-on-one folder. Self-editable because in practice either side creates it
+  // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
+  // looking at a blank row they cannot fill from the link already in their Drive.
+  "one_on_one_folder_url",
   "linkedin_url",
   // LinkedIn publishes no vanity-URL-to-URN mapping, so this is a value somebody has to look up --
   // but the member can look it up as easily as an admin, and the field's own help text has always
@@ -11889,6 +11895,7 @@ type SocialUrlFieldSpec = {
     | "avatar_url"
     | "cv_url"
     | "intake_form_url"
+    | "one_on_one_folder_url"
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
@@ -11897,6 +11904,13 @@ type SocialUrlFieldSpec = {
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
   hosts?: Set<string>;
   path?: RegExp;
+  // What to say when the host or the path rejects the value. The defaults are written for the
+  // account links -- "must point to GitHub", "must be a profile URL ... with a username in the
+  // path" -- and both are the wrong sentence for a field that wants a folder: a member reading
+  // "must be a profile URL" about their Drive link has no way to work out that the problem is
+  // having pasted a Doc. One message rather than two because for such a field the two failures are
+  // the same mistake described from different ends.
+  shapeMessage?: string;
   requireQueryParam?: string;
   // The field may also hold an inline `data:` image instead of a link out. Only the profile photo
   // does: the lab runs no object storage, so an uploaded picture is stored on the record itself
@@ -11942,6 +11956,18 @@ const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
     label: "intake form answers",
     hosts: new Set(["docs.google.com"]),
     path: /^\/forms\/.+/u,
+  },
+  {
+    // A Drive *folder*, which is a narrower shape than "a Google link": /drive/folders/<id>, or the
+    // /drive/u/<n>/folders/<id> form the address bar shows when somebody is signed into more than
+    // one Google account. A Docs URL, a Sheets URL and a shared-drive file all fail here, which is
+    // the point -- see the field note in contracts/actions.ts.
+    field: "one_on_one_folder_url",
+    label: "1:1 folder",
+    hosts: new Set(["drive.google.com"]),
+    path: /^\/drive\/(?:u\/\d+\/)?folders\/[A-Za-z0-9_-]+\/?$/u,
+    shapeMessage:
+      "1:1 folder link must be a Google Drive folder (drive.google.com/drive/folders/...), not a document",
   },
   {
     field: "github_url",
@@ -11994,10 +12020,13 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
     return `${spec.label} link must use https`;
   }
   if (spec.hosts && !spec.hosts.has(parsed.hostname)) {
-    return `${spec.label} link must point to ${spec.label}`;
+    return spec.shapeMessage ?? `${spec.label} link must point to ${spec.label}`;
   }
   if (spec.path && !spec.path.test(parsed.pathname)) {
-    return `${spec.label} link must be a profile URL (e.g. a page with a username in the path)`;
+    return (
+      spec.shapeMessage ??
+      `${spec.label} link must be a profile URL (e.g. a page with a username in the path)`
+    );
   }
   if (spec.requireQueryParam && !parsed.searchParams.has(spec.requireQueryParam)) {
     return `${spec.label} link must include a ${spec.requireQueryParam} parameter`;
