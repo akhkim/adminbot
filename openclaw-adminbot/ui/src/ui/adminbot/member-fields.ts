@@ -298,7 +298,21 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "work",
   },
   {
-    // The only confidential field on the page: the service strips it from every /lab/members
+    // Career direction, asked as a question rather than a label: where this person wants to go
+    // next, when, and what the lab can actually do about it. It sits with the other timeline
+    // facts (joined/graduated month) because the answer is usually pinned to those dates, and it
+    // is optional -- "I don't know yet" is a normal answer at any point in a research career, and
+    // a required field would only teach people to type something they don't mean.
+    // Confidential (adminBotConfidentialMemberFields): a job search is not roster material, so
+    // only this member and the admins read it.
+    key: "next_position",
+    labelKey: "profile.fields.nextPosition",
+    example: "PhD in NLP, applying Dec 2027 -- intros to causal-inference groups would help",
+    type: "paragraph",
+    group: "work",
+  },
+  {
+    // Confidential, like next_position above: the service strips it from every /lab/members
     // reader but this member and admins (adminBotConfidentialMemberFields). Last row of the last
     // group, so it comes after every other answer -- it is the one field a person may want to
     // think before answering, and optional because "nothing to declare" must never be something

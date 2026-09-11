@@ -774,6 +774,10 @@ export function adminBotSlackActivityOf(member: {
  */
 export const adminBotConfidentialMemberFields = [
   "personal_circumstances",
+  // Where someone wants to move next, and when. Written for the person who can help with it, not
+  // for a roster their current collaborators read: "applying for PhDs in December" is a fact about
+  // a job search, and a member should not have to weigh who else sees it before answering.
+  "next_position",
   // A personal phone number. It is on the record because the admins need to reach somebody on a
   // conference day, not so that the roster publishes it to everyone who opens devtools.
   "whatsapp",
@@ -1334,6 +1338,12 @@ export type AdminBotLabMemberInput = {
    * is nothing here worth hiding, and whoever is placing the order needs to read it.
    */
   merch_requests?: string;
+  /**
+   * Where the member wants to go next -- the position or move they are aiming for, when they want
+   * it to happen, and what the lab can do to help. Free text: the useful answers are sentences,
+   * not a job title picked off a list.
+   */
+  next_position?: string;
   /**
    * Free text a member may share about health or family circumstances. Confidential: see
    * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.
