@@ -601,10 +601,47 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
   `;
 }
 
+/**
+ * The lab-wide broadcast, above everything else on the page.
+ *
+ * Top of the dashboard rather than a banner on every tab: this page is home for anyone signed in,
+ * so it is the first thing a member sees, and a strip that followed them onto all twenty tabs would
+ * be read once and then scrolled past forever.
+ *
+ * Not dismissible, and deliberately: it expires on its own clock, which is the author saying how
+ * long it is worth saying. A dismiss button would let a member turn off the one channel the lab has
+ * for telling everybody something at once.
+ */
+function renderBroadcast(state: AppViewState) {
+  const broadcast = state.adminBotBroadcast;
+  if (!broadcast) {
+    return nothing;
+  }
+  // The service already applies expiry and retraction, but this page can hold a loaded broadcast
+  // across midnight -- so the boundary is re-checked here rather than trusted from load time.
+  if (broadcast.retracted_at || Date.parse(broadcast.expires_at) <= Date.now()) {
+    return nothing;
+  }
+  return html`
+    <section class="dashboard__broadcast" data-testid="dashboard-broadcast" aria-live="polite">
+      <div class="dashboard__broadcast-head">
+        <span class="dashboard__broadcast-icon" aria-hidden="true">📣</span>
+        <h2 class="dashboard__broadcast-title">${t("dashboard.broadcast.title")}</h2>
+      </div>
+      <p class="dashboard__broadcast-body">${broadcast.message}</p>
+      <p class="dashboard__broadcast-meta">
+        ${t("dashboard.broadcast.posted", {
+          when: new Date(broadcast.updated_at).toLocaleDateString(),
+        })}
+      </p>
+    </section>
+  `;
+}
+
 export function renderDashboard(state: AppViewState, role: AccessRole) {
   return html`
     <div class="dashboard">
-      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
+      ${renderBroadcast(state)} ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}

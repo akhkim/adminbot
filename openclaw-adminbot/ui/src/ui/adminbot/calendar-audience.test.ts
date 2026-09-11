@@ -5,6 +5,7 @@ import {
   knownConferences,
   memberNamesByEmail,
   memberIdsWritingFor,
+  reconcileAudience,
   selectAudience,
 } from "./calendar-audience.ts";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "./controllers/admin.ts";
@@ -247,5 +248,135 @@ describe("memberIdsWritingFor", () => {
     const people = [member({ id: "m1", name: "Ada Lovelace" })];
     const papers = [paper({ artifacts: { conference: "ICLR 2027" } })];
     expect(memberIdsWritingFor(papers, people, "NeurIPS 2026").size).toBe(0);
+  });
+});
+
+
+// The exclusive pass. An event kept current by additive sends accumulates everyone who ever
+// matched any filter, so the send has to be able to take people off as well as put them on.
+describe("reconcileAudience", () => {
+  const roster = [
+    member({ id: "in1", name: "In One", email: "in1@cs.toronto.edu", location: "Toronto" }),
+    member({ id: "in2", name: "In Two", email: "in2@cs.toronto.edu", location: "Toronto" }),
+    member({ id: "out", name: "Out There", email: "out@cs.toronto.edu", location: "Berlin" }),
+  ];
+  const toronto = { homeCity: "Toronto" };
+
+  it("adds who matches, removes the roster members who do not, and leaves guests alone", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["in1@cs.toronto.edu", "out@cs.toronto.edu", "speaker@elsewhere.org"],
+    });
+
+    expect(plan.invite).toEqual(["in2@cs.toronto.edu"]);
+    expect(plan.keep).toEqual(["in1@cs.toronto.edu"]);
+    expect(plan.remove).toEqual([
+      {
+        email: "out@cs.toronto.edu",
+        member_id: "out",
+        name: "Out There",
+        reason: "does not match the filters",
+      },
+    ]);
+    // A guest speaker is not a roster mistake to tidy away.
+    expect(plan.unrecognized).toEqual(["speaker@elsewhere.org"]);
+    expect(plan.remaining.toSorted()).toEqual([
+      "in1@cs.toronto.edu",
+      "in2@cs.toronto.edu",
+      "speaker@elsewhere.org",
+    ]);
+  });
+
+  // The write behind a removal replaces the guest list, so the people just invited have to be in
+  // the set that remains or the same call would uninvite them.
+  it("keeps everyone it is inviting in the remaining set", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["out@cs.toronto.edu"],
+    });
+    for (const email of plan.invite) {
+      expect(plan.remaining).toContain(email);
+    }
+  });
+
+  it("does not re-invite somebody already on the event at another of their addresses", () => {
+    const dual = member({
+      id: "dual",
+      name: "Two Addresses",
+      email: "dual@cs.toronto.edu",
+      calendar_email: "dual@gmail.com",
+      location: "Toronto",
+    });
+    const plan = reconcileAudience({
+      members: [dual],
+      papers: [],
+      filter: toronto,
+      // On the event at the roster address; `invitableEmail` would send to the calendar one.
+      attendees: ["dual@cs.toronto.edu"],
+    });
+    expect(plan.invite).toEqual([]);
+    expect(plan.keep).toEqual(["dual@cs.toronto.edu"]);
+    expect(plan.remove).toEqual([]);
+  });
+
+  it("treats an unticked match as not chosen, and says so", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["in1@cs.toronto.edu", "in2@cs.toronto.edu"],
+      excludedMemberIds: ["in2"],
+    });
+    expect(plan.invite).toEqual([]);
+    expect(plan.remove).toEqual([
+      {
+        email: "in2@cs.toronto.edu",
+        member_id: "in2",
+        name: "In Two",
+        reason: "unticked on this send",
+      },
+    ]);
+  });
+
+  // Google lists the organizing calendar among the attendees on plenty of events; a plan that
+  // excluded it would hand the connector a write dropping the organizer off the meeting.
+  it("never removes a protected address", () => {
+    const lab = member({ id: "lab", name: "Lab Calendar", email: "lab@cs.toronto.edu" });
+    const plan = reconcileAudience({
+      members: [...roster, lab],
+      papers: [],
+      filter: toronto,
+      attendees: ["lab@cs.toronto.edu", "out@cs.toronto.edu"],
+      protectedEmails: ["LAB@cs.toronto.edu"],
+    });
+    expect(plan.keep).toContain("lab@cs.toronto.edu");
+    expect(plan.remove.map((row) => row.member_id)).toEqual(["out"]);
+  });
+
+  it("removes nobody when no filter is set, since nobody is chosen", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: {},
+      attendees: ["in1@cs.toronto.edu"],
+    });
+    // An empty filter selects nobody by design; that must not read as "everyone comes off".
+    expect(plan.invite).toEqual([]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.keep).toEqual([]);
+  });
+
+  it("counts a duplicated attendee once", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["out@cs.toronto.edu", "OUT@cs.toronto.edu"],
+    });
+    expect(plan.remove).toHaveLength(1);
   });
 });

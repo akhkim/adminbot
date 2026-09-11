@@ -31,6 +31,7 @@ import type {
   MeetingRecord,
   MemberNotification,
   CalendarEventDraft,
+  LabBroadcast,
   LabCalendar,
 } from "./adminbot/auth/session.ts";
 import type {
@@ -83,6 +84,7 @@ import {
   saveMemberSheetEdits as saveMemberSheetEditsController,
 } from "./adminbot/controllers/member-sheet.ts";
 import {
+  loadAdminBotBroadcast,
   loadAdminBotNotifications,
   markAdminBotNotificationsRead,
   resetNotificationPopups,
@@ -348,6 +350,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMeetingNudgeError: string | null = null;
   // What the lab has told this member. Undefined until the first read.
   @state() adminBotNotifications?: MemberNotification[];
+  @state() adminBotBroadcast?: LabBroadcast | null;
+  @state() adminBotBroadcastHistory?: LabBroadcast[];
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   @state() adminBotMeetingsSaving = false;
@@ -1231,6 +1235,8 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
   }
 
   async endViewAs() {
@@ -1241,6 +1247,8 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
   }
 
   async signOutMember() {
@@ -1251,6 +1259,8 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
   }
 
   openChangePassword() {
@@ -1733,6 +1743,10 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  loadBroadcast(): Promise<void> {
+    return loadAdminBotBroadcast(this as unknown as Parameters<typeof loadAdminBotBroadcast>[0]);
+  }
+
   loadNotifications(): Promise<void> {
     return loadAdminBotNotifications(
       this as unknown as Parameters<typeof loadAdminBotNotifications>[0],
@@ -1789,12 +1803,18 @@ export class OpenClawApp extends LitElement {
   async sendCalendarInvites(): Promise<void> {
     const { calendarInviteSelection } = await import("./adminbot/views/calendar.ts");
     const selection = calendarInviteSelection(this as unknown as AppViewState);
-    if (!selection.event || !selection.emails.length) {
+    if (!selection.event || (!selection.emails.length && !selection.remove.length)) {
       return;
     }
     await inviteAdminBotCalendarAudience(
       this as unknown as Parameters<typeof inviteAdminBotCalendarAudience>[0],
-      { event: selection.event, emails: selection.emails, reason: selection.reason },
+      {
+        event: selection.event,
+        emails: selection.emails,
+        remove: selection.remove,
+        remaining: selection.remaining,
+        reason: selection.reason,
+      },
     );
   }
 

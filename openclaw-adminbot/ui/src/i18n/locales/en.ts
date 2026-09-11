@@ -1158,6 +1158,10 @@ export const en: TranslationMap = {
   },
   dashboard: {
     more: "+{count} more",
+    broadcast: {
+      title: "Broadcast from Zhijing",
+      posted: "Posted {when}",
+    },
     nudgeWarning: {
       unread: "{count} thing(s) the lab has asked you for",
       important: "{count} important thing(s) still outstanding",
@@ -2071,6 +2075,7 @@ export const en: TranslationMap = {
       otherSocials: "Other social media",
       cvUrl: "CV (PDF link)",
       intakeFormUrl: "Application form response link",
+      oneOnOneFolderUrl: "Link to 1:1 Folder",
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
@@ -2115,6 +2120,8 @@ export const en: TranslationMap = {
         "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
         'A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to "anyone with the link can view", otherwise it will open for you but not for anyone else.',
+      oneOnOneFolderUrl:
+        "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
       elevatorPitch:
         "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
     },
@@ -2128,6 +2135,8 @@ export const en: TranslationMap = {
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      oneOnOneFolderUrl:
+        "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
       hoursPerWeek:
         "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",

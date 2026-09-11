@@ -2847,6 +2847,12 @@ export function renderApp(state: AppViewState) {
     state.adminBotNotifications = [];
     void state.loadNotifications().finally(() => requestHostUpdate?.());
   }
+  // The lab-wide broadcast, on the same once-per-session footing and for the same reason: it is
+  // read on whichever tab the member lands on, so the dashboard has it the moment they go there.
+  if (hasMemberSession && state.adminBotBroadcast === undefined && state.loadBroadcast) {
+    state.adminBotBroadcast = null;
+    void state.loadBroadcast().finally(() => requestHostUpdate?.());
+  }
   // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
   // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
   if (

@@ -2341,19 +2341,82 @@ async function handleAuthenticatedRoute(
     const eventId = decodeURIComponent(calendarInvite[1]);
     const body = readRecord(await readJson(req));
     const attendees = readStringList(body.attendees);
-    if (!attendees.length) {
-      sendJson(res, 400, { error: { message: "attendees are required" } });
+    // An exclusive send: the Calendar tab's filters are the whole guest list, so roster members on
+    // the event that the filters exclude come off it in the same call.
+    const remove = readStringList(body.remove);
+    const remaining = readStringList(body.remaining_attendees);
+    if (!attendees.length && !remove.length) {
+      sendJson(res, 400, { error: { message: "attendees or remove are required" } });
       return;
     }
+    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
+    const label = asString(body.summary) || eventId;
+    const rationale = asString(body.rationale) || "Invited from the Calendar tab by an admin.";
+
+    if (remove.length) {
+      // The write behind a removal replaces the guest list rather than subtracting from it (see
+      // buildCalendarRemoveAttendeesArgs), so a caller that asks to remove somebody has to name the
+      // list it means to leave behind. An empty one is either a caller that forgot or a plan that
+      // would clear the event, and both are refused rather than guessed at -- the same reading
+      // `planInviteMembership` gives an empty attendee list.
+      if (!remaining.length) {
+        sendJson(res, 422, {
+          error: {
+            message:
+              "remaining_attendees is required when removing, and must not be empty — refusing to clear the guest list",
+          },
+        });
+        return;
+      }
+      // Everyone being invited has to survive the replace. Without this an add followed by a
+      // removal whose remaining list predates it would uninvite the people just added.
+      const missing = attendees.filter(
+        (email) =>
+          !remaining.some((keep) => keep.trim().toLowerCase() === email.trim().toLowerCase()),
+      );
+      if (missing.length) {
+        sendJson(res, 422, {
+          error: {
+            message: `remaining_attendees must include everyone being invited; missing ${missing.join(", ")}`,
+          },
+        });
+        return;
+      }
+    }
+
+    // Add first, then replace. Either order lands the same guest list -- `remaining_attendees`
+    // already contains the invitees -- but adding first means a failure between the two leaves the
+    // event over-inclusive rather than short of the people who were supposed to be on it.
+    if (attendees.length) {
+      const added = await executeCalendarAction(service, principal, {
+        type: "calendar.add_attendees",
+        summary: `Invite ${attendees.length} to ${label}`,
+        payload: { calendar_id: calendarId, event_id: eventId, attendees },
+        rationale,
+      });
+      if (!added.ok) {
+        sendServiceResult(res, added);
+        return;
+      }
+      if (!remove.length) {
+        sendJson(res, 200, added.payload);
+        return;
+      }
+    }
+
     await runCalendarAction(res, service, principal, {
-      type: "calendar.add_attendees",
-      summary: `Invite ${attendees.length} to ${asString(body.summary) || eventId}`,
+      type: "calendar.remove_attendees",
+      summary: `Remove ${remove.length} from ${label}`,
       payload: {
-        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        calendar_id: calendarId,
         event_id: eventId,
-        attendees,
+        // Both halves travel: the ledger records who was dropped, and the connector writes the set
+        // that remains.
+        removed_attendees: remove,
+        remaining_attendees: remaining,
       },
-      rationale: asString(body.rationale) || "Invited from the Calendar tab by an admin.",
+      rationale,
+      undo_plan: "Re-invite the removed attendees with calendar.add_attendees.",
     });
     return;
   }
@@ -4863,6 +4926,59 @@ async function readGroupMeetingInvite(
   }
 }
 
+/**
+ * One calendar action, all the way through propose -> approve -> execute, as a result.
+ *
+ * Returns rather than responds so a route can run more than one and still answer once. The
+ * exclusive invite needs exactly that: adding people and removing people are two typed actions
+ * with two audit rows, and collapsing them into one would lose which of the two failed.
+ */
+async function executeCalendarAction(
+  service: AdminBotService,
+  principal: Extract<AdminBotPrincipal, { kind: "member" }>,
+  action: {
+    type: string;
+    summary: string;
+    payload: Record<string, unknown>;
+    rationale: string;
+    /** How to reverse it, for the ledger. Worth carrying on anything that takes something away. */
+    undo_plan?: string;
+  },
+): Promise<AdminBotServiceResponse<{ action_id: string; status: string; executed_at?: string }>> {
+  const created = service.createProposal({
+    type: action.type as AdminBotActionProposal["type"],
+    summary: action.summary,
+    proposed_payload: action.payload,
+    rationale: action.rationale,
+    ...(action.undo_plan ? { undo_plan: action.undo_plan } : {}),
+  });
+  if (!created.ok) {
+    return created;
+  }
+  const approved = service.approve(created.payload.id, {
+    payload_hash: created.payload.payload_hash,
+    approver_role: "admin",
+    approver_id: principal.member.id,
+    note: "Admin acted directly from the Calendar tab.",
+  });
+  if (!approved.ok) {
+    return approved;
+  }
+  const executed = await service.execute(created.payload.id, { dry_run: false });
+  if (!executed.ok) {
+    return executed;
+  }
+  return {
+    ok: true,
+    status: 200,
+    payload: {
+      action_id: created.payload.id,
+      status: executed.payload.status,
+      ...(executed.payload.executed_at ? { executed_at: executed.payload.executed_at } : {}),
+    },
+  };
+}
+
 async function runCalendarAction(
   res: ServerResponse,
   service: AdminBotService,
@@ -4872,38 +4988,15 @@ async function runCalendarAction(
     summary: string;
     payload: Record<string, unknown>;
     rationale: string;
+    undo_plan?: string;
   },
 ): Promise<void> {
-  const created = service.createProposal({
-    type: action.type as AdminBotActionProposal["type"],
-    summary: action.summary,
-    proposed_payload: action.payload,
-    rationale: action.rationale,
-  });
-  if (!created.ok) {
-    sendServiceResult(res, created);
+  const result = await executeCalendarAction(service, principal, action);
+  if (!result.ok) {
+    sendServiceResult(res, result);
     return;
   }
-  const approved = service.approve(created.payload.id, {
-    payload_hash: created.payload.payload_hash,
-    approver_role: "admin",
-    approver_id: principal.member.id,
-    note: "Admin acted directly from the Calendar tab.",
-  });
-  if (!approved.ok) {
-    sendServiceResult(res, approved);
-    return;
-  }
-  const executed = await service.execute(created.payload.id, { dry_run: false });
-  if (!executed.ok) {
-    sendServiceResult(res, executed);
-    return;
-  }
-  sendJson(res, 200, {
-    action_id: created.payload.id,
-    status: executed.payload.status,
-    executed_at: executed.payload.executed_at,
-  });
+  sendJson(res, 200, result.payload);
 }
 
 // Escalation-sensitive governance (global settings, sensitive-info read/write, registration

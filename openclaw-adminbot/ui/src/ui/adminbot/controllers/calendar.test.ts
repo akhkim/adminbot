@@ -4,19 +4,24 @@ const fetchCalendarEvents = vi.fn();
 const draftCalendarEvent = vi.fn();
 const createCalendarEvent = vi.fn();
 const updateCalendarEvent = vi.fn();
+const inviteToCalendarEvent = vi.fn();
 
 vi.mock("../auth/session.ts", () => ({
   fetchCalendarEvents: (...args: unknown[]) => fetchCalendarEvents(...args),
   draftCalendarEvent: (...args: unknown[]) => draftCalendarEvent(...args),
   createCalendarEvent: (...args: unknown[]) => createCalendarEvent(...args),
   updateCalendarEvent: (...args: unknown[]) => updateCalendarEvent(...args),
-  inviteToCalendarEvent: vi.fn(),
+  inviteToCalendarEvent: (...args: unknown[]) => inviteToCalendarEvent(...args),
   loadStoredMemberSession: () => ({ sessionToken: "token" }),
   resolveAdminBotBaseUrl: () => "http://localhost",
 }));
 
-const { loadAdminBotCalendar, requestAdminBotCalendarDraft, saveAdminBotCalendarEvent } =
-  await import("./calendar.ts");
+const {
+  inviteAdminBotCalendarAudience,
+  loadAdminBotCalendar,
+  requestAdminBotCalendarDraft,
+  saveAdminBotCalendarEvent,
+} = await import("./calendar.ts");
 
 type Host = Parameters<typeof loadAdminBotCalendar>[0];
 
@@ -34,6 +39,78 @@ beforeEach(() => {
   updateCalendarEvent.mockResolvedValue({
     ok: true,
     value: { action_id: "a", status: "executed" },
+  });
+  inviteToCalendarEvent.mockResolvedValue({
+    ok: true,
+    value: { action_id: "a", status: "executed" },
+  });
+});
+
+describe("inviteAdminBotCalendarAudience", () => {
+  const event = { id: "evt-1", summary: "Lab retreat", start: "2026-09-01T13:00:00-04:00" };
+
+  it("sends the removals and the list the event is left with", async () => {
+    const app = host();
+    await inviteAdminBotCalendarAudience(app, {
+      event,
+      emails: ["new@cs.toronto.edu"],
+      remove: ["gone@cs.toronto.edu"],
+      remaining: ["stays@elsewhere.org", "new@cs.toronto.edu"],
+      reason: "Selected on the Calendar tab: based in Toronto.",
+    });
+
+    const [eventId, request] = inviteToCalendarEvent.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(eventId).toBe("evt-1");
+    expect(request).toMatchObject({
+      attendees: ["new@cs.toronto.edu"],
+      remove: ["gone@cs.toronto.edu"],
+      remaining_attendees: ["stays@elsewhere.org", "new@cs.toronto.edu"],
+    });
+    expect(app.adminBotNotice?.text).toContain("Invited 1 person");
+    expect(app.adminBotNotice?.text).toContain("removed 1 person");
+  });
+
+  // An additive send must not start carrying a removal key it never meant, since an empty
+  // `remaining_attendees` alongside one is exactly what the route refuses.
+  it("says nothing about removals when there are none", async () => {
+    await inviteAdminBotCalendarAudience(host(), {
+      event,
+      emails: ["new@cs.toronto.edu"],
+      remove: [],
+      remaining: ["new@cs.toronto.edu"],
+      reason: "why",
+    });
+    const [, request] = inviteToCalendarEvent.mock.calls[0] as [string, Record<string, unknown>];
+    expect(request.remove).toBeUndefined();
+    expect(request.remaining_attendees).toBeUndefined();
+  });
+
+  // Syncing a guest list down to the filters is a real send with nobody joining.
+  it("still sends when the call only removes people", async () => {
+    const app = host();
+    await inviteAdminBotCalendarAudience(app, {
+      event,
+      emails: [],
+      remove: ["gone@cs.toronto.edu"],
+      remaining: ["stays@elsewhere.org"],
+      reason: "why",
+    });
+    expect(inviteToCalendarEvent).toHaveBeenCalledTimes(1);
+    expect(app.adminBotNotice?.text).toContain("removed 1 person");
+  });
+
+  it("does nothing when neither half names anybody", async () => {
+    await inviteAdminBotCalendarAudience(host(), {
+      event,
+      emails: [],
+      remove: [],
+      remaining: [],
+      reason: "why",
+    });
+    expect(inviteToCalendarEvent).not.toHaveBeenCalled();
   });
 });
 

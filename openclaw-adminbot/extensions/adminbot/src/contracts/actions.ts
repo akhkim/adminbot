@@ -780,6 +780,9 @@ export const adminBotConfidentialMemberFields = [
   // Their application. It is the most one-reader document on the record -- written for the people
   // deciding, and nobody else's to reread afterwards.
   "intake_form_url",
+  // Where a member's one-on-one notes live. Same reason: written for two people, and the roster
+  // should not be the thing that tells the other 198 where to look.
+  "one_on_one_folder_url",
 ] as const;
 
 /**
@@ -1400,6 +1403,20 @@ export type AdminBotLabMemberInput = {
   // -- the lab cannot derive it from the shared form URL, which is why it is a field they fill in
   // rather than a link the profile can render for them.
   intake_form_url?: string;
+  /**
+   * The Google Drive folder holding this member's one-on-one notes.
+   *
+   * A folder and never a document: the notes accumulate one file per meeting, so the stable thing
+   * to store is the container. Validated as a Drive *folder* URL (see SOCIAL_URL_FIELDS in
+   * kernel/service.ts) rather than any Google link, because a pasted Doc link here is the first
+   * meeting's notes filed as if it were the whole series -- it looks right until the second
+   * meeting, and then quietly stops being the answer to "where are my one-on-ones".
+   *
+   * Confidential (adminBotConfidentialMemberFields): the folder is Drive-permissioned anyway, but
+   * what the roster would otherwise publish to every signed-in member is *that these notes exist
+   * and where*, which is between the member and the admins keeping them.
+   */
+  one_on_one_folder_url?: string;
   linkedin_url?: string;
   // The numeric LinkedIn URN behind a member's profile ("ACoAAB..." or the digits form), which the
   // social automation needs to @-mention someone in a post: LinkedIn's API addresses people by URN,

@@ -22,8 +22,10 @@ import {
   knownCities,
   knownConferences,
   memberNamesByEmail,
+  reconcileAudience,
   selectAudience,
   type AudienceFilter,
+  type AudiencePlan,
 } from "../calendar-audience.ts";
 import { sanitizeEventDescription } from "../calendar-description.ts";
 import {
@@ -851,15 +853,60 @@ function renderAttendeeTime(state: AppViewState, memberId: string, startsAt: str
   `;
 }
 
+/**
+ * The exclusive plan for the selected event: who joins, who stays, who comes off.
+ *
+ * One function for the panel and for the send, so what an operator reads above the button is the
+ * same arithmetic the button performs. Computing them separately is how a confirm line ends up
+ * promising four removals and a write performs five.
+ *
+ * With no event selected there is nothing to reconcile against, so the plan is the additive one:
+ * everybody chosen is an invite and nothing is removed.
+ */
+function invitePlanOf(state: AppViewState): AudiencePlan {
+  const members = state.adminBotData?.members ?? [];
+  const papers = state.adminBotData?.papers ?? [];
+  const selected = (state.calendarEvents ?? []).find(
+    (event) => event.id === state.calendarSelectedEventId,
+  );
+  return reconcileAudience({
+    members,
+    papers,
+    filter: filterOf(state),
+    attendees: selected?.attendees ?? [],
+    excludedMemberIds: state.calendarExcludedMemberIds ?? [],
+    // The calendar the event lives on is routinely listed among its own attendees, and dropping it
+    // would take the event off the calendar it belongs to.
+    protectedEmails: [selected?.calendar_id, state.calendarSource?.id].filter(
+      (email): email is string => Boolean(email),
+    ),
+  });
+}
+
+/**
+ * The button's own count, which has to be able to say "nobody joins, three people leave".
+ *
+ * A single number was enough while the send only ever added people. It is not enough now that the
+ * same click can be entirely a removal -- a button reading "Send invites (0)" for a click that
+ * uninvites three people is the worst version of this control.
+ */
+function sendLabel(plan: AudiencePlan): string {
+  const parts = [
+    plan.invite.length ? `+${plan.invite.length}` : "",
+    plan.remove.length ? `−${plan.remove.length}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : "no change";
+}
+
 function renderInvitePanel(state: AppViewState) {
   const members = state.adminBotData?.members ?? [];
   const papers = state.adminBotData?.papers ?? [];
   const filter = filterOf(state);
   const audience = selectAudience(members, papers, filter);
   const excluded = new Set(state.calendarExcludedMemberIds ?? []);
-  const chosen = audience.matches.filter((match) => !excluded.has(match.member_id));
   const events = state.calendarEvents ?? [];
   const selected = events.find((event) => event.id === state.calendarSelectedEventId);
+  const plan = invitePlanOf(state);
   const timezones = [
     ...new Set(members.flatMap((member) => (member.timezone ? [member.timezone] : []))),
   ].toSorted((left, right) => left.localeCompare(right));
@@ -984,6 +1031,36 @@ function renderInvitePanel(state: AppViewState) {
             they cannot be invited until one is added.
           </p>`
         : nothing}
+      ${plan.remove.length
+        ? html`
+            <div class="adminbot-calendar__removals" data-testid="calendar-removals">
+              <p class="adminbot-calendar__note">
+                Sending makes the filters the whole guest list, so
+                ${plan.remove.length === 1 ? "this person comes" : "these people come"} off
+                "${selected?.summary}":
+              </p>
+              <ul class="adminbot-calendar__matches">
+                ${plan.remove.map(
+                  (person) => html`
+                    <li data-testid=${`calendar-removal-${person.member_id}`}>
+                      <span class="adminbot-calendar__match-name">${person.name}</span>
+                      <span class="adminbot-calendar__match-email">${person.email}</span>
+                      <span class="adminbot-calendar__match-why">${person.reason}</span>
+                    </li>
+                  `,
+                )}
+              </ul>
+            </div>
+          `
+        : nothing}
+      ${plan.unrecognized.length
+        ? html`<p class="adminbot-calendar__note" data-testid="calendar-kept-guests">
+            ${plan.unrecognized.length}
+            ${plan.unrecognized.length === 1 ? "address on" : "addresses on"} this event
+            ${plan.unrecognized.length === 1 ? "matches" : "match"} nobody on the roster
+            (${plan.unrecognized.join(", ")}) — guests and rooms are never removed.
+          </p>`
+        : nothing}
 
       <div class="adminbot-calendar__actions">
         ${state.calendarConfirming === "invite" && selected
@@ -992,15 +1069,21 @@ function renderInvitePanel(state: AppViewState) {
               role="status"
               data-testid="calendar-invite-confirm"
             >
-              ${chosen.length} ${chosen.length === 1 ? "person gets" : "people get"} a Google
-              Calendar invitation to "${selected.summary}".
+              ${plan.invite.length} ${plan.invite.length === 1 ? "person gets" : "people get"} a
+              Google Calendar invitation to "${selected.summary}"${plan.remove.length
+                ? html`, and ${plan.remove.length}
+                  ${plan.remove.length === 1 ? "person is" : "people are"} uninvited:
+                  ${plan.remove.map((person) => person.name).join(", ")}`
+                : nothing}.
             </span>`
           : nothing}
         <button
           type="button"
           class="btn primary"
           data-testid="calendar-send-invite"
-          ?disabled=${Boolean(state.calendarBusy) || !selected || chosen.length === 0}
+          ?disabled=${Boolean(state.calendarBusy) ||
+          !selected ||
+          (plan.invite.length === 0 && plan.remove.length === 0)}
           @click=${() => {
             // Two clicks, because nothing stands between this button and forty inboxes.
             if (state.calendarConfirming !== "invite") {
@@ -1014,8 +1097,8 @@ function renderInvitePanel(state: AppViewState) {
           ${!selected
             ? "Pick an event to invite people to"
             : state.calendarConfirming === "invite"
-              ? `Confirm — send ${chosen.length}`
-              : `Send invites (${chosen.length})`}
+              ? `Confirm — ${sendLabel(plan)}`
+              : `Sync guest list (${sendLabel(plan)})`}
         </button>
       </div>
     </section>
@@ -1073,15 +1156,19 @@ export function renderAdminBotCalendar(state: AppViewState) {
 export function calendarInviteSelection(state: AppViewState): {
   event: CalendarEvent | undefined;
   emails: string[];
+  /** Roster members on the event that the filters exclude. Empty means this send only adds. */
+  remove: string[];
+  /**
+   * Exactly who is on the event afterwards.
+   *
+   * Sent whenever anything is removed, because the write that removes has no remove flag -- it
+   * replaces the whole attendee list -- so the caller has to name the list it means to leave.
+   */
+  remaining: string[];
   reason: string;
 } {
-  const members = state.adminBotData?.members ?? [];
-  const papers = state.adminBotData?.papers ?? [];
   const filter = filterOf(state);
-  const excluded = new Set(state.calendarExcludedMemberIds ?? []);
-  const matches = selectAudience(members, papers, filter).matches.filter(
-    (match) => !excluded.has(match.member_id),
-  );
+  const plan = invitePlanOf(state);
   const parts = [
     filter.conference ? `writing for ${filter.conference}` : "",
     filter.currentCity ? `currently in ${filter.currentCity}` : "",
@@ -1090,11 +1177,18 @@ export function calendarInviteSelection(state: AppViewState): {
     filter.privilegeLevels?.length ? filter.privilegeLevels.join("/") : "",
     filter.statuses?.length ? filter.statuses.join("/") : "",
   ].filter(Boolean);
+  const filters = parts.length ? `Selected on the Calendar tab: ${parts.join(", ")}.` : "Selected on the Calendar tab.";
   return {
     event: (state.calendarEvents ?? []).find((event) => event.id === state.calendarSelectedEventId),
-    emails: matches.map((match) => match.email),
-    reason: parts.length
-      ? `Selected on the Calendar tab: ${parts.join(", ")}.`
-      : "Selected on the Calendar tab.",
+    emails: plan.invite,
+    remove: plan.remove.map((person) => person.email),
+    remaining: plan.remaining,
+    // The removals are the half a reader will question later, so the rationale on the action says
+    // the guest list was made exclusive rather than leaving "why was I uninvited" to the diff.
+    reason: plan.remove.length
+      ? `${filters} The guest list was synced to those filters, so ${plan.remove.length} ${
+          plan.remove.length === 1 ? "person who no longer matches was" : "people who no longer match were"
+        } removed.`
+      : filters,
   };
 }

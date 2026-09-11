@@ -269,6 +269,7 @@ const FIELD_HELP: Record<string, string> = {
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
   cv_url: "profile.help.cvUrl",
+  one_on_one_folder_url: "profile.help.oneOnOneFolderUrl",
   elevator_pitch: "profile.help.elevatorPitch",
 };
 

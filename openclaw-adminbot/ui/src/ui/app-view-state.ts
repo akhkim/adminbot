@@ -464,6 +464,10 @@ export type AppViewState = {
   adminBotMeetingNudgeError?: string | null;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
+  /** The live lab-wide broadcast, or null for none. `undefined` means "not loaded yet". */
+  adminBotBroadcast?: import("./adminbot/auth/session.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("./adminbot/auth/session.ts").LabBroadcast[];
+  loadBroadcast?: () => Promise<void>;
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;
