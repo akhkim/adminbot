@@ -187,6 +187,13 @@ export function meetingToWire(row: MeetingRequestRow): LogisticsMeeting {
     purpose: row.purpose.trim(),
     ...omitBlank({ preferred_time: row.preferredTime, timezone: row.timezone }),
     ...(Number.isFinite(minutes) && minutes > 0 ? { length_minutes: Math.round(minutes) } : {}),
+    ...omitBlank({ city: row.city, doc_prep_url: row.docPrepUrl }),
+    // Only an answered radio travels. An unanswered one must stay absent rather than become
+    // `false`, because the sheet's column distinguishes "no" from a blank.
+    ...(row.whatsappHello === "yes" || row.whatsappHello === "no"
+      ? { whatsapp_hello: row.whatsappHello === "yes" }
+      : {}),
+    ...omitBlank({ latest_ok_date: row.latestOkDate }),
     // The stamp travels with the row: it is when the member asked, and re-stamping it on submit
     // would make every row on a request look like it was raised at the same moment.
     ...(row.submittedAt > 0 ? { submitted_at: new Date(row.submittedAt).toISOString() } : {}),
@@ -343,6 +350,11 @@ export function meetingFromWire(meeting: LogisticsMeeting): MeetingRequestRow {
     preferredTime: meeting.preferred_time ?? "",
     timezone: meeting.timezone ?? "",
     lengthMinutes: meeting.length_minutes ? String(meeting.length_minutes) : "",
+    city: meeting.city ?? "",
+    docPrepUrl: meeting.doc_prep_url ?? "",
+    whatsappHello:
+      meeting.whatsapp_hello === undefined ? "" : meeting.whatsapp_hello ? "yes" : "no",
+    latestOkDate: meeting.latest_ok_date ?? "",
     // The stamp is when they asked, and correcting a request is not asking again.
     ...(meeting.submitted_at ? { submittedAt: Date.parse(meeting.submitted_at) } : {}),
   });

@@ -3302,6 +3302,13 @@ export type LogisticsMeeting = {
   timezone?: string;
   length_minutes?: number;
   submitted_at?: string;
+  /** Free-text location, which is what the call sheet's city column actually holds. */
+  city?: string;
+  doc_prep_url?: string;
+  /** Tri-state: absent is "not answered", which is not the same as "no". */
+  whatsapp_hello?: boolean;
+  /** yyyy-mm-dd after which the call stops being worth placing. */
+  latest_ok_date?: string;
 };
 
 export type LogisticsRequestInput = {

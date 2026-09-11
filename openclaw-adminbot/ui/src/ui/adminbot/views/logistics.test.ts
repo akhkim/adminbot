@@ -540,8 +540,11 @@ describe("request actions", () => {
     );
     const actions = request?.querySelector(".logistics-request__actions");
     expect(actions).not.toBeNull();
-    // Last thing in the card, after both sections.
-    expect(request?.lastElementChild).toBe(actions);
+    // After the table it acts on. It is no longer the last thing in the card: the link that opens
+    // the queue for reading sits below it, because reading the queue is not part of filing a row.
+    expect(request?.querySelector(".logistics-schools")?.compareDocumentPosition(actions!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(actionButtons(container).map((button) => button.textContent?.trim())).toEqual([
       "Discard",
       "Save",
@@ -1326,7 +1329,7 @@ describe("correcting a request already sent", () => {
     expect(drawn.cancelledEdits).toBe(1);
   });
 
-  it("points a new meeting request at the contact spreadsheet tab, not at a form", () => {
+  it("offers the form for a new meeting request, and the sheet only for reading the queue", () => {
     const { container } = draw({ template: "bookMeeting", meetingEditing: false });
     const link = container.querySelector<HTMLAnchorElement>(
       "[data-testid='logistics-meeting-sheet-link']",
@@ -1338,16 +1341,20 @@ describe("correcting a request already sent", () => {
     );
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toContain("noopener");
-    // No table to fill in on this path.
-    expect(container.querySelector("[data-testid='logistics-meeting']")).toBeNull();
+    // The table is the point of the tab now: the doc prep link has to be collected somewhere the
+    // service can check it before it reaches her queue.
+    expect(container.querySelector("[data-testid='logistics-meeting']")).not.toBeNull();
   });
 
   // The one field somebody can leave blank and not find out until their call never gets scheduled.
-  it("says column D is mandatory before the member opens the sheet", () => {
+  // Named by what it is rather than by its column letter, since it is now filled in here.
+  it("says the doc prep link is mandatory, and that it has to open", () => {
     const { container } = draw({ template: "bookMeeting", meetingEditing: false });
-    expect(
-      container.querySelector("[data-testid='logistics-meeting-mandatory']")?.textContent,
-    ).toContain("Column D is mandatory");
+    const mandatory = container.querySelector(
+      "[data-testid='logistics-meeting-mandatory']",
+    )?.textContent;
+    expect(mandatory).toContain("doc prep link is mandatory");
+    expect(mandatory).toContain("open for anyone with the link");
   });
 
   it("says nothing about correcting on a form holding a new request", () => {
@@ -1453,7 +1460,8 @@ describe("book meeting", () => {
     return draw({ ...options, template: "bookMeeting" });
   }
 
-  it("lays a request out as a row: when they asked, what for, when, on whose clock, how long", () => {
+  // Every column the call queue needs, in the order the queue reads them.
+  it("lays a request out as a row, through to the columns the call queue needs", () => {
     const { container } = drawMeeting({ meetings: [createMeetingRow()] });
     const names = [...container.querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
@@ -1462,6 +1470,10 @@ describe("book meeting", () => {
       "Preferred time",
       "Time zone",
       "Call length (min)",
+      "Your city / when you can take calls",
+      "Doc prep of your questions",
+      "Said hello on WhatsApp?",
+      "Call still useful until",
     ]);
   });
 
@@ -1472,8 +1484,9 @@ describe("book meeting", () => {
     const row = container.querySelector<HTMLElement>(".logistics-schools__row")!;
     expect(row.querySelector(".logistics-meeting__submitted input")).toBeNull();
     expect(row.querySelector(".logistics-meeting__submitted")?.textContent?.trim()).not.toBe("");
-    // The four columns a member fills in, and no fifth.
-    expect(row.querySelectorAll("input")).toHaveLength(4);
+    // The seven typed columns plus the WhatsApp select, and nothing for the stamp.
+    expect(row.querySelectorAll("input")).toHaveLength(7);
+    expect(row.querySelectorAll("select")).toHaveLength(1);
   });
 
   it("prefills the zone from the browser so a proposed time means a real instant", () => {
