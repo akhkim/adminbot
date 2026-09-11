@@ -468,6 +468,17 @@ export type AppViewState = {
   adminBotBroadcast?: import("./adminbot/auth/session.ts").LabBroadcast | null;
   adminBotBroadcastHistory?: import("./adminbot/auth/session.ts").LabBroadcast[];
   loadBroadcast?: () => Promise<void>;
+  /** What is in the My Desk compose box. Undefined means "has not been opened since load". */
+  adminBotBroadcastDraft?: string;
+  adminBotBroadcastExpiry?: string;
+  adminBotBroadcastAvailability?: string;
+  adminBotBroadcastBusy?: boolean;
+  adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  publishBroadcast?: (draft: {
+    message: string;
+    availability: string;
+    expiresOn: string;
+  } | null) => Promise<void>;
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;

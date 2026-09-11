@@ -62,6 +62,10 @@ function profile(fields: Partial<MemberProfileOverviewRow> & { id: string }) {
 
 function draw(overrides: Partial<ProfessorViewProps> = {}) {
   const opened: string[] = [];
+  const draft: string[] = [];
+  const expiry: string[] = [];
+  const availability: string[] = [];
+  const published: Array<{ message: string; availability: string; expiresOn: string } | null> = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -72,11 +76,28 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       profiles: [],
       escalated: [],
       onOpen: (tab) => opened.push(tab),
+      broadcast: null,
+      onBroadcastDraftChange: (value) => draft.push(value),
+      onBroadcastExpiryChange: (value) => expiry.push(value),
+      onBroadcastAvailabilityChange: (value) => availability.push(value),
+      onBroadcastPublish: (value) => published.push(value),
       ...overrides,
     }),
     container,
   );
-  return { container, opened };
+  return { container, opened, draft, expiry, availability, published };
+}
+
+/**
+ * The queue sections, in render order.
+ *
+ * Excludes the broadcast composer: it is not a queue and sits above the settled-sinks-to-the-bottom
+ * sort on purpose, so counting it here would make every ordering assertion about the wrong thing.
+ */
+function queueOrder(container: HTMLElement): Array<string | null> {
+  return [...container.querySelectorAll(".professor__section")]
+    .map((node) => node.getAttribute("data-testid"))
+    .filter((id) => id !== "professor-broadcast");
 }
 
 describe("recLetterQueue", () => {
@@ -399,9 +420,7 @@ describe("renderProfessorView", () => {
 
   it("sinks a settled section below one that still has work in it", () => {
     const { container } = draw({ profiles: [profile({ id: "a", missing_fields: ["office"] })] });
-    const order = [...container.querySelectorAll(".professor__section")].map((node) =>
-      node.getAttribute("data-testid"),
-    );
+    const order = queueOrder(container);
     expect(order).toEqual([
       "professor-adoption",
       "professor-escalated",
@@ -455,10 +474,7 @@ describe("renderProfessorView", () => {
 
     it("leads the page when somebody is waiting on her", () => {
       const { container } = draw({ escalated: [row()] });
-      const order = [...container.querySelectorAll(".professor__section")].map((node) =>
-        node.getAttribute("data-testid"),
-      );
-      expect(order[0]).toBe("professor-escalated");
+      expect(queueOrder(container)[0]).toBe("professor-escalated");
     });
 
     it("sinks below real work, and says so plainly, when nobody is waiting", () => {
@@ -468,9 +484,7 @@ describe("renderProfessorView", () => {
       });
       const section = container.querySelector('[data-testid="professor-escalated"]');
       expect(section?.textContent).toContain("Nobody has ignored a nudge long enough");
-      const order = [...container.querySelectorAll(".professor__section")].map((node) =>
-        node.getAttribute("data-testid"),
-      );
+      const order = queueOrder(container);
       // Below the adoption columns, which do have somebody in them.
       expect(order[0]).toBe("professor-adoption");
       expect(order.indexOf("professor-escalated")).toBeGreaterThan(0);
@@ -490,9 +504,131 @@ describe("renderProfessorView", () => {
       requestsLoading: true,
       profiles: [profile({ id: "a", missing_fields: ["office"] })],
     });
-    const order = [...container.querySelectorAll(".professor__section")].map((node) =>
-      node.getAttribute("data-testid"),
+    expect(queueOrder(container)[0]).toBe("professor-letters");
+  });
+});
+
+// The box she types the lab's broadcast into. Lives here rather than on Lab Sharing because it is
+// the one thing on this page that is hers to author.
+describe("the broadcast box", () => {
+  const live = {
+    id: "bcast_1",
+    availability: "away" as const,
+    message: "Sep 11-17: Zürich.",
+    updated_at: "2026-09-10T18:00:00.000Z",
+    expires_at: "2026-09-26T03:59:59.000Z",
+    updated_by: "zhijing",
+  };
+
+  it("always leads the page, even with queues waiting", () => {
+    const { container } = draw({
+      escalated: [
+        {
+          member_id: "m1",
+          name: "Waiting Member",
+          items: [{ kind: "profile", title: "Fill in your profile" }],
+          escalatedAt: "2026-09-01T00:00:00Z",
+        } as unknown as EscalatedNudgeRow,
+      ],
+    });
+    const first = container.querySelector(".professor__section");
+    expect(first?.getAttribute("data-testid")).toBe("professor-broadcast");
+  });
+
+  it("starts holding whatever is live, so an edit is a correction not a retype", () => {
+    const { container } = draw({ broadcast: live });
+    const box = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="professor-broadcast-text"]',
     );
-    expect(order[0]).toBe("professor-letters");
+    expect(box?.value).toBe("Sep 11-17: Zürich.");
+    expect(
+      container.querySelector('[data-testid="professor-broadcast-until"]')?.textContent,
+    ).toContain("2026-09-26");
+  });
+
+  it("posts what is typed, with the chosen end date", () => {
+    const { container, published } = draw({
+      broadcastDraft: "Back in Toronto Thursday.",
+      broadcastExpiry: "2026-09-30",
+      broadcastAvailability: "busy",
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')
+      ?.click();
+    expect(published).toEqual([
+      { message: "Back in Toronto Thursday.", availability: "busy", expiresOn: "2026-09-30" },
+    ]);
+  });
+
+  it("reports every keystroke so the draft survives a re-render", () => {
+    const { container, draft } = draw({});
+    const box = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="professor-broadcast-text"]',
+    )!;
+    box.value = "Travelling next week";
+    box.dispatchEvent(new Event("input"));
+    expect(draft).toEqual(["Travelling next week"]);
+  });
+
+  // An empty box is a real state -- it is what taking a broadcast down leaves behind -- so it must
+  // not silently refill itself from the one just cleared.
+  it("keeps an emptied box empty rather than refilling it from the live broadcast", () => {
+    const { container } = draw({ broadcast: live, broadcastDraft: "" });
+    expect(
+      container.querySelector<HTMLTextAreaElement>('[data-testid="professor-broadcast-text"]')
+        ?.value,
+    ).toBe("");
+  });
+
+  it("will not post an empty or unchanged broadcast", () => {
+    const empty = draw({ broadcastDraft: "   " });
+    expect(
+      empty.container.querySelector<HTMLButtonElement>(
+        '[data-testid="professor-broadcast-post"]',
+      )?.disabled,
+    ).toBe(true);
+
+    // Same text and same end date as what is already up: nothing to say.
+    const unchanged = draw({ broadcast: live, broadcastExpiry: live.expires_at.slice(0, 10) });
+    expect(
+      unchanged.container.querySelector<HTMLButtonElement>(
+        '[data-testid="professor-broadcast-post"]',
+      )?.disabled,
+    ).toBe(true);
+  });
+
+  it("offers a take-down only when something is live, and sends null for it", () => {
+    expect(
+      draw({}).container.querySelector('[data-testid="professor-broadcast-clear"]'),
+    ).toBeNull();
+
+    const { container, published } = draw({ broadcast: live });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-clear"]')
+      ?.click();
+    expect(published).toEqual([null]);
+  });
+
+  it("locks the controls and shows the reason while a post is in flight or has failed", () => {
+    const busy = draw({ broadcastDraft: "x", broadcastBusy: true });
+    expect(
+      busy.container.querySelector<HTMLTextAreaElement>(
+        '[data-testid="professor-broadcast-text"]',
+      )?.disabled,
+    ).toBe(true);
+
+    const failed = draw({
+      broadcastNotice: { kind: "error", text: "Could not post that broadcast." },
+    });
+    const notice = failed.container.querySelector('[data-testid="professor-broadcast-notice"]');
+    expect(notice?.textContent).toContain("Could not post");
+    expect(notice?.getAttribute("role")).toBe("alert");
+  });
+
+  it("says plainly when nothing is being broadcast", () => {
+    const { container } = draw({});
+    expect(container.querySelector('[data-testid="professor-broadcast"]')?.textContent).toContain(
+      "Nothing being broadcast",
+    );
   });
 });

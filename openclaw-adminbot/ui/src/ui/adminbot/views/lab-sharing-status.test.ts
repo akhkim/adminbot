@@ -30,7 +30,7 @@ it("expires visible status without refresh and clears on logout", async () => {
   await vi.advanceTimersByTimeAsync(0);
   await el.updateComplete;
   expect(el.textContent).toContain("Synthetic status");
-  expect(el.querySelector("select")!.value).toBe("busy");
+  expect(el.textContent).toContain("Busy");
   await vi.advanceTimersByTimeAsync(1000);
   await el.updateComplete;
   expect(el.textContent).not.toContain("Synthetic status");
@@ -40,12 +40,13 @@ it("expires visible status without refresh and clears on logout", async () => {
   expect(el.textContent?.trim()).toBe("");
 });
 
-it("preserves an admin draft after a failed publish and hides editor for members", async () => {
+// The composer moved to My Desk so there is one surface that writes a broadcast. This panel is the
+// one members read, and it must not grow a second editor -- for an admin either, or the two drift.
+it("renders no editor, for an admin or a member, and only ever reads", async () => {
   vi.useFakeTimers();
   const fetcher = vi
     .fn()
-    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: null, can_manage: true }) })
-    .mockRejectedValueOnce(new Error("Offline"));
+    .mockResolvedValue({ ok: true, json: async () => ({ status: null, history: [], can_manage: true }) });
   vi.stubGlobal("fetch", fetcher);
   const el = document.createElement("lab-sharing-status") as LabSharingStatus;
   el.sessionToken = "admin";
@@ -53,42 +54,25 @@ it("preserves an admin draft after a failed publish and hides editor for members
   await el.updateComplete;
   await vi.advanceTimersByTimeAsync(0);
   await el.updateComplete;
-  const message = el.querySelector("textarea")!;
-  message.value = "Reviewing synthetic papers";
-  message.dispatchEvent(new Event("input"));
-  const expiry = el.querySelector("input")!;
-  expiry.value = "2099-01-01T12:00";
-  expiry.dispatchEvent(new Event("input"));
-  await el.updateComplete;
-  el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
-  await vi.advanceTimersByTimeAsync(0);
-  await el.updateComplete;
-  expect(fetcher.mock.calls[1][1].method).toBe("PUT");
-  expect(el.querySelector("textarea")!.value).toBe(message.value);
-  expect(el.textContent).toContain("Offline");
-  fetcher.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: null, can_manage: false }),
-  });
-  el.sessionToken = "member";
-  await el.updateComplete;
-  await vi.advanceTimersByTimeAsync(0);
-  await el.updateComplete;
+
+  // can_manage is true above, so this is not "hidden from a member" -- nobody gets an editor here.
   expect(el.querySelector("form")).toBeNull();
+  expect(el.querySelector("textarea")).toBeNull();
+  expect(el.querySelector("select")).toBeNull();
+  for (const [, init] of fetcher.mock.calls) {
+    expect(init?.method ?? "GET").toBe("GET");
+  }
 });
 
-it("removes the editor after server authorization is revoked", async () => {
+it("surfaces a refusal instead of an empty panel", async () => {
   vi.useFakeTimers();
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: null, can_manage: true }) })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        json: async () => ({ error: { message: "Access revoked" } }),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { message: "Access revoked" } }),
+    }),
   );
   const el = document.createElement("lab-sharing-status") as LabSharingStatus;
   el.sessionToken = "admin";
@@ -96,14 +80,8 @@ it("removes the editor after server authorization is revoked", async () => {
   await el.updateComplete;
   await vi.advanceTimersByTimeAsync(0);
   await el.updateComplete;
-  expect(el.querySelector("form")).not.toBeNull();
-  el.querySelector("button")!.click();
-  await vi.advanceTimersByTimeAsync(0);
-  await el.updateComplete;
-  expect(el.querySelector("form")).toBeNull();
   expect(el.textContent).toContain("Access revoked");
 });
-
 
 // The archive is the half a single-row table could never hold: what the lab was told before this
 // week. Shown under the live broadcast, and never repeating it.

@@ -3368,6 +3368,27 @@ export function renderApp(state: AppViewState) {
               profiles: state.adminBotProfileOverview ?? [],
               escalated: state.adminBotEscalatedNudges ?? [],
               onOpen: (tab) => state.setTab(tab),
+              broadcast: state.adminBotBroadcast ?? null,
+              broadcastDraft: state.adminBotBroadcastDraft,
+              broadcastExpiry: state.adminBotBroadcastExpiry,
+              broadcastAvailability: state.adminBotBroadcastAvailability,
+              broadcastBusy: state.adminBotBroadcastBusy,
+              broadcastNotice: state.adminBotBroadcastNotice,
+              onBroadcastDraftChange: (value) => {
+                state.adminBotBroadcastDraft = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastExpiryChange: (value) => {
+                state.adminBotBroadcastExpiry = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastAvailabilityChange: (value) => {
+                state.adminBotBroadcastAvailability = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastPublish: (draft) => {
+                void state.publishBroadcast?.(draft).finally(() => requestHostUpdate?.());
+              },
             })
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}

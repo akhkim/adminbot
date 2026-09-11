@@ -86,6 +86,7 @@ import {
 import {
   loadAdminBotBroadcast,
   loadAdminBotNotifications,
+  publishAdminBotBroadcast,
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
@@ -352,6 +353,11 @@ export class OpenClawApp extends LitElement {
   @state() adminBotNotifications?: MemberNotification[];
   @state() adminBotBroadcast?: LabBroadcast | null;
   @state() adminBotBroadcastHistory?: LabBroadcast[];
+  @state() adminBotBroadcastDraft?: string;
+  @state() adminBotBroadcastExpiry?: string;
+  @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastBusy = false;
+  @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   @state() adminBotMeetingsSaving = false;
@@ -1237,6 +1243,8 @@ export class OpenClawApp extends LitElement {
     this.adminBotNotifications = undefined;
     this.adminBotBroadcast = undefined;
     this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   async endViewAs() {
@@ -1249,6 +1257,8 @@ export class OpenClawApp extends LitElement {
     this.adminBotNotifications = undefined;
     this.adminBotBroadcast = undefined;
     this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   async signOutMember() {
@@ -1261,6 +1271,8 @@ export class OpenClawApp extends LitElement {
     this.adminBotNotifications = undefined;
     this.adminBotBroadcast = undefined;
     this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   openChangePassword() {
@@ -1745,6 +1757,15 @@ export class OpenClawApp extends LitElement {
 
   loadBroadcast(): Promise<void> {
     return loadAdminBotBroadcast(this as unknown as Parameters<typeof loadAdminBotBroadcast>[0]);
+  }
+
+  publishBroadcast(
+    draft: { message: string; availability: string; expiresOn: string } | null,
+  ): Promise<void> {
+    return publishAdminBotBroadcast(
+      this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],
+      draft,
+    );
   }
 
   loadNotifications(): Promise<void> {

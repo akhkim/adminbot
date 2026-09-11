@@ -13,6 +13,7 @@ import { showToast } from "../../toast.ts";
 // behind is the version that still says the thing tomorrow without saying it every minute.
 import {
   fetchLabBroadcasts,
+  publishLabBroadcast,
   fetchNotifications,
   loadStoredMemberSession,
   markNotificationsRead,
@@ -146,4 +147,79 @@ export async function loadAdminBotBroadcast(host: AdminBotHost): Promise<void> {
   // Set even on failure, so the lazy loader in app-render does not retry on every render.
   host.adminBotBroadcast = result.ok ? result.value.status : null;
   host.adminBotBroadcastHistory = result.ok ? result.value.history : [];
+}
+
+/** A week, which is the span "broadcast from Zhijing for this week" actually means. */
+export const ADMINBOT_BROADCAST_DEFAULT_DAYS = 7;
+
+/** The default expiry as a `yyyy-mm-dd`, for the date input to start on. */
+export function defaultBroadcastExpiry(now = new Date()): string {
+  const end = new Date(now.getTime() + ADMINBOT_BROADCAST_DEFAULT_DAYS * 86_400_000);
+  return end.toISOString().slice(0, 10);
+}
+
+/**
+ * Post what is in the box, or take the current broadcast down.
+ *
+ * Loud about its failures, unlike the read above: somebody pressed a button and is owed an answer.
+ * A broadcast that silently failed to post is worse than one that never existed, because she thinks
+ * the lab has been told.
+ *
+ * The date is read as the *end* of that day in the composer's own timezone -- "until the 26th"
+ * means through the 26th, not up to midnight as it began.
+ */
+export async function publishAdminBotBroadcast(
+  host: AdminBotHost,
+  draft: { message: string; availability: string; expiresOn: string } | null,
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.adminBotBroadcastBusy) {
+    return;
+  }
+  let body: Parameters<typeof publishLabBroadcast>[0] = null;
+  if (draft) {
+    const message = draft.message.trim();
+    if (!message) {
+      host.adminBotBroadcastNotice = { kind: "error", text: "Write something to broadcast first." };
+      return;
+    }
+    const endOfDay = new Date(`${draft.expiresOn}T23:59:59`);
+    if (!Number.isFinite(endOfDay.getTime()) || endOfDay.getTime() <= Date.now()) {
+      host.adminBotBroadcastNotice = { kind: "error", text: "Pick an end date in the future." };
+      return;
+    }
+    body = {
+      availability: (draft.availability || "unknown") as "available" | "busy" | "away" | "unknown",
+      message,
+      expires_at: endOfDay.toISOString(),
+    };
+  }
+
+  host.adminBotBroadcastBusy = true;
+  host.adminBotBroadcastNotice = null;
+  try {
+    const result = await publishLabBroadcast(
+      body,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.adminBotBroadcastNotice = {
+        kind: "error",
+        text: result.message ?? "Could not post that broadcast.",
+      };
+      return;
+    }
+    host.adminBotBroadcast = result.value.status;
+    host.adminBotBroadcastHistory = result.value.history;
+    // The box follows what is live, so a post leaves it showing what was posted rather than a
+    // stale draft, and a clear empties it.
+    host.adminBotBroadcastDraft = result.value.status?.message ?? "";
+    host.adminBotBroadcastNotice = {
+      kind: "success",
+      text: body ? "Posted to the lab." : "Broadcast taken down.",
+    };
+  } finally {
+    host.adminBotBroadcastBusy = false;
+  }
 }
