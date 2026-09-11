@@ -85,6 +85,7 @@ import {
 } from "./lab-sharing-interest.js";
 import {
   ensureDirectorStatusSchema,
+  listDirectorStatusHistory,
   saveDirectorStatus,
   readDirectorStatus,
 } from "./lab-sharing-status.js";
@@ -2275,6 +2276,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
   readDirectorStatus(): LabDirectorStatus | null {
     return readDirectorStatus(this.db);
+  }
+  listDirectorStatusHistory(limit?: number): LabDirectorStatus[] {
+    return listDirectorStatusHistory(this.db, limit);
   }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);

@@ -2,10 +2,12 @@ import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 
 type SharedStatus = {
+  id?: string;
   availability: string;
   message: string;
   updated_at: string;
   expires_at: string;
+  retracted_at?: string;
 };
 const availabilityLabels: Record<string, string> = {
   unknown: "Unknown",
@@ -18,6 +20,8 @@ export class LabSharingStatus extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
   @state() private status: SharedStatus | null = null;
+  /** Every broadcast, newest first. The archive the lab reads back; the service caps the length. */
+  @state() private history: SharedStatus[] = [];
   @state() private busy = false;
   @state() private error = "";
   @state() private canManage = false;
@@ -41,6 +45,7 @@ export class LabSharingStatus extends LitElement {
     this.generation++;
     clearTimeout(this.expiryTimer);
     this.status = null;
+    this.history = [];
     this.canManage = false;
     this.draft = { availability: "unknown", message: "", expiry: "" };
     this.busy = false;
@@ -99,6 +104,7 @@ export class LabSharingStatus extends LitElement {
         throw new Error(data.error?.message ?? "Could not load status.");
       }
       this.status = data.status;
+      this.history = Array.isArray(data.history) ? data.history : [];
       this.canManage = data.can_manage === true;
       const date = data.status ? new Date(data.status.expires_at) : null;
       this.draft = {
@@ -112,6 +118,7 @@ export class LabSharingStatus extends LitElement {
     } catch (error) {
       if (generation === this.generation) {
         this.status = null;
+        this.history = [];
         this.error = error instanceof Error ? error.message : "Could not load status.";
       }
     } finally {
@@ -122,9 +129,12 @@ export class LabSharingStatus extends LitElement {
     if (!this.sessionToken) return nothing;
     const current =
       this.status && Date.parse(this.status.expires_at) > Date.now() ? this.status : null;
-    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Zhijing’s availability">
-      <h2 class="lab-sharing-seek__title">Zhijing’s availability</h2>
-      <p class="lab-sharing-seek__sub">Check the latest shared update before reaching out. This is a manual update, not live calendar availability.</p>
+    // Everything but the live one. The current broadcast is rendered in full above, so repeating it
+    // in the archive would make the same message look like it was said twice.
+    const past = this.history.filter((entry) => entry !== current);
+    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Zhijing’s updates">
+      <h2 class="lab-sharing-seek__title">Zhijing’s updates</h2>
+      <p class="lab-sharing-seek__sub">The latest broadcast to the lab, and everything said before it. This is a manual update, not live calendar availability.</p>
       <button class="btn" ?disabled=${this.busy} @click=${() => this.refresh()}>
         Refresh status
       </button>
@@ -144,8 +154,29 @@ export class LabSharingStatus extends LitElement {
             </p>
           </article>`
         : !this.busy && !this.error
-          ? html`<p>No current status shared.</p>`
+          ? html`<p>No current update shared.</p>`
           : nothing}
+      ${past.length
+        ? html`<div class="lab-sharing-status__history" data-testid="lab-sharing-status-history">
+            <h3 class="lab-sharing-seek__title">Earlier updates</h3>
+            <ol class="lab-sharing-status__history-list">
+              ${past.map(
+                (entry) => html`<li
+                  class="lab-sharing-status__history-item"
+                  data-testid="lab-sharing-status-history-item"
+                >
+                  <p class="lab-sharing-status__history-body">${entry.message}</p>
+                  <p class="lab-sharing-request__time">
+                    ${new Date(entry.updated_at).toLocaleDateString()}
+                    ${entry.retracted_at
+                      ? html`· <span class="lab-sharing-status__retracted">withdrawn</span>`
+                      : nothing}
+                  </p>
+                </li>`,
+              )}
+            </ol>
+          </div>`
+        : nothing}
       ${this.canManage
         ? html`<form
             class="lab-sharing-directory__form"

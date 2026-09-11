@@ -13,6 +13,7 @@ import {
   type MeetingRecord,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
+  type LabBroadcast,
   type MemberNotification,
   type AdminBotEmailReviewItem,
   type AdminBotEmailReviewPaperflowCandidate,
@@ -813,6 +814,8 @@ export type AdminBotHost = {
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
+  adminBotBroadcast?: LabBroadcast | null;
+  adminBotBroadcastHistory?: LabBroadcast[];
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;

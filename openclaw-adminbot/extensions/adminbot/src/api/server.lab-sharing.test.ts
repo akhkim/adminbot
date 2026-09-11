@@ -529,3 +529,52 @@ it("allows compact-response preference in an allowed-origin preflight",async()=>
  const response=await fetch(`${baseUrl}/lab-sharing/requests/paper-1`,{method:"OPTIONS",headers:{Origin:"http://127.0.0.1:5197","Access-Control-Request-Method":"PUT","Access-Control-Request-Headers":"authorization,content-type,prefer"}});
  expect(response.headers.get("access-control-allow-headers")).toContain("Prefer");
 });
+
+  // The broadcast archive, end to end: admin publishes, every member reads back the history.
+  it("keeps a broadcast archive that members can read and only admins can add to", async () => {
+    const { mock, baseUrl } = await startLab();
+    const member = await memberSession(mock, baseUrl, "member");
+    const admin = await memberSession(mock, baseUrl, "admin");
+    const url = `${baseUrl}/lab-sharing/status`;
+    const publish = (headers: Record<string, string>, message: string) =>
+      fetch(url, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          availability: "away",
+          message,
+          expires_at: "2099-01-01T00:00:00Z",
+        }),
+      });
+
+    // Publishing is admin-only; reading is not, because a broadcast is addressed to everybody.
+    expect((await publish(member, "Members cannot broadcast")).status).toBe(403);
+    expect((await publish(admin, "First broadcast")).status).toBe(200);
+    expect((await publish(admin, "Second broadcast")).status).toBe(200);
+
+    const seen = await fetch(url, { headers: member });
+    expect(seen.status).toBe(200);
+    const payload = (await seen.json()) as {
+      status: { message: string } | null;
+      history: Array<{ message: string; id?: string }>;
+      can_manage: boolean;
+    };
+    expect(payload.status?.message).toBe("Second broadcast");
+    // The first one survives the second, which the single-row table it replaced could not do.
+    expect(payload.history.map((row) => row.message)).toEqual([
+      "Second broadcast",
+      "First broadcast",
+    ]);
+    expect(payload.can_manage).toBe(false);
+
+    // Clearing takes the current one down without emptying the record of it.
+    expect(
+      (await fetch(`${url}/clear`, { method: "POST", headers: admin })).status,
+    ).toBe(200);
+    const after = (await (await fetch(url, { headers: admin })).json()) as {
+      status: unknown;
+      history: unknown[];
+    };
+    expect(after.status).toBeNull();
+    expect(after.history).toHaveLength(2);
+  });

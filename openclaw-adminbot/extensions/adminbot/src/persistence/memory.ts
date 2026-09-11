@@ -46,7 +46,10 @@ import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
 import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
-import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
+import {
+  ADMINBOT_BROADCAST_HISTORY_LIMIT,
+  type LabDirectorStatus,
+} from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -84,12 +87,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listHelpInterests(): LabHelpInterest[] {
     return [...this.helpInterests.values()].map((row) => structuredClone(row));
   }
-  private directorStatus: LabDirectorStatus | null = null;
+  // Append-only, newest first, mirroring persistence/lab-sharing-status.ts. A null save retracts
+  // the newest live entry rather than dropping it: the archive is the point.
+  private directorBroadcasts: LabDirectorStatus[] = [];
   saveDirectorStatus(status: LabDirectorStatus | null): void {
-    this.directorStatus = structuredClone(status);
+    if (status) {
+      this.directorBroadcasts.unshift(structuredClone(status));
+      return;
+    }
+    const latest = this.directorBroadcasts[0];
+    if (latest && !latest.retracted_at) {
+      this.directorBroadcasts[0] = { ...latest, retracted_at: new Date().toISOString() };
+    }
   }
   readDirectorStatus(): LabDirectorStatus | null {
-    return structuredClone(this.directorStatus);
+    return structuredClone(this.directorBroadcasts[0] ?? null);
+  }
+  listDirectorStatusHistory(limit = ADMINBOT_BROADCAST_HISTORY_LIMIT): LabDirectorStatus[] {
+    return this.directorBroadcasts.slice(0, Math.max(1, limit)).map((row) => structuredClone(row));
   }
   private readonly helpRequests = new Map<string, LabHelpRequest>();
   saveHelpRequest(request: LabHelpRequest): void {

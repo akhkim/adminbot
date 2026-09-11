@@ -1655,7 +1655,20 @@ export async function updateCalendarEvent(
 
 export async function inviteToCalendarEvent(
   eventId: string,
-  request: { attendees: string[]; summary?: string; rationale?: string },
+  request: {
+    attendees: string[];
+    /**
+     * Addresses to take off the event, for an exclusive send.
+     *
+     * Paired with `remaining_attendees` and never sent alone: the calendar write behind a removal
+     * replaces the guest list rather than subtracting from it, so the route refuses a removal that
+     * does not say what should be left.
+     */
+    remove?: string[];
+    remaining_attendees?: string[];
+    summary?: string;
+    rationale?: string;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<CalendarActionResult>> {
@@ -3042,6 +3055,47 @@ export async function sendMeetingAttendanceNudges(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: result.body as MeetingAttendanceNudgeResult };
+}
+
+/**
+ * One lab-wide broadcast from the head of the lab.
+ *
+ * Mirrors LabDirectorStatus in extensions/adminbot/src/contracts/lab-sharing-status.ts. `id` and
+ * `retracted_at` are optional here and not there: a service older than the archive answers without
+ * them, and this page should render that rather than crash on it.
+ */
+export type LabBroadcast = {
+  id?: string;
+  availability: "available" | "busy" | "away" | "unknown";
+  message: string;
+  expires_at: string;
+  updated_at: string;
+  updated_by: string;
+  retracted_at?: string;
+};
+
+/**
+ * The current broadcast and the archive behind it.
+ *
+ * Both come from one read, because the banner and the "Zhijing's updates" list are two views of the
+ * same answer and a second round trip would let them disagree about which entry is current.
+ */
+export async function fetchLabBroadcasts(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = await authedJson(baseUrl, "/lab-sharing/status", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return {
+    ok: true,
+    value: { status: body?.status ?? null, history: body?.history ?? [] },
+  };
 }
 
 export type MemberNotification = {

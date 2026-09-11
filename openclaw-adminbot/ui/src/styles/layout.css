@@ -1347,9 +1347,49 @@
 /* Personal work remains at the dashboard's established reading width. The public deadline tool
    below uses its full board width so it is the same component, not a compressed dashboard mode. */
 .dashboard__attention,
+.dashboard__broadcast,
 .dashboard__summaries {
   width: 100%;
   max-width: 62rem;
+}
+
+/* The lab-wide broadcast. Carries an accent rule down its leading edge rather than a filled panel:
+   it sits above the attention stack, which is already a column of cards, and a second filled block
+   at the top of that column reads as one more task rather than as somebody talking. */
+.dashboard__broadcast {
+  border-inline-start: 3px solid var(--accent, currentColor);
+  border-radius: var(--radius-2, 6px);
+  background: var(--surface-2, transparent);
+  padding: var(--space-3) var(--space-4);
+}
+
+.dashboard__broadcast-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dashboard__broadcast-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* The message is written as lines -- travel dates, one place per line -- so the newlines the author
+   typed are the ones the reader sees. */
+.dashboard__broadcast-body {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.dashboard__broadcast-meta {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8125rem;
+  opacity: 0.65;
 }
 
 .dashboard__deadlines {
@@ -10635,4 +10675,36 @@ adminbot-paper-visibility { display: block; min-width: 0; margin-bottom: var(--s
   .decision-banner__row > .decision-banner__label { flex-basis: 100%; }
   .my-work__section-head { flex-direction: column; align-items: stretch; }
   .my-work .my-work__section-actions { justify-content: flex-start; }
+}
+
+/* "Zhijing's updates": the archive under the current broadcast. A plain list rather than cards --
+   these are things that were said and are no longer being said, so they should read as a record
+   somebody scans, not as a stack of live notices competing with the one above them. */
+.lab-sharing-status__history {
+  margin-top: var(--space-5);
+}
+
+.lab-sharing-status__history-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lab-sharing-status__history-item {
+  border-inline-start: 2px solid var(--border, currentColor);
+  padding-inline-start: var(--space-3);
+}
+
+/* The author's own line breaks, same as the banner. */
+.lab-sharing-status__history-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.lab-sharing-status__retracted {
+  font-style: italic;
 }

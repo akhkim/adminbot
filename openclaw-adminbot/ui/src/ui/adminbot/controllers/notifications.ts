@@ -12,6 +12,7 @@ import { showToast } from "../../toast.ts";
 // something the member learns to close without reading; firing once and leaving the dashboard card
 // behind is the version that still says the thing tomorrow without saying it every minute.
 import {
+  fetchLabBroadcasts,
   fetchNotifications,
   loadStoredMemberSession,
   markNotificationsRead,
@@ -122,4 +123,27 @@ export async function markAdminBotNotificationsRead(
 /** Forget which popups have fired. Called on sign-out: the next member starts with a clean corner. */
 export function resetNotificationPopups(): void {
   popped.clear();
+}
+
+
+/**
+ * The lab-wide broadcast, for the top of the dashboard.
+ *
+ * Silent on failure for the same reason notifications are: a broadcast is something the lab is
+ * telling the member, and a service that is briefly unreachable must not put an error where the
+ * message goes. An empty state reads as "nothing being broadcast", which is the honest answer when
+ * we cannot tell.
+ */
+export async function loadAdminBotBroadcast(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return;
+  }
+  const result = await fetchLabBroadcasts(
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  // Set even on failure, so the lazy loader in app-render does not retry on every render.
+  host.adminBotBroadcast = result.ok ? result.value.status : null;
+  host.adminBotBroadcastHistory = result.ok ? result.value.history : [];
 }
