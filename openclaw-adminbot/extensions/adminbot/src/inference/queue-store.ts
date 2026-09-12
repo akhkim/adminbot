@@ -45,9 +45,11 @@ export type InferenceFailureKind =
 /**
  * What the gate needs to make the call, and nothing it must not keep.
  *
- * No credential is stored: `apiKeyEnv` names the variable to read at dispatch, so a row re-admitted
- * after a restart authenticates with whatever the environment holds then, and a database copy carries
- * no bearer token.
+ * No credential is stored. `apiKeyEnv` names the variable to read at dispatch, so a row re-admitted
+ * after a restart authenticates with whatever the environment holds then, and a database copy
+ * carries no bearer token. A caller that already holds its key hands it to the gate beside the
+ * request (`InferenceGateRequest.apiKey`), where it lives in process memory for the life of the
+ * call and no longer.
  */
 export type InferenceRequestRecord = {
   route: "chat/completions" | "embeddings";
@@ -55,7 +57,6 @@ export type InferenceRequestRecord = {
   body: Record<string, unknown>;
   purpose: string;
   apiKeyEnv?: string;
-  apiKeyFallback?: string;
 };
 
 export type InferenceResponseRecord = {

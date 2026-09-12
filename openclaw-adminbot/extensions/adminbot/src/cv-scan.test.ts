@@ -566,3 +566,43 @@ describe("publications", () => {
     expect(draft.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
   });
 });
+
+describe("CV extraction at a busy gate", () => {
+  it("surfaces a shed from the gate with no second model call", async () => {
+    const { createSaturatedGate, settleMicrotasks } = await import(
+      "./inference/gate.test-support.js"
+    );
+    const { InferenceDeferredError } = await import("./inference/gate.js");
+    const { createAdminBotCvScanDeps } = await import("./cv-scan.js");
+    const saturated = createSaturatedGate();
+    await settleMicrotasks();
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const scanDeps = createAdminBotCvScanDeps({
+      extractScriptPath: "/unused.py",
+      fetchImpl,
+      env: {},
+      gate: saturated.gate,
+    });
+    // The scan waits by default (it is unattended), but this gate has no line to wait in, so the
+    // outcome is a shed -- the same decision an interactive caller would see.
+    await expect(scanDeps.extractEntries("cv text")).rejects.toBeInstanceOf(InferenceDeferredError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    saturated.release();
+  });
+
+  it("drafts a blurb through the gate and surfaces a shed with no second model call", async () => {
+    const { createSaturatedGate, settleMicrotasks } = await import(
+      "./inference/gate.test-support.js"
+    );
+    const { InferenceDeferredError } = await import("./inference/gate.js");
+    const { draftMemberBlurb } = await import("./cv-scan.js");
+    const saturated = createSaturatedGate();
+    await settleMicrotasks();
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    await expect(
+      draftMemberBlurb({ name: "Ada" }, [POSITION], { fetchImpl, env: {}, gate: saturated.gate }),
+    ).rejects.toBeInstanceOf(InferenceDeferredError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    saturated.release();
+  });
+});

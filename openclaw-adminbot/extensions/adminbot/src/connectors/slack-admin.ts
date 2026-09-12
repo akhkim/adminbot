@@ -99,8 +99,12 @@ export function createAdminBotSlackAdminExecutor(
         const ts = await postOrUpdateChannelMessage(token, target, fetchImpl);
         return { handled: true, artifacts: { slack_channel: target.channel_id, slack_ts: ts } };
       }
+      // The same group-DM shape for all of these: one conversation with everybody who should hear
+      // it. The inference one opens a room with every admin, so the first to see it can say "on it"
+      // where the others watch, rather than three admins each restarting the same server.
       if (
         proposal.type === "member_nudge.escalate" ||
+        proposal.type === "inference.escalate" ||
         proposal.type === "paper_integrity.alert" ||
         proposal.type === "paper_integrity.report"
       ) {
@@ -391,7 +395,9 @@ async function removeFromSlackChannel(
   }
 }
 
-function readGroupDmPayload(proposal: AdminBotStoredProposal): {
+function readGroupDmPayload(
+  proposal: AdminBotStoredProposal,
+): {
   user_ids: string[];
   message: string;
 } {

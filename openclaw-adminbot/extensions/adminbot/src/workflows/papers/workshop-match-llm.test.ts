@@ -1,5 +1,8 @@
+import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import type { GuidebookFetch } from "../../guidebook/local-client.js";
+import { resolveInferenceGateConfig } from "../../inference/config.js";
+import { createInferenceGate } from "../../inference/gate.js";
 import {
   buildWorkshopMatchPrompt,
   createLocalWorkshopMatcher,
@@ -41,6 +44,16 @@ function paper(id: string): WorkshopNudgePaper {
     lab_author_names: ["Ada"],
     publication_sources: ["CV"],
   };
+}
+
+function memoryDb() {
+  const sqlite = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE adminbot_audit_events (
+    id TEXT PRIMARY KEY, action_id TEXT, event_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL, actor TEXT, event_json TEXT NOT NULL
+  )`);
+  return db;
 }
 
 function reply(body: unknown): Awaited<ReturnType<GuidebookFetch>> {
@@ -386,12 +399,58 @@ describe("keeping calls short enough to answer", () => {
     await createLocalWorkshopMatcher({ fetchImpl, env: {} })({ workshops, papers: [paper("p-1")] });
     expect(peak).toBe(2);
 
+    // The number that admits requests is the shared gate's, and the gate reads the same variable
+    // (inference/config.ts honors ADMINBOT_WORKSHOP_MATCH_CONCURRENCY as its capacity), so a
+    // deployment that raised it keeps its four -- through one counter rather than the matcher's own.
     peak = 0;
+    const env = { ADMINBOT_WORKSHOP_MATCH_CONCURRENCY: "4" };
+    const gate = createInferenceGate({
+      db: memoryDb(),
+      env,
+      config: resolveInferenceGateConfig(env, {
+        queue: { sweepIntervalMs: 0 },
+        health: { intervalMs: 0 },
+      }),
+    });
+    await createLocalWorkshopMatcher({ fetchImpl, env, gate })({ workshops, papers: [paper("p-1")] });
+    expect(peak).toBe(4);
+    gate.close();
+  });
+
+  it("does not retry a job the gate declined, so one job never becomes several rows", async () => {
+    // A shed or an expiry is a decision about capacity. The retry loop exists for tunnel blips;
+    // feeding it a queue decision hands the gate the same job again, up to three times.
+    const fetchImpl = vi.fn(async () => reply({ matches: [] })) as unknown as GuidebookFetch;
+    const env = {};
+    const gate = createInferenceGate({
+      db: memoryDb(),
+      env,
+      // Capacity one, and a line that holds nothing: the second submitter is shed every time.
+      config: resolveInferenceGateConfig(env, {
+        capacity: 1,
+        queue: { maxDepth: 0, sweepIntervalMs: 0 },
+        health: { intervalMs: 0 },
+      }),
+    });
+    const seen: Array<[number, number, number, string | undefined]> = [];
     await createLocalWorkshopMatcher({
       fetchImpl,
-      env: { ADMINBOT_WORKSHOP_MATCH_CONCURRENCY: "4" },
-    })({ workshops, papers: [paper("p-1")] });
-    expect(peak).toBe(4);
+      gate,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 2,
+      retryBackoffMs: 0,
+    })({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (done, total, failed, detail) => seen.push([done, total, failed, detail]),
+    });
+    // Two jobs, two submitters, one slot: exactly one of them ran; the other was shed once and
+    // counted as a failed call -- not retried into the line three times.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(seen.at(-1)?.[2]).toBe(1);
+    expect(seen.at(-1)?.[3]).toMatch(/GPU busy/u);
+    expect(gate.stats().rows.shed).toBe(1);
+    gate.close();
   });
 
   it("says which workshop failed and why, alongside the count", async () => {
