@@ -1069,7 +1069,7 @@ describe("renderDeadlines", () => {
     expect(historyTrigger?.getAttribute("aria-haspopup")).toBe("dialog");
     const historyCount = cards[0].querySelectorAll(".deadline-card__history-panel li").length;
     expect(historyCount).toBeGreaterThan(0);
-    expect(historyTrigger?.getAttribute("data-tooltip")).toBe(`Deadline history (${historyCount})`);
+    expect(historyTrigger?.getAttribute("data-tooltip")).toBe("Deadline details");
     expect(historyTrigger?.getAttribute("popovertarget")).toMatch(/^deadline-history-/u);
     expect(historyTrigger?.closest(".deadline-card__history")?.getAttribute("data-change")).toBe(
       "extended",
@@ -1375,6 +1375,43 @@ describe("renderDeadlines", () => {
 
     expect(element.querySelector(".deadline-card__countdown")?.textContent).toBe(detached);
   });
+});
+
+it("submits an existing deadline correction with its stable target ID", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  const submit = vi.spyOn(store, "submit");
+  render(
+    renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
+    container,
+  );
+  await settle(container);
+  const correction = container.querySelector<HTMLButtonElement>(
+    'button[aria-label^="Suggest correction:"]',
+  );
+  expect(correction).not.toBeNull();
+  correction!.click();
+  await settle(container);
+  const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+  const name = (form.elements.namedItem("name") as HTMLInputElement).value;
+  const date = (form.elements.namedItem("deadlineDate") as HTMLInputElement).value;
+  const target = DEADLINE_VENUES.find(
+    (row) => row.name === name && row.deadline_aoe.startsWith(date),
+  );
+  expect(target).toBeDefined();
+  expect(container.textContent).toContain(
+    `Correct ${target!.name}: ${target!.deadline_label.charAt(0).toUpperCase()}${target!.deadline_label.slice(1)}`,
+  );
+  (form.elements.namedItem("deadlineDate") as HTMLInputElement).value = "2026-10-01";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await settle(container);
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({ deadlineDate: "2026-10-01" }),
+    expect.any(String),
+    target!.id,
+  );
+  expect(store.proposals[0].status).toBe("pending");
 });
 
 it("never displays bundled deadlines when the first live request fails and supports retry", async () => {

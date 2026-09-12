@@ -224,10 +224,12 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
   reconcileDeadlineMilestones,
 } from "../workflows/deadlines/member-milestones.js";
+import { mergePublishedDeadlines } from "../workflows/deadlines/published-dataset.js";
 import {
   byUrgency,
   prepareLogisticsRequest,
@@ -1238,7 +1240,10 @@ export class AdminBotService {
 
   private refreshStoredDeadlineMilestones(): void {
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(member.milestones);
+      const milestones = reconcileDeadlineMilestones(
+        member.milestones,
+        this.deadlineReadModel(DEADLINE_VENUES),
+      );
       if (milestones === member.milestones) {
         continue;
       }
@@ -1603,6 +1608,7 @@ export class AdminBotService {
     idempotencyKey: string,
     existingDeadlines: readonly unknown[] = [],
     submitterContact?: DeadlineSubmitterContact,
+    targetDeadlineId?: string,
   ): AdminBotServiceResponse<DeadlineProposalView> {
     const memberId = submitterMemberId.trim();
     const key = idempotencyKey.trim();
@@ -1621,11 +1627,27 @@ export class AdminBotService {
       return serviceError(400, contact.error);
     }
     const proposalId = `dlp_${randomUUID()}`;
-    const deadlineId = `community_${randomUUID()}`;
-    const duplicateIds = this.findDeadlineDuplicates(validation.value, existingDeadlines);
+    const target = targetDeadlineId
+      ? this.deadlineReadModel(existingDeadlines).find(
+          (row) => deadlineBoardEntryId(row) === targetDeadlineId,
+        )
+      : undefined;
+    if (targetDeadlineId && (!target || memberId.startsWith("visitor:deadline:"))) {
+      return serviceError(400, "a correction requires a member and an existing deadline");
+    }
+    const deadlineId = targetDeadlineId || `community_${randomUUID()}`;
+    const previousDeadline = target
+      ? String((target as Record<string, unknown>).deadline_aoe)
+      : undefined;
+    const duplicateIds = this.findDeadlineDuplicates(
+      validation.value,
+      existingDeadlines,
+      targetDeadlineId,
+    );
     const action = this.prepareDeadlinePublication({
       proposalId,
       deadlineId,
+      previousDeadline,
       revision: 1,
       submitterMemberId: memberId,
       ...(memberId.startsWith("visitor:deadline:") && Object.keys(contact.value).length
@@ -1688,6 +1710,14 @@ export class AdminBotService {
     const next = this.prepareDeadlinePublication({
       proposalId,
       deadlineId: currentPayload.deadline_id,
+      previousDeadline:
+        current.status === "executed" && currentPayload.previous_deadline_aoe
+          ? (
+              this.deadlineReadModel(existingDeadlines).find(
+                (row) => deadlineBoardEntryId(row) === currentPayload.deadline_id,
+              ) as Record<string, string> | undefined
+            )?.deadline_aoe
+          : currentPayload.previous_deadline_aoe,
       revision: currentPayload.revision + 1,
       submitterMemberId: currentPayload.submitter_member_id,
       ...(currentPayload.submitter_contact
@@ -1773,22 +1803,13 @@ export class AdminBotService {
 
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
     generated = this.options.deadlineDataset?.() ?? generated;
-    const published = this.store.listPublishedDeadlines();
-    const byDeadline = new Map<string, PublishedDeadlineRecord[]>();
-    for (const record of published) {
-      const records = byDeadline.get(record.deadline_id) ?? [];
-      records.push(record);
-      byDeadline.set(record.deadline_id, records);
-    }
-    return [
-      ...generated,
-      ...[...byDeadline.values()].map((records) => publishedDeadlineVenue(records)),
-    ];
+    return mergePublishedDeadlines(generated, this.store.listPublishedDeadlines());
   }
 
   private prepareDeadlinePublication(params: {
     proposalId: string;
     deadlineId: string;
+    previousDeadline?: string;
     revision: number;
     submitterMemberId: string;
     submitterContact?: DeadlineSubmitterContact;
@@ -1798,6 +1819,7 @@ export class AdminBotService {
     idempotencyKey?: string;
   }): AdminBotStoredProposal {
     const payload: DeadlinePublicationPayload = {
+      ...(params.previousDeadline ? { previous_deadline_aoe: params.previousDeadline } : {}),
       proposal_id: params.proposalId,
       deadline_id: params.deadlineId,
       revision: params.revision,
@@ -1906,6 +1928,9 @@ export class AdminBotService {
       current_revision: payload.revision,
       action_id: current.id,
       payload_hash: current.payload_hash,
+      ...(payload.previous_deadline_aoe
+        ? { previous_deadline_aoe: payload.previous_deadline_aoe }
+        : {}),
       duplicate_deadline_ids: payload.duplicate_deadline_ids,
       deadline: payload.deadline,
       revisions,
@@ -2130,7 +2155,22 @@ export class AdminBotService {
       if (!publishedBy) {
         return this.executionFailure(proposal, 409, "deadline publication has no named approver");
       }
+      if (publication.previous_deadline_aoe) {
+        const target = this.deadlineReadModel(DEADLINE_VENUES).find(
+          (row) => deadlineBoardEntryId(row) === publication.deadline_id,
+        ) as Record<string, unknown> | undefined;
+        if (!target || target.deadline_aoe !== publication.previous_deadline_aoe) {
+          return this.executionFailure(
+            proposal,
+            409,
+            "Deadline changed; submit a fresh correction for review",
+          );
+        }
+      }
       this.store.savePublishedDeadline({
+        ...(publication.previous_deadline_aoe
+          ? { previous_deadline_aoe: publication.previous_deadline_aoe }
+          : {}),
         action_id: proposal.id,
         proposal_id: publication.proposal_id,
         deadline_id: publication.deadline_id,
@@ -2364,7 +2404,9 @@ export class AdminBotService {
     if (Array.isArray(member.milestones)) {
       member = {
         ...member,
-        milestones: reconcileDeadlineMilestones(member.milestones) ?? [],
+        milestones:
+          reconcileDeadlineMilestones(member.milestones, this.deadlineReadModel(DEADLINE_VENUES)) ??
+          [],
       };
     }
     const existing = this.store.getLabMember(member.id);
@@ -2380,6 +2422,7 @@ export class AdminBotService {
       { ...member, name: member.name ?? existing?.name ?? "" },
       privilegeLevel,
       existing?.email,
+      this.deadlineReadModel(DEADLINE_VENUES),
     );
     if (validation) {
       return serviceError(400, validation);
@@ -3304,6 +3347,15 @@ export class AdminBotService {
   }
 
   private memberView(member: AdminBotLabMember): AdminBotLabMemberView {
+    if (member.milestones?.length) {
+      member = {
+        ...member,
+        milestones: reconcileDeadlineMilestones(
+          member.milestones,
+          this.deadlineReadModel(DEADLINE_VENUES),
+        ),
+      };
+    }
     const assigned = this.assignedBadgesFor(member.id);
     return { ...member, ...(assigned.length ? { assigned_badges: assigned } : {}) };
   }
@@ -11281,72 +11333,6 @@ function deadlineInputFromBoardEntry(value: unknown): DeadlineProposalInput | un
   };
 }
 
-function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<string, unknown> {
-  const records = records_.toSorted((left, right) => left.revision - right.revision);
-  const latest = records.at(-1)!;
-  const validated = validateDeadlineProposalInput(latest.deadline);
-  if (!validated.ok) {
-    throw new Error(`published deadline ${latest.deadline_id} is invalid`);
-  }
-  const instant = new Date(validated.instant).getTime();
-  const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
-  const entryType = latest.deadline.entryType;
-  const family = latest.deadline.parentConference;
-  const parentGroup =
-    [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
-  const group =
-    entryType === "workshop" && family && !/\bworkshops?$/iu.test(parentGroup)
-      ? `${parentGroup} Workshops`
-      : parentGroup;
-  const label =
-    entryType === "arr_commitment"
-      ? "ARR commitment"
-      : entryType === "arr_direct_submission"
-        ? "ARR submission"
-        : entryType === "rebuttal"
-          ? "rebuttal ends"
-          : "submission";
-  return {
-    id: latest.deadline_id,
-    deadline_id: latest.deadline_id,
-    venue_id: latest.deadline_id,
-    venue_aliases: [latest.deadline_id],
-    name: latest.deadline.name,
-    venue_type:
-      entryType === "workshop" ? "workshop" : entryType === "rebuttal" ? "rebuttal" : "conference",
-    venue_group: group,
-    ...(family ? { venue_family: family } : {}),
-    entry_type: entryType,
-    archival_status: "unknown",
-    venue_priority: "standard",
-    archival: false,
-    stale: false,
-    deadline_label: label,
-    deadline_aoe: aoe,
-    link: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
-    homepage_url: latest.deadline.homepageUrl,
-    ...(latest.deadline.cfpUrl ? { cfp_url: latest.deadline.cfpUrl } : {}),
-    source_url: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
-    source_checked_at: latest.published_at,
-    ...(latest.deadline.openReviewUrl ? { openreview_url: latest.deadline.openReviewUrl } : {}),
-    revisions: records.map((record) => {
-      const revision = validateDeadlineProposalInput(record.deadline);
-      const revisionInstant = revision.ok ? new Date(revision.instant).getTime() : Number.NaN;
-      return {
-        observed_at: record.published_at,
-        deadline_aoe: Number.isFinite(revisionInstant)
-          ? new Date(revisionInstant - 12 * 60 * 60 * 1000)
-              .toISOString()
-              .replace("T", " ")
-              .slice(0, 19)
-          : aoe,
-        deadline_label: label,
-        link: record.deadline.cfpUrl || record.deadline.homepageUrl,
-      };
-    }),
-  };
-}
-
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
   "preferred_name",
@@ -11828,6 +11814,7 @@ function validateLabMember(
   member: AdminBotLabMemberInput,
   privilegeLevel: AdminBotPrivilegeLevel,
   existingEmail?: string,
+  deadlines?: readonly unknown[],
 ): string | undefined {
   if (!member.id.trim()) {
     return "member id is required";
@@ -11941,7 +11928,7 @@ function validateLabMember(
       return urlError;
     }
   }
-  return validateAvailability(member);
+  return validateAvailability(member, deadlines);
 }
 
 // Every one of these is a *real* account-page shape check, not merely "is this a URL" -- a
@@ -12363,7 +12350,10 @@ function validateDismissedDeadlines(member: AdminBotLabMemberInput): string | un
   return undefined;
 }
 
-function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
+function validateMilestones(
+  member: AdminBotLabMemberInput,
+  deadlines?: readonly unknown[],
+): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
   }
@@ -12387,7 +12377,7 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
     }
     if (
       row.deadline_id !== undefined &&
-      (typeof row.deadline_id !== "string" || !isDeadlineMilestoneId(row.deadline_id))
+      (typeof row.deadline_id !== "string" || !isDeadlineMilestoneId(row.deadline_id, deadlines))
     ) {
       return "milestone deadline_id must identify a deadline-board entry";
     }
@@ -12408,7 +12398,10 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
 // served to every admin is an unbounded write.
 const MAX_AVAILABILITY_NOTES_LENGTH = 2000;
 
-function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
+function validateAvailability(
+  member: AdminBotLabMemberInput,
+  deadlines?: readonly unknown[],
+): string | undefined {
   if (member.availability_notes !== undefined) {
     if (typeof member.availability_notes !== "string") {
       return "member availability notes must be a string";
@@ -12484,7 +12477,11 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member);
+  return (
+    validateMilestones(member, deadlines) ??
+    validateTrips(member) ??
+    validateDismissedDeadlines(member)
+  );
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

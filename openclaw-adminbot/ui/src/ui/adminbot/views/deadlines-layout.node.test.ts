@@ -121,14 +121,10 @@ describeLayout("mounted deadline layout", () => {
               const history = workshop
                 ?.querySelector(".deadline-card__history-trigger")
                 ?.getBoundingClientRect();
-              const dateText = workshop?.querySelector("time");
               const icon = workshop?.querySelector(".deadline-card__history-trigger svg");
               return {
-                iconTextRatio:
-                  dateText && icon
-                    ? icon.getBoundingClientRect().width /
-                      Number.parseFloat(getComputedStyle(dateText).fontSize)
-                    : 0,
+                iconWidth: icon?.getBoundingClientRect().width ?? 0,
+                targetWidth: history?.width ?? 0,
                 historyBesideDate: Boolean(date && history && history.top < date.bottom),
                 compact:
                   mode !== "Groups" ||
@@ -139,7 +135,8 @@ describeLayout("mounted deadline layout", () => {
               };
             }, view);
             expect(result.count).toBeGreaterThan(0);
-            expect(result.iconTextRatio, "history icon scales with date text").toBeCloseTo(1, 1);
+            expect(result.iconWidth, "compact deadline menu icon").toBe(14);
+            expect(result.targetWidth, "deadline menu touch target").toBeGreaterThanOrEqual(32);
             if (width === 390 && scale >= 2) {
               expect(result.historyBesideDate, "history follows the wrapped date inline").toBe(
                 true,

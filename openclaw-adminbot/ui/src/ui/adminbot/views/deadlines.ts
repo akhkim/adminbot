@@ -922,7 +922,10 @@ class AdminbotDeadlinesView extends LitElement {
     this.requestUpdate();
   }
 
+  private correctionTarget?: DeadlineVenue;
+
   private openProposalForm(): void {
+    this.correctionTarget = undefined;
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
     this.editingProposalId = "";
@@ -968,7 +971,11 @@ class AdminbotDeadlinesView extends LitElement {
       } else {
         this.proposalSubmissionKey ||= crypto.randomUUID();
         if (this.memberId && this.accessRole !== "anonymous") {
-          await this.proposalStore.submit(validation.value, this.proposalSubmissionKey);
+          await this.proposalStore.submit(
+            validation.value,
+            this.proposalSubmissionKey,
+            this.correctionTarget?.id,
+          );
         } else {
           await this.proposalStore.submitPublic(validation.value, this.proposalSubmissionKey, {
             name: String(data.get("submitterName") ?? ""),
@@ -1022,6 +1029,7 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private editProposal(proposal: DeadlineProposal): void {
+    this.correctionTarget = undefined;
     this.editingProposalId = proposal.id;
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
@@ -1047,7 +1055,24 @@ class AdminbotDeadlinesView extends LitElement {
       return nothing;
     }
     const editing = this.proposals.find((proposal) => proposal.id === this.editingProposalId);
-    const value = editing?.deadline;
+    const target = this.correctionTarget;
+    const value =
+      editing?.deadline ??
+      (target
+        ? {
+            name: target.name,
+            entryType: target.entry_type,
+            parentConference: target.venue_family ?? "",
+            parentYear: "",
+            deadlineDate: target.deadline_aoe.slice(0, 10),
+            deadlineTime: target.deadline_aoe.slice(11, 16),
+            timezone: "Etc/GMT+12",
+            homepageUrl: target.homepage_url || target.link || "",
+            cfpUrl: target.cfp_url || "",
+            openReviewUrl: target.openreview_url || "",
+            note: "",
+          }
+        : undefined);
     const parentConferences = parentConferenceOptions(this.venues);
     const parentConference = value?.parentConference ?? "";
     return html`
@@ -1058,7 +1083,11 @@ class AdminbotDeadlinesView extends LitElement {
         <div class="deadline-proposal__heading">
           <div>
             <h2 id="deadline-proposal-drawer-title">
-              ${editing ? "Revise deadline proposal" : "Propose a new deadline"}
+              ${editing
+                ? "Revise deadline proposal"
+                : target
+                  ? `Correct ${target.name}: ${capitalize(target.deadline_label)}`
+                  : "Propose a new deadline"}
             </h2>
           </div>
           <button class="btn btn--sm" type="button" @click=${this.closeProposalDrawer}>
@@ -1082,18 +1111,18 @@ class AdminbotDeadlinesView extends LitElement {
                 </label>
               `
             : nothing}
-          <label>
+          <label ?hidden=${Boolean(target)}>
             <span>Conference or workshop name</span>
             <input
               name="name"
               required
-              autofocus
+              ?autofocus=${!target}
               .value=${value?.name ?? ""}
               aria-invalid=${String(Boolean(this.proposalErrors.name))}
             />
             ${this.renderProposalFieldError("name")}
           </label>
-          <label>
+          <label ?hidden=${Boolean(target)}>
             <span>Entry type</span>
             <select name="entryType" required>
               ${ENTRY_TYPE_OPTIONS.filter((option) => option.value !== "all").map(
@@ -1106,14 +1135,14 @@ class AdminbotDeadlinesView extends LitElement {
               )}
             </select>
           </label>
-          <label>
+          <label ?hidden=${Boolean(target)}>
             <span>Parent conference <small>optional</small></span>
             ${renderDeadlineParentConferenceSelect({
               options: parentConferences,
               value: parentConference,
             })}
           </label>
-          <label>
+          <label ?hidden=${Boolean(target)}>
             <span>Parent year <small>optional</small></span>
             <input
               name="parentYear"
@@ -1130,6 +1159,7 @@ class AdminbotDeadlinesView extends LitElement {
               <span>Deadline date</span>
               <input
                 name="deadlineDate"
+                ?autofocus=${Boolean(target)}
                 type="date"
                 required
                 .value=${value?.deadlineDate ?? ""}
@@ -1274,6 +1304,13 @@ class AdminbotDeadlinesView extends LitElement {
             ? html`<p>${proposal.submitter_email}</p>`
             : nothing}
           ${deadline.note ? html`<p>${deadline.note}</p>` : nothing}
+          ${proposal.previous_deadline_aoe
+            ? html`<p>
+                Deadline correction: ${proposal.previous_deadline_aoe} AoE →
+                ${deadline.deadlineDate} ${deadline.deadlineTime} ${deadline.timezone}.
+                Administrator approval required.
+              </p>`
+            : nothing}
           ${proposal.duplicate_deadline_ids.length
             ? html`<p class="deadline-proposal-row__duplicate">
                 Possible duplicate of ${proposal.duplicate_deadline_ids.join(", ")}
@@ -1640,14 +1677,8 @@ class AdminbotDeadlinesView extends LitElement {
     const previous = priorDeadlineRevisions(venue);
     const change = deadlineChangeSummary(venue);
     const extended = venue.deadline_extended || change?.kind === "extended";
-    const available = previous.length > 0 || extended;
     const historyId = `deadline-history-${placement}-${venue.id.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
     const anchorName = `--${historyId}`;
-    const countLabel = previous.length
-      ? `Deadline history (${previous.length})`
-      : extended
-        ? "Extended deadline; earlier date unavailable"
-        : "No deadline history";
     return html`<span
       class="deadline-card__note deadline-card__history"
       data-change=${extended ? "extended" : (change?.kind ?? "history")}
@@ -1655,47 +1686,75 @@ class AdminbotDeadlinesView extends LitElement {
       <button
         type="button"
         class="btn btn--icon deadline-card__history-trigger"
-        popovertarget=${available ? historyId : nothing}
-        aria-haspopup=${available ? "dialog" : nothing}
-        aria-label=${countLabel}
-        data-tooltip=${countLabel}
+        popovertarget=${historyId}
+        aria-haspopup="dialog"
+        aria-label=${`Deadline details: ${venue.name} ${venue.deadline_label}`}
+        data-tooltip="Deadline details"
         style=${`anchor-name: ${anchorName}`}
-        ?disabled=${!available}
       >
-        ${icons.history}
+        ${icons.moreHorizontal}
       </button>
-      ${available
-        ? html`<div
-            id=${historyId}
-            class="deadline-card__history-panel"
-            popover="auto"
-            role="dialog"
-            aria-label=${`Deadline history for ${venue.name}`}
-            style=${`position-anchor: ${anchorName}`}
-          >
-            <strong>Deadline history</strong>
-            ${previous.length
-              ? html`<ul>
-                  ${previous.map(
-                    (revision) => html`<li>
-                      ${renderAoeDateTime(revision.deadline_aoe)} ·
-                      ${capitalize(revision.deadline_label || "deadline")} · recorded
-                      ${revision.observed_at.slice(0, 10)}
-                      ${revision.link
-                        ? html` ·
-                            <a href=${revision.link} target="_blank" rel="noopener noreferrer"
-                              >source ↗</a
-                            >`
-                        : nothing}
-                    </li>`,
-                  )}
-                </ul>`
-              : html`<p>
-                  The official source marks this deadline as extended, but does not publish the
-                  earlier date.
-                </p>`}
-          </div>`
-        : nothing}
+      <div
+        id=${historyId}
+        class="deadline-card__history-panel"
+        popover="auto"
+        role="dialog"
+        aria-label=${`Deadline details for ${venue.name}`}
+        style=${`position-anchor: ${anchorName}`}
+      >
+        <header class="deadline-details__header">
+          <strong>${venue.name}</strong>
+          <p>${capitalize(venue.deadline_label)}</p>
+          <div>${renderAoeDateTime(venue.deadline_aoe)}</div>
+        </header>
+
+        <section class="deadline-details__history">
+          <strong>History</strong>
+          ${previous.length
+            ? html`<ul>
+                ${previous.map(
+                  (revision) => html`<li>
+                    ${renderAoeDateTime(revision.deadline_aoe)} ·
+                    ${capitalize(revision.deadline_label || "deadline")} · recorded
+                    ${revision.observed_at.slice(0, 10)}
+                    ${revision.link
+                      ? html` ·
+                          <a href=${revision.link} target="_blank" rel="noopener noreferrer"
+                            >source ↗</a
+                          >`
+                      : nothing}
+                  </li>`,
+                )}
+              </ul>`
+            : html`<p>
+                ${extended
+                  ? "The source marks this deadline as extended, but does not publish the earlier date."
+                  : "No earlier dates recorded."}
+              </p>`}
+        </section>
+        <footer class="deadline-details__footer">
+          ${this.renderSourceActions(venue)}
+          ${this.memberId && this.accessRole !== "anonymous"
+            ? html`<button
+                class="btn btn--sm"
+                type="button"
+                aria-label=${`Suggest correction: ${venue.name} ${venue.deadline_label}`}
+                data-tooltip="Suggest a deadline correction"
+                title="Suggest a deadline correction"
+                @click=${(event: Event) => {
+                  (event.currentTarget as HTMLElement)
+                    .closest<HTMLElement>("[popover]")
+                    ?.hidePopover?.();
+                  this.openProposalForm();
+                  this.correctionTarget = venue;
+                  this.requestUpdate();
+                }}
+              >
+                Suggest deadline correction
+              </button>`
+            : nothing}
+        </footer>
+      </div>
     </span>`;
   }
 
@@ -1747,7 +1806,9 @@ class AdminbotDeadlinesView extends LitElement {
           ? "Sources disagree. Showing the matched OpenReview deadline."
           : status === "portal_unverified" || status === "openreview_final_submission"
             ? "Announced date; the matching submission portal cutoff has not been verified."
-            : "";
+            : status === "administrator_approved"
+              ? "Date corrected after administrator review."
+              : "";
     return note ? html`<p class="deadline-card__note">${note}</p>` : nothing;
   }
 

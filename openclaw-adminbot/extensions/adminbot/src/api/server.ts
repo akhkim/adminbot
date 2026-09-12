@@ -2131,6 +2131,8 @@ async function handleAuthenticatedRoute(
         principal.member.id,
         idempotencyKey,
         DEADLINE_VENUES,
+        undefined,
+        asString(body.targetDeadlineId) || undefined,
       ),
     );
     return;

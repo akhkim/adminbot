@@ -41,6 +41,8 @@ task="${1:-}"
 
 adminbot_load_cron_env "deadline $task" || exit 1
 
+export ADMINBOT_DEADLINE_READ_URL="${ADMINBOT_DEADLINE_READ_URL:-http://127.0.0.1:8765/deadlines/venues.json}"
+
 case "$task" in
   calendar-conferences)
     exec "$PYTHON" "$REPO_ROOT/scripts/adminbot-deadline-calendar.py" \

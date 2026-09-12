@@ -4725,6 +4725,10 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
 }
 
+.deadline-proposal__form [hidden] {
+  display: none;
+}
+
 .deadline-proposal__form label > span {
   font-weight: 600;
 }
@@ -5273,7 +5277,7 @@ adminbot-deadlines-view {
 
 .deadline-group__row {
   display: grid;
-  grid-template-columns: 7.75rem 13rem minmax(0, 1fr) auto;
+  grid-template-columns: 7.75rem 15rem minmax(0, 1fr) auto;
   grid-template-areas: "countdown date main source";
   align-items: center;
   gap: var(--space-3);
@@ -5351,7 +5355,7 @@ adminbot-deadlines-view {
   display: inline-flex;
   grid-area: date;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .deadline-group__row .deadline-card__actions {
@@ -5611,7 +5615,7 @@ adminbot-deadlines-view {
 .deadline-table__date-row {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .deadline-card__date-row {
@@ -5647,25 +5651,33 @@ adminbot-deadlines-view {
   display: inline-flex;
   align-items: center;
   margin: 0;
+  margin-inline-start: 0;
   font-size: var(--control-ui-text-sm);
   white-space: nowrap;
 }
 
-.btn.deadline-card__history-trigger {
-  width: 2em;
-  min-width: 2em;
-  height: 2em;
-  min-height: 2em;
+.btn.deadline-card__history-trigger,
+.btn.deadline-card__correction-trigger {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   font-size: inherit;
 }
 
-.btn.deadline-card__history-trigger svg {
-  width: 1em;
-  height: 1em;
+.btn.deadline-card__history-trigger svg,
+.btn.deadline-card__correction-trigger svg {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
+}
+
+.btn.deadline-card__correction-trigger svg {
+  width: 13px;
+  height: 13px;
 }
 
 .deadline-card__history[data-change="extended"] .deadline-card__history-trigger:not(:disabled) {
@@ -5677,11 +5689,12 @@ adminbot-deadlines-view {
   color: var(--accent-hover);
 }
 
+
 .deadline-card__history-panel[popover] {
   position: fixed;
   position-area: block-start span-inline-end;
-  width: max-content;
-  max-width: min(32rem, calc(100vw - 2 * var(--space-4)));
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--space-4));
   max-height: min(24rem, calc(100vh - 2 * var(--space-4)));
   margin: 0 0 var(--space-2);
   padding: var(--space-3);
@@ -5694,6 +5707,47 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
   line-height: 1.45;
   white-space: normal;
+}
+
+.deadline-details__header,
+.deadline-details__history,
+.deadline-details__footer {
+  display: grid;
+  gap: 8px;
+}
+
+.deadline-details__header > strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.deadline-details__history,
+.deadline-details__footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.deadline-details__history > strong {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.deadline-card__history-panel .deadline-details__header p,
+.deadline-card__history-panel .deadline-details__history p,
+.deadline-card__history-panel .deadline-details__history ul {
+  margin: 0;
+}
+
+.deadline-details__footer .deadline-card__actions {
+  margin: 0;
+  padding: 0;
+}
+
+.deadline-details__footer > .btn {
+  justify-content: center;
+  min-height: 36px;
 }
 
 .deadline-card__history-panel ul {
@@ -6047,7 +6101,7 @@ adminbot-deadlines-view {
 
   .deadline-group__row-date-wrap > .deadline-card__history,
   .deadline-card__date-row > .deadline-card__history {
-    margin-inline-start: var(--space-1);
+    margin-inline-start: 0;
     vertical-align: middle;
   }
 
