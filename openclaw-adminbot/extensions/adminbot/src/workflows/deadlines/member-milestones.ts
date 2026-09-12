@@ -13,11 +13,13 @@ type DeadlineRecord = {
 };
 
 const deadlines = DEADLINE_VENUES as readonly DeadlineRecord[];
-const deadlinesById = new Map(
-  deadlines.flatMap((deadline) =>
-    [deadline.id, deadline.deadline_id].map((id) => [id, deadline] as const),
-  ),
-);
+function indexDeadlines(deadlines: readonly DeadlineRecord[]) {
+  return new Map(
+    deadlines.flatMap((deadline) =>
+      [deadline.id, deadline.deadline_id].map((id) => [id, deadline] as const),
+    ),
+  );
+}
 
 function deadlineDate(deadline: DeadlineRecord): string {
   return deadline.deadline_aoe.slice(0, 10);
@@ -35,7 +37,10 @@ function deadlineMilestone(deadline: DeadlineRecord): AdminBotMemberMilestone {
   };
 }
 
-function legacyDeadline(row: AdminBotMemberMilestone): DeadlineRecord | undefined {
+function legacyDeadline(
+  row: AdminBotMemberMilestone,
+  deadlines: readonly DeadlineRecord[],
+): DeadlineRecord | undefined {
   const label = row.label.trim();
   const matches = deadlines.filter(
     (deadline) =>
@@ -46,8 +51,11 @@ function legacyDeadline(row: AdminBotMemberMilestone): DeadlineRecord | undefine
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function isDeadlineMilestoneId(value: string): boolean {
-  return deadlinesById.has(value);
+export function isDeadlineMilestoneId(
+  value: string,
+  records: readonly unknown[] = deadlines,
+): boolean {
+  return indexDeadlines(records as readonly DeadlineRecord[]).has(value);
 }
 
 /**
@@ -59,15 +67,20 @@ export function isDeadlineMilestoneId(value: string): boolean {
  */
 export function reconcileDeadlineMilestones(
   rows: AdminBotMemberMilestone[] | undefined,
+  records: readonly unknown[] = deadlines,
 ): AdminBotMemberMilestone[] | undefined {
   if (!rows) {
     return undefined;
   }
+  const currentDeadlines = records as readonly DeadlineRecord[];
+  const deadlinesById = indexDeadlines(currentDeadlines);
   const seen = new Set<string>();
   const reconciled: AdminBotMemberMilestone[] = [];
   let changed = false;
   for (const row of rows) {
-    const deadline = row.deadline_id ? deadlinesById.get(row.deadline_id) : legacyDeadline(row);
+    const deadline = row.deadline_id
+      ? deadlinesById.get(row.deadline_id)
+      : legacyDeadline(row, currentDeadlines);
     if (!deadline) {
       reconciled.push(row);
       continue;

@@ -17,7 +17,11 @@ export type DeadlineProposal = DeadlineProposalView;
 export interface DeadlineProposalStore {
   list(): Promise<DeadlineProposal[]>;
   listPublished(): Promise<DeadlineVenue[]>;
-  submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal>;
+  submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal>;
   submitPublic(
     input: DeadlineProposalInput,
     idempotencyKey: string,
@@ -61,11 +65,15 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
     return (body as { items?: DeadlineVenue[] }).items ?? [];
   }
 
-  async submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal> {
+  async submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal> {
     return (await this.request("/deadline-proposals", {
       method: "POST",
       authenticated: true,
-      body: input,
+      body: { ...input, ...(targetDeadlineId ? { targetDeadlineId } : {}) },
       headers: { "Idempotency-Key": idempotencyKey },
     })) as DeadlineProposal;
   }

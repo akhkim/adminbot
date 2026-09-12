@@ -367,6 +367,21 @@ class DeadlineDataset:
             return json.load(handle)
 
     def venues(self) -> list[dict]:
+        endpoint = os.environ.get("ADMINBOT_DEADLINE_READ_URL", "")
+        if endpoint:
+            import urllib.request
+            request = urllib.request.Request(endpoint, headers={"Accept": "application/json", "User-Agent": "adminbot-deadlines/1.0"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                document = json.load(response)
+            if not isinstance(document.get("items"), list) or not document["items"]:
+                raise ValueError("Accepted deadline dataset is empty or invalid")
+            ids = set()
+            for row in document["items"]:
+                if not isinstance(row, dict) or not isinstance(row.get("id"), str) or row["id"] in ids:
+                    raise ValueError("Accepted deadline dataset contains invalid or duplicate ids")
+                AoEClock.instant(row.get("deadline_aoe", ""))
+                ids.add(row["id"])
+            return document["items"]
         if os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH"):
             with open(os.environ["ADMINBOT_DEADLINE_DATASET_PATH"], encoding="utf-8") as handle:
                 return json.load(handle)["items"]

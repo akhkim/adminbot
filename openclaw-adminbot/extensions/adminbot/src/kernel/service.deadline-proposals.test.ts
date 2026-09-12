@@ -196,3 +196,97 @@ it("validates visitor contact details and supports name-only or email-only submi
     ),
   ).toMatchObject({ submitter_name: "External visitor", submitter_email: "taylor@example.org" });
 });
+
+it("keeps a member correction pending, then replaces its target after administrator approval", async () => {
+  const rows = [
+    {
+      id: "paper",
+      name: "Example Workshop",
+      deadline_aoe: "2026-09-14 23:59:00",
+      deadline_label: "full paper",
+      milestone: "submission",
+      archival_status: "archival",
+      venue_group: "Example 2026 Workshops",
+      venue_id: "example",
+      revisions: [],
+    },
+  ];
+  const service = new AdminBotService(new AdminBotMemoryStore(), { deadlineDataset: () => rows });
+  const proposal = unwrap(
+    service.submitDeadlineProposal(
+      input({ deadlineDate: "2026-09-21" }),
+      "member-1",
+      "correction",
+      rows,
+      undefined,
+      "paper",
+    ),
+  );
+  expect(service.deadlineReadModel([])).toMatchObject([{ deadline_aoe: "2026-09-14 23:59:00" }]);
+  expect(
+    await service.publishDeadlineProposal(proposal.id, proposal.payload_hash, {
+      payload_hash: proposal.payload_hash,
+      approver_role: "member" as never,
+      approver_id: "member-1",
+    }),
+  ).toMatchObject({ ok: false });
+  unwrap(
+    await service.publishDeadlineProposal(proposal.id, proposal.payload_hash, {
+      payload_hash: proposal.payload_hash,
+      approver_role: "admin",
+      approver_id: "admin-1",
+    }),
+  );
+  expect(service.deadlineReadModel([])).toHaveLength(1);
+  expect(service.deadlineReadModel([])).toMatchObject([
+    {
+      id: "paper",
+      deadline_aoe: "2026-09-21 23:59:00",
+      deadline_label: "full paper",
+      venue_id: "example",
+      deadline_source_status: "administrator_approved",
+      revisions: [{ deadline_aoe: "2026-09-14 23:59:00" }, { deadline_aoe: "2026-09-21 23:59:00" }],
+      archival_status: "archival",
+      venue_group: "Example 2026 Workshops",
+    },
+  ]);
+  rows[0].deadline_aoe = "2026-09-15 23:59:00";
+  expect(service.deadlineReadModel([])).toMatchObject([{ deadline_aoe: "2026-09-21 23:59:00" }]);
+});
+
+it("rejects visitor corrections, missing targets, and approval after the target changes", async () => {
+  const rows = [{ id: "paper", name: "Example Workshop", deadline_aoe: "2026-09-14 23:59:00" }];
+  const service = new AdminBotService(new AdminBotMemoryStore(), { deadlineDataset: () => rows });
+  expect(
+    service.submitDeadlineProposal(
+      input(),
+      "visitor:deadline:one",
+      "visitor",
+      rows,
+      undefined,
+      "paper",
+    ),
+  ).toMatchObject({ ok: false });
+  expect(
+    service.submitDeadlineProposal(input(), "member-1", "missing", rows, undefined, "missing"),
+  ).toMatchObject({ ok: false });
+  const proposal = unwrap(
+    service.submitDeadlineProposal(
+      input({ deadlineDate: "2026-09-21" }),
+      "member-1",
+      "correction",
+      rows,
+      undefined,
+      "paper",
+    ),
+  );
+  rows[0].deadline_aoe = "2026-09-18 23:59:00";
+  expect(
+    await service.publishDeadlineProposal(proposal.id, proposal.payload_hash, {
+      payload_hash: proposal.payload_hash,
+      approver_role: "admin",
+      approver_id: "admin-1",
+    }),
+  ).toMatchObject({ ok: false, status: 409 });
+  expect(service.deadlineReadModel([])).toMatchObject([{ deadline_aoe: "2026-09-18 23:59:00" }]);
+});

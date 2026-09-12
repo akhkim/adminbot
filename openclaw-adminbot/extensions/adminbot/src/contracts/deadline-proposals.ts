@@ -56,6 +56,7 @@ export function validateDeadlineSubmitterContact(
 }
 
 export type DeadlinePublicationPayload = {
+  previous_deadline_aoe?: string;
   proposal_id: string;
   deadline_id: string;
   revision: number;
@@ -76,6 +77,7 @@ export type DeadlineProposalRevision = {
 };
 
 export type DeadlineProposalView = {
+  previous_deadline_aoe?: string;
   id: string;
   deadline_id: string;
   submitter_member_id: string;
@@ -94,6 +96,7 @@ export type DeadlineProposalView = {
 };
 
 export type PublishedDeadlineRecord = {
+  previous_deadline_aoe?: string;
   action_id: string;
   proposal_id: string;
   deadline_id: string;
@@ -226,6 +229,9 @@ export function isDeadlinePublicationPayload(value: unknown): value is DeadlineP
   }
   const payload = value as Partial<DeadlinePublicationPayload>;
   return (
+    (payload.previous_deadline_aoe === undefined ||
+      (typeof payload.previous_deadline_aoe === "string" &&
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(payload.previous_deadline_aoe))) &&
     typeof payload.proposal_id === "string" &&
     typeof payload.deadline_id === "string" &&
     typeof payload.revision === "number" &&

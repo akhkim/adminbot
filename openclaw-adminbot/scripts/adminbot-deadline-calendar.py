@@ -32,6 +32,8 @@ import os
 import subprocess
 import sys
 
+from adminbot_deadlines import DeadlineDataset
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
 
@@ -137,7 +139,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="cap the number of events touched")
     args = ap.parse_args()
 
-    items = json.load(open(VENUES))["items"]
+    items = DeadlineDataset(os.path.dirname(VENUES)).venues()
     today = datetime.date.today()
     horizon = today + datetime.timedelta(days=args.within_days)
 

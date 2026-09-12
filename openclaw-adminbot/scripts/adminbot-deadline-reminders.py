@@ -159,11 +159,17 @@ def main():
     tmpl = dataset.templates()
     notifier = SlackNotifier(send=args.send)
 
+    venues = {venue["id"]: venue for venue in dataset.venues()}
     roster = load_roster()
     submitted = openreview_submitted_titles()
 
     fired, escalations = 0, []
     for paper in confirmed_papers(dataset.matches()):
+        current = venues.get(paper.get("deadline_id"))
+        if current is None:
+            print("WARN: confirmed match has no current deadline id; rerun matching before reminders", file=sys.stderr)
+            continue
+        paper = dict(paper, deadline_aoe=current["deadline_aoe"])
         if submitted is not None and norm(paper["title"]) in submitted:
             continue                           # already submitted -> silent
         if clock.has_passed(paper["deadline_aoe"]):
