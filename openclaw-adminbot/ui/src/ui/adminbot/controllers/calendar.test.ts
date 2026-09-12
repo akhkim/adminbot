@@ -297,3 +297,27 @@ describe("saveAdminBotCalendarEvent", () => {
     expect(app.calendarEditingEventId).toBeNull();
   });
 });
+
+// A 200 is not proof the calendar changed: a dry run, or a connector that declined to deliver,
+// both answer ok with status "simulated". Reporting that as a success is how a removal that never
+// happened reads as one that did.
+describe("an action the service did not execute", () => {
+  it("says so rather than claiming the people were removed", async () => {
+    inviteToCalendarEvent.mockResolvedValue({
+      ok: true,
+      value: { action_id: "a-42", status: "simulated" },
+    });
+    const app = host();
+    await inviteAdminBotCalendarAudience(app, {
+      event: { id: "evt-1", summary: "Monday group meeting", start: "2026-09-14T09:30:00-04:00" },
+      emails: [],
+      remove: ["gone@cs.toronto.edu"],
+      remaining: ["stays@cs.toronto.edu"],
+      reason: "Selected on the Calendar tab: member type full.",
+    });
+    expect(app.adminBotNotice?.kind).toBe("error");
+    expect(app.adminBotNotice?.text).toContain("simulated");
+    expect(app.adminBotNotice?.text).toContain("a-42");
+    expect(app.adminBotNotice?.text).not.toContain("removed 1 person");
+  });
+});

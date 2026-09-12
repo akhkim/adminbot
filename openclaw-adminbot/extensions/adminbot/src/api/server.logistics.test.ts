@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLogisticsRequestInput } from "../contracts/actions.js";
+import type { CallSheetSource } from "./call-sheet-config.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -38,7 +39,12 @@ type Lab = {
   tokens: Record<string, string>;
 };
 
-async function startLab(): Promise<Lab> {
+/**
+ * @param callSheet Turns the automatic call-sheet push on, with a stub workbook. Left out, the
+ * push is off: it probes a doc-prep link over the network and reads a real spreadsheet, and these
+ * tests are about who the wire lets in.
+ */
+async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
   const sensitiveInfoPath = path.join(
     os.tmpdir(),
     `adminbot-logistics-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
@@ -49,6 +55,8 @@ async function startLab(): Promise<Lab> {
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
     dcsFormRunner: async () => {},
+    autoQueueMeetingRequests: Boolean(callSheet),
+    ...(callSheet ? { callSheet } : {}),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -403,5 +411,72 @@ describe("returning a signed document", () => {
       }),
     });
     expect(res.status).toBe(413);
+  });
+});
+
+// A meeting request is answered by a row on Zhijing's call sheet, so submitting one proposes that
+// row rather than waiting for somebody to remember to push the queue.
+describe("the call-sheet row a meeting request proposes for itself", () => {
+  const CALL_GRID: string[][] = [
+    [
+      "Name",
+      "What topics do you want to go through?",
+      "Your current city (or time range flexible for you tto receive calls)",
+      "Doc prep of all the questions (before the call)",
+      'Have you messaged Zhijing a "hello" on whatsapp?',
+      "min_length of the call possible",
+      "until when is it ok to make this call?",
+      "time you entered this call request",
+    ],
+    ["", "", "", "", "", "", "", ""],
+    ["Finished calls", "", "", "", "", "", "", ""],
+  ];
+
+  function callSheet(): CallSheetSource {
+    return {
+      spreadsheetId: "1ZqdaRze",
+      tab: "Whatsapp call requests",
+      read: async () => CALL_GRID,
+    };
+  }
+
+  // A placeholder link never reaches the network (parseDocPrepLink settles it), so this asserts the
+  // wiring without a doc-prep probe: the request is stored, and the answer explains the refusal.
+  it("tells the member when the doc prep link is still a placeholder", async () => {
+    const lab = await startLab(callSheet());
+    const res = await fetch(`${lab.baseUrl}/logistics/requests`, {
+      method: "POST",
+      headers: asMember(lab, "ada", { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        kind: "book_meeting",
+        meetings: [{ purpose: "thesis check-in", doc_prep_url: "TODO" }],
+      } satisfies AdminBotLogisticsRequestInput),
+    });
+    // 201, the same status the service answered before this hook existed.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: string;
+      kind: string;
+      call_sheet?: { queued: boolean; message: string };
+    };
+    // The request is saved either way -- the push decorates this response, it never decides it.
+    expect(body.id).toBeTruthy();
+    expect(body.kind).toBe("book_meeting");
+    expect(body.call_sheet?.queued).toBe(false);
+    expect(body.call_sheet?.message).not.toBe("");
+  });
+
+  // Every other kind goes nowhere near the call sheet.
+  it("says nothing about the call sheet on a request of another kind", async () => {
+    const lab = await startLab(callSheet());
+    const res = await fetch(`${lab.baseUrl}/logistics/requests`, {
+      method: "POST",
+      headers: asMember(lab, "ada", { "Content-Type": "application/json" }),
+      body: JSON.stringify(LETTERS),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { kind?: string; call_sheet?: unknown };
+    expect(body.kind).toBe("recommendation_letters");
+    expect(body.call_sheet).toBeUndefined();
   });
 });

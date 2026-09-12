@@ -154,6 +154,40 @@ export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[
   return tabs.filter((tab) => canAccessTab(tab, role));
 }
 
+/**
+ * Whether the member has nothing left on their checklist.
+ *
+ * An empty list is not complete. The checklist is generated when a registration is approved, so a
+ * member who arrived another way -- a seeded roster row, an admin-created record -- has no steps
+ * and never will, and reading that as "finished" would hide a tab that was never shown a checklist
+ * in the first place. Typed structurally rather than against `MemberOnboardingStep` so the access
+ * table stays a leaf module with no view or session imports.
+ */
+export function isOnboardingComplete(
+  steps: readonly { status: string }[] | undefined | null,
+): boolean {
+  return Boolean(steps?.length) && (steps ?? []).every((step) => step.status === "complete");
+}
+
+/**
+ * The tabs to draw in navigation: what the role may reach, minus what this member has finished
+ * with.
+ *
+ * Only Getting Started leaves this way, and only once every step is ticked. It is a checklist with
+ * an end, and a tab that stays in the sidebar forever after it is finished is one more permanent
+ * item competing with the ones that still want something. The page itself stays reachable at its
+ * own path -- the completed list is still a record, and Lab Members shows it too -- so a bookmark
+ * or a link from elsewhere does not break.
+ */
+export function visibleTabsForMember(
+  tabs: readonly Tab[],
+  role: AccessRole,
+  onboardingSteps: readonly { status: string }[] | undefined | null,
+): Tab[] {
+  const finished = isOnboardingComplete(onboardingSteps);
+  return visibleTabsForRole(tabs, role).filter((tab) => tab !== "gettingStarted" || !finished);
+}
+
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
 // longer allowed after signing out. Deliberately the least privileged surface that role can see.
 export function defaultTabForRole(role: AccessRole): Tab {

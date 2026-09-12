@@ -1,7 +1,7 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
-import { visibleTabsForRole, type AccessRole } from "./adminbot/access.ts";
+import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -231,7 +231,11 @@ const NEW_CHAT_CREATE_FAILED_MESSAGE =
  * a label pretending to be a control.
  */
 export function renderPageTabs(state: AppViewState, role: AccessRole) {
-  const siblings = visibleTabsForRole(pageTabsFor(state.tab), role);
+  const siblings = visibleTabsForMember(
+    pageTabsFor(state.tab),
+    role,
+    state.adminBotOnboarding?.steps,
+  );
   if (siblings.length < 2) {
     return nothing;
   }

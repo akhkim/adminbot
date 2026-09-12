@@ -1,11 +1,3 @@
-import { LabSharingInvites } from "./lab-sharing-invites.ts";
-import "./lab-sharing-how-to.ts";
-import "./lab-sharing-status.ts";
-import { renderLabSharingResources } from "./lab-sharing-resources.ts";
-import { ref } from "lit/directives/ref.js";
-import "./lab-sharing-member-search.ts";
-import { LabSharingDirectory } from "./lab-sharing-directory.ts";
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 // Lab Sharing tab: five panels --
 //   1. Director status strip (availability, timezone, progress, a way to flag a blocker)
 //   2. Seek help -- pick a project, describe what's needed, tag it, then post a general call or
@@ -20,8 +12,19 @@ import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session
 // `labSharing*` fields (see the bottom of this file for the shape expected there) -- add those
 // fields to AppViewState the same way onboarding/profile fields were added.
 import { html, nothing } from "lit";
+import "./lab-sharing-how-to.ts";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import {
+  askAdminBotLabSharingMember,
+  closeAdminBotLabSharingRequest,
+  loadAdminBotLabSharing,
+  offerAdminBotLabSharingHelp,
+  postAdminBotLabSharingRequest,
+  searchAdminBotLabSharingMembers,
+} from "../controllers/lab-sharing.ts";
+import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 
 // ---------------------------------------------------------------------------
 // Types (shape guesses -- adjust once a real API contract exists)
@@ -85,25 +88,6 @@ type Announcement = {
   postedAt: string;
 };
 
-// ---------------------------------------------------------------------------
-// MOCK DATA -- replace with real fetch/state once backend exists
-// ---------------------------------------------------------------------------
-
-const MOCK_DIRECTOR: DirectorStatus = {
-  name: "Zhijing Jin",
-  availability: "available",
-  timezone: "America/Toronto",
-  localTime: "2:14 PM",
-  progressLabel: "Q3 paper deadlines",
-  progressPercent: 62,
-};
-
-// Projects the current member owns/leads -- populates the "which project" picker in Seek Help.
-const MOCK_OWNED_PROJECTS: OwnedProject[] = [
-  { id: "proj-adminbot", title: "AdminBot", tags: ["general tools"] },
-  { id: "proj-scm", title: "Causal Tutor", tags: ["visualization", "causality"] },
-];
-
 // The fixed tag vocabulary for the frontend prototype -- swap for a real managed tag list later.
 const AVAILABLE_TAGS = [
   "causality",
@@ -118,69 +102,121 @@ const AVAILABLE_TAGS = [
   "annotation",
 ];
 
-const MOCK_MEMBERS: LabMemberSummary[] = [
-  {
-    id: "m1",
-    name: "Ada Lovelace",
-    role: "External Collaborator",
-    projects: ["AdminBot", "Causal Tutor"],
-    interests: ["reasoning", "alignment"],
-  },
-];
+// ---------------------------------------------------------------------------
+// The service, in this page's own words
+//
+// The panels below are unchanged from the design they shipped as; what changed is where their rows
+// come from. Each adapter takes one service shape (data/lab-sharing.ts, snake_case, keyed by
+// `paper_id`) and returns the shape the panel was written against, so the markup never learns the
+// wire format and there is one place to look when a field moves.
+//
+// Two of them cannot be honest translations, and say so at their own definition: the broadcast
+// carries no progress figure, and invitations run outwards rather than in.
+// ---------------------------------------------------------------------------
 
-const MOCK_OPEN_PROJECTS: OpenProject[] = [
-  {
-    id: "p1",
-    title: "AdminBot",
-    owner: "Ada Lovelace",
-    summary: "Need a second set of eyes labeling ~400  traces for error type.",
-    tags: ["annotators", "general tools"],
-    membersNeeded: 2,
-    hoursPerWeek: 3,
-  },
-  {
-    id: "p2",
-    title: "Causal Tutor",
-    owner: "Ada Lovelace",
-    summary: "Click through the SCM playground and file bugs on anything that feels off.",
-    tags: ["causality", "UI/UX feedback"],
-    membersNeeded: 1,
-    hoursPerWeek: 1,
-  },
-];
+/**
+ * The lab-wide broadcast, in the shape this strip was drawn for.
+ *
+ * Two of that shape's fields have no source and are not invented: the service stores no progress
+ * figure and no per-person local clock. `progressPercent` of -1 is the panel's signal to leave the
+ * bar out entirely rather than draw an honest-looking 0%.
+ */
+function directorOf(state: AppViewState): DirectorStatus | null {
+  const status = state.labSharing?.status;
+  if (!status || status.retracted_at) {
+    return null;
+  }
+  const availability =
+    status.availability === "busy" || status.availability === "away"
+      ? status.availability
+      : "available";
+  return {
+    name: status.message,
+    availability,
+    timezone: "",
+    localTime: "",
+    progressLabel: "",
+    progressPercent: -1,
+  };
+}
 
-const MOCK_INVITES: CollabInvite[] = [
-  {
-    id: "inv1",
-    fromName: "Ada Lovelace",
-    projectId: "p1",
-    note: "Would love a hand on this from you if you're available.",
-    receivedAt: "2 days ago",
-  },
-];
+function ownedProjectsOf(state: AppViewState): OwnedProject[] {
+  // Tags live on the request, not the paper, so a project the member has not posted about yet has
+  // none to show. An empty list rather than an invented one.
+  return (state.labSharing?.projects ?? []).map((project) => ({
+    id: project.id,
+    title: project.title,
+    tags: [],
+  }));
+}
 
-// Help requests the member has sent out -- the general-call posts become rows here once a backend
-// exists; two seeded examples keep the panel visible in the frontend prototype.
-const MOCK_REQUESTS: HelpRequest[] = [
-  {
-    id: "req1",
-    projectId: "proj-scm",
-    comment: "Looking for a second pair of eyes on the SCM playground before the next demo.",
-    members: 1,
-    hours: 2,
-    tags: ["causality", "visualization"],
-    sentAt: "3 days ago",
-  },
-  {
-    id: "req2",
-    projectId: "proj-adminbot",
-    comment: "Need help getting feedback from onboarded members.",
-    members: 2,
-    hours: 1,
-    tags: ["QA", "general tools"],
-    sentAt: "yesterday",
-  },
-];
+function openProjectsOf(state: AppViewState): OpenProject[] {
+  return (state.labSharing?.open ?? []).map((request) => ({
+    id: request.paper_id,
+    title: request.title,
+    owner: request.owner_name,
+    summary: request.description,
+    tags: request.tags ?? [],
+    membersNeeded: request.members_needed,
+    hoursPerWeek: request.hours_per_week,
+  }));
+}
+
+function sentRequestsOf(state: AppViewState): HelpRequest[] {
+  return (state.labSharing?.mine ?? []).map((request) => ({
+    // A member posts at most one request per paper, so the paper is the row's identity.
+    id: request.paper_id,
+    projectId: request.paper_id,
+    comment: request.description,
+    members: request.members_needed,
+    hours: request.hours_per_week,
+    tags: request.tags ?? [],
+    // The service keeps a timeline in the poster's own words ("before the ARR deadline"), which is
+    // what this line has to show; there is no "sent at" clock behind it.
+    sentAt: request.timeline,
+  }));
+}
+
+function membersOf(state: AppViewState): LabMemberSummary[] {
+  return (state.labSharingMembers ?? []).map((member) => ({
+    id: member.id,
+    name: member.name,
+    role: member.research_branch,
+    projects: member.projects.map((project) => project.title),
+    interests: member.research_topics ?? [],
+  }));
+}
+
+const INVITE_STATUS: Record<string, string> = {
+  pending: "Waiting for an admin to approve it",
+  approved: "Approved; waiting to send",
+  executed: "Sent",
+  rejected: "Rejected",
+  failed: "Could not be sent",
+};
+
+/**
+ * Invitations, which run the other way.
+ *
+ * This panel was drawn for invitations arriving -- somebody asks you, and you accept or decline.
+ * The service has no such record: an invitation is something the viewer *sends*, and it reaches
+ * its recipient only once an admin approves it. So the card keeps its shape and changes what it
+ * names -- who it went to, which paper, and where it has got to -- and the Respond button went
+ * with the flow it belonged to.
+ */
+function invitesOf(state: AppViewState): CollabInvite[] {
+  return (state.labSharing?.invites ?? []).map((invite) => ({
+    id: invite.id,
+    fromName: invite.recipient_name,
+    projectId: invite.project_title,
+    note: invite.kind,
+    receivedAt: INVITE_STATUS[invite.status] ?? invite.status,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Announcements have no service behind them -- see renderAnnouncementsPanel.
+// ---------------------------------------------------------------------------
 
 const MOCK_ANNOUNCEMENTS: Announcement[] = [
   {
@@ -211,16 +247,6 @@ function availabilityLabel(status: DirectorStatus["availability"]): string {
   return t("labSharing.director.availabilityAway");
 }
 
-function matchesQuery(member: LabMemberSummary, query: string): boolean {
-  if (!query.trim()) {
-    return true;
-  }
-  const haystack = [member.name, member.role, ...member.projects, ...member.interests]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(query.trim().toLowerCase());
-}
-
 function requestUpdate(state: AppViewState): void {
   (state as AppViewState & { requestUpdate?: () => void }).requestUpdate?.();
 }
@@ -228,10 +254,10 @@ function requestUpdate(state: AppViewState): void {
 // The inline "add a tag" chip and the announcement compose dialog keep their transient UI state
 // here rather than on AppViewState: typing state and an open flag are not things a re-render or a
 // future backend sync should care about.
+let memberSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let addingTag = false;
 let tagDraft = "";
 let announcements: Announcement[] = [...MOCK_ANNOUNCEMENTS];
-let sentRequests: HelpRequest[] = [...MOCK_REQUESTS];
 let composingAnnouncement = false;
 let announcementDraft = "";
 let viewingInviteId: string | null = null;
@@ -248,8 +274,13 @@ let confirmingDeleteRequestId: string | null = null;
 // 1. Director status strip
 // ---------------------------------------------------------------------------
 
-function renderDirectorPanel() {
-  const director = MOCK_DIRECTOR;
+function renderDirectorPanel(state: AppViewState) {
+  const director = directorOf(state);
+  if (!director) {
+    // No broadcast standing. The strip goes rather than drawing an empty status card, which reads
+    // as "the lab has said something and we cannot show it".
+    return nothing;
+  }
   return html`
     <section class="lab-sharing-director" data-testid="lab-sharing-director">
       <div class="lab-sharing-director__identity">
@@ -261,35 +292,8 @@ function renderDirectorPanel() {
           ></span>
           <div class="lab-sharing-director__name">${director.name}</div>
         </div>
-        <div class="lab-sharing-director__meta">
-          ${availabilityLabel(director.availability)} · ${director.timezone} · ${director.localTime}
-        </div>
+        <div class="lab-sharing-director__meta">${availabilityLabel(director.availability)}</div>
       </div>
-
-      <div class="lab-sharing-director__progress">
-        <div class="lab-sharing-director__progress-label">
-          <span>${director.progressLabel}</span>
-          <span>${director.progressPercent}%</span>
-        </div>
-        <div class="lab-sharing-director__progress-track">
-          <div
-            class="lab-sharing-director__progress-fill"
-            style=${`width: ${director.progressPercent}%`}
-          ></div>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        class="btn lab-sharing-director__blocker"
-        data-testid="lab-sharing-contact-blocker"
-        @click=${() => {
-          // MOCK: wire to a real contact/blocker flow once backend exists.
-          console.log("contact about blocker clicked");
-        }}
-      >
-        ${t("labSharing.director.contactBlocker")}
-      </button>
     </section>
   `;
 }
@@ -378,7 +382,7 @@ function renderTagPicker(state: AppViewState) {
 }
 
 function renderAskForm(state: AppViewState) {
-  const projectId = state.labSharingAskProjectId ?? MOCK_OWNED_PROJECTS[0]?.id ?? "";
+  const projectId = state.labSharingAskProjectId ?? ownedProjectsOf(state)[0]?.id ?? "";
   return html`
     <div class="lab-sharing-ask">
       <label class="lab-sharing-ask__field">
@@ -390,7 +394,7 @@ function renderAskForm(state: AppViewState) {
             state.labSharingAskProjectId = (event.target as HTMLSelectElement).value;
           }}
         >
-          ${MOCK_OWNED_PROJECTS.map(
+          ${ownedProjectsOf(state).map(
             (project) => html`<option value=${project.id}>${project.title}</option>`,
           )}
         </select>
@@ -487,9 +491,7 @@ function renderSeekHelpPanel(state: AppViewState) {
   const query = state.labSharingSearchQuery ?? "";
   const trimmed = query.trim();
   // Members stay hidden until the member actually searches -- no directory dump, just results.
-  const results = trimmed
-    ? MOCK_MEMBERS.filter((member) => matchesQuery(member, query))
-    : [];
+  const results = trimmed ? membersOf(state) : [];
 
   return html`
     <section class="lab-sharing-seek" data-testid="lab-sharing-seek-help">
@@ -511,8 +513,23 @@ function renderSeekHelpPanel(state: AppViewState) {
           placeholder=${t("labSharing.seekHelp.searchPlaceholder")}
           .value=${query}
           @input=${(event: Event) => {
-            state.labSharingSearchQuery = (event.target as HTMLInputElement).value;
+            const value = (event.target as HTMLInputElement).value;
+            state.labSharingSearchQuery = value;
             requestUpdate(state);
+            // Debounced, because this is a request per keystroke otherwise. The generation guard is
+            // the query itself: a reply for something the member has since typed past is dropped.
+            clearTimeout(memberSearchTimer);
+            if (!value.trim()) {
+              state.labSharingMembers = [];
+              return;
+            }
+            memberSearchTimer = setTimeout(() => {
+              void searchAdminBotLabSharingMembers(state, value).then(() => {
+                if ((state.labSharingSearchQuery ?? "") === value) {
+                  requestUpdate(state);
+                }
+              });
+            }, 250);
           }}
         />
       </div>
@@ -526,7 +543,10 @@ function renderSeekHelpPanel(state: AppViewState) {
       </div>
 
       ${askingMemberId
-        ? renderMemberAskDialog(state, MOCK_MEMBERS.find((member) => member.id === askingMemberId) ?? null)
+        ? renderMemberAskDialog(
+            state,
+            membersOf(state).find((member) => member.id === askingMemberId) ?? null,
+          )
         : nothing}
 
       <div class="lab-sharing-seek__or">
@@ -553,24 +573,20 @@ function renderSeekHelpPanel(state: AppViewState) {
 }
 
 function renderGeneralCallDialog(state: AppViewState) {
-  const projectId = state.labSharingAskProjectId ?? MOCK_OWNED_PROJECTS[0]?.id ?? "";
-  const project = MOCK_OWNED_PROJECTS.find((p) => p.id === projectId);
+  const projectId = state.labSharingAskProjectId ?? ownedProjectsOf(state)[0]?.id ?? "";
+  const project = ownedProjectsOf(state).find((p) => p.id === projectId);
   const publish = () => {
-    // MOCK: submit the ask form above as a public call once backend exists.
-    sentRequests = [
-      {
-        id: `req-${Date.now()}`,
-        projectId,
-        comment: state.labSharingAskComment ?? "",
-        members: state.labSharingAskMembers ?? 1,
-        hours: state.labSharingAskHours ?? 1,
-        tags: state.labSharingAskTags ?? [],
-        sentAt: "just now",
-      },
-      ...sentRequests,
-    ];
     confirmingGeneralCall = false;
     requestUpdate(state);
+    void postAdminBotLabSharingRequest(state, projectId, {
+      description: state.labSharingAskComment ?? "",
+      tags: state.labSharingAskTags ?? [],
+      members_needed: state.labSharingAskMembers ?? 1,
+      hours_per_week: state.labSharingAskHours ?? 1,
+      // The form has no timeline field, and the service takes one. Left empty rather than guessed:
+      // an invented deadline is worse than none on a board people plan against.
+      timeline: "",
+    }).finally(() => requestUpdate(state));
   };
   return html`
     <div
@@ -593,11 +609,15 @@ function renderGeneralCallDialog(state: AppViewState) {
           : nothing}
 
         <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.membersLabel")}</span>
+          <span class="lab-sharing-invite-dialog__label"
+            >${t("labSharing.seekHelp.membersLabel")}</span
+          >
           <span class="lab-sharing-invite-dialog__value">${state.labSharingAskMembers ?? 1}</span>
         </div>
         <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.hoursLabel")}</span>
+          <span class="lab-sharing-invite-dialog__label"
+            >${t("labSharing.seekHelp.hoursLabel")}</span
+          >
           <span class="lab-sharing-invite-dialog__value">${state.labSharingAskHours ?? 1}</span>
         </div>
 
@@ -640,19 +660,22 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
   if (!member) {
     return nothing;
   }
-  const projectId = state.labSharingAskProjectId ?? MOCK_OWNED_PROJECTS[0]?.id ?? "";
-  const project = MOCK_OWNED_PROJECTS.find((p) => p.id === projectId);
+  const projectId = state.labSharingAskProjectId ?? ownedProjectsOf(state)[0]?.id ?? "";
+  const project = ownedProjectsOf(state).find((p) => p.id === projectId);
   const send = () => {
-    // MOCK: send a real collaboration invite (comment) once backend exists.
-    console.log("invited member to help", {
-      to: member.id,
-      projectId,
-      comment: state.labSharingAskComment,
-      specialMessage: askSpecialMessage,
-    });
+    const note = [state.labSharingAskComment, askSpecialMessage]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join("\n\n");
     state.labSharingInvitedMemberIds = [...(state.labSharingInvitedMemberIds ?? []), member.id];
     askingMemberId = null;
     requestUpdate(state);
+    void askAdminBotLabSharingMember(state, {
+      recipient_id: member.id,
+      paper_id: projectId,
+      kind: "collaboration",
+      note,
+    }).finally(() => requestUpdate(state));
   };
   return html`
     <div
@@ -675,11 +698,15 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
           : nothing}
 
         <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.membersLabel")}</span>
+          <span class="lab-sharing-invite-dialog__label"
+            >${t("labSharing.seekHelp.membersLabel")}</span
+          >
           <span class="lab-sharing-invite-dialog__value">${state.labSharingAskMembers ?? 1}</span>
         </div>
         <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.hoursLabel")}</span>
+          <span class="lab-sharing-invite-dialog__label"
+            >${t("labSharing.seekHelp.hoursLabel")}</span
+          >
           <span class="lab-sharing-invite-dialog__value">${state.labSharingAskHours ?? 1}</span>
         </div>
 
@@ -740,15 +767,8 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
 
 function renderInvitesPanel(state: AppViewState) {
   const responded = new Set(state.labSharingRespondedInviteIds ?? []);
-  const invites = MOCK_INVITES.filter((invite) => !responded.has(invite.id));
-  const viewingInvite = MOCK_INVITES.find((invite) => invite.id === viewingInviteId) ?? null;
-
-  const respondTo = (invite: CollabInvite) => {
-    // MOCK: reach the owner (e.g. a Slack DM) once the backend exists.
-    state.labSharingRespondedInviteIds = [...(state.labSharingRespondedInviteIds ?? []), invite.id];
-    viewingInviteId = null;
-    requestUpdate(state);
-  };
+  const invites = invitesOf(state).filter((invite) => !responded.has(invite.id));
+  const viewingInvite = invitesOf(state).find((invite) => invite.id === viewingInviteId) ?? null;
 
   return html`
     <section class="lab-sharing-invites" data-testid="lab-sharing-invites">
@@ -758,12 +778,12 @@ function renderInvitesPanel(state: AppViewState) {
           (invite) => html`
             <article class="lab-sharing-invite" data-testid=${`lab-sharing-invite-${invite.id}`}>
               <div class="lab-sharing-invite__header">
-                <span class="lab-sharing-invite__from">${invite.fromName}</span>
+                <span class="lab-sharing-invite__from"
+                  >${t("labSharing.invites.to", { name: invite.fromName })}</span
+                >
                 <span class="lab-sharing-invite__time">${invite.receivedAt}</span>
               </div>
-              <p class="lab-sharing-invite__project">
-                ${MOCK_OPEN_PROJECTS.find((p) => p.id === invite.projectId)?.title ?? invite.projectId}
-              </p>
+              <p class="lab-sharing-invite__project">${invite.projectId}</p>
               <p class="lab-sharing-invite__note">${invite.note}</p>
               <div class="lab-sharing-invite__actions">
                 <button
@@ -804,14 +824,6 @@ function renderInvitesPanel(state: AppViewState) {
                   >
                     ${t("labSharing.invites.close")}
                   </button>
-                  <button
-                    type="button"
-                    class="btn primary lab-sharing-invite-dialog__respond"
-                    data-testid="lab-sharing-invite-respond"
-                    @click=${() => respondTo(viewingInvite)}
-                  >
-                    ${t("labSharing.invites.respond")}
-                  </button>
                 </div>
               </div>
             </div>
@@ -821,37 +833,14 @@ function renderInvitesPanel(state: AppViewState) {
   `;
 }
 
-function renderProjectDetailRows(project: Pick<OpenProject, "summary" | "owner" | "membersNeeded" | "hoursPerWeek" | "tags">) {
-  return html`
-    <p class="lab-sharing-invite-dialog__summary">${project.summary}</p>
-    <div class="lab-sharing-invite-dialog__detail">
-      <span class="lab-sharing-invite-dialog__label">${t("labSharing.invites.owner")}</span>
-      <span class="lab-sharing-invite-dialog__value">${project.owner}</span>
-    </div>
-    <div class="lab-sharing-invite-dialog__detail">
-      <span class="lab-sharing-invite-dialog__label">${t("labSharing.invites.membersNeeded")}</span>
-      <span class="lab-sharing-invite-dialog__value">${project.membersNeeded}</span>
-    </div>
-    <div class="lab-sharing-invite-dialog__detail">
-      <span class="lab-sharing-invite-dialog__label">${t("labSharing.invites.hoursPerWeek")}</span>
-      <span class="lab-sharing-invite-dialog__value">${project.hoursPerWeek}</span>
-    </div>
-    <div class="lab-sharing-invite-dialog__needs">
-      ${project.tags.map(
-        (tag) => html`<span class="lab-sharing-invite-dialog__need">${tag}</span>`,
-      )}
-    </div>
-  `;
-}
-
 function renderInviteDetails(invite: CollabInvite) {
-  const project = MOCK_OPEN_PROJECTS.find((p) => p.id === invite.projectId);
   return html`
     <div class="lab-sharing-invite-dialog__head">
-      <h3 class="lab-sharing-invite-dialog__title">${project?.title ?? invite.projectId}</h3>
-      <span class="lab-sharing-invite-dialog__from">${t("labSharing.invites.from", { name: invite.fromName })}</span>
+      <h3 class="lab-sharing-invite-dialog__title">${invite.projectId}</h3>
+      <span class="lab-sharing-invite-dialog__from"
+        >${t("labSharing.invites.to", { name: invite.fromName })}</span
+      >
     </div>
-    ${project ? renderProjectDetailRows(project) : nothing}
     <p class="lab-sharing-invite-dialog__note">${invite.note}</p>
   `;
 }
@@ -861,6 +850,7 @@ function renderInviteDetails(invite: CollabInvite) {
 // ---------------------------------------------------------------------------
 
 function renderYourRequestsPanel(state: AppViewState) {
+  const sentRequests = sentRequestsOf(state);
   return html`
     <section class="lab-sharing-requests" data-testid="lab-sharing-requests">
       <h2 class="lab-sharing-requests__title">${t("labSharing.requests.title")}</h2>
@@ -876,7 +866,7 @@ function renderYourRequestsPanel(state: AppViewState) {
                   >
                     <div class="lab-sharing-request__header">
                       <span class="lab-sharing-request__project">
-                        ${MOCK_OWNED_PROJECTS.find((p) => p.id === request.projectId)?.title ??
+                        ${ownedProjectsOf(state).find((p) => p.id === request.projectId)?.title ??
                         request.projectId}
                       </span>
                       <span class="lab-sharing-request__time">${request.sentAt}</span>
@@ -914,9 +904,15 @@ function renderYourRequestsPanel(state: AppViewState) {
                               class="btn lab-sharing-request__delete lab-sharing-request__delete--confirm"
                               data-testid=${`lab-sharing-request-delete-${request.id}`}
                               @click=${() => {
-                                sentRequests = sentRequests.filter((r) => r.id !== request.id);
                                 confirmingDeleteRequestId = null;
                                 requestUpdate(state);
+                                // Closed, not deleted: the service keeps the row and stops showing
+                                // it to the lab, so an offer already made against it still has
+                                // something to point at.
+                                void closeAdminBotLabSharingRequest(
+                                  state,
+                                  request.projectId,
+                                ).finally(() => requestUpdate(state));
                               }}
                             >
                               ${t("labSharing.requests.confirmDelete")}
@@ -948,7 +944,7 @@ function renderYourRequestsPanel(state: AppViewState) {
 // ---------------------------------------------------------------------------
 // 5. Open projects deck
 // ---------------------------------------------------------------------------
-function renderProjectCard(project: OpenProject) {
+function renderProjectCard(state: AppViewState, project: OpenProject) {
   return html`
     <article class="lab-sharing-project" data-testid=${`lab-sharing-project-${project.id}`}>
       <div class="lab-sharing-project__header">
@@ -966,7 +962,20 @@ function renderProjectCard(project: OpenProject) {
             hours: String(project.hoursPerWeek),
           })}
         </span>
-        <button type="button" class="btn primary lab-sharing-project__offer">
+        <button
+          type="button"
+          class="btn primary lab-sharing-project__offer"
+          data-testid=${`lab-sharing-offer-${project.id}`}
+          @click=${() => {
+            // The hours the poster asked for, as the opening offer. The panel has no field of its
+            // own for it, and asking for a number before the offer exists is a form where a click
+            // belongs -- the poster and the offerer settle the real figure between them.
+            void offerAdminBotLabSharingHelp(state, project.id, {
+              hours_per_week: project.hoursPerWeek,
+              note: "",
+            }).finally(() => requestUpdate(state));
+          }}
+        >
           ${t("labSharing.openProjects.offerHelp")}
         </button>
       </div>
@@ -975,7 +984,8 @@ function renderProjectCard(project: OpenProject) {
 }
 
 function renderOpenProjectsPanel(state: AppViewState) {
-  const total = MOCK_OPEN_PROJECTS.length;
+  const projects = openProjectsOf(state);
+  const total = projects.length;
   if (total === 0) {
     return html`
       <section class="lab-sharing-projects" data-testid="lab-sharing-open-projects">
@@ -987,7 +997,7 @@ function renderOpenProjectsPanel(state: AppViewState) {
   // Wrap-around deck: `% total` (with a positive-modulo guard) so prev/next cycle forever
   // instead of hitting hard stops at either end.
   const index = (((state.labSharingOpenProjectIndex ?? 0) % total) + total) % total;
-  const project = MOCK_OPEN_PROJECTS[index];
+  const project = projects[index];
 
   return html`
     <section class="lab-sharing-projects" data-testid="lab-sharing-open-projects">
@@ -1024,7 +1034,7 @@ function renderOpenProjectsPanel(state: AppViewState) {
           </svg>
         </button>
 
-        ${renderProjectCard(project)}
+        ${renderProjectCard(state, project)}
 
         <button
           type="button"
@@ -1061,11 +1071,23 @@ function renderOpenProjectsPanel(state: AppViewState) {
 // 6. Announcements -- feed plus an in-page compose dialog
 // ---------------------------------------------------------------------------
 
+/**
+ * The one panel with nothing behind it.
+ *
+ * Every other panel on this tab reads and writes the service now. This one has no route, no store
+ * and no action type -- so it keeps its design and wears a badge saying what it is, rather than
+ * being quietly deleted or quietly left to look like the others.
+ */
 function renderAnnouncementsPanel(state: AppViewState) {
   return html`
     <section class="lab-sharing-announcements" data-testid="lab-sharing-announcements">
       <div class="lab-sharing-announcements__header">
-        <h2 class="lab-sharing-announcements__title">${t("labSharing.announcements.title")}</h2>
+        <h2 class="lab-sharing-announcements__title">
+          ${t("labSharing.announcements.title")}
+          <span class="pill warn" data-testid="lab-sharing-announcements-sample"
+            >${t("labSharing.announcements.sample")}</span
+          >
+        </h2>
         <button
           type="button"
           class="btn lab-sharing-announcements__add"
@@ -1090,7 +1112,10 @@ function renderAnnouncementsPanel(state: AppViewState) {
       <div class="lab-sharing-announcements__list">
         ${announcements.map(
           (announcement) => html`
-            <article class="lab-sharing-announcement" data-testid=${`lab-sharing-announcement-${announcement.id}`}>
+            <article
+              class="lab-sharing-announcement"
+              data-testid=${`lab-sharing-announcement-${announcement.id}`}
+            >
               <div class="lab-sharing-announcement__header">
                 <span class="lab-sharing-announcement__author">${announcement.authorName}</span>
                 <span class="lab-sharing-announcement__time">${announcement.postedAt}</span>
@@ -1103,8 +1128,16 @@ function renderAnnouncementsPanel(state: AppViewState) {
 
       ${composingAnnouncement
         ? html`
-            <div class="lab-sharing-compose" role="dialog" aria-modal="true" aria-label=${t("labSharing.announcements.composeTitle")} data-testid="lab-sharing-announcement-compose">
-              <h3 class="lab-sharing-compose__title">${t("labSharing.announcements.composeTitle")}</h3>
+            <div
+              class="lab-sharing-compose"
+              role="dialog"
+              aria-modal="true"
+              aria-label=${t("labSharing.announcements.composeTitle")}
+              data-testid="lab-sharing-announcement-compose"
+            >
+              <h3 class="lab-sharing-compose__title">
+                ${t("labSharing.announcements.composeTitle")}
+              </h3>
               <textarea
                 class="lab-sharing-compose__input"
                 rows="3"
@@ -1169,62 +1202,55 @@ function renderAnnouncementsPanel(state: AppViewState) {
 // ---------------------------------------------------------------------------
 
 /**
- * The banner that says what this tab is.
+ * What the tab could not load, and the one panel that has nothing behind it.
  *
- * Every panel below runs on mock data and no control on the page reaches a service (see the MOCK
- * markers throughout this file). Without a banner the tab reads as a working feature whose data
- * happens to be wrong, and the first person to post a help request would discover otherwise by
- * having it vanish. Saying it once, at the top, costs a strip of page and makes the whole tab
- * honest -- which is why the panels themselves are left exactly as they are.
+ * The banner this replaces said the whole tab was a preview; five of its six panels now read and
+ * write the service, so a blanket warning would be false in the other direction. What survives is
+ * narrower and truer: the reads that failed, named one per line, and -- on the announcements panel
+ * itself -- a badge saying that one is still sample data.
  */
-function renderComingSoonBanner() {
+function renderLoadNotices(state: AppViewState) {
+  const errors = state.labSharingErrors ?? [];
+  if (!errors.length && !state.labSharingNotice) {
+    return nothing;
+  }
   return html`
-    <div class="lab-sharing__coming-soon" role="status" data-testid="lab-sharing-coming-soon">
-      <span class="pill warn">${t("labSharing.comingSoon.badge")}</span>
+    <div class="lab-sharing__coming-soon" role="status" data-testid="lab-sharing-notice">
       <span class="lab-sharing__coming-soon-copy">
-        <strong>${t("labSharing.comingSoon.title")}</strong>
-        <span>${t("labSharing.comingSoon.body")}</span>
+        ${state.labSharingNotice ? html`<strong>${state.labSharingNotice}</strong>` : nothing}
+        ${errors.map((message) => html`<span>${message}</span>`)}
       </span>
     </div>
   `;
 }
 
-export function renderLabSharingPreview(state: AppViewState) {
-  return html`
-    <div class="lab-sharing" data-testid="lab-sharing" data-preview="true">
-      ${renderComingSoonBanner()} ${renderDirectorPanel()} ${renderInvitesPanel(state)}
-      ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
-      ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
-    </div>
-  `;
-}
-
+/**
+ * The Collaborate tab.
+ *
+ * The six panels are the design from #23, in the order it put them; what sits under them now is
+ * the service. The two strips that design never had -- the guidebook question box and the resource
+ * shortcuts -- follow it, wearing the same section shell as the rest so the page reads as one
+ * thing rather than as two eras stacked.
+ *
+ * Loading is kicked off from the render rather than from a lifecycle hook because this view is a
+ * function, not a component: the guard is the snapshot's own absence, so it runs once per session
+ * and not once per keystroke.
+ */
 export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
-  let directory: LabSharingDirectory | undefined;
-  let invitations: LabSharingInvites | undefined;
-  return html`<div class="lab-sharing-page">
-    <lab-sharing-directory
-      ${ref((element) => {
-        directory = element as LabSharingDirectory | undefined;
-      })}
-      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-      .sessionToken=${session?.sessionToken ?? ""}
-    ></lab-sharing-directory>
-    <lab-sharing-member-search
-      .onInviteSelect=${(id: string, name: string) => { void invitations?.selectMember(id, name); }}
-      .onProjectSelect=${(paperId: string) => {
-        void directory?.showProject(paperId);
-      }}
-      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-      .sessionToken=${session?.sessionToken ?? ""}
-    ></lab-sharing-member-search>
-    <lab-sharing-invites ${ref((element) => { invitations = element as LabSharingInvites | undefined; })} .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-invites>
-    <lab-sharing-how-to .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-how-to>
-    <lab-sharing-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} .sessionToken=${session?.sessionToken ?? ""}></lab-sharing-status>
-    ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
-    <details>
-      <summary>Preview of upcoming Lab Sharing features (sample data)</summary>
-      ${renderLabSharingPreview(state)}
-    </details></div>`;
+  if (session && !state.labSharing && !state.labSharingLoading) {
+    void loadAdminBotLabSharing(state).finally(() => requestUpdate(state));
+  }
+  return html`
+    <div class="lab-sharing" data-testid="lab-sharing">
+      ${renderLoadNotices(state)} ${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
+      ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
+      ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
+      <lab-sharing-how-to
+        .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+        .sessionToken=${session?.sessionToken ?? ""}
+      ></lab-sharing-how-to>
+      ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
+    </div>
+  `;
 }

@@ -302,6 +302,18 @@ export async function inviteAdminBotCalendarAudience(
       };
       return;
     }
+    // The service answers 200 for work it did not do: a dry run, or a connector that recognized the
+    // action and declined to deliver it, both come back ok with status "simulated" (kernel/
+    // service.ts, the two `execution.simulated` branches). Reporting those as "removed 5 people"
+    // is how a guest list that never changed reads as a guest list that did -- and a removal is
+    // exactly the half nobody re-checks against Google afterwards.
+    if (result.value.status !== "executed") {
+      host.adminBotNotice = {
+        kind: "error",
+        text: `The calendar action was filed as ${result.value.status}, not executed — nobody was added or removed. Action ${result.value.action_id} on the Actions tab says why.`,
+      };
+      return;
+    }
     const removed = params.remove?.length ?? 0;
     const invited = params.emails.length
       ? `Invited ${params.emails.length} ${params.emails.length === 1 ? "person" : "people"}`

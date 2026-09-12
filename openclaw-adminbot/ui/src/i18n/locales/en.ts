@@ -1761,8 +1761,14 @@ export const en: TranslationMap = {
     },
     signature: {
       title: "Document Signature",
-      sub: "Signature requests are filed on a Google Form now. It asks for the documents and everything the signer needs to know.",
-      openForm: "Open the signature form",
+      sub: "Fill this in and AdminBot files it on the lab's signature form for you. Your name is taken from the roster.",
+      driveUrl: "Link to the document",
+      deadline: "Deadline",
+      context: "Context of signing (optional)",
+      send: "Send the signature request",
+      sending: "Sending…",
+      submitted: "Filed on the lab's signature form.",
+      openForm: "Open the form yourself",
       dropTitle: "Drop documents here, or click to choose",
       dropHint: "PDF, Word, or a photo of the page.",
       remove: "Remove {name}",
@@ -1880,6 +1886,9 @@ export const en: TranslationMap = {
         empty: "Fill the request in before sending it.",
         noName: "Every school needs its name filled in.",
         noPurpose: "Every meeting needs a purpose.",
+        noDocPrep:
+          "Every meeting needs a doc prep link. It is what the call is spent on, and a request " +
+          "without one cannot go on the queue.",
         fileTooBig: "{name} is larger than 5MB. Send a smaller copy or a link to it.",
         requestTooBig: "The files on this request come to more than 20MB altogether.",
         signedOut: "Sign in to send this request.",
@@ -1934,10 +1943,11 @@ export const en: TranslationMap = {
       searchPrompt: "Type to search for a member by name, project, or interests.",
     },
     invites: {
-      title: "Your invites",
+      title: "Invitations you have asked for",
       view: "View",
-      viewTitle: "Project details",
+      viewTitle: "Invitation details",
       from: "Invited by {name}",
+      to: "To {name}",
       owner: "Owner",
       membersNeeded: "Members needed",
       hoursPerWeek: "Hours / week",
@@ -1962,6 +1972,8 @@ export const en: TranslationMap = {
     },
     announcements: {
       title: "Announcements",
+      // The only panel on this tab with no service behind it, and it says so on its face.
+      sample: "Sample data — nothing here is saved",
       add: "Add",
       composeTitle: "New announcement",
       bodyPlaceholder: "What do people need to know?",

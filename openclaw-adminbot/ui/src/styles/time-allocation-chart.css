@@ -280,3 +280,45 @@
   color: var(--text-muted);
   font-size: var(--control-ui-text-xs);
 }
+
+/* ── The series palette ──────────────────────────────────────────────────────────────────────
+   Eight categorical slots, assigned in fixed order and never cycled past the eighth (the chart
+   falls back to the neutral). Held here as tokens rather than as hex in the TypeScript so the two
+   themes can differ: the same hue needs a different step to sit on #141417 than on #ffffff, and a
+   single set of values cannot be right on both.
+
+   Chosen for colour-vision deficiency, not by eye, and checked with a validator rather than
+   argued about. The set this replaces put #188B3E beside #F6511D -- a green and an orange-red that
+   come to ΔE 4.2 for a protanope, which is to say the same colour -- and carried a brown so dark
+   (#783810) and a gold so pale (#D4A72C, 2.18:1) that neither read as a mark. Every slot below
+   sits inside the lightness band, clears the chroma floor, and keeps worst-adjacent CVD ΔE at 9.1
+   light / 8.4 dark against a target of 8.
+
+   Three light-mode slots (aqua, yellow, magenta) sit under 3:1 against white. That is a documented
+   relief case, not a pass: identity on this chart never rests on colour alone -- the legend names
+   every series and the tooltip repeats the name beside its swatch. */
+:root {
+  --adminbot-chart-series-1: #3987e5;
+  --adminbot-chart-series-2: #d95926;
+  --adminbot-chart-series-3: #199e70;
+  --adminbot-chart-series-4: #c98500;
+  --adminbot-chart-series-5: #d55181;
+  --adminbot-chart-series-6: #008300;
+  --adminbot-chart-series-7: #9085e9;
+  --adminbot-chart-series-8: #e66767;
+  /* Anything past the eighth series, and any category the chart cannot colour. Deliberately
+     achromatic: it is the absence of an assignment, and a ninth hue would read as a ninth series. */
+  --adminbot-chart-neutral: #9aa0aa;
+}
+
+:root[data-theme="light"] {
+  --adminbot-chart-series-1: #2a78d6;
+  --adminbot-chart-series-2: #eb6834;
+  --adminbot-chart-series-3: #1baf7a;
+  --adminbot-chart-series-4: #eda100;
+  --adminbot-chart-series-5: #e87ba4;
+  --adminbot-chart-series-6: #008300;
+  --adminbot-chart-series-7: #4a3aa7;
+  --adminbot-chart-series-8: #e34948;
+  --adminbot-chart-neutral: #6b7280;
+}

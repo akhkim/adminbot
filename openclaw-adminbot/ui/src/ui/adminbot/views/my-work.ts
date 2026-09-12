@@ -2411,6 +2411,13 @@ const savedDecisions = new Set<string>();
  * reading "Saved ✓" while describing something older than the screen.
  */
 const dirtyDecisions = new Set<string>();
+/**
+ * Decisions closed by hand this session.
+ *
+ * Session-only on purpose: the close also writes the seen stamp, so the next load has the durable
+ * answer and this set exists only to make the banner leave the page under the click that closed it.
+ */
+const dismissedDecisions = new Set<string>();
 /** The coauthor-email task: whether the box is open, and the body as edited. */
 const emailTasks = new Map<string, { open: boolean; body: string }>();
 const decisionDrafts = new Map<
@@ -2432,9 +2439,22 @@ function renderDecisionBanners(
   if (!memberId) {
     return nothing;
   }
-  // Every decided paper, answered or not. The banner is the record of the decision as well as
-  // the prompt for it, so it does not leave when the prompt is satisfied.
-  const waiting = papers.filter((paper) => decisionOf(paper) !== null);
+  // A decided paper still asking for something. Three ways a banner stops asking:
+  //
+  //   - closed by hand this session,
+  //   - answered in an earlier session -- the answer is on the paper card, and a prompt that
+  //     outlives its answer is just a page that never empties,
+  //   - (not here) answered in *this* session, which keeps its banner: the click that recorded
+  //     the answer needs something to confirm against, and a card that vanishes under the button
+  //     reads as the page eating the answer.
+  const waiting = papers.filter((paper) => {
+    if (decisionOf(paper) === null || dismissedDecisions.has(paper.id)) {
+      return false;
+    }
+    return (
+      !isDecisionAnswered(paper) || savedDecisions.has(paper.id) || dirtyDecisions.has(paper.id)
+    );
+  });
   if (waiting.length === 0) {
     return nothing;
   }
@@ -2531,6 +2551,10 @@ function renderDecisionBanners(
           onSavePaper: props.onSavePaper,
           onDone: () => props.onRerender?.(),
         }),
+      onDismiss: () => {
+        dismissedDecisions.add(paper.id);
+        props.onRerender?.();
+      },
       collapsed: collapsedDecisions.has(paper.id),
       onToggleCollapsed: () => {
         // Collapsed, not gone. The decision is still unanswered, and a banner that vanishes on
@@ -2707,7 +2731,9 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
              land you first, so a question nobody sees is a question nobody answers. The blockers
              board and the nudge preview stay on the cards: neither is asking this reader for
              anything. -->
-        ${props.personal ? renderDecisionBanners(items, props, state.adminBotData?.members ?? []) : nothing}
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
         ${props.slotsError
           ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
           : nothing}

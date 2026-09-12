@@ -443,6 +443,17 @@ export type AppViewState = {
   labSharingInvitedMemberIds?: string[];
   labSharingRespondedInviteIds?: string[];
   labSharingOpenProjectIndex?: number;
+  /** What the service holds for this member: their posts, everybody else's, invites, the broadcast. */
+  labSharing?: import("./adminbot/data/lab-sharing.ts").LabSharingSnapshot;
+  labSharingLoading?: boolean;
+  /** One sentence per read that failed. The other strips still render. */
+  labSharingErrors?: string[];
+  /** Results of the member search strip, and what was typed to get them. */
+  labSharingMembers?: import("./adminbot/data/lab-sharing.ts").LabSharingMemberMatch[];
+  labSharingMembersTruncated?: boolean;
+  labSharingBusy?: boolean;
+  labSharingNotice?: string | null;
+  loadLabSharing?: () => Promise<void>;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
@@ -476,11 +487,13 @@ export type AppViewState = {
   adminBotBroadcastAvailability?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
-  publishBroadcast?: (draft: {
-    message: string;
-    availability: string;
-    expiresOn: string;
-  } | null) => Promise<void>;
+  publishBroadcast?: (
+    draft: {
+      message: string;
+      availability: string;
+      expiresOn: string;
+    } | null,
+  ) => Promise<void>;
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;
@@ -529,6 +542,12 @@ export type AppViewState = {
   adminBotLogisticsSubmitting: boolean;
   adminBotLogisticsSubmitError: string | null;
   adminBotLogisticsSubmittedId: string | null;
+  adminBotLogisticsCallSheetNote: string | null;
+  adminBotSignatureForm: { driveUrl: string; deadline: string; context: string };
+  adminBotSignatureSubmitting: boolean;
+  adminBotSignatureError: string | null;
+  adminBotSignatureSubmitted: boolean;
+
   // The request the forms are currently holding a correction to, or null when what is on screen is
   // a new request. Submit sends a PUT for the first and a POST for the second.
   adminBotLogisticsEditingId: string | null;

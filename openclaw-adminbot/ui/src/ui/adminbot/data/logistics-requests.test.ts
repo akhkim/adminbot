@@ -257,6 +257,34 @@ describe("describeSubmitBlock", () => {
     ).toEqual({ reason: "no-purpose" });
   });
 
+  // The call is spent on the doc prep document, and the queue push drops a row whose link cannot be
+  // opened -- so a request without one would be filed and then quietly go nowhere.
+  it("asks for a doc prep link on every meeting", () => {
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [createMeetingRow({ purpose: "thesis check-in" })],
+      }),
+    ).toEqual({ reason: "no-doc-prep" });
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [createMeetingRow({ purpose: "thesis check-in", docPrepUrl: "   " })],
+      }),
+    ).toEqual({ reason: "no-doc-prep" });
+  });
+
+  it("takes a meeting that has both", () => {
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [
+          createMeetingRow({
+            purpose: "thesis check-in",
+            docPrepUrl: "https://docs.google.com/document/d/abc/edit",
+          }),
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("lets a filled-in request through", () => {
     expect(
       describeSubmitBlock("document_signature", {

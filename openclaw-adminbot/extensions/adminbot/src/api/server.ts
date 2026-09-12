@@ -128,7 +128,11 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
-import { previewCallSheetPush, proposeCallSheetPush } from "./server.call-sheet.js";
+import {
+  previewCallSheetPush,
+  proposeCallSheetPush,
+  queueCallSheetRow,
+} from "./server.call-sheet.js";
 import {
   PayloadTooLargeError,
   asString,
@@ -284,6 +288,14 @@ export type AdminBotMockServiceOptions = {
    * The tab Zhijing's WhatsApp call queue lives on. Injected on the same terms as `memberSheet`.
    */
   callSheet?: CallSheetSource;
+  /**
+   * Propose a call-sheet row the moment a `book_meeting` request is submitted.
+   *
+   * Defaults on (ADMINBOT_CALL_SHEET_AUTO_QUEUE=0 turns it off). Route tests that submit meeting
+   * requests pass false: the push checks a doc-prep link over the network and reads the workbook,
+   * and neither belongs in a test about who the wire lets in.
+   */
+  autoQueueMeetingRequests?: boolean;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -528,6 +540,8 @@ type AdminBotRouteContext = {
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   memberSheet?: AdminBotMemberSheetSource;
   callSheet?: CallSheetSource;
+  /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
+  autoQueueMeetingRequests: boolean;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -641,6 +655,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // deployment can point the two at different files, and because the roster's tab title is not
   // this one's.
   const callSheet = options.callSheet ?? defaultCallSheet(process.env);
+  // Whether a submitted meeting request proposes its own row. On unless a deployment turns it off,
+  // because a queue nobody pushes is the state this replaced -- but it is a switch rather than a
+  // constant: it checks a link over the network and reads the workbook on somebody's form submit,
+  // and a deployment (or a route test) has to be able to say no to that.
+  const autoQueueMeetingRequests =
+    options.autoQueueMeetingRequests ?? process.env.ADMINBOT_CALL_SHEET_AUTO_QUEUE !== "0";
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
   // request identically. Undefined when no script path is configured, which the sender reports
   // rather than silently skipping.
@@ -728,6 +748,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
+    autoQueueMeetingRequests,
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -3540,7 +3561,18 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "member session required" } });
       return;
     }
-    await handleLogisticsRoute(req, res, url, ctx.service, principal.member);
+    const callSheetForSubmit = ctx.autoQueueMeetingRequests ? ctx.callSheet : undefined;
+    await handleLogisticsRoute(
+      req,
+      res,
+      url,
+      ctx.service,
+      principal.member,
+      callSheetForSubmit
+        ? (requestId) =>
+            queueCallSheetRow(service, callSheetForSubmit, principalActor(principal), requestId)
+        : undefined,
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {

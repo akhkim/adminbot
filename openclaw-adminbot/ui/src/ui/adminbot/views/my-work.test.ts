@@ -1590,3 +1590,52 @@ describe("the flat view", () => {
     expect(drawn.container.querySelector('[data-testid="paper-legacy-paper-p2"]')).not.toBeNull();
   });
 });
+
+describe("a decision banner that has done its job", () => {
+  const decided = (id: string, extra: Record<string, unknown> = {}) =>
+    ({
+      id,
+      title: "A decided paper",
+      authors: ["Ada Lovelace"],
+      current_step: "submission",
+      venue_decision: "accept",
+      accepted_venue: "EMNLP 2026",
+      ...extra,
+    }) as never;
+
+  // The answer lives on the paper card afterwards. A prompt that outlives its own answer turns the
+  // page into a list that never empties, which is how the real prompts stop being read.
+  it("leaves out a decision answered before this session", () => {
+    const { container } = draw({
+      scopedPapers: [decided("done-1", { artifacts: { decision_seen: "accept:EMNLP 2026" } })],
+      personal: true,
+    });
+    expect(container.querySelector('[data-testid="decision-banner-done-1"]')).toBeNull();
+  });
+
+  // The other half of the same rule: vanishing under the button that recorded it reads as the page
+  // eating the answer, so the banner stays until the page is loaded again.
+  it("keeps one answered in this session", () => {
+    const { container, saved, rerender } = draw({
+      scopedPapers: [decided("live-1")],
+      personal: true,
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="decision-save-live-1"]')?.click();
+    rerender();
+    expect(container.querySelector('[data-testid="decision-banner-live-1"]')).not.toBeNull();
+    expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
+  });
+
+  it("closes on the close button and records that it was seen", () => {
+    const { container, saved, rerender } = draw({
+      scopedPapers: [decided("close-1")],
+      personal: true,
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="decision-dismiss-close-1"]')?.click();
+    rerender();
+    expect(container.querySelector('[data-testid="decision-banner-close-1"]')).toBeNull();
+    // Closing is not an answer: the stamp travels, the track and format do not.
+    expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
+    expect(saved.at(-1)?.presentationType).toBeUndefined();
+  });
+});
