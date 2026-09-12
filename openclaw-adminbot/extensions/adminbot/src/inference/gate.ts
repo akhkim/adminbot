@@ -36,7 +36,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
-import { assertLoopbackUrl } from "../guidebook/local-client.js";
 import { DEFAULT_INFERENCE_GATE_CONFIG, type InferenceGateConfig } from "./config.js";
 import {
   InferenceQueueStore,
@@ -47,6 +46,27 @@ import {
   type InferenceRowStatus,
   type MemberInferencePreferences,
 } from "./queue-store.js";
+
+export type { InferenceRequestRecord, InferenceResponseRecord, InferenceRowStatus };
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * The base URL, proven to be on this machine.
+ *
+ * `purpose` is the whole phrase the message opens with ("guidebook answer", "meeting summary"),
+ * because this guard is shared: every model call in the tree runs through the same loopback rule,
+ * and an error naming the wrong subsystem sends the operator to the wrong config. Defined here rather
+ * than in guidebook/local-client.ts (which re-exports it) because the gate is the last thing that
+ * touches a URL before the socket opens, and the guard belongs at the last step.
+ */
+export function assertLoopbackUrl(value: string, purpose: string): string {
+  const url = new URL(value.endsWith("/") ? value : `${value}/`);
+  if (!LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new Error(`${purpose} must use a loopback URL, got ${url.hostname}`);
+  }
+  return url.toString();
+}
 
 export type InferenceFetch = (
   input: string,
@@ -80,6 +100,12 @@ export type InferenceGateRequest = {
   wait?: boolean;
   /** Transport for this request. Tests inject theirs; production leaves it to the gate. */
   fetchImpl?: InferenceFetch;
+  /**
+   * The bearer token, when the caller resolved it itself. Kept in memory beside the waiting promise
+   * and never written to the queue row -- see InferenceRequestRecord. A row re-admitted after a
+   * restart has lost it and falls back to `request.apiKeyEnv`.
+   */
+  apiKey?: string;
 };
 
 export type InferenceStatus = {
@@ -200,6 +226,7 @@ type Waiter = {
   id: string;
   resolvers: Array<(outcome: InferenceOutcome) => void>;
   fetchImpl?: InferenceFetch;
+  apiKey?: string;
   signal?: AbortSignal;
   onAbort?: () => void;
 };
@@ -214,9 +241,15 @@ export function createInferenceGate(options: InferenceGateOptions) {
   const store = new InferenceQueueStore(options.db);
   const config = options.config ?? DEFAULT_INFERENCE_GATE_CONFIG;
   const env = options.env ?? process.env;
-  const defaultFetch =
-    options.fetchImpl ??
-    ((input, init) => globalThis.fetch(input, init) as ReturnType<InferenceFetch>);
+  // A gate built with its own transport uses it for every request, whatever the caller handed in:
+  // that is how a test stands one fake model behind every code path at once. A gate built without
+  // one -- production, and every caller's own unit test -- defers to the caller's transport, which
+  // is how those tests keep their existing fakes.
+  const pinnedFetch = options.fetchImpl;
+  const defaultFetch: InferenceFetch =
+    pinnedFetch ?? ((input, init) => globalThis.fetch(input, init) as ReturnType<InferenceFetch>);
+  const transportFor = (requested: InferenceFetch | undefined): InferenceFetch =>
+    pinnedFetch ?? requested ?? defaultFetch;
   const now = options.now ?? (() => new Date());
   const processId = options.processId ?? `${process.pid}:${randomUUID().slice(0, 8)}`;
   const localBaseUrl =
@@ -370,6 +403,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
     row: InferenceQueueRow,
     fetchImpl: InferenceFetch,
     callerSignal?: AbortSignal,
+    apiKeyInMemory?: string,
   ): Promise<InferenceOutcome> {
     const request = row.request;
     const admittedAt = row.admitted_at ?? timestamp();
@@ -388,7 +422,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
       const base = assertLoopbackUrl(request.baseUrl, `${request.purpose} inference`);
       const apiKey =
-        (request.apiKeyEnv ? env[request.apiKeyEnv]?.trim() : undefined) || request.apiKeyFallback;
+        apiKeyInMemory || (request.apiKeyEnv ? env[request.apiKeyEnv]?.trim() : undefined);
       let response: Awaited<ReturnType<InferenceFetch>>;
       let text: string;
       try {
@@ -543,7 +577,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
         continue;
       }
       const claimed = { ...row, status: "running" as const, admitted_at: at, claimed_at: at };
-      const run = track(claimed.id, execute(claimed, waiter.fetchImpl ?? defaultFetch, waiter.signal));
+      const run = track(
+        claimed.id,
+        execute(claimed, transportFor(waiter.fetchImpl), waiter.signal, waiter.apiKey),
+      );
       for (const resolve of waiter.resolvers) {
         void run.then(resolve);
       }
@@ -570,6 +607,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         id: row.id,
         resolvers: [resolve],
         ...(request.fetchImpl ? { fetchImpl: request.fetchImpl } : {}),
+        ...(request.apiKey ? { apiKey: request.apiKey } : {}),
         ...(request.signal ? { signal: request.signal } : {}),
       };
       if (request.signal) {
@@ -688,7 +726,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
         store.insertRunning(row, processId);
       });
       const running = { ...row, status: "running" as const, admitted_at: arrivedAt, claimed_at: arrivedAt };
-      return track(row.id, execute(running, request.fetchImpl ?? defaultFetch, request.signal));
+      return track(
+        row.id,
+        execute(running, transportFor(request.fetchImpl), request.signal, request.apiKey),
+      );
     }
 
     const wantsWait =
@@ -1058,6 +1099,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
     stats,
     config,
     processId,
+    /** The handle this gate writes to. Exposed so a server can build a durable gate on the same file. */
+    database: options.db,
   };
 }
 

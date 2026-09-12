@@ -934,6 +934,12 @@ const DEFAULT_ACTION_POLICIES = {
   "paper_publish.submit": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.nudge_author": approvalPolicy("T3", ["admin"]),
   "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin"]),
+  // An approval, not auto, even though the text is server-composed: this is a DM to the lab's
+  // administrators saying the GPU is in trouble, and a gate that fires on a threshold can fire on a
+  // Sunday night about a queue that will drain itself by Monday. An admin seeing the card decides
+  // whether the lab needs to hear it. The gate raises a local operator alert the moment the
+  // threshold trips, so the approval wait costs no visibility -- only the DM.
+  "inference.escalate": approvalPolicy("T3", ["admin"]),
   "join_form.classify": autoPolicy("T0"),
   // Auto-approved for the same reason member_nudge.send is: the only way to create one of these is
   // POST /logistics/requests/:id/signed, which is admin-gated, so the admin gate is the approval.
@@ -2176,6 +2182,19 @@ export class AdminBotService {
         idempotency_key: idempotencyKey,
       },
     });
+    if (proposal.type === "inference.escalate") {
+      // Only here, once a connector has delivered it. The gate records `escalation_proposed` when
+      // it asks; recording `escalated` at that point would say the lab was told when nobody was.
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      this.recordAudit({
+        type: "inference.escalated",
+        action_id: actionId,
+        details: {
+          trigger: payload.trigger,
+          recipients: Array.isArray(payload.user_ids) ? payload.user_ids.length : 0,
+        },
+      });
+    }
     return { ok: true, status: 200, payload: result };
   }
 
@@ -9147,6 +9166,60 @@ export class AdminBotService {
    * Not both branches at once: a lab whose manager is also its only other admin would otherwise
    * get each message twice.
    */
+  /**
+   * Ask the lab's administrators for help with the GPU, through the approval gate.
+   *
+   * Called by the inference gate when a threshold trips (inference/gate.ts). A proposal rather than
+   * a send, like every other external effect: the escalation DM leaves the box, so somebody has to
+   * say yes first. Recipients are the same people an admin notice goes to, minus anyone without a
+   * Slack id -- there is no point proposing a DM the connector cannot deliver.
+   *
+   * Keyed on the trigger, so a threshold that stays tripped across several sweeps collapses onto one
+   * pending card rather than one per sweep. A trigger that clears and trips again is a new key.
+   */
+  proposeInferenceEscalation(escalation: {
+    trigger: string;
+    summary: string;
+    details: Record<string, unknown>;
+    firedAt: string;
+  }): AdminBotServiceResponse<AdminBotStoredProposal> {
+    const recipients = this.adminNoticeRecipients()
+      .map((memberId) => this.store.getLabMember(memberId))
+      .filter((member): member is AdminBotLabMember => Boolean(member?.slack_user_id));
+    if (recipients.length === 0) {
+      return serviceError(
+        409,
+        "no administrator with a Slack id is configured to receive an inference escalation",
+      );
+    }
+    const message = [
+      `AdminBot: the local model needs attention (${escalation.trigger}).`,
+      escalation.summary,
+      "",
+      "Requests that are waiting will keep waiting; anything shed has told its member to try later.",
+      "Check the vLLM unit on Aurora, or raise ADMINBOT_INFERENCE_CAPACITY if the server was given more sequences.",
+    ].join("\n");
+    return this.createProposal({
+      type: "inference.escalate",
+      summary: `Tell the lab admins the GPU needs attention: ${escalation.summary}`,
+      target: {
+        service: "slack",
+        channel: "slack",
+        recipientMemberIds: recipients.map((member) => member.id),
+      },
+      proposed_payload: {
+        channel: "slack",
+        user_ids: recipients.map((member) => member.slack_user_id as string),
+        message,
+        trigger: escalation.trigger,
+        details: escalation.details,
+      },
+      rationale: escalation.summary,
+      undo_plan: "Reply in the same DM once the server is back.",
+      idempotency_key: `inference-escalation:${escalation.trigger}:${escalation.firedAt}`,
+    });
+  }
+
   private adminNoticeRecipients(): string[] {
     const settings = this.resolveSettings();
     const headProfessorId = settings.head_professor_member_id?.trim();

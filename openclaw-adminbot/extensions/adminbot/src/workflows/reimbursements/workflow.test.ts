@@ -467,3 +467,30 @@ describe("derived trip details", () => {
     expect(result.draft.trip_dates).toBe("the second week of July");
   });
 });
+
+describe("reimbursement intake at a busy gate", () => {
+  it("surfaces a shed as the decision it is, not as an unreachable model", async () => {
+    // fetchLocalModel wraps transport errors as "unreachable" so the dashboard names the endpoint.
+    // A shed must not be wrapped that way: the model is fine, the GPU is busy, and the member needs
+    // the handle to wait on -- not an instruction to check a server.
+    const { createSaturatedGate, settleMicrotasks } = await import(
+      "../../inference/gate.test-support.js"
+    );
+    const { InferenceDeferredError } = await import("../../inference/gate.js");
+    const saturated = createSaturatedGate();
+    await settleMicrotasks();
+    const fetchImpl = vi.fn();
+    const workflow = createAdminBotReimbursementWorkflow({
+      formScriptPath: "/unused.py",
+      mpiScriptPath: "/unused-mpi.py",
+      fetchImpl: fetchImpl as typeof fetch,
+      env: { ADMINBOT_LOCAL_BASE_URL: "http://127.0.0.1:8000/v1" },
+      gate: saturated.gate,
+    });
+    await expect(workflow.converse({ message: "Start my reimbursement." })).rejects.toBeInstanceOf(
+      InferenceDeferredError,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+    saturated.release();
+  });
+});

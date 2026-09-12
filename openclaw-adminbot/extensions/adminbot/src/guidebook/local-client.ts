@@ -5,7 +5,22 @@
  * so every base URL is validated as loopback before a request is made. That check
  * is the guarantee: a misconfigured endpoint fails the call rather than quietly
  * shipping guidebook text to a hosted model.
+ *
+ * Every call also passes through the shared inference gate (inference/gate.ts), which is the one
+ * count of requests in flight to the GPU. The gate is a parameter with a process-wide default rather
+ * than a hidden global so a test can hand a call its own, but there is deliberately no way to opt a
+ * call *out*: a caller that bypassed the counter would be the third pool of two that reproduced the
+ * recorded incident.
  */
+import {
+  assertLoopbackUrl,
+  runGated,
+  sharedInferenceGate,
+  type InferenceFetch,
+  type InferenceGate,
+} from "../inference/gate.js";
+
+export { assertLoopbackUrl };
 
 export type GuidebookFetch = (
   input: string,
@@ -18,48 +33,64 @@ export type GuidebookFetch = (
   },
 ) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
 /**
- * The base URL, proven to be on this machine.
+ * How a call presents itself to the gate.
  *
- * `purpose` is the whole phrase the message opens with ("guidebook answer", "meeting summary"),
- * because this guard is shared: the meetings workflow summarizes transcripts through the same
- * loopback rule, and an error naming the wrong subsystem sends the operator to the wrong config.
+ * `owner` and `caller` are what the audit row and the member-facing status carry; `wait` is the
+ * caller's answer to "no slot right now" (unattended jobs say yes, interactive ones let the member
+ * choose); `timeoutMs` is the model's budget once admitted, and is the one thing a caller must send
+ * as a number rather than as an AbortSignal, or the clock starts before the slot is taken.
  */
-export function assertLoopbackUrl(value: string, purpose: string): string {
-  const url = new URL(value.endsWith("/") ? value : `${value}/`);
-  if (!LOOPBACK_HOSTS.has(url.hostname)) {
-    throw new Error(`${purpose} must use a loopback URL, got ${url.hostname}`);
-  }
-  return url.toString();
-}
+export type LocalCallGateOptions = {
+  gate?: InferenceGate;
+  owner?: string;
+  caller?: string;
+  wait?: boolean;
+  timeoutMs?: number;
+  submissionKey?: string;
+};
 
 async function postJson(
   fetchImpl: GuidebookFetch,
   baseUrl: string,
-  route: string,
+  route: "chat/completions" | "embeddings",
   apiKey: string | undefined,
   payload: unknown,
   purpose: string,
   signal?: AbortSignal,
+  gateOptions: LocalCallGateOptions = {},
 ): Promise<unknown> {
   const base = assertLoopbackUrl(baseUrl, purpose);
   const endpoint = `${base}${route}`;
-  let response: Awaited<ReturnType<GuidebookFetch>>;
+  // The gate has already read the body -- it has to, to release the slot only once the response is
+  // fully consumed -- so what comes back is a record, not a stream.
+  let response: { ok: boolean; status: number; statusText: string; text: string };
   try {
-    response = await fetchImpl(endpoint, {
-      method: "POST",
-      // A loopback origin must not redirect private excerpts to another host.
-      redirect: "error",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    // The bearer token travels beside the request, not inside it: the gate stores the request body
+    // durably and rebuilds the Authorization header at dispatch, so a queue row on disk carries no
+    // credential and a row re-admitted after a restart authenticates with what the process has then.
+    response = await runGated(gateOptions.gate ?? sharedInferenceGate(), {
+      owner: gateOptions.owner ?? "system:local-client",
+      caller: gateOptions.caller ?? purpose,
+      request: {
+        route,
+        baseUrl: base,
+        body: payload as Record<string, unknown>,
+        purpose,
       },
-      body: JSON.stringify(payload),
+      ...(apiKey ? { apiKey } : {}),
+      ...(gateOptions.wait !== undefined ? { wait: gateOptions.wait } : {}),
+      ...(gateOptions.timeoutMs !== undefined ? { timeoutMs: gateOptions.timeoutMs } : {}),
+      ...(gateOptions.submissionKey ? { submissionKey: gateOptions.submissionKey } : {}),
       ...(signal ? { signal } : {}),
+      fetchImpl: fetchImpl as unknown as InferenceFetch,
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "InferenceDeferredError") {
+      // A queue decision, not an outage. The wording below would send the operator to check the
+      // model server for a request that was deliberately not sent to it.
+      throw error;
+    }
     // Node reports a refused connection as a bare "fetch failed", which says
     // nothing about which of the two local services is down.
     const cause = error instanceof Error ? (error.cause ?? error) : error;
@@ -68,7 +99,7 @@ async function postJson(
       `${purpose} could not reach ${endpoint} (${detail}). Is the local model serving there?`,
     );
   }
-  const raw = await response.text();
+  const raw = response.text;
   if (!response.ok) {
     throw new Error(`${purpose} failed: ${response.status} ${response.statusText}`);
   }
@@ -98,6 +129,8 @@ export async function embedLocally(params: {
   apiKey?: string;
   inputs: string[];
   signal?: AbortSignal;
+  /** Which member and code path this is for, and how it should meet a busy GPU. See the gate. */
+  gate?: LocalCallGateOptions;
 }): Promise<number[][]> {
   if (params.inputs.length === 0) {
     return [];
@@ -110,6 +143,7 @@ export async function embedLocally(params: {
     { model: params.model, input: params.inputs },
     "guidebook embedding",
     params.signal,
+    params.gate,
   )) as { data?: Array<{ embedding?: unknown }> };
   const rows = parsed.data ?? [];
   if (rows.length !== params.inputs.length) {
@@ -148,6 +182,8 @@ export async function completeLocally(params: {
    * and the next server may spell them differently.
    */
   extra?: Record<string, unknown>;
+  /** Which member and code path this is for, and how it should meet a busy GPU. See the gate. */
+  gate?: LocalCallGateOptions;
 }): Promise<string> {
   const parsed = (await postJson(
     params.fetchImpl,
@@ -163,6 +199,7 @@ export async function completeLocally(params: {
     },
     params.purposeLabel ?? "guidebook answer",
     params.signal,
+    { caller: params.purposeLabel ?? "guidebook answer", ...params.gate },
   )) as { choices?: Array<{ message?: { content?: unknown } }> };
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {

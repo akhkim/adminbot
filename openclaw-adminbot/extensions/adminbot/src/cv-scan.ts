@@ -16,6 +16,12 @@ import type {
   AdminBotCvSnapshot,
   AdminBotLabMember,
 } from "./contracts/actions.js";
+import {
+  runGated,
+  sharedInferenceGate,
+  type InferenceFetch,
+  type InferenceGate,
+} from "./inference/gate.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -457,6 +463,8 @@ export function createAdminBotCvScanDeps(options: {
   fetchImpl?: typeof globalThis.fetch;
   env?: NodeJS.ProcessEnv;
   pythonCommand?: string;
+  /** The admission gate. Tests hand in their own; production resolves the shared one per call. */
+  gate?: InferenceGate;
 }): AdminBotCvScanDeps {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
@@ -484,7 +492,8 @@ export function createAdminBotCvScanDeps(options: {
         await rm(directory, { recursive: true, force: true });
       }
     },
-    extractEntries: async (text, signal) => await extractCvEntries(fetchImpl, env, text, signal),
+    extractEntries: async (text, signal) =>
+      await extractCvEntries(fetchImpl, env, text, signal, options.gate),
   };
 }
 
@@ -600,16 +609,25 @@ async function extractCvEntries(
   env: NodeJS.ProcessEnv,
   text: string,
   signal?: AbortSignal,
+  gate?: InferenceGate,
 ): Promise<AdminBotCvEntry[]> {
   const baseUrl = assertLoopbackModelUrl(env);
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
-      "content-type": "application/json",
-    },
+  // Through the shared gate, like every other GPU call in the tree. A scan is a sweep over the whole
+  // roster that nobody is clicking through, so it waits for a slot rather than being shed; the
+  // gate's line puts an interactive member ahead of the next CV either way.
+  const response = await runGated(gate ?? sharedInferenceGate(), {
+    owner: "system:cv-scan",
+    caller: "cv_scan.extract",
+    wait: true,
+    apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
+    fetchImpl: fetchImpl as unknown as InferenceFetch,
     ...(signal ? { signal } : {}),
-    body: JSON.stringify({
+    request: {
+      route: "chat/completions",
+      baseUrl: baseUrl.toString(),
+      purpose: "the local CV model",
+      apiKeyEnv: "VLLM_API_KEY",
+      body: {
       model: env.ADMINBOT_LOCAL_MODEL ?? DEFAULT_LOCAL_MODEL,
       temperature: 0,
       // A CV runs to twenty-odd entries and a reasoning model spends most of its budget thinking
@@ -640,12 +658,13 @@ async function extractCvEntries(
         },
         { role: "user", content: text },
       ],
-    }),
+      },
+    },
   });
   if (!response.ok) {
     throw new Error(`the local CV model returned ${response.status} ${response.statusText}`);
   }
-  const payload = (await response.json()) as {
+  const payload = JSON.parse(response.text) as {
     choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   };
   const choice = payload.choices?.[0];
@@ -700,7 +719,16 @@ function assertLoopbackModelUrl(env: NodeJS.ProcessEnv): URL {
 export async function draftMemberBlurb(
   member: { name: string; role?: string; research_topics?: string[] },
   entries: AdminBotCvEntry[],
-  options?: { fetchImpl?: typeof globalThis.fetch; env?: NodeJS.ProcessEnv; signal?: AbortSignal },
+  options?: {
+    fetchImpl?: typeof globalThis.fetch;
+    env?: NodeJS.ProcessEnv;
+    signal?: AbortSignal;
+    gate?: InferenceGate;
+    /** The administrator asking, so the request row is theirs to check on. */
+    owner?: string;
+    wait?: boolean;
+    submissionKey?: string;
+  },
 ): Promise<string> {
   const env = options?.env ?? process.env;
   const fetchImpl = options?.fetchImpl ?? globalThis.fetch;
@@ -720,14 +748,22 @@ export async function draftMemberBlurb(
         .join(" | "),
     )
     .join("\n");
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
-      "content-type": "application/json",
-    },
+  // Interactive: an administrator pressed a button and is looking at the page, so a busy GPU sheds
+  // by default and the page offers them the wait, rather than deciding for them.
+  const response = await runGated(options?.gate ?? sharedInferenceGate(), {
+    owner: options?.owner ?? "system:cv-blurb",
+    caller: "cv_scan.blurb",
+    ...(options?.wait !== undefined ? { wait: options.wait } : {}),
+    ...(options?.submissionKey ? { submissionKey: options.submissionKey } : {}),
+    apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
+    fetchImpl: fetchImpl as unknown as InferenceFetch,
     ...(options?.signal ? { signal: options.signal } : {}),
-    body: JSON.stringify({
+    request: {
+      route: "chat/completions",
+      baseUrl: baseUrl.toString(),
+      purpose: "the local model",
+      apiKeyEnv: "VLLM_API_KEY",
+      body: {
       model: env.ADMINBOT_LOCAL_MODEL ?? DEFAULT_LOCAL_MODEL,
       temperature: 0.3,
       // Generous because a reasoning model spends most of this thinking. chat_template_kwargs is
@@ -767,12 +803,13 @@ export async function draftMemberBlurb(
             .join("\n"),
         },
       ],
-    }),
+      },
+    },
   });
   if (!response.ok) {
     throw new Error(`the local model returned ${response.status} ${response.statusText}`);
   }
-  const payload = (await response.json()) as {
+  const payload = JSON.parse(response.text) as {
     choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   };
   const choice = payload.choices?.[0];

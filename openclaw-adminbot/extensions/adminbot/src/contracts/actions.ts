@@ -43,6 +43,12 @@ export const adminBotActionTypes = [
   "paper_publish.submit",
   "paper_publish.nudge_author",
   "paper_publish.escalate_to_pi",
+  // The inference gate asking an administrator for help: the GPU line is too long, too old, or the
+  // model server has stopped answering. Its own type because it is the one message in the system
+  // that is *about* the system, and "when did AdminBot last say the GPU was in trouble" is a
+  // question the audit trail should answer without reading every Slack DM. It reaches nobody until
+  // an admin approves it -- see inference/gate.ts for the operator alert that fires meanwhile.
+  "inference.escalate",
   "join_form.classify",
   // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
   // an attachment), so it is a typed action rather than a call out of the service.

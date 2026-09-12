@@ -10,6 +10,14 @@ import {
   type AdminBotReimbursementFunder,
 } from "../../contracts/reimbursement-rules.js";
 import { checkReimbursementPackage, describeCheck } from "./check.js";
+import {
+  isInferenceDeferred,
+  runGated,
+  sharedInferenceGate,
+  type InferenceFetch,
+  type InferenceGate,
+  type InferenceResponseRecord,
+} from "../../inference/gate.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_RECEIPTS = 12;
@@ -79,10 +87,21 @@ export type AdminBotReimbursementArtifact = {
   data_base64: string;
 };
 
+/**
+ * Who a turn is for and how it should meet a busy GPU. Additive: the request body is what the
+ * form posts and stays as it is; this is what the route knows from the session and headers.
+ */
+export type AdminBotReimbursementCallContext = {
+  owner?: string;
+  wait?: boolean;
+  submissionKey?: string;
+};
+
 export type AdminBotReimbursementWorkflow = {
   converse(
     request: AdminBotReimbursementRequest,
     signal?: AbortSignal,
+    context?: AdminBotReimbursementCallContext,
   ): Promise<AdminBotReimbursementConversationResult>;
   generate(
     request: Pick<AdminBotReimbursementRequest, "draft" | "funder">,
@@ -96,6 +115,8 @@ export type AdminBotReimbursementWorkflowOptions = {
   pythonCommand?: string;
   fetchImpl?: typeof globalThis.fetch;
   env?: NodeJS.ProcessEnv;
+  /** The admission gate. Tests hand in their own; production resolves the shared one per call. */
+  gate?: InferenceGate;
 };
 
 export function createAdminBotReimbursementWorkflow(
@@ -104,14 +125,22 @@ export function createAdminBotReimbursementWorkflow(
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const env = options.env ?? process.env;
   return {
-    async converse(request, signal) {
+    async converse(request, signal, context = {}) {
       const receipts = validateReceipts(request.receipts ?? []);
       const extracted = await extractReceipts(
         receipts,
         options.formScriptPath,
         options.pythonCommand ?? "python3",
       );
-      const draft = await callLocalReimbursementModel(fetchImpl, env, request, extracted, signal);
+      const draft = await callLocalReimbursementModel(
+        fetchImpl,
+        env,
+        request,
+        extracted,
+        signal,
+        options.gate ?? sharedInferenceGate(),
+        context,
+      );
       applyDerivedTripDetails(draft);
       const missingFields = reimbursementMissingFields(draft);
       const assistantMessage = readString(draft, "assistant_message");
@@ -278,7 +307,9 @@ async function callLocalReimbursementModel(
   env: NodeJS.ProcessEnv,
   request: AdminBotReimbursementRequest,
   extracted: ExtractedReceipt[],
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  gate: InferenceGate,
+  context: AdminBotReimbursementCallContext,
 ): Promise<Record<string, unknown>> {
   const baseUrl = new URL(
     (env.ADMINBOT_LOCAL_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/?$/u, "/"),
@@ -321,13 +352,23 @@ async function callLocalReimbursementModel(
     (message) => message.role === "assistant",
   )?.content;
 
-  const response = await fetchLocalModel(fetchImpl, new URL("chat/completions", baseUrl), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  const response = await fetchLocalModel(baseUrl, () =>
+    // Interactive: a member is typing into the form. A busy GPU sheds by default and the form
+    // offers the wait, with the receipts already stored so they are not uploaded twice.
+    runGated(gate, {
+      owner: context.owner ?? "anonymous",
+      caller: "reimbursement.converse",
+      ...(context.wait !== undefined ? { wait: context.wait } : {}),
+      ...(context.submissionKey ? { submissionKey: context.submissionKey } : {}),
+      apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
+      fetchImpl: fetchImpl as unknown as InferenceFetch,
+      ...(signal ? { signal } : {}),
+      request: {
+        route: "chat/completions",
+        baseUrl: baseUrl.toString(),
+        purpose: "local reimbursement model",
+        apiKeyEnv: "VLLM_API_KEY",
+        body: {
       model: env.ADMINBOT_LOCAL_MODEL ?? "nvidia/Qwen3.5-122B-A10B-NVFP4",
       temperature: 0,
       max_tokens: 2200,
@@ -439,17 +480,18 @@ Return JSON only.`,
         type: "json_schema",
         json_schema: { name: "reimbursement_intake", strict: true, schema: reimbursementSchema() },
       },
+        },
+      },
     }),
-    signal,
-  });
+  );
   // Read the status before the body: an error response is often HTML/plain text, and parsing it
   // first would replace the useful status with a JSON syntax error.
   if (!response.ok) {
     throw new Error(
-      `local reimbursement model HTTP ${response.status}: ${(await response.text()).slice(0, 400)}`,
+      `local reimbursement model HTTP ${response.status}: ${response.text.slice(0, 400)}`,
     );
   }
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = JSON.parse(response.text) as Record<string, unknown>;
   const choices = Array.isArray(raw.choices) ? raw.choices : [];
   const message = readRecord(readRecord(choices[0]).message);
   const content = readString(message, "content");
@@ -463,14 +505,16 @@ Return JSON only.`,
  * local reimbursement model is not listening. Name the endpoint so the dashboard says what to fix.
  */
 async function fetchLocalModel(
-  fetchImpl: typeof globalThis.fetch,
   url: URL,
-  init: RequestInit,
-): Promise<Response> {
+  call: () => Promise<InferenceResponseRecord>,
+): Promise<InferenceResponseRecord> {
   try {
-    return await fetchImpl(url, init);
+    return await call();
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
+    // A queue decision is not unreachability: the model was deliberately not called. Wrapping it
+    // would tell the member to check a server that is fine, just busy.
+    if (isInferenceDeferred(error)) throw error;
     throw new Error(
       `the local reimbursement model at ${url.origin} is unreachable: ${
         error instanceof Error ? error.message : String(error)

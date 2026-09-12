@@ -55,7 +55,14 @@ import {
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
-import { createAdminBotSqliteService } from "../persistence/sqlite.js";
+import {
+  createInferenceGate,
+  setSharedInferenceGate,
+  sharedInferenceGate,
+  type InferenceGate,
+} from "../inference/gate.js";
+import { resolveInferenceGateConfig } from "../inference/config.js";
+import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
 import {
   createAdminBotSensitiveInfoDocument,
@@ -136,6 +143,11 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
+import {
+  handleInferenceRoute,
+  inferenceCallContext,
+  sendInferenceDeferred,
+} from "./server.inference.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
@@ -201,6 +213,11 @@ export type AdminBotMockServiceOptions = {
   databasePath?: string;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  /**
+   * The admission gate in front of the local model. Built here from the durable store when none is
+   * injected, so queued requests survive a restart; tests hand in an in-memory one.
+   */
+  inferenceGate?: InferenceGate;
   privacyBroker?: AdminBotPrivacyBroker;
   sensitiveInfoPath?: string;
   sensitiveInfoDocument?: AdminBotSensitiveInfoDocument;
@@ -475,6 +492,7 @@ type AdminBotRouteContext = {
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
   store: AdminBotServiceStore;
   auth: AdminBotAuthService;
+  inferenceGate: InferenceGate;
   privacyBroker: AdminBotPrivacyBroker;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
   runEmailAutomation?: () => Promise<unknown>;
@@ -669,6 +687,40 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         save: (invite) => service.saveSlackConnectInvite(invite),
       },
     });
+  // The one counter in front of the GPU. Durable when the store is, so a request waiting for a
+  // slot survives a restart of this process; in-memory otherwise, which is what tests want. It is
+  // also installed as the process-wide default, so a caller built before this line (or one that
+  // never receives it explicitly) shares the same counter rather than starting a second one.
+  const inferenceGate =
+    options.inferenceGate ??
+    createInferenceGate({
+      db:
+        store instanceof AdminBotSqliteStore
+          ? store.inferenceDatabase()
+          : sharedInferenceGate().database,
+      config: resolveInferenceGateConfig(process.env),
+      alert: (line) => console.warn(line),
+      onEscalate: async (escalation) => {
+        const proposed = service.proposeInferenceEscalation({
+          ...escalation,
+          firedAt: new Date().toISOString(),
+        });
+        if (!proposed.ok) {
+          // No admin with a Slack id, most likely. The alert above already went to the console;
+          // the audit row the gate writes carries this reason.
+          throw new Error(proposed.error.message);
+        }
+        return { proposal_id: proposed.payload.id };
+      },
+    });
+  setSharedInferenceGate(inferenceGate);
+  const recovered = inferenceGate.start();
+  if (recovered.interrupted > 0 || recovered.expired > 0 || recovered.readmitted > 0) {
+    console.warn(
+      `[adminbot] inference queue recovered: ${recovered.readmitted} re-admitted, ` +
+        `${recovered.expired} expired, ${recovered.interrupted} interrupted (see audit).`,
+    );
+  }
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -678,6 +730,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     options.privacyBroker ??
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
+      gate: inferenceGate,
+      // The broker's fallbacks used to be invisible. Recorded through the store so they land in
+      // the same audit table as every other inference event.
+      recordAudit: (event) =>
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          ...event,
+        }),
     });
   let activeEmailAutomation: Promise<unknown> | undefined;
   const emailAutomationRunner = options.emailAutomationRunner;
@@ -703,6 +764,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     service,
     store,
     auth,
+    inferenceGate,
     privacyBroker,
     sensitiveInfo,
     onboardingSender,
@@ -793,6 +855,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (slackChannelNamingSweepTimer) {
         clearInterval(slackChannelNamingSweepTimer);
       }
+      inferenceGate.close();
       closeDurable();
     },
   };
@@ -1881,6 +1944,7 @@ async function handleAuthenticatedRoute(
       return;
     }
     try {
+      const context = inferenceCallContext(req, principalActor(principal));
       const text = await draftMemberBlurb(
         {
           name: member.name,
@@ -1888,9 +1952,18 @@ async function handleAuthenticatedRoute(
           ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
         },
         entries,
+        {
+          gate: ctx.inferenceGate,
+          owner: context.owner,
+          ...(context.wait !== undefined ? { wait: context.wait } : {}),
+          ...(context.submissionKey ? { submissionKey: context.submissionKey } : {}),
+        },
       );
       sendJson(res, 200, { member_id: member.id, blurb: text });
     } catch (error) {
+      if (sendInferenceDeferred(res, error)) {
+        return;
+      }
       sendJson(res, 502, {
         error: { message: error instanceof Error ? error.message : String(error) },
       });
@@ -2024,7 +2097,24 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
-    sendJson(res, 200, await ctx.reimbursementWorkflow.converse(body));
+    try {
+      sendJson(
+        res,
+        200,
+        await ctx.reimbursementWorkflow.converse(
+          body,
+          undefined,
+          // Anonymous callers are allowed here (see ANONYMOUS_ROUTES), and their rows are owned by
+          // the anonymous principal collectively: a handle handed to one anonymous visitor can be
+          // read back by another. A signed-in member's rows are theirs alone.
+          inferenceCallContext(req, principalActor(principal)),
+        ),
+      );
+    } catch (error) {
+      if (!sendInferenceDeferred(res, error)) {
+        throw error;
+      }
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/reimbursements/submit") {
@@ -2438,7 +2528,18 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
-    sendJson(res, 200, await privacyBroker.handle(body));
+    try {
+      sendJson(
+        res,
+        200,
+        await privacyBroker.handle(body, undefined, inferenceCallContext(req, principalActor(principal))),
+      );
+    } catch (error) {
+      // A busy GPU is a status the member acts on, not a 500 they refresh past.
+      if (!sendInferenceDeferred(res, error)) {
+        throw error;
+      }
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/proposals/pending") {
@@ -2772,6 +2873,21 @@ async function handleAuthenticatedRoute(
       ),
     );
     return;
+  }
+  if (url.pathname === "/inference" || url.pathname.startsWith("/inference/")) {
+    // The owner is the session, never the URL or the body. The service principal owns the rows it
+    // submitted (as "service"); anonymous callers are denied by the boundary above this function.
+    const handled = await handleInferenceRoute(
+      req,
+      res,
+      url,
+      ctx.inferenceGate,
+      principalActor(principal),
+      isPrivileged(principal),
+    );
+    if (handled) {
+      return;
+    }
   }
   if (url.pathname === "/lab-sharing" || url.pathname.startsWith("/lab-sharing/")) {
     if (principal.kind !== "member") {
