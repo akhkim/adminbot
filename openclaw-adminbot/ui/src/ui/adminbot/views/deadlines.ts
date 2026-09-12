@@ -751,7 +751,7 @@ class AdminbotDeadlinesView extends LitElement {
   private archivalStatus: DeadlineBoardArchivalStatus = "all";
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
-  private venues: DeadlineVenue[] = DEADLINE_VENUES;
+  private venues: DeadlineVenue[] = [];
   private proposals: DeadlineProposal[] = [];
   private proposalFormOpen = false;
   private proposalReviewOpen = false;
@@ -767,12 +767,20 @@ class AdminbotDeadlinesView extends LitElement {
     return this;
   }
 
+  private datasetRefreshTimer?: number;
+
   override connectedCallback(): void {
     super.connectedCallback();
     this.timer = window.setInterval(() => {
       this.now = Date.now();
       this.requestUpdate();
     }, 1000);
+    this.datasetRefreshTimer = window.setInterval(
+      () => {
+        if (document.visibilityState !== "hidden") void this.loadPublishedDeadlines();
+      },
+      5 * 60 * 1000,
+    );
     void this.loadPublishedDeadlines();
     if (this.accessRole !== "anonymous" && this.memberId) {
       void this.loadProposals();
@@ -780,6 +788,10 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    if (this.datasetRefreshTimer !== undefined) {
+      window.clearInterval(this.datasetRefreshTimer);
+      this.datasetRefreshTimer = undefined;
+    }
     if (this.timer !== undefined) {
       window.clearInterval(this.timer);
       this.timer = undefined;
@@ -887,16 +899,25 @@ class AdminbotDeadlinesView extends LitElement {
     this.requestUpdate();
   }
 
+  private datasetFailure = "";
+  private datasetLoading = true;
+
   private async loadPublishedDeadlines(): Promise<void> {
+    this.datasetLoading = true;
+    this.requestUpdate();
     try {
       const venues = await this.proposalStore.listPublished();
-      if (venues.length) {
-        this.venues = venues;
+      if (!venues.length) {
+        throw new Error("Empty deadline response");
       }
+      this.venues = venues;
+      this.datasetFailure = "";
     } catch {
-      // The bundled generated dataset remains a valid read-only fallback while the service
-      // reconnects. Proposal writes still fail visibly instead of pretending they were saved.
-      this.venues = DEADLINE_VENUES;
+      this.datasetFailure = this.venues.length
+        ? "Could not refresh live deadlines. Showing the last successful server response; dates and approved corrections may be out of date."
+        : "Could not load live deadlines. Check the service connection and try again.";
+    } finally {
+      this.datasetLoading = false;
     }
     this.requestUpdate();
   }
@@ -1700,7 +1721,7 @@ class AdminbotDeadlinesView extends LitElement {
     }
     const rows = entries.map(
       (entry) => html`<li class="deadline-card__milestone" data-milestone=${entry.milestone}>
-        <span class="deadline-card__milestone-label">${entry.label}</span>
+        <span class="deadline-card__milestone-label">${capitalize(entry.label)}</span>
         <span class="deadline-card__milestone-date">${milestoneDateLabel(entry)}</span>
       </li>`,
     );
@@ -1718,9 +1739,16 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private renderStale(venue: DeadlineVenue) {
-    return venue.stale
-      ? html`<p class="deadline-card__note">Source not observed in the latest sweep.</p>`
-      : nothing;
+    const status = venue.deadline_source_status || "";
+    const note =
+      venue.stale || status === "source_unavailable"
+        ? "Source not observed in the latest sweep."
+        : status.includes("disagree") || status.includes("conflict")
+          ? "Sources disagree. Showing the matched OpenReview deadline."
+          : status === "portal_unverified" || status === "openreview_final_submission"
+            ? "Announced date; the matching submission portal cutoff has not been verified."
+            : "";
+    return note ? html`<p class="deadline-card__note">${note}</p>` : nothing;
   }
 
   private renderCard(entry: DeadlineBoardEntry) {
@@ -1853,7 +1881,7 @@ class AdminbotDeadlinesView extends LitElement {
                           >stale</span
                         >`
                       : nothing}
-                    ${this.renderSourceActions(entry.venue)}
+                    ${this.renderStale(entry.venue)} ${this.renderSourceActions(entry.venue)}
                   </td>
                 </tr>
               `;
@@ -1913,6 +1941,7 @@ class AdminbotDeadlinesView extends LitElement {
               ${renderClassification(venue)}
             </span>
           </p>
+          ${this.renderStale(venue)}
         </div>
         ${this.renderSourceActions(venue)}
       </div>
@@ -2083,6 +2112,21 @@ class AdminbotDeadlinesView extends LitElement {
   protected override render() {
     const canPropose = Boolean(this.memberId) && this.accessRole !== "anonymous";
     const canReview = canPropose && this.accessRole === "admin";
+    if (!this.venues.length && (this.datasetLoading || this.datasetFailure)) {
+      return html`<section class="deadline-board">
+        <h1>${t("tabs.adminbotDeadlines")}</h1>
+        ${this.datasetFailure
+          ? html`<div class="callout danger" role="alert">${this.datasetFailure}</div>
+              <button
+                class="btn"
+                ?disabled=${this.datasetLoading}
+                @click=${() => this.loadPublishedDeadlines()}
+              >
+                Retry
+              </button>`
+          : html`<p role="status">Loading live deadlines…</p>`}
+      </section>`;
+    }
     const all = buildDeadlineBoardEntries(this.venues);
     const periodEntries = entriesForDeadlinePeriod(all, this.now, this.period);
     const filters: DeadlineBoardFilters = {
@@ -2106,6 +2150,11 @@ class AdminbotDeadlinesView extends LitElement {
       ?.slice(0, 10);
     return html`
       <section class="deadline-board">
+        ${this.datasetFailure
+          ? html`<p class="callout danger" role="alert" data-testid="deadline-load-error">
+              ${this.datasetFailure}
+            </p>`
+          : nothing}
         <header class="deadline-board__header">
           <div>
             <h1>${t("tabs.adminbotDeadlines")}</h1>
@@ -2177,7 +2226,7 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-board__foot">
           Showing ${filtered.length} of ${matching.length} matching ${this.period} deadlines ·
           official venue sites + OpenReview
-          ${latestSourceCheck ? ` · source checks through ${latestSourceCheck}` : ""}
+          ${latestSourceCheck ? ` · latest source check ${latestSourceCheck}` : ""}
         </p>
       </section>
     `;

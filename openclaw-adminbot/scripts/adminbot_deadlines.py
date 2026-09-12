@@ -180,6 +180,8 @@ MILESTONE_LABELS = {
 # unclassified date is still shown rather than dropped.
 _MILESTONE_FROM_LABEL = {
     "abstract deadline": "abstract",
+    "abstract registration": "abstract",
+    "abstract submission": "abstract",
     "abstract": "abstract",
     "submission": "direct_submission",
     "arr submission": "direct_submission",
@@ -300,7 +302,7 @@ class AoEClock:
 # where CFP pages get edited -- an extension announced the day before is the case the board exists
 # to catch -- so it is re-read daily. Workshops further out move often enough to be worth a weekly
 # look; conferences, whose dates are announced once and rarely revised, wait a fortnight.
-SWEEP_IMMINENT_DAYS = 3
+SWEEP_IMMINENT_DAYS = 14
 SWEEP_IMMINENT_INTERVAL_DAYS = 1
 SWEEP_WORKSHOP_INTERVAL_DAYS = 7
 SWEEP_INTERVAL_DAYS = 14
@@ -311,25 +313,17 @@ def sweep_interval_days(
 ) -> int:
     """How many days may pass before this venue's source is read again.
 
-    Workshops weekly, or daily once the deadline is three days out or nearer. Conferences
-    fortnightly. Only a workshop earns the daily cadence, and only while its deadline is still
-    ahead.
+    Check all venues daily from fourteen days before through seven days after expiry.
+    Otherwise check workshops weekly and other venues fortnightly.
     """
-    if entry_type != "workshop":
-        return SWEEP_INTERVAL_DAYS
     try:
-        if clock.has_passed(deadline_aoe):
-            # A passed deadline cannot move. It drops to the conference interval rather than the
-            # weekly one: nothing about it is going to change, and the budget is better spent on
-            # the workshops still ahead.
-            return SWEEP_INTERVAL_DAYS
-        days = clock.days_until(deadline_aoe)
+        days = (clock.instant(deadline_aoe) - clock.now).total_seconds() / 86400
     except (ValueError, TypeError):
-        # An unparseable deadline is a data problem, not a reason to hammer the source.
         return SWEEP_INTERVAL_DAYS
-    if days <= SWEEP_IMMINENT_DAYS:
+    # Extensions may be announced after the advertised cutoff. Keep watching that window.
+    if -7 <= days <= SWEEP_IMMINENT_DAYS:
         return SWEEP_IMMINENT_INTERVAL_DAYS
-    return SWEEP_WORKSHOP_INTERVAL_DAYS
+    return SWEEP_WORKSHOP_INTERVAL_DAYS if entry_type == "workshop" else SWEEP_INTERVAL_DAYS
 
 
 def is_sweep_due(
@@ -373,6 +367,9 @@ class DeadlineDataset:
             return json.load(handle)
 
     def venues(self) -> list[dict]:
+        if os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH"):
+            with open(os.environ["ADMINBOT_DEADLINE_DATASET_PATH"], encoding="utf-8") as handle:
+                return json.load(handle)["items"]
         return self._read("venues.json")["items"]
 
     def templates(self) -> dict:

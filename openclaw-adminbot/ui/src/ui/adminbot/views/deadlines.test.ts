@@ -49,7 +49,7 @@ async function settle(container: HTMLElement): Promise<void> {
 async function renderView(view: "cards" | "default" = "cards"): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
-  render(renderDeadlines(), container);
+  render(renderDeadlines({ proposalStore: new TestProposalStore() }), container);
   await settle(container);
   if (view === "cards") {
     buttonNamed(container, "Cards").click();
@@ -92,7 +92,7 @@ class TestProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished() {
-    return [];
+    return DEADLINE_VENUES;
   }
 
   async submit(input: DeadlineProposalInput, _idempotencyKey: string) {
@@ -557,7 +557,7 @@ describe("venue schedule", () => {
     // Guards the generated dataset, not the renderer: these come off the venues' own pages, and
     // a regeneration that dropped the field would otherwise only show up as an empty card.
     const paper = DEADLINE_VENUES.find((entry) => entry.id === "iclr2027_paper");
-    expect(paper?.deadline_aoe).toBe("2026-09-25 23:59:59");
+    expect(paper?.deadline_aoe).toBe("2026-09-25 23:59:00");
     expect(
       venueSchedule(paper!).map((entry) => [entry.milestone, milestoneDateLabel(entry)]),
     ).toEqual([
@@ -1375,4 +1375,61 @@ describe("renderDeadlines", () => {
 
     expect(element.querySelector(".deadline-card__countdown")?.textContent).toBe(detached);
   });
+});
+
+it("never displays bundled deadlines when the first live request fails and supports retry", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  const load = vi.spyOn(store, "listPublished").mockRejectedValue(new Error("offline"));
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load live deadlines",
+  );
+  expect(container.textContent).not.toContain("ICLR 2027");
+  expect(container.querySelector(".deadline-card")).toBeNull();
+  load.mockResolvedValue(DEADLINE_VENUES);
+  buttonNamed(container, "Retry").click();
+  await settle(container);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain("ICLR 2027");
+});
+
+it("labels retained server data when a later refresh fails", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  const live = [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "live-only",
+      name: "Server-only workshop",
+      deadline_aoe: "2035-09-25 23:59:00",
+    },
+  ];
+  const load = vi.spyOn(store, "listPublished").mockResolvedValue(live);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  load.mockRejectedValue(new Error("offline"));
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+  await settle(container);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "last successful server response",
+  );
+  expect(container.textContent).toContain("Server-only workshop");
+  expect(container.textContent).not.toContain("ICLR 2027");
+  vi.restoreAllMocks();
+});
+
+it("starts with a loading state and no bundled records", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockImplementation(() => new Promise(() => {}));
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  expect(container.textContent).toContain("Loading live deadlines");
+  expect(container.textContent).not.toContain("ICLR 2027");
 });

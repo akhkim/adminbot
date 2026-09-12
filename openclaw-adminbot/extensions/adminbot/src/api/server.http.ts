@@ -109,9 +109,9 @@ export function sendRedirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
-export function sendServiceResult<T>(
+export function sendServiceResult(
   res: ServerResponse,
-  result: AdminBotServiceResponse<T>,
+  result: AdminBotServiceResponse<unknown>,
 ): void {
   if (result.ok) {
     sendJson(res, result.status, result.payload);

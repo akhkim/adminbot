@@ -6056,7 +6056,7 @@ adminbot-deadlines-view {
   }
 }
 
-@container deadline-board (max-width: 60em) {
+@container deadline-board (max-width: 64em) {
   .deadline-group__row {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:

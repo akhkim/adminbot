@@ -6,6 +6,19 @@ import {
   startControlUiE2eServer,
   type ControlUiE2eServer,
 } from "../../../test-helpers/control-ui-e2e.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
+
+const workshopFixture = DEADLINE_VENUES.find((venue) => venue.name.includes("Document Intelligence"))!;
+const layoutVenues = ["Document Intelligence Workshop", "Example Research Workshop"].map(
+  (name, index) => ({
+    ...workshopFixture,
+    id: `layout-workshop-${index}`,
+    deadline_id: `layout-workshop-${index}`,
+    name,
+    venue_group: "Example 2026 Workshops",
+    deadline_aoe: "2026-09-14 23:59:00",
+  }),
+);
 
 const executablePath = resolvePlaywrightChromiumExecutablePath(chromium.executablePath());
 const describeLayout = canRunPlaywrightChromium(executablePath) ? describe : describe.skip;
@@ -32,6 +45,9 @@ describeLayout("mounted deadline layout", () => {
         await page.clock.setFixedTime(new Date("2026-09-09T12:00:00Z"));
         await page.route("**/*", (route) =>
           route.request().url().startsWith(server.baseUrl) ? route.continue() : route.abort(),
+        );
+        await page.route("**/deadlines/venues.json", (route) =>
+          route.fulfill({ json: { items: layoutVenues } }),
         );
         await page.goto(`${server.baseUrl}adminbot/deadlines`);
         await page.locator(".deadline-group__summary").first().waitFor();
