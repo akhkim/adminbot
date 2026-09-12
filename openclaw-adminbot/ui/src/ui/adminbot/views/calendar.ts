@@ -19,6 +19,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
 import {
+  hasAudienceFilter,
   knownCities,
   knownConferences,
   memberNamesByEmail,
@@ -45,6 +46,7 @@ import {
   type AttendeeZoneSource,
 } from "../data/attendee-time.ts";
 import { tripOnDay, tripRows } from "../data/availability.ts";
+import { renderMemberTypeFilter } from "../member-type-filter.ts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 // How many events a square shows before the rest collapse into "N more". Four is what fits the
@@ -607,7 +609,10 @@ function renderDraftCard(
         data-testid=${testId ?? ""}
         .value=${value}
         @input=${(event: Event) => {
-          state.calendarDraft = { ...draft, [key]: (event.target as HTMLInputElement).value };
+          state.calendarDraft = {
+            ...draft,
+            [key]: (event.target as HTMLInputElement).value,
+          };
         }}
       />
     </label>
@@ -987,6 +992,20 @@ function renderInvitePanel(state: AppViewState) {
           anyLabel: "Any status",
           onChange: (status) => setFilter(state, { statuses: status ? [status] : undefined }),
         })}
+        <div class="adminbot-form__field adminbot-calendar__wide">
+          <span>Member type</span>
+          ${renderMemberTypeFilter({
+            selected: filter.memberTypes ?? [],
+            // Undefined rather than [], so an emptied control reads as "no member-type filter" to
+            // hasAudienceFilter rather than as a filter that happens to match nobody.
+            onChange: (memberTypes) =>
+              setFilter(state, {
+                memberTypes: memberTypes.length ? memberTypes : undefined,
+              }),
+            testIdPrefix: "calendar",
+            label: "Member type",
+          })}
+        </div>
       </div>
 
       ${audience.matches.length
@@ -1021,7 +1040,7 @@ function renderInvitePanel(state: AppViewState) {
             </ul>
           `
         : html`<p class="adminbot-calendar__note" data-testid="calendar-no-matches">
-            ${Object.keys(filter).length
+            ${hasAudienceFilter(filter)
               ? "Nobody on the roster matches all of those."
               : "Pick at least one filter to see who would be invited."}
           </p>`}
@@ -1053,6 +1072,14 @@ function renderInvitePanel(state: AppViewState) {
             </div>
           `
         : nothing}
+      ${plan.undecided.length
+        ? html`<p class="adminbot-calendar__note" data-testid="calendar-undecided">
+            ${plan.undecided.map((person) => person.name).join(", ")}
+            ${plan.undecided.length === 1 ? "has" : "have"} no member type on the roster, so this
+            filter cannot say whether they belong — they stay on the event. Fill the field in on
+            their profile to have the next send decide.
+          </p>`
+        : nothing}
       ${plan.unrecognized.length
         ? html`<p class="adminbot-calendar__note" data-testid="calendar-kept-guests">
             ${plan.unrecognized.length}
@@ -1070,7 +1097,8 @@ function renderInvitePanel(state: AppViewState) {
               data-testid="calendar-invite-confirm"
             >
               ${plan.invite.length} ${plan.invite.length === 1 ? "person gets" : "people get"} a
-              Google Calendar invitation to "${selected.summary}"${plan.remove.length
+              Google Calendar invitation to
+              "${selected.summary}"${plan.remove.length
                 ? html`, and ${plan.remove.length}
                   ${plan.remove.length === 1 ? "person is" : "people are"} uninvited:
                   ${plan.remove.map((person) => person.name).join(", ")}`
@@ -1174,10 +1202,13 @@ export function calendarInviteSelection(state: AppViewState): {
     filter.currentCity ? `currently in ${filter.currentCity}` : "",
     filter.homeCity ? `based in ${filter.homeCity}` : "",
     filter.timezone ? `in ${filter.timezone}` : "",
+    filter.memberTypes?.length ? `member type ${filter.memberTypes.join("/")}` : "",
     filter.privilegeLevels?.length ? filter.privilegeLevels.join("/") : "",
     filter.statuses?.length ? filter.statuses.join("/") : "",
   ].filter(Boolean);
-  const filters = parts.length ? `Selected on the Calendar tab: ${parts.join(", ")}.` : "Selected on the Calendar tab.";
+  const filters = parts.length
+    ? `Selected on the Calendar tab: ${parts.join(", ")}.`
+    : "Selected on the Calendar tab.";
   return {
     event: (state.calendarEvents ?? []).find((event) => event.id === state.calendarSelectedEventId),
     emails: plan.invite,
@@ -1187,7 +1218,9 @@ export function calendarInviteSelection(state: AppViewState): {
     // the guest list was made exclusive rather than leaving "why was I uninvited" to the diff.
     reason: plan.remove.length
       ? `${filters} The guest list was synced to those filters, so ${plan.remove.length} ${
-          plan.remove.length === 1 ? "person who no longer matches was" : "people who no longer match were"
+          plan.remove.length === 1
+            ? "person who no longer matches was"
+            : "people who no longer match were"
         } removed.`
       : filters,
   };
