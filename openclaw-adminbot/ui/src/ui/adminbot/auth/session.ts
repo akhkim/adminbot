@@ -3379,11 +3379,21 @@ export async function fetchLogisticsRequest(
   return { ok: true, value: result.body as LogisticsRequest };
 }
 
+/**
+ * A submitted request, plus what the automatic call-sheet push made of it.
+ *
+ * Only a `book_meeting` carries `call_sheet`, and only where the deployment has the queue wired
+ * up -- so it is optional, and its absence means "no call sheet was involved", never "it failed".
+ */
+export type SubmittedLogisticsRequest = LogisticsRequest & {
+  call_sheet?: { queued: boolean; message: string };
+};
+
 export async function submitLogisticsRequest(
   input: LogisticsRequestInput,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LogisticsRequest>> {
+): Promise<AuthResult<SubmittedLogisticsRequest>> {
   const result = await authedJson(baseUrl, "/logistics/requests", "POST", sessionToken, input);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -3391,7 +3401,34 @@ export async function submitLogisticsRequest(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as LogisticsRequest };
+  return { ok: true, value: result.body as SubmittedLogisticsRequest };
+}
+
+/**
+ * Files the signature request on the lab's Google Form.
+ *
+ * Posted through AdminBot rather than from the browser: the form's first column is who is asking,
+ * and the service answers it from the roster instead of trusting whatever the page sends.
+ */
+export async function submitSignatureFormRequest(
+  input: { drive_url: string; deadline: string; context?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ submitted: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/logistics/signature-form",
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { submitted: boolean } };
 }
 
 /** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */

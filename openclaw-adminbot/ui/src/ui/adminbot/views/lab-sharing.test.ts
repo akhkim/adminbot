@@ -3,18 +3,86 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import { renderLabSharingPreview as renderLabSharing } from "./lab-sharing.ts";
+import type { LabSharingSnapshot } from "../data/lab-sharing.ts";
+import { renderLabSharing } from "./lab-sharing.ts";
+
+// The rows the service would have answered with. Seeded on the state rather than faked at the
+// network, because what these tests are about is the panels: given this snapshot, what is on the
+// page. The fetch layer has nothing to do here -- with no stored session the controller never
+// reaches it.
+function snapshot(overrides: Partial<LabSharingSnapshot> = {}): LabSharingSnapshot {
+  return {
+    projects: [
+      { id: "paper-adminbot", title: "AdminBot" },
+      { id: "paper-scm", title: "Causal Tutor" },
+    ],
+    mine: [
+      {
+        paper_id: "paper-scm",
+        title: "Causal Tutor",
+        owner_name: "Ada Lovelace",
+        description: "A second pair of eyes on the SCM playground.",
+        tags: ["causality", "visualization"],
+        members_needed: 1,
+        hours_per_week: 2,
+        timeline: "before the demo",
+        status: "open",
+        can_manage: true,
+      },
+    ],
+    open: [
+      {
+        paper_id: "paper-traces",
+        title: "Trace labelling",
+        owner_name: "Mei Lin",
+        description: "Label ~400 traces by error type.",
+        tags: ["annotation"],
+        members_needed: 2,
+        hours_per_week: 3,
+        timeline: "this month",
+        status: "open",
+        can_manage: false,
+      },
+      {
+        paper_id: "paper-tutor",
+        title: "Tutor UX",
+        owner_name: "Sirui Lu",
+        description: "Click through the playground and file bugs.",
+        tags: ["UI/UX feedback"],
+        members_needed: 1,
+        hours_per_week: 1,
+        timeline: "no rush",
+        status: "open",
+        can_manage: false,
+      },
+    ],
+    invites: [
+      {
+        id: "inv1",
+        status: "pending",
+        kind: "collaboration",
+        project_title: "AdminBot",
+        recipient_name: "Ada Lovelace",
+      },
+    ],
+    status: {
+      availability: "busy",
+      message: "Heads down on the ARR rebuttal until Friday.",
+      updated_at: "2026-09-10T10:00:00.000Z",
+      expires_at: "2026-09-20T10:00:00.000Z",
+    },
+    ...overrides,
+  };
+}
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
     tab: "labSharing",
+    labSharing: snapshot(),
     ...overrides,
   } as unknown as AppViewState;
 }
 
-// The view's click handlers mutate module state and then call `state.requestUpdate()` to schedule a
-// re-render. Wire that up to re-render into the same container so a test can click and read the
-// result without re-rendering by hand.
 function renderView(overrides: Partial<AppViewState> = {}) {
   const state = createState(overrides);
   const container = document.createElement("div");
@@ -43,18 +111,6 @@ function input(container: HTMLElement, selector: string, value: string): void {
 }
 
 describe("renderLabSharing", () => {
-  // Every panel here runs on mock data and no control reaches a service. Saying so once at the
-  // top is what keeps the tab from reading as a working feature with wrong numbers in it.
-  it("marks the whole tab as a preview without hiding any of it", () => {
-    const { container } = renderView();
-    const banner = container.querySelector('[data-testid="lab-sharing-coming-soon"]');
-    expect(banner).not.toBeNull();
-    expect(banner?.textContent).toContain("Coming soon");
-    expect(banner?.textContent).toContain("Nothing you type here is saved yet");
-    // The panels stay exactly as they were.
-    expect(container.querySelector('[data-testid="lab-sharing-seek-help"]')).not.toBeNull();
-  });
-
   it("renders every panel on the page", () => {
     const { container } = renderView();
     for (const testId of [
@@ -69,110 +125,115 @@ describe("renderLabSharing", () => {
     }
   });
 
-  it("shows the director's name and availability", () => {
+  // It was a preview; five of its six panels now read the service, so the blanket warning went.
+  it("no longer calls the whole tab a preview", () => {
     const { container } = renderView();
-    expect(text(container, "lab-sharing-director")).toContain("Zhijing Jin");
-    expect(text(container, "lab-sharing-director")).toContain("Available");
+    expect(container.querySelector('[data-testid="lab-sharing-coming-soon"]')).toBeNull();
   });
 
-  it("lists the invite sent to the member and opens its details dialog", () => {
+  it("shows the standing broadcast and its availability", () => {
     const { container } = renderView();
-    expect(container.querySelector('[data-testid="lab-sharing-invite-inv1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="lab-sharing-invite-dialog"]')).toBeNull();
+    expect(text(container, "lab-sharing-director")).toContain("ARR rebuttal");
+    expect(text(container, "lab-sharing-director")).toContain("Busy");
+  });
 
+  // Nothing standing is nothing to say. An empty status card reads as a broadcast that failed to
+  // load, which is worse than no card.
+  it("leaves the broadcast strip out when there is none", () => {
+    const { container } = renderView({ labSharing: snapshot({ status: null }) });
+    expect(container.querySelector('[data-testid="lab-sharing-director"]')).toBeNull();
+  });
+
+  // The panel was drawn for invitations arriving. The service only has outgoing ones, so the card
+  // names who it went to and where it has got to.
+  it("lists an invitation the member sent, with its approval state", () => {
+    const { container } = renderView();
+    const card = container.querySelector('[data-testid="lab-sharing-invite-inv1"]');
+    expect(card?.textContent).toContain("To Ada Lovelace");
+    expect(card?.textContent).toContain("AdminBot");
+    expect(card?.textContent).toContain("Waiting for an admin");
+  });
+
+  it("opens an invitation's details and closes them again", () => {
+    const { container } = renderView();
     click(container, `[data-testid="lab-sharing-invite-inv1"] .lab-sharing-invite__view`);
-    const dialog = container.querySelector('[data-testid="lab-sharing-invite-dialog"]');
-    expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain("Ada Lovelace");
-    expect(dialog?.textContent).toContain("AdminBot");
-  });
-
-  it("responds to an invite and removes it from the list", () => {
-    const { container } = renderView();
-    click(container, `[data-testid="lab-sharing-invite-inv1"] .lab-sharing-invite__view`);
-    click(container, `[data-testid="lab-sharing-invite-respond"]`);
-    // The responded invite no longer renders; the dialog is gone.
-    expect(container.querySelector('[data-testid="lab-sharing-invite-inv1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="lab-sharing-invite-dialog"]')).not.toBeNull();
+    click(container, ".lab-sharing-invite-dialog__close");
     expect(container.querySelector('[data-testid="lab-sharing-invite-dialog"]')).toBeNull();
   });
 
-  it("seeks members only once the search query is non-empty", () => {
+  it("lists the member's own posts", () => {
+    const { container } = renderView();
+    const requests = text(container, "lab-sharing-requests");
+    expect(requests).toContain("Causal Tutor");
+    expect(requests).toContain("A second pair of eyes");
+  });
+
+  // The search is the service's now, so an empty box shows the prompt and a query shows whatever
+  // the last search put on the state.
+  it("shows members only once a search has returned some", () => {
     const { state, container } = renderView({ labSharingSearchQuery: "" });
     expect(container.querySelector(".lab-sharing-seek__hint")).not.toBeNull();
     expect(container.querySelector(".lab-sharing-member")).toBeNull();
 
     state.labSharingSearchQuery = "ada";
+    state.labSharingMembers = [
+      {
+        id: "m1",
+        name: "Ada Lovelace",
+        research_branch: "External Collaborator",
+        research_topics: ["reasoning"],
+        matched_fields: ["name"],
+        projects: [{ id: "paper-adminbot", title: "AdminBot" }],
+      },
+    ];
     (state as AppViewState & { requestUpdate?: () => void }).requestUpdate?.();
-    expect(container.querySelector(".lab-sharing-member")).not.toBeNull();
     expect(text(container, "lab-sharing-member-m1")).toContain("Ada Lovelace");
+    expect(text(container, "lab-sharing-member-m1")).toContain("External Collaborator");
   });
 
-  it("opens the member ask dialog with the form's project and comment", () => {
-    const { container } = renderView({
-      labSharingSearchQuery: "ada",
-      labSharingAskComment: "Need help with traces.",
-    });
-    click(container, `[data-testid="lab-sharing-member-m1"] .lab-sharing-member__invite`);
-
-    const dialog = container.querySelector('[data-testid="lab-sharing-ask-dialog"]');
-    expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain("AdminBot");
-    expect(dialog?.textContent).toContain("Need help with traces.");
-    expect(dialog?.querySelector("#lab-sharing-ask-special-message")).not.toBeNull();
+  it("offers the member's own papers as the project to ask about", () => {
+    const { container } = renderView();
+    expect(text(container, "lab-sharing-seek-help")).toContain("AdminBot");
+    expect(text(container, "lab-sharing-seek-help")).toContain("Causal Tutor");
   });
 
   it("confirms a general call against the form contents before posting", () => {
     const { container } = renderView({
+      labSharingAskProjectId: "paper-adminbot",
       labSharingAskComment: "Looking for reviewers.",
       labSharingAskMembers: 2,
       labSharingAskHours: 3,
       labSharingAskTags: ["QA", "causality"],
     });
     click(container, `[data-testid="lab-sharing-general-call"]`);
-
     const dialog = container.querySelector('[data-testid="lab-sharing-general-call-dialog"]');
-    expect(dialog).not.toBeNull();
     expect(dialog?.textContent).toContain("AdminBot");
     expect(dialog?.textContent).toContain("Looking for reviewers.");
-    expect(dialog?.textContent).toContain("2");
-    expect(dialog?.textContent).toContain("3");
     expect(dialog?.textContent).toContain("QA");
   });
 
-  it("posts a general call into Your requests", () => {
+  // The board is the service's answer, not a local list: a posted call shows up because the reload
+  // brought it back, so the click must not invent a row of its own.
+  it("closes the dialog on send without inventing a row", () => {
     const { container } = renderView({
-      labSharingAskProjectId: "proj-adminbot",
+      labSharingAskProjectId: "paper-adminbot",
       labSharingAskComment: "Fresh request.",
     });
+    const before = [...container.querySelectorAll(".lab-sharing-request")].length;
     click(container, `[data-testid="lab-sharing-general-call"]`);
     click(container, `[data-testid="lab-sharing-general-call-send"]`);
-
     expect(container.querySelector('[data-testid="lab-sharing-general-call-dialog"]')).toBeNull();
-    const requestCards = [...container.querySelectorAll(".lab-sharing-request")];
-    expect(requestCards.length).toBeGreaterThan(0);
-    const posted = requestCards.find((card) => card.textContent?.includes("Fresh request."));
-    expect(posted).not.toBeUndefined();
-    expect(posted?.textContent).toContain("AdminBot");
+    expect([...container.querySelectorAll(".lab-sharing-request")].length).toBe(before);
   });
 
-  it("deletes a request only after confirming, and cancels instead", () => {
+  it("asks for a second click before taking a post down, and cancels instead", () => {
     const { container } = renderView();
-    const cardsBefore = [...container.querySelectorAll(".lab-sharing-request")].length;
-    expect(cardsBefore).toBeGreaterThan(0);
-
-    const firstId = container.querySelector<HTMLElement>(".lab-sharing-request")?.dataset.testid;
-    const requestRow = `[data-testid="${firstId}"]`;
-    click(container, `${requestRow} .lab-sharing-request__delete`);
+    const row = `[data-testid="lab-sharing-request-paper-scm"]`;
+    click(container, `${row} .lab-sharing-request__delete`);
     expect(container.querySelector(".lab-sharing-request__delete--confirm")).not.toBeNull();
-    expect(container.querySelector(".lab-sharing-request__cancel")).not.toBeNull();
-
-    click(container, `${requestRow} .lab-sharing-request__cancel`);
+    click(container, `${row} .lab-sharing-request__cancel`);
     expect(container.querySelector(".lab-sharing-request__delete--confirm")).toBeNull();
-    expect([...container.querySelectorAll(".lab-sharing-request")].length).toBe(cardsBefore);
-
-    click(container, `${requestRow} .lab-sharing-request__delete`);
-    click(container, `${requestRow} .lab-sharing-request__delete--confirm`);
-    expect([...container.querySelectorAll(".lab-sharing-request")].length).toBe(cardsBefore - 1);
   });
 
   it("navigates the open-projects deck with the prev/next arrows", () => {
@@ -181,26 +242,34 @@ describe("renderLabSharing", () => {
     expect(text(container, "lab-sharing-open-projects")).toContain("1 / 2");
 
     click(container, ".lab-sharing-projects__nav--next");
-    const secondTitle = container.querySelector(".lab-sharing-project__title")?.textContent ?? "";
-    expect(secondTitle).not.toBe(firstTitle);
+    expect(container.querySelector(".lab-sharing-project__title")?.textContent).not.toBe(
+      firstTitle,
+    );
     expect(text(container, "lab-sharing-open-projects")).toContain("2 / 2");
 
     click(container, ".lab-sharing-projects__nav--prev");
     expect(container.querySelector(".lab-sharing-project__title")?.textContent).toBe(firstTitle);
-    expect(text(container, "lab-sharing-open-projects")).toContain("1 / 2");
   });
 
-  it("composes and posts an announcement", () => {
+  // Discover answers with everybody's open posts; the member's own already have a panel.
+  it("keeps the member's own posts out of the open-projects deck", () => {
     const { container } = renderView();
-    click(container, `[data-testid="lab-sharing-announcement-add"]`);
-    expect(
-      container.querySelector('[data-testid="lab-sharing-announcement-compose"]'),
-    ).not.toBeNull();
+    expect(text(container, "lab-sharing-open-projects")).not.toContain("Causal Tutor");
+  });
 
+  it("reports a read that failed without hiding the rest of the tab", () => {
+    const { container } = renderView({ labSharingErrors: ["Could not load projects."] });
+    expect(text(container, "lab-sharing-notice")).toContain("Could not load projects.");
+    expect(container.querySelector('[data-testid="lab-sharing-seek-help"]')).not.toBeNull();
+  });
+
+  // The one panel with nothing behind it. It keeps its design and says so on its face.
+  it("composes and posts an announcement, and marks the panel as not live", () => {
+    const { container } = renderView();
+    expect(text(container, "lab-sharing-announcements")).toContain("Sample data");
+    click(container, `[data-testid="lab-sharing-announcement-add"]`);
     input(container, '[data-testid="lab-sharing-announcement-compose"] textarea', "Heads up.");
     click(container, `[data-testid="lab-sharing-announcement-send"]`);
-    expect(container.querySelector('[data-testid="lab-sharing-announcement-compose"]')).toBeNull();
-    const feed = container.querySelector('[data-testid="lab-sharing-announcements"]');
-    expect(feed?.textContent).toContain("Heads up.");
+    expect(text(container, "lab-sharing-announcements")).toContain("Heads up.");
   });
 });

@@ -675,6 +675,14 @@
   color: var(--ok);
 }
 
+/* What the call sheet made of a meeting request, next to the confirmation. Muted and on its own
+   line: the request landed either way, and this is the follow-up -- a doc prep link to fix, or a
+   row already in the queue -- not a second verdict on the submit. */
+.logistics-request__status--note {
+  display: block;
+  color: var(--text-muted);
+}
+
 /* Why Submit would refuse, sitting between the status and the buttons. Not an error color: nothing
    has gone wrong yet, the request is just not finished. */
 .logistics-request__blocked {

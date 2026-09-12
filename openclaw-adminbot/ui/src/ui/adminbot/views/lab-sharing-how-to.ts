@@ -77,7 +77,7 @@ export class LabSharingHowTo extends LitElement {
     if (!this.sessionToken) {
       return nothing;
     }
-    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Lab how-to">
+    return html`<section class="lab-sharing-directory" aria-label="Lab how-to">
       <h2 class="lab-sharing-seek__title">Lab how-to</h2>
       <p>
         Ask where to find something or how a lab process works. Answers use the member guidebook.

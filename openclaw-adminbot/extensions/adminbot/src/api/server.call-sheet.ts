@@ -63,6 +63,13 @@ export type CallSheetPush = {
 
 export type CallSheetError = { error: { status: number; message: string } };
 
+/** What one automatic push did, in the words the member who submitted it should read. */
+export type CallSheetQueued = {
+  /** True once the row is in a filed proposal. Not yet on the sheet -- that needs the approval. */
+  queued: boolean;
+  message: string;
+};
+
 export type CallSheetOptions = {
   /** Injected in tests; defaults to an unauthenticated GET, which is the point of the check. */
   probe?: DocPrepProbe;
@@ -273,4 +280,69 @@ export async function proposeCallSheetPush(
     };
   }
   return { ...base, proposal: created.payload };
+}
+
+/**
+ * The push for a single request, run as its author submits it.
+ *
+ * The queue push an admin runs takes the whole open queue; this takes the one request that just
+ * arrived, so the row is proposed while its author is still on the page and can be told what is
+ * wrong with it. Everything else is the same computation -- the same link check, the same
+ * duplicate rule, the same proposal -- because a row that reaches the sheet by this path must be
+ * the row that would have reached it by the other one.
+ *
+ * It proposes. It does not write: `sheet.update_cells` is T2 (kernel/service.ts), and a member
+ * submitting a form is not an approval. What is automatic here is the filing, not the write.
+ *
+ * Never throws and never fails the submission it is attached to. The request is already stored by
+ * the time this runs, and a spreadsheet that cannot be read is not a reason to lose it -- the
+ * queue push remains there to pick the row up later.
+ */
+export async function queueCallSheetRow(
+  service: AdminBotService,
+  source: CallSheetSource,
+  actor: string,
+  requestId: string,
+  options: Omit<CallSheetOptions, "request_ids"> = {},
+): Promise<CallSheetQueued> {
+  let push: CallSheetPush | CallSheetError;
+  try {
+    push = await proposeCallSheetPush(service, source, actor, {
+      ...options,
+      request_ids: [requestId],
+    });
+  } catch (error) {
+    return {
+      queued: false,
+      message: `The call queue could not be reached, so this is not on the sheet yet: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+  if ("error" in push) {
+    return {
+      queued: false,
+      message: `The call queue could not be read, so this is not on the sheet yet: ${push.error.message}`,
+    };
+  }
+  if (push.placed.some((row) => row.request_id === requestId)) {
+    return {
+      queued: true,
+      message: "Added to Zhijing's call queue, pending an admin's approval.",
+    };
+  }
+  // Not placed. The skip carries the sharper sentence (a duplicate, a full block); the candidate's
+  // carries the doc-prep explanation. Either beats a generic failure, because both name the thing
+  // the member can go and fix.
+  const skipped = push.skipped.find((row) => row.request_id === requestId);
+  if (skipped) {
+    return { queued: false, message: skipped.detail };
+  }
+  const candidate = push.candidates.find((row) => row.request_id === requestId);
+  return {
+    queued: false,
+    message:
+      candidate?.message ??
+      "This request is not on the call queue yet; an admin can push it from the queue.",
+  };
 }

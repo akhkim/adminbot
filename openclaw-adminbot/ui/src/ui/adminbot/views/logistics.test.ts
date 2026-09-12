@@ -35,6 +35,11 @@ type DrawOptions = {
   submitting?: boolean;
   submitError?: string | null;
   submitted?: boolean;
+  submittedNote?: string;
+  signatureForm?: { driveUrl: string; deadline: string; context: string };
+  sendingForm?: boolean;
+  formError?: string | null;
+  formSent?: boolean;
   submitBlocked?: SubmitBlock | null;
   hasContent?: boolean;
   editing?: boolean;
@@ -98,6 +103,7 @@ function submitProps(options: DrawOptions, onSubmit: () => void) {
     submitting: options.submitting ?? false,
     submitError: options.submitError ?? null,
     submitted: options.submitted ?? false,
+    ...(options.submittedNote ? { submittedNote: options.submittedNote } : {}),
     hasContent: options.hasContent ?? true,
     editing: options.editing ?? false,
     onCancelEdit: () => {
@@ -118,6 +124,12 @@ function draw(options: DrawOptions = {}): Drawn {
   discardCount = 0;
   cancelEditCount = 0;
   const signatureChanges: File[][] = [];
+  const signatureFormPatches: Partial<{
+    driveUrl: string;
+    deadline: string;
+    context: string;
+  }>[] = [];
+  let signatureSends = 0;
   const attachmentChanges: File[][] = [];
   const descriptionChanges: string[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
@@ -191,6 +203,15 @@ function draw(options: DrawOptions = {}): Drawn {
         onDescriptionChange: (next) => descriptionChanges.push(next),
         attachments: options.attachments ?? [],
         onAttachmentsChange: (next) => attachmentChanges.push(next),
+        form: options.signatureForm ?? { driveUrl: "", deadline: "", context: "" },
+        onForm: (patch) => signatureFormPatches.push(patch),
+        onSendForm: () => {
+          signatureSends += 1;
+          return true;
+        },
+        sendingForm: options.sendingForm ?? false,
+        formError: options.formError ?? null,
+        formSent: options.formSent ?? false,
         saving: options.saving ?? false,
         savedAt: options.savedAt ?? null,
         saveError: options.saveError ?? null,
@@ -262,6 +283,10 @@ function draw(options: DrawOptions = {}): Drawn {
     answers,
     noteChanges,
     signatureChanges,
+    signatureFormPatches,
+    get signatureSends() {
+      return signatureSends;
+    },
     attachmentChanges,
     descriptionChanges,
     schoolChanges,
@@ -510,10 +535,72 @@ describe("the signature Google Form signpost", () => {
   });
 
   // Nothing is filed from this tab any more, so none of the request controls belong on the card.
+  // It files a row on the lab's Google Form, not a logistics request, so the request's own Save and
+  // Submit have nothing to do here -- only the button that sends the form.
   it("carries no Save or Submit, since the form is what files the request", () => {
     const { container } = draw({ signatureEditing: false });
     expect(container.querySelector("[data-testid='logistics-submit']")).toBeNull();
-    expect(container.querySelector(".logistics-request__actions")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-save']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-signature-submit']")).not.toBeNull();
+  });
+
+  // The form's three member-answered questions. The fourth, their name, is the service's to answer.
+  it("collects the link, the deadline and the optional context", () => {
+    const { container, signatureFormPatches } = draw({ signatureEditing: false });
+    const link = container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-signature-drive-url']",
+    );
+    link!.value = "https://drive.google.com/file/d/abc/view";
+    link!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signatureFormPatches.at(-1)).toEqual({
+      driveUrl: "https://drive.google.com/file/d/abc/view",
+    });
+    expect(
+      container.querySelector<HTMLInputElement>("[data-testid='logistics-signature-deadline']")
+        ?.type,
+    ).toBe("date");
+    expect(container.querySelector("[data-testid='logistics-signature-context']")).not.toBeNull();
+  });
+
+  it("will not send until the link and the deadline are both there", () => {
+    const bare = draw({ signatureEditing: false });
+    expect(
+      bare.container.querySelector<HTMLButtonElement>("[data-testid='logistics-signature-submit']")
+        ?.disabled,
+    ).toBe(true);
+    const ready = draw({
+      signatureEditing: false,
+      signatureForm: {
+        driveUrl: "https://drive.google.com/x",
+        deadline: "2026-09-30",
+        context: "",
+      },
+    });
+    const button = ready.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-signature-submit']",
+    );
+    expect(button?.disabled).toBe(false);
+    button?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(ready.signatureSends).toBe(1);
+  });
+
+  // Google can refuse, and the link out is the door the member had before this existed.
+  it("says what the form answered, and keeps the link out", () => {
+    const { container } = draw({
+      signatureEditing: false,
+      formError: "the form answered 401",
+    });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-error']")?.textContent,
+    ).toContain("401");
+    expect(container.querySelector("[data-testid='logistics-signature-form-link']")).not.toBeNull();
+  });
+
+  it("says so once it landed", () => {
+    const { container } = draw({ signatureEditing: false, formSent: true });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-submitted']")?.textContent,
+    ).toContain("signature form");
   });
 
   // The one case that still needs the old editor: a request filed before the switch, being fixed.
@@ -617,6 +704,26 @@ describe("request actions", () => {
       "Sent to the lab.",
     );
     expect(container.querySelector("[data-testid='logistics-blocked']")).toBeNull();
+  });
+
+  // The request landed; the row it proposes for itself may not have. Both are true at once, so the
+  // confirmation keeps its place and the call sheet's sentence sits under it.
+  it("carries what the call sheet made of a meeting request", () => {
+    const { container } = draw({
+      submitted: true,
+      submittedNote: "a row with this name and topic is already in the queue",
+    });
+    expect(container.querySelector("[data-testid='logistics-submitted']")?.textContent).toContain(
+      "Sent to the lab.",
+    );
+    expect(
+      container.querySelector("[data-testid='logistics-submitted-note']")?.textContent,
+    ).toContain("already in the queue");
+  });
+
+  it("says nothing about the call sheet when there is nothing to say", () => {
+    const { container } = draw({ submitted: true });
+    expect(container.querySelector("[data-testid='logistics-submitted-note']")).toBeNull();
   });
 
   it("shows a submit failure ahead of anything the local draft has to say", () => {

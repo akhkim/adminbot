@@ -49,7 +49,14 @@ import {
 
 /** What `describeSubmitBlock` found, as the view needs it: a reason and, for a file, which one. */
 export type SubmitBlock = {
-  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big" | "signed-out";
+  reason:
+    | "empty"
+    | "no-name"
+    | "no-purpose"
+    | "no-doc-prep"
+    | "file-too-big"
+    | "request-too-big"
+    | "signed-out";
   file?: string;
 };
 
@@ -78,6 +85,14 @@ type RequestSaveProps = {
   submitError: string | null;
   /** Set once a request landed, so the form can say so instead of looking like nothing happened. */
   submitted: boolean;
+  /**
+   * What became of the call-sheet row a meeting request proposes for itself.
+   *
+   * The service's own sentence, not a UI string: it names the thing to fix -- a doc prep link
+   * nobody can open, a duplicate already in the queue -- and this is the one moment its author is
+   * looking at the form.
+   */
+  submittedNote?: string;
   /** Clears everything typed into this form, draft included. */
   onDiscard: () => void;
   hasContent: boolean;
@@ -108,6 +123,18 @@ export type AdminBotLogisticsProps = {
     onDescriptionChange: (description: string) => void;
     attachments: File[];
     onAttachmentsChange: (files: File[]) => void;
+    /**
+     * The three answers the lab's Google Form asks of the member. The fourth -- their name -- is
+     * answered by the service from the roster, so it is deliberately not here.
+     */
+    form: { driveUrl: string; deadline: string; context: string };
+    onForm: (patch: Partial<{ driveUrl: string; deadline: string; context: string }>) => void;
+    /** Files it on the Google Form. Named apart from RequestSaveProps' own submit, which belongs
+     *  to the upload path this replaced and is still used when correcting a sent request. */
+    onSendForm: () => Promise<boolean> | void;
+    sendingForm: boolean;
+    formError: string | null;
+    formSent: boolean;
   };
   meeting: RequestSaveProps & {
     rows: MeetingRequestRow[];
@@ -369,6 +396,9 @@ function submitBlockText(block: SubmitBlock): string {
   if (block.reason === "no-purpose") {
     return t("logistics.request.blocked.noPurpose");
   }
+  if (block.reason === "no-doc-prep") {
+    return t("logistics.request.blocked.noDocPrep");
+  }
   if (block.reason === "signed-out") {
     return t("logistics.request.blocked.signedOut");
   }
@@ -388,8 +418,14 @@ function renderRequestActions(props: RequestSaveProps) {
     ? html`<span class="logistics-request__status--error">${props.submitError}</span>`
     : props.submitted
       ? html`<span class="logistics-request__status--ok" data-testid="logistics-submitted"
-          >${t("logistics.request.submitted")}</span
-        >`
+            >${t("logistics.request.submitted")}</span
+          >${props.submittedNote
+            ? html`<span
+                class="logistics-request__status--note"
+                data-testid="logistics-submitted-note"
+                >${props.submittedNote}</span
+              >`
+            : nothing}`
       : props.saveError
         ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
         : saved
@@ -1048,7 +1084,16 @@ function renderDriveFolderSection(props: LettersProps) {
 // One container for the whole request: the documents, the optional context that travels with them,
 // and the two actions that close it out.
 /**
- * Signature requests are filed on a Google Form now, so this is a signpost rather than a form.
+ * Signature requests are filed on the lab's Google Form, and this tab fills it in.
+ *
+ * It used to be a signpost -- a link, and the member typed the same four answers into Google
+ * themselves. The form asks exactly four questions (name, a link to the document, a deadline, and
+ * optional context), so the tab asks the three that are the member's to answer and AdminBot posts
+ * the row. The name is not asked for here: the service answers it from the roster, because the
+ * form's first column is who is asking and that is not a field to let a browser fill in.
+ *
+ * The link to the form stays, under the button. This posts to Google over the network and Google
+ * can refuse; a member who cannot get past that needs the door they had before, not a dead end.
  *
  * The upload path is kept for one case only: a request that was already submitted and is being
  * corrected. Those were filed with documents attached, and dropping the editor would strand the
@@ -1067,6 +1112,8 @@ function renderSignatureRequest(props: SignatureProps) {
       </div>
     `;
   }
+  const form = props.form;
+  const ready = Boolean(form.driveUrl.trim() && form.deadline.trim());
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-request"
@@ -1075,16 +1122,76 @@ function renderSignatureRequest(props: SignatureProps) {
       <section class="logistics-request__section">
         <h3 class="card-title">${t("logistics.signature.title")}</h3>
         <p class="card-sub">${t("logistics.signature.sub")}</p>
-        <a
-          class="btn primary logistics-signature__link"
-          href=${SIGNATURE_FORM_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-          data-testid="logistics-signature-form-link"
-        >
-          ${t("logistics.signature.openForm")}
-          <span aria-hidden="true">${icons.externalLink}</span>
-        </a>
+        <label class="adminbot-form__field">
+          <span>${t("logistics.signature.driveUrl")}</span>
+          <input
+            type="url"
+            data-testid="logistics-signature-drive-url"
+            .value=${form.driveUrl}
+            placeholder="https://drive.google.com/..."
+            @input=${(event: Event) =>
+              props.onForm({ driveUrl: (event.target as HTMLInputElement).value })}
+          />
+        </label>
+        <label class="adminbot-form__field">
+          <span>${t("logistics.signature.deadline")}</span>
+          <input
+            type="date"
+            data-testid="logistics-signature-deadline"
+            .value=${form.deadline}
+            @input=${(event: Event) =>
+              props.onForm({ deadline: (event.target as HTMLInputElement).value })}
+          />
+        </label>
+        <label class="adminbot-form__field">
+          <span>${t("logistics.signature.context")}</span>
+          <textarea
+            rows="3"
+            data-testid="logistics-signature-context"
+            .value=${form.context}
+            @input=${(event: Event) =>
+              props.onForm({ context: (event.target as HTMLTextAreaElement).value })}
+          ></textarea>
+        </label>
+
+        ${props.formError
+          ? html`<p
+              class="logistics-request__status--error"
+              data-testid="logistics-signature-error"
+            >
+              ${props.formError}
+            </p>`
+          : nothing}
+        ${props.formSent
+          ? html`<p
+              class="logistics-request__status--ok"
+              data-testid="logistics-signature-submitted"
+            >
+              ${t("logistics.signature.submitted")}
+            </p>`
+          : nothing}
+
+        <div class="logistics-request__actions">
+          <button
+            type="button"
+            class="btn primary"
+            data-testid="logistics-signature-submit"
+            ?disabled=${!ready || props.sendingForm}
+            @click=${() => void props.onSendForm()}
+          >
+            ${props.sendingForm ? t("logistics.signature.sending") : t("logistics.signature.send")}
+          </button>
+          <a
+            class="logistics-signature__link"
+            href=${SIGNATURE_FORM_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="logistics-signature-form-link"
+          >
+            ${t("logistics.signature.openForm")}
+            <span aria-hidden="true">${icons.externalLink}</span>
+          </a>
+        </div>
       </section>
     </div>
   `;

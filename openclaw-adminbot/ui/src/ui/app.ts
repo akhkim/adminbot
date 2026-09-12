@@ -660,6 +660,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSubmitting = false;
   @state() adminBotLogisticsSubmitError: string | null = null;
   @state() adminBotLogisticsSubmittedId: string | null = null;
+  @state() adminBotLogisticsCallSheetNote: string | null = null;
+  @state() adminBotSignatureForm: { driveUrl: string; deadline: string; context: string } = {
+    driveUrl: "",
+    deadline: "",
+    context: "",
+  };
+  @state() adminBotSignatureSubmitting = false;
+  @state() adminBotSignatureError: string | null = null;
+  @state() adminBotSignatureSubmitted = false;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
   @state() adminBotLogisticsDownloadingId: string | null = null;

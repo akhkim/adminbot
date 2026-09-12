@@ -58,6 +58,8 @@ import {
 import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import {
+  CHART_COLORS,
+  CHART_NEUTRAL_COLOR,
   renderTimeAllocationChart,
   type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
@@ -295,18 +297,6 @@ export type AdminBotTimeAvailabilityProps = {
 };
 
 const DAY_MS = 86_400_000;
-// Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
-const CHART_COLORS = [
-  "#3575DA",
-  "#00676E",
-  "#F6511D",
-  "#188B3E",
-  "#783810",
-  "#F7615D",
-  "#8B5CF6",
-  "#D4A72C",
-] as const;
-const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;

@@ -4,7 +4,11 @@ import type { AdminBotService } from "../kernel/service.js";
 import type { DocPrepProbe } from "../workflows/logistics/doc-prep-link.js";
 import { resolveCallSheetConfig } from "./call-sheet-config.js";
 import type { CallSheetSource } from "./call-sheet-config.js";
-import { previewCallSheetPush, proposeCallSheetPush } from "./server.call-sheet.js";
+import {
+  previewCallSheetPush,
+  proposeCallSheetPush,
+  queueCallSheetRow,
+} from "./server.call-sheet.js";
 
 const DOC = "https://docs.google.com/document/d/1DvlfAFPHplL5kGH9zjpOFKAx2D3cltnltzQdpIY43i0/edit";
 
@@ -272,5 +276,81 @@ describe("proposeCallSheetPush", () => {
         message: expect.stringContaining("no call-request heading row"),
       },
     });
+  });
+});
+
+// The same computation the queue push runs, aimed at one request as it arrives. What it returns is
+// what its author is told, so each branch has to name the thing they can go and fix.
+describe("queueCallSheetRow", () => {
+  it("proposes the row and says it is waiting on an approval", async () => {
+    const { service, proposals } = fakeService([request()]);
+    const queued = await queueCallSheetRow(service, source(), "Jiarui", "req-1", { probe: opens });
+    expect(queued.queued).toBe(true);
+    expect(queued.message).toContain("pending an admin's approval");
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]?.type).toBe("sheet.update_cells");
+  });
+
+  // The link check is the point of the whole path: a row whose doc prep cannot be opened is worth
+  // less than no row, because Zhijing reaches it with nothing to read.
+  it("does not propose a row whose doc prep link is not open, and says why", async () => {
+    const { service, proposals } = fakeService([request()]);
+    const queued = await queueCallSheetRow(service, source(), "Jiarui", "req-1", {
+      probe: restricted,
+    });
+    expect(queued.queued).toBe(false);
+    expect(queued.message).not.toBe("");
+    expect(proposals).toHaveLength(0);
+  });
+
+  it("only ever proposes the request it was given", async () => {
+    const other = request({ id: "req-2", member_name: "Sirui" });
+    const { service, proposals } = fakeService([request(), other]);
+    await queueCallSheetRow(service, source(), "Sirui", "req-2", { probe: opens });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]?.summary).toContain("Sirui");
+    expect(proposals[0]?.summary).not.toContain("Jiarui");
+  });
+
+  // The request is already stored by the time this runs. Losing it because a spreadsheet could not
+  // be read would be the worst trade in this file.
+  it("never throws when the sheet cannot be read", async () => {
+    const { service, proposals } = fakeService([request()]);
+    const broken: CallSheetSource = {
+      spreadsheetId: "1ZqdaRze",
+      tab: "Whatsapp call requests",
+      read: vi.fn(async () => {
+        throw new Error("gog: token expired");
+      }),
+    };
+    const queued = await queueCallSheetRow(service, broken, "Jiarui", "req-1", { probe: opens });
+    expect(queued.queued).toBe(false);
+    expect(queued.message).toContain("gog: token expired");
+    expect(proposals).toHaveLength(0);
+  });
+
+  // The sheet is edited by hand and the queue push may have placed the row already; name and topics
+  // are what a duplicate looks like from the sheet's side.
+  it("does not add a second row for somebody already on the sheet", async () => {
+    const onSheet = [...GRID];
+    onSheet[3] = [
+      "Jiarui",
+      "Research plans for the semester",
+      "Boston",
+      DOC,
+      "yes",
+      "30 min",
+      "2026-09-30",
+      "2026-09-09",
+      "",
+    ];
+    const { service, proposals } = fakeService([request()]);
+    const queued = await queueCallSheetRow(service, source(onSheet), "Jiarui", "req-1", {
+      probe: opens,
+    });
+    expect(queued.queued).toBe(false);
+    // Asserted on the wording so this cannot pass for some other reason the row was skipped.
+    expect(queued.message).toBe("a row with this name and topic is already in the queue");
+    expect(proposals).toHaveLength(0);
   });
 });

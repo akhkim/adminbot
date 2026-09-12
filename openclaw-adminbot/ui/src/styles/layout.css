@@ -1341,16 +1341,17 @@
   flex-direction: column;
   gap: var(--space-12);
   width: 100%;
-  max-width: 75rem;
 }
 
-/* Personal work remains at the dashboard's established reading width. The public deadline tool
-   below uses its full board width so it is the same component, not a compressed dashboard mode. */
+/* Full width, like the deadline board below them. These three used to hold a 62rem reading width
+   while the page allowed 75rem, so widening the page alone changed nothing -- the cap that was
+   being seen was this one. The summaries grid is `repeat(auto-fit, minmax(18rem, 1fr))` and turns
+   the room into more columns; the attention stack spends it on wider cards, which is the trade
+   this asks for. */
 .dashboard__attention,
 .dashboard__broadcast,
 .dashboard__summaries {
   width: 100%;
-  max-width: 62rem;
 }
 
 /* The lab-wide broadcast. Carries an accent rule down its leading edge rather than a filled panel:
@@ -1546,7 +1547,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  max-width: 62rem;
 }
 
 .getting-started__progress {
@@ -2365,11 +2365,14 @@
    My Profile
    =========================================== */
 
+/* The full width of the content pane, deliberately, where every other page here caps at 62rem.
+   This page is two dozen short fields, and its grid is `repeat(auto-fill, minmax(18rem, 1fr))` --
+   so the width it is given turns into more columns rather than longer lines, and the cap was
+   spending a third of a wide screen on nothing while the fields it was protecting sat four deep. */
 .profile {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  max-width: 62rem;
 }
 
 .my-work {
@@ -6694,6 +6697,14 @@ adminbot-deadlines-view {
 /* A quiet secondary accent for this surface: the lab-collab tab gets a muted teal instead of the
    app-wide blue, so the section reads as its own place without shouting. Stays low-key for dark
    mode -- this is a work surface, not a highlight reel. */
+/* The two strips that came from the other implementation sit inside this container now rather than
+   beside it. They carry their own section shell, so the page's padding and column gap belong to the
+   container alone -- nested, they were paying for both. */
+.lab-sharing .lab-sharing {
+  max-width: none;
+  padding: 0;
+}
+
 .lab-sharing {
   --ls-accent: #715fb3;
   --ls-accent-hover: #8375b8;
@@ -9808,6 +9819,14 @@ adminbot-deadlines-view {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+/* "Not now" and "Close" sit together as one block against the head's space-between, so the pair
+   stays on the right instead of the close button being pushed to a line of its own. */
+.decision-banner__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
 }
 
 .decision-banner__eyebrow {

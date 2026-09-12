@@ -8,6 +8,7 @@ import {
   canAccessTab,
   resolveAccessRole,
   resolveAccessibleTab,
+  visibleTabsForMember,
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
@@ -73,6 +74,7 @@ import {
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
   submitAdminBotLogisticsRequest,
+  submitAdminBotSignatureForm,
   updateAdminBotLogisticsRequest,
   withdrawAdminBotLogisticsRequest,
 } from "./adminbot/controllers/logistics.ts";
@@ -547,6 +549,9 @@ function adminBotLogisticsSubmitProps(
     submitting: state.adminBotLogisticsSubmitting,
     submitError: state.adminBotLogisticsSubmitError,
     submitted: Boolean(state.adminBotLogisticsSubmittedId),
+    ...(state.adminBotLogisticsCallSheetNote
+      ? { submittedNote: state.adminBotLogisticsCallSheetNote }
+      : {}),
     submitBlocked: blocked,
     hasContent: adminBotLogisticsHasContent(state, template),
     editing: Boolean(state.adminBotLogisticsEditingId),
@@ -584,6 +589,7 @@ function adminBotLogisticsSubmitProps(
       void (async () => {
         resetAdminBotLogisticsForm(state, template);
         state.adminBotLogisticsSubmittedId = null;
+        state.adminBotLogisticsCallSheetNote = null;
         state.adminBotLogisticsSubmitError = null;
         await clearAdminBotLogisticsDraft(template, adminBotLogisticsScope(state));
         requestHostUpdate?.();
@@ -2773,6 +2779,7 @@ export function renderApp(state: AppViewState) {
     // point the next person's Submit at a request they do not own.
     state.adminBotLogisticsEditingId = null;
     state.adminBotLogisticsSubmittedId = null;
+    state.adminBotLogisticsCallSheetNote = null;
     resetAdminBotLogisticsForm(state, "documentSignature");
     resetAdminBotLogisticsForm(state, "recommendationLetters");
     resetAdminBotLogisticsForm(state, "bookMeeting");
@@ -3221,7 +3228,11 @@ export function renderApp(state: AppViewState) {
             <div class="sidebar-shell__body">
               <nav class="sidebar-nav">
                 ${TAB_GROUPS.map((group) => {
-                  const groupTabs = visibleTabsForRole(group.tabs as readonly Tab[], accessRole);
+                  const groupTabs = visibleTabsForMember(
+                    group.tabs as readonly Tab[],
+                    accessRole,
+                    state.adminBotOnboarding?.steps,
+                  );
                   // A group whose every tab is out of reach renders nothing at all, header
                   // included: an empty "Settings" heading reads as a broken sidebar.
                   if (groupTabs.length === 0) {
@@ -3502,6 +3513,7 @@ export function renderApp(state: AppViewState) {
                   }
                   state.adminBotLogisticsEditingId = requestId;
                   state.adminBotLogisticsSubmittedId = null;
+                  state.adminBotLogisticsCallSheetNote = null;
                   state.adminBotLogisticsSubmitError = null;
                   state.adminBotLogisticsMode = "make";
                   state.adminBotLogisticsOpenRequest = null;
@@ -3587,6 +3599,20 @@ export function renderApp(state: AppViewState) {
                 onAttachmentsChange: (files) => {
                   state.adminBotLogisticsAttachments = files;
                 },
+                form: state.adminBotSignatureForm,
+                onForm: (patch) => {
+                  state.adminBotSignatureForm = { ...state.adminBotSignatureForm, ...patch };
+                  // Editing after a send re-arms the tab: "Sent" must not describe something older
+                  // than what is on screen.
+                  state.adminBotSignatureSubmitted = false;
+                  state.adminBotSignatureError = null;
+                  requestHostUpdate?.();
+                },
+                onSendForm: () =>
+                  submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
+                sendingForm: state.adminBotSignatureSubmitting,
+                formError: state.adminBotSignatureError,
+                formSent: state.adminBotSignatureSubmitted,
                 saving: state.adminBotLogisticsSaving,
                 savedAt: state.adminBotLogisticsSavedAt,
                 saveError: state.adminBotLogisticsSaveError,

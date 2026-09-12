@@ -272,7 +272,7 @@ export function describeSubmitBlock(
   kind: LogisticsRequestKind,
   form: SignatureFormState | LettersFormState | MeetingFormState,
 ): {
-  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big";
+  reason: "empty" | "no-name" | "no-purpose" | "no-doc-prep" | "file-too-big" | "request-too-big";
   file?: string;
 } | null {
   if (kind === "document_signature") {
@@ -302,7 +302,14 @@ export function describeSubmitBlock(
   if (!meetings.length) {
     return { reason: "empty" };
   }
-  return meetings.some((row) => !row.purpose.trim()) ? { reason: "no-purpose" } : null;
+  if (meetings.some((row) => !row.purpose.trim())) {
+    return { reason: "no-purpose" };
+  }
+  // The doc prep document is what the call is spent on, and a request without one cannot go on the
+  // queue anyway -- the push checks the link and drops the row. Refusing it here means the member
+  // finds out while they are still filling the form in, rather than from a note under a request
+  // they thought they had sent.
+  return meetings.some((row) => !row.docPrepUrl.trim()) ? { reason: "no-doc-prep" } : null;
 }
 
 /**

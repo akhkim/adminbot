@@ -6,6 +6,8 @@ import {
   minimumRoleForTab,
   resolveAccessRole,
   resolveAccessibleTab,
+  isOnboardingComplete,
+  visibleTabsForMember,
   visibleTabsForRole,
 } from "./adminbot/access.ts";
 import { TAB_GROUPS, type Tab } from "./navigation.ts";
@@ -207,5 +209,47 @@ describe("resolveAccessibleTab", () => {
     expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
+  });
+});
+
+// A checklist with an end. Once every step is ticked there is nothing on that page to come back
+// for -- the completed list is still readable on Lab Members -- so it stops taking a permanent
+// seat in the sidebar beside the tabs that do still want something.
+describe("Getting Started, once it is finished", () => {
+  const tabs = ["gettingStarted", "profile", "myWork"] as readonly Tab[];
+  const step = (status: string) => ({ status });
+
+  it("leaves the sidebar when every step is complete", () => {
+    const finished = [step("complete"), step("complete"), step("complete")];
+    expect(visibleTabsForMember(tabs, "member", finished)).toEqual(["profile", "myWork"]);
+  });
+
+  it("stays while anything is outstanding", () => {
+    const partway = [step("complete"), step("current"), step("remaining")];
+    expect(visibleTabsForMember(tabs, "member", partway)).toContain("gettingStarted");
+  });
+
+  // The checklist is generated when a registration is approved, so a seeded or admin-created
+  // member has none and never will. Reading that as "finished" would hide a tab from somebody who
+  // was never shown a checklist at all.
+  it("stays for a member who has no checklist", () => {
+    expect(visibleTabsForMember(tabs, "member", [])).toContain("gettingStarted");
+    expect(visibleTabsForMember(tabs, "member", undefined)).toContain("gettingStarted");
+    expect(isOnboardingComplete([])).toBe(false);
+    expect(isOnboardingComplete(undefined)).toBe(false);
+  });
+
+  it("takes nothing else off the list it is given", () => {
+    const finished = [step("complete")];
+    expect(
+      visibleTabsForMember(["profile", "myWork"] as readonly Tab[], "member", finished),
+    ).toEqual(["profile", "myWork"]);
+  });
+
+  // Hidden from navigation, not revoked: the page is still a record of what was done, and a
+  // bookmark or a link from another page must not land on a permission error.
+  it("does not change who may reach the page", () => {
+    expect(canAccessTab("gettingStarted", "member")).toBe(true);
+    expect(resolveAccessibleTab("gettingStarted", "member")).toBe("gettingStarted");
   });
 });
