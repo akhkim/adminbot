@@ -23,6 +23,14 @@
 // though — it is pure over the two record types, which is why it is a module of its own with its
 // own tests rather than a helper inside the view.
 import type { AdminBotLabMember, AdminBotPaperRecord } from "./controllers/admin.ts";
+// The member-type vocabulary is not redeclared here. `member_type` is free text with a
+// hand-maintained spelling, and a second copy of "how to split and compare it" is how the Calendar
+// tab ends up filtering "coauthor-major" on a rule the Lab Overview tabs have since changed.
+import {
+  ADMINBOT_MEMBER_TYPE_FILTERS,
+  matchesMemberTypeFilter,
+  memberTypeTokens,
+} from "./member-type-filter.ts";
 
 export type AudienceFilter = {
   /** Venue as written on the paper, matched case- and punctuation-insensitively. */
@@ -33,6 +41,17 @@ export type AudienceFilter = {
   homeCity?: string;
   /** IANA zone, matched exactly — these are picked from a list, never typed. */
   timezone?: string;
+  /**
+   * What the lab calls these people: `member_type` tokens, matched as a union.
+   *
+   * The axis the lab actually reasons about when it asks who belongs on a recurring meeting, and
+   * the one `privilegeLevels` cannot answer -- almost every imported row defaults to `member`
+   * there (see `AdminBotLabMember.member_type`). Ticking several widens, because these are labels
+   * a person holds rather than a ladder: "full, own-pace-advisee, coauthor-major" is the standing
+   * definition of the lab's active roster, spelled the same way the Slack active-channel audit
+   * spells it.
+   */
+  memberTypes?: string[];
   /**
    * How the two place filters and the timezone filter combine with each other.
    *
@@ -137,6 +156,20 @@ function cityMatches(stored: string | undefined, wanted: string): boolean {
     return false;
   }
   return haystack === needle || haystack.startsWith(`${needle} `);
+}
+
+/**
+ * The labels for the types a member holds and the operator asked for, in the order the filter
+ * declares them.
+ *
+ * Intersected rather than echoing the filter, so somebody carrying "alumni, coauthor-major" is
+ * shown the one token that put them in the audience and not the three that were ticked.
+ */
+function memberTypeLabels(memberType: string | undefined, wanted: readonly string[]): string[] {
+  const held = memberTypeTokens(memberType);
+  return ADMINBOT_MEMBER_TYPE_FILTERS.filter(
+    (option) => wanted.includes(option.value) && held.has(option.value),
+  ).map((option) => option.label);
 }
 
 function conferenceOf(paper: AdminBotPaperRecord): string | undefined {
@@ -246,7 +279,23 @@ export type AudiencePlan = {
    * real meeting is not a cost worth paying to tidy a list.
    */
   unrecognized: string[];
-  /** Exactly who is on the event afterwards: `keep` + `unrecognized` + `invite`. */
+  /**
+   * Roster members the member-type filter cannot decide about, because their `member_type` is
+   * blank. Kept, never removed, and reported.
+   *
+   * The column is hand-maintained and plenty of imported rows have never been filled in, so an
+   * empty cell means "the roster has not been told", not "this person is none of those things".
+   * Reading it the second way is what would take the head professor off the group meeting the
+   * first time somebody syncs a guest list -- the same reason the Slack active-channel audit
+   * (workflows/members/active-channel-audit.ts) proposes removals only for `not_entitled` and
+   * leaves its `unknown` bucket for a human. An operator who genuinely wants them gone can fix
+   * the roster row, which is the fix that also holds next time.
+   *
+   * Only populated when a member-type filter is actually set; with the other filters a blank
+   * field is just a non-match like any other.
+   */
+  undecided: Array<{ email: string; member_id: string; name: string }>;
+  /** Exactly who is on the event afterwards: `keep` + `unrecognized` + `undecided` + `invite`. */
   remaining: string[];
 };
 
@@ -258,9 +307,11 @@ export type AudiencePlan = {
  * question from `selectAudience` alone, which only ever answered the first half; an event kept
  * current by repeated additive sends accumulates everyone who ever matched any filter.
  *
- * Two things are never removed, and both are deliberate:
+ * Three things are never removed, and all three are deliberate:
  *
  *   - An address no roster row explains. See `unrecognized` above.
+ *   - A roster member whose `member_type` is blank while the filter turns on member type. See
+ *     `undecided` above.
  *   - Anything in `protectedEmails` -- the organizer and the calendar the event lives on. Google
  *     lists the organizing calendar among the attendees on plenty of events, and a list built to
  *     exclude it would hand the connector a write that drops the organizer off the meeting.
@@ -290,6 +341,7 @@ export function reconcileAudience(params: {
       keep: [],
       remove: [],
       unrecognized: [],
+      undecided: [],
       remaining: [...params.attendees],
     };
   }
@@ -317,6 +369,8 @@ export function reconcileAudience(params: {
   const keep: string[] = [];
   const remove: AudienceRemoval[] = [];
   const unrecognized: string[] = [];
+  const undecided: AudiencePlan["undecided"] = [];
+  const decidesOnMemberType = Boolean(params.filter.memberTypes?.some((type) => type.trim()));
   const onEvent = new Set<string>();
   const seen = new Set<string>();
 
@@ -342,6 +396,16 @@ export function reconcileAudience(params: {
       keep.push(email);
       continue;
     }
+    // Unticking somebody is a decision about that person and outranks a blank cell; only a member
+    // the filters merely failed to match gets the benefit of the doubt.
+    if (
+      decidesOnMemberType &&
+      !excluded.has(member.id) &&
+      !memberTypeTokens(member.member_type).size
+    ) {
+      undecided.push({ email, member_id: member.id, name: member.name });
+      continue;
+    }
     remove.push({
       email,
       member_id: member.id,
@@ -364,7 +428,14 @@ export function reconcileAudience(params: {
     onEvent.add(normalizeEmail(match.email));
   }
 
-  return { invite, keep, remove, unrecognized, remaining: [...keep, ...unrecognized, ...invite] };
+  return {
+    invite,
+    keep,
+    remove,
+    unrecognized,
+    undecided,
+    remaining: [...keep, ...unrecognized, ...undecided.map((person) => person.email), ...invite],
+  };
 }
 
 /**
@@ -378,11 +449,12 @@ export function reconcileAudience(params: {
 export function hasAudienceFilter(filter: AudienceFilter): boolean {
   return Boolean(
     filter.conference?.trim() ||
-      filter.currentCity?.trim() ||
-      filter.homeCity?.trim() ||
-      filter.timezone?.trim() ||
-      filter.privilegeLevels?.some((level) => level.trim()) ||
-      filter.statuses?.some((status) => status.trim()),
+    filter.currentCity?.trim() ||
+    filter.homeCity?.trim() ||
+    filter.timezone?.trim() ||
+    filter.memberTypes?.some((type) => type.trim()) ||
+    filter.privilegeLevels?.some((level) => level.trim()) ||
+    filter.statuses?.some((status) => status.trim()),
   );
 }
 
@@ -400,6 +472,7 @@ export function selectAudience(
   const currentCity = filter.currentCity?.trim();
   const homeCity = filter.homeCity?.trim();
   const timezone = filter.timezone?.trim();
+  const memberTypes = filter.memberTypes?.filter((type) => type.trim()) ?? [];
   const placeMode = filter.placeMode ?? "and";
   const privileges = filter.privilegeLevels?.filter((level) => level.trim()) ?? [];
   const statuses = filter.statuses?.filter((status) => status.trim()) ?? [];
@@ -426,6 +499,15 @@ export function selectAudience(
       continue;
     }
     reasons.push(...place);
+    if (memberTypes.length) {
+      if (!matchesMemberTypeFilter(member.member_type, memberTypes)) {
+        continue;
+      }
+      // The labels rather than the raw tokens, and only the ones this person actually holds: a row
+      // reading "Full member" beside somebody who matched on "coauthor-major" is a reason that
+      // does not survive being checked.
+      reasons.push(...memberTypeLabels(member.member_type, memberTypes));
+    }
     if (privileges.length) {
       if (!privileges.includes(member.privilege_level ?? "")) {
         continue;
