@@ -2308,7 +2308,26 @@ export type AdminBotAuditEvent = {
     // The publication digest going out to an address an admin typed. Recorded because it leaves
     // the lab: the recipient and the range are the whole of what was disclosed and to whom.
     | "publication_digest.sent"
-    | "publication_digest.failed";
+    | "publication_digest.failed"
+    // The inference gate (inference/gate.ts). One request to the local model is one row in
+    // `adminbot_inference_queue`, and these are the row's life: `admitted` when it takes a GPU slot,
+    // `queued` when it joins the line, `shed` when it is turned away with its body kept, `waited`
+    // when a shed request is converted to a queued one at the member's request. Exactly one of
+    // `completed`, `failed`, `expired` closes every row -- the load simulation reconciles on that.
+    // `refused` is a request the queue declined to store at all (over the size caps), so no row
+    // exists for it and the event is the only record. `escalation_proposed` is the gate asking an
+    // administrator for help through the approval gate; `escalated` is recorded only once a
+    // connector has actually delivered that ask, because a proposal nobody approved reached nobody.
+    | "inference.admitted"
+    | "inference.queued"
+    | "inference.shed"
+    | "inference.waited"
+    | "inference.completed"
+    | "inference.failed"
+    | "inference.expired"
+    | "inference.refused"
+    | "inference.escalation_proposed"
+    | "inference.escalated";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

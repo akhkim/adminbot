@@ -89,6 +89,7 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import { ensureInferenceQueueSchema } from "../inference/queue-store.js";
 
 const require = createRequire(import.meta.url);
 
@@ -697,6 +698,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDirectorStatusSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
+    // The inference queue and member preferences live in the same file as everything else, so a
+    // request body waiting for the GPU is protected exactly as well as the roster is -- no better,
+    // no worse -- and a backup of one is a backup of both.
+    ensureInferenceQueueSchema(this.db);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
@@ -3220,6 +3225,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         .prepare("DELETE FROM adminbot_slack_channel_naming WHERE channel_id = ?")
         .run(channelId).changes > 0
     );
+  }
+
+  /**
+   * The raw handle, for the inference gate only.
+   *
+   * The gate writes its queue rows and their audit events in one transaction, which it cannot do
+   * through this class's per-statement methods. Nothing else should reach for this: every other
+   * table has a typed method here, and a second path to the same rows is how two writers disagree.
+   */
+  inferenceDatabase(): DatabaseSync {
+    return this.db;
   }
 
   close(): void {
