@@ -1,9 +1,11 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createEmptyAdminBotReimbursementState } from "../controllers/admin.ts";
+import { AdminBotDeadlineProposalStore } from "../data/deadline-proposals.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderPublicShell } from "./public-shell.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
@@ -78,15 +80,24 @@ describe("renderPublicShell", () => {
     expect(state.tab).toBe("chat");
   });
 
-  // The deadline board is a bundled snapshot, so it has to render with no gateway and no session.
+  afterEach(() => {
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  // Public deadline data loads asynchronously without requiring a member session.
   it("renders the deadline board without a session behind it", async () => {
+    vi.spyOn(AdminBotDeadlineProposalStore.prototype, "listPublished").mockResolvedValue(
+      DEADLINE_VENUES,
+    );
     document.body.append(container);
     const view = container.querySelector("adminbot-deadlines-view") as {
       updateComplete?: Promise<unknown>;
     };
     await view.updateComplete;
-    container.remove();
-    expect(container.textContent).toContain("Past and upcoming conference & workshop deadlines.");
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Past and upcoming conference & workshop deadlines.");
+    });
     expect(container.querySelector(".content--public-deadlines > .adminbot-card")).toBeNull();
   });
 });

@@ -250,7 +250,7 @@ describe("workshop source URLs", () => {
       runPython(
         "m = load('adminbot-deadline-collect')\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}}}]}\n" +
-          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False: {group_ids[0]: '2035-01-03 23:59:59'}\n" +
+          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {group_ids[0]: '2035-01-03 23:59:59'}\n" +
           "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'group': 'TEST 2035 Workshops'}\n" +
           "previous = {'test2035_ws_Example': {'deadline_aoe': '2035-01-02 23:59:59'}}\n" +
           "print(json.dumps(m.fetch_workshop_source(source, previous)[0]['deadline_aoe']))",
@@ -263,7 +263,7 @@ describe("workshop source URLs", () => {
       runPython(
         "m = load('adminbot-deadline-collect')\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}}}]}\n" +
-          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False: {}\n" +
+          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {}\n" +
           "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'group': 'TEST 2035 Workshops'}\n" +
           "previous = {'test2035_ws_Example': {'deadline_aoe': '2035-01-02 23:59:59', 'source_checked_at': '2034-12-01T00:00:00Z'}}\n" +
           "item = m.fetch_workshop_source(source, previous)[0]\n" +
@@ -277,7 +277,7 @@ describe("workshop source URLs", () => {
       runPython(
         "m = load('adminbot-deadline-collect')\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}, 'date': {'value': 'Abstract Registration: Jan 01 2035 11:00PM UTC-0, Submission Deadline: Jan 02 2035 11:00PM UTC-0'}}}]}\n" +
-          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False: {}\n" +
+          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {}\n" +
           "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'year': 2035, 'group': 'TEST 2035 Workshops'}\n" +
           "print(json.dumps(m.fetch_workshop_source(source, [])))",
       ),
@@ -290,7 +290,7 @@ describe("workshop source URLs", () => {
         "m = load('adminbot-deadline-collect')\n" +
           "gid = 'EMNLP/2035/Workshop/MINT_ARR_Commitment'\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': gid, 'content': {'title': {'value': 'MINT commitment'}, 'date': {'value': 'Abstract Registration: Jan 01 2035 11:00PM UTC-0, Submission Deadline: Jan 02 2035 11:00PM UTC-0'}}}]}\n" +
-          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False: {}\n" +
+          "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {}\n" +
           "source = {'parent': 'EMNLP/2035/Workshop', 'id_prefix': 'emnlp2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'EMNLP', 'year': 2035, 'group': 'EMNLP 2035 Workshops'}\n" +
           "previous = {'emnlp2035_ws_MINT_ARR_Commitment': {'deadline_aoe': '2035-02-01 23:59:00'}}\n" +
           "item = m.fetch_workshop_source(source, previous)[0]\n" +
@@ -309,7 +309,7 @@ describe("workshop source URLs", () => {
     ).toBe("2026-09-12 23:59:00");
   });
 
-  it("reconciles advertised AoE times and preserves source-explicit extension chains", () => {
+  it("keeps a matched portal deadline when a CFP announces a different time", () => {
     const html =
       "<p>All deadlines are 11:59 PM Anywhere on Earth (AoE).</p>" +
       "<p>Paper submission deadline <s>August 29, 2026</s> September 5, 2026 (extended).</p>";
@@ -321,10 +321,10 @@ describe("workshop source URLs", () => {
           "result = reconcile_deadline_candidates(candidates, '2026-09-05 09:00:00', 'https://openreview.net/group?id=Example', 2026)\n" +
           "print(json.dumps([result['deadline_aoe'], result['deadline_extended'], result['source_revisions']]))",
       ),
-    ).toEqual(["2026-09-05 23:59:00", true, ["2026-08-29 23:59:00", "2026-09-05 23:59:00"]]);
+    ).toEqual(["2026-09-05 09:00:00", true, []]);
   });
 
-  it("selects a labelled final paper after an earlier abstract cutoff", () => {
+  it("does not replace an invitation cutoff with a different stage", () => {
     const html =
       "<table><tr><td>Abstract Registration Deadline</td><td>2026/09/05 23:00 GMT</td></tr>" +
       "<tr><td>Paper Submission Deadline</td><td>2026/09/12 23:00 GMT</td></tr></table>";
@@ -336,7 +336,7 @@ describe("workshop source URLs", () => {
           "result = reconcile_deadline_candidates(candidates, '2026-09-05 11:00:00', 'https://openreview.net/group?id=Example', 2026)\n" +
           "print(json.dumps(result['deadline_aoe']))",
       ),
-    ).toBe("2026-09-12 11:00:00");
+    ).toBe("2026-09-05 11:00:00");
   });
 
   it("does not treat a submission-opening date or a bare schedule update as an extension", () => {
@@ -391,7 +391,7 @@ describe("workshop source URLs", () => {
     ).toEqual(["2026-09-25 23:59:00", false, []]);
   });
 
-  it("selects an ARR commitment deadline instead of the earlier ARR paper cycle", () => {
+  it("retains the supplied matched portal cutoff over a different CFP route", () => {
     const html =
       "<p>All deadlines are 11:59 PM AoE.</p>" +
       "<p>ARR paper submission deadline May 25, 2026</p>" +
@@ -405,7 +405,7 @@ describe("workshop source URLs", () => {
           "result = reconcile_deadline_candidates(candidates, '2026-05-25 23:59:00', 'https://openreview.net/group?id=Example', 2026, target_hint='MINT_ARR_Commitment')\n" +
           "print(json.dumps([result['deadline_aoe'], result['source_revisions']]))",
       ),
-    ).toEqual(["2026-08-31 23:59:00", ["2026-08-24 23:59:00", "2026-08-31 23:59:00"]]);
+    ).toEqual(["2026-05-25 23:59:00", []]);
   });
 
   it("retains a route cutoff when a page only advertises another route", () => {
@@ -723,7 +723,7 @@ describe("sweep cadence", () => {
   const clock = (now: string) =>
     `AoEClock(__import__("datetime").datetime.fromisoformat(${JSON.stringify(now)}))`;
 
-  it("re-reads a workshop daily inside three days, weekly otherwise, conferences fortnightly", () => {
+  it("re-reads near deadlines daily for both workshops and conferences", () => {
     const result = runPython(
       [
         `c = ${clock("2026-08-27T12:00:00+00:00")}`,
@@ -744,12 +744,12 @@ describe("sweep cadence", () => {
       workshop_two_days: 1,
       // Three days is inside the window, not the first day outside it.
       workshop_exactly_three_days: 1,
-      workshop_four_days: 7,
+      workshop_four_days: 1,
       workshop_far: 7,
-      // A passed deadline cannot move, so it drops below even the weekly cadence.
-      workshop_passed: 14,
+      // Well past the post-deadline watch window, workshops return to weekly checks.
+      workshop_passed: 7,
       // Conferences are fortnightly however close they are.
-      conference_tomorrow: 14,
+      conference_tomorrow: 1,
       arr_far: 14,
     });
   });
@@ -800,4 +800,96 @@ describe("sweep cadence", () => {
       bad_deadline: false,
     });
   });
+});
+
+describe("deadline stage preservation", () => {
+  it("keeps abstract registration and full paper as distinct rows", () => {
+    expect(
+      runPython(`
+from adminbot_workshop_deadlines import split_workshop_milestones
+item = {'id': 'example', 'name': 'Example', 'submission_type': 'direct', '_openreview_deadline': '2035-01-01 11:00:00', '_group_final_deadline': '2035-01-02 11:00:00', '_group_final_evidence': 'Abstract Registration: Jan 01 2035 11:00PM UTC-0, Submission Deadline: Jan 02 2035 11:00PM UTC-0'}
+rows = split_workshop_milestones(item, [], 2035)
+print(json.dumps([[r['id'], r['deadline_label'], r['deadline_aoe'], r['_openreview_deadline']] for r in rows]))
+`),
+    ).toEqual([
+      ["example", "full paper", "2035-01-02 11:00:00", ""],
+      ["example_abstract", "abstract registration", "2035-01-01 11:00:00", "2035-01-01 11:00:00"],
+    ]);
+  });
+  it("continues daily checking after a deadline has just passed", () => {
+    expect(
+      runPython(
+        "print(json.dumps(sweep_interval_days(AoEClock.resolve('2026-09-11T14:00:00Z'), 'workshop', '2026-09-10 23:59:59')))",
+      ),
+    ).toBe(1);
+  });
+});
+
+it("does not borrow paper stages for an unmatched competition portal", () => {
+  expect(
+    runPython(`
+from adminbot_workshop_deadlines import split_workshop_milestones, deadline_candidates_from_text
+item = {'id':'competition','name':'Example competition','deadline_aoe':'2035-11-08 23:00:00','_openreview_deadline':'2035-11-08 23:00:00'}
+candidates = deadline_candidates_from_text('Abstract submission deadline: September 11, 2035 AoE. Paper submission deadline: September 13, 2035 AoE.', 'https://example.org/', 2035)
+rows = split_workshop_milestones(item, candidates, 2035)
+print(json.dumps([[row['id'], row['deadline_aoe']] for row in rows]))
+`),
+  ).toEqual([["competition", "2035-11-08 23:00:00"]]);
+});
+
+it("preserves invitation expiry separately without using it as the due date", () => {
+  expect(
+    runPython(`
+m = load('adminbot-deadline-collect')
+m._openreview_get = lambda *args, **kwargs: {'invitations':[{'id':'Example/-/Submission','duedate':2000000000000,'expdate':2000001800000}]}
+metadata = {}
+dates = m._openreview_submission_deadlines(['Example'], include_expired=True, metadata=metadata)
+print(json.dumps([dates['Example'] == metadata['Example']['duedate_aoe'], metadata['Example']['duedate_aoe'] != metadata['Example']['expdate_aoe']]))
+`),
+  ).toEqual([true, true]);
+});
+
+it("binds both stages to their declared OpenReview invitations", () => {
+  expect(
+    runPython(`
+from adminbot_workshop_deadlines import split_workshop_milestones
+item = {'id':'example','name':'Example','_openreview_deadline':'2035-09-11 23:59:00','_full_submission_deadline':'2035-09-13 23:59:00'}
+rows = split_workshop_milestones(item, [], 2035)
+print(json.dumps([[row['id'], row['_openreview_deadline']] for row in rows]))
+`),
+  ).toEqual([
+    ["example", "2035-09-13 23:59:00"],
+    ["example_abstract", "2035-09-11 23:59:00"],
+  ]);
+});
+
+it("keeps unavailable configured conference sources uncertain without advancing the check date", () => {
+  expect(
+    runPython(`
+m = load('adminbot-deadline-collect')
+m.fetch_invitation_observations = lambda ids: {}
+m._fetch_html = lambda url: (_ for _ in ()).throw(OSError('unavailable'))
+old = {'id':'iclr2027_paper','deadline_aoe':'2026-09-25 23:59:00','source_checked_at':'2026-09-01T00:00:00Z'}
+row = m.refresh_configured_conferences([dict(old)], {old['id']:old}, AoEClock.resolve('2026-09-11'), True)[0]
+print(json.dumps([row['deadline_aoe'], row['source_checked_at'], row['_source_observed'], row['deadline_source_status']]))
+`),
+  ).toEqual(["2026-09-25 23:59:00", "2026-09-01T00:00:00Z", false, "source_unavailable"]);
+});
+
+it("refreshes the named commitment row without borrowing submission or notification dates", () => {
+  expect(runPython(`
+from adminbot_conference_deadlines import conference_table_deadline
+html = '<table><tr><td>ARR submission deadline</td><td>October 12, 2026</td></tr><tr><td>NAACL commitment deadline</td><td>December 23, 2026</td></tr><tr><td>Notification</td><td>February 10, 2027</td></tr></table>'
+print(json.dumps([conference_table_deadline(html, 'NAACL commitment deadline', 2026)[0], conference_table_deadline(html, 'Missing deadline', 2026), conference_table_deadline(html + html, 'NAACL commitment deadline', 2026)]))
+`)).toEqual(["2026-12-23", null, null]);
+});
+
+
+it("does not invent a tutorial abstract stage from a shared paper CFP", () => {
+  expect(runPython(`
+from adminbot_workshop_deadlines import split_workshop_milestones, deadline_candidates_from_text
+item = {'id':'tutorial','name':'Tutorials track','deadline_aoe':'2035-09-11 23:59:00','_openreview_deadline':'2035-09-11 23:59:00'}
+candidates = deadline_candidates_from_text('Abstract submission deadline: September 11, 2035 AoE. Paper submission deadline: September 13, 2035 AoE.', 'https://example.org/', 2035)
+print(json.dumps([row['id'] for row in split_workshop_milestones(item, candidates, 2035)]))
+`)).toEqual(["tutorial"]);
 });

@@ -874,6 +874,7 @@ export type AdminBotActionExecutor = {
 };
 
 export type AdminBotServiceOptions = {
+  deadlineDataset?: () => readonly unknown[];
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
@@ -1771,6 +1772,7 @@ export class AdminBotService {
   }
 
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
+    generated = this.options.deadlineDataset?.() ?? generated;
     const published = this.store.listPublishedDeadlines();
     const byDeadline = new Map<string, PublishedDeadlineRecord[]>();
     for (const record of published) {

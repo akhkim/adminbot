@@ -56,6 +56,7 @@ DATE_PATTERNS = (
 )
 
 POSITIVE_SIGNALS = (
+    (re.compile(r"(?i)\babstract\s+(?:registration|submission)(?:\s+deadline)?\b"), 280),
     (re.compile(r"(?i)\bfull\s+(?:paper|manuscript)\s+(?:submission\s+)?deadline\b"), 280),
     (re.compile(r"(?i)\bpaper\s+submission\s+deadline\b"), 265),
     (re.compile(r"(?i)\b(?:final|regular)\s+submission\s+deadline\b"), 260),
@@ -613,8 +614,8 @@ def reconcile_deadline_candidates(
     target_hint="",
 ):
     """Select one deadline while preserving source conflicts and extension evidence."""
-    fallback = group_final_stamp or openreview_stamp
-    fallback_kind = "openreview_group" if group_final_stamp else "openreview"
+    fallback = openreview_stamp or group_final_stamp
+    fallback_kind = "openreview" if openreview_stamp else "openreview_group"
     selected, ranked = select_official_candidate(candidates, fallback, year, target_hint)
     if selected and not selected["extended"]:
         equivalent_extensions = [
@@ -643,7 +644,7 @@ def reconcile_deadline_candidates(
         "source_revisions": [],
         "alternatives": ranked,
     }
-    if group_final_stamp:
+    if group_final_stamp and not openreview_stamp:
         result["deadline_source_status"] = "openreview_final_submission"
     if not selected:
         return result
@@ -670,30 +671,15 @@ def reconcile_deadline_candidates(
 
     official = selected["stamp"]
     if fallback:
-        official_instant = datetime.datetime.strptime(official, "%Y-%m-%d %H:%M:%S")
-        fallback_instant = datetime.datetime.strptime(fallback, "%Y-%m-%d %H:%M:%S")
-        delta = official_instant - fallback_instant
-        # OpenReview is the operational cutoff and is retained when it is
-        # materially later than an otherwise unmarked website date.  A labelled
-        # final-paper date, a source-explicit extension, a later official date,
-        # or sub-two-hour portal clock drift is resolved to the advertised CFP
-        # value instead.  Every disagreement remains recorded in the status.
-        use_official = (
-            delta >= datetime.timedelta(0)
-            or abs(delta) <= datetime.timedelta(hours=2)
-            or selected["extended"]
-            or bool(group_final_stamp and official[:16] == group_final_stamp[:16])
+        # The caller must match the milestone first. A CFP extension is evidence, not
+        # permission to move the advertised OpenReview deadline later.
+        result["deadline_source_status"] = (
+            "official_matches_openreview" if official[:16] == fallback[:16]
+            else "cfp_disagrees_with_openreview"
         )
-        if not use_official:
-            result["deadline_source_status"] = "openreview_later_than_official"
-            result["deadline_source_precision"] = selected["precision"]
-            result["source_revisions"] = extension_revision_stamps(
-                selected, candidates, target_hint
-            )
-            result["deadline_extended"] = bool(
-                result["deadline_extended"] or len(result["source_revisions"]) > 1
-            )
-            return result
+        if official[:16] == fallback[:16]:
+            result["source_revisions"] = extension_revision_stamps(selected, candidates, target_hint)
+        return result
 
     result.update(
         deadline_aoe=official,
@@ -704,7 +690,7 @@ def reconcile_deadline_candidates(
         deadline_source_status=(
             "official_matches_openreview"
             if fallback and official[:16] == fallback[:16]
-            else "official_overrides_openreview"
+            else "portal_unverified"
         ),
     )
     result["source_revisions"] = extension_revision_stamps(selected, candidates, target_hint)
@@ -712,3 +698,63 @@ def reconcile_deadline_candidates(
         result["deadline_extended"] or len(result["source_revisions"]) > 1
     )
     return result
+
+
+def split_workshop_milestones(item, candidates, year):
+    """Retain the legacy id for the paper row; give registration its own stable id.
+
+    A Submission invitation can belong to either stage. Match it to explicit dates
+    before assigning its authority, and leave unmatched portal evidence visible.
+    """
+    if item.get("submission_type") == "commitment":
+        return [item]
+    abstracts = [c for c in candidates if _candidate_is_abstract(c) and not c["old_hint"]]
+    summary = item.get("_group_final_evidence", "")
+    match = re.search(
+        r"(?i)Abstract\s+Registration\s*:\s*"
+        r"([A-Z][a-z]{2}\s+\d{1,2}\s+20\d{2}\s+\d{1,2}:\d{2}(?:AM|PM)\s+UTC-0)", summary
+    )
+    if not match and not item.get("_full_submission_deadline") and re.search(
+        r"(?i)\b(?:tutorials?|competition)\b", item.get("name", "")
+    ):
+        # These routes may share a CFP with papers but have no abstract stage of their own.
+        return [item]
+    abstract_stamp = ""
+    if match:
+        try:
+            utc = datetime.datetime.strptime(match.group(1), "%b %d %Y %I:%M%p UTC-0")
+            abstract_stamp = (utc - datetime.timedelta(hours=12)).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+    if not abstract_stamp and abstracts:
+        selected, _ = select_official_candidate(abstracts, "", year, "abstract")
+        if selected and len(selected["stamp"]) > 10:
+            abstract_stamp = selected["stamp"]
+    full_portal = item.get("_full_submission_deadline", "")
+    initial_portal = item.get("_openreview_deadline", "")
+    if not abstract_stamp and full_portal and initial_portal and initial_portal < full_portal:
+        abstract_stamp = initial_portal
+    if not abstract_stamp:
+        return [item]
+    final_stamp = full_portal or item.get("_group_final_deadline", "")
+    if not final_stamp:
+        finals = [c for c in candidates if not _candidate_is_abstract(c) and not c["old_hint"]]
+        selected, _ = select_official_candidate(finals, "", year)
+        if selected and len(selected["stamp"]) > 10:
+            final_stamp = selected["stamp"]
+    portal = item.get("_openreview_deadline", "")
+    portal_abstract = portal and portal[:10] == abstract_stamp[:10]
+    portal_final = portal and final_stamp and portal[:10] == final_stamp[:10]
+    if portal and not portal_abstract and not portal_final and not match:
+        # Shared homepages can describe different tracks. Keep the known portal route.
+        return [item]
+    registration = dict(item, id=item["id"] + "_abstract", deadline_label="abstract registration",
+                        deadline_aoe=abstract_stamp, _group_final_deadline=abstract_stamp if match else "",
+                        _openreview_deadline=portal if portal_abstract else "", _stage="abstract")
+    item.update(deadline_label="full paper", _stage="full_paper",
+                _openreview_deadline=full_portal or (portal if portal_final else ""),
+                _group_final_deadline=final_stamp, deadline_aoe=final_stamp)
+    if portal and not portal_abstract and not portal_final:
+        item["deadline_portal_unmatched"] = portal
+        registration["deadline_portal_unmatched"] = portal
+    return [item, registration] if final_stamp else [registration]

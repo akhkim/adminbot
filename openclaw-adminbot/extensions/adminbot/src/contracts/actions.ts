@@ -1300,6 +1300,7 @@ export type AdminBotCvScanResult = {
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
+  preferred_name?: string;
   /**
    * The lab spreadsheet's "Member Type" column, verbatim ("full", "full, coauthor-major",
    * "alumni", "external-prof", ...).

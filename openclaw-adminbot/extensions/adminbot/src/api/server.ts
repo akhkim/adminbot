@@ -71,6 +71,7 @@ import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calen
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
+import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
 import {
   AdminBotAuthService,
@@ -819,6 +820,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
 
 function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOptions {
   return {
+    deadlineDataset: () => readDeadlineDataset(),
     ...(typeof options.auditRetentionDays === "number"
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
