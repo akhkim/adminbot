@@ -273,8 +273,17 @@ export function startWorkshopNudgeRun(params: {
         now: params.now,
         ...(params.conferenceKey?.trim() ? { conferenceKey: params.conferenceKey.trim() } : {}),
         signal: controller.signal,
-        onProgress: (done, total, failed, detail) => {
-          progress = { done, total, failed: failed ?? 0, detail: detail ?? progress.detail };
+        onProgress: (done, total, failed, detail, deferred) => {
+          // Deferred batches ride in the detail line rather than a new column: the run table has
+          // no field for them, and "N batches deferred (GPU queue full)" beside the last failure
+          // is what an administrator needs to read to know whether to wait or to investigate.
+          const deferredNote = deferred ? `${deferred} batches deferred (GPU queue full)` : undefined;
+          progress = {
+            done,
+            total,
+            failed: failed ?? 0,
+            detail: [detail, deferredNote].filter(Boolean).join("; ") || progress.detail,
+          };
           saveIfCurrent({
             ...run,
             calls_done: done,
@@ -331,7 +340,13 @@ export async function previewWorkshopNudges(params: {
   now: Date;
   /** Narrow the pass to one parent conference. Blank or unknown means the whole open season. */
   conferenceKey?: string;
-  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
+  onProgress?: (
+    done: number,
+    total: number,
+    failed: number,
+    detail?: string,
+    deferred?: number,
+  ) => void;
   signal?: AbortSignal;
 }): Promise<WorkshopNudgePreview> {
   const papers = servicePayload(params.service.listPapers()).papers;

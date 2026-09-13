@@ -18,6 +18,7 @@ import type {
 } from "./contracts/actions.js";
 import { routeLlmFetch } from "./kernel/llm-gateway-client.js";
 import {
+  isInferenceDeferred,
   runGated,
   sharedInferenceGate,
   type InferenceFetch,
@@ -129,6 +130,18 @@ export async function runAdminBotCvScan(
         removed,
       });
     } catch (error) {
+      if (isInferenceDeferred(error)) {
+        // The GPU had no room for this member's CV. Not a failure -- nothing was tried -- and the
+        // snapshot is left alone so the next scan asks again. The queue row is named so the
+        // extraction can be found (and waited on) rather than only re-run.
+        const handle = "id" in error.outcome ? ` (queue row ${error.outcome.id})` : "";
+        results.push({
+          ...base,
+          status: "skipped",
+          reason: `the GPU queue declined the extraction: ${error.message}${handle}`,
+        });
+        continue;
+      }
       results.push({ ...base, status: "failed", reason: errorMessage(error) });
     }
   }

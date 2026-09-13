@@ -606,3 +606,31 @@ describe("CV extraction at a busy gate", () => {
     saturated.release();
   });
 });
+
+describe("CV scan when the gate declines", () => {
+  it("records the member as skipped with the queue handle, never as failed", async () => {
+    const { createSaturatedGate, settleMicrotasks } = await import(
+      "./inference/gate.test-support.js"
+    );
+    const { createAdminBotCvScanDeps } = await import("./cv-scan.js");
+    const saturated = createSaturatedGate();
+    await settleMicrotasks();
+    const gated = createAdminBotCvScanDeps({
+      extractScriptPath: "/unused.py",
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+      env: {},
+      gate: saturated.gate,
+    });
+    const store = new AdminBotMemoryStore();
+    const { result, snapshots } = await runAdminBotCvScan(
+      [member({ id: "m1", cv_url: "https://example.com/cv.pdf" })],
+      deps({ extractEntries: gated.extractEntries }),
+    );
+    expect(result.results[0]?.status).toBe("skipped");
+    expect(result.results[0]?.reason).toMatch(/GPU queue declined.*queue row inf_/u);
+    // Nothing was written for this member: the next scan asks again.
+    expect(snapshots.has("m1")).toBe(false);
+    void store;
+    saturated.release();
+  });
+});
