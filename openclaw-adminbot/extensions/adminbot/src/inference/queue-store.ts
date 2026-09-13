@@ -66,12 +66,22 @@ export type InferenceResponseRecord = {
   text: string;
 };
 
+/**
+ * Where one request sits inside a multi-step task, for callers that make several GPU calls per
+ * task (the privacy broker: classify, then finalize or a local run). `task` groups the steps under
+ * the caller's task identity; `final` marks the step whose completion means the task itself is
+ * done. Without this a shed classification that is later waited on would report "Done" for a task
+ * that never ran -- the step finished, the task did not, and the status has to say which.
+ */
+export type InferenceStage = { name: string; task: string; final: boolean };
+
 export type InferenceQueueRow = {
   id: string;
   owner_id: string;
   submission_key: string;
   payload_hash: string;
   caller: string;
+  stage: InferenceStage | null;
   status: InferenceRowStatus;
   arrived_at: string;
   expires_at: string;
@@ -86,7 +96,10 @@ export type InferenceQueueRow = {
   result: InferenceResponseRecord | null;
   result_bytes: number;
   outcome: string | null;
+  /** Raw failure text. Private-content retention applies: the sweep strips it with the bodies. */
   error: string | null;
+  /** Whether a completed row's result was kept. False when the retained-bytes ceiling refused it. */
+  result_retained: boolean;
 };
 
 export type MemberInferencePreferences = {
@@ -125,21 +138,31 @@ export function ensureInferenceQueueSchema(db: DatabaseSync): void {
       result_json TEXT,
       result_bytes INTEGER NOT NULL DEFAULT 0,
       outcome TEXT,
-      error TEXT
+      error TEXT,
+      stage_name TEXT,
+      stage_task TEXT,
+      stage_final INTEGER,
+      result_retained INTEGER NOT NULL DEFAULT 1
     );
 
     -- The wait line is read in arrival-to-the-line order, and the sweep reads by status.
     CREATE INDEX IF NOT EXISTS adminbot_inference_queue_status_idx
       ON adminbot_inference_queue(status, queued_at, arrived_at);
 
-    -- A member's retry must find the row it made, not make another. Partial, so the key is only
-    -- reserved while the row can still answer: live rows, and completed rows whose result is still
-    -- retained. Once the sweep strips a result the same key may be submitted again -- at that point
-    -- it is a resubmission, and the row it creates says so by being new.
-    CREATE UNIQUE INDEX IF NOT EXISTS adminbot_inference_queue_submission_idx
+    -- "Did this task's final step complete" is answered per (owner, task).
+    CREATE INDEX IF NOT EXISTS adminbot_inference_queue_task_idx
+      ON adminbot_inference_queue(owner_id, stage_task, stage_final, status);
+
+    -- A member's retry must find the row it made, not make another. Partial, so the key is reserved
+    -- exactly as long as the row still carries its body: live rows always, finished rows -- completed,
+    -- failed, expired alike -- until the retention sweep strips them. A failed row that lost its key
+    -- reservation the moment it failed was the hole: a timeout, a lost response, and a retry under
+    -- the same key ran the request twice. Once the sweep has stripped a row the same key may be
+    -- submitted again; at that point it is a resubmission, and the new row says so by being new.
+    DROP INDEX IF EXISTS adminbot_inference_queue_submission_idx;
+    CREATE UNIQUE INDEX IF NOT EXISTS adminbot_inference_queue_submission_v2_idx
       ON adminbot_inference_queue(owner_id, submission_key)
-      WHERE status IN ('queued', 'shed', 'running')
-         OR (status = 'completed' AND result_json IS NOT NULL);
+      WHERE status IN ('queued', 'shed', 'running') OR request_json IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS adminbot_member_preferences (
       member_id TEXT PRIMARY KEY,
@@ -151,11 +174,15 @@ export function ensureInferenceQueueSchema(db: DatabaseSync): void {
 
 const ROW_COLUMNS = `id, owner_id, submission_key, payload_hash, caller, status, arrived_at, expires_at,
   queued_at, admitted_at, finished_at, claimed_at, claimed_by, timeout_ms, request_json, request_bytes,
-  result_json, result_bytes, outcome, error`;
+  result_json, result_bytes, outcome, error, stage_name, stage_task, stage_final, result_retained`;
 
-type RawRow = Omit<InferenceQueueRow, "request" | "result"> & {
+type RawRow = Omit<InferenceQueueRow, "request" | "result" | "stage" | "result_retained"> & {
   request_json: string | null;
   result_json: string | null;
+  stage_name: string | null;
+  stage_task: string | null;
+  stage_final: number | null;
+  result_retained: number;
 };
 
 export class InferenceQueueStore {
@@ -217,7 +244,7 @@ export class InferenceQueueStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_inference_queue (${ROW_COLUMNS})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.id,
@@ -240,6 +267,10 @@ export class InferenceQueueStore {
         row.result_bytes,
         row.outcome,
         row.error,
+        row.stage?.name ?? null,
+        row.stage?.task ?? null,
+        row.stage ? (row.stage.final ? 1 : 0) : null,
+        row.result_retained ? 1 : 0,
       );
   }
 
@@ -256,12 +287,23 @@ export class InferenceQueueStore {
       .prepare(
         `SELECT ${ROW_COLUMNS} FROM adminbot_inference_queue
           WHERE owner_id = ? AND submission_key = ?
-            AND (status IN ('queued', 'shed', 'running')
-                 OR (status = 'completed' AND result_json IS NOT NULL))
+            AND (status IN ('queued', 'shed', 'running') OR request_json IS NOT NULL)
           ORDER BY arrived_at DESC LIMIT 1`,
       )
       .get(ownerId, submissionKey) as RawRow | undefined;
     return raw ? fromRaw(raw) : undefined;
+  }
+
+  /** Whether some final step of this owner's task has completed. */
+  taskCompleted(ownerId: string, task: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS hit FROM adminbot_inference_queue
+          WHERE owner_id = ? AND stage_task = ? AND stage_final = 1 AND status = 'completed'
+          LIMIT 1`,
+      )
+      .get(ownerId, task) as { hit?: number } | undefined;
+    return Boolean(row?.hit);
   }
 
   listByStatus(...statuses: InferenceRowStatus[]): InferenceQueueRow[] {
@@ -323,15 +365,21 @@ export class InferenceQueueStore {
     return result.changes === 1;
   }
 
-  finishCompleted(id: string, at: string, result: InferenceResponseRecord): boolean {
-    const json = JSON.stringify(result);
+  /**
+   * running -> completed. `result` may be omitted when the retained-bytes ceiling has no room for
+   * it: the caller still receives the answer in memory, and the row says the result was not kept
+   * rather than pretending nothing was answered.
+   */
+  finishCompleted(id: string, at: string, result: InferenceResponseRecord | undefined): boolean {
+    const json = result ? JSON.stringify(result) : null;
     const changed = this.db
       .prepare(
         `UPDATE adminbot_inference_queue
-            SET status = 'completed', finished_at = ?, result_json = ?, result_bytes = ?
+            SET status = 'completed', finished_at = ?, result_json = ?, result_bytes = ?,
+                result_retained = ?
           WHERE id = ? AND status = 'running'`,
       )
-      .run(at, json, Buffer.byteLength(json), id);
+      .run(at, json, json ? Buffer.byteLength(json) : 0, json ? 1 : 0, id);
     return changed.changes === 1;
   }
 
@@ -370,13 +418,16 @@ export class InferenceQueueStore {
    * to my request" remains answerable after the content that made it private is gone.
    */
   purgeBodiesBefore(cutoff: string): number {
+    // `error` goes with the bodies: a model's error text can quote the prompt back, so it is
+    // private content under the same retention as the prompt itself.
     const changed = this.db
       .prepare(
         `UPDATE adminbot_inference_queue
-            SET request_json = NULL, request_bytes = 0, result_json = NULL, result_bytes = 0
+            SET request_json = NULL, request_bytes = 0, result_json = NULL, result_bytes = 0,
+                error = NULL
           WHERE status IN ('completed', 'failed', 'expired')
             AND finished_at IS NOT NULL AND finished_at < ?
-            AND (request_json IS NOT NULL OR result_json IS NOT NULL)`,
+            AND (request_json IS NOT NULL OR result_json IS NOT NULL OR error IS NOT NULL)`,
       )
       .run(cutoff);
     return Number(changed.changes ?? 0);
@@ -431,7 +482,8 @@ export class InferenceQueueStore {
 }
 
 function fromRaw(raw: RawRow): InferenceQueueRow {
-  const { request_json, result_json, ...rest } = raw;
+  const { request_json, result_json, stage_name, stage_task, stage_final, result_retained, ...rest } =
+    raw;
   return {
     ...rest,
     timeout_ms: Number(rest.timeout_ms),
@@ -439,5 +491,10 @@ function fromRaw(raw: RawRow): InferenceQueueRow {
     result_bytes: Number(rest.result_bytes),
     request: request_json ? (JSON.parse(request_json) as InferenceRequestRecord) : null,
     result: result_json ? (JSON.parse(result_json) as InferenceResponseRecord) : null,
+    stage:
+      stage_name && stage_task
+        ? { name: stage_name, task: stage_task, final: Number(stage_final) === 1 }
+        : null,
+    result_retained: Number(result_retained) === 1,
   };
 }

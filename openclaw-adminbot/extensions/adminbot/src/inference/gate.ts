@@ -44,10 +44,16 @@ import {
   type InferenceRequestRecord,
   type InferenceResponseRecord,
   type InferenceRowStatus,
+  type InferenceStage,
   type MemberInferencePreferences,
 } from "./queue-store.js";
 
-export type { InferenceRequestRecord, InferenceResponseRecord, InferenceRowStatus };
+export type {
+  InferenceRequestRecord,
+  InferenceResponseRecord,
+  InferenceRowStatus,
+  InferenceStage,
+};
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -84,6 +90,8 @@ export type InferenceGateRequest = {
   owner: string;
   /** Which code path sent it, for the audit trail: `privacy_broker.classify`, `cv_scan.extract`. */
   caller: string;
+  /** For multi-step callers: which step of which task this is. See InferenceStage. */
+  stage?: InferenceStage;
   request: InferenceRequestRecord;
   /**
    * A stable key the owner chose, so a retry after a lost response finds this row rather than
@@ -125,6 +133,11 @@ export type InferenceStatus = {
   outcome?: string;
   error?: string;
   result_available: boolean;
+  /**
+   * For a step of a multi-step task: whether the *task* completed. A completed step whose task did
+   * not is reported as such, never as "Done".
+   */
+  task_completed?: boolean;
   /** Present while an escalation for the GPU is proposed and awaiting an administrator. */
   escalation?: { proposal_id?: string; trigger: string; awaiting_approval: true };
 };
@@ -173,6 +186,8 @@ export function isInferenceDeferred(error: unknown): error is InferenceDeferredE
 export type InferenceHealth = {
   state: "ok" | "degraded" | "down";
   consecutive_probe_failures: number;
+  /** Timeouts and transport errors since the last completion. Cleared by a completion. */
+  consecutive_inference_failures: number;
   last_probe_ok_at?: string;
   last_probe_error?: string;
   last_inference_ok_at?: string;
@@ -208,6 +223,12 @@ export type InferenceGateOptions = {
   fetchImpl?: InferenceFetch;
   /** Where the health probe goes. Defaults to ADMINBOT_LOCAL_BASE_URL, then the vLLM default. */
   localBaseUrl?: string;
+  /**
+   * Which environment variable holds the local model's bearer token, for the health probe. The
+   * checked-in vLLM unit runs with `--api-key`, so an unauthenticated `/v1/models` is a 401 and a
+   * healthy server would read as down. Defaults to VLLM_API_KEY, like every caller in this tree.
+   */
+  localApiKeyEnv?: string;
   /**
    * Called once per armed trigger. Returns the proposal it created, if any, so the status a member
    * sees can point at it. Delivery is not this module's business: the proposal goes through the
@@ -254,6 +275,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   const processId = options.processId ?? `${process.pid}:${randomUUID().slice(0, 8)}`;
   const localBaseUrl =
     options.localBaseUrl ?? env.ADMINBOT_LOCAL_BASE_URL?.trim() ?? "http://127.0.0.1:8000/v1";
+  const localApiKeyEnv = options.localApiKeyEnv ?? "VLLM_API_KEY";
 
   // The wait line, in the order rows joined it. The database is the durable copy; this is the
   // dispatch order and the place a waiting caller's promise lives.
@@ -272,6 +294,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   const health: InferenceHealth = {
     state: "ok",
     consecutive_probe_failures: 0,
+    consecutive_inference_failures: 0,
     inference_timeouts: 0,
     inference_failures: 0,
   };
@@ -291,7 +314,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function estimate(ahead: number): number | null {
-    if (health.state === "down" || meanServiceMs === null) {
+    // Any unhealthy state, not only `down`: a degraded server is one whose recent calls timed out,
+    // and its healthy-era mean says nothing about how long the next one will take.
+    if (health.state !== "ok" || meanServiceMs === null) {
       return null;
     }
     // Everybody ahead plus this one, divided across the slots.
@@ -308,6 +333,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
       ...(row.outcome ? { outcome: row.outcome } : {}),
       ...(row.error ? { error: row.error } : {}),
       result_available: row.status === "completed" && row.result !== null,
+      ...(row.stage
+        ? { task_completed: row.stage.final ? row.status === "completed" : taskDone(row) }
+        : {}),
       ...(armed.size > 0
         ? {
             escalation: {
@@ -347,7 +375,23 @@ export function createInferenceGate(options: InferenceGateOptions) {
       case "running":
         return { ...base, can_wait: false, message: "Running on the GPU." };
       case "completed":
-        return { ...base, can_wait: false, message: "Done." };
+        if (row.stage && !row.stage.final && !taskDone(row)) {
+          // The step ran; the task it belonged to did not finish, because the workflow that would
+          // have run the next step ended when this one was shed. Saying "Done" here is the lie the
+          // review caught: a member whose classification completed has not had their note drafted.
+          return {
+            ...base,
+            can_wait: false,
+            message: `The "${row.stage.name}" step finished, but the task it was part of did not. Resubmit the task.`,
+          };
+        }
+        return {
+          ...base,
+          can_wait: false,
+          message: row.result_retained
+            ? "Done."
+            : "Done. The answer was delivered but not kept, because the queue was at its storage limit.",
+        };
       case "failed":
         return {
           ...base,
@@ -366,6 +410,25 @@ export function createInferenceGate(options: InferenceGateOptions) {
           message: "This request waited too long and was never run. Resubmit it.",
         };
     }
+  }
+
+  function taskDone(row: InferenceQueueRow): boolean {
+    return row.stage ? store.taskCompleted(row.owner_id, row.stage.task) : row.status === "completed";
+  }
+
+  /**
+   * What an audit row may say about a failure: a code, a status, a kind. Never the message. A model
+   * error can quote the prompt back, an HTTP body can carry it, and the audit table is read by more
+   * people than the queue table is. The raw text lives in the row's `error` column, under the same
+   * retention as the body.
+   */
+  function auditableFailure(kind: InferenceFailureKind, cause: unknown, httpStatus?: number) {
+    const code = errorCode(cause);
+    return {
+      outcome: kind,
+      ...(code ? { error_code: code } : {}),
+      ...(httpStatus !== undefined ? { http_status: httpStatus } : {}),
+    };
   }
 
   function auditRow(
@@ -408,10 +471,6 @@ export function createInferenceGate(options: InferenceGateOptions) {
     const request = row.request;
     const admittedAt = row.admitted_at ?? timestamp();
     const startedAt = Date.now();
-    auditRow("inference.admitted", row, {
-      wait_ms: waitedMs(row, admittedAt),
-      timeout_ms: row.timeout_ms,
-    });
     let outcome: InferenceOutcome;
     try {
       if (!request) {
@@ -447,8 +506,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
             : "error";
         const message = error instanceof Error ? error.message : String(error);
         outcome = { kind: "failed", id: row.id, failure: kind, error: message, cause: error };
-        finishFailed(row, kind, message, undefined, Date.now() - startedAt);
-        return outcome;
+        return settleFailed(row, outcome, undefined, Date.now() - startedAt);
       }
       const record: InferenceResponseRecord = {
         ok: response.ok,
@@ -461,21 +519,37 @@ export function createInferenceGate(options: InferenceGateOptions) {
         const kind = `http_${response.status}` as InferenceFailureKind;
         const message = `${request.purpose}: HTTP ${response.status} ${response.statusText}`;
         outcome = { kind: "failed", id: row.id, failure: kind, error: message, response: record };
-        finishFailed(row, kind, message, record, durationMs);
-        return outcome;
+        return settleFailed(row, outcome, record, durationMs);
       }
       const finishedAt = timestamp();
-      store.transaction(() => {
-        store.finishCompleted(row.id, finishedAt, record);
+      // The ceiling is a ceiling: a result that would push retained bytes past it is delivered to
+      // the caller but not kept, and the row says so. Counting only request bytes at admission let
+      // a 1,000-byte cap end at 2,188 retained.
+      const resultBytes = Buffer.byteLength(JSON.stringify(record));
+      const keep = store.retainedBytes() + resultBytes <= config.queue.maxRetainedBytes;
+      const transitioned = store.transaction(() => {
+        if (!store.finishCompleted(row.id, finishedAt, keep ? record : undefined)) {
+          return false;
+        }
         auditRow("inference.completed", row, {
           outcome: "completed",
           wait_ms: waitedMs(row, admittedAt),
           duration_ms: durationMs,
           http_status: response.status,
+          result_retained: keep,
         });
+        return true;
       });
+      if (!transitioned) {
+        // The row is no longer ours: recovery (or another gate on the same file) marked it
+        // interrupted while the call was in flight. The answer arrived, but the row says failed
+        // and a second terminal event would make the audit trail contradict itself. The caller
+        // gets what the row says.
+        return settledElsewhere(row);
+      }
       meanServiceMs = meanServiceMs === null ? durationMs : meanServiceMs * 0.7 + durationMs * 0.3;
       health.last_inference_ok_at = finishedAt;
+      health.consecutive_inference_failures = 0;
       if (health.state === "degraded") {
         health.state = "ok";
       }
@@ -488,30 +562,70 @@ export function createInferenceGate(options: InferenceGateOptions) {
       return outcome;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      finishFailed(row, "error", message, undefined, Date.now() - startedAt);
-      return { kind: "failed", id: row.id, failure: "error", error: message, cause: error };
+      return settleFailed(
+        row,
+        { kind: "failed", id: row.id, failure: "error", error: message, cause: error },
+        undefined,
+        Date.now() - startedAt,
+      );
     }
   }
 
+  /** The row's actual terminal state, for a call whose guarded transition lost to somebody else's. */
+  function settledElsewhere(row: InferenceQueueRow): InferenceOutcome {
+    const current = store.get(row.id);
+    if (!current) {
+      return { kind: "refused", reason: "request row vanished" };
+    }
+    if (current.status === "completed" && current.result) {
+      return { kind: "completed", id: current.id, response: current.result, waitMs: 0 };
+    }
+    if (current.status === "expired") {
+      return { kind: "expired", id: current.id, status: statusOf(current) };
+    }
+    return {
+      kind: "failed",
+      id: current.id,
+      failure: (current.outcome as InferenceFailureKind | null) ?? "error",
+      error: current.error ?? "the request was settled by another process",
+    };
+  }
+
+  function settleFailed(
+    row: InferenceQueueRow,
+    outcome: Extract<InferenceOutcome, { kind: "failed" }>,
+    response: InferenceResponseRecord | undefined,
+    durationMs: number,
+  ): InferenceOutcome {
+    return finishFailed(row, outcome.failure, outcome.error, response, durationMs, outcome.cause)
+      ? outcome
+      : settledElsewhere(row);
+  }
+
+  /** running|queued -> failed, if the row is still ours. Returns whether the transition happened. */
   function finishFailed(
     row: InferenceQueueRow,
     kind: InferenceFailureKind,
     message: string,
     response: InferenceResponseRecord | undefined,
     durationMs: number,
-  ) {
+    cause?: unknown,
+  ): boolean {
     const finishedAt = timestamp();
-    store.transaction(() => {
-      store.finishFailed(row.id, finishedAt, kind, message, response);
+    const transitioned = store.transaction(() => {
+      if (!store.finishFailed(row.id, finishedAt, kind, message, response)) {
+        return false;
+      }
       auditRow("inference.failed", row, {
-        outcome: kind,
-        // The message, never the prompt: a model error can quote the request back, and the audit
-        // table is read by more people than the queue table is.
-        error: message.slice(0, 300),
+        ...auditableFailure(kind, cause, response?.status),
         wait_ms: row.admitted_at ? waitedMs(row, row.admitted_at) : undefined,
         duration_ms: durationMs,
       });
+      return true;
     });
+    if (!transitioned) {
+      return false;
+    }
     if (kind === "timeout") {
       health.inference_timeouts += 1;
     } else if (kind !== "cancelled") {
@@ -519,8 +633,65 @@ export function createInferenceGate(options: InferenceGateOptions) {
     }
     if (kind === "timeout" || kind === "error") {
       // Two timeouts with nothing succeeding in between is the shape of a hung server that still
-      // answers /v1/models; the probe alone would never notice.
+      // answers /v1/models; the probe alone would never notice. Escalation is evaluated here as
+      // well as on the probe and sweep timers, because with an empty queue and an answering probe
+      // nothing else would look.
+      health.consecutive_inference_failures += 1;
       health.state = health.state === "down" ? "down" : "degraded";
+      void evaluateEscalations();
+    }
+    return true;
+  }
+
+  /**
+   * Admission, atomically: the running transition and its `inference.admitted` event in one
+   * transaction, before any model call. If that transaction fails nothing has changed -- the row is
+   * still queued (or, for an arrival, was never inserted) and there is no orphaned `running` row
+   * with no call behind it.
+   */
+  function admitQueued(row: InferenceQueueRow, at: string): boolean {
+    return store.transaction(() => {
+      if (!store.claim(row.id, processId, at)) {
+        return false;
+      }
+      auditRow("inference.admitted", row, {
+        wait_ms: waitedMs(row, at),
+        timeout_ms: row.timeout_ms,
+      });
+      return true;
+    });
+  }
+
+  function admitArrival(row: InferenceQueueRow): void {
+    store.transaction(() => {
+      store.insertRunning(row, processId);
+      auditRow("inference.admitted", row, { wait_ms: 0, timeout_ms: row.timeout_ms });
+    });
+  }
+
+  /**
+   * Runs an admitted row and guarantees the promise settles with an outcome, never a rejection. A
+   * throw out of execute() -- which should not happen, but a database error in a finishing
+   * transaction can -- is turned into a failed outcome and the row reconciled, so a waiter never
+   * hangs and no rejection escapes into `void run.then(resolve)`.
+   */
+  async function dispatch(
+    row: InferenceQueueRow,
+    fetchImpl: InferenceFetch,
+    signal?: AbortSignal,
+    apiKey?: string,
+  ): Promise<InferenceOutcome> {
+    try {
+      return await execute(row, fetchImpl, signal, apiKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        finishFailed(row, "error", message, undefined, 0, error);
+      } catch {
+        // The database itself is failing. The caller still gets a typed outcome; the row is
+        // whatever the last successful write left it, and recovery on the next start will settle it.
+      }
+      return { kind: "failed", id: row.id, failure: "error", error: message, cause: error };
     }
   }
 
@@ -555,22 +726,23 @@ export function createInferenceGate(options: InferenceGateOptions) {
         }
         continue;
       }
-      if (!store.claim(waiter.id, processId, at)) {
+      let admitted: boolean;
+      try {
+        admitted = admitQueued(row, at);
+      } catch (error) {
+        // The admission transaction itself failed (database trouble). The row is untouched and
+        // still queued in the table; the waiter is told, rather than left hanging, and the row
+        // will be re-admitted by the next process's recovery.
+        const message = error instanceof Error ? error.message : String(error);
+        for (const resolve of waiter.resolvers) {
+          resolve({ kind: "failed", id: row.id, failure: "error", error: message, cause: error });
+        }
+        continue;
+      }
+      if (!admitted) {
         // Somebody else changed the row under us (a sweep expired it, a cancel failed it). Whatever
         // they wrote is the answer.
-        const current = store.get(waiter.id);
-        const outcome: InferenceOutcome = current
-          ? current.status === "completed" && current.result
-            ? { kind: "completed", id: current.id, response: current.result, waitMs: 0 }
-            : current.status === "expired"
-              ? { kind: "expired", id: current.id, status: statusOf(current) }
-              : {
-                  kind: "failed",
-                  id: current.id,
-                  failure: (current.outcome as InferenceFailureKind) ?? "error",
-                  error: current.error ?? "request was not admitted",
-                }
-          : { kind: "refused", reason: "request row vanished" };
+        const outcome = settledElsewhere(row);
         for (const resolve of waiter.resolvers) {
           resolve(outcome);
         }
@@ -579,9 +751,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
       const claimed = { ...row, status: "running" as const, admitted_at: at, claimed_at: at };
       const run = track(
         claimed.id,
-        execute(claimed, transportFor(waiter.fetchImpl), waiter.signal, waiter.apiKey),
+        dispatch(claimed, transportFor(waiter.fetchImpl), waiter.signal, waiter.apiKey),
       );
       for (const resolve of waiter.resolvers) {
+        // `run` never rejects (see dispatch), so this settles every waiter exactly once.
         void run.then(resolve);
       }
     }
@@ -697,6 +870,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       submission_key: submissionKey,
       payload_hash: hash,
       caller: request.caller,
+      stage: request.stage ?? null,
       status: "queued",
       arrived_at: arrivedAt,
       // Fixed at arrival and never moved: a request cannot wait its way past the age limit by being
@@ -714,6 +888,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       result_bytes: 0,
       outcome: null,
       error: null,
+      result_retained: true,
     };
 
     if (request.signal?.aborted) {
@@ -722,13 +897,11 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
     // Slot free and nobody ahead: run. Somebody ahead means the slot is theirs the moment pump runs.
     if (inFlight < config.capacity && waiting.length === 0) {
-      store.transaction(() => {
-        store.insertRunning(row, processId);
-      });
+      admitArrival(row);
       const running = { ...row, status: "running" as const, admitted_at: arrivedAt, claimed_at: arrivedAt };
       return track(
         row.id,
-        execute(running, transportFor(request.fetchImpl), request.signal, request.apiKey),
+        dispatch(running, transportFor(request.fetchImpl), request.signal, request.apiKey),
       );
     }
 
@@ -762,6 +935,16 @@ export function createInferenceGate(options: InferenceGateOptions) {
             ? { kind: "completed", id: row.id, response: row.result, waitMs: 0 }
             : { kind: "expired", id: row.id, status: statusOf(row) },
         );
+      case "failed":
+        // The key found a row that failed. That failure is the answer to this key -- a retry that
+        // ran the request again under the same key is exactly the double execution the key exists
+        // to prevent. A genuinely new attempt needs a new key; the status says so.
+        return Promise.resolve({
+          kind: "failed",
+          id: row.id,
+          failure: (row.outcome as InferenceFailureKind | null) ?? "error",
+          error: `${row.error ?? "the request failed"} (resubmit with a new key to try again)`,
+        });
       case "running": {
         const current = active.get(row.id);
         return current ? current.promise : Promise.resolve({ kind: "queued", id: row.id, status: statusOf(row) });
@@ -934,9 +1117,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
   async function probeHealth(): Promise<InferenceHealth> {
     const base = assertLoopbackUrl(localBaseUrl, "inference health probe");
     try {
+      const probeKey = env[localApiKeyEnv]?.trim();
       const response = await defaultFetch(`${base}models`, {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          ...(probeKey ? { Authorization: `Bearer ${probeKey}` } : {}),
+        },
         signal: AbortSignal.timeout(config.health.timeoutMs),
       });
       await response.text();
@@ -1004,10 +1191,17 @@ export function createInferenceGate(options: InferenceGateOptions) {
       ],
       [
         "health",
-        health.consecutive_probe_failures >= config.escalate.healthFailures || health.state === "down",
+        // Probe failures, or generation failing while the probe still answers: a hung vLLM lists its
+        // models happily and never finishes a completion, and only the second signal sees that.
+        health.consecutive_probe_failures >= config.escalate.healthFailures ||
+          health.consecutive_inference_failures >= config.escalate.healthFailures ||
+          health.state === "down",
         {
           trigger: "health",
-          summary: `The local model at ${localBaseUrl} has failed ${health.consecutive_probe_failures} health checks in a row`,
+          summary:
+            health.consecutive_probe_failures >= config.escalate.healthFailures || health.state === "down"
+              ? `The local model at ${localBaseUrl} has failed ${health.consecutive_probe_failures} health checks in a row`
+              : `The local model at ${localBaseUrl} answers health checks but ${health.consecutive_inference_failures} inference calls in a row have timed out or failed`,
           details: { ...health, queue_depth: depth(), in_flight: inFlight },
         },
       ],
@@ -1102,6 +1296,22 @@ export function createInferenceGate(options: InferenceGateOptions) {
     /** The handle this gate writes to. Exposed so a server can build a durable gate on the same file. */
     database: options.db,
   };
+}
+
+/** A Node/undici error code (`ECONNREFUSED`, `UND_ERR_...`) or the error's class name; never its message. */
+export function errorCode(error: unknown): string | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const own = (error as unknown as { code?: unknown }).code;
+  if (typeof own === "string") {
+    return own;
+  }
+  const nested = (error.cause as { code?: unknown } | undefined)?.code;
+  if (typeof nested === "string") {
+    return nested;
+  }
+  return error.name;
 }
 
 /**
