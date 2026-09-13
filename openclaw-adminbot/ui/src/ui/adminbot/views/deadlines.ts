@@ -11,6 +11,11 @@ import { icons } from "../../icons.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
 import {
+  deadlineMilestoneRow,
+  hasDeadlineMilestone,
+  type MilestoneRow,
+} from "../data/availability.ts";
+import {
   AdminBotDeadlineProposalStore,
   deadlineProposalStoreFor,
   type DeadlineProposal,
@@ -736,11 +741,19 @@ class AdminbotDeadlinesView extends LitElement {
     accessRole: { type: String, attribute: "access-role" },
     memberId: { type: String, attribute: "member-id" },
     proposalStore: { attribute: false },
+    timelineMilestones: { attribute: false },
+    onSaveTimeline: { attribute: false },
   };
 
   accessRole: AccessRole = "anonymous";
   memberId = "";
   proposalStore: DeadlineProposalStore = DEFAULT_DEADLINE_PROPOSAL_STORE;
+  /** The signed-in member's own milestones; null until their record has loaded. */
+  timelineMilestones: MilestoneRow[] | null = null;
+  /** Saves the member's whole milestone list; resolves true when the save landed. */
+  onSaveTimeline?: (milestones: MilestoneRow[]) => Promise<boolean>;
+  private timelineBusyId = "";
+  private timelineFailedId = "";
 
   private timer: number | undefined;
   private readonly expandedGroups = new Set<string>();
@@ -1733,7 +1746,7 @@ class AdminbotDeadlinesView extends LitElement {
               </p>`}
         </section>
         <footer class="deadline-details__footer">
-          ${this.renderSourceActions(venue)}
+          ${this.renderSourceActions(venue, { timeline: false })}
           ${this.memberId && this.accessRole !== "anonymous"
             ? html`<button
                 class="btn btn--sm"
@@ -1851,19 +1864,84 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderSourceActions(venue: DeadlineVenue) {
+  private async addToTimeline(venue: DeadlineVenue): Promise<void> {
+    const milestones = this.timelineMilestones;
+    if (!milestones || !this.onSaveTimeline || this.timelineBusyId) {
+      return;
+    }
+    this.timelineBusyId = venue.deadline_id;
+    this.timelineFailedId = "";
+    this.requestUpdate();
+    try {
+      const saved = await this.onSaveTimeline([...milestones, deadlineMilestoneRow(venue)]);
+      if (!saved) {
+        this.timelineFailedId = venue.deadline_id;
+      }
+    } catch {
+      this.timelineFailedId = venue.deadline_id;
+    } finally {
+      this.timelineBusyId = "";
+      this.requestUpdate();
+    }
+  }
+
+  /**
+   * "Add to my timeline": copies this deadline onto the signed-in member's own milestones, the list
+   * Time Availability plans around.
+   *
+   * Offered only once the member's own milestone list has loaded. A save writes the whole list, so
+   * a button that could be pressed before the list arrived would replace every milestone the member
+   * already had with this one. Past deadlines get no button: there is nothing left to plan back from.
+   */
+  private renderTimelineAction(venue: DeadlineVenue) {
+    const milestones = this.timelineMilestones;
+    if (
+      !milestones ||
+      !this.onSaveTimeline ||
+      !this.memberId ||
+      this.accessRole === "anonymous" ||
+      this.period === "past"
+    ) {
+      return nothing;
+    }
+    if (hasDeadlineMilestone(milestones, venue)) {
+      return html`<span class="deadline-card__missing" data-testid="deadline-on-timeline"
+        >✓ On your timeline</span
+      >`;
+    }
+    const busy = this.timelineBusyId === venue.deadline_id;
+    return html`<button
+        type="button"
+        class="btn btn--sm"
+        data-testid="deadline-add-to-timeline"
+        aria-label=${`Add to my timeline: ${venue.name} ${venue.deadline_label}`}
+        ?disabled=${Boolean(this.timelineBusyId)}
+        @click=${() => void this.addToTimeline(venue)}
+      >
+        ${busy ? "Adding…" : "Add to my timeline"}
+      </button>
+      ${this.timelineFailedId === venue.deadline_id
+        ? html`<span class="deadline-card__missing" role="alert">Couldn't add it. Try again.</span>`
+        : nothing}`;
+  }
+
+  private renderSourceActions(venue: DeadlineVenue, options: { timeline?: boolean } = {}) {
+    const timeline = options.timeline === false ? nothing : this.renderTimelineAction(venue);
     const workshop = workshopSourceLinks(venue);
     if (!workshop) {
-      return venue.link
+      return venue.link || timeline !== nothing
         ? html`<span class="deadline-card__actions">
-            <a
-              class="deadline-card__source deadline-card__source--button"
-              href=${venue.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label=${`Official site for ${venue.name}`}
-              >Official site ↗</a
-            >
+            ${venue.link
+              ? html`<a
+                  class="deadline-card__source deadline-card__source--button"
+                  href=${venue.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label=${`Official site for ${venue.name}`}
+                  >Official site ↗</a
+                >`
+              : nothing}
+            ${timeline}
           </span>`
         : nothing;
     }
@@ -1888,6 +1966,7 @@ class AdminbotDeadlinesView extends LitElement {
             >OpenReview ↗</a
           >`
         : nothing}
+      ${timeline}
     </span>`;
   }
 
@@ -2303,6 +2382,8 @@ export type RenderDeadlinesOptions = {
   memberId?: string | null;
   proposalStore?: DeadlineProposalStore;
   settings?: Pick<UiSettings, "adminBotUrl"> | null;
+  timelineMilestones?: MilestoneRow[] | null;
+  onSaveTimeline?: (milestones: MilestoneRow[]) => Promise<boolean>;
 };
 
 export function renderDeadlines(options: RenderDeadlinesOptions = {}) {
@@ -2310,5 +2391,7 @@ export function renderDeadlines(options: RenderDeadlinesOptions = {}) {
     access-role=${options.role ?? "anonymous"}
     member-id=${options.memberId ?? ""}
     .proposalStore=${options.proposalStore ?? deadlineProposalStoreFor(options.settings)}
+    .timelineMilestones=${options.timelineMilestones ?? null}
+    .onSaveTimeline=${options.onSaveTimeline}
   ></adminbot-deadlines-view>`;
 }
