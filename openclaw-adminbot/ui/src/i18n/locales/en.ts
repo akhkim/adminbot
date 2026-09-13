@@ -1765,6 +1765,8 @@ export const en: TranslationMap = {
       driveUrl: "Link to the document",
       deadline: "Deadline",
       context: "Context of signing (optional)",
+      contextPlaceholder:
+        "Example: this is the visa letter for the Montreal workshop — the deadline is the 8th.",
       send: "Send the signature request",
       sending: "Sending…",
       submitted: "Filed on the lab's signature form.",

@@ -544,6 +544,26 @@ describe("the signature Google Form signpost", () => {
     expect(container.querySelector("[data-testid='logistics-signature-submit']")).not.toBeNull();
   });
 
+  // It sits under Supporting Content on the same page, so it wears the same shell: a section with a
+  // card title, stacked label-over-control fields, and controls the page styles rather than the
+  // browser. `adminbot-form__field` alone is not that -- those rules need an `.adminbot-form`
+  // ancestor this section does not have.
+  it("wears the section shell the rest of the tab uses", () => {
+    const { container } = draw({ signatureEditing: false });
+    const section = container.querySelector('[data-testid="logistics-signature-section"]');
+    expect(section?.classList.contains("logistics-request__section")).toBe(true);
+    expect(section?.querySelector(".card-title")).not.toBeNull();
+    for (const testId of [
+      "logistics-signature-drive-url",
+      "logistics-signature-deadline",
+      "logistics-signature-context",
+    ]) {
+      const control = container.querySelector(`[data-testid="${testId}"]`);
+      expect(control?.className).toMatch(/logistics-signature__(input|note)/u);
+      expect(control?.closest(".logistics-signature__field")).not.toBeNull();
+    }
+  });
+
   // The form's three member-answered questions. The fourth, their name, is the service's to answer.
   it("collects the link, the deadline and the optional context", () => {
     const { container, signatureFormPatches } = draw({ signatureEditing: false });
