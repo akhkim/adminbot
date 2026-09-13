@@ -24,6 +24,7 @@
 // durability that has only been tested by dropping an object in the same process has not been
 // tested. No production data is touched: the fixture generator writes the database this reads.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
@@ -315,20 +316,52 @@ function reconcile(params: {
     detail: `${statusMismatch.length} rows disagree with their audit event`,
   });
 
-  // 4. Every user-visible outcome the client received matches the row it names.
+  // 4. Every user-visible outcome the client received agrees with the row it names: the same id,
+  //    the same kind (a client told "failed" against a row that says "completed" is a lie in one
+  //    direction or the other), and for a completed outcome the same bytes the row retained.
   let outcomeMismatch = 0;
+  const mismatchDetail: string[] = [];
   for (const [key, outcomes] of params.submitted) {
     const row = byKey.get(key)?.[0];
     for (const outcome of outcomes) {
       if (!row || !("id" in outcome) || outcome.id !== row.id) {
         outcomeMismatch += 1;
+        mismatchDetail.push(`${key}: outcome names ${"id" in outcome ? outcome.id : "no row"}`);
+        continue;
+      }
+      const rowKind =
+        row.status === "completed" || row.status === "failed" || row.status === "expired"
+          ? row.status
+          : row.status === "shed"
+            ? "shed"
+            : "queued";
+      // A shed outcome that was later waited on and completed is consistent (shed is non-terminal);
+      // anything else must match the row's kind exactly.
+      const consistent =
+        outcome.kind === rowKind ||
+        // A conflict names the row the key already belongs to; whatever that row went on to do is
+        // its own outcome, not this submission's.
+        outcome.kind === "conflict" ||
+        (outcome.kind === "shed" && (rowKind === "completed" || rowKind === "queued")) ||
+        (outcome.kind === "queued" && rowKind === "completed");
+      if (!consistent) {
+        outcomeMismatch += 1;
+        mismatchDetail.push(`${key}: client saw ${outcome.kind}, row says ${row.status}`);
+        continue;
+      }
+      if (outcome.kind === "completed" && row.result_json) {
+        const stored = (JSON.parse(row.result_json) as { text: string }).text;
+        if (sha(stored) !== sha(outcome.response.text)) {
+          outcomeMismatch += 1;
+          mismatchDetail.push(`${key}: delivered content differs from the stored result`);
+        }
       }
     }
   }
   checks.push({
-    name: "every outcome handed to a client names that client's row",
+    name: "every outcome handed to a client agrees with its row: id, kind, and delivered content",
     ok: outcomeMismatch === 0,
-    detail: `${outcomeMismatch} outcomes named a different row`,
+    detail: `${outcomeMismatch} disagreements${mismatchDetail.length ? `: ${mismatchDetail.slice(0, 3).join("; ")}` : ""}`,
   });
 
   if (params.expectedTerminal) {
@@ -707,9 +740,23 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
     const rows = queueRows(after);
     const events = auditEvents(after);
     const interrupted = events.filter((e) => e.type === "inference.failed" && e.details?.outcome === "interrupted");
+    const manifest = JSON.parse(fs.readFileSync(`${dbPath}.manifest.json`, "utf8")) as Array<{
+      key: string;
+      owner: string;
+    }>;
     const submitted = new Map<string, InferenceOutcome[]>();
-    for (const row of rows) submitted.set(row.submission_key, []);
+    for (const entry of manifest) submitted.set(entry.key, []);
     const checks = reconcile({ store: after, submitted, capacity: 2 });
+    checks.push({
+      name: `every request in the victim's pre-kill manifest (${manifest.length}) has a row and a retrievable status`,
+      ok:
+        manifest.length === N &&
+        manifest.every((entry) => {
+          const row = rows.find((r) => r.submission_key === entry.key && r.owner_id === entry.owner);
+          return row !== undefined && parsed.outcomes[row.id] !== undefined && parsed.outcomes[row.id]?.state !== "missing";
+        }),
+      detail: `${manifest.filter((e) => rows.some((r) => r.submission_key === e.key)).length}/${manifest.length} manifest entries found as rows`,
+    });
     checks.push({
       name: `rows found running were failed as interrupted (${runningBefore}), naming the dead claim`,
       ok:
@@ -723,7 +770,8 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
       ok:
         parsed.recovered.expired === stale.length &&
         stale.every((id) => rows.find((r) => r.id === id)?.status === "expired") &&
-        stale.every((id) => /resubmit/iu.test(parsed.outcomes[id]?.outcome ?? "") || parsed.outcomes[id]?.state === "expired"),
+        stale.every((id) => parsed.outcomes[id]?.state === "expired") &&
+        stale.every((id) => /resubmit/iu.test(parsed.outcomes[id]?.outcome ?? "")),
       detail: `expired=${parsed.recovered.expired}`,
     });
     const readmitted = queuedBefore.filter((r) => !stale.includes(r.id));
@@ -923,13 +971,23 @@ async function runVictim(o: Options): Promise<never> {
   const baseUrl = `http://127.0.0.1:${o.port}/v1`;
   const { gate } = openGate(o.dbPath as string, baseUrl);
   gate.start();
-  for (let i = 0; i < o.requests; i += 1) {
+  // The manifest is written *before* the first submission and is the independent record of what
+  // this process intended to submit. The parent reconciles against it, not against whatever rows
+  // survive the kill -- a row that never made it to disk would otherwise vanish from the accounting
+  // rather than show up as lost.
+  const manifest = Array.from({ length: o.requests }, (_, i) => ({
+    key: `rs${i}`,
+    owner: `m${i}`,
+    prompt: `restart prompt ${i}`,
+  }));
+  fs.writeFileSync(`${o.dbPath}.manifest.json`, JSON.stringify(manifest));
+  for (const entry of manifest) {
     void gate.run({
-      owner: `m${i}`,
+      owner: entry.owner,
       caller: "load_sim.restart",
-      submissionKey: `rs${i}`,
+      submissionKey: entry.key,
       wait: true,
-      request: chatRequest(baseUrl, `restart prompt ${i}`),
+      request: chatRequest(baseUrl, entry.prompt),
       timeoutMs: 120_000,
     });
   }
@@ -960,6 +1018,10 @@ async function runSurvivor(o: Options): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+function sha(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 function log(line: string) {
   process.stdout.write(`${line}\n`);
