@@ -212,6 +212,74 @@
   margin-top: 0;
 }
 
+/* ── The signature request form ──────────────────────────────────────────────────────────────
+   Three fields where the tab used to hold a link out to the Google Form. They wear the same shell
+   as Supporting Content directly above them -- section, card-title, card-sub, stacked label over
+   control -- because the two are read as one page and a form built out of bare `adminbot-form__field`
+   labels was not styled at all: those input rules are scoped to an `.adminbot-form` ancestor this
+   section does not have, so the controls fell back to the browser's own. */
+.logistics-signature__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-4);
+}
+
+/* A date is a fixed-width thing; stretching it to the card's width reads as a text box that has
+   lost its content. Bounded rather than sized, so a locale with a longer format still fits. */
+.logistics-signature__field--short {
+  max-width: 18rem;
+}
+
+.logistics-signature__input,
+.logistics-signature__note {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.logistics-signature__note {
+  resize: vertical;
+}
+
+.logistics-signature__input::placeholder,
+.logistics-signature__note::placeholder {
+  color: var(--placeholder);
+}
+
+.logistics-signature__input:focus-visible,
+.logistics-signature__note:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* The send button and the way out to the form sit on one line, the link quiet beside the button:
+   it is the fallback for a send Google refuses, not a second way of doing the same thing. */
+.logistics-signature__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+}
+
+.logistics-signature__status {
+  margin: var(--space-3) 0 0;
+}
+
+/* The link carries a top margin from when it stood alone under the heading; inside the actions row
+   the row's own alignment places it, and the margin only pushed it off the button's baseline. */
+.logistics-signature__actions .logistics-signature__link {
+  margin-top: 0;
+}
+
 /* .adminbot-form's input rules are scoped to that parent class and pin a control-height, which
    would squash a textarea -- so this surface styles its own, as the reimbursement composer does. */
 .logistics-supporting__description {

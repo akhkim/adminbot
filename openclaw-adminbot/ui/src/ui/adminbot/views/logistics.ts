@@ -1119,12 +1119,16 @@ function renderSignatureRequest(props: SignatureProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-signature-form"
     >
-      <section class="logistics-request__section">
+      <section
+        class="logistics-request__section logistics-signature"
+        data-testid="logistics-signature-section"
+      >
         <h3 class="card-title">${t("logistics.signature.title")}</h3>
         <p class="card-sub">${t("logistics.signature.sub")}</p>
-        <label class="adminbot-form__field">
+        <label class="adminbot-form__field logistics-signature__field">
           <span>${t("logistics.signature.driveUrl")}</span>
           <input
+            class="logistics-signature__input"
             type="url"
             data-testid="logistics-signature-drive-url"
             .value=${form.driveUrl}
@@ -1133,9 +1137,12 @@ function renderSignatureRequest(props: SignatureProps) {
               props.onForm({ driveUrl: (event.target as HTMLInputElement).value })}
           />
         </label>
-        <label class="adminbot-form__field">
+        <label
+          class="adminbot-form__field logistics-signature__field logistics-signature__field--short"
+        >
           <span>${t("logistics.signature.deadline")}</span>
           <input
+            class="logistics-signature__input"
             type="date"
             data-testid="logistics-signature-deadline"
             .value=${form.deadline}
@@ -1143,10 +1150,12 @@ function renderSignatureRequest(props: SignatureProps) {
               props.onForm({ deadline: (event.target as HTMLInputElement).value })}
           />
         </label>
-        <label class="adminbot-form__field">
+        <label class="adminbot-form__field logistics-signature__field">
           <span>${t("logistics.signature.context")}</span>
           <textarea
+            class="logistics-signature__note"
             rows="3"
+            placeholder=${t("logistics.signature.contextPlaceholder")}
             data-testid="logistics-signature-context"
             .value=${form.context}
             @input=${(event: Event) =>
@@ -1156,7 +1165,7 @@ function renderSignatureRequest(props: SignatureProps) {
 
         ${props.formError
           ? html`<p
-              class="logistics-request__status--error"
+              class="logistics-request__status--error logistics-signature__status"
               data-testid="logistics-signature-error"
             >
               ${props.formError}
@@ -1164,14 +1173,14 @@ function renderSignatureRequest(props: SignatureProps) {
           : nothing}
         ${props.formSent
           ? html`<p
-              class="logistics-request__status--ok"
+              class="logistics-request__status--ok logistics-signature__status"
               data-testid="logistics-signature-submitted"
             >
               ${t("logistics.signature.submitted")}
             </p>`
           : nothing}
 
-        <div class="logistics-request__actions">
+        <div class="logistics-request__actions logistics-signature__actions">
           <button
             type="button"
             class="btn primary"
