@@ -260,10 +260,19 @@ describe("AdminBot inference routes", () => {
     });
     expect(bobsResponse?.status).toBe(200);
 
-    const status = await fetch(`${baseUrl}/inference/requests/${id}`, {
-      headers: { Authorization: `Bearer ${ada}` },
-    });
-    expect(((await status.json()) as { state: string }).state).toBe("completed");
+    // What ran from the stored body is the *classification* step of Ada's task -- the workflow that
+    // would have drafted the note ended when the classification was shed. The step is complete; the
+    // task is not, and the status has to say exactly that rather than "Done".
+    const status = (await (
+      await fetch(`${baseUrl}/inference/requests/${id}`, {
+        headers: { Authorization: `Bearer ${ada}` },
+      })
+    ).json()) as { state: string; message: string; task_completed?: boolean; can_wait: boolean };
+    expect(status.state).toBe("completed");
+    expect(status.task_completed).toBe(false);
+    expect(status.can_wait).toBe(false);
+    expect(status.message).toMatch(/"classify" step finished, but the task it was part of did not/u);
+    expect(status.message).not.toMatch(/^Done/u);
     const result = await fetch(`${baseUrl}/inference/requests/${id}/result`, {
       headers: { Authorization: `Bearer ${ada}` },
     });
@@ -334,6 +343,22 @@ describe("AdminBot inference routes", () => {
       return adasResponse !== undefined;
     });
     expect(adasResponse?.status).toBe(200);
+  });
+
+  it("lets a browser preflight the wait header from an allowed origin", async () => {
+    const { baseUrl } = await startService(1);
+    const preflight = await fetch(`${baseUrl}/privacy/tasks`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://127.0.0.1:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-inference-wait",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    const allowed = (preflight.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+    expect(allowed).toContain("x-inference-wait");
+    expect(allowed).toContain("idempotency-key");
   });
 
   it("keeps /inference/status privileged", async () => {

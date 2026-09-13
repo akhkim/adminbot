@@ -699,6 +699,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
           ? store.inferenceDatabase()
           : sharedInferenceGate().database,
       config: resolveInferenceGateConfig(process.env),
+      localApiKeyEnv: "VLLM_API_KEY",
       alert: (line) => console.warn(line),
       onEscalate: async (escalation) => {
         const proposed = service.proposeInferenceEscalation({
@@ -2516,6 +2517,10 @@ async function handleAuthenticatedRoute(
       });
       sendJson(res, 200, result);
     } catch (error) {
+      // A busy GPU is a status with a handle, not a failed gate.
+      if (sendInferenceDeferred(res, error)) {
+        return;
+      }
       sendJson(res, 502, {
         error: {
           message: `the guidebook gate failed: ${
@@ -2647,7 +2652,13 @@ async function handleAuthenticatedRoute(
       sendJson(res, 200, { mapping: {} });
       return;
     }
-    sendJson(res, 200, { mapping: await mapper({ unmapped, available }) });
+    try {
+      sendJson(res, 200, { mapping: await mapper({ unmapped, available }) });
+    } catch (error) {
+      if (!sendInferenceDeferred(res, error)) {
+        throw error;
+      }
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/opportunities") {
@@ -5135,7 +5146,7 @@ function applyCors(
   res.setHeader("Vary", "Origin");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Authorization, Content-Type, Idempotency-Key, Prefer",
+    "Authorization, Content-Type, Idempotency-Key, Prefer, X-Inference-Wait",
   );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   return true;

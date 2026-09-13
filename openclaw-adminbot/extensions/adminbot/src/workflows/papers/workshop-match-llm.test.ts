@@ -432,7 +432,7 @@ describe("keeping calls short enough to answer", () => {
         health: { intervalMs: 0 },
       }),
     });
-    const seen: Array<[number, number, number, string | undefined]> = [];
+    const seen: Array<[number, number, number, string | undefined, number | undefined]> = [];
     await createLocalWorkshopMatcher({
       fetchImpl,
       gate,
@@ -442,12 +442,15 @@ describe("keeping calls short enough to answer", () => {
     })({
       workshops: [profile("a"), profile("b")],
       papers: [paper("p-1")],
-      onProgress: (done, total, failed, detail) => seen.push([done, total, failed, detail]),
+      onProgress: (done, total, failed, detail, deferred) =>
+        seen.push([done, total, failed, detail, deferred]),
     });
     // Two jobs, two submitters, one slot: exactly one of them ran; the other was shed once and
-    // counted as a failed call -- not retried into the line three times.
+    // counted as *deferred* -- not failed (the model was never asked) and not retried into the
+    // line three times.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(seen.at(-1)?.[2]).toBe(1);
+    expect(seen.at(-1)?.[2]).toBe(0);
+    expect(seen.at(-1)?.[4]).toBe(1);
     expect(seen.at(-1)?.[3]).toMatch(/GPU busy/u);
     expect(gate.stats().rows.shed).toBe(1);
     gate.close();

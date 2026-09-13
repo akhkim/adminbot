@@ -15,6 +15,7 @@
 // filled -- so the worst a wrong answer costs is one unticked row in a preview.
 
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
+import { isInferenceDeferred } from "../../inference/gate.js";
 
 const PURPOSE = "paper import column mapping";
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1";
@@ -122,7 +123,13 @@ export function createImportColumnMapper(options: {
           },
         },
       });
-    } catch {
+    } catch (error) {
+      if (isInferenceDeferred(error)) {
+        // A queue decision, not a model that could not answer. `{}` here would read as "the model
+        // could not place any of these columns", and the importer would carry on as if it had
+        // asked. The caller decides what to tell the person importing.
+        throw error;
+      }
       return {};
     }
     return readMapping(text, unmapped, available);
