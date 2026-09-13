@@ -6476,6 +6476,10 @@ adminbot-deadlines-view {
   background: #fff;
   cursor: grab;
   touch-action: none;
+  /* The pointerdown handler only cancels selections that start inside the canvas. A drag that
+     starts on the title bar and sweeps down across the chart would still highlight mermaid's
+     HTML labels, since they are ordinary selectable text. */
+  user-select: none;
 }
 
 .flowmap__canvas.is-dragging {
