@@ -183,9 +183,12 @@ describe("AdminBot privacy broker at a busy gate", () => {
       output: "Local answer",
     });
     expect(audits).toHaveLength(1);
+    // A code and the fallback taken -- never the message, which a remote or local model can fill
+    // with the task text it was given.
     expect(audits[0]).toMatchObject({
       type: "inference.failed",
-      details: { caller: "privacy_broker.remote", error: "remote is down", fallback: "local" },
+      details: { caller: "privacy_broker.remote", error_code: "Error", fallback: "local" },
     });
+    expect(JSON.stringify(audits[0])).not.toContain("remote is down");
   });
 });

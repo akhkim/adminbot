@@ -48,6 +48,13 @@ export type LocalCallGateOptions = {
   wait?: boolean;
   timeoutMs?: number;
   submissionKey?: string;
+  /**
+   * The environment variable the bearer token came from. Stored on the row (the name, never the
+   * value) so a request re-dispatched after a shed-then-wait or a restart -- when the in-memory key
+   * is gone -- still authenticates. Without it, those re-dispatches went out with no Authorization
+   * header at all.
+   */
+  apiKeyEnv?: string;
 };
 
 async function postJson(
@@ -77,6 +84,7 @@ async function postJson(
         baseUrl: base,
         body: payload as Record<string, unknown>,
         purpose,
+        ...(gateOptions.apiKeyEnv ? { apiKeyEnv: gateOptions.apiKeyEnv } : {}),
       },
       ...(apiKey ? { apiKey } : {}),
       ...(gateOptions.wait !== undefined ? { wait: gateOptions.wait } : {}),

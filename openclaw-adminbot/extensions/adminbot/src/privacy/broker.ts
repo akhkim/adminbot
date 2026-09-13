@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import type {
   AdminBotAuditEvent,
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
 } from "../contracts/actions.js";
 import {
+  errorCode,
   isInferenceDeferred,
   runGated,
   sharedInferenceGate,
@@ -125,6 +127,8 @@ type TaskRun = {
    * sheds a later stage too, and the member gets that stage's handle.
    */
   admitted: boolean;
+  /** Groups this task's stage rows when the caller sent no submission key. */
+  taskId: string;
   signal?: AbortSignal;
 };
 
@@ -150,6 +154,7 @@ function createPrivacyBrokerHandler(
         gate: options.gate ?? sharedInferenceGate(),
         context,
         admitted: false,
+        taskId: `task:${randomUUID()}`,
         audit: (stage, error, fallback) => {
           options.recordAudit?.({
             type: "inference.failed",
@@ -157,8 +162,9 @@ function createPrivacyBrokerHandler(
             details: {
               caller: `privacy_broker.${stage}`,
               outcome: "error",
-              // The message, never the task: a model error can quote the prompt back.
-              error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+              // A code and a status, never the message: the remote's error body and the local
+              // model's can both quote the task back, and "message only" does not sanitize that.
+              ...auditableError(error),
               fallback,
             },
           });
@@ -328,9 +334,14 @@ async function callLocalModel(
   const baseUrl = getValidatedLoopbackLocalBaseUrl(config.localBaseUrl);
   const apiKey = env[config.localApiKeyEnv]?.trim() || "vllm-local";
   const wait = run.context.wait ?? (run.admitted ? true : undefined);
+  // Every stage of one task shares the task's identity, and `local`/`finalize` are the steps whose
+  // completion means the task is done. A shed `classify` that is later waited on completes only the
+  // classification; its stored status must say the task did not finish, not "Done".
+  const task = run.context.submissionKey ?? run.taskId;
   const response = await runGated(run.gate, {
     owner: run.context.owner ?? "anonymous",
     caller: `privacy_broker.${stage}`,
+    stage: { name: stage, task, final: stage !== "classify" },
     ...(wait !== undefined ? { wait } : {}),
     ...(run.context.submissionKey
       ? { submissionKey: `${run.context.submissionKey}:${stage}` }
@@ -555,6 +566,18 @@ function getValidatedLoopbackLocalBaseUrl(value: string): string {
     throw new Error("local privacy model must use a loopback URL");
   }
   return url.toString();
+}
+
+/**
+ * What a failure may contribute to an audit row: an error class or code and, for HTTP failures, the
+ * status. The message is excluded on purpose -- see the audit callback.
+ */
+function auditableError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) {
+    return { error_code: "unknown" };
+  }
+  const status = /\berror (\d{3})\b/u.exec(error.message)?.[1];
+  return { error_code: errorCode(error), ...(status ? { http_status: Number(status) } : {}) };
 }
 
 function formatHttpError(

@@ -125,6 +125,7 @@ export async function askGuidebook(
     baseUrl: config.embeddingBaseUrl,
     model: config.embeddingModel,
     apiKey: readApiKey(env, config.embeddingApiKeyEnv),
+    gate: { caller: "guidebook.embed", apiKeyEnv: config.embeddingApiKeyEnv },
     inputs: [question],
     ...(options.signal ? { signal: options.signal } : {}),
   });
@@ -159,6 +160,7 @@ export async function askGuidebook(
     baseUrl: config.answerBaseUrl,
     model: config.answerModel,
     apiKey: readApiKey(env, config.answerApiKeyEnv),
+    gate: { caller: "guidebook.answer", apiKeyEnv: config.answerApiKeyEnv },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {

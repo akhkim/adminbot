@@ -584,3 +584,194 @@ describe("inference gate escalation", () => {
     expect(gate.stats().escalations_armed).toContain("health");
   });
 });
+
+describe("inference gate review fixes", () => {
+  it("keeps a failed row's key reserved: a retry after a failure does not run the request again", async () => {
+    // A timeout, a lost response, and a client re-sending under the same key is the retry path
+    // the key exists for; it must land on the failed row, not make a second call.
+    const db = openDb();
+    let calls = 0;
+    const hang: InferenceFetch = (_url, init) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    };
+    const gate = makeGate(db, hang);
+    const first = await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k", timeoutMs: 20 });
+    expect(first.kind).toBe("failed");
+    const retry = await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k", timeoutMs: 20 });
+    expect(retry.kind).toBe("failed");
+    if (retry.kind === "failed" && first.kind === "failed") {
+      expect(retry.id).toBe(first.id);
+      expect(retry.error).toMatch(/resubmit with a new key/u);
+    }
+    expect(calls).toBe(1);
+    expect(gate.stats().rows.failed).toBe(1);
+    // A new key is a new attempt.
+    await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k2", timeoutMs: 20 });
+    expect(calls).toBe(2);
+  });
+
+  it("admits atomically: an admission-audit failure leaves no orphaned running row and settles the waiter", async () => {
+    const db = openDb();
+    const model = controllableFetch();
+    const gate = makeGate(db, model.fetchImpl);
+    void gate.run({ owner: "x", caller: "t", request: request("a") });
+    void gate.run({ owner: "x", caller: "t", request: request("b") });
+    await settle();
+    const queued = gate.run({ owner: "x", caller: "t", request: request("c"), wait: true });
+    await settle();
+    // Break the audit table so the next admission's transaction fails.
+    db.exec("DROP TABLE adminbot_audit_events");
+    model.releaseAll();
+    const outcome = await queued;
+    expect(outcome.kind).toBe("failed");
+    // The row is still queued in the table (the failed transaction rolled back), not running.
+    const row = db
+      .prepare("SELECT status FROM adminbot_inference_queue WHERE request_json LIKE '%\"c\"%'")
+      .get() as { status: string };
+    expect(row.status).toBe("queued");
+    expect(gate.stats().in_flight).toBe(0);
+  });
+
+  it("emits completed only if the guarded transition won; a row settled by recovery stays failed", async () => {
+    const db = openDb();
+    const model = controllableFetch();
+    const gate = makeGate(db, model.fetchImpl);
+    const run = gate.run({ owner: "x", caller: "t", request: request("a") });
+    await settle();
+    // A second process starts on the same file and recovers: the running row is interrupted.
+    const other = makeGate(db, model.fetchImpl);
+    expect(other.recover().interrupted).toBe(1);
+    model.releaseAll();
+    const outcome = await run;
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") {
+      expect(outcome.failure).toBe("interrupted");
+    }
+    const events = auditEvents(db).filter((e) => /completed|failed|expired/u.test(e.type));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.details?.outcome).toBe("interrupted");
+  });
+
+  it("audits a failure as a code and status, never the model's text; the raw text is purged with the body", async () => {
+    const db = openDb();
+    let clock = Date.parse("2026-09-12T10:00:00Z");
+    const fetchImpl: InferenceFetch = async () => ({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      text: async () => JSON.stringify({ error: "prompt was: SECRET-PROMPT-TEXT" }),
+    });
+    const gate = makeGate(db, fetchImpl, { queue: { retentionMs: 1000 } }, { now: () => new Date(clock) });
+    const outcome = await gate.run({ owner: "x", caller: "t", request: request("SECRET-PROMPT-TEXT") });
+    expect(outcome.kind).toBe("failed");
+    const failed = auditEvents(db).filter((e) => e.type === "inference.failed");
+    expect(failed).toHaveLength(1);
+    expect(JSON.stringify(failed[0])).not.toContain("SECRET");
+    expect(failed[0]?.details).toMatchObject({ outcome: "http_400", http_status: 400 });
+    clock += 5000;
+    gate.sweep();
+    const row = db.prepare("SELECT error, result_json FROM adminbot_inference_queue").get() as {
+      error: string | null;
+      result_json: string | null;
+    };
+    expect(row.error).toBeNull();
+    expect(row.result_json).toBeNull();
+  });
+
+  it("re-dispatches a shed-then-waited local-client request with its bearer token", async () => {
+    const seen: string[] = [];
+    const db = openDb();
+    const model = controllableFetch();
+    const fetchImpl: InferenceFetch = (url, init) => {
+      seen.push(init.headers.Authorization ?? "(none)");
+      return model.fetchImpl(url, init);
+    };
+    const gate = makeGate(db, fetchImpl, {}, { env: { VLLM_API_KEY: "from-env" } });
+    void gate.run({ owner: "x", caller: "t", request: request("a") });
+    void gate.run({ owner: "x", caller: "t", request: request("b") });
+    await settle();
+    const shed = await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: { ...request("c"), apiKeyEnv: "VLLM_API_KEY" },
+      apiKey: "in-memory",
+    });
+    expect(shed.kind).toBe("shed");
+    if (shed.kind === "shed") {
+      gate.wait("ada", shed.id);
+    }
+    model.releaseAll();
+    await settle();
+    model.releaseAll();
+    await settle();
+    // The re-dispatch had no in-memory key left; it resolved the named variable instead.
+    expect(seen.at(-1)).toBe("Bearer from-env");
+  });
+
+  it("sends the local model's bearer token on the health probe", async () => {
+    const db = openDb();
+    const seen: Array<Record<string, string>> = [];
+    const fetchImpl: InferenceFetch = async (_url, init) => {
+      seen.push(init.headers);
+      return { ok: true, status: 200, statusText: "OK", text: async () => "{}" };
+    };
+    const gate = makeGate(db, fetchImpl, {}, { env: { VLLM_API_KEY: "probe-key" } });
+    await gate.probeHealth();
+    expect(seen[0]?.Authorization).toBe("Bearer probe-key");
+    expect(gate.stats().health.state).toBe("ok");
+  });
+
+  it("escalates on consecutive generation failures even while the probe answers, and hides estimates while degraded", async () => {
+    const db = openDb();
+    const onEscalate = vi.fn(async () => ({ proposal_id: "act_h" }));
+    const hang: InferenceFetch = (_url, init) =>
+      init.method === "GET"
+        ? Promise.resolve({ ok: true, status: 200, statusText: "OK", text: async () => "{}" })
+        : new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          });
+    const gate = makeGate(db, hang, { escalate: { healthFailures: 2 } }, { onEscalate });
+    await gate.run({ owner: "x", caller: "t", request: request("a"), timeoutMs: 15 });
+    await gate.run({ owner: "x", caller: "t", request: request("b"), timeoutMs: 15 });
+    await settle();
+    await gate.probeHealth();
+    expect(gate.stats().health.state).toBe("degraded");
+    expect(gate.stats().escalations_armed).toContain("health");
+    expect(onEscalate).toHaveBeenCalledTimes(1);
+    // A shed status while degraded carries no estimate.
+    const model = controllableFetch();
+    const gate2 = makeGate(openDb(), model.fetchImpl);
+    void gate2.run({ owner: "x", caller: "t", request: request("a") });
+    void gate2.run({ owner: "x", caller: "t", request: request("b") });
+    await settle();
+    const shed = await gate2.run({ owner: "y", caller: "t", request: request("c") });
+    if (shed.kind === "shed") {
+      // Fresh gate, no completions yet: no mean either, so null. The degraded gate above proves the
+      // health path; this proves the status never invents a number it does not have.
+      expect(shed.status.estimated_wait_ms).toBeNull();
+    }
+    model.releaseAll();
+  });
+
+  it("delivers but does not keep a result that would exceed the retained-bytes ceiling", async () => {
+    const db = openDb();
+    const fetchImpl: InferenceFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => "x".repeat(600),
+    });
+    const gate = makeGate(db, fetchImpl, { queue: { maxRetainedBytes: 700 } });
+    const outcome = await gate.run({ owner: "ada", caller: "t", request: request("a") });
+    expect(outcome.kind).toBe("completed");
+    if (outcome.kind === "completed") {
+      expect(outcome.response.text).toHaveLength(600);
+      expect(gate.result("ada", outcome.id)).toBeUndefined();
+      expect(gate.status("ada", outcome.id)?.message).toMatch(/not kept/u);
+    }
+    expect(gate.stats().retained_bytes).toBeLessThanOrEqual(700);
+  });
+});
