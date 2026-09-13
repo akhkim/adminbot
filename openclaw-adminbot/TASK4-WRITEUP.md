@@ -83,9 +83,13 @@ the row. That covers clients that received the handle. For a client whose respon
 client-supplied submission key (`Idempotency-Key` header), scoped to the owner and bound to a hash of
 the payload, makes the retry find the same row: same key + same payload returns it (or attaches to
 its in-flight promise); same key + different payload is a `conflict`. This follows
-`adminbot_executions.idempotency_key` / `adminbot_proposals.payload_hash`. The broker suffixes the
-key per stage (`k:classify`, `k:local`) so each stage's row is findable. Callers that send no key get
-none of this protection; the HTTP layer should always send one.
+`adminbot_executions.idempotency_key` / `adminbot_proposals.payload_hash`. The key stays reserved for
+as long as the row keeps its body — across `completed`, `failed` and `expired` alike, until the
+retention sweep strips it — so a timeout followed by a lost response and a retry lands on the failed
+row (with "resubmit with a new key to try again") rather than running the request a second time. A
+genuinely new attempt is a new key. The broker suffixes the key per stage (`k:classify`, `k:local`)
+so each stage's row is findable. Callers that send no key get none of this protection; the HTTP
+layer should always send one.
 
 **Durability.** `adminbot_inference_queue` in the same SQLite file as everything else (schema added
 in `persistence/sqlite.ts` via `ensureInferenceQueueSchema`). On startup, `gate.start()`:
@@ -105,7 +109,17 @@ process's in-flight requests are still on the server when the survivor starts.
 **States and terminal events.** `queued`, `shed`, `running` are live; `completed`, `failed`,
 `expired` are terminal, written exactly once. `shed` is *not* terminal — it is "awaiting the
 member's choice" — so shed → wait → completed is one terminal event. The `expires_at` deadline is
-fixed at arrival and never moves, so a late wait click cannot revive an expired row.
+fixed at arrival and never moves, so a late wait click cannot revive an expired row. Both terminal
+transitions are guarded `UPDATE ... WHERE status = 'running'`; if recovery (or a second gate on the
+same file) settled the row first, the in-flight call emits no second terminal event and returns the
+row's actual state to its caller.
+
+**Steps of a task.** Multi-step callers label each row with a `stage` — `{ name, task, final }`.
+The broker's `classify` is non-final; `local` and `finalize` are final. A shed classification that a
+member later waits on completes only that step, and its status says so: `task_completed: false`,
+`can_wait: false`, message *"The "classify" step finished, but the task it was part of did not.
+Resubmit the task."* — never "Done". Continuation of the parent workflow is not built (see below);
+this is the status refusing to claim it was.
 
 **Ownership.** Every status / result / wait / preference / list operation takes the owner from the
 session (`principalActor`), never the URL or body. A wrong owner reads as not-found on every route,
@@ -113,11 +127,13 @@ so a request id cannot be used to learn that somebody else's request exists. Tes
 (`gate.test.ts`) and over HTTP (`api/server.inference.test.ts`).
 
 **Retention.** A periodic sweep (`queue.sweep_interval_ms`) expires live rows past `max_age_ms` and
-strips `request_json` / `result_json` from finished rows older than `queue.retention_ms`, keeping
-status metadata. `queue.max_payload_bytes` refuses a single body over the cap; `queue.max_retained_bytes`
-refuses new arrivals when the table already holds that much content. A refused request gets a
-`refused` outcome and an `inference.refused` audit event, not a handle — a handle would promise a
-row that was not written.
+strips `request_json`, `result_json` and `error` from finished rows older than `queue.retention_ms`,
+keeping status metadata. `queue.max_payload_bytes` refuses a single body over the cap;
+`queue.max_retained_bytes` refuses new arrivals when the table already holds that much content, and
+a *result* that would breach it is delivered to the caller but not stored (`result_retained: false`,
+status says "delivered but not kept"). A refused request gets a `refused` outcome and an
+`inference.refused` audit event, not a handle — a handle would promise a row that was not written.
+Not bounded: row count (metadata rows accumulate until an operator prunes them) and per-owner usage.
 
 *This is logical retention.* Bodies are CVs, receipts and private tasks, and they sit in the same
 file as the roster. SQLite does not zero freed pages, the WAL keeps recent content until checkpoint,
@@ -126,9 +142,11 @@ bound how long content is *reachable through the application*, not how long it e
 Physical erasure would need `PRAGMA secure_delete`, periodic `VACUUM`, and a backup retention
 policy, none of which this change adds.
 
-**Bearer tokens are never stored.** Callers pass the key beside the request; the gate rebuilds the
-`Authorization` header at dispatch. A queue row on disk carries `apiKeyEnv` (a variable *name*), so a
-row re-admitted after a restart authenticates with whatever the environment holds then.
+**Bearer tokens are never stored.** Every caller passes the key beside the request *and* the name
+of the environment variable it came from; the row carries the name only, and the gate resolves it at
+every dispatch. A shed-then-waited or restart-re-admitted row therefore authenticates with whatever
+the environment holds then. The health probe sends the same key: the checked-in vLLM unit runs with
+`--api-key`, and an unauthenticated `/v1/models` would read a healthy server as down.
 
 ### Observability events — `contracts/actions.ts` `AdminBotAuditEvent.type`
 
@@ -142,8 +160,8 @@ transaction as the row change it describes. Every event's `details` carries `req
 | `inference.queued` | The request joined the line. | `position`, `wait` |
 | `inference.shed` | No slot; body kept; member offered the wait. | `reason: no_slot \| queue_full`, `max_depth` |
 | `inference.waited` | A shed request was converted to queued at the member's request. | `position` |
-| `inference.completed` | **Terminal.** The model answered 2xx. | `duration_ms`, `http_status` |
-| `inference.failed` | **Terminal.** `outcome` says how: `timeout`, `error`, `cancelled`, `interrupted`, `http_<status>`. Also the broker's fallbacks (`caller: privacy_broker.<stage>`, `fallback: local`). | `error` (message only, never the prompt), for `interrupted`: `claimed_at`, `claimed_by`, `recovered_by` |
+| `inference.completed` | **Terminal.** The model answered 2xx. | `duration_ms`, `http_status`, `result_retained` (false when the retained-bytes ceiling refused to keep the reply) |
+| `inference.failed` | **Terminal.** `outcome` says how: `timeout`, `error`, `cancelled`, `interrupted`, `http_<status>`. Also the broker's fallbacks (`caller: privacy_broker.<stage>`, `fallback: local`). | `error_code` (a Node/undici code or the error class — never the message, which a model can fill with the prompt), `http_status`; for `interrupted`: `claimed_at`, `claimed_by`, `recovered_by`. The raw error text lives in the queue row's `error` column under body retention. |
 | `inference.expired` | **Terminal.** Never admitted; past `max_age_ms`. | `max_age_ms` |
 | `inference.refused` | Not stored at all (over a size cap). No row exists; this is the only record. | `reason`, `bytes` |
 | `inference.escalation_proposed` | A threshold tripped and an `inference.escalate` proposal was created (or could not be: `proposal_error`). `action_id` links the proposal. | `trigger`, `summary`, threshold details |
@@ -155,15 +173,17 @@ that the fallback to local was taken. The fallback still happens; it is no longe
 
 ### Health and escalation
 
-Health: `GET /v1/models` every `health.interval_ms` (default 15 s, 5 s timeout). `failure_threshold`
-consecutive failures → `down`. Because a listing endpoint can answer while generation hangs,
-observed inference timeouts and time-since-last-successful-completion are folded in: a timeout marks
-health `degraded` until a completion clears it; work in flight with no success inside
-`health.stale_after_ms` is `degraded`. While `down`, wait estimates are `null` rather than
-extrapolated from a healthy latency.
+Health: `GET /v1/models` every `health.interval_ms` (default 15 s, 5 s timeout), authenticated.
+`failure_threshold` consecutive failures → `down`. Because a listing endpoint can answer while
+generation hangs, observed inference timeouts and time-since-last-successful-completion are folded
+in: a timeout or transport error marks health `degraded` until a completion clears it; work in flight
+with no success inside `health.stale_after_ms` is `degraded`. Whenever health is not `ok`, wait
+estimates are `null` rather than extrapolated from a healthy latency.
 
 Three triggers, each with a default: oldest queued age > `escalate.queue_age_ms` (5 min); depth >
-`escalate.queue_depth` (16); consecutive health failures ≥ `escalate.health_failures` (3). Each
+`escalate.queue_depth` (16); consecutive *probe* failures ≥ `escalate.health_failures` (3) **or**
+consecutive *generation* failures ≥ the same threshold — so a vLLM that lists its models and never
+finishes a completion still escalates, even with an empty queue. Each
 fires once while its condition holds and re-arms when it clears. On firing the gate (1) writes an
 operator-visible console line immediately, (2) calls `service.proposeInferenceEscalation`, which
 creates an **`inference.escalate`** typed action (new in `adminBotActionTypes`; policy
@@ -229,16 +249,20 @@ table without one of exactly three terminal events. The load sim's burst scenari
 arrivals, 50 rows, 50 terminal events, 50 completed, mock `peak_arrivals = 2`.
 
 **…or silently duplicate them.** One row per request from arrival; wait finds the row; a submission
-key finds the row across a lost response; the mock's semantic fingerprint of every body it received
-shows zero duplicates in every scenario. Queue decisions cannot enter a retry loop or a fallback,
+key finds the row across a lost response, including one whose first attempt failed; the mock's
+semantic fingerprint of every body it received shows zero duplicates in every scenario. Queue decisions cannot enter a retry loop or a fallback,
 and each caller has a test for that. The retry scenario submits 20 logical requests 61 times and the
 server runs 20.
 
 **Users receive a clear status.** Every outcome carries a `message` the UI can show as-is
 (`GPU busy, 3 ahead of you. Wait or try later.`, `Waiting for the GPU, 2 ahead of you.`, `This request
 waited too long and was never run. Resubmit it.`, `The service restarted while this request was
-running, so its answer was lost. Resubmit it.`), plus `ahead`, `estimated_wait_ms` (null when
-unhealthy), `can_wait`, `expires_at`, and `escalation` when help has been asked for. Over HTTP a
+running, so its answer was lost. Resubmit it.`, `The "classify" step finished, but the task it was
+part of did not. Resubmit the task.`), plus `ahead`, `estimated_wait_ms` (null when unhealthy),
+`can_wait`, `expires_at`, `task_completed` for a step of a larger task, and `escalation` when help
+has been asked for. A matcher pass reports deferred batches apart from failed ones, and a pass the
+GPU never ran throws rather than returning "no matches"; a CV scan records a deferred member as
+`skipped` with the queue row named, not `failed`. Over HTTP a
 queue decision is a 202/409/410 with that object, not a 500.
 
 **Preserve the request and use an allowed fallback, queue, or human escalation.** Preserve: the row.
@@ -264,7 +288,16 @@ Scenarios: `burst`, `retry`, `refuse`, `hang`, `restart`, `matcher`, `broker`. E
 mock on `--port` (default 8100, control on 8101), generates a fresh fixture database, and prints one
 `PASS`/`FAIL` line per check. Exit code is 0 only if every check passed.
 
-Observed on 2026-09-12 (WSL2, Node 22.22.0), all scenarios passing:
+Every scenario reconciles three views: the logical requests the client submitted (by submission
+key — for the restart scenario, from a manifest the victim wrote to disk *before* its first
+submission, so a row that never reached disk shows up as lost rather than vanishing from the
+accounting); the database (one row per key, exactly one terminal event per finished row, row status
+agreeing with its event and result); and the client's own outcomes, which must name the right row,
+carry a kind consistent with the row's state, and — for completed outcomes — deliver bytes whose
+hash matches the retained result. Plus the mock's `peak_arrivals ≤ capacity` and zero duplicate
+fingerprints.
+
+Observed on 2026-09-13 (WSL2, Node 22.22.0), 59 checks across 7 scenarios, all passing:
 
 | Scenario | Numbers |
 | --- | --- |
@@ -287,8 +320,8 @@ corepack pnpm test extensions/adminbot/src/privacy extensions/adminbot/src/cv-sc
   extensions/adminbot/src/connectors extensions/adminbot/src/kernel extensions/adminbot/src/persistence
 ```
 
-Observed 2026-09-12: the touched directories (`api`, `connectors`, `privacy`, `inference`,
-`guidebook`, `cv-scan`, `reimbursements`, `papers`, `meetings`, `persistence`) — 69 files / 1009
+Observed 2026-09-13: the touched directories (`api`, `connectors`, `privacy`, `inference`,
+`guidebook`, `cv-scan`, `reimbursements`, `papers`, `meetings`, `persistence`) — 69 files / 1019
 tests, all green; `kernel` — 26 files / 477 tests, all green. `pnpm tsgo:extensions`: 4 errors, all
 pre-existing and unrelated (`api/server.lab-sharing.ts` ×2, `preferred_name` ×2), same as before
 this change. `check:import-cycles` 0 cycles; `check:dir-size` 0 failures. The known-red
@@ -311,10 +344,18 @@ this change. `check:import-cycles` 0 cycles; `check:dir-size` 0 failures. The kn
   proposal's recipients are every Slack-linked admin (lab manager first, if set); a lab with none
   gets an `inference.escalation_proposed` event with `proposal_error` and nothing else.
 - **Retention is logical.** See above. No `secure_delete`, no `VACUUM`, no backup policy.
-- **Anonymous reimbursement callers share an owner.** `POST /reimbursements/converse` is on
-  `ANONYMOUS_ROUTES` by design; their rows are owned by the anonymous principal collectively, so a
-  shed handle handed to one anonymous visitor could be waited on by another. A signed-in member's
-  rows are theirs alone. Fixing this needs a per-visitor identity the anonymous route does not have.
+- **Anonymous reimbursement callers get a handle they cannot use.** `POST /reimbursements/converse`
+  is on `ANONYMOUS_ROUTES` by design, so an anonymous visitor's turn can be shed and they receive a
+  `request_id` — but every `/inference/*` route requires a session, so *that visitor* cannot check
+  the status, read the result, or click "wait". (An earlier version of this note said another
+  anonymous visitor could; that was wrong — nobody anonymous can reach those routes at all.) The row
+  still exists and expires on schedule; the practical effect is that an anonymous visitor's shed
+  turn is "try later" with no wait option. The fix is an isolated, expiring visitor session bound to
+  those rows, which is out of scope here. A signed-in member's rows are theirs alone.
+- **Storage bounds are bytes only.** Request and result bytes are capped and counted; the number of
+  rows (status metadata survives the sweep) and per-owner usage are not bounded.
+- **Audit growth is unbounded by this change.** Every request adds two to four audit rows; the
+  existing `auditRetentionDays` pruning applies to them like any other event.
 - **One process.** The counter is process-local. The database claims are atomic, so two service
   processes on one file would not double-dispatch a row, but they would each admit `capacity`
   requests. AdminBot runs as one process; if that changes, capacity has to be shared.
@@ -326,6 +367,28 @@ this change. `check:import-cycles` 0 cycles; `check:dir-size` 0 failures. The kn
   and `null` when health is not `ok`.
 - **`AGENTS.md` still says the AdminBot suite is 38 files / 570 tests.** It is not (the handoff
   found 155 / 2,293 before this change). Not fixed here; worth one line to Andrew.
+
+## Review disposition
+
+An independent code review (2026-09-13) rated the first implementation against the thirteen design
+concerns and found six would-fail defects and seven should-fix ones. This is where each concern
+stands after the fixes — the honest version.
+
+| # | Concern | Status | What remains |
+| --- | --- | --- | --- |
+| 1 | Stable submission identity | **DELIVERED** for keyed callers | Keys stay reserved across `failed`/`expired` for the retention window; retry onto a failed row is that failure, never a second run. Keys are still optional — a caller that sends none has no lost-response protection. |
+| 2 | Atomic claims and recovery | **PARTIAL** | Claim + admitted event are one transaction; every waiter settles; guarded terminal transitions mean a recovered row cannot be completed twice. Recovery is still unfenced across processes: two gates on one file each admit `capacity`. |
+| 3 | Durable user-visible delivery | **PARTIAL** | Each step's result is retrievable and a completed step of an unfinished task says so (`task_completed: false`, "resubmit the task"). The parent workflow is not resumed. |
+| 4 | Shed state and atomic wait | **DELIVERED** | — |
+| 5 | Admission-time timeout and retry semantics | **DELIVERED** | Matcher's outer catch counts deferred apart from failed, keeps handles, and refuses to report "no matches" for a pass that never ran. Attempts of one job share no persistent identity across a process restart. |
+| 6 | Server-side ownership | **PARTIAL** | Every route checks the session owner. Anonymous reimbursement rows are unreachable by their submitter (see above); unattended callers use `system:*` owners by design. |
+| 7 | Retention policy | **PARTIAL** | Sweep strips bodies *and* raw error text; audit rows carry codes only. Running rows past `max_age` are left to the next recovery; deletion is logical. |
+| 8 | Storage bounds | **PARTIAL** | Request and result bytes are both counted against the ceiling; a result that would breach it is delivered but not kept. Row count and per-owner quotas are not bounded. |
+| 9 | Per-call permit scope | **DELIVERED** | — |
+| 10 | Matcher submission policy | **PARTIAL** | Bounded submitters; deferred batches reported distinctly with handles. No persisted continuation identity for a deferred batch beyond the queue row. |
+| 11 | Honest escalation visibility | **PARTIAL** | Alert at once, proposal through the gate, `escalated` only on delivery. Dedup is process-local; `awaiting_approval` reflects the armed trigger, not a live read of the proposal's status. |
+| 12 | Generation-aware health | **DELIVERED** | Consecutive generation failures trip the health trigger with an answering probe; estimates hidden whenever health ≠ ok; probe authenticated. |
+| 13 | Assertions establish the pass condition | **DELIVERED** for what is claimed | Reconciles submission manifest ↔ rows/events ↔ client outcome kind and content ↔ mock. Does not test delivery of a *parent workflow* across restart, because that is not built. |
 
 ## Design record
 
