@@ -1,4 +1,4 @@
-// Lab Sharing tab: five panels --
+// Lab Sharing tab (Collaborate): six panels --
 //   1. Director status strip (availability, timezone, progress, a way to flag a blocker)
 //   2. Seek help -- pick a project, describe what's needed, tag it, then post a general call or
 //      search members to invite
@@ -7,10 +7,18 @@
 //   5. Open projects -- a wrap-around deck of projects looking for hands
 //   6. Announcements -- a lab-wide comms feed with an in-page compose dialog
 //
-// FRONTEND-ONLY for now: all data below is mock/static. Search `MOCK` for every spot that needs
-// wiring to real state/controllers once the backend exists. State lives on AppViewState under the
-// `labSharing*` fields (see the bottom of this file for the shape expected there) -- add those
-// fields to AppViewState the same way onboarding/profile fields were added.
+// Five of the six read and write the service. Panels 1-5 go through controllers/lab-sharing.ts
+// onto `state.labSharing*`; the adapters just below turn the service's shapes into the shapes the
+// panels were drawn against, and each says so where it cannot be an honest translation.
+//
+// Announcements (6) is the exception and the only thing left that stores nothing: it holds what
+// the viewer composes for as long as the page lives and no longer. It seeds no posts -- a seeded
+// post has to be signed by somebody, and every name would be a person who never said it -- and it
+// wears a "Sample data" pill on its face.
+//
+// This header used to say the whole file was frontend-only and to search MOCK for the spots that
+// needed wiring. That stopped being true when the five panels landed, and a reader who believed it
+// had no way to tell which half of the page to trust.
 import { html, nothing } from "lit";
 import "./lab-sharing-how-to.ts";
 import { t } from "../../../i18n/index.ts";
@@ -81,7 +89,7 @@ type HelpRequest = {
   sentAt: string;
 };
 
-type Announcement = {
+export type Announcement = {
   id: string;
   authorName: string;
   body: string;
@@ -218,20 +226,23 @@ function invitesOf(state: AppViewState): CollabInvite[] {
 // Announcements have no service behind them -- see renderAnnouncementsPanel.
 // ---------------------------------------------------------------------------
 
-const MOCK_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: "a1",
-    authorName: "Zhijing Jin",
-    body: "Reminder: Monday group meeting moves to 3pm this week only.",
-    postedAt: "1 day ago",
-  },
-  {
-    id: "a2",
-    authorName: "Andrew Kim",
-    body: "GPU cluster maintenance window Friday night -- expect downtime 11pm-2am ET.",
-    postedAt: "3 days ago",
-  },
-];
+/**
+ * Who a locally composed announcement is from.
+ *
+ * The viewer, resolved from the session the rest of the tab already runs on. This panel used to
+ * open on two fabricated posts signed "Zhijing Jin" and "Andrew Kim", and a post the viewer wrote
+ * was signed "You" -- so the only names on the lab's announcement feed were two people who had not
+ * said either thing, and never the person actually typing. While the tab carried a preview banner
+ * and kept this panel folded inside a "sample data" disclosure that read as a mockup; #238 put the
+ * panel inline with the five real ones, which left the fabrications looking like the lab's record.
+ *
+ * `memberName` is what the topbar already greets the viewer with, so an impersonated session
+ * ("view as") signs as the member being viewed, which is the same person every other panel here is
+ * scoped to. Empty only before the profile read lands, which is why there is a fallback at all.
+ */
+function announcementAuthor(state: AppViewState): string {
+  return state.memberName?.trim() || t("labSharing.announcements.authorFallback");
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -257,7 +268,17 @@ function requestUpdate(state: AppViewState): void {
 let memberSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let addingTag = false;
 let tagDraft = "";
-let announcements: Announcement[] = [...MOCK_ANNOUNCEMENTS];
+/**
+ * The composed feed lives on view state, not at module scope.
+ *
+ * Everything else parked in this block is transient chrome -- an open flag, a half-typed tag --
+ * which a re-render may keep and a sign-out has no opinion about. An announcement is neither: it is
+ * content somebody wrote under their own name, so at module scope it outlived the session that
+ * wrote it and the next member to sign in on the same page load inherited it, signed by them.
+ */
+function announcementsOf(state: AppViewState): Announcement[] {
+  return state.labSharingAnnouncements ?? [];
+}
 let composingAnnouncement = false;
 let announcementDraft = "";
 let viewingInviteId: string | null = null;
@@ -1110,7 +1131,12 @@ function renderAnnouncementsPanel(state: AppViewState) {
       </div>
 
       <div class="lab-sharing-announcements__list">
-        ${announcements.map(
+        ${announcementsOf(state).length
+          ? nothing
+          : html`<p class="lab-sharing-announcements__empty">
+              ${t("labSharing.announcements.empty")}
+            </p>`}
+        ${announcementsOf(state).map(
           (announcement) => html`
             <article
               class="lab-sharing-announcement"
@@ -1178,9 +1204,14 @@ function renderAnnouncementsPanel(state: AppViewState) {
                     if (!body) {
                       return;
                     }
-                    announcements = [
-                      { id: `local-${Date.now()}`, authorName: "You", body, postedAt: "just now" },
-                      ...announcements,
+                    state.labSharingAnnouncements = [
+                      {
+                        id: `local-${Date.now()}`,
+                        authorName: announcementAuthor(state),
+                        body,
+                        postedAt: t("labSharing.announcements.justNow"),
+                      },
+                      ...announcementsOf(state),
                     ];
                     composingAnnouncement = false;
                     announcementDraft = "";

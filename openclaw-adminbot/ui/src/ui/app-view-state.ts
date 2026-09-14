@@ -443,6 +443,14 @@ export type AppViewState = {
   labSharingInvitedMemberIds?: string[];
   labSharingRespondedInviteIds?: string[];
   labSharingOpenProjectIndex?: number;
+  /**
+   * Announcements composed on the Collaborate tab this session. Nothing stores them.
+   *
+   * Here rather than at module scope in the view so signing out drops them with the rest of the
+   * member's state: they carry the author's own name, and the next member on the same page load
+   * must not inherit them.
+   */
+  labSharingAnnouncements?: import("./adminbot/views/lab-sharing.ts").Announcement[];
   /** What the service holds for this member: their posts, everybody else's, invites, the broadcast. */
   labSharing?: import("./adminbot/data/lab-sharing.ts").LabSharingSnapshot;
   labSharingLoading?: boolean;
