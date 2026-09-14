@@ -291,6 +291,36 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-paper-stages",
+      "description": "Verify paper evidence, advance each paper on it, and queue the ones at the PI's gate",
+      "cron": "45 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-paper-stages-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-papermentor-runs",
+      "description": "Collect PaperMentor's cached reviews and record them against their papers",
+      "cron": "35 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-papermentor-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-rec-letter-reminders",
+      "description": "Mail the head professor the letters due within three days",
+      "cron": "25 10 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-reminder-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-thesis-milestones",
       "description": "Guidebook nudge before a thesis deadline, grading reminder five days after",
       "cron": "50 9 * * 1-5",

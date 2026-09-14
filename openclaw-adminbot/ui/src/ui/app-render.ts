@@ -3395,6 +3395,7 @@ export function renderApp(state: AppViewState) {
               papers: state.adminBotData?.papers ?? [],
               profiles: state.adminBotProfileOverview ?? [],
               escalated: state.adminBotEscalatedNudges ?? [],
+              piReview: state.adminBotPiReview ?? [],
               onOpen: (tab) => state.setTab(tab),
               broadcast: state.adminBotBroadcast ?? null,
               broadcastDraft: state.adminBotBroadcastDraft,

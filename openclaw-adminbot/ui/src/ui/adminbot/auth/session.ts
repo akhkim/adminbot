@@ -3664,6 +3664,66 @@ export type EscalatedNudgeRow = {
   items: Array<{ id: string; title: string; body: string; createdAt: string; tab?: string }>;
 };
 
+/** One paper waiting on the head professor's yes to post. */
+export type PiReviewRow = {
+  paperId: string;
+  title: string;
+  authors: string[];
+  venue?: string;
+  /** When the package became ready, which is what the queue is ordered by. */
+  waitingSince?: string;
+  /** The lab's copy of the exact PDF that would go public. */
+  drivePdfUrl?: string;
+  /** Whether everything else the arXiv package needs is on file. */
+  packageComplete: boolean;
+};
+
+/**
+ * The papers at the PI gate (GET /papers/pi-review).
+ *
+ * A 404 reads as an empty queue for the same reason the escalation queue does: the page ships from
+ * Vercel on merge and the service follows on the host, so a service that predates the route should
+ * render as "nothing waiting", not as a broken panel.
+ */
+export async function fetchPiReviewQueue(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PiReviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/pi-review", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: Array<Record<string, unknown>> };
+  const rows = (body.papers ?? []).flatMap((row) => {
+    const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
+    const title = typeof row.title === "string" ? row.title : "";
+    if (!paperId || !title) {
+      return [];
+    }
+    const authors = Array.isArray(row.authors)
+      ? row.authors.filter((name): name is string => typeof name === "string")
+      : [];
+    return [
+      {
+        paperId,
+        title,
+        authors,
+        ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
+        ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
+        ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+        packageComplete: row.package_complete === true,
+      },
+    ];
+  });
+  return { ok: true, value: rows };
+}
+
 /**
  * The escalation queue (GET /nudges/escalated).
  *

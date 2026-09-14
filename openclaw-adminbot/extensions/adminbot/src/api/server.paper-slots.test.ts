@@ -12,6 +12,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAdminBotMessageExecutor } from "../connectors/message.js";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -272,6 +273,66 @@ describe("writing a slot over HTTP", () => {
       reason: "no poster session",
     });
     expect(result.status).toBe(403);
+  });
+});
+
+describe("the PaperMentor collector's route", () => {
+  const PROJECT = "65f2a1c9d4e3b7a801f6";
+
+  async function linkProject(baseUrl: string): Promise<void> {
+    const linked = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
+      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${PROJECT}`,
+    });
+    expect(linked.status).toBe(200);
+  }
+
+  it("records a review against the paper carrying that project, and reads it back", async () => {
+    const { baseUrl } = await startLab();
+    await linkProject(baseUrl);
+
+    const posted = await call(baseUrl, "POST", "/papers/papermentor/runs", {
+      project_id: PROJECT,
+      reviewed_at: "2026-09-12T11:04:09.221Z",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+    });
+
+    expect(posted.status).toBe(200);
+    expect(posted.body).toMatchObject({ paper_id: "p1", recorded: true, review_slot: "provided" });
+    const read = await call(baseUrl, "GET", "/papers/papermentor/runs?paper_id=p1");
+    expect(read.body.runs).toHaveLength(1);
+    expect(read.body.runs[0]).toMatchObject({ comments_total: 3, project_id: PROJECT });
+    // The evidence slot the card shows is the one the review ticked.
+    const slots = await call(baseUrl, "GET", "/papers/p1/slots");
+    expect(
+      slots.body.slots.find((slot: { slot: string }) => slot.slot === "papermentor_review").status,
+    ).toBe("provided");
+  });
+
+  it("refuses a body that is not a review, before anything is stored", async () => {
+    const { baseUrl } = await startLab();
+    await linkProject(baseUrl);
+
+    const posted = await call(baseUrl, "POST", "/papers/papermentor/runs", { comments_total: 3 });
+
+    expect(posted.status).toBe(400);
+    expect((await call(baseUrl, "GET", "/papers/papermentor/runs")).body.runs).toEqual([]);
+  });
+
+  // The collector authenticates as the service principal like every other machine-driven pass.
+  // Nothing about this route is open: an unauthenticated post reaches no service code at all.
+  it("is not an open route", async () => {
+    const { baseUrl } = await startLab();
+
+    const posted = await fetch(`${baseUrl}/papers/papermentor/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: PROJECT, reviewed_at: "2026-09-12T11:04:09.221Z" }),
+    });
+
+    expect(posted.status).toBe(401);
+    expect((await call(baseUrl, "GET", "/papers/papermentor/runs")).body.runs).toEqual([]);
   });
 });
 

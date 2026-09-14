@@ -47,6 +47,13 @@ export const adminBotActionTypes = [
   // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
   // an attachment), so it is a typed action rather than a call out of the service.
   "logistics.send_signed_document",
+  // The letter deadline reminder that lands on the head professor's desk three days out. Its own
+  // type rather than a `member_nudge.send` because the nudge pipeline deliberately refuses to
+  // message the head professor -- the lab does not chase its PI -- and this is the one mail that
+  // is addressed to that desk about its own queue rather than about somebody else's chore. The
+  // recipient is the head professor on file and the body is composed from the request log, so
+  // nothing about who it reaches or what it says comes from a caller.
+  "logistics.rec_letter_reminder",
   "member_nudge.send",
   // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
   // type rather than a member_nudge.send with two targets: the audit trail should be able to
@@ -2211,6 +2218,24 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // The three-day letter warning to the head professor's inbox. One row per pass that actually
+    // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
+    // she hear about this letter, and when" has an answer that does not depend on her mailbox.
+    | "rec_letter_reminders.swept"
+    // One PaperMentor review, as the collector reported it. Recorded on every pass rather than
+    // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
+    // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
+    | "papermentor.run_recorded"
+    // A paper moving itself along the trunk on the strength of its own evidence, and the slots
+    // that released the step. The audit row is the proof: "why is this paper at submission" has an
+    // answer that names four pieces of evidence rather than "somebody changed a dropdown".
+    // One pass of the evidence checker: how much was confirmed, how much contradicted, and how
+    // much it could not tell. Counts rather than rows -- which paper is which is on the rows.
+    | "paper_evidence.verified"
+    | "paper.stage_advanced"
+    // The head professor being signed up to decide, once per prepared package. Never an approval:
+    // nothing in AdminBot ticks `pi_approval`.
+    | "paper.pi_review_requested"
     // The nightly roster sync. Three rows rather than one because they answer three different
     // questions after the fact: what one person's Member Type became and what that cost them, what
     // Slack removals it filed, and whether the pass ran at all (a refused pass records a

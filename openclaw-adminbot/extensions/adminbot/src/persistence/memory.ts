@@ -67,6 +67,7 @@ import type {
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
+import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
 import type {
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
@@ -149,6 +150,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly paperSlots = new Map<string, AdminBotPaperSlotRecord>();
   // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
   private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
+  private readonly paperMentorRuns = new Map<string, AdminBotPaperMentorRun>();
   private readonly emailReviews = new Map<string, AdminBotEmailReviewItem>();
   private readonly resolvedEmailReviews = new Map<string, AdminBotResolvedEmailReviewItem>();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
@@ -762,6 +764,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .toSorted(
         (left, right) =>
           left.paper_id.localeCompare(right.paper_id) || left.slot.localeCompare(right.slot),
+      );
+  }
+
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void {
+    // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: the collector
+    // re-reads the same cached review until a newer one replaces it.
+    if (this.paperMentorRuns.has(record.id)) {
+      return;
+    }
+    this.paperMentorRuns.set(record.id, record);
+  }
+
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined {
+    return this.paperMentorRuns.get(id);
+  }
+
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
+    return [...this.paperMentorRuns.values()]
+      .filter((record) => paperId === undefined || record.paper_id === paperId)
+      .toSorted(
+        (left, right) =>
+          right.reviewed_at.localeCompare(left.reviewed_at) || left.id.localeCompare(right.id),
       );
   }
 

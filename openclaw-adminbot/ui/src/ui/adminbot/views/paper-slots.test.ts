@@ -2,6 +2,7 @@
 // answer on file cannot be used.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
 import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
@@ -413,7 +414,9 @@ describe("renderPaperSlots", () => {
   it("shows the accepted shape on a link slot, from the same rules the service enforces", async () => {
     const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    expect(overleaf?.textContent).toContain("overleaf.com");
+    // The lab's own instance, because that is the one PaperMentor can review -- the example is
+    // steering, not just shape.
+    expect(overleaf?.textContent).toContain(ADMINBOT_LAB_OVERLEAF_HOST);
     expect(overleaf?.textContent).toContain("/project/");
   });
 });
@@ -576,6 +579,6 @@ describe("field guidance", () => {
       '[data-testid="paper-slot-help-p1-overleaf_edit"]',
     )?.parentElement;
     expect(help?.textContent).toContain("address bar");
-    expect(help?.textContent).toContain("overleaf.com/project/");
+    expect(help?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/project/`);
   });
 });

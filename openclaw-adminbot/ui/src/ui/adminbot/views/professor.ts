@@ -28,6 +28,7 @@ import type {
   LabBroadcast,
   LogisticsRequest,
   MemberProfileOverviewRow,
+  PiReviewRow,
 } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 
@@ -45,6 +46,15 @@ export type ProfessorViewProps = {
    * these every weekday, said them once in Slack, and kept no list.
    */
   escalated: EscalatedNudgeRow[];
+  /**
+   * Papers whose arXiv package is prepared and which are waiting on her explicit yes.
+   *
+   * The gate PaperFlow calls GT -- "prepared is not permission". It is here because until now
+   * nothing asked her at all: the nudge sweep computed the item and the send path refused to
+   * message the head professor, so a prepared paper reached the gate with nobody told. This queue
+   * is the asking, and ticking the box is still hers to do on the paper.
+   */
+  piReview: PiReviewRow[];
   onOpen: (tab: Tab) => void;
   /** The live broadcast, or null when nothing is being said. */
   broadcast: LabBroadcast | null;
@@ -561,6 +571,40 @@ export function renderProfessorView(props: ProfessorViewProps) {
   );
 
   const sections = [
+    {
+      settled: props.piReview.length === 0,
+      body: section({
+        id: "pi-review",
+        title: t("professor.piReview.title"),
+        count: props.piReview.length,
+        // The paper card is where the yes is given, so that is where this points.
+        tab: "adminbotPapers",
+        linkLabel: t("professor.piReview.open"),
+        onOpen: props.onOpen,
+        body: rows(
+          props.piReview.map(
+            (row) => html`<li>
+              <strong>${row.title}</strong>
+              <span class="muted">${row.authors.join(", ")}</span>
+              ${row.drivePdfUrl
+                ? html`<a href=${row.drivePdfUrl} target="_blank" rel="noreferrer noopener"
+                    >${t("professor.piReview.pdf")}</a
+                  >`
+                : nothing}
+              ${row.packageComplete
+                ? nothing
+                : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
+              ${row.waitingSince
+                ? html`<span class="professor__when"
+                    >${t("professor.piReview.since", { date: row.waitingSince.slice(0, 10) })}</span
+                  >`
+                : nothing}
+            </li>`,
+          ),
+          t("professor.piReview.empty"),
+        ),
+      }),
+    },
     {
       settled: props.escalated.length === 0,
       body: section({

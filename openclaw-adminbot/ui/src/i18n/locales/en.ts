@@ -430,6 +430,14 @@ export const en: TranslationMap = {
     },
     loading: "Reading…",
     more: "+{count} more",
+    piReview: {
+      title: "Waiting on your yes to post",
+      empty: "No paper is waiting on your approval.",
+      open: "Open the papers",
+      since: "ready {date}",
+      pdf: "Read the PDF",
+      incomplete: "paper password still missing",
+    },
     escalated: {
       title: "Waiting on a word from you",
       items: "{count} things outstanding",

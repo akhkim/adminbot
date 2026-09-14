@@ -19,6 +19,7 @@ import {
 } from "../src/api/server.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
+  createGogDriveProbe,
   readDriveFileBase64,
   createGogAdminBotExecutor,
   writeGogDocMarkdown,
@@ -830,6 +831,10 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // Lets a LinkedIn draft use the Drive copy the paper already names instead of demanding the
     // author upload the same PDF again. Same gog binary, same account, as every other Google read.
     readDrivePdfBase64: (fileId: string) => readDriveFileBase64(fileId),
+    // Turns a pasted Drive link into something checkable: the evidence pass asks whether the file
+    // is really there rather than trusting that a URL of the right shape means a real artifact.
+    // A metadata read, so nothing is downloaded and no copy of a paper lands on disk.
+    driveProbe: createGogDriveProbe(),
     ...(deps.inviteToSlackConnect ? { inviteToSlackConnect: deps.inviteToSlackConnect } : {}),
     sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
     emailAutomationRunner: deps.runEmailAutomation,
