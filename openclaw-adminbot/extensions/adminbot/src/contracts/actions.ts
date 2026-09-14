@@ -451,12 +451,10 @@ export const adminBotMandatoryProfileFields = [
   "research_topics",
   "correspondence_email",
   "whatsapp",
-  "joined_month",
   "github_url",
   "linkedin_url",
   "linkedin_urn",
   "cv_url",
-  "intake_form_url",
   "openreview_id",
 ] as const;
 

@@ -12827,6 +12827,7 @@ type SocialUrlFieldSpec = {
     | "github_url"
     | "scholar_url";
   label: string;
+  freeText?: true;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
   hosts?: Set<string>;
   path?: RegExp;
@@ -12873,7 +12874,7 @@ function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
   { field: "avatar_url", label: "profile photo", allowInlineImage: true },
-  { field: "cv_url", label: "CV" },
+  { field: "cv_url", label: "CV", freeText: true },
   {
     // A member's own intake answers. Google Forms hands each respondent a link to their single
     // submitted response, so the host is fixed and the path is always a /forms/ route -- checking
@@ -12898,8 +12899,7 @@ const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   {
     field: "github_url",
     label: "GitHub",
-    hosts: new Set(["github.com", "www.github.com"]),
-    path: /^\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/?$/u,
+    freeText: true,
   },
   {
     field: "twitter_url",
@@ -12929,6 +12929,12 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
   const trimmed = value.trim();
   // Empty clears the link.
   if (!trimmed) {
+    return undefined;
+  }
+  if (spec.freeText) {
+    if (trimmed.length > 2000) return `${spec.label} cannot exceed 2000 characters`;
+    if (/^(?:javascript|data|vbscript):/iu.test(trimmed))
+      return `${spec.label} contains an unsafe URL scheme`;
     return undefined;
   }
   if (trimmed.startsWith("data:")) {

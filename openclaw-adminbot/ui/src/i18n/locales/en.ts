@@ -2135,7 +2135,7 @@ export const en: TranslationMap = {
       graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
       otherSocials: "Other social media",
-      cvUrl: "CV (PDF link)",
+      cvUrl: "CV",
       intakeFormUrl: "Application form response link",
       oneOnOneFolderUrl: "Link to 1:1 Folder",
       linkedin: "LinkedIn",
@@ -2194,11 +2194,11 @@ export const en: TranslationMap = {
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
       correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
-      github: "Your profile page, not a repository: github.com/username",
+      github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
-      intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      intakeFormUrl: "Optional — paste the response link if you still have it.",
       oneOnOneFolderUrl:
         "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",

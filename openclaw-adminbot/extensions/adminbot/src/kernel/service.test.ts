@@ -2689,13 +2689,10 @@ describe("AdminBotService", () => {
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
 
     for (const bad of [
-      { github_url: "https://gitlab.com/octocat" }, // wrong platform for the field
-      { github_url: "https://github.com/" }, // no username
       { twitter_url: "https://github.com/octocat" }, // GitHub link in the Twitter field
       { linkedin_url: "https://linkedin.com/company/openai" }, // company page, not a personal profile
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
       { scholar_url: "http://scholar.google.com/citations?user=abc123" }, // not https
-      { cv_url: "not a url" },
       // Only the member's own Forms response link belongs here; a stray link filed under it would
       // read on the profile as "these are their intake answers" when it is nothing of the sort.
       { intake_form_url: "https://example.com/my-answers" },
@@ -4505,11 +4502,9 @@ describe("AdminBotService", () => {
           "research_topics",
           "correspondence_email",
           "whatsapp",
-          "joined_month",
           "github_url",
           "linkedin_url",
           "cv_url",
-          "intake_form_url",
           "openreview_id",
         ]),
       );
@@ -4732,7 +4727,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 11 required fields");
+      expect(message).toContain("missing 9 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 

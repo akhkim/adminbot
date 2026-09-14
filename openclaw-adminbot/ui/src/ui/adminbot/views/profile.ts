@@ -1560,15 +1560,20 @@ function renderLinks(member: LabMember) {
   if (!cv && !socials.length && !site && !openReviewId) {
     return nothing;
   }
-  const link = (label: string, href: string, strong = false) => html`
-    <a
-      class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
-      href=${href}
-      target=${EXTERNAL_LINK_TARGET}
-      rel=${buildExternalLinkRel()}
-      >${label}</a
-    >
-  `;
+  const link = (label: string, href: string, strong = false) => {
+    if (!/^https?:\/\//iu.test(href)) {
+      return html`<span class="profile__link">${label}: ${href}</span>`;
+    }
+    return html`
+      <a
+        class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
+        href=${href}
+        target=${EXTERNAL_LINK_TARGET}
+        rel=${buildExternalLinkRel()}
+        >${label}</a
+      >
+    `;
+  };
   return html`
     <span class="profile__links" data-testid="profile-links">
       ${cv ? link(t("profile.social.cv"), cv, true) : nothing}
