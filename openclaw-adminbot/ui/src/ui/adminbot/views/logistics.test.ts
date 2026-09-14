@@ -1192,7 +1192,10 @@ describe("request modes", () => {
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
     expect(rows.map((row) => row.textContent?.replace(/\s+/gu, " ").trim())).toEqual([
-      "Recommendation Letters Dec 1, 2026 Submitted",
+      // All three are stored as the same `submitted`/`in_progress`, and the letter row is the one
+      // that must not read "Submitted": the request has been sent, the letter has not. The other
+      // two kinds are the thing being asked for, so they still say it. See logistics-status.ts.
+      "Recommendation Letters Dec 1, 2026 To submit",
       // A signature request names no date, so it says so rather than inventing one.
       "Document Signature No deadline In progress",
       "Book Meeting Sep 1, 2026 Submitted",

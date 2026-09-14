@@ -239,6 +239,38 @@ describe("the queue as a spreadsheet", () => {
     expect(drawn.opened).toEqual(["logreq_1"]);
   });
 
+  // The status names what the recommender still has to do, not what the member already did. A
+  // letter request sitting at `submitted` is a letter nobody has sent yet, so offering "Submitted"
+  // as its current state is the one reading that is never true. See logistics-status.ts.
+  it("names a letter request's statuses from the recommender's side", () => {
+    const { container } = draw({
+      requests: [request({ kind: "recommendation_letters", status: "submitted" })],
+    });
+    const select = container.querySelector<HTMLSelectElement>(".logistics-queue__status");
+    expect(
+      [...(select?.options ?? [])].map((option) => [option.value, option.textContent?.trim()]),
+    ).toEqual([
+      ["submitted", "To submit"],
+      ["in_progress", "In progress"],
+      ["completed", "Submitted"],
+      ["declined", "Declined"],
+    ]);
+    expect(select?.value).toBe("submitted");
+  });
+
+  it("leaves the other two kinds saying what they always said", () => {
+    for (const kind of ["document_signature", "book_meeting"] as const) {
+      const { container } = draw({ requests: [request({ kind, status: "submitted" })] });
+      const select = container.querySelector<HTMLSelectElement>(".logistics-queue__status");
+      expect([...(select?.options ?? [])].map((option) => option.textContent?.trim())).toEqual([
+        "Submitted",
+        "In progress",
+        "Done",
+        "Declined",
+      ]);
+    }
+  });
+
   it("reports a failure to read the queue", () => {
     const { container } = draw({ requests: [], error: "Could not reach the AdminBot service." });
     expect(container.querySelector(".logistics-requests__error")?.textContent).toContain(

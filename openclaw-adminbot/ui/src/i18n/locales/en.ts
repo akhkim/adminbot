@@ -1736,6 +1736,17 @@ export const en: TranslationMap = {
         declined: "Declined",
         withdrawn: "Withdrawn",
       },
+      // Letter requests are named for the letter, not the request. "Submitted" on a signature
+      // request means the member filed it; on a letter request every reader takes it to mean the
+      // letter has gone to the school, which is the one thing it never means -- a letter nobody has
+      // written yet showed as "Submitted" and a letter already uploaded showed as "Done".
+      recLetterStatus: {
+        submitted: "To submit",
+        inProgress: "In progress",
+        completed: "Submitted",
+        declined: "Declined",
+        withdrawn: "Withdrawn",
+      },
       error: {
         signIn: "Sign in to send and read logistics requests.",
         unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",
@@ -1989,6 +2000,12 @@ export const en: TranslationMap = {
       bodyPlaceholder: "What do people need to know?",
       send: "Send announcement",
       cancel: "Cancel",
+      // Nothing is seeded, because a seeded post has to be signed by somebody and every name here
+      // would be a person who never said it.
+      empty: "No announcements yet.",
+      justNow: "just now",
+      // Only before the viewer's own profile read lands; their real name is what normally signs it.
+      authorFallback: "You",
     },
   },
   profile: {
