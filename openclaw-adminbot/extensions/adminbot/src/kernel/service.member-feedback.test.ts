@@ -115,3 +115,10 @@ it("accepts free-form GitHub and CV text with optional historical fields", () =>
     status: 400,
   });
 });
+
+it("persists an explicit missing-form answer and validates its type", () => {
+  const service = new AdminBotService();
+  service.upsertLabMember({ id: "form", name: "Form", privilege_level: "member" });
+  expect(service.updateOwnProfile("form", { intake_form_unavailable: true })).toMatchObject({ ok: true, payload: { intake_form_unavailable: true } });
+  expect(service.updateOwnProfile("form", { intake_form_unavailable: "yes" as unknown as boolean })).toMatchObject({ ok: false, status: 400 });
+});

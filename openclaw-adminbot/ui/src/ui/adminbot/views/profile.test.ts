@@ -1429,3 +1429,16 @@ it("renders free-form CV and GitHub safely and leaves historical fields optional
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
 });
+
+it("saves the missing-form checkbox and clears it when a link is supplied", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ intake_form_unavailable: true })), save);
+  const checkbox = container.querySelector<HTMLInputElement>('[name="intake_form_unavailable"]')!;
+  expect(checkbox.checked).toBe(true);
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
+});

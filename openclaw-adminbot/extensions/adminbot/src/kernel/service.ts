@@ -12237,6 +12237,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "avatar_url",
   "cv_url",
   "intake_form_url",
+  "intake_form_unavailable",
   // The member's own one-on-one folder. Self-editable because in practice either side creates it
   // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
   // looking at a blank row they cannot fill from the link already in their Drive.
@@ -12709,6 +12710,9 @@ function validateLabMember(
   // according to the record and silent according to the sweeps.
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
+  }
+  if (member.intake_form_unavailable !== undefined && typeof member.intake_form_unavailable !== "boolean") {
+    return "application form unavailable must be true or false";
   }
   const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {

@@ -2198,7 +2198,9 @@ export const en: TranslationMap = {
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
-      intakeFormUrl: "Optional — paste the response link if you still have it.",
+      intakeFormUrl: "Paste the response link if you have it, or mark that you cannot find it below.",
+      intakeFormSearch: "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
+      intakeFormUnavailable: "I cannot find my form response",
       oneOnOneFolderUrl:
         "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",

@@ -789,6 +789,7 @@ export const adminBotConfidentialMemberFields = [
   // Their application. It is the most one-reader document on the record -- written for the people
   // deciding, and nobody else's to reread afterwards.
   "intake_form_url",
+  "intake_form_unavailable",
   // Where a member's one-on-one notes live. Same reason: written for two people, and the roster
   // should not be the thing that tells the other 198 where to look.
   "one_on_one_folder_url",
@@ -1419,6 +1420,7 @@ export type AdminBotLabMemberInput = {
   // -- the lab cannot derive it from the shared form URL, which is why it is a field they fill in
   // rather than a link the profile can render for them.
   intake_form_url?: string;
+  intake_form_unavailable?: boolean;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *

@@ -588,6 +588,7 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       setField(fields, field.key, value);
     }
   }
+  fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
 
@@ -952,6 +953,17 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
+                    ${field.key === "intake_form_url" ? html`
+                      <label class="profile__form-row">
+                        <span>${t("profile.hints.intakeFormSearch")}</span>
+                        <span><input type="checkbox" name="intake_form_unavailable"
+                          .checked=${member.intake_form_unavailable === true}
+                          @change=${(event: Event) => {
+                            const input = event.currentTarget as HTMLInputElement;
+                            const link = input.form?.querySelector<HTMLInputElement>('[name="intake_form_url"]');
+                            if (input.checked && link) link.value = "";
+                          }} /> ${t("profile.hints.intakeFormUnavailable")}</span>
+                      </label>` : nothing}
                   `,
                 )}
               </div>

@@ -168,6 +168,7 @@ export type LabMember = {
   openreview_id?: string | null;
   cv_url?: string | null;
   intake_form_url?: string | null;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string | null;
   twitter_url?: string | null;
   github_url?: string | null;
@@ -204,6 +205,7 @@ export type MemberProfileUpdate = {
   // set it could hide or invent their own career changes.
   cv_url?: string;
   intake_form_url?: string;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;
