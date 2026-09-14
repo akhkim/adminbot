@@ -1040,6 +1040,18 @@ const DEFAULT_ACTION_POLICIES = {
   // already requires a real admin session via POST /nudges/send (never reachable
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
+  // Approval-required, deliberately, even though the sweep composes the whole payload and would
+  // otherwise qualify for the same auto policy the nudges below carry. The approval *is* the
+  // feature here: it is the only surface in this system that knows which human is acting, because
+  // the channel checks the sender id the platform supplies rather than one a caller typed. An auto
+  // policy would resolve the item the moment it was proposed and there would be nobody deciding.
+  //
+  // T3 for the tier and `admin` for the role, matching the other actions whose effect is a write
+  // somebody else feels: attaching evidence closes a PaperFlow stage, and a closed stage stops the
+  // chase silently -- the failure is a message that never gets sent. Restricting it to one person
+  // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
+  // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
+  "email_review.resolve": approvalPolicy("T3", ["admin"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
   // reason: resolvePolicy only honors auto_allowed below T2. The recipients and the entire text are
@@ -1882,10 +1894,39 @@ export class AdminBotService {
       : serviceError(500, "published deadline proposal could not be reloaded");
   }
 
+  /**
+   * The deadline board's data: the freshest dataset this deployment can read, plus the corrections
+   * the lab has published on top of it.
+   *
+   * `deadlineDataset` re-reads and re-validates a file on every call so a re-collection lands
+   * without a rebuild, and it throws on anything it does not recognise -- a missing file, an empty
+   * `items`, a duplicate id, an impossible date (workflows/deadlines/runtime-dataset.ts). That
+   * throw must not reach the caller. `GET /deadlines/venues.json` is public and login-free and the
+   * board ships no bundled copy of its own, so an exception here does not degrade the page -- it
+   * empties it, for every visitor at once. Worse, the constructor reconciles every member's
+   * milestones through this same path, so a bad file stopped the service from starting at all.
+   *
+   * `generated` is the dataset compiled into this build, which is what the route already hands us
+   * and a valid read-only answer. Falling back to it costs freshness; failing costs the surface.
+   * Warned once rather than per call: the cause is a file, and this runs once per member at boot.
+   */
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
-    generated = this.options.deadlineDataset?.() ?? generated;
-    return mergePublishedDeadlines(generated, this.store.listPublishedDeadlines());
+    let dataset = generated;
+    try {
+      dataset = this.options.deadlineDataset?.() ?? generated;
+    } catch (error) {
+      if (!this.warnedDeadlineDatasetUnreadable) {
+        this.warnedDeadlineDatasetUnreadable = true;
+        console.warn(
+          `[adminbot] deadline dataset unreadable, serving the compiled snapshot: ${String(error)}`,
+        );
+      }
+    }
+    return mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines());
   }
+
+  /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
+  private warnedDeadlineDatasetUnreadable = false;
 
   private prepareDeadlinePublication(params: {
     proposalId: string;
@@ -2271,6 +2312,44 @@ export class AdminBotService {
           revision: publication.revision,
         },
       });
+      handled = true;
+    } else if (proposal.type === "email_review.resolve") {
+      // Handled here rather than by a connector, like `deadline.publish` above and for the same
+      // reason: the effect is a write to this store, not a message leaving the building, so there
+      // is no external call for a connector to make. Routing it outward would hit the fail-closed
+      // rule -- no connector handles this type, and nothing may be recorded as executed that
+      // nothing performed.
+      const settlement = emailReviewResolutionPayload(proposal);
+      if (!settlement) {
+        return this.executionFailure(proposal, 400, "email review resolution payload is invalid");
+      }
+      // The approver is the resolver. Read off the approval rather than the payload so the name in
+      // the audit row is the person the channel authenticated -- the whole reason this is an
+      // approval and not a tool call -- and fail closed when there is none, exactly as a deadline
+      // publication does.
+      const resolvedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!resolvedBy) {
+        return this.executionFailure(
+          proposal,
+          409,
+          "email review resolution has no named approver",
+        );
+      }
+      const applied = this.resolveEmailReview({
+        messageId: settlement.message_id,
+        resolution: settlement.resolution,
+        actor: resolvedBy,
+      });
+      // Its own guards decide this: the item may have been settled in the Control UI while the
+      // approval sat in Slack, or the stage it would close may have shut since. Either way the
+      // execution fails with that reason instead of reporting a resolution that did not happen.
+      if (!applied.ok) {
+        return this.executionFailure(proposal, applied.status, applied.error.message);
+      }
+      artifacts = {
+        resolution: applied.payload.resolution,
+        evidence_recorded: String(applied.payload.evidence_recorded),
+      };
       handled = true;
     } else {
       if (!this.options.executor) {
@@ -6832,6 +6911,81 @@ export class AdminBotService {
         })),
       },
     };
+  }
+
+  /**
+   * Put every undecided message to the reviewer, once each, as an approval they can answer.
+   *
+   * The queue this drains used to be reachable only through the Email Review tab, which is a page
+   * somebody has to remember to open -- so the handful of messages a pass cannot decide sat in it.
+   * Each one becomes an `email_review.resolve` proposal instead, which the approval channel puts in
+   * front of the reviewer and which carries the resolution to apply when they say yes.
+   *
+   * Two resolutions, and which one is proposed is decided here rather than guessed at by the
+   * reviewer. A message held because a PaperFlow bcc could not be matched is proposed as evidence
+   * when the queue offers exactly one open stage it could belong to -- that is the case where there
+   * is nothing to choose between. Everything else is proposed as a dismissal, which is what the
+   * queue's `unknown` items actually need: they are messages nobody can attach to anything, and
+   * clearing one writes no evidence and closes no stage.
+   *
+   * Said once per message per touch, through the ledger. The pass runs hourly and sees the same
+   * held message every time, so without that a single undecided email would mint a new approval
+   * every hour until it was answered.
+   */
+  proposeEmailReviewResolutions(
+    actor: string,
+    nowIso = new Date().toISOString(),
+  ): AdminBotServiceResponse<{ proposed: string[]; already_asked: string[] }> {
+    const queue = this.listEmailReviews();
+    if (!queue.ok) {
+      return queue;
+    }
+    const { reviews, paperflow_candidates: candidates } = queue.payload;
+    const ledger = this.nudgeLedgerIndex();
+    const proposed: string[] = [];
+    const alreadyAsked: string[] = [];
+    for (const review of reviews) {
+      // The updated stamp is part of the subject so a message the pass re-examines and holds again
+      // is asked about again, while one sitting untouched is asked exactly once.
+      const subject = `${review.message_id}|${review.updated_at}`;
+      if (this.hasNudgeBeenSaid(ledger, "email_review", subject)) {
+        alreadyAsked.push(review.message_id);
+        continue;
+      }
+      const only =
+        review.category === "paperflow_bcc" && candidates.length === 1 ? candidates[0] : undefined;
+      const resolution: AdminBotEmailReviewResolution = only
+        ? { kind: "paperflow_evidence", paper_id: only.paper_id, stage: only.stage }
+        : { kind: "dismissed" };
+      const summary = only
+        ? `Resolve held email from ${review.sender}: record as ${only.stage_label} evidence for ${only.title}`
+        : `Resolve held email from ${review.sender}: dismiss (${review.reason ?? review.category})`;
+      const created = this.createProposal({
+        type: "email_review.resolve",
+        summary,
+        // The message itself, not a person: what an approval on this decides is what happens to
+        // this row, and the reviewer is whoever the channel authenticated.
+        target: { service: "adminbot", channel: "adminbot", target: review.message_id },
+        proposed_payload: {
+          message_id: review.message_id,
+          thread_id: review.thread_id,
+          sender: review.sender,
+          ...(review.subject ? { subject: review.subject } : {}),
+          ...(review.reason ? { held_because: review.reason } : {}),
+          resolution,
+        },
+        undo_plan:
+          resolution.kind === "dismissed"
+            ? "Dismissing writes no evidence and closes no stage; the message stays in the mailbox and the audit row names who dismissed it."
+            : "Delete the recorded PaperFlow evidence for this stage, which reopens it for the chase.",
+      });
+      if (!created.ok) {
+        return serviceError(created.status, created.error.message);
+      }
+      this.markNudgeSaid("email_review", subject, actor, nowIso);
+      proposed.push(review.message_id);
+    }
+    return { ok: true, status: 200, payload: { proposed, already_asked: alreadyAsked } };
   }
 
   /** Settle one held email after an administrator has made the decision automation refused. */
@@ -12153,6 +12307,52 @@ export class AdminBotService {
 
 export function payloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+/**
+ * The resolution an `email_review.resolve` proposal is asking to have applied.
+ *
+ * Read defensively rather than cast: this payload is what an approval press turns into a write, so
+ * a shape that does not parse has to fail the execution loudly instead of resolving the wrong item
+ * or resolving it the wrong way.
+ */
+function emailReviewResolutionPayload(
+  proposal: AdminBotStoredProposal,
+): { message_id: string; resolution: AdminBotEmailReviewResolution } | undefined {
+  if (proposal.type !== "email_review.resolve") {
+    return undefined;
+  }
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const row = payload as Record<string, unknown>;
+  const messageId = typeof row.message_id === "string" ? row.message_id.trim() : "";
+  const resolution = row.resolution;
+  if (!messageId || !resolution || typeof resolution !== "object") {
+    return undefined;
+  }
+  const kind = (resolution as Record<string, unknown>).kind;
+  if (kind === "dismissed") {
+    return { message_id: messageId, resolution: { kind: "dismissed" } };
+  }
+  if (kind !== "paperflow_evidence") {
+    return undefined;
+  }
+  const paperId = (resolution as Record<string, unknown>).paper_id;
+  const stage = (resolution as Record<string, unknown>).stage;
+  if (
+    typeof paperId !== "string" ||
+    !paperId.trim() ||
+    typeof stage !== "string" ||
+    !stage.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    message_id: messageId,
+    resolution: { kind: "paperflow_evidence", paper_id: paperId, stage },
+  };
 }
 
 function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {

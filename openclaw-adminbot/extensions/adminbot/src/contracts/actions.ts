@@ -54,6 +54,26 @@ export const adminBotActionTypes = [
   // recipient is the head professor on file and the body is composed from the request log, so
   // nothing about who it reaches or what it says comes from a caller.
   "logistics.rec_letter_reminder",
+  /**
+   * One message the hourly inbox pass could not decide, put to the reviewer as an approval.
+   *
+   * The queue it drains is the four-or-so messages a pass leaves behind, and until now the only way
+   * to clear one was to open the Control UI and work the Email Review tab. That is a page somebody
+   * has to remember to visit, so items sat there.
+   *
+   * An approval rather than an agent tool, and the distinction is the whole point. A tool call
+   * carries no caller identity -- `ToolPluginExecutionContext` has the tool-call id and the runtime
+   * api and nothing about who is typing -- so "only Andrew may resolve these" would have to trust
+   * whoever claimed to be him. An approval is checked against the sender id the platform supplies:
+   * `isSlackApprovalAuthorizedSender` in the Slack plugin tests the real Slack user against the
+   * account's allowFrom list, which is why chat approval is switched off everywhere else and why
+   * this rides the approval path instead of going around it.
+   *
+   * The payload names one resolution AdminBot already believes is right -- a paper and the stage
+   * the message is evidence for, or a dismissal -- so approving is a press rather than an answer.
+   * What is being approved is the resolution, not merely the reading.
+   */
+  "email_review.resolve",
   "member_nudge.send",
   // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
   // type rather than a member_nudge.send with two targets: the audit trail should be able to

@@ -1451,6 +1451,17 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listEmailReviews());
     return;
   }
+  if (req.method === "POST" && url.pathname === "/automation/email/review/propose") {
+    // `requirePrivileged`, not `requireMemberPrivileged`, unlike the two routes around it: this is
+    // a machine-driven pass like the paper stage walk, and it decides nothing. It turns each held
+    // message into an approval for a person to answer, which is the opposite of acting on one --
+    // the resolve route below still refuses the service principal, because that is the write.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.proposeEmailReviewResolutions(principalActor(principal)));
+    return;
+  }
   const emailReview = /^\/automation\/email\/review\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "POST" && emailReview?.[1]) {
     // This decision can stop a PaperFlow reminder, so the shared service principal is denied even
