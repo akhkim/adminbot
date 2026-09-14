@@ -29,6 +29,62 @@ function unwrap<T>(
   return result.payload;
 }
 
+describe("deadline read model", () => {
+  const compiled = [
+    {
+      id: "compiled-venue",
+      deadline_id: "compiled-venue",
+      name: "Compiled Conference",
+      entry_type: "conference",
+      deadline_aoe: "2026-09-25 23:59:00",
+    },
+  ];
+
+  it("serves the compiled dataset when the runtime dataset cannot be read", () => {
+    // `/deadlines/venues.json` is public and the board ships no bundled copy of its own, so an
+    // exception from the file-backed dataset used to empty the board for every visitor at once.
+    const service = new AdminBotService(new AdminBotMemoryStore(), {
+      deadlineDataset: () => {
+        throw new Error("Deadline dataset is empty or invalid");
+      },
+    });
+    expect(service.deadlineReadModel(compiled)).toEqual(compiled);
+  });
+
+  it("still constructs when the runtime dataset is unreadable and the roster is not empty", () => {
+    // The constructor reconciles every member's milestones through this read model, so an
+    // unreadable dataset file did not only blank the board -- it threw out of `new AdminBotService`
+    // and the whole service failed to start.
+    const store = new AdminBotMemoryStore();
+    const seed = new AdminBotService(store);
+    expect(
+      seed.upsertLabMember({
+        receives_nudges: true,
+        id: "member-with-milestones",
+        name: "Member With Milestones",
+        privilege_level: "member",
+        member_type: "full",
+      }).ok,
+    ).toBe(true);
+    expect(
+      () =>
+        new AdminBotService(store, {
+          deadlineDataset: () => {
+            throw new Error("ENOENT: no such file or directory");
+          },
+        }),
+    ).not.toThrow();
+  });
+
+  it("prefers the runtime dataset when it reads cleanly", () => {
+    const fresh = [{ ...compiled[0], id: "fresh-venue", name: "Refreshed Conference" }];
+    const service = new AdminBotService(new AdminBotMemoryStore(), {
+      deadlineDataset: () => fresh,
+    });
+    expect(service.deadlineReadModel(compiled)).toEqual(fresh);
+  });
+});
+
 describe("deadline proposals", () => {
   it("makes repeated member submissions idempotent and flags likely duplicates", () => {
     const service = new AdminBotService(new AdminBotMemoryStore());

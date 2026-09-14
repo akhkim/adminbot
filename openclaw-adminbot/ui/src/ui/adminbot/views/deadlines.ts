@@ -912,10 +912,17 @@ class AdminbotDeadlinesView extends LitElement {
       }
       this.venues = venues;
       this.datasetFailure = "";
-    } catch {
+    } catch (error) {
+      // The reason is carried, not swallowed. The board has no bundled copy to fall back on, so
+      // this message is the whole surface when the read fails -- and "check the service connection"
+      // describes a service that is down, a service whose ADMINBOT_ALLOWED_ORIGINS does not name
+      // this site, and a route an older release does not serve yet, without telling them apart.
+      // The thrown error already distinguishes them: a refused origin answers "origin is not
+      // allowed", a missing route 404s, and an unreachable host fails with no response at all.
+      const reason = error instanceof Error ? error.message : String(error);
       this.datasetFailure = this.venues.length
-        ? "Could not refresh live deadlines. Showing the last successful server response; dates and approved corrections may be out of date."
-        : "Could not load live deadlines. Check the service connection and try again.";
+        ? `Could not refresh live deadlines (${reason}). Showing the last successful server response; dates and approved corrections may be out of date.`
+        : `Could not load live deadlines (${reason}). Check that the AdminBot service is running and that this site's address is in ADMINBOT_ALLOWED_ORIGINS, then try again.`;
     } finally {
       this.datasetLoading = false;
     }

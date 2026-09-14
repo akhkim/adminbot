@@ -388,6 +388,12 @@ const TEMPLATE = `<meta charset="utf-8" />
     text-transform: uppercase;
     white-space: nowrap;
   }
+  /* Not a classification but a caveat, so it reads as a warning rather than another category. */
+  .badge--unconfirmed {
+    border-color: color-mix(in srgb, var(--warn, #b8860b) 60%, var(--border));
+    color: color-mix(in srgb, var(--warn, #b8860b) 80%, var(--ink));
+    background: color-mix(in srgb, var(--warn, #b8860b) 12%, transparent);
+  }
   .badge {
     border-color: color-mix(in srgb, var(--ink) 55%, var(--border));
     background: color-mix(in srgb, var(--ink) 10%, transparent);
@@ -651,6 +657,16 @@ const TEMPLATE = `<meta charset="utf-8" />
   }
   .deadline-group__row:hover {
     background: var(--surface-2);
+  }
+  /* A standalone card is one row and nothing else, so the row carries the padding the summary
+     would have, and loses the hover: there is no disclosure here, and a background that lights up
+     under the pointer offers to open something that does not exist. */
+  .deadline-group--standalone .deadline-group__row {
+    padding: 14px 18px;
+    border-bottom: 0;
+  }
+  .deadline-group--standalone .deadline-group__row:hover {
+    background: transparent;
   }
   .deadline-group__row[data-entry-type="workshop"] {
     background: color-mix(in srgb, var(--surface) 88%, var(--muted));
@@ -1354,6 +1370,29 @@ const TEMPLATE = `<meta charset="utf-8" />
     const label = x.archival_status === "non_archival" ? "Non-archival" : "Archival";
     return \`<span class="archival" data-archival="\${esc(x.archival_status)}">\${label}</span>\`;
   }
+  // How firm the date is, in the same words the console's card uses (views/deadlines.ts,
+  // renderStale) so the two surfaces cannot tell a reader different things about one venue. This
+  // page showed none of it: it read only the stale flag, which the sweep currently sets on
+  // nothing, so every date looked equally settled -- including the third of the board where the
+  // CFP and OpenReview disagree, and the dozen whose portal cutoff was never verified.
+  function sourceConfidenceNote(x) {
+    const status = x.deadline_source_status || "";
+    if (x.stale || status === "source_unavailable") return "Source not observed in the latest sweep";
+    if (status.indexOf("disagree") >= 0 || status.indexOf("conflict") >= 0)
+      return "Sources disagree; showing the matched OpenReview deadline";
+    if (status === "portal_unverified" || status === "openreview_final_submission")
+      return "Announced date; the submission portal cutoff is unverified";
+    if (status === "administrator_approved") return "Date corrected after administrator review";
+    return "";
+  }
+  // The short form of the same fact, for the row itself. A note under the title is read after the
+  // date has already been believed; this sits with the labels, where the eye is.
+  function confidenceBadge(x) {
+    const note = sourceConfidenceNote(x);
+    if (!note || note.indexOf("corrected after") >= 0) return "";
+    const short = note.indexOf("Sources disagree") === 0 ? "dates disagree" : "unconfirmed";
+    return \`<span class="badge badge--unconfirmed" title="\${esc(note)}">\${short}</span>\`;
+  }
   function classificationLabels(x) {
     const labels = archivalLabel(x);
     return labels ? \`<span class="classification">\${labels}</span>\` : "";
@@ -1422,7 +1461,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
       <div class="cname">\${title}</div>
       <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
-      \${classificationLabels(x)}
+      \${classificationLabels(x)}\${confidenceBadge(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
       \${notif}\${staleNote(x)}\${historyNote(x)}\${sourceLinks(x)}
@@ -1445,7 +1484,7 @@ const TEMPLATE = `<meta charset="utf-8" />
         return \`<tr data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
       <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
-      <td class="meta"><span class="labels"><span class="badge">\${type}</span>\${classificationLabels(x)}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${x.stale ? \`<span class="cnote" title="Source not observed in the latest sweep.">stale</span>\` : ""}\${historyNote(x)}\${actions}</td></tr>\`;
+      <td class="meta"><span class="labels"><span class="badge">\${type}</span>\${classificationLabels(x)}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${sourceConfidenceNote(x) ? \`<span class="cnote" title="\${esc(sourceConfidenceNote(x))}">\${x.stale ? "stale" : "unconfirmed"}</span>\` : ""}\${historyNote(x)}\${actions}</td></tr>\`;
       })
       .join("");
   }
@@ -1585,7 +1624,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       // repeating it here would print the same date twice in one panel.
       x._notif && groupKind !== "conference" ? \`Accept/reject \${fmtAoe(x.notification_aoe)} AoE\` : "",
       deadlineChangeText(x),
-      x.stale ? "Source not observed in the latest sweep" : "",
+      sourceConfidenceNote(x),
     ]
       .filter(Boolean)
       .join(" · ");
@@ -1593,7 +1632,7 @@ const TEMPLATE = `<meta charset="utf-8" />
     return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
           <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
-          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
+          <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}\${confidenceBadge(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
   }
   // A stage the venue acts on rather than one the lab submits to. Shares the row grid so the
@@ -1666,6 +1705,14 @@ const TEMPLATE = `<meta charset="utf-8" />
               renderGroupSection("Archival status unknown", group.sections.unknown, group, now),
               renderGroupSection("Other dates", group.sections.other, group, now),
             ].join("");
+        // A group that hides nothing does not get a disclosure. One entry and no later dates means
+        // the triangle expands to a single row repeating the summary line above it, which is a
+        // click that buys the reader nothing and a card that reads as though something is behind
+        // it. The row goes straight in instead; the data-count attribute still says what the
+        // group holds, so anything reading the markup is unaffected.
+        if (group.entries.length === 1 && laterDates <= 0) {
+          return \`<section class="deadline-group deadline-group--standalone" data-group-kind="\${esc(group.kind)}" data-count="1" style="--u:\${firstUrgency.cvar}">\${renderGroupRow(first, group, now, group.kind)}</section>\`;
+        }
         return \`<section class="deadline-group" data-group-kind="\${esc(group.kind)}" data-count="\${group.entries.length}" style="--u:\${firstUrgency.cvar}"\${open ? " data-open" : ""}>
           <button class="deadline-group__summary" data-group="\${esc(group.id)}" aria-expanded="\${open}" aria-controls="\${panelId}">
             <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"\${period === "upcoming" ? \` data-t="\${first._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}\`}</span>
