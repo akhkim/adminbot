@@ -1,3 +1,4 @@
+import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type {
   AdminBotReimbursementCheck,
   AdminBotReimbursementFunder,
@@ -63,19 +64,25 @@ import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
-// Mirrors `adminBotExternalCollaboratorSubgroups` in extensions/adminbot/src/contracts/actions.ts. Copied
-// rather than imported for the same reason as AdminBotPrivilegeLevel above: the Control UI does not
-// reach across the extensions boundary. Only meaningful while privilege_level is
-// "external_collaborator" — the service rejects it on any other level and clears it on promotion.
+/**
+ * The service's subgroup vocabulary, derived rather than copied.
+ *
+ * This was a hand-written union of eight, "copied rather than imported" so the Control UI need not
+ * reach across the extensions boundary. It drifted: `own_pace_advisee` and
+ * `coauthor_discussant_designer` were added to the contract and never reached the copy, and because
+ * the members panel casts the form value straight to this type (views/admin.ts), assigning either
+ * of them produced a value the UI's own types said could not exist. The dropdown had already been
+ * switched to iterate the contract's list for exactly this reason -- the type is the half that was
+ * left behind.
+ *
+ * Derived from that same list, so the two can no longer disagree. The boundary argument no longer
+ * holds either: this file already imports the reimbursement-rules contract a few lines up.
+ *
+ * Only meaningful while privilege_level is "external_collaborator" — the service rejects it on any
+ * other level and clears it on promotion.
+ */
 export type AdminBotExternalCollaboratorSubgroup =
-  | "interviewee"
-  | "slightly_better_than_emails"
-  | "acquaintance"
-  | "alumni"
-  | "coauthor_minor"
-  | "coauthor_major"
-  | "disappearing_coauthor"
-  | "external_prof";
+  (typeof adminBotExternalCollaboratorSubgroups)[number];
 
 export type AdminBotAccessGrant = {
   service: string;

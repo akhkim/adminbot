@@ -62,14 +62,22 @@ Do not treat these as regressions; treat any _growth_ in them as one.
 [docs/refactor-baseline.md](docs/refactor-baseline.md) is the source of truth — it carries every
 lane, which specific tests fail, and why. This is the summary.
 
-- `tsgo:core`: 18 errors — 13 in `ui/src/ui/adminbot/next-step.ts`, 2 in
-  `ui/src/ui/adminbot/paperflow-map.ts`, 1 each in `packages/nudge-engine/src/messages.ts` and
-  `ui/src/ui/adminbot/views/{admin,my-work}.ts`. `ui/src/ui/views/chat.ts` is clean again now that
-  its orphaned renderers are wired back in.
+- `tsgo:core`: 25 errors (measured 2026-09-14; the 18 recorded before had drifted) — 12 in
+  `ui/src/ui/adminbot/next-step.ts`, 4 in `ui/src/ui/adminbot/views/profile.ts`, 2 in
+  `ui/src/ui/adminbot/paperflow-map.ts`, 1 each in `packages/nudge-engine/src/messages.ts`,
+  `ui/src/ui/adminbot/{paper-columns,paper-grid}.ts` and
+  `ui/src/ui/adminbot/views/{admin,dashboard,my-work,paper-cycle}.ts`. `ui/src/ui/views/chat.ts` is
+  clean again now that its orphaned renderers are wired back in. Two of the newer ones are worth a
+  look rather than a wave-through: `profile.ts:1005` takes `.length` off a `{}`-typed value and
+  `dashboard.ts:474` iterates one. `paper-cycle.ts:201` is a narrowing false positive -- the call is
+  guarded at line 188 -- and `paper-grid.ts:26`'s unused `columnIndexOf` reads as a half-removed
+  feature rather than a typing slip.
 - UI suite: 2 failures, both in `i18n/test/translate.test.ts`. Every shipped locale bundle sits at
   1,567 keys against English's 2,009 — a uniform 442-key gap that no locale was ever regenerated
   for. Closing it means running the `ui:i18n:sync` translation pipeline over 442 keys x 18 locales,
-  so it is a product call, not a test fix.
+  so it is a product call, not a test fix. The gap widened by 8 on 2026-09-14 — 5 for the
+  recommendation-letter status wording, 3 for the Collaborate announcements panel — which fall back
+  to English until that pipeline is run, like the other 442.
   `ui/src/ui/components/feedback-widget.test.ts` still flakes in roughly 1 run in 6; see
   docs/refactor-baseline.md. Everything else is deterministic: 2,899 passed / 31 skipped, identical
   across 12 consecutive runs.
@@ -96,8 +104,14 @@ lane, which specific tests fail, and why. This is the summary.
 `tsgo:core`, the test-type lanes) warn and let the run continue, and only a clean lane can fail
 the gate. Neither runner diffs against the numbers above — compare by hand.
 
-The AdminBot suite itself (`pnpm test extensions/adminbot`) is fully green — 38 files, 570 tests.
+The AdminBot suite itself (`pnpm test extensions/adminbot`) is fully green — 174 files, 2,561
+tests (measured 2026-09-14; it was recorded here as 38 files / 570 tests, which the suite outgrew).
 Keep it that way.
+
+Scope every run to a path, and do not read a full-directory sweep as a result. `node
+scripts/run-vitest.mjs run ui/src/ui/adminbot` reports ~569 failures across 32 files on this box
+while every one of those files passes on its own — `views/profile.test.ts` alone is 67/67. That is
+the OOM thrash the Commands section warns about, not a red lane.
 
 ## Verification
 

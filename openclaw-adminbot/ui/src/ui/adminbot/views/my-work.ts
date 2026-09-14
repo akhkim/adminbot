@@ -325,7 +325,7 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 // resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
 // where AdminBot lives when the console is served from anywhere but the service itself, so every
 // draft died as "AdminBot is not reachable" before the request left the browser.
-function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
+function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -1353,7 +1353,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
               })}
               ${renderWeeklyUpdates(paper, props)} ${renderCycle(state, paper, props)}
-              ${renderStepControls(state, paper, props)}
+              ${renderStepControls(paper, props)}
               <!-- Who moved this paper, and when. Below the controls and shut: it is history
                    about the checklist above it, and the card is long enough already. Opening it
                    is what fetches it. -->
