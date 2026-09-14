@@ -9164,6 +9164,17 @@ adminbot-deadlines-view {
   line-height: 1.4;
 }
 
+/* The one slot the authors cannot act on, once it is genuinely with the PI. Reads as a standing
+   fact about where the paper is rather than as a hint about a field, so it carries the accent rule
+   the rest of the muted notes do not. */
+.paper-slot__note--sent {
+  padding: var(--space-1) var(--space-2);
+  border-radius: 8px;
+  border-inline-start: 2px solid var(--border-strong);
+  background: var(--bg-accent);
+  color: var(--text);
+}
+
 .paper-slot__error {
   margin: var(--space-2) 0 0;
   padding: var(--space-1) var(--space-2);

@@ -581,4 +581,39 @@ describe("field guidance", () => {
     expect(help?.textContent).toContain("address bar");
     expect(help?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/project/`);
   });
+  // `pi_approval` is the only slot the authors cannot act on. Before this it looked like any other
+  // unfilled field -- "Missing", and the word "the PI" in grey -- so a paper that was genuinely on
+  // her desk read as one nobody had picked up. The condition is the same one that puts it on her
+  // queue (contracts/paper-slots.ts), so the two screens cannot disagree.
+  describe("the PI's gate, as the authors see it", () => {
+    const atGate = [
+      row({ slot: "drive_pdf_arxiv", status: "provided", url: "https://drive.example/p.pdf" }),
+      row({ slot: "authors_ack", status: "provided", provided_at: "2026-09-08T10:00:00.000Z" }),
+    ];
+
+    it("tells the authors the paper has gone to her, and when", async () => {
+      const { container } = await draw(atGate);
+      const note = container.querySelector('[data-testid="paper-slot-pi-sent-p1"]');
+      expect(note?.textContent).toContain("Sent to Zhijing to review");
+      expect(note?.textContent).toContain("2026-09-08");
+    });
+
+    it("says nothing about her until the package is actually prepared", async () => {
+      const { container } = await draw([
+        row({ slot: "drive_pdf_arxiv", status: "provided", url: "https://drive.example/p.pdf" }),
+      ]);
+      expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
+      // Still the plain owner line, so the row does not claim a hand-off that has not happened.
+      const parent = container.querySelector('[data-testid="paper-slot-row-p1-pi_approval"]');
+      expect(parent?.textContent).toContain("the PI");
+    });
+
+    it("stops saying it once she has ticked it", async () => {
+      const { container } = await draw([
+        ...atGate,
+        row({ slot: "pi_approval", status: "provided" }),
+      ]);
+      expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
+    });
+  });
 });

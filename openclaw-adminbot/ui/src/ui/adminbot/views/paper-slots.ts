@@ -27,6 +27,7 @@ import {
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
   adminBotPosterPhysicalStates,
+  isAdminBotPaperAtPiGate,
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotBranch,
@@ -126,6 +127,34 @@ const OWNER_LABELS: Record<string, string> = {
 
 function rowFor(slots: PaperSlotRow[], slot: AdminBotPaperSlot): PaperSlotRow | undefined {
   return slots.find((row) => row.slot === slot);
+}
+
+/**
+ * What the authors are told about the one slot they cannot act on.
+ *
+ * `pi_approval` is the PI's own, and to an author it used to look like any other unfilled field --
+ * a "Missing" pill and the word "the PI" in grey -- which reads as something nobody has picked up.
+ * Once the package is prepared the paper is genuinely with her: it is on her queue on My Desk and
+ * she has been told it is there (workflows/papers/pi-review.ts). So the row says so.
+ *
+ * Null until the paper is actually at the gate. Before that the claim would be false -- the package
+ * is still being assembled, nothing has reached her -- and the row keeps saying what it waits on.
+ */
+function piReviewNotice(
+  definition: AdminBotPaperSlotDefinition,
+  slot: AdminBotPaperSlot,
+  slots: PaperSlotRow[],
+): string | null {
+  if (slot !== "pi_approval" || definition.owner !== "pi") {
+    return null;
+  }
+  if (!isAdminBotPaperAtPiGate(slots)) {
+    return null;
+  }
+  const readyAt = rowFor(slots, "authors_ack")?.provided_at?.slice(0, 10);
+  return readyAt
+    ? `Sent to Zhijing to review on ${readyAt}. It is on her desk waiting for her yes to post.`
+    : "Sent to Zhijing to review. It is on her desk waiting for her yes to post.";
 }
 
 /**
@@ -371,6 +400,7 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   const definition = adminBotPaperSlotRegistry[slot];
   const row = rowFor(props.slots, slot);
   const blocked = waitingOn(definition, props.slots);
+  const sentToPi = piReviewNotice(definition, slot, props.slots);
   const children = childrenOf(slot);
   return html`
     <div
@@ -423,11 +453,18 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
            the ordering is expressed by which fields are offered at all, and the format now lives
            in the placeholder and the "?", which is where somebody filling a field looks. A field
            that is not reachable yet still dims; it just no longer narrates why. -->
-      ${definition.owner === "first_author"
-        ? nothing
-        : html`<p class="paper-slot__meta">
-            <span class="paper-slot__owner">${OWNER_LABELS[definition.owner]}</span>
-          </p>`}
+      ${sentToPi
+        ? html`<p
+            class="paper-slot__note paper-slot__note--sent"
+            data-testid=${`paper-slot-pi-sent-${props.paperId}`}
+          >
+            ${sentToPi}
+          </p>`
+        : definition.owner === "first_author"
+          ? nothing
+          : html`<p class="paper-slot__meta">
+              <span class="paper-slot__owner">${OWNER_LABELS[definition.owner]}</span>
+            </p>`}
       ${row?.status === "invalid" && row.invalid_reason
         ? html`<p class="paper-slot__error" role="alert">${row.invalid_reason}</p>`
         : nothing}
