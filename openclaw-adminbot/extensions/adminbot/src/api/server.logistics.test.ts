@@ -480,3 +480,26 @@ describe("the call-sheet row a meeting request proposes for itself", () => {
     expect(body.call_sheet).toBeUndefined();
   });
 });
+
+describe("POST /logistics/rec-letter-reminders/run", () => {
+  // The wire half of the letter-deadline sweep. What it sends is unit-tested against a clock in
+  // service.rec-letter-reminders.test.ts; what matters here is that a member session cannot make
+  // AdminBot mail the head professor, and that the cron's service token can.
+  it("refuses a member session and answers the service token", async () => {
+    const lab = await startLab();
+    const byMember = await fetch(`${lab.baseUrl}/logistics/rec-letter-reminders/run`, {
+      method: "POST",
+      headers: asMember(lab, "ada"),
+    });
+    expect(byMember.status).toBe(403);
+
+    const byCron = await fetch(`${lab.baseUrl}/logistics/rec-letter-reminders/run`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    // Nothing is due in this lab, so the pass is quiet rather than refusing for want of a head
+    // professor: the recipient is only resolved on a morning with something to say.
+    expect(byCron.status).toBe(200);
+    expect((await byCron.json()) as { reminded: unknown[] }).toEqual({ reminded: [] });
+  });
+});

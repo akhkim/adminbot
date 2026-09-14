@@ -2,6 +2,7 @@
 // which slots the nudge sweep would actually chase.
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST, ADMINBOT_OVERLEAF_URL_ENV } from "../../contracts/overleaf.js";
 import type { AdminBotSocialDraftRecord } from "../../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotRegistry,
@@ -198,6 +199,34 @@ describe("value validation", () => {
     expect(
       validateAdminBotPaperSlotUrl("overleaf_view", "https://www.overleaf.com/read/abcdef"),
     ).toEqual({ ok: true });
+  });
+
+  it("takes a project on the lab's own Overleaf, which is where PaperMentor can read it", () => {
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_edit",
+        `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_view",
+        `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("takes the instance a deployment configured, on top of the two it ships with", () => {
+    const env = { [ADMINBOT_OVERLEAF_URL_ENV]: "https://tex.example.edu" };
+    expect(
+      validateAdminBotPaperSlotUrl("overleaf_edit", "https://tex.example.edu/project/64ab", {
+        env,
+      }),
+    ).toEqual({ ok: true });
+    // Still not anywhere at all: the configured host is an addition, not a way to turn the check off.
+    expect(
+      validateAdminBotPaperSlotUrl("overleaf_edit", "https://evil.example/project/64ab", { env }),
+    ).toMatchObject({ ok: false });
   });
 
   it("takes a Drive folder as well as a doc for the project folder", () => {

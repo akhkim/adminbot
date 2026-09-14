@@ -19,6 +19,7 @@ import {
   adminBotPosterPhysicalStates,
   type AdminBotPaperSlot,
 } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../extensions/adminbot/src/contracts/overleaf.js";
 import { blockerLog, fileBlockerInput } from "./blockers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import {
@@ -511,27 +512,28 @@ const RECORD_COLUMNS: Column[] = [
     hosts: ["docs.google.com", "drive.google.com"],
     hint: "A doc or a Drive folder",
   },
+  // No `hosts` on either: both are slot-backed columns, so the cell check runs the registry's own
+  // validator (see `cellError`), which accepts the lab's Overleaf as well as overleaf.com. The
+  // literal list these used to carry was a second, staler copy of the same rule.
   {
     key: "overleaf_view_url",
     group: "links",
     slot: "overleaf_view",
-    format: "https://www.overleaf.com/read/…",
+    format: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/…`,
     save: "overleafViewUrl",
     label: "Overleaf (view)",
     short: "Overleaf view",
-    hosts: ["overleaf.com", "www.overleaf.com"],
     hint: "The read-only share link",
   },
   {
     key: "overleaf_edit_url",
     group: "links",
     slot: "overleaf_edit",
-    format: "https://www.overleaf.com/project/…",
+    format: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/…`,
     save: "overleafEditUrl",
     label: "Overleaf (edit)",
     short: "Overleaf edit",
-    hosts: ["overleaf.com", "www.overleaf.com"],
-    hint: "The project link coauthors can write in",
+    hint: "The project link coauthors can write in — on the lab's Overleaf, so PaperMentor can review it",
   },
   {
     key: "submission_url",

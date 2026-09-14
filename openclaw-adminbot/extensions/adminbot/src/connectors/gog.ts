@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
 import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
@@ -361,6 +362,9 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
     case "email.draft":
       return buildEmailArgs(proposal, true);
     case "email.send":
+    // Plain mail, no attachment: the letters themselves are not in it, only the fact that they are
+    // due and where to read the requests.
+    case "logistics.rec_letter_reminder":
       return buildEmailArgs(proposal, false);
     case "member_nudge.send": {
       // Shared with message-executor.ts (Slack-channel payloads); only the email-shaped half of
@@ -599,6 +603,68 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
     "all",
   );
   return args;
+}
+
+/**
+ * Ask Google whether one Drive file is there, and what it is called.
+ *
+ * A metadata read, not a download: proving a link points at something real should not put a copy
+ * of somebody's paper on disk. Outside the proposal gate for the same reason `readDriveFileBase64`
+ * is -- nothing is written and nothing leaves the lab -- and it shells to the same `gog`, so it
+ * inherits one auth story rather than inventing a second.
+ *
+ * Never throws. A probe is a question the lab asks about its own records, and the answer "I could
+ * not tell" has to be available to the caller as an answer rather than as a stack trace: a paper
+ * must not stall because a network blinked. The three outcomes are the contract's own, and only
+ * `missing` is Google actually saying the file is not there.
+ */
+export function createGogDriveProbe(
+  options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
+): AdminBotDriveProbe {
+  const command = options.command ?? "gog";
+  return async (fileId) => {
+    // The id comes from `adminBotDriveFileId`, which accepts a closed charset -- but this is the
+    // last point before it becomes an argument, so it is checked here too rather than trusted.
+    if (!/^[A-Za-z0-9_-]{10,200}$/u.test(fileId)) {
+      return { status: "unreadable", reason: "not a Drive file id" };
+    }
+    const args = [
+      ...(options.commandArgsPrefix ?? []),
+      ...rootArgs("drive.get", optionalAccount(options.env)),
+      "drive",
+      "get",
+      fileId,
+      "--fields",
+      "id,name,trashed",
+    ];
+    try {
+      const { stdout } = await execFile(command, args, {
+        maxBuffer: GOG_MAX_OUTPUT_BYTES,
+        timeout: GOG_TIMEOUT_MS,
+        ...(options.env ? { env: options.env } : {}),
+      });
+      const payload = JSON.parse(stdout) as Record<string, unknown>;
+      const file = (payload.result ?? payload) as Record<string, unknown>;
+      const name = typeof file.name === "string" ? file.name : undefined;
+      return {
+        status: "found",
+        ...(name ? { name } : {}),
+        ...(file.trashed === true ? { trashed: true } : {}),
+      };
+    } catch (error) {
+      const text = `${(error as { stderr?: string }).stderr ?? ""} ${(error as Error).message ?? ""}`;
+      // Google's own "there is no such file" and "you cannot see it" are different sentences, and
+      // only the first is evidence about the artifact. Anything else -- no account, a timeout, a
+      // gog that is not installed -- is the lab failing to ask, not the file failing to exist.
+      return /not ?found|404|does not exist/iu.test(text)
+        ? { status: "missing" }
+        : { status: "unreadable", reason: firstLine(text) };
+    }
+  };
+}
+
+function firstLine(text: string): string {
+  return text.trim().split("\n")[0]?.slice(0, 200) || "gog gave no reason";
 }
 
 /**

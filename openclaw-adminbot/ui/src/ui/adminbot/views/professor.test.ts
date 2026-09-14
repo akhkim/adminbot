@@ -6,6 +6,7 @@ import type {
   EscalatedNudgeRow,
   LogisticsRequest,
   MemberProfileOverviewRow,
+  PiReviewRow,
 } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
@@ -75,6 +76,7 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       papers: [],
       profiles: [],
       escalated: [],
+      piReview: [],
       onOpen: (tab) => opened.push(tab),
       broadcast: null,
       onBroadcastDraftChange: (value) => draft.push(value),
@@ -423,6 +425,8 @@ describe("renderProfessorView", () => {
     const order = queueOrder(container);
     expect(order).toEqual([
       "professor-adoption",
+      // The settled ones keep their relative order below it, the PI gate among them.
+      "professor-pi-review",
       "professor-escalated",
       "professor-letters",
       "professor-drafts",
@@ -629,6 +633,55 @@ describe("the broadcast box", () => {
     const { container } = draw({});
     expect(container.querySelector('[data-testid="professor-broadcast"]')?.textContent).toContain(
       "Nothing being broadcast",
+    );
+  });
+});
+
+// The gate PaperFlow calls GT. Nothing asked her about it until now: the nudge sweep computed the
+// item and the send path refused to message the head professor, so a prepared paper reached the
+// gate with nobody told.
+describe("the papers waiting on her yes", () => {
+  const row = (fields: Partial<PiReviewRow> = {}): PiReviewRow => ({
+    paperId: "p1",
+    title: "Causal Garden Planning",
+    authors: ["Ada Lovelace"],
+    waitingSince: "2026-09-10T09:00:00.000Z",
+    drivePdfUrl: "https://drive.google.com/file/d/1PdF9x",
+    packageComplete: true,
+    ...fields,
+  });
+
+  it("names the paper, its authors and the PDF she would be approving", () => {
+    const { container } = draw({ piReview: [row()] });
+    const section = container.querySelector('[data-testid="professor-pi-review"]');
+
+    expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("1");
+    expect(section?.textContent).toContain("Causal Garden Planning");
+    expect(section?.textContent).toContain("Ada Lovelace");
+    expect(section?.querySelector("a")?.getAttribute("href")).toBe(
+      "https://drive.google.com/file/d/1PdF9x",
+    );
+    expect(section?.textContent).toContain("2026-09-10");
+  });
+
+  it("says when the package is not finished, without holding the decision up for it", () => {
+    const { container } = draw({ piReview: [row({ packageComplete: false })] });
+    const section = container.querySelector('[data-testid="professor-pi-review"]');
+
+    expect(section?.textContent).toContain("paper password still missing");
+    // Still listed: the missing password is the authors' errand, not a reason to stall her yes.
+    expect(section?.textContent).toContain("Causal Garden Planning");
+  });
+
+  it("leads the page when something is waiting on her", () => {
+    const { container } = draw({ piReview: [row()] });
+    expect(queueOrder(container)[0]).toBe("professor-pi-review");
+  });
+
+  it("says so plainly when nothing is", () => {
+    const { container } = draw({ piReview: [] });
+    expect(container.querySelector('[data-testid="professor-pi-review"]')?.textContent).toContain(
+      "No paper is waiting on your approval.",
     );
   });
 });

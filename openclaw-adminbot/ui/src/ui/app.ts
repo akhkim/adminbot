@@ -36,6 +36,7 @@ import type {
 } from "./adminbot/auth/session.ts";
 import type {
   EscalatedNudgeRow,
+  PiReviewRow,
   MemberProfileOverviewRow,
   PaperCycle,
   PaperNudgeBatch,
@@ -679,6 +680,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
+  @state() adminBotPiReview: PiReviewRow[] = [];
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.

@@ -1,8 +1,12 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
-import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
+import {
+  createOpenReviewForumProbe,
+  createOpenReviewNotesReader,
+} from "../connectors/openreview-notes.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -31,14 +35,17 @@ import {
 } from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import {
   isAdminBotOpportunityCategory,
   type AdminBotOpportunityInput,
 } from "../contracts/opportunities.js";
+import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
+import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
 import {
   buildNewsletterDraft,
   draftMemberBlurb,
@@ -276,6 +283,17 @@ export type AdminBotMockServiceOptions = {
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
+  /**
+   * Asks Google whether a Drive file is really there, for the evidence-verification pass.
+   *
+   * Injected for the same reason `readDrivePdfBase64` is: reaching Google is the composition
+   * layer's job, and a deployment without an account simply leaves this unset -- the pass then
+   * confirms nothing rather than marking every link as broken.
+   */
+  driveProbe?: AdminBotDriveProbe;
+  /** Asks arXiv and OpenReview about a paper's public record; unset means those slots go unchecked. */
+  arxivProbe?: AdminBotArtifactProbe;
+  openReviewProbe?: AdminBotArtifactProbe;
   /**
    * The lab's member spreadsheet, as the Membership tab's grid reads and writes it.
    *
@@ -852,6 +870,13 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
     ...(options.polishSlackProfilePhoto
       ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
       : {}),
+    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    // Defaulted here rather than injected from the launcher, like `venuePapersReader` above:
+    // both are credential-free reads of a public API, so the composition root has nothing to add
+    // and a deployment gets them by existing. The Drive probe is the one that needs an account,
+    // which is why it is the one that stays injected.
+    arxivProbe: options.arxivProbe ?? createArxivProbe(),
+    openReviewProbe: options.openReviewProbe ?? createOpenReviewForumProbe(),
   };
 }
 
@@ -3646,6 +3671,72 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/papers/evidence/verify/run") {
+    // Asks Google whether the files a paper points at are really there. A read, and one whose
+    // targets come from the rows already on file rather than from the caller -- so it takes
+    // requirePrivileged like the other machine-driven passes. A deployment with no Google account
+    // wired answers zero checked rather than failing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.verifyPaperEvidence(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/stages/run") {
+    // Where each paper is, recomputed from its own evidence. Nothing here is caller-supplied: the
+    // walk reads the slot registry's `gates` and the rows already on file, so this takes
+    // requirePrivileged like the other machine-driven passes. It advances papers and files the
+    // PI's queue; it approves nothing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.syncPaperStages(principalActor(principal)));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/pi-review") {
+    // The head professor's own queue, which is also an admin read: the lab manager needs to see
+    // what is held up at the gate to know whether to ask her about it.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listPiReviewQueue());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/papermentor/runs") {
+    // The collector on the Overleaf host, reporting one review it found cached there. Privileged
+    // like the other machine-driven routes: nothing here is composed by a person, and which paper
+    // it lands on is resolved from the project id rather than named by the caller.
+    //
+    // The body is re-read through the contract's own parser rather than trusted. It arrives from a
+    // script the lab wrote, over a network, and the parser is what keeps this route a counting
+    // surface: a payload that tried to carry comment text would have that text dropped rather
+    // than stored.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const run = parsePaperMentorRunInput(await readJsonOrEmpty(req));
+    if (!run) {
+      sendJson(res, 400, {
+        error: { message: "a PaperMentor run needs at least project_id and reviewed_at" },
+      });
+      return;
+    }
+    sendServiceResult(res, service.recordPaperMentorRun(principalActor(principal), run));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/papermentor/runs") {
+    // What has been ingested, for an operator checking the collector is working and for the cron
+    // summary. Privileged: it is the whole lab's review history, which is governance rather than
+    // something every member is owed about everyone else's drafts.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.listPaperMentorRuns(url.searchParams.get("paper_id") ?? undefined),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/conference-rosters") {
     // Who is going to each conference the lab has a paper at. Privileged: a member's own papers'
     // rolls are on their own cards, and the whole lab's travel -- including who has not answered
@@ -4803,6 +4894,16 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.syncRecLetterChannel(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/logistics/rec-letter-reminders/run") {
+    // Which letters are close, who hears about it and what the mail says are all computed from the
+    // request log, the clock and the head-professor setting, so this takes requirePrivileged like
+    // the other cron-triggered sweeps: there is no caller-supplied recipient or text.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sweepRecLetterReminders(principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/nudges/escalate/run") {

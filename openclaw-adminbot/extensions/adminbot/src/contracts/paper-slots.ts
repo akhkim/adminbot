@@ -24,6 +24,12 @@
 // that table because consent is asked against a specific draft, and a second copy of "is there an
 // approved draft" in `paper_slots` would be free to disagree with it.
 
+import {
+  ADMINBOT_LAB_OVERLEAF_HOST,
+  adminBotOverleafHosts,
+  OVERLEAF_COM_HOST,
+} from "./overleaf.js";
+
 /** Every artifact a paper can be asked for. Ordered roughly as the work happens. */
 export const adminBotPaperSlots = [
   "project_folder",
@@ -208,6 +214,17 @@ export type AdminBotPaperSlotDefinition = {
  * `gates` names the step a slot releases, so "what is this for" is answerable from the row rather
  * than from the graph. `upstream` is the dependency edge the nudge walk actually follows.
  */
+/**
+ * The Overleaf hosts both project slots accept, as literals.
+ *
+ * Static rather than resolved from the environment, because this registry is shared code: the
+ * Control UI imports it to validate a cell as it is typed, and a browser has no environment to
+ * read. `validateAdminBotPaperSlotUrl` layers this deployment's configured instance on top when
+ * it runs service-side, so a deployment that moved its Overleaf is still checked correctly where
+ * the check is authoritative.
+ */
+const OVERLEAF_HOSTS = [OVERLEAF_COM_HOST, ADMINBOT_LAB_OVERLEAF_HOST] as const;
+
 export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperSlotDefinition> = {
   project_folder: {
     kind: "link",
@@ -241,10 +258,10 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     // you paste into a channel.
     required: false,
     deadlineBearing: false,
-    urlHosts: ["overleaf.com"],
+    urlHosts: OVERLEAF_HOSTS,
     urlPath: ["/read/"],
     hint: "Overleaf's read-only share link. Safe to paste in a channel — nobody can edit the paper with it.",
-    example: "https://overleaf.com/read/xzqvbnmklpqr",
+    example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
   },
   overleaf_edit: {
     groupLabel: "Overleaf",
@@ -257,10 +274,14 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["project_folder"],
     required: true,
     deadlineBearing: true,
-    urlHosts: ["overleaf.com"],
+    urlHosts: OVERLEAF_HOSTS,
     urlPath: ["/project/"],
-    hint: "The URL in your address bar while editing. Hands over write access, so keep it to coauthors.",
-    example: "https://overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    // Both hosts are accepted and only one of them can be reviewed, which is why the hint names
+    // the lab's own: every paper is now reviewed by PaperMentor before submission, and PaperMentor
+    // only sees projects on the instance it is built into. A draft on overleaf.com is not refused
+    // -- that is a real paper, and refusing the link would only cost the lab the record of it.
+    hint: `The URL in your address bar while editing. Hands over write access, so keep it to coauthors. Papers are reviewed by PaperMentor before submission, which can only read projects on ${ADMINBOT_LAB_OVERLEAF_HOST}.`,
+    example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
   },
   papermentor_review: {
     kind: "bool",
@@ -562,6 +583,56 @@ export function isConfidentialPaperSlot(slot: AdminBotPaperSlot): boolean {
 }
 
 /** One stored slot row. */
+/**
+ * What can confirm a slot without taking anybody's word for it.
+ *
+ * The distinction this whole field exists for: a slot is *validated* when its value is the right
+ * shape, and *verified* when something outside the lab's own claim says the artifact is really
+ * there. A Drive link that parses is validated; a Drive link whose file the lab account can open
+ * is verified. Most slots have no verifier and never will -- "the author list is final" is a
+ * judgement, not a fact a machine can check -- and that is the point of the map below being
+ * partial rather than a column with a default.
+ */
+export const adminBotPaperSlotVerifiers = [
+  "google_drive",
+  "papermentor",
+  "arxiv",
+  "openreview",
+  /** AdminBot posted it itself, so the execution record is the evidence. */
+  "adminbot_post",
+] as const;
+
+export type AdminBotPaperSlotVerifier = (typeof adminBotPaperSlotVerifiers)[number];
+
+/**
+ * Which slots something can confirm, and what confirms them.
+ *
+ * Deliberately small, and deliberately not aspirational: a slot appears here when the check is
+ * built, because the stage walk records which evidence was machine-confirmed and a verifier named
+ * but not wired would make that record a claim about a check nobody runs.
+ */
+export const adminBotPaperSlotVerifier: Partial<
+  Record<AdminBotPaperSlot, AdminBotPaperSlotVerifier>
+> = {
+  project_folder: "google_drive",
+  drive_pdf_arxiv: "google_drive",
+  slides: "google_drive",
+  poster: "google_drive",
+  // Both come from the reviewer itself: the review slot from the run being ingested at all, the
+  // fixes from a later run that no longer finds anything serious. See workflows/papers/papermentor.
+  papermentor_review: "papermentor",
+  fixes_merged: "papermentor",
+  // The public record. arXiv can be asked outright; OpenReview can only ever confirm, never deny,
+  // because a blind submission is invisible to an anonymous reader -- see the probe's own note.
+  arxiv: "arxiv",
+  submission: "openreview",
+  // The two the lab does not have to check at all, because AdminBot published them: the URL comes
+  // back from the connector that posted, so the slot is filled by the act rather than reported
+  // afterwards by the person who watched it happen.
+  x_post: "adminbot_post",
+  linkedin_post: "adminbot_post",
+};
+
 export type AdminBotPaperSlotRecord = {
   paper_id: string;
   slot: AdminBotPaperSlot;
@@ -575,6 +646,17 @@ export type AdminBotPaperSlotRecord = {
   provided_by_member_id?: string;
   provided_at?: string;
   validated_at?: string;
+  /**
+   * What confirmed the artifact is really there, and when.
+   *
+   * Absent is not a failure and does not hold a paper up: most slots have no verifier, a check
+   * can be unconfigured, and a deployment with no Google account wired reads every Drive link as
+   * unconfirmed rather than as wrong. What a failed check produces is `invalid` with a reason,
+   * the same as a value that never parsed -- so the thing that stops a paper is a contradiction,
+   * never a silence.
+   */
+  verified_by?: AdminBotPaperSlotVerifier;
+  verified_at?: string;
   invalid_reason?: string;
   waived_by_member_id?: string;
   waived_reason?: string;
@@ -599,11 +681,16 @@ export type AdminBotPaperSlotValueCheck = { ok: true } | { ok: false; reason: st
  *
  * Shape only, never a liveness fetch. Fetching would mean the service makes an outbound request
  * to an address a member typed, which is a request-forgery primitive in exchange for a check that
- * is stale the moment it passes.
+ * is stale the moment it passes. `contracts/overleaf.ts` is where a checked link becomes a project
+ * id, which is the only part of one that is safe to build a request from.
  */
+/** The two slots whose accepted hosts this deployment may have moved. */
+const OVERLEAF_SLOTS = new Set<AdminBotPaperSlot>(["overleaf_view", "overleaf_edit"]);
+
 export function validateAdminBotPaperSlotUrl(
   slot: AdminBotPaperSlot,
   raw: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
 ): AdminBotPaperSlotValueCheck {
   const definition = adminBotPaperSlotRegistry[slot];
   if (definition.kind !== "link") {
@@ -622,7 +709,12 @@ export function validateAdminBotPaperSlotUrl(
   if (url.protocol !== "https:") {
     return { ok: false, reason: "the link must start with https://" };
   }
-  const hosts = definition.urlHosts;
+  // The registry's literals, plus whatever instance this deployment configured. They are the same
+  // list on the lab's own boxes; they differ only where `ADMINBOT_OVERLEAF_URL` names a third
+  // host, and then the service -- which is the authoritative check -- is the side that knows.
+  const hosts = OVERLEAF_SLOTS.has(slot)
+    ? [...new Set([...(definition.urlHosts ?? []), ...adminBotOverleafHosts(options.env)])]
+    : definition.urlHosts;
   if (hosts?.length) {
     // Subdomains count: `www.overleaf.com` and `overleaf.com` are the same place, and rejecting
     // the copy-pasted one teaches people to edit URLs by hand until it is accepted.

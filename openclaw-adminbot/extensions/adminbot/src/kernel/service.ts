@@ -136,6 +136,7 @@ import {
   type DeadlinePublicationPayload,
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
+import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
@@ -180,6 +181,13 @@ import {
   type AdminBotOpportunityStatus,
   type AdminBotOpportunityView,
 } from "../contracts/opportunities.js";
+import { adminBotOverleafProjectRef } from "../contracts/overleaf.js";
+import {
+  adminBotArxivId,
+  adminBotOpenReviewForumId,
+  adminBotTitlesLookLikeTheSamePaper,
+  type AdminBotArtifactProbe,
+} from "../contracts/paper-artifact-links.js";
 import {
   adminBotAttendanceStates,
   adminBotAttendeeKey,
@@ -198,10 +206,14 @@ import {
 } from "../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotBranchPriority,
+  adminBotPaperSlotVerifier,
+  validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
+  type AdminBotPaperSlotVerifier,
   type AdminBotPaperSlotInput,
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
+  type AdminBotPaperSlotStatus,
 } from "../contracts/paper-slots.js";
 import {
   adminBotWeeklyUpdateBodyMax,
@@ -220,6 +232,11 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
+import {
+  adminBotPaperMentorRunId,
+  type AdminBotPaperMentorRun,
+  type AdminBotPaperMentorRunInput,
+} from "../contracts/papermentor.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
@@ -230,6 +247,13 @@ import {
   reconcileDeadlineMilestones,
 } from "../workflows/deadlines/member-milestones.js";
 import { mergePublishedDeadlines } from "../workflows/deadlines/published-dataset.js";
+import {
+  adminBotRecLetterReminderLeadDays,
+  recLetterReminderBody,
+  recLetterReminderLedgerSubject,
+  recLetterReminderSubject,
+  recLetterRemindersDue,
+} from "../workflows/logistics/rec-letter-reminders.js";
 import {
   byUrgency,
   prepareLogisticsRequest,
@@ -355,11 +379,23 @@ import {
   waivePaperSlot,
   type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
+import { derivePaperStage, isStageAhead } from "../workflows/papers/paper-stage.js";
 import {
   openPaperflowStage,
   paperflowRecipient,
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
+import {
+  reviewProvesFixesMerged,
+  type PaperMentorContext,
+} from "../workflows/papers/papermentor-nudges.js";
+import {
+  buildPiReviewNotice,
+  isAwaitingPiReview,
+  piReviewLedgerSubject,
+  piReviewQueue,
+  type PiReviewRow,
+} from "../workflows/papers/pi-review.js";
 import {
   type Publication,
   type PublicationExclusion,
@@ -496,6 +532,15 @@ export type AdminBotServiceStore = {
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+  /**
+   * One PaperMentor review, by its own id. First sighting wins, like the paperflow evidence
+   * below: the collector re-reads the same cached review until a newer one replaces it, so a
+   * second write of the same run is the same pass running again rather than news.
+   */
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void;
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined;
+  /** One paper's reviews newest first, or every paper's when the id is omitted. */
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   /** First sighting wins: a stage that already closed keeps the mail that closed it. */
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
@@ -869,6 +914,19 @@ export type AdminBotExecutorOutcome = {
   delivered?: boolean;
   /** Why it was not delivered, shown to whoever approved it. Only read when `delivered` is false. */
   reason?: string;
+  /**
+   * What the connector created, keyed by a name the action type defines.
+   *
+   * The point of it: when AdminBot performs the act, the lab does not have to go and check
+   * afterwards that it happened -- the connector knows the URL it just created, and that is better
+   * evidence than a member pasting one back in a week later. `social_media.post_publicly` reports
+   * `x_post` and `linkedin_post`, which are the slots they fill.
+   *
+   * Free-form on purpose. The executor seam is connector-agnostic and knows nothing about paper
+   * evidence; what each key means is the action type's business, and a connector that reports a
+   * key nobody reads costs nothing.
+   */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotActionExecutor = {
@@ -903,6 +961,23 @@ export type AdminBotServiceOptions = {
    * env var to unset rather than a code change.
    */
   paperflowPriorityMemberId?: string;
+  /**
+   * Asks Google whether a Drive file a paper points at is really there.
+   *
+   * Injected rather than imported, like every other outward-facing read: a deployment with no
+   * Google account wired simply has no probe, and the verification pass then confirms nothing
+   * rather than marking every link as broken. See contracts/drive-links.ts for why "I could not
+   * tell" is a first-class answer.
+   */
+  driveProbe?: AdminBotDriveProbe;
+  /**
+   * Asks arXiv and OpenReview about the public record of a paper.
+   *
+   * Injected like the Drive probe, and unset is the same answer: the slot goes unchecked. The
+   * OpenReview one is anonymous by design and can only ever confirm -- see the probe itself.
+   */
+  arxivProbe?: AdminBotArtifactProbe;
+  openReviewProbe?: AdminBotArtifactProbe;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -954,6 +1029,12 @@ const DEFAULT_ACTION_POLICIES = {
   // The recipient is never chosen by the caller either -- it is the address of the member who asked
   // for the signature, read off the roster. resolvePolicy only honors auto_allowed below T2.
   "logistics.send_signed_document": autoPolicy("T1"),
+  // Auto (T1) on the same reasoning: the recipient is the head professor on file rather than an
+  // address a caller chose, and the body is composed here from the open letter requests and the
+  // clock. What is left for an approval to protect against is nothing -- and a deadline reminder
+  // that waited in Pending actions would arrive after the letter was late, which is the one
+  // failure this exists to prevent. resolvePolicy only honors auto_allowed below T2.
+  "logistics.rec_letter_reminder": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
@@ -2146,6 +2227,7 @@ export class AdminBotService {
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
+    let artifacts: Record<string, string> = {};
     if (proposal.type === "deadline.publish") {
       const publication = deadlinePayload(proposal);
       if (!publication) {
@@ -2199,6 +2281,7 @@ export class AdminBotService {
         handled = outcome.handled;
         delivered = outcome.delivered !== false;
         notDeliveredReason = outcome.reason ?? "";
+        artifacts = outcome.artifacts ?? {};
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -2234,6 +2317,7 @@ export class AdminBotService {
       ...baseResult,
       status: "executed",
     };
+    this.recordExecutedArtifacts(proposal, artifacts, now);
     proposal.status = "executed";
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
@@ -4756,6 +4840,16 @@ export class AdminBotService {
         status: result.record.status,
       },
     });
+    // The evidence just changed, so where the paper is may have changed with it. Done here as well
+    // as hourly because the author who has just finished a step is the person most likely to look
+    // at the card next, and a stage that lags an hour behind the thing that released it reads as
+    // the system not having noticed.
+    this.syncOnePaperStage(
+      this.store.getPaper(params.paperId) ?? context.paper,
+      params.memberId,
+      new Date().toISOString(),
+      this.nudgeLedgerIndex(),
+    );
     return { ok: true, status: 200, payload: { slot: result.record } };
   }
 
@@ -4792,7 +4886,651 @@ export class AdminBotService {
       actor: params.memberId,
       details: { paper_id: params.paperId, slot: result.record.slot, reason: params.reason },
     });
+    // A waiver settles a slot, so it can release a step exactly as providing the artifact would --
+    // which is the point of waiving rather than leaving a genuinely inapplicable slot open.
+    this.syncOnePaperStage(
+      context.paper,
+      params.memberId,
+      new Date().toISOString(),
+      this.nudgeLedgerIndex(),
+    );
     return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /**
+   * Record that PaperMentor reviewed a paper, and tick the slot that says so.
+   *
+   * Every paper is reviewed before submission, and until now the lab's only evidence of that was
+   * the author ticking a box. This is the same fact arriving from the reviewer itself: the
+   * collector reads the review PaperMentor cached on the Overleaf host, summarizes it to counts --
+   * see contracts/papermentor.ts, which is the boundary that keeps the comments themselves on that
+   * machine -- and posts it here.
+   *
+   * The link between the two systems is the project id, taken from the Overleaf link the author
+   * already maintains as evidence. That is why Phase 0 had to come first: the id is read through
+   * `adminBotOverleafProjectRef`, so "which paper is this" is a comparison of two ids rather than
+   * anything that follows a URL.
+   *
+   * A review of a project no paper claims is a 404 rather than a stored orphan. Somebody reviewing
+   * a draft AdminBot has never heard of is a real and ordinary thing -- a paper nobody registered
+   * -- and a row filed against no paper would be invisible to every reader that matters.
+   */
+  recordPaperMentorRun(
+    actor: string,
+    input: AdminBotPaperMentorRunInput,
+    options: { nowIso?: string } = {},
+  ): AdminBotServiceResponse<{
+    paper_id: string;
+    run_id: string;
+    /** False when this exact run was already on file, which is the ordinary case on a re-run. */
+    recorded: boolean;
+    review_slot: AdminBotPaperSlotStatus;
+  }> {
+    const paper = this.paperForOverleafProject(input.project_id);
+    if (!paper) {
+      return serviceError(
+        404,
+        `no paper on file carries Overleaf project ${input.project_id}; add the project link to the paper first`,
+      );
+    }
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const runId = adminBotPaperMentorRunId(input.project_id, input.reviewed_at);
+    const existing = this.store.getPaperMentorRun(runId);
+    const run: AdminBotPaperMentorRun = {
+      ...input,
+      id: runId,
+      paper_id: paper.id,
+      ingested_at: existing?.ingested_at ?? nowIso,
+    };
+    if (!existing) {
+      this.store.savePaperMentorRun(run);
+    }
+    const reviewSlot = this.markPaperMentorReviewed(paper, run, nowIso);
+    // Audited on every pass, not only the first: a re-post is the collector saying the same review
+    // is still the newest one, and an audit row that appears once is no use for "when did we last
+    // hear from PaperMentor at all".
+    this.recordAudit({
+      type: "papermentor.run_recorded",
+      actor,
+      details: {
+        paper_id: paper.id,
+        project_id: input.project_id,
+        reviewed_at: input.reviewed_at,
+        comments: input.comments_total,
+        critical: input.by_severity.critical ?? 0,
+        failed_agents: input.failed_agents.length,
+        recorded: !existing,
+        review_slot: reviewSlot,
+      },
+    });
+    this.closeFixesMergedIfClean(paper, run, nowIso);
+    // The review just settled a slot that gates submission, so the paper may have moved. The
+    // ingest is the one evidence path with no member behind it, which is exactly why it has to say
+    // so here rather than wait for the hourly walk.
+    this.syncOnePaperStage(
+      this.store.getPaper(paper.id) ?? paper,
+      actor,
+      nowIso,
+      this.nudgeLedgerIndex(),
+    );
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        paper_id: paper.id,
+        run_id: runId,
+        recorded: !existing,
+        review_slot: reviewSlot,
+      },
+    };
+  }
+
+  /** One paper's PaperMentor reviews, newest first. */
+  listPaperMentorRuns(
+    paperId?: string,
+  ): AdminBotServiceResponse<{ runs: AdminBotPaperMentorRun[] }> {
+    if (paperId && !this.store.getPaper(paperId)) {
+      return serviceError(404, "paper not found");
+    }
+    return { ok: true, status: 200, payload: { runs: this.store.listPaperMentorRuns(paperId) } };
+  }
+
+  /**
+   * The paper a project id belongs to, by the link its author keeps.
+   *
+   * The evidence slot is asked first and the legacy `artifacts.overleaf_edit_url` second, because
+   * the slot is the field the paper card writes and the one an author is chased about; the
+   * artifact is where the same link lived before slots existed and is still filled by the grid.
+   */
+  private paperForOverleafProject(projectId: string): AdminBotPaperRecord | undefined {
+    const isThisProject = (url: string | undefined): boolean =>
+      Boolean(url && adminBotOverleafProjectRef(url)?.projectId === projectId);
+    const slot = this.store
+      .listPaperSlots()
+      .find((row) => row.slot === "overleaf_edit" && isThisProject(row.url));
+    if (slot) {
+      return this.store.getPaper(slot.paper_id);
+    }
+    return this.store
+      .listPapers()
+      .find((paper) => isThisProject(paper.artifacts?.overleaf_edit_url));
+  }
+
+  /**
+   * Move every paper to the step its evidence has released, and sign up the ones at the PI's gate.
+   *
+   * The stage half reads `gates` off the slot registry -- see workflows/papers/paper-stage.ts --
+   * which has been declared on every slot since the registry existed and, until now, read by
+   * nothing. A step is released when every required slot gating it is settled, and a paper is at
+   * the furthest released step. Forward only, and never past a step somebody set by hand: the
+   * point is to stop a paper sitting at `overleaf_writing` for a month after it was submitted,
+   * not to argue with an administrator about where it is.
+   *
+   * Deliberately not a gate. Nothing here blocks a paper from moving without its evidence -- the
+   * stepper stays open, as the slot registry's own note insists -- because a gate deadlocks the
+   * paper and the person who could clear it is the one being blocked. This only ever catches a
+   * paper up to what it has already proved.
+   *
+   * The PI half is the other thing a stage change should cause. `pi_approval` is the one slot
+   * owned by the head professor, and the nudge pipeline refuses to message her, so a prepared
+   * package used to reach the gate with nobody told. Now the paper signs itself up: it appears in
+   * her queue on My Desk, and she is told once. Nothing here ticks the box -- prepared is not
+   * permission, and that decision stays hers.
+   */
+  syncPaperStages(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): AdminBotServiceResponse<{
+    advanced: Array<{ paper_id: string; from: string; to: AdminBotPaperStep }>;
+    pi_review_requested: string[];
+    waiting_on_pi: number;
+  }> {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const ledger = this.nudgeLedgerIndex();
+    const advanced: Array<{ paper_id: string; from: string; to: AdminBotPaperStep }> = [];
+    const requested: string[] = [];
+    let waiting = 0;
+
+    for (const paper of this.store.listPapers()) {
+      const result = this.syncOnePaperStage(paper, actor, nowIso, ledger);
+      if (result.advanced) {
+        advanced.push(result.advanced);
+      }
+      if (result.piReviewRequested) {
+        requested.push(paper.id);
+      }
+      if (result.waitingOnPi) {
+        waiting += 1;
+      }
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      payload: { advanced, pi_review_requested: requested, waiting_on_pi: waiting },
+    };
+  }
+
+  /**
+   * One paper's stage and gate, shared by the hourly pass and by every slot write.
+   *
+   * Called from the write path as well so the card does not spend an hour claiming a paper is
+   * where it was before its author finished the step. Idempotent by construction -- an advance
+   * that has already happened is not ahead of anything, and the ledger holds the PI's notice to
+   * once per prepared package -- so running it twice in a second costs two reads.
+   */
+  private syncOnePaperStage(
+    paper: AdminBotPaperRecord,
+    actor: string,
+    nowIso: string,
+    ledger: Map<string, AdminBotNudgeLedgerRecord>,
+  ): {
+    advanced?: { paper_id: string; from: string; to: AdminBotPaperStep };
+    piReviewRequested?: boolean;
+    waitingOnPi?: boolean;
+  } {
+    const slots = this.store.listPaperSlots(paper.id);
+    const out: {
+      advanced?: { paper_id: string; from: string; to: AdminBotPaperStep };
+      piReviewRequested?: boolean;
+      waitingOnPi?: boolean;
+    } = {};
+
+    // A closed paper is not on its way anywhere: a rejection re-opens the record at the Overleaf
+    // draft, which is a decision somebody makes, not a stage to be advanced into.
+    if (!isPaperClosed(paper)) {
+      const stage = derivePaperStage(slots);
+      if (isStageAhead(paper.current_step, stage.step)) {
+        const from = paper.current_step;
+        this.store.savePaper({ ...paper, current_step: stage.step, updated_at: nowIso });
+        out.advanced = { paper_id: paper.id, from, to: stage.step };
+        this.recordAudit({
+          type: "paper.stage_advanced",
+          actor,
+          details: {
+            paper_id: paper.id,
+            from,
+            to: stage.step,
+            // The proof, named. This is the whole reason an advance is auditable rather than
+            // silent: the answer to "why does this say submission" is these four slots.
+            evidence: [...stage.evidence],
+            // And of those, the ones something outside the lab's own claim confirmed. Recorded
+            // separately rather than as a flag per slot because the question afterwards is "how
+            // much of this did we actually check": a paper advanced on four ticked boxes should
+            // not read the same as one advanced on three ticks and a file Google confirmed.
+            verified: stage.evidence.filter((slot) =>
+              slots.some((row) => row.slot === slot && row.verified_at),
+            ),
+            ...(stage.next ? { next: stage.next, blocking: [...stage.blocking] } : {}),
+          },
+        });
+      }
+    }
+
+    if (isPaperClosed(paper) || !isAwaitingPiReview(slots)) {
+      return out;
+    }
+    out.waitingOnPi = true;
+    const [row] = piReviewQueue([{ paper, slots }]);
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!row || !headProfessorId) {
+      return out;
+    }
+    const subject = piReviewLedgerSubject(row);
+    if (this.hasNudgeBeenSaid(ledger, "pi_review", subject)) {
+      return out;
+    }
+    const notice = buildPiReviewNotice(row);
+    // Written straight to her notifications rather than sent through `sendMemberNudge`, which
+    // refuses the head professor outright and is right to: this is not the lab chasing its PI
+    // through Slack, it is her own queue on her own page having something in it. The same shape
+    // the escalation list uses, for the same reason.
+    this.store.saveMemberNotification({
+      id: `notif_${randomUUID()}`,
+      member_id: headProfessorId,
+      kind: "paper_slot",
+      title: notice.title,
+      body: notice.body,
+      tab: "adminbotProfessor",
+      created_at: nowIso,
+    });
+    this.markNudgeSaid("pi_review", subject, headProfessorId, nowIso);
+    out.piReviewRequested = true;
+    this.recordAudit({
+      type: "paper.pi_review_requested",
+      actor,
+      details: {
+        paper_id: paper.id,
+        waiting_since: row.waiting_since ?? nowIso,
+        package_complete: row.package_complete,
+      },
+    });
+    return out;
+  }
+
+  /**
+   * File what a connector just created as evidence on the paper it belongs to.
+   *
+   * The last of the verifiers, and the only one that needs no checking at all: AdminBot published
+   * these posts, so the URLs come back from the act itself. A member pasting the link in a week
+   * later is the same fact arriving worse -- later, by hand, and only if they remember.
+   *
+   * Never overwrites. A slot somebody already filled keeps what it has, and a waived one stays
+   * waived: this fills a gap, it does not correct anybody.
+   */
+  private recordExecutedArtifacts(
+    proposal: AdminBotStoredProposal,
+    artifacts: Record<string, string>,
+    nowIso: string,
+  ): void {
+    if (proposal.type !== "social_media.post_publicly") {
+      return;
+    }
+    const payload = proposal.proposed_payload as { paper?: { id?: string } } | undefined;
+    const paperId = payload?.paper?.id;
+    if (!paperId || !this.store.getPaper(paperId)) {
+      return;
+    }
+    const stored = this.store.listPaperSlots(paperId);
+    for (const slot of ["x_post", "linkedin_post"] as const) {
+      const url = artifacts[slot]?.trim();
+      if (!url) {
+        continue;
+      }
+      const existing = stored.find((row) => row.slot === slot);
+      if (existing && existing.status !== "missing") {
+        continue;
+      }
+      // Checked before it is stored, like anything else that lands in a link slot: the connector
+      // built this URL from an id an API returned, and a malformed one should read as invalid
+      // rather than sit in the record looking like evidence.
+      const check = validateAdminBotPaperSlotUrl(slot, url);
+      this.store.savePaperSlot({
+        paper_id: paperId,
+        slot,
+        status: check.ok ? "provided" : "invalid",
+        url,
+        provided_at: nowIso,
+        ...(check.ok
+          ? { validated_at: nowIso, verified_by: "adminbot_post" as const, verified_at: nowIso }
+          : { invalid_reason: check.reason }),
+      });
+      this.recordAudit({
+        type: "paper_slot.updated",
+        actor: "adminbot",
+        details: { paper_id: paperId, slot, status: check.ok ? "provided" : "invalid" },
+      });
+    }
+    this.syncOnePaperStage(
+      this.store.getPaper(paperId) ?? ({ id: paperId } as AdminBotPaperRecord),
+      "adminbot",
+      nowIso,
+      this.nudgeLedgerIndex(),
+    );
+  }
+
+  /**
+   * Check the evidence that can be checked, and say so on the row.
+   *
+   * The distinction the whole pass exists for: a slot is *validated* when its value is the right
+   * shape -- which `validateAdminBotPaperSlotUrl` has always done, without ever fetching anything
+   * -- and *verified* when something outside the lab's own claim says the artifact is really
+   * there. Until now every piece of evidence on a paper was somebody's word, including the links:
+   * a Drive URL that parses proves a member typed a Drive URL.
+   *
+   * Three outcomes, and the middle one is the point:
+   *
+   *   - Found: the row is stamped `verified_by` / `verified_at`, and the stage audit can say which
+   *     of the evidence a machine confirmed rather than implying it confirmed all of it.
+   *   - Missing: Google says there is no such file. That is a contradiction of the evidence, so the
+   *     row goes `invalid` with a reason -- the same state a value that never parsed lands in, and
+   *     it re-opens the nudge with the reason attached rather than inventing a new mechanism.
+   *   - Unreadable: no account configured, a network that blinked, a file shared with a person and
+   *     not with the lab's account. Nothing is written. A paper must never stall because the lab
+   *     failed to ask, and the commonest cause of "cannot open" is a sharing setting rather than a
+   *     wrong link.
+   *
+   * A deployment with no probe wired verifies nothing and reports as much, which is the honest
+   * answer for a lab whose Google account this service has never been given.
+   */
+  async verifyPaperEvidence(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      verified: Array<{ paper_id: string; slot: AdminBotPaperSlot }>;
+      invalidated: Array<{ paper_id: string; slot: AdminBotPaperSlot }>;
+      unreadable: Array<{ paper_id: string; slot: AdminBotPaperSlot; reason: string }>;
+      /** Confirmed to exist, under a title that does not look like this paper's. */
+      mismatched: Array<{ paper_id: string; slot: AdminBotPaperSlot; found_title: string }>;
+      checked: number;
+    }>
+  > {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const verified: Array<{ paper_id: string; slot: AdminBotPaperSlot }> = [];
+    const invalidated: Array<{ paper_id: string; slot: AdminBotPaperSlot }> = [];
+    const unreadable: Array<{ paper_id: string; slot: AdminBotPaperSlot; reason: string }> = [];
+    const mismatched: Array<{ paper_id: string; slot: AdminBotPaperSlot; found_title: string }> =
+      [];
+    let checked = 0;
+
+    for (const paper of this.store.listPapers()) {
+      if (isPaperClosed(paper)) {
+        continue;
+      }
+      for (const row of this.store.listPaperSlots(paper.id)) {
+        if (row.status !== "provided" || row.verified_at || !row.url) {
+          continue;
+        }
+        const check = this.paperEvidenceCheck(row.slot, row.url);
+        if (!check) {
+          continue;
+        }
+        if (!check.id) {
+          // The link passed the slot's own host and path rules and still names nothing checkable:
+          // a URL shape this deployment has not seen, a share link with the id stripped, a venue
+          // that is not OpenReview. Not a contradiction -- the shape check accepted it -- so it is
+          // reported rather than invalidated.
+          unreadable.push({ paper_id: paper.id, slot: row.slot, reason: check.reason });
+          continue;
+        }
+        checked += 1;
+        const result = await check.probe(check.id);
+        if (result.status === "found") {
+          this.store.savePaperSlot({ ...row, verified_by: check.verifier, verified_at: nowIso });
+          verified.push({ paper_id: paper.id, slot: row.slot });
+          // A title the public record disagrees with is the mistake worth catching -- a link to
+          // somebody else's paper -- but it is not proof of one: papers get retitled between
+          // submission and posting, and a rename is not a reason to mark a real artifact invalid.
+          // Reported for a person to look at, and the row is left alone.
+          if (result.title && !adminBotTitlesLookLikeTheSamePaper(result.title, paper.title)) {
+            mismatched.push({ paper_id: paper.id, slot: row.slot, found_title: result.title });
+          }
+          continue;
+        }
+        if (result.status === "missing") {
+          this.store.savePaperSlot({
+            ...row,
+            status: "invalid",
+            invalid_reason: check.missingReason,
+            validated_at: undefined,
+          });
+          invalidated.push({ paper_id: paper.id, slot: row.slot });
+          continue;
+        }
+        unreadable.push({ paper_id: paper.id, slot: row.slot, reason: result.reason });
+      }
+    }
+
+    this.recordAudit({
+      type: "paper_evidence.verified",
+      actor,
+      details: {
+        checked,
+        verified: verified.length,
+        invalidated: invalidated.length,
+        unreadable: unreadable.length,
+        mismatched: mismatched.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { verified, invalidated, unreadable, mismatched, checked },
+    };
+  }
+
+  /**
+   * Which check a slot's link is due, if any, and what to say when it comes back empty-handed.
+   *
+   * One place rather than a branch per verifier in the walk above, because every check has the
+   * same shape -- pull an id out of the link, ask the outside world about it, and read the answer
+   * under the same three-outcome rule. A verifier this deployment has not wired simply has no
+   * probe, and the slot goes unchecked rather than unconfirmed-and-complained-about.
+   */
+  private paperEvidenceCheck(
+    slot: AdminBotPaperSlot,
+    url: string,
+  ):
+    | {
+        verifier: AdminBotPaperSlotVerifier;
+        probe: AdminBotArtifactProbe;
+        id?: string;
+        reason: string;
+        missingReason: string;
+      }
+    | undefined {
+    switch (adminBotPaperSlotVerifier[slot]) {
+      case "google_drive": {
+        const probe = this.options.driveProbe;
+        return probe
+          ? {
+              verifier: "google_drive",
+              probe,
+              ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
+              reason: "no Drive file id in the link",
+              missingReason:
+                "Google has no file at this link — check the URL, or that the lab account can see it",
+            }
+          : undefined;
+      }
+      case "arxiv": {
+        const probe = this.options.arxivProbe;
+        return probe
+          ? {
+              verifier: "arxiv",
+              probe,
+              ...(adminBotArxivId(url) ? { id: adminBotArxivId(url) } : {}),
+              reason: "no arXiv id in the link",
+              missingReason: "arXiv has no paper with this id — check the link",
+            }
+          : undefined;
+      }
+      case "openreview": {
+        const probe = this.options.openReviewProbe;
+        return probe
+          ? {
+              verifier: "openreview",
+              probe,
+              ...(adminBotOpenReviewForumId(url) ? { id: adminBotOpenReviewForumId(url) } : {}),
+              // Every other venue: CMT, HotCRP, a conference's own site. There is nothing to ask,
+              // and saying so is more useful than silence when somebody reads the run.
+              reason: "not an OpenReview submission, so there is nothing to ask",
+              // Unreachable in practice -- the OpenReview probe never reports `missing`, because
+              // a blind submission is invisible to an anonymous reader. Written out anyway so the
+              // day it gains a credentialed mode there is a sentence ready rather than a blank.
+              missingReason: "OpenReview has no submission with this id — check the link",
+            }
+          : undefined;
+      }
+      default:
+        // Including `papermentor` and `adminbot_post`: both are written by the thing that did the
+        // work, at the moment it did it, so there is nothing for a later pass to go and ask.
+        return undefined;
+    }
+  }
+
+  /** The papers waiting on the head professor's yes, oldest wait first. */
+  listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+    const papers = piReviewQueue(
+      this.store
+        .listPapers()
+        .filter((paper) => !isPaperClosed(paper))
+        .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) })),
+    );
+    return { ok: true, status: 200, payload: { papers } };
+  }
+
+  /**
+   * What the nudge layer needs to know about PaperMentor for one paper.
+   *
+   * Two facts, both already on file: which Overleaf the draft lives on -- so a paper PaperMentor
+   * physically cannot read is chased about *that* rather than about not having been reviewed --
+   * and the newest review, which carries the counts the fixes reminder quotes.
+   *
+   * Built per paper rather than once for the whole sweep because the runs are indexed by paper and
+   * the slot row is already in hand; the walk that calls this has both.
+   */
+  private paperMentorContext(
+    paper: AdminBotPaperRecord,
+    stored: AdminBotPaperSlotRecord[],
+  ): PaperMentorContext {
+    const link =
+      stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
+    const project = link ? adminBotOverleafProjectRef(link) : undefined;
+    const [latest] = this.store.listPaperMentorRuns(paper.id);
+    return {
+      ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
+      ...(latest ? { latest } : {}),
+    };
+  }
+
+  /**
+   * Tick `papermentor_review` on the strength of the review itself.
+   *
+   * Written straight to the store rather than through `setPaperSlot`, and deliberately: that path
+   * takes a member id, checks whether that member owns the paper, and files an update event that
+   * counts towards how much of the checklist its authors fill in themselves. None of those are
+   * true here. AdminBot saw the review; nobody ticked a box, and crediting an author for it would
+   * quietly inflate the one number that measures whether people are using the system.
+   *
+   * A waived slot is left alone. An admin who decided this paper does not need the review has
+   * overridden the requirement, and a review arriving afterwards does not undo their decision --
+   * the run is still recorded, which is what makes the override visible next to the evidence.
+   */
+  private markPaperMentorReviewed(
+    paper: AdminBotPaperRecord,
+    run: AdminBotPaperMentorRun,
+    nowIso: string,
+  ): AdminBotPaperSlotStatus {
+    const existing = this.store
+      .listPaperSlots(paper.id)
+      .find((row) => row.slot === "papermentor_review");
+    if (existing?.status === "waived") {
+      return "waived";
+    }
+    this.store.savePaperSlot({
+      paper_id: paper.id,
+      slot: "papermentor_review",
+      status: "provided",
+      // The review's own instant, not the ingest's: the slot should say when the paper was
+      // reviewed, which is the date its author will be asked about.
+      provided_at: run.reviewed_at,
+      validated_at: nowIso,
+      // The one piece of evidence on a paper that was never anybody's claim: the reviewer said it
+      // itself. `verified_by` is what lets the stage audit tell that apart from a ticked box.
+      verified_by: "papermentor",
+      verified_at: nowIso,
+    });
+    if ((paper.updated_at ?? "") < nowIso) {
+      this.store.savePaper({ ...paper, updated_at: nowIso });
+    }
+    return "provided";
+  }
+
+  /**
+   * Tick `fixes_merged` when a later review proves there is nothing left to merge.
+   *
+   * The second of the two PaperMentor verifiers, and the conservative one: only a review that
+   * follows an earlier one and comes back with no critical and no warning comments closes this.
+   * See `reviewProvesFixesMerged` for why a count that merely dropped is not enough.
+   *
+   * Like the review slot, this is written rather than nudged for, and credited to nobody: the
+   * evidence is the reviewer's, not an author's claim about their own work.
+   */
+  private closeFixesMergedIfClean(
+    paper: AdminBotPaperRecord,
+    latest: AdminBotPaperMentorRun,
+    nowIso: string,
+  ): void {
+    const [newest, previous] = this.store.listPaperMentorRuns(paper.id);
+    if (!newest || newest.id !== latest.id) {
+      // A run older than the one already on file: history arriving late, which says nothing about
+      // the state of the draft now.
+      return;
+    }
+    if (!reviewProvesFixesMerged({ latest, ...(previous ? { previous } : {}) })) {
+      return;
+    }
+    const existing = this.store.listPaperSlots(paper.id).find((row) => row.slot === "fixes_merged");
+    if (existing && isAdminBotPaperSlotSettled(existing.status)) {
+      return;
+    }
+    this.store.savePaperSlot({
+      paper_id: paper.id,
+      slot: "fixes_merged",
+      status: "provided",
+      provided_at: latest.reviewed_at,
+      validated_at: nowIso,
+      verified_by: "papermentor",
+      verified_at: nowIso,
+    });
+    this.recordAudit({
+      type: "paper_slot.updated",
+      actor: "papermentor",
+      details: { paper_id: paper.id, slot: "fixes_merged", status: "provided" },
+    });
   }
 
   /** Shared lookup and permission check behind both slot writes. */
@@ -5366,7 +6104,13 @@ export class AdminBotService {
       // rather than the number of half-filled rows -- see the note on the card read above.
       const attendees = this.conferenceRollCall(paper);
       const reimbursements = this.store.listPaperReimbursements(paper.id);
-      const actionable = actionablePaperSlots(paper, stored, now, drafts);
+      const actionable = actionablePaperSlots(
+        paper,
+        stored,
+        now,
+        drafts,
+        this.paperMentorContext(paper, stored),
+      );
       const progress = paperSlotProgress(paper.id, stored, drafts);
       const lastNudged = actionable
         .map((item) => ledger.get(`paper_slot|${item.subjectId}`)?.last_nudged_at)
@@ -5626,7 +6370,13 @@ export class AdminBotService {
       const stored = this.store.listPaperSlots(paper.id);
       const drafts = this.store.listSocialDrafts(paper.id);
 
-      for (const item of actionablePaperSlots(paper, stored, now, drafts)) {
+      for (const item of actionablePaperSlots(
+        paper,
+        stored,
+        now,
+        drafts,
+        this.paperMentorContext(paper, stored),
+      )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
         }
@@ -9944,6 +10694,132 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: { channel, invited, removal_proposals: removalProposals, skipped },
+    };
+  }
+
+  /**
+   * Mail the head professor the letters that come due in the next three days.
+   *
+   * The one thing AdminBot sends the head professor, and the exception is deliberate. Every nudge
+   * pipeline refuses that address -- see `sendMemberNudge` -- because the lab does not chase its
+   * PI: the escalation path runs *towards* her, so a sweep that messaged her would be the lab
+   * nagging the person the nagging is supposed to reach. This is the other direction. It is her
+   * own queue, about work only she can do, on a date her members chose; the desk it repeats is the
+   * rec-letter list on My Desk, which she has to be looking at to see.
+   *
+   * Its own action type rather than a member nudge for exactly that reason, so the refusal above
+   * stays absolute and this mail is a row an audit can find by name.
+   *
+   * One mail per pass however many letters are due, and said once per request per deadline. A
+   * school date that moves re-arms it against the new date, because the ledger subject carries the
+   * deadline; re-saving the same request does not.
+   */
+  async sweepRecLetterReminders(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      recipient?: string;
+      reminded: Array<{
+        request_id: string;
+        member_id: string;
+        deadline_at: string;
+        days_until: number;
+      }>;
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const ledger = this.nudgeLedgerIndex();
+    const due = recLetterRemindersDue(this.store.listLogisticsRequests(), now).filter(
+      (entry) =>
+        !this.hasNudgeBeenSaid(
+          ledger,
+          "rec_letter_reminder",
+          recLetterReminderLedgerSubject(entry),
+        ),
+    );
+    if (!due.length) {
+      // Quiet when nothing is close: a pass that mailed "no letters are due" every morning is a
+      // pass that teaches its one reader to filter it.
+      return { ok: true, status: 200, payload: { reminded: [] } };
+    }
+
+    // Resolved after the window rather than before it, so a deployment that has not named a head
+    // professor is only an error on a morning when there was something to say.
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!headProfessorId) {
+      return serviceError(409, "no head professor is configured to remind about letter deadlines");
+    }
+    const headProfessor = this.store.getLabMember(headProfessorId);
+    if (!headProfessor) {
+      return serviceError(409, "the configured head professor is not on the roster");
+    }
+    const recipient = headProfessor.email?.trim();
+    // Fail closed rather than guessing at an address: a reminder sent to the wrong inbox is a
+    // letter nobody writes, and the roster is the only place this address is allowed to come from.
+    if (!recipient) {
+      return serviceError(
+        409,
+        `${headProfessor.name} has no email address on the roster, so the letter reminder cannot be sent`,
+      );
+    }
+
+    const proposed = this.createProposal({
+      type: "logistics.rec_letter_reminder",
+      summary:
+        due.length === 1
+          ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_at.slice(0, 10)}`
+          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
+      target: { service: "email", channel: "email", target: recipient },
+      proposed_payload: {
+        to: recipient,
+        subject: recLetterReminderSubject(due),
+        body: recLetterReminderBody(due, resolveAdminBotControlUiUrl()),
+      },
+      undo_plan: "Send an email follow-up correcting or retracting the reminder.",
+    });
+    if (!proposed.ok) {
+      return serviceError(proposed.status, proposed.error.message);
+    }
+    const executed = await this.execute(proposed.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      // Unstamped on purpose, unlike the say-once sweeps that announce an event: the window is
+      // three days wide, so a send that failed this morning is worth trying again tomorrow while
+      // the letter is still worth writing. A reader who gets it twice has lost less than one who
+      // never gets it.
+      return serviceError(502, `could not email the letter reminder: ${executed.error.message}`);
+    }
+    for (const entry of due) {
+      this.markNudgeSaid(
+        "rec_letter_reminder",
+        recLetterReminderLedgerSubject(entry),
+        headProfessorId,
+        nowIso,
+      );
+    }
+    this.recordAudit({
+      type: "rec_letter_reminders.swept",
+      actor,
+      details: {
+        to: recipient,
+        lead_days: adminBotRecLetterReminderLeadDays,
+        reminded: due.length,
+        proposal_id: proposed.payload.id,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        recipient,
+        reminded: due.map((entry) => ({
+          request_id: entry.request_id,
+          member_id: entry.member_id,
+          deadline_at: entry.deadline_at,
+          days_until: entry.days_until,
+        })),
+      },
     };
   }
 

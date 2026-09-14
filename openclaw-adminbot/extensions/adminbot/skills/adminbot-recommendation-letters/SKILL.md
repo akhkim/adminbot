@@ -26,3 +26,11 @@ what the member actually did. An admin works that queue.
 
 That request is the system of record. Use this skill to help write the letter
 itself; do not try to file the request or the send on the member's behalf.
+
+## The deadline reminder
+
+A daily pass mails the head professor the letter requests coming due within three
+days -- one message however many are due, said once per request per deadline. It
+is server-computed from the request log, so there is nothing here to trigger or
+address by hand; see "Recommendation letter deadlines" in
+`docs/tools/adminbot.md`.
