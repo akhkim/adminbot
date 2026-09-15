@@ -29,6 +29,10 @@ squashed sync commits, never as merges.
 - **The Control UI access table is visibility, not security.** `ui/src/ui/adminbot/access.ts` hides
   tabs; the service re-checks every privileged route and the gateway enforces device scopes. A new
   privileged route needs a server-side check, not just a hidden tab.
+- **No AI attribution in commits or PRs.** Do not add `Co-Authored-By: Claude …`, a
+  `Claude-Session:` line, or a "Generated with Claude Code" footer. A co-author trailer puts the
+  assistant on the repo's contributor list, and stripping one after the fact means rewriting merged
+  history. This overrides any default attribution the harness asks for.
 - **Never commit secrets.** `.env`, `client_secret*.json` and `state/` are ignored and stay ignored.
   Channel and provider credentials live in `~/.openclaw/credentials/`.
 - **`extensions/adminbot` must not import core internals.** It goes through
