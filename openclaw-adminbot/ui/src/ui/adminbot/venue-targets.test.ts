@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
+  cardVenueTargets,
+  DEFAULT_VENUE_CONFIDENCE,
   effectiveVenueTargets,
+  newCardVenueTarget,
+  primaryVenueTarget,
+  toVenueTargets,
   PRE_REGISTRATION_VENUES,
   daysUntil,
   formatVenueTargets,
@@ -222,5 +227,98 @@ describe("a declared venue counts as a registration", () => {
 
   it("does not let one year answer for another", () => {
     expect(papersNeedingRegistration([declared("ICLR 2026")], "iclr2027_paper")).toHaveLength(1);
+  });
+});
+
+// The list as a paper card edits it: one row per venue, keyed so a checkbox can tick it.
+describe("the card's venue list", () => {
+  function card(artifacts: Record<string, unknown>): AdminBotPaperRecord {
+    return {
+      id: "p1",
+      title: "Paper p1",
+      authors: [],
+      current_step: "overleaf_writing",
+      artifacts,
+    } as unknown as AdminBotPaperRecord;
+  }
+
+  it("keys a catalog venue by its catalog id, whichever field named it", () => {
+    // Written by Add a project: bare catalog id, year in the label.
+    expect(
+      cardVenueTargets(
+        card({
+          venue_targets: JSON.stringify([
+            { venue_id: "ACL-demo", label: "ACL 2027 (demo)", confidence: 80 },
+          ]),
+        }),
+      ),
+    ).toEqual([
+      { key: "ACL-demo", label: "ACL 2027 (demo)", year: 2027, confidence: 80, legacy: false },
+    ]);
+    // Declared through `artifacts.conference` alone: the same venue, the same key, so the card
+    // opens with it ticked rather than showing an empty dropdown over a paper that names one.
+    expect(cardVenueTargets(card({ conference: "ACL 2027 (demo)" }))[0]?.key).toBe("ACL-demo");
+  });
+
+  it("gives a venue the catalog cannot spell a row of its own", () => {
+    const rows = cardVenueTargets(
+      card({
+        venue_targets: JSON.stringify([
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 80 },
+        ]),
+      }),
+    );
+    expect(rows).toEqual([
+      { key: "arr_2026_october", label: "ARR October", year: null, confidence: 80, legacy: true },
+    ]);
+  });
+
+  it("shows one venue once when two fields name it", () => {
+    // The dialog's id space and the card's own, on one paper. Two rows would mean two checkboxes
+    // for one venue, and unticking either would leave the other behind.
+    const rows = cardVenueTargets(
+      card({
+        conference: "ICLR 2027",
+        venue_targets: JSON.stringify([{ venue_id: "ICLR", label: "ICLR 2027", confidence: 80 }]),
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    // The stronger bet wins the row: the list arrives sorted, so the duplicate is the weaker one.
+    expect(rows[0]?.confidence).toBe(80);
+  });
+
+  it("dates a newly ticked venue and gives it the default odds", () => {
+    expect(newCardVenueTarget("NeurIPS", 2027)).toEqual({
+      key: "NeurIPS",
+      label: "NeurIPS 2027",
+      year: 2027,
+      confidence: DEFAULT_VENUE_CONFIDENCE,
+      legacy: false,
+    });
+  });
+
+  it("hands the legacy pair the likeliest venue, not the first one listed", () => {
+    // `artifacts.conference` holds one venue and the deadline board reads it, so it holds the bet
+    // the authors actually expect to make.
+    const rows = cardVenueTargets(
+      card({
+        venue_targets: JSON.stringify([
+          { venue_id: "ICLR", label: "ICLR 2027", confidence: 30 },
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 80 },
+        ]),
+      }),
+    );
+    expect(primaryVenueTarget(rows)?.label).toBe("ARR October");
+    expect(primaryVenueTarget([])).toBeUndefined();
+  });
+
+  it("round-trips through the stored shape", () => {
+    const stored = [
+      { venue_id: "ICLR", label: "ICLR 2027", confidence: 80 },
+      { venue_id: "arr_2026_october", label: "ARR October", confidence: 30 },
+    ];
+    expect(
+      toVenueTargets(cardVenueTargets(card({ venue_targets: JSON.stringify(stored) }))),
+    ).toEqual(stored);
   });
 });

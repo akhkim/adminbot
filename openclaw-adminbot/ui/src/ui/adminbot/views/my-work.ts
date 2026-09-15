@@ -106,11 +106,14 @@ import {
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
 import {
+  cardVenueTargets,
   formatVenueTargets,
+  newCardVenueTarget,
+  primaryVenueTarget,
   serializeVenueTargets,
   effectiveVenueTargets,
-  readVenueTargets,
-  venueTargetMatches,
+  toVenueTargets,
+  type CardVenueTarget,
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
@@ -1405,126 +1408,173 @@ function renderDeletePaper(paper: AdminBotPaperRecord, props: MyWorkProps) {
 }
 
 /**
- * Target venue and confidence, editable in place.
+ * Target venues and confidence, editable in place.
  *
  * Asked once at registration, but a paper's target moves -- a missed deadline, a change of plan,
- * a rejection. Making it selects on the card means changing it is one click where the information
+ * a rejection. Making it controls on the card means changing it is one click where the information
  * already is, instead of a form somewhere else.
  *
- * Year and venue are separate because they change for different reasons: a slipped paper keeps its
- * venue and moves a year, and a rejected one keeps the year and moves venue. One combined list
- * would make either edit a hunt through every venue-year pair.
+ * The venue is a multiple-choice dropdown rather than a single select, because a paper is often
+ * aimed at more than one venue at once: 80% ICLR and 50% ARR October are independent bets on the
+ * same work, not a distribution that has to sum to anything. The store has held a list since
+ * pre-registration shipped and Add a project has offered rows for it; only this card was still
+ * asking the question as if it had one answer, so picking a second venue here overwrote the first.
+ *
+ * Checkboxes behind a summary line, not a `<select multiple>`: picking a second option in one of
+ * those needs a ctrl-click nobody would guess at, and a bare column of thirty venues would swamp
+ * a card. Same control the roster's Role field uses, for the same reason.
+ *
+ * Year and odds sit on the venue's own row rather than above the list, because they differ per
+ * venue -- a paper can be aimed at ICLR 2027 and ARR 2026 -- and because a slipped paper keeps its
+ * venue and moves a year while a rejected one keeps the year and moves venue.
  */
 function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const current = paper.artifacts?.conference ?? "";
-  const confidence = paper.artifacts?.confidence ?? "";
-  const parsed = parseVenue(current);
-  // Keep whatever the paper already names when the catalog cannot express it, or touching either
-  // select would silently retarget the paper.
-  const custom = current && !parsed.id ? current : "";
-  const year = parsed.year ?? defaultTarget().year;
+  const rows = cardVenueTargets(paper);
+  const ticked = new Set(rows.map((row) => row.key));
+  const fallbackYear = defaultTarget().year;
 
   /**
-   * Save the target, and register the paper for it.
+   * Write the whole list, and register the paper for it.
    *
    * Declaring where a paper is going *is* pre-registering it -- there is no second intention to
-   * collect. Until now these two selects wrote only `artifacts.conference`, while every reader of
-   * "is this paper pre-registered" looks at `artifacts.venue_targets`, so an author who set their
-   * target here was still counted as not having pre-registered and still got asked to.
-   *
-   * The chosen venue is upserted rather than made the whole list: a paper aimed at two venues
-   * through the pre-registration dialog must not lose one because somebody adjusted the year on
-   * this card. Any existing target for the same venue is replaced, the rest are left alone, and
-   * clearing the venue removes just its own entry.
+   * collect -- so this writes `venue_targets`, which is what every reader of "is this paper
+   * pre-registered" actually looks at, alongside the legacy pair the deadline board still reads.
    */
-  const save = (conference: string, odds: string) => {
-    const existing = readVenueTargets(paper);
-    const parsedNext = parseVenue(conference);
-    const venueId = parsedNext.id ?? conference.trim();
-    // Drop any target this edit supersedes, matching on the venue rather than the id string so a
-    // target written by the dialog's id space is replaced rather than duplicated.
-    const kept = existing.filter((target) => !venueId || !venueTargetMatches(target, venueId));
-    const confidenceValue = Number(odds);
-    const targets = venueId
-      ? [
-          ...kept,
-          {
-            venue_id: venueId,
-            label: conference.trim() || venueId,
-            // The odds select can be empty ("No estimate"); a target still has to carry a number,
-            // and the same 50 the Add a project form defaults to is the honest one.
-            confidence:
-              Number.isFinite(confidenceValue) && confidenceValue > 0 ? confidenceValue : 50,
-          },
-        ]
-      : kept;
+  const commit = (next: CardVenueTarget[]) => {
+    const primary = primaryVenueTarget(next);
     props.onSavePaper({
       id: paper.id,
       title: paper.title,
       authors: paper.authors ?? [],
       currentStep: paper.current_step as AdminBotPaperStep,
-      conference,
-      confidence: odds,
-      venueTargets: serializeVenueTargets(targets),
+      venueTargets: serializeVenueTargets(toVenueTargets(next)),
+      conference: primary?.label ?? "",
+      confidence: primary ? String(primary.confidence) : "",
     });
   };
 
-  // Both selects write the one `conference` field, so whichever one moved has to read the other.
-  const retarget = (event: Event) => {
-    const root = (event.target as HTMLElement).closest(".my-work-item__target");
-    const pick = (role: string) =>
-      root?.querySelector<HTMLSelectElement>(`[data-role="${role}"]`)?.value ?? "";
-    const venueId = pick("venue-name");
-    if (!venueId) {
-      save("", confidence);
+  const patchRow = (key: string, patch: Partial<CardVenueTarget>) =>
+    commit(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+
+  /** Ticking appends; unticking removes just that venue and leaves the others aimed. */
+  const toggleVenue = (key: string, on: boolean) => {
+    if (!on) {
+      commit(rows.filter((row) => row.key !== key));
       return;
     }
-    if (venueId === custom) {
-      save(custom, confidence);
+    if (ticked.has(key)) {
       return;
     }
-    save(formatVenue(venueId, Number(pick("venue-year"))), confidence);
+    commit([...rows, newCardVenueTarget(key, fallbackYear)]);
   };
 
-  return html`
-    <p class="my-work-item__target">
+  const option = (key: string, label: string) => html`
+    <label class="target__venue-option">
+      <input
+        type="checkbox"
+        data-testid=${`target-venue-${paper.id}-${key}`}
+        .checked=${ticked.has(key)}
+        @change=${(event: Event) => toggleVenue(key, (event.target as HTMLInputElement).checked)}
+      />
+      <span>${label}</span>
+    </label>
+  `;
+
+  const group = (label: string, entries: CatalogVenue[]) => html`
+    <div class="target__venue-group">
+      <p class="target__venue-group-label">${label}</p>
+      <div class="target__venue-options">
+        ${entries.map((entry) => option(entry.id, entry.label))}
+      </div>
+    </div>
+  `;
+
+  // Venues the catalog cannot spell -- an ARR cycle from the pre-registration dialog, or a
+  // deadline-board wording predating the catalog -- get their own ticked box. Without one they
+  // would be invisible in the menu and dropped the first time anything else was ticked.
+  const kept = rows.filter((row) => row.legacy);
+
+  // Names rather than a count: "ICLR 2027, ARR October" is the answer somebody opened the card to
+  // read, and "2 venues" makes them open the menu to find out which.
+  const summary = rows.length ? rows.map((row) => row.label).join(", ") : "Other / not decided yet";
+
+  const venueRow = (row: CardVenueTarget) => html`
+    <span class="target__venue" data-testid=${`target-venue-row-${paper.id}-${row.key}`}>
+      <span class="target__venue-name">${row.label}</span>
+      ${row.legacy
+        ? nothing
+        : html`
+            <select
+              class="target__select"
+              aria-label=${`Target year for ${row.label}`}
+              data-testid=${`target-venue-year-${paper.id}-${row.key}`}
+              @change=${(event: Event) => {
+                const year = Number((event.target as HTMLSelectElement).value);
+                patchRow(row.key, { year, label: formatVenue(row.key, year) || row.label });
+              }}
+            >
+              ${venueYears().map(
+                (value) => html`
+                  <option value=${String(value)} ?selected=${value === (row.year ?? fallbackYear)}>
+                    ${value}
+                  </option>
+                `,
+              )}
+            </select>
+          `}
       <select
         class="target__select"
-        data-role="venue-year"
-        aria-label="Target year"
-        data-testid=${`target-venue-year-${paper.id}`}
-        @change=${retarget}
+        aria-label=${`How likely ${row.label} is`}
+        data-testid=${`target-confidence-${paper.id}-${row.key}`}
+        @change=${(event: Event) =>
+          patchRow(row.key, { confidence: Number((event.target as HTMLSelectElement).value) })}
       >
-        ${venueYears().map(
-          (option) => html`
-            <option value=${String(option)} ?selected=${option === year}>${option}</option>
-          `,
-        )}
-      </select>
-      <select
-        class="target__select"
-        data-role="venue-name"
-        aria-label="Target venue"
-        data-testid=${`target-venue-${paper.id}`}
-        @change=${retarget}
-      >
-        ${custom ? html`<option value=${custom} selected>${custom}</option>` : nothing}
-        ${venueOptions(parsed.id ?? "")}
-        <option value="" ?selected=${!current}>Other / not decided yet</option>
-      </select>
-      <select
-        class="target__select"
-        data-testid=${`target-confidence-${paper.id}`}
-        @change=${(event: Event) => save(current, (event.target as HTMLSelectElement).value)}
-      >
-        <option value="" ?selected=${!confidence}>No estimate</option>
         ${CONFIDENCE_OPTIONS.map(
           (value) => html`
-            <option value=${value} ?selected=${value === confidence}>${value}% likely</option>
+            <option value=${value} ?selected=${Number(value) === row.confidence}>
+              ${value}% likely
+            </option>
           `,
         )}
       </select>
-    </p>
+    </span>
+  `;
+
+  return html`
+    <div class="my-work-item__target">
+      <details
+        class="adminbot-multiselect target__venues"
+        data-testid=${`target-venues-${paper.id}`}
+      >
+        <summary class="adminbot-multiselect__summary" aria-label="Target venues">
+          <span class="adminbot-multiselect__value">${summary}</span>
+          <span class="adminbot-multiselect__caret" aria-hidden="true"></span>
+        </summary>
+        <div
+          class="adminbot-multiselect__menu target__venue-menu"
+          role="group"
+          aria-label="Target venues"
+        >
+          ${group("Archival", ARCHIVAL_VENUES)} ${group("Non-archival", NON_ARCHIVAL_VENUES)}
+          ${group("Workshops (check the CFP)", WORKSHOP_VENUES)}
+          ${kept.length
+            ? html`
+                <div class="target__venue-group">
+                  <p class="target__venue-group-label">Already on this paper</p>
+                  <div class="target__venue-options">
+                    ${kept.map((row) => option(row.key, row.label))}
+                  </div>
+                </div>
+              `
+            : nothing}
+          <p class="target__venue-hint">
+            Tick every venue this paper is genuinely aimed at. Untick them all for "not decided
+            yet".
+          </p>
+        </div>
+      </details>
+      ${rows.map(venueRow)}
+    </div>
   `;
 }
 

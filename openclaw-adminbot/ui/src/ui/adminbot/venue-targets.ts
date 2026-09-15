@@ -15,7 +15,7 @@
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import { aoeInstantMs } from "./data/deadline-time.ts";
 import { DEADLINE_VENUES } from "./data/deadlines.ts";
-import { parseVenue } from "./data/venue-catalog.ts";
+import { findVenue, formatVenue, parseVenue } from "./data/venue-catalog.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
 export type VenueTarget = {
@@ -290,3 +290,109 @@ export const VENUE_FAMILIES: Array<{ group: string; venues: string[] }> = [
     venues: ["TACL", "TMLR", "Nature"],
   },
 ];
+
+// ── the venue list on a paper card ───────────────────────────────────────────────────────
+//
+// The card used to ask "where is this going" with a single select, so the question could only
+// ever be answered once: picking a second venue overwrote the first. Everything underneath was
+// already a list -- `artifacts.venue_targets` is written as one by the pre-registration dialog
+// and by Add a project, and a paper genuinely is 80% ICLR *and* 50% ARR October. Only the card
+// was narrower than the data it edited.
+//
+// These helpers are that list in the shape the card's controls need: one row per venue, keyed so
+// a checkbox in the dropdown can tick it, with the year and the odds pulled out of the stored
+// target because those are the two things people come back to change.
+
+/** The odds a venue takes when it is first ticked. Same default Add a project uses. */
+export const DEFAULT_VENUE_CONFIDENCE = 50;
+
+/** One venue on a card: a checkbox in the dropdown, and a row of selects under it. */
+export type CardVenueTarget = {
+  /**
+   * What the checkbox is keyed by: the catalog id where the catalog can express this venue, the
+   * stored id otherwise. Two ids per venue are in circulation (`ICLR` from the forms,
+   * `iclr2027_paper` from the pre-registration dialog) and the menu can only tick one of them.
+   */
+  key: string;
+  /** What the venue is called, year included -- "ICLR 2027". Written back as the target's label. */
+  label: string;
+  /** Lifted out of the label so the year select can move it. Null when the label names no year. */
+  year: number | null;
+  confidence: number;
+  /** Not in the catalog: an ARR cycle, or a venue named before the catalog existed. */
+  legacy: boolean;
+};
+
+/**
+ * The venues a card should show as ticked.
+ *
+ * Reads the effective list, so a paper that only ever declared `artifacts.conference` arrives
+ * with that venue ticked rather than with an empty dropdown over a card that plainly names one.
+ */
+export function cardVenueTargets(paper: AdminBotPaperRecord): CardVenueTarget[] {
+  const rows: CardVenueTarget[] = [];
+  for (const target of effectiveVenueTargets(paper)) {
+    const row = asCardVenueTarget(target);
+    // The list arrives sorted by confidence, so the first row for a venue is the stronger bet and
+    // any later one is the duplicate -- which is exactly what the dialog and the card produce
+    // between them when both write the same venue under different ids.
+    if (!rows.some((held) => held.key === row.key)) {
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Resolve one stored target against the catalog.
+ *
+ * The label is where the catalog's own wording lives ("EMNLP 2026 (main)"); the id is a bare
+ * catalog id when Add a project wrote it. Both are tried before giving up, because giving up
+ * means the venue renders as its own ticked box rather than as the catalog row it actually is,
+ * and the same venue would then be tickable twice.
+ */
+function asCardVenueTarget(target: VenueTarget): CardVenueTarget {
+  const parsed = parseVenue(target.label);
+  const catalogId = parsed.id ?? (findVenue(target.venue_id) ? target.venue_id : null);
+  return {
+    key: catalogId ?? target.venue_id,
+    label: target.label || target.venue_id,
+    year: parsed.year,
+    confidence: target.confidence,
+    legacy: catalogId === null,
+  };
+}
+
+/** A venue just ticked in the dropdown, at the given year. */
+export function newCardVenueTarget(key: string, year: number): CardVenueTarget {
+  const label = formatVenue(key, year);
+  return {
+    key,
+    label: label || key,
+    year: label ? year : null,
+    confidence: DEFAULT_VENUE_CONFIDENCE,
+    legacy: !label,
+  };
+}
+
+/** The card's rows, back in the stored shape. */
+export function toVenueTargets(rows: readonly CardVenueTarget[]): VenueTarget[] {
+  return rows.map((row) => ({
+    venue_id: row.key,
+    label: row.label,
+    confidence: row.confidence,
+  }));
+}
+
+/**
+ * The one target the legacy pair can carry: the strongest bet.
+ *
+ * `artifacts.conference` and `artifacts.confidence` predate the list, and the deadline board, the
+ * venue-stage nudges and the roster export still read them. They hold one venue, so they hold the
+ * likeliest one -- and they are rewritten on every save rather than left behind, because a
+ * conference left set after its venue was unticked comes straight back as a derived target (see
+ * declaredVenueTarget) and the venue reappears on the card that just cleared it.
+ */
+export function primaryVenueTarget(rows: readonly CardVenueTarget[]): CardVenueTarget | undefined {
+  return rows.toSorted((left, right) => right.confidence - left.confidence)[0];
+}

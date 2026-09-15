@@ -8073,6 +8073,107 @@ adminbot-deadlines-view {
   margin: 0.25rem 0 0;
 }
 
+/* The venue dropdown on a paper card. `.adminbot-multiselect` (components.css) carries the
+   summary line and the menu box; everything below is what a card needs that the roster's Role
+   field did not: named groups inside the menu, and a row of selects per chosen venue.
+
+   Narrower than a form field and allowed to grow, because the summary names the venues rather
+   than counting them -- "ICLR 2027, ARR October" is the answer somebody opened the card for. */
+.target__venues {
+  flex: 1 1 14rem;
+  max-width: 100%;
+}
+
+/* Open, it takes the whole row: the card centres its target line, so an open menu beside the
+   chosen-venue pills would leave them floating halfway down it. Full width sends them below. */
+.target__venues[open] {
+  flex-basis: 100%;
+}
+
+.target__venues > .adminbot-multiselect__summary {
+  min-height: auto;
+  padding: 0.2rem 0.5rem;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.target__venues[open] > .adminbot-multiselect__summary,
+.target__venues > .adminbot-multiselect__summary:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+/* Column, not the Role field's wrap-anywhere row: these options are grouped by whether publishing
+   there consumes the paper, and a group heading only reads as one when its options sit under it.
+   The menu stays in flow rather than floating -- the card scrolls, and a positioned menu opened
+   near its bottom would be clipped by it. */
+.target__venue-menu {
+  flex-direction: column;
+  align-items: stretch;
+  flex-basis: 100%;
+  max-height: 18rem;
+}
+
+.target__venue-group + .target__venue-group {
+  margin-top: var(--space-3);
+}
+
+.target__venue-group-label {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+.target__venue-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.target__venue-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+  cursor: pointer;
+}
+
+.target__venue-option:hover {
+  border-color: var(--border-hover);
+}
+
+.target__venue-hint {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* One per chosen venue: its name, then the two things people come back to change. Named rather
+   than positional, because with several venues on a card a bare pair of selects gives no way to
+   tell which bet is being edited. */
+.target__venue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.15rem 0.4rem 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+
+.target__venue-name {
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
 .target__select {
   padding: 0.2rem 0.5rem;
   border: 1px solid var(--border-strong);

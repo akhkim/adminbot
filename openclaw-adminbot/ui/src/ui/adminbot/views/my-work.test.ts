@@ -443,71 +443,136 @@ describe("target venue", () => {
     return [...(select?.options ?? [])].find((option) => option.hasAttribute("selected"))?.value;
   }
 
-  function selects(container: Element) {
+  /** The dropdown's checkbox for one venue, keyed the way the card keys it. */
+  function venueBox(container: Element, key: string) {
+    return container.querySelector<HTMLInputElement>(`[data-testid="target-venue-p1-${key}"]`);
+  }
+
+  function tick(container: Element, key: string, on = true) {
+    const box = venueBox(container, key);
+    if (!box) {
+      throw new Error(`no checkbox for ${key}`);
+    }
+    box.checked = on;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  /** The year and odds selects that appear on a chosen venue's own row. */
+  function rowSelects(container: Element, key: string) {
     return {
-      year: container.querySelector<HTMLSelectElement>('[data-testid="target-venue-year-p1"]'),
-      venue: container.querySelector<HTMLSelectElement>('[data-testid="target-venue-p1"]'),
+      year: container.querySelector<HTMLSelectElement>(
+        `[data-testid="target-venue-year-p1-${key}"]`,
+      ),
+      odds: container.querySelector<HTMLSelectElement>(
+        `[data-testid="target-confidence-p1-${key}"]`,
+      ),
     };
   }
 
-  it("splits the target into a year and a venue, grouped by whether it is archival", () => {
+  function savedTargets(input: { venueTargets?: string } | undefined) {
+    return JSON.parse(input?.venueTargets || "[]") as Array<{
+      venue_id: string;
+      label: string;
+      confidence: number;
+    }>;
+  }
+
+  it("offers every venue as a checkbox, grouped by whether it is archival", () => {
     const { container } = draw({ openIds: ["p1"] });
-    const { year: yearSelect, venue } = selects(container);
+    const menu = container.querySelector('[data-testid="target-venues-p1"]');
+    // Three groups, not two: workshops are their own, because "is this archival" is a question the
+    // CFP answers per workshop rather than something the catalog can state for the venue. The
+    // ICLR-workshop assertion below has always depended on that group existing.
+    const groups = [...(menu?.querySelectorAll(".target__venue-group-label") ?? [])].map((label) =>
+      label.textContent?.trim(),
+    );
+    expect(groups).toEqual(["Archival", "Non-archival", "Workshops (check the CFP)"]);
+    expect(venueBox(container, "EMNLP-main")).not.toBeNull();
+    expect(venueBox(container, "ICLR-workshop")).not.toBeNull();
+  });
+
+  it("opens with what the paper already names ticked, at its own year", () => {
+    const { container } = draw({
+      openIds: ["p1"],
+      papers: [paper({ artifacts: { conference: "ACL 2027 (demo)" } })],
+    });
+    expect(venueBox(container, "ACL-demo")?.checked).toBe(true);
+    const { year: yearSelect } = rowSelects(container, "ACL-demo");
     expect([...(yearSelect?.options ?? [])].map((option) => option.value)).toEqual([
       String(year - 1),
       String(year),
       String(year + 1),
       String(year + 2),
     ]);
-    // Three groups, not two: workshops are their own, because "is this archival" is a question the
-    // CFP answers per workshop rather than something the catalog can state for the venue. The
-    // ICLR-workshop assertion below has always depended on that group existing.
-    const groups = [...(venue?.querySelectorAll("optgroup") ?? [])].map((group) => group.label);
-    expect(groups).toEqual(["Archival", "Non-archival", "Workshops (check the CFP)"]);
-    expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("EMNLP-main");
-    expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("ICLR-workshop");
-  });
-
-  it("opens on what the paper already names", () => {
-    const { container } = draw({
-      openIds: ["p1"],
-      papers: [paper({ artifacts: { conference: "ACL 2027 (demo)" } })],
-    });
-    const { year: yearSelect, venue } = selects(container);
     expect(chosen(yearSelect)).toBe("2027");
-    expect(chosen(venue)).toBe("ACL-demo");
   });
 
-  it("writes the two selects back as one venue string", () => {
+  it("aims at more than one venue at once rather than replacing the first", () => {
+    // The point of the control: 80% ICLR and 50% ARR October are independent bets on the same
+    // work. Ticking the second used to overwrite the first, which is what made the card lie.
     const { container, saved } = draw({
       openIds: ["p1"],
       papers: [paper({ artifacts: { conference: "ACL 2027 (demo)", confidence: "50" } })],
     });
-    const { year: yearSelect, venue } = selects(container);
-    yearSelect!.value = "2027";
-    venue!.value = "NeurIPS";
-    venue!.dispatchEvent(new Event("change"));
-    expect(saved.at(-1)?.conference).toBe("NeurIPS 2027");
-    // Moving the year alone keeps the venue: a slipped paper is the common edit here.
+    tick(container, "NeurIPS");
+    const ids = savedTargets(saved.at(-1)).map((target) => target.venue_id);
+    expect(ids).toContain("ACL-demo");
+    expect(ids).toContain("NeurIPS");
+  });
+
+  it("moves one venue's year without touching the others", () => {
+    // A slipped paper keeps its venue and moves a year, which is why the year sits on the venue's
+    // own row: a paper aimed at ICLR 2027 and ARR 2026 has no single year to move.
+    const { container, saved } = draw({
+      openIds: ["p1"],
+      papers: [paper({ artifacts: { conference: "ACL 2027 (demo)", confidence: "50" } })],
+    });
+    const { year: yearSelect } = rowSelects(container, "ACL-demo");
     yearSelect!.value = String(year + 2);
-    yearSelect!.dispatchEvent(new Event("change"));
-    expect(saved.at(-1)?.conference).toBe(`NeurIPS ${year + 2}`);
+    yearSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(savedTargets(saved.at(-1))[0]?.label).toBe(`ACL ${year + 2} (demo)`);
+    // The legacy pair still carries the likeliest bet: the deadline board reads it, not the list.
+    expect(saved.at(-1)?.conference).toBe(`ACL ${year + 2} (demo)`);
     expect(saved.at(-1)?.confidence).toBe("50");
   });
 
-  it("keeps a venue the list cannot name rather than retargeting the paper", () => {
-    // Targets written before this list existed came from the deadline board, in its wording.
+  it("gives each venue its own odds", () => {
+    const { container, saved } = draw({
+      openIds: ["p1"],
+      papers: [paper({ artifacts: { conference: "ACL 2027 (demo)", confidence: "50" } })],
+    });
+    const { odds } = rowSelects(container, "ACL-demo");
+    odds!.value = "80";
+    odds!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(savedTargets(saved.at(-1))[0]?.confidence).toBe(80);
+  });
+
+  it("keeps a venue the list cannot name rather than dropping it", () => {
+    // Targets written before this list existed came from the deadline board, in its wording. They
+    // get a ticked box of their own; without one they would be invisible in the menu and lost the
+    // first time anything else was ticked.
     const { container, saved } = draw({
       openIds: ["p1"],
       papers: [paper({ artifacts: { conference: "EMNLP 2026 (system demonstrations)" } })],
     });
-    const { year: yearSelect, venue } = selects(container);
-    expect(chosen(venue)).toBe("EMNLP 2026 (system demonstrations)");
-    // Editing the year around it must not rewrite a venue this list cannot spell.
-    venue!.value = "EMNLP 2026 (system demonstrations)";
-    yearSelect!.value = String(year + 1);
-    yearSelect!.dispatchEvent(new Event("change"));
-    expect(saved.at(-1)?.conference).toBe("EMNLP 2026 (system demonstrations)");
+    expect(venueBox(container, "EMNLP 2026 (system demonstrations)")?.checked).toBe(true);
+    tick(container, "NeurIPS");
+    const labels = savedTargets(saved.at(-1)).map((target) => target.label);
+    expect(labels).toContain("EMNLP 2026 (system demonstrations)");
+    expect(labels).toHaveLength(2);
+  });
+
+  it("clears the legacy pair when the last venue is unticked", () => {
+    // `artifacts.conference` left set would come straight back as a derived target, so the venue
+    // somebody just unticked would reappear on the card that cleared it.
+    const { container, saved } = draw({
+      openIds: ["p1"],
+      papers: [paper({ artifacts: { conference: "ACL 2027 (demo)", confidence: "50" } })],
+    });
+    tick(container, "ACL-demo", false);
+    expect(savedTargets(saved.at(-1))).toEqual([]);
+    expect(saved.at(-1)?.conference).toBe("");
+    expect(saved.at(-1)?.confidence).toBe("");
   });
 
   it("offers one conference select per row, the conference before the year", () => {
@@ -1116,18 +1181,18 @@ describe("deleting a paper", () => {
 });
 
 describe("declaring a target venue", () => {
-  // Declaring where a paper is going *is* pre-registering it. These two selects wrote only
+  // Declaring where a paper is going *is* pre-registering it. The card's venue control wrote only
   // `artifacts.conference`, while every reader of "is this pre-registered" looks at
   // `artifacts.venue_targets` -- so an author who set their target here was still counted as not
   // having pre-registered, and still got asked to.
-  function retarget(record: AdminBotPaperRecord) {
+  function ticked(record: AdminBotPaperRecord, key: string, on = true) {
     const { container, saved } = draw({ papers: [record], openIds: ["p1"] });
-    const venue = container.querySelector<HTMLSelectElement>('[data-testid="target-venue-p1"]');
-    if (!venue) {
-      throw new Error("venue select missing");
+    const box = container.querySelector<HTMLInputElement>(`[data-testid="target-venue-p1-${key}"]`);
+    if (!box) {
+      throw new Error(`venue checkbox missing: ${key}`);
     }
-    venue.value = "ICLR";
-    venue.dispatchEvent(new Event("change", { bubbles: true }));
+    box.checked = on;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
     return saved.at(-1);
   }
 
@@ -1139,7 +1204,7 @@ describe("declaring a target venue", () => {
   }
 
   it("registers the paper for the venue it was just pointed at", () => {
-    const written = retarget(paper());
+    const written = ticked(paper(), "ICLR");
     expect(written?.conference).toContain("ICLR");
     const targets = targetsOf(written);
     expect(targets).toHaveLength(1);
@@ -1149,22 +1214,31 @@ describe("declaring a target venue", () => {
     expect(targets[0]?.confidence).toBe(50);
   });
 
-  it("replaces its own venue instead of stacking a second entry for it", () => {
-    const written = retarget(
-      paper({
-        artifacts: {
-          conference: "ICLR 2026",
-          venue_targets: JSON.stringify([{ venue_id: "ICLR", label: "ICLR 2026", confidence: 30 }]),
-        },
-      } as Partial<AdminBotPaperRecord>),
-    );
-    expect(targetsOf(written)).toHaveLength(1);
+  it("shows a venue it already holds as one ticked box, not two", () => {
+    const { container } = draw({
+      openIds: ["p1"],
+      papers: [
+        paper({
+          artifacts: {
+            // The same venue under both ids: the card's own wording, and the bare catalog id the
+            // Add a project form writes. One venue, so one box.
+            conference: "ICLR 2026",
+            venue_targets: JSON.stringify([
+              { venue_id: "ICLR", label: "ICLR 2026", confidence: 30 },
+            ]),
+          },
+        } as Partial<AdminBotPaperRecord>),
+      ],
+    });
+    const boxes = container.querySelectorAll('[data-testid^="target-venue-p1-ICLR"]');
+    expect([...boxes].filter((box) => (box as HTMLInputElement).checked)).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid^="target-venue-row-p1-"]')).toHaveLength(1);
   });
 
   it("leaves a venue the paper is also aimed at alone", () => {
-    // Somebody adjusting the year on this card must not drop the second venue they registered
-    // through the pre-registration dialog.
-    const written = retarget(
+    // Somebody ticking a second venue on this card must not drop the one they registered through
+    // the pre-registration dialog.
+    const written = ticked(
       paper({
         artifacts: {
           venue_targets: JSON.stringify([
@@ -1172,10 +1246,30 @@ describe("declaring a target venue", () => {
           ]),
         },
       } as Partial<AdminBotPaperRecord>),
+      "ICLR",
     );
     const ids = targetsOf(written).map((target) => target.venue_id);
     expect(ids).toContain("arr_2026_october");
     expect(ids).toContain("ICLR");
+  });
+
+  it("unticks one venue without dropping the rest", () => {
+    const written = ticked(
+      paper({
+        artifacts: {
+          venue_targets: JSON.stringify([
+            { venue_id: "arr_2026_october", label: "ARR October", confidence: 80 },
+            { venue_id: "ICLR", label: "ICLR 2027", confidence: 30 },
+          ]),
+        },
+      } as Partial<AdminBotPaperRecord>),
+      "ICLR",
+      false,
+    );
+    const ids = targetsOf(written).map((target) => target.venue_id);
+    expect(ids).toEqual(["arr_2026_october"]);
+    // The legacy pair follows the survivor rather than keeping a venue nobody is aiming at.
+    expect(written?.conference).toBe("ARR October");
   });
 });
 
