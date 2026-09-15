@@ -8,6 +8,7 @@
 // Slots are loaded per card rather than all at once. Twenty-three rows per paper is a lot to fetch
 // for papers nobody has expanded, and a card that is closed shows only the counts, which the
 // overview already carries.
+import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
@@ -109,6 +110,12 @@ function headProfessorMemberId(host: AdminBotPaperSlotsHost): string {
  *
  * Filtered rather than hidden-and-sent: a name that is not on this list never reaches the preview,
  * so what an admin reads before pressing is exactly who gets a message.
+ *
+ * "Has left" goes through `adminBotIsAlumniMember`, which reads `member_type` as well as `status`.
+ * The roster spells it in the type for 22 of the lab's 24 alumni, with no status at all, so a
+ * `status`-only test -- which this was -- left nearly all of them in the preview. The send refused
+ * them anyway (`sendMemberNudge` asks the same helper), so this was a count and a list of names
+ * that did not match what pressing the button would do.
  */
 export function nudgeableBatches(
   host: AdminBotPaperSlotsHost,
@@ -125,7 +132,7 @@ export function nudgeableBatches(
       return false;
     }
     const full = member.privilege_level === "member" || member.privilege_level === "admin";
-    return full && member.status !== "alumni" && member.status !== "external";
+    return full && !adminBotIsAlumniMember(member) && member.status !== "external";
   });
 }
 
