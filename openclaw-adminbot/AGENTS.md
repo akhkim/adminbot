@@ -82,7 +82,10 @@ lane, which specific tests fail, and why. This is the summary.
   80 keys x 18 locales, so it is a product call, not a test fix. The missing keys fall back to
   English until it is run. Recent growth: +8 on 2026-09-14 (5 recommendation-letter status wording,
   3 Collaborate announcements panel), +3 for the My Desk queue blurbs
-  (`professor.{piReview,drafts,escalated}.blurb`).
+  (`professor.{piReview,drafts,escalated}.blurb`), +4 -1 on 2026-09-15 for the My Desk row
+  disclosure (`professor.{showMore,showFewer,showing,newTab}` in, the dead `professor.more` out --
+  the locales still carry that one until the pipeline runs, so the mismatch it reports is one stale
+  key as well as the missing ones).
   (Measured 2026-09-14. The figures here read "1,567 against 2,009, a uniform 442-key gap" and
   "2 failures" until then, and all of them had drifted: the locales *have* been regenerated since
   that was written, which is why the gap is 80 rather than 442. Count them rather than trusting

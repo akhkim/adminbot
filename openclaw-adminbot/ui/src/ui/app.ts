@@ -360,6 +360,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBroadcastAvailability?: string;
   @state() adminBotBroadcastBusy = false;
   @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
+  // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
+  // setting, and a queue she opened on Monday is a different queue by Thursday.
+  @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   @state() adminBotMeetingsSaving = false;

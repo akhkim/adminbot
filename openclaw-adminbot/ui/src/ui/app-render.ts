@@ -3443,6 +3443,17 @@ export function renderApp(state: AppViewState) {
               escalated: state.adminBotEscalatedNudges ?? [],
               piReview: state.adminBotPiReview ?? [],
               onOpen: (tab) => state.setTab(tab),
+              expanded: state.professorExpandedLists,
+              onToggleExpand: (id) => {
+                const next = new Set(state.professorExpandedLists);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                state.professorExpandedLists = next;
+                requestHostUpdate?.();
+              },
               broadcast: state.adminBotBroadcast ?? null,
               broadcastDraft: state.adminBotBroadcastDraft,
               broadcastExpiry: state.adminBotBroadcastExpiry,

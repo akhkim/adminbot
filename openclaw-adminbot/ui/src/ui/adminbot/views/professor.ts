@@ -5,9 +5,11 @@
 // built for working through one kind of thing, and the question this page answers is the one nobody
 // could answer without opening all of them: what is waiting on me.
 //
-// So it aggregates and links; it does not re-implement. Every section is a count, the few rows
-// worth seeing, and the way through to the page that actually does the work. A section that grew
-// its own editing controls would be a second place to do the same job, drifting from the first.
+// So it aggregates and links; it does not re-implement. Every section is a count and the few rows
+// worth seeing, where each row is itself the way through to the page that does the work and the rest
+// of the queue is one press away. What no section carries is a control that changes something: one
+// that grew its own editing would be a second place to do the same job, drifting from the first.
+// Linking harder is not that -- it is the same aggregation, reachable.
 //
 // The broadcast box at the top is the one exception, and it is not a second place: the composer was
 // *moved* here out of Lab Sharing rather than copied, so there is still exactly one surface that
@@ -57,6 +59,14 @@ export type ProfessorViewProps = {
    */
   piReview: PiReviewRow[];
   onOpen: (tab: Tab) => void;
+  /**
+   * Row lists open past their preview cap, keyed by list id.
+   *
+   * Per list rather than per section, because the adoption section is three lists side by side and
+   * opening "who has a blank profile" is not a request to open the two columns beside it.
+   */
+  expanded: ReadonlySet<string>;
+  onToggleExpand: (id: string) => void;
   /** The live broadcast, or null when nothing is being said. */
   broadcast: LabBroadcast | null;
   /** The compose box's contents. Undefined means it has not been touched since the page loaded. */
@@ -76,6 +86,16 @@ export type ProfessorViewProps = {
 
 /** How many rows a section shows before it stops being a summary. */
 const PREVIEW_ROWS = 5;
+
+/**
+ * How many rows an opened list shows.
+ *
+ * Opening a list asks for the rest of it, not for all two hundred: past this the page stops being
+ * something read top to bottom, and the queue's own page -- which filters and sorts -- is the
+ * better answer. So the cap stays, the line under the list says what is still held back, and the
+ * link to that page sits right beneath it.
+ */
+const EXPANDED_ROWS = 20;
 
 /** Steps at or before submission: the window in which reading the draft still changes it. */
 const PRE_SUBMISSION_STEPS = new Set(["brainstorming_docs", "overleaf_writing", "submission"]);
@@ -354,7 +374,7 @@ function section(params: {
       ${params.blurb ? html`<p class="professor__blurb">${params.blurb}</p>` : nothing}
       ${params.body}
       <button
-        class="btn btn--sm professor__open"
+        class="btn btn--sm btn--ghost professor__open"
         type="button"
         data-testid=${`professor-open-${params.id}`}
         @click=${() => params.onOpen(params.tab)}
@@ -366,18 +386,116 @@ function section(params: {
   `;
 }
 
-function rows(items: unknown[], empty: string) {
-  if (!items.length) {
-    return html`<p class="professor__empty">${empty}</p>`;
-  }
-  return html`<ul class="professor__list">
-    ${items.slice(0, PREVIEW_ROWS)}
-    ${items.length > PREVIEW_ROWS
-      ? html`<li class="muted">
-          ${t("professor.more", { count: String(items.length - PREVIEW_ROWS) })}
-        </li>`
+/**
+ * One row, drawn as the control it already looked like.
+ *
+ * Every row here is about something -- a request, a paper, a person -- and what you want on seeing
+ * it is that thing, not the top of the queue it came out of. So the row is the button and the
+ * footer link is the fallback, where before the footer link was the only way off the page and the
+ * five rows above it were decoration.
+ *
+ * `action` is the section's own "open" label said again for a screen reader: the visible row is
+ * facts, and facts do not say that pressing them goes anywhere. `aside` is for a row with a second,
+ * different destination -- it sits outside the button, because a link inside a button is reachable
+ * by neither.
+ */
+function rowButton(params: { action: string; onOpen: () => void; body: unknown; aside?: unknown }) {
+  return html`<li>
+    <button class="professor__row" type="button" @click=${params.onOpen}>
+      <span class="professor__row-body">${params.body}</span>
+      <span class="sr-only">${params.action}</span>
+      <span class="professor__row-go" aria-hidden="true">${icons.chevronRight}</span>
+    </button>
+    ${params.aside ?? nothing}
+  </li>`;
+}
+
+/** A row whose subject lives outside AdminBot, so the whole row is the link out to it. */
+function rowLink(params: { href: string; body: unknown }) {
+  return html`<li>
+    <a class="professor__row" href=${params.href} target="_blank" rel="noreferrer noopener">
+      <span class="professor__row-body">${params.body}</span>
+      <span class="sr-only">${t("professor.newTab")}</span>
+      <span class="professor__row-go" aria-hidden="true">${icons.externalLink}</span>
+    </a>
+  </li>`;
+}
+
+/**
+ * The line that used to read "+3 more", which looked like a control and was not one.
+ *
+ * Now it is the one it was imitating: pressing it opens the rest of the list where it already is,
+ * which is what somebody reaching for it wanted -- those rows, here, clickable -- and not a trip to
+ * another page to go and find them. Keyboard users reach it at all for the first time; as a muted
+ * `<li>` it sat outside the tab order, and a screen reader read it as one more row of the queue.
+ *
+ * When an opened list is still holding rows back the button says "Show fewer" and the note beside it
+ * says how many of how many are drawn: a list that quietly stops at twenty of forty-three would be
+ * the same lie the bucket counts are careful not to tell.
+ */
+function moreToggle(params: {
+  id: string;
+  controls: string;
+  open: boolean;
+  shown: number;
+  hidden: number;
+  total: number;
+  onToggleExpand: (id: string) => void;
+}) {
+  return html`<div class="professor__more">
+    <button
+      class="professor__more-btn"
+      type="button"
+      aria-expanded=${params.open ? "true" : "false"}
+      aria-controls=${params.controls}
+      data-testid=${`professor-more-${params.id}`}
+      @click=${() => params.onToggleExpand(params.id)}
+    >
+      <span class="professor__more-chevron" aria-hidden="true"
+        >${params.open ? icons.chevronDown : icons.chevronRight}</span
+      >
+      ${params.open
+        ? t("professor.showFewer")
+        : t("professor.showMore", { count: String(params.hidden) })}
+    </button>
+    ${params.open && params.hidden > 0
+      ? html`<span class="professor__more-note muted"
+          >${t("professor.showing", {
+            shown: String(params.shown),
+            total: String(params.total),
+          })}</span
+        >`
       : nothing}
-  </ul>`;
+  </div>`;
+}
+
+function rows(params: {
+  id: string;
+  items: unknown[];
+  empty: string;
+  expanded: ReadonlySet<string>;
+  onToggleExpand: (id: string) => void;
+}) {
+  if (!params.items.length) {
+    return html`<p class="professor__empty">${params.empty}</p>`;
+  }
+  const open = params.expanded.has(params.id);
+  const shown = params.items.slice(0, open ? EXPANDED_ROWS : PREVIEW_ROWS);
+  const listId = `professor-list-${params.id}`;
+  return html`<ul id=${listId} class="professor__list" data-open=${open ? "true" : "false"}>
+      ${shown}
+    </ul>
+    ${params.items.length > PREVIEW_ROWS
+      ? moreToggle({
+          id: params.id,
+          controls: listId,
+          open,
+          shown: shown.length,
+          hidden: params.items.length - shown.length,
+          total: params.items.length,
+          onToggleExpand: params.onToggleExpand,
+        })
+      : nothing}`;
 }
 
 /**
@@ -388,51 +506,72 @@ function rows(items: unknown[], empty: string) {
  * under and the relative date beside it, so "Overdue" is answerable at a glance instead of being
  * something she works out from four ISO dates.
  */
-function letterBody(due: readonly RecLetterDue[]) {
+function letterBody(
+  due: readonly RecLetterDue[],
+  props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand">,
+) {
   if (!due.length) {
     return html`<p class="professor__empty">${t("professor.letters.empty")}</p>`;
   }
-  const groups = recLetterGroups(due);
-  const hidden = due.length - groups.reduce((sum, group) => sum + group.rows.length, 0);
-  return html`<div class="professor__buckets">
-    ${groups.map(
-      (group) => html`<div
-        class="professor__bucket"
-        data-testid=${`professor-letters-${group.bucket}`}
-        data-bucket=${group.bucket}
-      >
-        <div class="professor__column-head">
-          <span>${t(`professor.letters.bucket.${group.bucket}`)}</span>
-          <span class="ab-num">${group.total}</span>
-        </div>
-        ${group.rows.length
-          ? html`<ul class="professor__list">
-              ${group.rows.map(
-                (entry) => html`<li>
-                  <strong>${entry.request.member_name}</strong>
-                  <span class="muted"
-                    >${entry.request.schools?.length
-                      ? t("professor.letters.schools", {
-                          count: String(entry.request.schools.length),
-                        })
-                      : t("professor.letters.noSchools")}</span
-                  >
-                  <span class="professor__when">${recLetterDueLabel(entry)}</span>
-                </li>`,
-              )}
-            </ul>`
-          : nothing}
-      </div>`,
-    )}
-    ${hidden > 0
-      ? html`<p class="professor__bucket-more muted">
-          ${t("professor.more", { count: String(hidden) })}
-        </p>`
-      : nothing}
-  </div>`;
+  // One switch for the whole section rather than one per bucket: the cap is taken across the queue
+  // before grouping, so "the rest of it" is a fact about the queue and not about "Next 30 days".
+  const open = props.expanded.has("letters");
+  const groups = recLetterGroups(due, open ? EXPANDED_ROWS : PREVIEW_ROWS);
+  const shown = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  return html`<div
+      class="professor__buckets"
+      id="professor-list-letters"
+      data-open=${open ? "true" : "false"}
+    >
+      ${groups.map(
+        (group) => html`<div
+          class="professor__bucket"
+          data-testid=${`professor-letters-${group.bucket}`}
+          data-bucket=${group.bucket}
+        >
+          <div class="professor__column-head">
+            <span>${t(`professor.letters.bucket.${group.bucket}`)}</span>
+            <span class="ab-num">${group.total}</span>
+          </div>
+          ${group.rows.length
+            ? html`<ul class="professor__list">
+                ${group.rows.map((entry) =>
+                  rowButton({
+                    action: t("professor.letters.open"),
+                    onOpen: () => props.onOpen("adminbotRecLetters"),
+                    body: html`<strong>${entry.request.member_name}</strong>
+                      <span class="muted"
+                        >${entry.request.schools?.length
+                          ? t("professor.letters.schools", {
+                              count: String(entry.request.schools.length),
+                            })
+                          : t("professor.letters.noSchools")}</span
+                      >
+                      <span class="professor__when">${recLetterDueLabel(entry)}</span>`,
+                  }),
+                )}
+              </ul>`
+            : nothing}
+        </div>`,
+      )}
+    </div>
+    ${due.length > PREVIEW_ROWS
+      ? moreToggle({
+          id: "letters",
+          controls: "professor-list-letters",
+          open,
+          shown,
+          hidden: due.length - shown,
+          total: due.length,
+          onToggleExpand: props.onToggleExpand,
+        })
+      : nothing}`;
 }
 
-function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
+function adoptionBody(
+  profiles: readonly MemberProfileOverviewRow[],
+  props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand">,
+) {
   return html`<div class="professor__columns">
     ${adoptionColumns(profiles).map(
       (column) => html`<div
@@ -444,15 +583,20 @@ function adoptionBody(profiles: readonly MemberProfileOverviewRow[]) {
           <span>${column.label}</span>
           <span class="ab-num">${column.rows.length}</span>
         </div>
-        ${rows(
-          column.rows.map(
-            (row) => html`<li>
-              <strong>${row.name}</strong>
-              <span class="muted">${column.detail(row)}</span>
-            </li>`,
+        ${rows({
+          id: `adoption-${column.id}`,
+          items: column.rows.map((row) =>
+            rowButton({
+              action: t("professor.adoption.open"),
+              onOpen: () => props.onOpen("adminbotProfileOverview"),
+              body: html`<strong>${row.name}</strong>
+                <span class="muted">${column.detail(row)}</span>`,
+            }),
           ),
-          t("professor.adoption.empty"),
-        )}
+          empty: t("professor.adoption.empty"),
+          expanded: props.expanded,
+          onToggleExpand: props.onToggleExpand,
+        })}
       </div>`,
     )}
   </div>`;
@@ -603,28 +747,41 @@ export function renderProfessorView(props: ProfessorViewProps) {
         tab: "adminbotPapers",
         linkLabel: t("professor.piReview.open"),
         onOpen: props.onOpen,
-        body: rows(
-          props.piReview.map(
-            (row) => html`<li>
-              <strong>${row.title}</strong>
-              <span class="muted">${row.authors.join(", ")}</span>
-              ${row.drivePdfUrl
-                ? html`<a href=${row.drivePdfUrl} target="_blank" rel="noreferrer noopener"
+        body: rows({
+          id: "pi-review",
+          items: props.piReview.map((row) =>
+            rowButton({
+              action: t("professor.piReview.open"),
+              onOpen: () => props.onOpen("adminbotPapers"),
+              body: html`<strong>${row.title}</strong>
+                <span class="muted">${row.authors.join(", ")}</span>
+                ${row.packageComplete
+                  ? nothing
+                  : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
+                ${row.waitingSince
+                  ? html`<span class="professor__when"
+                      >${t("professor.piReview.since", {
+                        date: row.waitingSince.slice(0, 10),
+                      })}</span
+                    >`
+                  : nothing}`,
+              // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
+              // own target rather than being swallowed by the row.
+              aside: row.drivePdfUrl
+                ? html`<a
+                    class="professor__row-aside"
+                    href=${row.drivePdfUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
                     >${t("professor.piReview.pdf")}</a
                   >`
-                : nothing}
-              ${row.packageComplete
-                ? nothing
-                : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
-              ${row.waitingSince
-                ? html`<span class="professor__when"
-                    >${t("professor.piReview.since", { date: row.waitingSince.slice(0, 10) })}</span
-                  >`
-                : nothing}
-            </li>`,
+                : undefined,
+            }),
           ),
-          t("professor.piReview.empty"),
-        ),
+          empty: t("professor.piReview.empty"),
+          expanded: props.expanded,
+          onToggleExpand: props.onToggleExpand,
+        }),
       }),
     },
     {
@@ -643,22 +800,27 @@ export function renderProfessorView(props: ProfessorViewProps) {
         tab: "adminbotAnnouncements",
         linkLabel: t("professor.escalated.open"),
         onOpen: props.onOpen,
-        body: rows(
-          props.escalated.map(
-            (row) => html`<li>
-              <strong>${row.name}</strong>
-              <span class="muted"
-                >${row.items.length === 1
-                  ? (row.items[0]?.title ?? "")
-                  : t("professor.escalated.items", { count: String(row.items.length) })}</span
-              >
-              ${row.escalatedAt
-                ? html`<span class="professor__when">${row.escalatedAt.slice(0, 10)}</span>`
-                : nothing}
-            </li>`,
+        body: rows({
+          id: "escalated",
+          items: props.escalated.map((row) =>
+            rowButton({
+              action: t("professor.escalated.open"),
+              onOpen: () => props.onOpen("adminbotAnnouncements"),
+              body: html`<strong>${row.name}</strong>
+                <span class="muted"
+                  >${row.items.length === 1
+                    ? (row.items[0]?.title ?? "")
+                    : t("professor.escalated.items", { count: String(row.items.length) })}</span
+                >
+                ${row.escalatedAt
+                  ? html`<span class="professor__when">${row.escalatedAt.slice(0, 10)}</span>`
+                  : nothing}`,
+            }),
           ),
-          t("professor.escalated.empty"),
-        ),
+          empty: t("professor.escalated.empty"),
+          expanded: props.expanded,
+          onToggleExpand: props.onToggleExpand,
+        }),
       }),
     },
     {
@@ -673,7 +835,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         onOpen: props.onOpen,
         body: props.requestsLoading
           ? html`<p class="professor__empty">${t("professor.loading")}</p>`
-          : letterBody(letters),
+          : letterBody(letters, props),
       }),
     },
     {
@@ -686,20 +848,24 @@ export function renderProfessorView(props: ProfessorViewProps) {
         tab: "adminbotPapers",
         linkLabel: t("professor.drafts.open"),
         onOpen: props.onOpen,
-        body: rows(
-          drafts.map(
-            (draft) => html`<li>
-              <a href=${draft.url} target="_blank" rel="noreferrer noopener"
-                >${draft.paper.title}</a
-              >
-              <span class="muted">${draft.paper.authors.join(", ")}</span>
-              ${draft.deadline
-                ? html`<span class="professor__when">${draft.deadline}</span>`
-                : nothing}
-            </li>`,
+        // The draft itself is the destination here -- the row is the link, title to deadline,
+        // rather than a line of text with a link at the front of it.
+        body: rows({
+          id: "drafts",
+          items: drafts.map((draft) =>
+            rowLink({
+              href: draft.url,
+              body: html`<strong>${draft.paper.title}</strong>
+                <span class="muted">${draft.paper.authors.join(", ")}</span>
+                ${draft.deadline
+                  ? html`<span class="professor__when">${draft.deadline}</span>`
+                  : nothing}`,
+            }),
           ),
-          t("professor.drafts.empty"),
-        ),
+          empty: t("professor.drafts.empty"),
+          expanded: props.expanded,
+          onToggleExpand: props.onToggleExpand,
+        }),
       }),
     },
     {
@@ -711,7 +877,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         tab: "adminbotProfileOverview",
         linkLabel: t("professor.adoption.open"),
         onOpen: props.onOpen,
-        body: adoptionBody(props.profiles),
+        body: adoptionBody(props.profiles, props),
       }),
     },
   ];

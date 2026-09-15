@@ -1506,9 +1506,83 @@
 
 .professor__list li {
   display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+/* An opened list scrolls inside itself rather than pushing the sections below it off the screen:
+   the point of opening one queue is to read it without losing the page it sits on. */
+.professor__list[data-open="true"] {
+  max-height: 22rem;
+  overflow-y: auto;
+  /* Room for the focus ring on the last row, which a scroll container would otherwise clip. */
+  padding: 2px;
+  margin-inline: -2px;
+}
+
+/* The row itself, which is now the way through to whatever it is about. Reset to look like the
+   text it replaced: a row that announced itself as a button with a border and a background would
+   put five buttons where the page wants a readable list. The affordance is the hover ground, the
+   chevron, and the focus ring -- enough to invite a click, quiet enough to still read as a queue. */
+.professor__row {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  margin-inline-start: calc(-1 * var(--space-2));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.professor__row:hover {
+  background: var(--bg-hover);
+}
+
+.professor__row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   align-items: baseline;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* Sits still at the end of the row, and only colours in on hover: a chevron per row at full
+   strength is five arrows pointing at nothing in particular. */
+.professor__row-go {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.professor__row:hover .professor__row-go,
+.professor__row:focus-visible .professor__row-go {
+  opacity: 1;
+}
+
+.professor__row-go svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* A row's second errand -- the PDF on a paper waiting for approval -- kept outside the row button
+   so both are reachable. */
+.professor__row-aside {
+  flex: none;
+  align-self: center;
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
 }
 
 .professor__when {
@@ -1625,13 +1699,48 @@
   color: var(--danger, var(--warn));
 }
 
-/* Everything past the visible slice, counted once under the last bucket rather than per window --
-   a "+2 more" inside each of four buckets says nothing about how long the queue actually is. */
-.professor__bucket-more {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
+/* The switch that opens the rest of the list, counted once for the whole queue rather than per
+   window -- a "+2 more" inside each of four buckets says nothing about how long the queue is. */
+.professor__more {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
+.professor__more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+.professor__more-btn:hover {
+  text-decoration: underline;
+}
+
+.professor__more-chevron {
+  display: inline-flex;
+}
+
+.professor__more-chevron svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.professor__more-note {
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Quieter than it was. It is no longer the only way off the page -- every row is -- so it reads as
+   what it now does: the whole queue, with the filters and sorting this page deliberately lacks. */
 .professor__open {
   display: inline-flex;
   align-items: center;
