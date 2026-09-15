@@ -72,12 +72,17 @@ lane, which specific tests fail, and why. This is the summary.
   `dashboard.ts:474` iterates one. `paper-cycle.ts:201` is a narrowing false positive -- the call is
   guarded at line 188 -- and `paper-grid.ts:26`'s unused `columnIndexOf` reads as a half-removed
   feature rather than a typing slip.
-- UI suite: 2 failures, both in `i18n/test/translate.test.ts`. Every shipped locale bundle sits at
-  1,567 keys against English's 2,009 — a uniform 442-key gap that no locale was ever regenerated
-  for. Closing it means running the `ui:i18n:sync` translation pipeline over 442 keys x 18 locales,
-  so it is a product call, not a test fix. The gap widened by 8 on 2026-09-14 — 5 for the
-  recommendation-letter status wording, 3 for the Collaborate announcements panel — which fall back
-  to English until that pipeline is run, like the other 442.
+- UI suite: 1 failure, `i18n/test/translate.test.ts > keeps shipped locales structurally aligned
+  with English`. Every shipped locale bundle sits at 2,233 keys against English's 2,313 — a uniform
+  80-key gap across all 18. Closing it means running the `ui:i18n:sync` translation pipeline over
+  80 keys x 18 locales, so it is a product call, not a test fix. The missing keys fall back to
+  English until it is run. Recent growth: +8 on 2026-09-14 (5 recommendation-letter status wording,
+  3 Collaborate announcements panel), +3 for the My Desk queue blurbs
+  (`professor.{piReview,drafts,escalated}.blurb`).
+  (Measured 2026-09-14. The figures here read "1,567 against 2,009, a uniform 442-key gap" and
+  "2 failures" until then, and all of them had drifted: the locales *have* been regenerated since
+  that was written, which is why the gap is 80 rather than 442. Count them rather than trusting
+  this line -- flatten each bundle's keys and diff against `en.ts`.)
   `ui/src/ui/components/feedback-widget.test.ts` still flakes in roughly 1 run in 6; see
   docs/refactor-baseline.md. Everything else is deterministic: 2,899 passed / 31 skipped, identical
   across 12 consecutive runs.
