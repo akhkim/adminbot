@@ -626,6 +626,55 @@ export function archivalLabelOf(venue: DeadlineVenue): string {
 }
 
 /**
+ * Every site the venue meets at, in the order it published them.
+ *
+ * A workshop has no location of its own: it inherits the conference it is attached to, which is
+ * what the reader is deciding about when a workshop deadline comes up. A multi-site conference
+ * publishes all of its sites and the board keeps all of them — NeurIPS 2026 runs in Sydney,
+ * Atlanta and Paris at once, and naming only the first would tell most attendees the wrong
+ * continent. Sites arrive semicolon-separated because each one carries its own "City, Country"
+ * comma.
+ */
+export function venueLocationSites(venue: DeadlineVenue): string[] {
+  return (venue.conference_location ?? "")
+    .split(";")
+    .map((site) => site.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Sites as one line of text, for a title attribute or a surface with no room for markup.
+ * Empty when the venue has published no location.
+ */
+export function venueLocationLabel(venue: DeadlineVenue): string {
+  return venueLocationSites(venue).join(" · ");
+}
+
+/**
+ * The location chip.
+ *
+ * `data-site-count` lets a narrow surface tighten a multi-site chip without the renderer having
+ * to know which surface it is on, and the full list stays in `title` for the case where CSS
+ * truncates it.
+ */
+function renderVenueLocation(venue: DeadlineVenue) {
+  const sites = venueLocationSites(venue);
+  if (!sites.length) {
+    return nothing;
+  }
+  const label = sites.join(" · ");
+  return html`<span
+    class="deadline-location"
+    data-site-count=${sites.length}
+    title=${sites.length > 1 ? `Multi-site: ${label}` : label}
+  >
+    <span class="deadline-location__icon" aria-hidden="true">${icons.mapPin}</span>
+    <span class="sr-only">${sites.length > 1 ? "Locations" : "Location"}:</span>
+    <span class="deadline-location__sites">${label}</span>
+  </span>`;
+}
+
+/**
  * Only the publication policy is shown now.
  *
  * The Primary/Secondary venue priority was dropped from the board: it applied to 10 of 154 venues,
@@ -1477,7 +1526,7 @@ class AdminbotDeadlinesView extends LitElement {
             <span class="deadline-board__hero-urgency"
               >${daysLeftLabel(entry.instant, this.now)}</span
             >
-            ${renderClassification(entry.venue)}
+            ${renderClassification(entry.venue)} ${renderVenueLocation(entry.venue)}
           </div>
         </div>
         ${this.period === "upcoming"
@@ -1856,7 +1905,7 @@ class AdminbotDeadlinesView extends LitElement {
           <span aria-hidden="true">·</span>
           <span class="deadline-card__stage">${capitalize(venue.deadline_label)}</span>
         </p>
-        ${renderClassification(venue)}
+        ${renderVenueLocation(venue)} ${renderClassification(venue)}
         <span class="deadline-card__date-row">
           <time class="deadline-card__date" datetime=${venue.deadline_aoe}>
             ${renderAoeDateTime(venue.deadline_aoe)}
@@ -1988,6 +2037,7 @@ class AdminbotDeadlinesView extends LitElement {
               <th>Item</th>
               <th>Type</th>
               <th>Venue</th>
+              <th>Location</th>
               <th><span class="sr-only">Source and history</span></th>
             </tr>
           </thead>
@@ -2020,6 +2070,14 @@ class AdminbotDeadlinesView extends LitElement {
                     </span>
                   </td>
                   <td class="deadline-table__venue">${entry.venue.venue_group}</td>
+                  <!-- No pin icon here: the column heading already says "Location", and a
+                       column of identical icons would only add noise. A multi-site venue stays
+                       on one line, ellipsised, so a table of twenty NeurIPS workshops does not
+                       become three times as tall; the full list is in the title. -->
+                  <td class="deadline-table__location" title=${venueLocationLabel(entry.venue)}>
+                    ${venueLocationLabel(entry.venue) ||
+                    html`<span aria-label="Location not published">—</span>`}
+                  </td>
                   <td>
                     ${entry.venue.stale
                       ? html`<span
@@ -2039,10 +2097,17 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
+  /**
+   * `showLocation` is off by default because every row under a group heading shares that
+   * heading's location — printing "Sydney · Atlanta · Paris" against all twenty NeurIPS
+   * workshops says nothing the heading has not already said. A standalone group has no heading,
+   * so its one row turns it back on.
+   */
   private renderGroupRow(
     entry: DeadlineBoardEntry,
     conference: string,
     groupKind: DeadlineBoardGroup["kind"] = "workshops",
+    showLocation = false,
   ) {
     const { venue, instant } = entry;
     const title = groupRowTitle(venue, conference, groupKind);
@@ -2085,7 +2150,7 @@ class AdminbotDeadlinesView extends LitElement {
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels">
               <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-              ${renderClassification(venue)}
+              ${renderClassification(venue)} ${showLocation ? renderVenueLocation(venue) : nothing}
             </span>
           </p>
           ${this.renderStale(venue)}
@@ -2167,11 +2232,19 @@ class AdminbotDeadlinesView extends LitElement {
           >
             <!-- Full venue name, not the stage: a standalone row carries no group heading
                  above it, so it is the only place the venue gets named. -->
-            ${this.renderGroupRow(solo, group.label)}
+            ${this.renderGroupRow(solo, group.label, "workshops", true)}
           </section>`;
         }
         const open = this.expandedGroups.has(group.id);
         const panelId = `deadline-group-panel-${index}`;
+        // A group is one conference — its own stages, or the workshops attached to it — so one
+        // location covers every row inside it and belongs on the heading, where it is readable
+        // without expanding the group. Scanning for the first entry that has one rather than
+        // reading entries[0] keeps the heading populated when the earliest deadline happens to
+        // be a row the collector found no location for.
+        const groupLocation = group.entries.find(
+          (entry) => venueLocationSites(entry.venue).length,
+        )?.venue;
         // A conference counts its own calendar. Splitting one venue's rows by archival status
         // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
         // reader what is behind the triangle before they open it.
@@ -2223,6 +2296,7 @@ class AdminbotDeadlinesView extends LitElement {
                           >${capitalize(group.entries[0].venue.deadline_label)}</span
                         ><span aria-hidden="true"> · </span>`
                     : nothing}${renderAoeDateTime(group.entries[0].venue.deadline_aoe)}
+                  ${groupLocation ? renderVenueLocation(groupLocation) : nothing}
                 </small>
               </span>
               <span class="deadline-group__count">${counts.join(" · ")}</span>

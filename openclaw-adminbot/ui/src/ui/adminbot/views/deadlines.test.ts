@@ -24,6 +24,8 @@ import {
   workshopGroupLabel,
   priorDeadlineRevisions,
   renderDeadlines,
+  venueLocationLabel,
+  venueLocationSites,
   workshopSourceLinks,
 } from "./deadlines.ts";
 
@@ -1593,5 +1595,145 @@ describe("add to my timeline", () => {
     addButtons(container)[0].click();
     await settle(container);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Couldn't add it");
+  });
+});
+
+describe("venue location", () => {
+  it("splits a multi-site conference into every site it publishes", () => {
+    // NeurIPS 2026 is genuinely three meetings. Naming only Sydney would tell an Atlanta or
+    // Paris attendee the wrong continent, so all three survive the parse.
+    expect(
+      venueLocationSites({
+        conference_location: "Sydney, Australia; Atlanta, USA; Paris, France",
+      } as DeadlineVenue),
+    ).toEqual(["Sydney, Australia", "Atlanta, USA", "Paris, France"]);
+    expect(
+      venueLocationLabel({
+        conference_location: "Sydney, Australia; Atlanta, USA; Paris, France",
+      } as DeadlineVenue),
+    ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
+  });
+
+  it("keeps a single-site location whole, commas and all", () => {
+    expect(
+      venueLocationSites({ conference_location: "Budapest, Hungary" } as DeadlineVenue),
+    ).toEqual(["Budapest, Hungary"]);
+  });
+
+  it("reports no sites for a venue with no published location", () => {
+    // An ARR cycle has no venue to travel to, and the generator writes "" for it.
+    expect(venueLocationSites({ conference_location: "" } as DeadlineVenue)).toEqual([]);
+    expect(venueLocationSites({} as DeadlineVenue)).toEqual([]);
+    expect(venueLocationLabel({ conference_location: "  ;  " } as DeadlineVenue)).toBe("");
+  });
+
+  it("carries conference_location through the generated dataset", () => {
+    // Guards the collector's key projection: the field is on the canonical venues.json, and
+    // dropping it from the slim UI dataset would empty the board's locations silently.
+    const located = DEADLINE_VENUES.filter((venue) => venueLocationSites(venue).length);
+    expect(located.length).toBeGreaterThan(0);
+    expect(located.some((venue) => venueLocationSites(venue).includes("Budapest, Hungary"))).toBe(
+      true,
+    );
+    const neurips = DEADLINE_VENUES.find((venue) => venue.venue_group.includes("NeurIPS 2026"));
+    expect(venueLocationSites(neurips!)).toEqual([
+      "Sydney, Australia",
+      "Atlanta, USA",
+      "Paris, France",
+    ]);
+  });
+
+  it("shows the location on a workshop card, listing every site", async () => {
+    const container = await renderView();
+    const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
+    const neurips = cards.find(
+      (card) =>
+        card.dataset.entryType === "workshop" &&
+        card.querySelector(".deadline-card__group-name")?.textContent?.includes("NeurIPS 2026"),
+    )!;
+    const location = neurips.querySelector<HTMLElement>(".deadline-location")!;
+    expect(location.querySelector(".deadline-location__sites")?.textContent?.trim()).toBe(
+      "Sydney, Australia · Atlanta, USA · Paris, France",
+    );
+    expect(location.dataset.siteCount).toBe("3");
+    expect(location.getAttribute("title")).toContain("Multi-site");
+
+    const budapest = cards.find((card) =>
+      card.querySelector(".deadline-card__group-name")?.textContent?.includes("EMNLP 2026"),
+    )!;
+    const single = budapest.querySelector<HTMLElement>(".deadline-location")!;
+    expect(single.querySelector(".deadline-location__sites")?.textContent?.trim()).toBe(
+      "Budapest, Hungary",
+    );
+    expect(single.dataset.siteCount).toBe("1");
+    expect(single.getAttribute("title")).toBe("Budapest, Hungary");
+  });
+
+  it("gives the table a Location column, with an em dash where none is published", async () => {
+    const container = await renderView();
+    buttonNamed(container, "Table").click();
+    await settle(container);
+    const headings = [...container.querySelectorAll(".deadline-table th")].map((cell) =>
+      cell.textContent?.trim(),
+    );
+    expect(headings).toContain("Location");
+
+    const cells = [...container.querySelectorAll<HTMLElement>(".deadline-table__location")];
+    expect(cells.length).toBeGreaterThan(0);
+    // The column heading already names the field, so the cell carries no pin icon.
+    expect(
+      container.querySelector(".deadline-table__location .deadline-location__icon"),
+    ).toBeNull();
+    expect(cells.some((cell) => cell.textContent?.trim() === "Budapest, Hungary")).toBe(true);
+    expect(
+      cells.some(
+        (cell) => cell.textContent?.trim() === "Sydney, Australia · Atlanta, USA · Paris, France",
+      ),
+    ).toBe(true);
+    // ARR cycles publish no location and must still occupy the column.
+    expect(cells.some((cell) => cell.textContent?.trim() === "—")).toBe(true);
+  });
+
+  it("puts the location on a group heading rather than on every row beneath it", async () => {
+    const container = await renderView();
+    buttonNamed(container, "Groups").click();
+    await settle(container);
+    const group = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+      (section) =>
+        section.dataset.standalone !== "true" &&
+        section
+          .querySelector(".deadline-group__heading strong")
+          ?.textContent?.includes("NeurIPS 2026"),
+    )!;
+    expect(
+      group
+        .querySelector(".deadline-group__heading .deadline-location__sites")
+        ?.textContent?.trim(),
+    ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
+    // Twenty workshops that all meet in the same three cities say it once, on the heading.
+    expect(group.querySelectorAll(".deadline-group__row .deadline-location")).toHaveLength(0);
+  });
+
+  it("puts the location on a standalone group row, which has no heading above it", async () => {
+    // Searching down to one workshop leaves its bundle with a single row, which the board
+    // renders as a standalone card — no heading, so the row itself has to carry the location.
+    const container = await renderView();
+    const input = container.querySelector<HTMLInputElement>(".deadline-board__search input")!;
+    input.value = "IMPACT-SPEECH";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await settle(container);
+    buttonNamed(container, "Groups").click();
+    await settle(container);
+
+    const standalone = [...container.querySelectorAll<HTMLElement>(".deadline-group")].filter(
+      (section) => section.dataset.standalone === "true",
+    );
+    expect(standalone).toHaveLength(1);
+    expect(standalone[0].querySelector(".deadline-group__heading")).toBeNull();
+    expect(
+      standalone[0]
+        .querySelector(".deadline-group__row .deadline-location__sites")
+        ?.textContent?.trim(),
+    ).toBe("Budapest, Hungary");
   });
 });

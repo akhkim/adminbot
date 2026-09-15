@@ -1543,6 +1543,15 @@ def classify(item):
     # Kept while older calendar/matcher consumers migrate. New surfaces use the
     # explicit status above so an unknown venue is never presented as safe.
     item["archival"] = item["archival_status"] == "archival"
+    # Where the event meets, for every entry type rather than workshops only. A workshop inherits
+    # this from the conference it is attached to, but so does the conference's own main track,
+    # demo track and rebuttal window — leaving it on the workshop branch meant the board could
+    # name three cities against a NeurIPS workshop and none against NeurIPS itself. Families the
+    # table does not carry stay empty rather than guessing a city.
+    group_year = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+    item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get(
+        (family, group_year.group(1) if group_year else "unknown"), ""
+    )
     if item["entry_type"] == "workshop":
         legacy_link = normalize_url(item.get("link", ""))
         homepage = normalize_url(policy_override.get("homepage_url", item.get("homepage_url", "")))
@@ -1565,7 +1574,6 @@ def classify(item):
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = year_match.group(1) if year_match else "unknown"
         item["parent_conference_key"] = f"{family.lower()}-{year}"
-        item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get((family, year), "")
         topics = item.get("topic_profile")
         item["topic_profile"] = topics if isinstance(topics, list) and topics else [item["name"]]
         if not str(item.get("topic_evidence", "")).strip():
@@ -1776,6 +1784,7 @@ def write_outputs(items):
 
     # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
+            "conference_location",
             "entry_type", "archival_status", "venue_priority", "archival",
             "submission_type", "milestone", "schedule",
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
@@ -1814,6 +1823,11 @@ def write_outputs(items):
                 "  track?: string;\n"
                 "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
                 "  venue_family?: string;\n"
+                "  /** Where the parent conference meets, e.g. \"Budapest, Hungary\". A workshop\n"
+                "   *  inherits its conference's location. A multi-site event lists every site,\n"
+                "   *  separated by \"; \" — NeurIPS 2026 runs in Sydney, Atlanta and Paris at once.\n"
+                "   *  Empty for a venue with no fixed location (ARR cycles) or none published. */\n"
+                "  conference_location?: string;\n"
                 "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
                 "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
                 "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
