@@ -588,6 +588,7 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       setField(fields, field.key, value);
     }
   }
+  fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
 
@@ -952,6 +953,17 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
+                    ${field.key === "intake_form_url" ? html`
+                      <label class="profile__form-row">
+                        <span>${t("profile.hints.intakeFormSearch")}</span>
+                        <span><input type="checkbox" name="intake_form_unavailable"
+                          .checked=${member.intake_form_unavailable === true}
+                          @change=${(event: Event) => {
+                            const input = event.currentTarget as HTMLInputElement;
+                            const link = input.form?.querySelector<HTMLInputElement>('[name="intake_form_url"]');
+                            if (input.checked && link) link.value = "";
+                          }} /> ${t("profile.hints.intakeFormUnavailable")}</span>
+                      </label>` : nothing}
                   `,
                 )}
               </div>
@@ -1560,15 +1572,20 @@ function renderLinks(member: LabMember) {
   if (!cv && !socials.length && !site && !openReviewId) {
     return nothing;
   }
-  const link = (label: string, href: string, strong = false) => html`
-    <a
-      class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
-      href=${href}
-      target=${EXTERNAL_LINK_TARGET}
-      rel=${buildExternalLinkRel()}
-      >${label}</a
-    >
-  `;
+  const link = (label: string, href: string, strong = false) => {
+    if (!/^https?:\/\//iu.test(href)) {
+      return html`<span class="profile__link">${label}: ${href}</span>`;
+    }
+    return html`
+      <a
+        class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
+        href=${href}
+        target=${EXTERNAL_LINK_TARGET}
+        rel=${buildExternalLinkRel()}
+        >${label}</a
+      >
+    `;
+  };
   return html`
     <span class="profile__links" data-testid="profile-links">
       ${cv ? link(t("profile.social.cv"), cv, true) : nothing}

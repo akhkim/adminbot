@@ -599,7 +599,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 
     const hint = (key: string) =>
       container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
-    expect(hint("github_url")).toContain("github.com/username");
+    expect(hint("github_url")).toContain("A username, link, or note");
     expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
     expect(hint("openreview_id")).toContain("~Zhijing_Jin1");
     // The obvious ones stay quiet -- a hint on every row is a page nobody reads.
@@ -845,7 +845,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
   // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
   // field they paste into rather than a link the profile could render.
-  it("collects the member's own application form URL as a required field, not a shared link", () => {
+  it("collects the member's own application form URL as an optional field, not a shared link", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -858,10 +858,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
     const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
     expect(input).not.toBeNull();
-    // Required, and in the links group beside the other places a member's details live.
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).toBeNull();
-    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row?.querySelector(".profile__optional")).not.toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
   });
 });
 
@@ -963,12 +962,12 @@ describe("renderProfile field types", () => {
     expect(container.querySelector('textarea[name="notes"]')).toBeNull();
   });
 
-  it("renders github_url as a url input, and asks for weekly work capacity as a bounded number", () => {
+  it("renders github_url as a text input, and asks for weekly work capacity as a bounded number", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("url");
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("text");
     // Weekly capacity is the denominator the Time Availability chart reads every commitment
     // against, so the page has to ask for it. Bounded to the range the service accepts, so an
     // impossible week is refused by the control rather than by a rejected save.
@@ -1416,4 +1415,30 @@ describe("the LinkedIn URN", () => {
       ?.closest("label");
     expect(field?.querySelector(".profile__mandatory")).toBeNull();
   });
+});
+
+it("renders free-form CV and GitHub safely and leaves historical fields optional", () => {
+  const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
+  const container = renderPage(createState(member), vi.fn());
+  const links = container.querySelector('[data-testid="profile-links"]')!;
+  expect(links.textContent).toContain("Available on request");
+  expect(links.textContent).toContain("@pat");
+  expect(links.querySelector('a[href="@pat"]')).toBeNull();
+  expect(adminBotMandatoryProfileFields).not.toContain("joined_month");
+  expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).toContain("github_url");
+  expect(adminBotMandatoryProfileFields).toContain("cv_url");
+});
+
+it("saves the missing-form checkbox and clears it when a link is supplied", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ intake_form_unavailable: true })), save);
+  const checkbox = container.querySelector<HTMLInputElement>('[name="intake_form_unavailable"]')!;
+  expect(checkbox.checked).toBe(true);
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
 });

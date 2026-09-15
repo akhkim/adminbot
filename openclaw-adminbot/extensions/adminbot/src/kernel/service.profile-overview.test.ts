@@ -69,7 +69,7 @@ describe("listMemberProfileOverview", () => {
     // member's own page will not let them type those -- so the honest denominator is two smaller.
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(11);
+    expect(overview.mandatory_field_count).toBe(9);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });

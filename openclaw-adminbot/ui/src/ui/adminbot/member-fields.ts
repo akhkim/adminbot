@@ -345,7 +345,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
     example: "https://zhijing-jin.com/files/CV.pdf",
-    type: "link",
+    type: "short_text",
     group: "links",
   },
   {
@@ -365,7 +365,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     key: "github_url",
     labelKey: "profile.fields.github",
     example: "https://github.com/zhijing-jin",
-    type: "link",
+    type: "short_text",
     hintKey: "profile.hints.github",
     group: "links",
   },

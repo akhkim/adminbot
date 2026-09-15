@@ -93,3 +93,32 @@ it("does not restore an explicitly cleared legacy publication track", () => {
     }),
   ).toMatchObject({ ok: true, payload: { artifacts: { publication_track: "" } } });
 });
+
+it("accepts free-form GitHub and CV text with optional historical fields", () => {
+  const service = new AdminBotService();
+  expect(service.upsertLabMember({ id: "free", name: "Free", privilege_level: "member" }).ok).toBe(
+    true,
+  );
+  expect(
+    service.updateOwnProfile("free", {
+      github_url: "@example",
+      cv_url: "CV available on request",
+      joined_month: "",
+      intake_form_url: "",
+    }),
+  ).toMatchObject({
+    ok: true,
+    payload: { github_url: "@example", cv_url: "CV available on request" },
+  });
+  expect(service.updateOwnProfile("free", { github_url: "x".repeat(2001) })).toMatchObject({
+    ok: false,
+    status: 400,
+  });
+});
+
+it("persists an explicit missing-form answer and validates its type", () => {
+  const service = new AdminBotService();
+  service.upsertLabMember({ id: "form", name: "Form", privilege_level: "member" });
+  expect(service.updateOwnProfile("form", { intake_form_unavailable: true })).toMatchObject({ ok: true, payload: { intake_form_unavailable: true } });
+  expect(service.updateOwnProfile("form", { intake_form_unavailable: "yes" as unknown as boolean })).toMatchObject({ ok: false, status: 400 });
+});
