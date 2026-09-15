@@ -267,6 +267,39 @@ describe("the adoption columns", () => {
     expect(unattendedProjects([gone, here]).map((row) => row.id)).toEqual(["here"]);
   });
 
+  // The spelling 22 of the lab's 24 alumni actually carry: the roster was imported from a
+  // spreadsheet that records leaving in `member_type`, and those rows have no `status` at all.
+  // Testing `status` alone let every one of them back into the reminder list -- and because their
+  // records are the emptiest, they sorted to the top of it.
+  it("leaves out alumni the roster spells in member_type, with no status", () => {
+    const gone = profile({
+      id: "gone",
+      member_type: "alumni",
+      missing_fields: ["office", "phone"],
+      timeline: bare,
+      projects: { total: 2, self_updated: 0 },
+    });
+    // A combination type, which is how the sheet records somebody who left a full member.
+    const alsoGone = profile({
+      id: "also-gone",
+      member_type: "full, alumni",
+      missing_fields: ["office", "phone", "advisor"],
+      timeline: bare,
+      projects: { total: 3, self_updated: 0 },
+    });
+    const here = profile({
+      id: "here",
+      member_type: "full",
+      status: "active",
+      missing_fields: ["office"],
+      timeline: bare,
+      projects: { total: 2, self_updated: 0 },
+    });
+    expect(incompleteProfiles([gone, alsoGone, here]).map((row) => row.id)).toEqual(["here"]);
+    expect(thinTimelines([gone, alsoGone, here]).map((row) => row.id)).toEqual(["here"]);
+    expect(unattendedProjects([gone, alsoGone, here]).map((row) => row.id)).toEqual(["here"]);
+  });
+
   it("orders each column by how far behind the member is", () => {
     expect(
       incompleteProfiles([
@@ -297,9 +330,29 @@ describe("renderProfessorView", () => {
     expect(container.querySelector('[data-testid="professor-approvals"]')).toBeNull();
   });
 
-  it("carries no subtitle under any section heading", () => {
+  // One line per queue saying what it is for. Three of these sections are a list of papers with
+  // her name against them, and the titles alone did not say which question each was asking --
+  // approve the finished thing, read the unfinished thing, or go and ask somebody for something.
+  it("says what each paper queue is for, in words that tell them apart", () => {
     const { container } = draw();
-    expect(container.querySelector(".professor .card-sub")).toBeNull();
+    const blurb = (id: string) =>
+      container.querySelector(`[data-testid="professor-${id}"] .professor__blurb`)?.textContent ??
+      "";
+    // Blocked on her: nothing moves until she acts.
+    expect(blurb("pi-review")).toContain("Nothing is posted until you say yes");
+    // Not blocked on her: reading, while reading can still change something.
+    expect(blurb("drafts")).toContain("Nobody is blocked on you here");
+    // Not a paper queue at all: information nobody sent, and she is the one left to ask.
+    expect(blurb("escalated")).toContain("a message from you is what is left");
+  });
+
+  it("titles the two paper queues by the job, not by where the file lives", () => {
+    const { container } = draw();
+    const title = (id: string) =>
+      container.querySelector(`[data-testid="professor-${id}"] .card-title`)?.textContent ?? "";
+    expect(title("pi-review")).toBe("Approve before it goes public");
+    expect(title("drafts")).toBe("Read and comment while they are still writing");
+    expect(title("escalated")).toBe("Missing information — needs a word from you");
   });
 
   it("goes quiet at zero, and loud when something is waiting", () => {
@@ -427,15 +480,18 @@ describe("renderProfessorView", () => {
       "professor-adoption",
       // The settled ones keep their relative order below it, the PI gate among them.
       "professor-pi-review",
-      "professor-escalated",
       "professor-letters",
       "professor-drafts",
+      // Pinned last, below even the settled ones. See the escalated-nudges block.
+      "professor-escalated",
     ]);
   });
 
-  // The queue the escalation pass was always computing. It leads the page when it has anybody in
-  // it: everything else here is work she can schedule, and this is the part where the lab has
-  // already stopped chasing and is waiting on her.
+  // The queue the escalation pass was always computing. It sits at the bottom of the page, and
+  // stays there whether or not anybody is in it: everything above is a queue she works through on
+  // her own, and this one is the lab asking her to go and chase a person -- the slowest and least
+  // frequent thing here, and not something that should land between two reading lists on the
+  // weeks it happens to be busy.
   describe("escalated nudges", () => {
     const row = (overrides: Partial<EscalatedNudgeRow> = {}): EscalatedNudgeRow => ({
       memberId: "mei",
@@ -476,12 +532,16 @@ describe("renderProfessorView", () => {
       expect(section?.textContent).toContain("2 things outstanding");
     });
 
-    it("leads the page when somebody is waiting on her", () => {
+    it("sits at the bottom even when somebody is waiting on her", () => {
       const { container } = draw({ escalated: [row()] });
-      expect(queueOrder(container)[0]).toBe("professor-escalated");
+      const order = queueOrder(container);
+      expect(order.at(-1)).toBe("professor-escalated");
+      // And it is genuinely last, not merely below the one section that has work in it: a pinned
+      // section outranks the settled sort rather than joining it.
+      expect(order).toHaveLength(5);
     });
 
-    it("sinks below real work, and says so plainly, when nobody is waiting", () => {
+    it("stays at the bottom, and says so plainly, when nobody is waiting", () => {
       const { container } = draw({
         escalated: [],
         profiles: [profile({ id: "a", missing_fields: ["office"] })],
@@ -491,7 +551,7 @@ describe("renderProfessorView", () => {
       const order = queueOrder(container);
       // Below the adoption columns, which do have somebody in them.
       expect(order[0]).toBe("professor-adoption");
-      expect(order.indexOf("professor-escalated")).toBeGreaterThan(0);
+      expect(order.at(-1)).toBe("professor-escalated");
     });
 
     it("sends her where she can write to them", () => {
@@ -556,9 +616,7 @@ describe("the broadcast box", () => {
       broadcastExpiry: "2026-09-30",
       broadcastAvailability: "busy",
     });
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')
-      ?.click();
+    container.querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')?.click();
     expect(published).toEqual([
       { message: "Back in Toronto Thursday.", availability: "busy", expiresOn: "2026-09-30" },
     ]);
@@ -587,9 +645,8 @@ describe("the broadcast box", () => {
   it("will not post an empty or unchanged broadcast", () => {
     const empty = draw({ broadcastDraft: "   " });
     expect(
-      empty.container.querySelector<HTMLButtonElement>(
-        '[data-testid="professor-broadcast-post"]',
-      )?.disabled,
+      empty.container.querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')
+        ?.disabled,
     ).toBe(true);
 
     // Same text and same end date as what is already up: nothing to say.
@@ -616,9 +673,8 @@ describe("the broadcast box", () => {
   it("locks the controls and shows the reason while a post is in flight or has failed", () => {
     const busy = draw({ broadcastDraft: "x", broadcastBusy: true });
     expect(
-      busy.container.querySelector<HTMLTextAreaElement>(
-        '[data-testid="professor-broadcast-text"]',
-      )?.disabled,
+      busy.container.querySelector<HTMLTextAreaElement>('[data-testid="professor-broadcast-text"]')
+        ?.disabled,
     ).toBe(true);
 
     const failed = draw({

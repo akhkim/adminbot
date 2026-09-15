@@ -17,6 +17,7 @@
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
 import {
+  adminBotIsAlumniMember,
   adminBotLogisticsSettledStatuses,
   adminBotTimelineEntryTarget,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
@@ -68,7 +69,9 @@ export type ProfessorViewProps = {
   onBroadcastExpiryChange: (value: string) => void;
   onBroadcastAvailabilityChange: (value: string) => void;
   /** Post what is in the box, or take the current broadcast down with null. */
-  onBroadcastPublish: (draft: { message: string; availability: string; expiresOn: string } | null) => void;
+  onBroadcastPublish: (
+    draft: { message: string; availability: string; expiresOn: string } | null,
+  ) => void;
 };
 
 /** How many rows a section shows before it stops being a summary. */
@@ -234,11 +237,17 @@ export function overleafReadingQueue(papers: readonly AdminBotPaperRecord[]): Ov
  * not a reminder anybody is going to send. Everyone else stays, external collaborators included --
  * the lab does chase them, and dropping them would quietly shrink the count this section exists to
  * show.
+ *
+ * Asked through `adminBotIsAlumniMember`, which reads `member_type` as well as `status`. Testing
+ * `status` alone -- which this did -- let 22 of the lab's 24 alumni back into the list: the roster
+ * was imported from a spreadsheet that spells it in the type, and those 22 carry no status at all.
+ * They are the rows least likely to ever be filled in, so they sorted straight to the top of every
+ * column, which is how a reminder list ends up led by people who have left.
  */
 export function adoptionCandidates(
   profiles: readonly MemberProfileOverviewRow[],
 ): MemberProfileOverviewRow[] {
-  return profiles.filter((row) => row.status !== "alumni");
+  return profiles.filter((row) => !adminBotIsAlumniMember(row));
 }
 
 /** Members with mandatory profile fields still blank, emptiest record first. */
@@ -319,6 +328,15 @@ export function adoptionColumns(profiles: readonly MemberProfileOverviewRow[]): 
 function section(params: {
   id: string;
   title: string;
+  /**
+   * One line saying what this queue is *for*.
+   *
+   * Three of these sections are "a list of papers with your name against them", and the titles
+   * alone did not say which question each was asking -- approve the finished thing, read the
+   * unfinished thing, or go and ask somebody for something. Which one you are looking at decides
+   * whether you open it now, so it is worth a line rather than left to be inferred from the rows.
+   */
+  blurb?: string;
   count: number;
   tab: Tab;
   linkLabel: string;
@@ -333,6 +351,7 @@ function section(params: {
           >${params.count}</span
         >
       </div>
+      ${params.blurb ? html`<p class="professor__blurb">${params.blurb}</p>` : nothing}
       ${params.body}
       <button
         class="btn btn--sm professor__open"
@@ -524,7 +543,9 @@ function broadcastBox(props: ProfessorViewProps) {
             class="btn btn--sm primary"
             type="button"
             data-testid="professor-broadcast-post"
-            ?disabled=${busy || !draft.trim() || (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
+            ?disabled=${busy ||
+            !draft.trim() ||
+            (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
             @click=${() => props.onBroadcastPublish({ message: draft, availability, expiresOn })}
           >
             ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
@@ -570,12 +591,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
     adoptionColumns(props.profiles).flatMap((column) => column.rows.map((row) => row.id)),
   );
 
-  const sections = [
+  const sections: Array<{ settled: boolean; pinned?: boolean; body: unknown }> = [
     {
       settled: props.piReview.length === 0,
       body: section({
         id: "pi-review",
         title: t("professor.piReview.title"),
+        blurb: t("professor.piReview.blurb"),
         count: props.piReview.length,
         // The paper card is where the yes is given, so that is where this points.
         tab: "adminbotPapers",
@@ -607,9 +629,14 @@ export function renderProfessorView(props: ProfessorViewProps) {
     },
     {
       settled: props.escalated.length === 0,
+      // Pinned last whether or not it has anything in it. Everything above is a queue she works
+      // through on her own; this one is the lab asking her to go and chase a person, which is the
+      // slowest and least frequent thing on the page and should not sit between two reading lists.
+      pinned: true,
       body: section({
         id: "escalated",
         title: t("professor.escalated.title"),
+        blurb: t("professor.escalated.blurb"),
         count: props.escalated.length,
         // Announcements is where she writes to somebody, which is the whole point of an
         // escalation: the automatic chasing is finished and it now wants a person.
@@ -654,6 +681,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
       body: section({
         id: "drafts",
         title: t("professor.drafts.title"),
+        blurb: t("professor.drafts.blurb"),
         count: drafts.length,
         tab: "adminbotPapers",
         linkLabel: t("professor.drafts.open"),
@@ -689,12 +717,18 @@ export function renderProfessorView(props: ProfessorViewProps) {
   ];
 
   // Settled sections keep their relative order but sink below the ones with something in them: the
-  // page is read top down, and nothing outstanding should not cost the first screen.
+  // page is read top down, and nothing outstanding should not cost the first screen. A pinned
+  // section sits below both -- its place on the page is fixed, so it is not somewhere different
+  // depending on how her week is going.
   return html`
     <div class="professor">
       ${broadcastBox(props)}
       ${sections
-        .toSorted((left, right) => Number(left.settled) - Number(right.settled))
+        .toSorted(
+          (left, right) =>
+            Number(Boolean(left.pinned)) - Number(Boolean(right.pinned)) ||
+            Number(left.settled) - Number(right.settled),
+        )
         .map((entry) => entry.body)}
     </div>
   `;
