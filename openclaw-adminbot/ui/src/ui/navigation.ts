@@ -117,6 +117,11 @@ export const TAB_PAGES = [
       "adminbotProfileOverview",
       "adminbotGrantReport",
       "adminbotMailingList",
+      // Which parts of AdminBot the lab opens. It sits with the completeness columns because it is
+      // the other half of that question: those count what members filled in, this counts what they
+      // came to look at, and a blank column next to an unopened tab is a different problem from a
+      // blank column next to a busy one.
+      "adminbotTabUsage",
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
@@ -206,6 +211,7 @@ export type Tab =
   | "adminbotMembers"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
+  | "adminbotTabUsage"
   | "adminbotProfessor"
   | "adminbotTravel"
   | "adminbotTimeAvailability"
@@ -294,6 +300,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotMembers: "/members",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
+  adminbotTabUsage: "/tab-usage",
   adminbotProfessor: "/professor",
   adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
@@ -353,6 +360,7 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/professor": "adminbotProfessor",
   "/adminbot/travel": "adminbotTravel",
   "/adminbot/profile-overview": "adminbotProfileOverview",
+  "/adminbot/tab-usage": "adminbotTabUsage",
   "/adminbot/rec-letters": "adminbotRecLetters",
   "/adminbot/registrations": "adminbotRegistrations",
   "/adminbot/badges": "adminbotBadges",
@@ -531,6 +539,8 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotProfileOverview":
       return "check";
+    case "adminbotTabUsage":
+      return "barChart";
     case "adminbotProfessor":
       return "lobster";
     case "adminbotTravel":

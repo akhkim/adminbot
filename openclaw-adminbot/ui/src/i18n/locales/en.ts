@@ -503,6 +503,47 @@ export const en: TranslationMap = {
     },
   },
 
+  tabUsage: {
+    title: "Which tabs the lab opens",
+    blurb:
+      "Every tab switch, counted. The other pages here count what members filled in; this counts what they came to look at, which is the only way to tell an unwanted tab from an unfindable one.",
+    window: "Window",
+    days: "{count} days",
+    loading: "Reading\u2026",
+    empty: "No tab visits recorded in this window yet.",
+    refresh: "Refresh",
+    export: "Download CSV",
+    exporting: "Preparing\u2026",
+    untimed: "\u2014",
+    seconds: "{count}s",
+    minutes: "{count}m",
+    minutesSeconds: "{minutes}m {seconds}s",
+    totals: {
+      visits: "visits",
+      members: "people",
+      tabs: "tabs opened",
+      impersonated: "while viewing as",
+    },
+    column: {
+      tab: "Tab",
+      visits: "Visits",
+      members: "People",
+      perDay: "Per day",
+      dwell: "Median time",
+      last: "Last opened",
+    },
+    // Said on the page, not left for whoever reads the numbers next year: each clause is a way the
+    // table can be over-read, and the export is what a real analysis should start from.
+    caveat:
+      "Time on a tab is inferred from the gap to that person's next tab, capped at 30 minutes, so the last tab of a sitting is counted as a visit but not timed. A visit is one tab switch, not one read. Rows recorded while an admin was viewing as somebody are counted here and flagged in the CSV.",
+    error: {
+      signIn: "Sign in to read tab usage.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "Tab usage is admin-only.",
+      failed: "Could not read tab usage.",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",
@@ -525,6 +566,7 @@ export const en: TranslationMap = {
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
+    adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
     adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
@@ -579,6 +621,7 @@ export const en: TranslationMap = {
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+    adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
     adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",

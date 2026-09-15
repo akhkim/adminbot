@@ -4756,6 +4756,41 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
     return;
   }
+  if (req.method === "POST" && url.pathname === "/ui/tab-visits") {
+    // Any signed-in member records their own navigation, and only their own: the id comes from the
+    // session, never from the body, so one member cannot write visits as another. On a "view as"
+    // session it lands on the admin who is actually browsing, flagged -- see
+    // contracts/tab-visits.ts for why that distinction is the whole validity of the log.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "sign in required" } });
+      return;
+    }
+    const visitBody = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.recordTabVisit(principalActor(principal), {
+        tab: asString(visitBody.tab),
+        ...(principal.impersonator ? { impersonated: true } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ui/tab-visits") {
+    // Everybody's browsing at once is a governance read, like the completeness sweep below it: a
+    // member may write their own visits and may not read the lab's.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.tabVisitReport({ days: asDays(url.searchParams.get("days")) }));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ui/tab-visits/rows") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listTabVisits({ days: asDays(url.searchParams.get("days")) }));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/members/profile-overview") {
     // Everybody's completeness at once is a governance read, unlike the incomplete-fields scan
     // above which answers "is my own profile done" for any signed-in member's dashboard.
@@ -5198,6 +5233,20 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
 function updateLimit(url: URL): number | undefined {
   const raw = Number(url.searchParams.get("limit") ?? "");
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
+}
+
+/**
+ * A `?days=` value as a number, or undefined when it is absent or not one.
+ *
+ * Undefined rather than a default: the window's default belongs to the service, which is what the
+ * two readers of this log and any later one share.
+ */
+function asDays(raw: string | null): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const days = Number(raw);
+  return Number.isFinite(days) ? days : undefined;
 }
 
 function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {

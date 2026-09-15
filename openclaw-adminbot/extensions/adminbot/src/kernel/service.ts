@@ -591,6 +591,9 @@ export type AdminBotServiceStore = {
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
   appendLoginEvent(event: AdminBotLoginEvent): void;
+  appendTabVisit(visit: AdminBotTabVisit): void;
+  /** Every tab opening at or after `since`, newest first. */
+  listTabVisitsSince(since: string): AdminBotTabVisit[];
   /** Fills in where an already-appended sign-in came from. See the note on the persistence side. */
   attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void;
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
@@ -857,6 +860,12 @@ export type AdminBotSlackChannelNamingRecord = {
   rename_action_id?: string;
 };
 
+import {
+  ADMINBOT_TAB_ID_MAX_LENGTH,
+  summarizeTabVisits,
+  type AdminBotTabVisit,
+  type AdminBotTabVisitReport,
+} from "../contracts/tab-visits.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 import {
   adminBotCityChannelMinimumMembers,
@@ -7531,6 +7540,85 @@ export class AdminBotService {
     this.store.saveWorkshopMatchRun(run);
   }
 
+  /**
+   * Record that somebody opened a tab.
+   *
+   * Takes the actor rather than looking one up: the caller knows whether an admin is viewing as
+   * somebody, and this must never file that browsing under the member being viewed (see
+   * contracts/tab-visits.ts).
+   *
+   * An unknown member is refused, for the same reason the roster refuses one anywhere else: a log
+   * that accepts any id is a log whose member column cannot be joined, and the purge sweep would
+   * leave those rows behind forever. A blank or over-long tab id is refused rather than trimmed --
+   * the UI sends a constant, so a bad one is a bug worth seeing, not a row worth keeping.
+   */
+  recordTabVisit(
+    memberId: string,
+    visit: { tab: string; at?: string; impersonated?: boolean },
+  ): AdminBotServiceResponse<{ recorded: true }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, "member not found");
+    }
+    const tab = visit.tab.trim();
+    if (!tab || tab.length > ADMINBOT_TAB_ID_MAX_LENGTH) {
+      return serviceError(400, "tab is required");
+    }
+    this.store.appendTabVisit({
+      id: `tabv_${randomUUID()}`,
+      member_id: memberId,
+      tab,
+      // The server's clock, never the browser's: a laptop with a wrong clock would otherwise place
+      // its visits outside every window and drag dwell gaps negative.
+      at: visit.at ?? new Date().toISOString(),
+      ...(visit.impersonated ? { impersonated: true } : {}),
+    });
+    return { ok: true, status: 200, payload: { recorded: true } };
+  }
+
+  /**
+   * How often each tab was opened over a window, and by how many people.
+   *
+   * Derived on read rather than kept as counters: a counter answers "how many" and nothing else,
+   * while the rows answer the questions that come after it -- who, in what order, how long -- and
+   * those are the ones a write-up needs. The window is days back from now because that is how the
+   * question is asked ("last month"), and it is returned in the payload so a reader can say what
+   * they measured.
+   */
+  tabVisitReport(options?: { days?: number }): AdminBotServiceResponse<AdminBotTabVisitReport> {
+    const days = clampReportDays(options?.days);
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    const visits = this.store.listTabVisitsSince(from.toISOString());
+    return {
+      ok: true,
+      status: 200,
+      payload: summarizeTabVisits(visits, {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        days,
+      }),
+    };
+  }
+
+  /**
+   * The rows themselves, for an analysis this service should not be in the business of doing.
+   *
+   * The report above answers the question the page asks; a paper asks different ones -- transition
+   * matrices, per-person sequences, time of day -- and every one of them wants the raw log rather
+   * than another endpoint. So this hands over the window and stops.
+   */
+  listTabVisits(options?: {
+    days?: number;
+  }): AdminBotServiceResponse<{ visits: AdminBotTabVisit[]; from: string; days: number }> {
+    const days = clampReportDays(options?.days);
+    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    return {
+      ok: true,
+      status: 200,
+      payload: { visits: this.store.listTabVisitsSince(from), from, days },
+    };
+  }
+
   /** Every sign-in this member has made, newest first. */
   listLoginEvents(
     memberId: string,
@@ -12958,6 +13046,20 @@ function approvalPolicy(
   };
 }
 
+/**
+ * How many days back a usage window may ask for.
+ *
+ * Clamped rather than validated because the caller is a query string: `?days=abc` and `?days=1e9`
+ * are the same mistake, and a usage page is not worth a 400. The ceiling is a year -- long enough
+ * for any question about a term, short enough that the sweep stays one indexed range scan.
+ */
+function clampReportDays(days: number | undefined, fallback = 30): number {
+  if (typeof days !== "number" || !Number.isFinite(days)) {
+    return fallback;
+  }
+  return Math.min(365, Math.max(1, Math.floor(days)));
+}
+
 function serviceError<T>(status: number, message: string): AdminBotServiceResponse<T> {
   return { ok: false, status, error: { message } };
 }
@@ -13260,7 +13362,10 @@ function validateLabMember(
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
   }
-  if (member.intake_form_unavailable !== undefined && typeof member.intake_form_unavailable !== "boolean") {
+  if (
+    member.intake_form_unavailable !== undefined &&
+    typeof member.intake_form_unavailable !== "boolean"
+  ) {
     return "application form unavailable must be true or false";
   }
   const emailError = validateMemberEmail(member.email, existingEmail);

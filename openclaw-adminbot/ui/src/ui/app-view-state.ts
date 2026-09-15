@@ -500,6 +500,13 @@ export type AppViewState = {
   adminBotBroadcastAvailability?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  /** The tab-usage window, null until the first read answers. */
+  adminBotTabUsage: import("./adminbot/auth/session.ts").TabVisitReport | null;
+  adminBotTabUsageDays: number;
+  adminBotTabUsageLoading: boolean;
+  adminBotTabUsageError: string | null;
+  adminBotTabUsageExporting: boolean;
+  adminBotTabUsageLoadedAt: number | null;
   /** Which My Desk row lists are open past their preview cap, by list id. */
   professorExpandedLists: Set<string>;
   publishBroadcast?: (

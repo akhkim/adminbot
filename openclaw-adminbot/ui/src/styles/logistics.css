@@ -1753,3 +1753,139 @@
 .onboarding-checklist__section {
   margin-top: var(--space-5);
 }
+
+/* Tab Usage: which parts of AdminBot the lab opens.
+   A table of eleven-odd rows read by comparing them to each other, so the bar under each tab name
+   is doing the real work and the digits are there to check it. */
+.tab-usage__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tab-usage__blurb {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  max-width: 72ch;
+}
+
+.tab-usage__windows {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/* The three totals, sized like the My Desk counts: the number is the point and the word under it
+   is the caption. */
+.tab-usage__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-usage__total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tab-usage__total-value {
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.tab-usage__total-label {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.tab-usage__table {
+  width: 100%;
+  margin-top: var(--space-3);
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.tab-usage__table th,
+.tab-usage__table td {
+  padding: var(--space-2) var(--space-2);
+  text-align: start;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tab-usage__table thead th {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tab-usage__numeric {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.tab-usage__tab {
+  font-weight: 500;
+  min-width: 12rem;
+}
+
+.tab-usage__tab-name {
+  display: block;
+}
+
+/* Scaled against the busiest tab rather than against the total: the question the eye asks of this
+   column is "how does this compare to the one at the top", and a share-of-total bar answers a
+   different one badly -- with a dozen tabs every bar is short. */
+.tab-usage__bar {
+  display: block;
+  width: var(--share, 0%);
+  min-width: 2px;
+  height: 3px;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.tab-usage__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.tab-usage__actions svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.tab-usage__caveat {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  max-width: 82ch;
+}
+
+.tab-usage__empty {
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.tab-usage__error {
+  margin: var(--space-3) 0 0;
+  color: var(--danger);
+  font-size: var(--control-ui-text-sm);
+}

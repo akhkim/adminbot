@@ -41,6 +41,7 @@ import type {
   PaperCycle,
   PaperNudgeBatch,
   PaperSlotOverviewRow,
+  TabVisitReport,
 } from "./adminbot/auth/session.ts";
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
@@ -92,6 +93,10 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
+import {
+  recordAdminBotTabVisit,
+  type AdminBotTabVisitHost,
+} from "./adminbot/controllers/tab-visits.ts";
 import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import {
@@ -299,6 +304,15 @@ export class OpenClawApp extends LitElement {
   clientInstanceId = generateUUID();
   connectGeneration = 0;
   @state() settings: UiSettings = loadSettings();
+  // Which tab the usage log was last told about. A plain field, not @state: see tab-visits.ts.
+  adminBotLastVisitTab?: Tab;
+  @state() adminBotTabUsage: TabVisitReport | null = null;
+  // A month by default: long enough that a weekly page shows up, short enough to still be about now.
+  @state() adminBotTabUsageDays = 30;
+  @state() adminBotTabUsageLoading = false;
+  @state() adminBotTabUsageError: string | null = null;
+  @state() adminBotTabUsageExporting = false;
+  @state() adminBotTabUsageLoadedAt: number | null = null;
   constructor() {
     super();
     if (isSupportedLocale(this.settings.locale)) {
@@ -1184,6 +1198,9 @@ export class OpenClawApp extends LitElement {
 
   protected override firstUpdated() {
     handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
+    // The tab somebody arrived on is a visit too. Without this the landing tab -- the most opened
+    // screen in the app -- is counted only when somebody navigates away and comes back.
+    recordAdminBotTabVisit(this as unknown as AdminBotTabVisitHost, this.tab);
   }
 
   protected override willUpdate() {
@@ -1380,6 +1397,9 @@ export class OpenClawApp extends LitElement {
   }
 
   setTab(next: Tab) {
+    // Before the switch, so the log records the navigation the member asked for even if rendering
+    // that tab then fails. A repeat of the tab already open is ignored by the recorder.
+    recordAdminBotTabVisit(this as unknown as AdminBotTabVisitHost, next);
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
     if (next !== "chat") {
       this.setChatMobileControlsOpen(false);
