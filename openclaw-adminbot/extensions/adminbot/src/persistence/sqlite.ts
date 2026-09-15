@@ -63,6 +63,7 @@ import type {
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
@@ -684,6 +685,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_login_events(member_id, at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_login_events_at_idx
         ON adminbot_login_events(at DESC);
+
+      -- Which Control UI tab was opened, by whom, when. The third of these logs and the same shape
+      -- for the same reason: the question is a distribution, so it has to be rows.
+      --
+      -- The tab column holds the UI's own tab id, stored as sent -- see contracts/tab-visits.ts
+      -- for why this side does not police the list. impersonated is 0/1 rather than absent so a
+      -- reader can exclude an admin's "view as" browsing without joining anything.
+      CREATE TABLE IF NOT EXISTS adminbot_tab_visits (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        tab TEXT NOT NULL,
+        at TEXT NOT NULL,
+        impersonated INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- The window sweep is the only read; the member index is what makes dwell derivable, since
+      -- that walks one member's visits in order.
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_at_idx
+        ON adminbot_tab_visits(at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_member_idx
+        ON adminbot_tab_visits(member_id, at);
 
       -- Who changed which field of what, when. slot_id is namespaced by subject (see
       -- contracts/activity-log.ts) so profile fields and paper slots share one table without
@@ -1531,6 +1553,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
     ["adminbot_badge_assignments", "member_id"],
     ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
@@ -1594,6 +1617,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
     ["adminbot_badge_assignments", "member_id"],
     ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
@@ -2626,6 +2650,34 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
       )
       .all(since) as AdminBotLoginEvent[];
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.db
+      .prepare(
+        "INSERT INTO adminbot_tab_visits (id, member_id, tab, at, impersonated) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(visit.id, visit.member_id, visit.tab, visit.at, visit.impersonated ? 1 : 0);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, member_id, tab, at, impersonated FROM adminbot_tab_visits
+         WHERE at >= ? ORDER BY at DESC, rowid DESC`,
+      )
+      .all(since) as Array<{
+      id: string;
+      member_id: string;
+      tab: string;
+      at: string;
+      impersonated: number;
+    }>;
+    // 0/1 back to a boolean, and absent rather than `false`: the memory store never writes the
+    // field at all when it is off, and the two stores are meant to be indistinguishable.
+    return rows.map(({ impersonated, ...visit }) =>
+      impersonated ? { ...visit, impersonated: true } : visit,
+    );
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {

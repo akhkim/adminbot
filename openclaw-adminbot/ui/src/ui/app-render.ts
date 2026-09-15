@@ -111,6 +111,7 @@ import {
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
@@ -186,6 +187,7 @@ import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
+import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
@@ -2837,6 +2839,15 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => requestHostUpdate?.());
   }
+  if (
+    state.tab === "adminbotTabUsage" &&
+    hasMemberSession &&
+    !state.adminBotTabUsageLoading &&
+    state.adminBotTabUsageLoadedAt === null
+  ) {
+    state.adminBotTabUsageLoadedAt = Date.now();
+    void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
+  }
   // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
   // opened, and re-read after a reminder run clears the stamp.
   if (
@@ -3489,6 +3500,29 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "adminbotTabUsage"
+          ? renderAdminBotTabUsage({
+              report: state.adminBotTabUsage,
+              days: state.adminBotTabUsageDays,
+              loading: state.adminBotTabUsageLoading,
+              exporting: state.adminBotTabUsageExporting,
+              error: state.adminBotTabUsageError,
+              onDaysChange: (days) => {
+                state.adminBotTabUsageDays = days;
+                // Clearing the stamp is what asks for the new window, the same way the reminder
+                // run asks the overview to re-read itself.
+                state.adminBotTabUsageLoadedAt = null;
+                requestHostUpdate?.();
+              },
+              onRefresh: () => {
+                state.adminBotTabUsageLoadedAt = null;
+                requestHostUpdate?.();
+              },
+              onExport: () => {
+                void exportAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
+              },
+            })
+          : nothing}
         ${state.tab === "adminbotProfileOverview"
           ? renderAdminBotProfileOverview({
               members: state.adminBotProfileOverview,

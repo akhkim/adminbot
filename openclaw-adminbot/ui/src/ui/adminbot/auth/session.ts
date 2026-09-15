@@ -3624,6 +3624,133 @@ export type MemberProfileOverview = {
   mandatoryFieldCount: number;
 };
 
+/** One tab's share of a usage window, as the page reads it. */
+export type TabVisitRate = {
+  tab: string;
+  visits: number;
+  members: number;
+  visitsPerDay: number;
+  dwellSecondsMedian: number;
+  dwellSecondsTotal: number;
+  dwellSamples: number;
+  firstAt: string;
+  lastAt: string;
+};
+
+export type TabVisitReport = {
+  from: string;
+  to: string;
+  days: number;
+  visits: number;
+  members: number;
+  impersonatedVisits: number;
+  tabs: TabVisitRate[];
+};
+
+/** One row of the log, as the CSV writes it. Deliberately the service's own field names. */
+export type TabVisitRow = {
+  id: string;
+  member_id: string;
+  tab: string;
+  at: string;
+  impersonated?: boolean;
+};
+
+/**
+ * Tell the service a tab was opened.
+ *
+ * Returns nothing and throws nothing: navigation must not wait on this and must not break when it
+ * fails. A dropped visit is a gap in a usage log; a navigation that stalls or a page that errors
+ * because analytics was unreachable is a broken tool, and the second is much worse than the first.
+ */
+export async function recordTabVisit(
+  sessionToken: string,
+  baseUrl: string,
+  tab: string,
+): Promise<void> {
+  try {
+    await authedJson(baseUrl, "/ui/tab-visits", "POST", sessionToken, { tab });
+  } catch {
+    // Same reasoning as the unreachable branch: a usage log is never worth a visible failure.
+  }
+}
+
+export async function fetchTabVisitReport(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitReport>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    from?: string;
+    to?: string;
+    days?: number;
+    visits?: number;
+    members?: number;
+    impersonated_visits?: number;
+    tabs?: Array<Record<string, unknown>>;
+  } | null;
+  return {
+    ok: true,
+    value: {
+      from: body?.from ?? "",
+      to: body?.to ?? "",
+      days: body?.days ?? days,
+      visits: body?.visits ?? 0,
+      members: body?.members ?? 0,
+      impersonatedVisits: body?.impersonated_visits ?? 0,
+      tabs: (body?.tabs ?? []).map((row) => ({
+        tab: typeof row.tab === "string" ? row.tab : "",
+        visits: numberOr(row.visits),
+        members: numberOr(row.members),
+        visitsPerDay: numberOr(row.visits_per_day),
+        dwellSecondsMedian: numberOr(row.dwell_seconds_median),
+        dwellSecondsTotal: numberOr(row.dwell_seconds_total),
+        dwellSamples: numberOr(row.dwell_samples),
+        firstAt: typeof row.first_at === "string" ? row.first_at : "",
+        lastAt: typeof row.last_at === "string" ? row.last_at : "",
+      })),
+    },
+  };
+}
+
+/** The raw rows behind the report, for the analysis that happens outside this tool. */
+export async function fetchTabVisitRows(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitRow[]>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits/rows?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { visits?: TabVisitRow[] } | null;
+  return { ok: true, value: body?.visits ?? [] };
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 export async function fetchMemberProfileOverview(
   sessionToken: string,
   baseUrl: string,

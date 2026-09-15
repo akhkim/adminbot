@@ -68,6 +68,7 @@ import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
@@ -172,6 +173,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // event, so a plain array is the whole implementation.
   private readonly workshopMatchRuns = new Map<string, AdminBotWorkshopMatchRun>();
   private readonly loginEvents: AdminBotLoginEvent[] = [];
+  private readonly tabVisits: AdminBotTabVisit[] = [];
   private readonly updateEvents: AdminBotUpdateEvent[] = [];
   private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
   private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
@@ -468,6 +470,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
     purgeList(this.memberLocations, "member_locations", (entry) => entry.member_id === memberId);
     purgeList(this.loginEvents, "login_events", (entry) => entry.member_id === memberId);
+    purgeList(this.tabVisits, "tab_visits", (entry) => entry.member_id === memberId);
     // Either column makes the row this member's, unlike the merge, which repoints them
     // independently: there is no survivor to attribute the other half to.
     purgeList(
@@ -589,6 +592,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       if (entry.member_id === fromMemberId) {
         this.loginEvents[index] = { ...entry, member_id: toMemberId };
         bump("login_events");
+      }
+    }
+    for (const [index, entry] of this.tabVisits.entries()) {
+      if (entry.member_id === fromMemberId) {
+        this.tabVisits[index] = { ...entry, member_id: toMemberId };
+        bump("tab_visits");
       }
     }
     // Both columns, for the reason the SQLite sweep spells out: moving who typed without moving
@@ -926,6 +935,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
     return recentFirst(this.loginEvents.filter((event) => event.at >= since));
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.tabVisits.push(visit);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    return recentFirst(this.tabVisits.filter((visit) => visit.at >= since));
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {
