@@ -758,3 +758,33 @@ export function isAdminBotPosterPhysicalState(value: string): value is AdminBotP
 export function isAdminBotPaperSlotSettled(status: AdminBotPaperSlotStatus): boolean {
   return status === "provided" || status === "waived";
 }
+
+/**
+ * Whether this paper is sitting at the PI's gate: the package is prepared and the yes is not given.
+ *
+ * `pi_approval` is the one slot the lab does not chase and cannot tick for itself, so "is it with
+ * her" is a question two surfaces ask and must answer identically -- her own queue on My Desk
+ * (workflows/papers/pi-review.ts) and the author's card under My Projects, which says the paper has
+ * gone to her. Two copies of this condition is how a paper comes to be announced as sent on one
+ * screen while never appearing on the other.
+ *
+ * The two upstream conditions are the graph's own, PK before GT: `authors_ack` is the last thing
+ * the authors do to the package and `drive_pdf_arxiv` is the copy being approved. Requiring both is
+ * requiring the package, rather than a single tick that could be ahead of the file it describes.
+ *
+ * Structural in its row type so the service's stored records and the Control UI's wire rows both
+ * satisfy it without either side importing the other's shape.
+ */
+export function isAdminBotPaperAtPiGate(
+  slots: readonly { slot: string; status: AdminBotPaperSlotStatus }[],
+): boolean {
+  const status = (slot: string) =>
+    slots.find((row) => row.slot === slot)?.status ?? ("missing" as AdminBotPaperSlotStatus);
+  if (isAdminBotPaperSlotSettled(status("pi_approval"))) {
+    return false;
+  }
+  return (
+    isAdminBotPaperSlotSettled(status("authors_ack")) &&
+    isAdminBotPaperSlotSettled(status("drive_pdf_arxiv"))
+  );
+}

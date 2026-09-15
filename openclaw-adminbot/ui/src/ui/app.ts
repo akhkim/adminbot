@@ -434,6 +434,9 @@ export class OpenClawApp extends LitElement {
   // mutate it alone, so a non-reaction property would let clicks fall through with no repaint.
   @state() adminBotOnboardingStepIndex: number | null = null;
   @state() tab: Tab = "chat";
+  // Not reactive: nothing renders from it. It records that the address this visit arrived on named
+  // no tab, so the viewer's own home may still replace the one standing in for it.
+  landedWithoutATab = false;
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";

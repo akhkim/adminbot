@@ -431,7 +431,12 @@ export const en: TranslationMap = {
     loading: "Reading…",
     more: "+{count} more",
     piReview: {
-      title: "Waiting on your yes to post",
+      // Each of the three paper queues below names the job it is asking for, because "a list of
+      // papers" was true of all three and told her nothing about which to open. This one is a
+      // decision on a finished thing.
+      title: "Approve before it goes public",
+      blurb:
+        "The package is finished and the PDF is final. Nothing is posted until you say yes, so these are stopped until you look.",
       empty: "No paper is waiting on your approval.",
       open: "Open the papers",
       since: "ready {date}",
@@ -439,7 +444,11 @@ export const en: TranslationMap = {
       incomplete: "paper password still missing",
     },
     escalated: {
-      title: "Waiting on a word from you",
+      // Not a paper queue: what is missing here is information, and the only thing left to try is
+      // her asking the person directly.
+      title: "Missing information — needs a word from you",
+      blurb:
+        "AdminBot asked these people repeatedly and got nothing back. It has stopped asking; a message from you is what is left.",
       items: "{count} things outstanding",
       empty: "Nobody has ignored a nudge long enough to reach you.",
       open: "Write to them",
@@ -466,7 +475,11 @@ export const en: TranslationMap = {
       },
     },
     drafts: {
-      title: "Overleaf reading queue",
+      // The other paper queue, and the one nothing is blocked on. Named for the reading rather
+      // than for Overleaf, which is only where the draft happens to live.
+      title: "Read and comment while they are still writing",
+      blurb:
+        "Drafts still being written, on Overleaf. Nobody is blocked on you here — this is the window where your comments can still change the paper.",
       empty: "No drafts are waiting to be read.",
       open: "Open Active Papers",
     },
@@ -1736,6 +1749,17 @@ export const en: TranslationMap = {
         declined: "Declined",
         withdrawn: "Withdrawn",
       },
+      // Letter requests are named for the letter, not the request. "Submitted" on a signature
+      // request means the member filed it; on a letter request every reader takes it to mean the
+      // letter has gone to the school, which is the one thing it never means -- a letter nobody has
+      // written yet showed as "Submitted" and a letter already uploaded showed as "Done".
+      recLetterStatus: {
+        submitted: "To submit",
+        inProgress: "In progress",
+        completed: "Submitted",
+        declined: "Declined",
+        withdrawn: "Withdrawn",
+      },
       error: {
         signIn: "Sign in to send and read logistics requests.",
         unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",
@@ -1989,6 +2013,12 @@ export const en: TranslationMap = {
       bodyPlaceholder: "What do people need to know?",
       send: "Send announcement",
       cancel: "Cancel",
+      // Nothing is seeded, because a seeded post has to be signed by somebody and every name here
+      // would be a person who never said it.
+      empty: "No announcements yet.",
+      justNow: "just now",
+      // Only before the viewer's own profile read lands; their real name is what normally signs it.
+      authorFallback: "You",
     },
   },
   profile: {

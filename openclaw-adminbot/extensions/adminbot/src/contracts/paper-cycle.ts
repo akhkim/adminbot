@@ -178,6 +178,13 @@ export const adminBotNudgeDomains = [
   // announcement about a date, not a request repeated until somebody answers, and the `subject_id`
   // carries the deadline so a school date that moves re-arms it against the new one.
   "rec_letter_reminder",
+  // One message the inbox pass could not decide, put to the reviewer once as an approval. Say-once
+  // like the two above, and for the sharper reason: the hourly pass sees the same held message
+  // every hour it runs, so without the ledger a single undecided email would mint a fresh approval
+  // in Slack every hour until somebody answered it. The `subject_id` carries the message id and
+  // the time the pass last touched it, so a message the pass re-examines and holds again asks
+  // again, while one sitting untouched stays asked exactly once.
+  "email_review",
 ] as const;
 
 /**

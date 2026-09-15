@@ -437,7 +437,7 @@ export function groupTitleForTab(tab: Tab): string | null {
   return t(`nav.${group.label}`);
 }
 
-export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+function normalizedTabPath(pathname: string, basePath: string): string {
   const base = normalizeBasePath(basePath);
   let path = pathname || "/";
   if (base) {
@@ -447,16 +447,31 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
       path = path.slice(base.length);
     }
   }
-  let normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
-  if (normalized.endsWith("/index.html")) {
-    normalized = "/";
-  }
+  const normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
+  return normalized.endsWith("/index.html") ? "/" : normalized;
+}
+
+export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+  const normalized = normalizedTabPath(pathname, basePath);
   // The root is home: the dashboard for anyone signed in. Because a visitor may not see it, the
   // coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
     return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
+}
+
+/**
+ * Whether the path is the root rather than a named tab.
+ *
+ * `tabFromPath` answers the root with `dashboard`, which is the right tab to show and the wrong
+ * answer to "did this visitor ask for a surface". Home is a default standing in for a choice
+ * nobody made, and the two cases part company once a viewer has a home of their own: see
+ * `defaultTabForViewer`. The URL is rewritten to the resolved tab on load, so this has to be read
+ * from the address the visit arrived on, before that happens.
+ */
+export function pathIsRoot(pathname: string, basePath = ""): boolean {
+  return normalizedTabPath(pathname, basePath) === "/";
 }
 
 export function inferBasePathFromPathname(pathname: string): string {

@@ -130,6 +130,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-onboarding-sheet-sweep",
+      "description": "Weekly: create members for new spreadsheet rows and report who is owed an onboarding mail",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-onboarding-sheet-sweep-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-meeting-membership",
       "description": "Reconcile the standing invite against the roster and file the removals as proposals",
       "cron": "35 6 * * *",
@@ -357,6 +367,16 @@
       "argv": [
         "bash",
         "scripts/adminbot-prereg-nudge-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-local-event-audience",
+      "description": "Reconcile the Zurich lunch guest list with where members are",
+      "cron": "0 7 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-local-event-audience-cron.sh"
       ],
       "timeoutSeconds": 900
     },

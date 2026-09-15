@@ -66,6 +66,7 @@ import {
   normalizeBasePath,
   normalizePath,
   pathForTab,
+  pathIsRoot,
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
@@ -122,6 +123,9 @@ type SettingsHost = {
   controlUiOverviewRefreshSeq?: number;
   controlUiCronRefreshSeq?: number;
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
+  // This visit arrived on the root and has not been navigated since, so the tab on screen is a
+  // default nobody chose. Read once the session says who is looking -- see applyViewerHome.
+  landedWithoutATab?: boolean;
 };
 
 type LocalUserIdentityHost = {
@@ -684,8 +688,13 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   if (typeof window === "undefined") {
     return;
   }
+  const fromRoot = pathIsRoot(window.location.pathname, host.basePath);
   const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
   setTabFromRoute(host, resolved);
+  // After the selection above, which clears the flag as any navigation does. The member session
+  // has not resumed yet, so who is looking is not knowable here; this records that the question is
+  // still open so applyViewerHome can answer it when the roster arrives.
+  host.landedWithoutATab = fromRoot;
   syncUrlWithTab(host, resolved, replace);
 }
 
@@ -740,6 +749,9 @@ function applyTabSelection(
 ) {
   const prev = host.tab;
   host.tab = next;
+  // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
+  // so the viewer's home no longer gets to replace it.
+  host.landedWithoutATab = false;
   if (prev !== next) {
     scheduleControlUiTabVisibleTiming(host, prev, next);
     clearPendingSessionsChangedReload(host);

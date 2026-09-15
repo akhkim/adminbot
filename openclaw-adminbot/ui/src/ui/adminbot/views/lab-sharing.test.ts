@@ -265,11 +265,30 @@ describe("renderLabSharing", () => {
 
   // The one panel with nothing behind it. It keeps its design and says so on its face.
   it("composes and posts an announcement, and marks the panel as not live", () => {
-    const { container } = renderView();
+    const { container } = renderView({ memberName: "Ada Lovelace" });
     expect(text(container, "lab-sharing-announcements")).toContain("Sample data");
     click(container, `[data-testid="lab-sharing-announcement-add"]`);
     input(container, '[data-testid="lab-sharing-announcement-compose"] textarea', "Heads up.");
     click(container, `[data-testid="lab-sharing-announcement-send"]`);
     expect(text(container, "lab-sharing-announcements")).toContain("Heads up.");
+  });
+
+  // The feed used to open on two fabricated posts signed by real people -- the head professor and
+  // a member -- and a post the viewer wrote was signed "You". Nothing is stored, so the only
+  // honest feed is the viewer's own, under the viewer's own name.
+  it("signs a posted announcement with the signed-in member, and seeds nobody else's", () => {
+    const { container } = renderView({ memberName: "Grace Hopper" });
+    const before = text(container, "lab-sharing-announcements");
+    expect(before).not.toContain("Zhijing");
+    // Per-state now, so each render starts from nothing rather than inheriting the last test's post.
+    expect(before).toContain("No announcements yet.");
+
+    click(container, `[data-testid="lab-sharing-announcement-add"]`);
+    input(container, '[data-testid="lab-sharing-announcement-compose"] textarea', "Cluster is up.");
+    click(container, `[data-testid="lab-sharing-announcement-send"]`);
+
+    const after = text(container, "lab-sharing-announcements");
+    expect(after).toContain("Grace Hopper");
+    expect(after).not.toContain("Zhijing");
   });
 });

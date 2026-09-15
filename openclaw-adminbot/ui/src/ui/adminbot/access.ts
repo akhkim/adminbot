@@ -199,3 +199,51 @@ export function defaultTabForRole(role: AccessRole): Tab {
 export function resolveAccessibleTab(tab: Tab, role: AccessRole): Tab {
   return canAccessTab(tab, role) ? tab : defaultTabForRole(role);
 }
+
+/**
+ * Who is looking, where that is more than which role they hold.
+ *
+ * The head professor is deliberately not a fourth entry in `ACCESS_ROLES`. That list is a ladder --
+ * `canAccessTab` compares ranks -- and a `pi` rung above `admin` would be a rung nobody else can
+ * see past: every `role === "admin"` test in app-render (the `viewerIsAdmin` props, the meeting
+ * nudges, the announcement controls) would read false for the one person in the lab who most
+ * plainly is an admin, and would do it silently. She is not a higher privilege than an admin; she
+ * is a particular admin, and that is a different question from what a role answers. So it is
+ * carried alongside the role rather than inside it.
+ *
+ * Whether she may *see* My Desk is still the role's answer and unchanged -- `adminbotProfessor` is
+ * admin-visible, because everything on it is an admin read. This only decides where she starts.
+ */
+export type ViewerIdentity = {
+  role: AccessRole;
+  /** True only for the member named by `head_professor_member_id` in AdminBot settings. */
+  isHeadProfessor?: boolean;
+};
+
+/** Whether this viewer is the member the settings name as head professor. */
+export function isHeadProfessorViewer(params: {
+  memberId?: string | null;
+  headProfessorMemberId?: string | null;
+}): boolean {
+  const head = params.headProfessorMemberId?.trim();
+  const viewer = params.memberId?.trim();
+  // Both required: an unset setting must not make everybody the PI, and a viewer with no member id
+  // is the break-glass gateway operator, who is an admin without being a person on the roster.
+  return Boolean(head) && Boolean(viewer) && head === viewer;
+}
+
+/**
+ * Where a viewer lands when they named no tab -- the root, rather than a link to a surface.
+ *
+ * My Desk for the head professor. It is the one page assembled around what is waiting on *her*
+ * (the letter queue, the papers at her gate, the roster's timelines), so for her it is home in the
+ * sense the dashboard is home for everybody else; the dashboard summarises the same queues one
+ * remove further out. Nobody else's landing changes: this is the PI's own page, not a better
+ * default.
+ */
+export function defaultTabForViewer(viewer: ViewerIdentity): Tab {
+  if (viewer.isHeadProfessor && canAccessTab("adminbotProfessor", viewer.role)) {
+    return "adminbotProfessor";
+  }
+  return defaultTabForRole(viewer.role);
+}

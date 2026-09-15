@@ -15,6 +15,7 @@
 // ticks the box or an admin waives it, and there is no second list to fall out of step.
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  isAdminBotPaperAtPiGate,
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
@@ -52,14 +53,10 @@ export type PiReviewCandidate = {
  * requiring the package rather than a single tick.
  */
 export function isAwaitingPiReview(slots: readonly AdminBotPaperSlotRecord[]): boolean {
-  const status = (slot: string) => slots.find((row) => row.slot === slot)?.status ?? "missing";
-  if (isAdminBotPaperSlotSettled(status("pi_approval"))) {
-    return false;
-  }
-  return (
-    isAdminBotPaperSlotSettled(status("authors_ack")) &&
-    isAdminBotPaperSlotSettled(status("drive_pdf_arxiv"))
-  );
+  // The condition itself lives in the slot contract, because the author's card under My Projects
+  // has to answer the same question to tell them the paper has gone to her. This queue and that
+  // sentence are two readings of one fact and must not be able to disagree.
+  return isAdminBotPaperAtPiGate(slots);
 }
 
 /** The queue itself, oldest wait first: the paper that has been held up longest is the one to read. */

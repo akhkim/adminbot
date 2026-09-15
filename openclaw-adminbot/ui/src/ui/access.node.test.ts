@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessTab,
   defaultTabForRole,
+  defaultTabForViewer,
+  isHeadProfessorViewer,
   minimumRoleForTab,
   resolveAccessRole,
   resolveAccessibleTab,
@@ -209,6 +211,47 @@ describe("resolveAccessibleTab", () => {
     expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
+  });
+});
+
+describe("isHeadProfessorViewer", () => {
+  it("matches only the member the settings name", () => {
+    expect(isHeadProfessorViewer({ memberId: "zhijing", headProfessorMemberId: "zhijing" })).toBe(
+      true,
+    );
+    expect(isHeadProfessorViewer({ memberId: "ada", headProfessorMemberId: "zhijing" })).toBe(
+      false,
+    );
+    expect(
+      isHeadProfessorViewer({ memberId: " zhijing ", headProfessorMemberId: "zhijing\n" }),
+    ).toBe(true);
+  });
+
+  // The two ways this could wrongly answer everybody: an unset setting, and a viewer with no
+  // member id at all -- the break-glass gateway operator, who is an admin without being a person.
+  it("is false when either side is missing", () => {
+    expect(isHeadProfessorViewer({ memberId: "zhijing", headProfessorMemberId: "" })).toBe(false);
+    expect(isHeadProfessorViewer({ memberId: "zhijing" })).toBe(false);
+    expect(isHeadProfessorViewer({ headProfessorMemberId: "zhijing" })).toBe(false);
+    expect(isHeadProfessorViewer({ memberId: null, headProfessorMemberId: null })).toBe(false);
+  });
+});
+
+describe("defaultTabForViewer", () => {
+  it("sends the head professor to My Desk and nobody else", () => {
+    expect(defaultTabForViewer({ role: "admin", isHeadProfessor: true })).toBe("adminbotProfessor");
+    expect(defaultTabForViewer({ role: "admin" })).toBe(defaultTabForRole("admin"));
+    expect(defaultTabForViewer({ role: "member" })).toBe(defaultTabForRole("member"));
+    expect(defaultTabForViewer({ role: "anonymous" })).toBe(defaultTabForRole("anonymous"));
+  });
+
+  // The role still decides what may be seen. A flag saying "this is the PI" cannot open a tab the
+  // viewer's role does not reach -- it would land them on an empty privileged panel.
+  it("never lands a viewer on a tab their role cannot reach", () => {
+    expect(defaultTabForViewer({ role: "member", isHeadProfessor: true })).toBe("dashboard");
+    expect(defaultTabForViewer({ role: "anonymous", isHeadProfessor: true })).toBe(
+      "adminbotDeadlines",
+    );
   });
 });
 

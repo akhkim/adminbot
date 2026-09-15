@@ -29,6 +29,16 @@ export const adminBotActionTypes = [
   "calendar.cancel",
   "email.draft",
   "email.send",
+  // The onboarding guide for one person, sent through the same path the Onboarding tab uses.
+  //
+  // Its own type rather than `email.send` because sending it is not only sending: the path mints a
+  // Slack Connect invite, provisions a Drive folder, invites the project channels and files the DCS
+  // account request, and the copy tells the reader those are coming. An `email.send` carrying the
+  // rendered body would deliver the promise and none of the provisioning, which is the failure
+  // guide-sender.ts orders its steps to prevent. The payload therefore names the template and the
+  // recipient and lets the sender compose, rather than carrying a body an approver could edit into
+  // something the provisioning no longer matches.
+  "onboarding.send_guide",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -54,6 +64,26 @@ export const adminBotActionTypes = [
   // recipient is the head professor on file and the body is composed from the request log, so
   // nothing about who it reaches or what it says comes from a caller.
   "logistics.rec_letter_reminder",
+  /**
+   * One message the hourly inbox pass could not decide, put to the reviewer as an approval.
+   *
+   * The queue it drains is the four-or-so messages a pass leaves behind, and until now the only way
+   * to clear one was to open the Control UI and work the Email Review tab. That is a page somebody
+   * has to remember to visit, so items sat there.
+   *
+   * An approval rather than an agent tool, and the distinction is the whole point. A tool call
+   * carries no caller identity -- `ToolPluginExecutionContext` has the tool-call id and the runtime
+   * api and nothing about who is typing -- so "only Andrew may resolve these" would have to trust
+   * whoever claimed to be him. An approval is checked against the sender id the platform supplies:
+   * `isSlackApprovalAuthorizedSender` in the Slack plugin tests the real Slack user against the
+   * account's allowFrom list, which is why chat approval is switched off everywhere else and why
+   * this rides the approval path instead of going around it.
+   *
+   * The payload names one resolution AdminBot already believes is right -- a paper and the stage
+   * the message is evidence for, or a dismissal -- so approving is a press rather than an answer.
+   * What is being approved is the resolution, not merely the reading.
+   */
+  "email_review.resolve",
   "member_nudge.send",
   // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
   // type rather than a member_nudge.send with two targets: the audit trail should be able to
@@ -1610,6 +1640,19 @@ export type AdminBotSettingsInput = {
   // source tree, and /settings is admin-gated on read as well as write.
   head_professor_whatsapp?: string;
   /**
+   * The city a standing local event's guest list is drawn from ("Zurich"), and the zone that city
+   * sits in ("Europe/Zurich").
+   *
+   * Setting the city is load-bearing beyond this sweep: it is what opts the lab into stamping
+   * every member's sign-in with the place the IP resolved to. Until it is set, only the head
+   * professor's sign-ins carry a place (workflows/members/travel-history.ts explains why), and the
+   * audience sweep has no IP signal to read for anybody else. Clearing it stops the collection.
+   */
+  location_audience_city?: string;
+  location_audience_zone?: string;
+  /** The event whose guest list the weekly sweep reconciles. */
+  location_audience_event_id?: string;
+  /**
    * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
    *
    * Separate from `head_professor_member_id` because the two answer different questions. The head
@@ -1656,6 +1699,19 @@ export type AdminBotSettings = {
   cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
+  /**
+   * The city a standing local event's guest list is drawn from ("Zurich"), and the zone that city
+   * sits in ("Europe/Zurich").
+   *
+   * Setting the city is load-bearing beyond this sweep: it is what opts the lab into stamping
+   * every member's sign-in with the place the IP resolved to. Until it is set, only the head
+   * professor's sign-ins carry a place (workflows/members/travel-history.ts explains why), and the
+   * audience sweep has no IP signal to read for anybody else. Clearing it stops the collection.
+   */
+  location_audience_city?: string;
+  location_audience_zone?: string;
+  /** The event whose guest list the weekly sweep reconciles. */
+  location_audience_event_id?: string;
   /**
    * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
    *
@@ -2192,6 +2248,8 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
+    // One pass of a standing local event's guest list against where people actually are.
+    | "calendar.local_audience_swept"
     // One pass over the back catalogue, linking printed author names to the people they name.
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.
@@ -2256,6 +2314,9 @@ export type AdminBotAuditEvent = {
     | "prereg.nudged"
     | "paper.deleted"
     | "onboarding.guide_sent"
+    // One weekly pass over the sheet for joiners and re-typed members. Its timestamp is what the
+    // next pass reads to know which applied type changes it has already seen.
+    | "onboarding_sweep.ran"
     | "members.disengagement_swept"
     | "settings.updated"
     // What somebody thought of one surface. Carries the rating, never the comment -- a comment can

@@ -295,6 +295,11 @@ import {
 import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
+  localEventAudience,
+  remainingAttendees,
+  type LocalEventAudience,
+} from "../workflows/members/local-event-audience.js";
+import {
   detectLocationDrift,
   isNewObservation,
   latestBySource,
@@ -330,6 +335,10 @@ import {
   buildTravelHistory,
   type AdminBotTravelHistory,
 } from "../workflows/members/travel-history.js";
+import {
+  planOnboardingSweep,
+  type OnboardingSweepPlan,
+} from "../workflows/onboarding/onboarding-sweep.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -1008,6 +1017,12 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
+  // T3 with the other outward mail, and deliberately not auto even though the recipient and the
+  // copy are both computed rather than caller-supplied. Approving it is the moment somebody looks
+  // at a joiner the spreadsheet produced and agrees they are real -- the sweep that files these
+  // reads a sheet a typo can reach, and the mail it triggers also provisions a Slack invite and a
+  // CS account request. Those are not things to undo.
+  "onboarding.send_guide": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the
   // attachments are the forms the service just generated, and the send only happens once every
@@ -1040,6 +1055,18 @@ const DEFAULT_ACTION_POLICIES = {
   // already requires a real admin session via POST /nudges/send (never reachable
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
+  // Approval-required, deliberately, even though the sweep composes the whole payload and would
+  // otherwise qualify for the same auto policy the nudges below carry. The approval *is* the
+  // feature here: it is the only surface in this system that knows which human is acting, because
+  // the channel checks the sender id the platform supplies rather than one a caller typed. An auto
+  // policy would resolve the item the moment it was proposed and there would be nobody deciding.
+  //
+  // T3 for the tier and `admin` for the role, matching the other actions whose effect is a write
+  // somebody else feels: attaching evidence closes a PaperFlow stage, and a closed stage stops the
+  // chase silently -- the failure is a message that never gets sent. Restricting it to one person
+  // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
+  // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
+  "email_review.resolve": approvalPolicy("T3", ["admin"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
   // reason: resolvePolicy only honors auto_allowed below T2. The recipients and the entire text are
@@ -1147,6 +1174,16 @@ const SLACK_CHANNEL_NAMING_RENAME_AFTER_MS = 48 * 60 * 60 * 1000;
 
 // Least-privilege baseline for a member created without an explicit tier.
 const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
+
+/**
+ * How many sign-ins back the audience sweep looks for a place.
+ *
+ * Only the most recent located one decides anything -- `dailyLocationRows` takes the latest
+ * observation at or before the day -- so this only has to be deep enough to find it past a run of
+ * unlocated rows (a private IP, a provider timeout, or any login from before the stamp was turned
+ * on). Two hundred covers months of daily sign-ins and still bounds the read.
+ */
+const ADMINBOT_LOCATION_LOGIN_SCAN = 200;
 
 /**
  * What the three-way DM says.
@@ -1468,6 +1505,161 @@ export class AdminBotService {
    * `meetings` is passed in rather than read here: the events live on Google, the service does not
    * reach out, and the caller that already lists Wednesday's calendar is the one that has them.
    */
+  /**
+   * Refresh a standing local event's guest list from where people actually are.
+   *
+   * The Zurich lunch: a weekly event whose audience is "whoever is in Zurich", which nobody keeps
+   * accurate by hand. The decision itself is `localEventAudience` -- either a login IP in the city
+   * or a Slack zone of the city's puts somebody on, and only a *fresh* observation elsewhere takes
+   * them off, so a quiet fortnight never reads as a departure.
+   *
+   * Same division of labour as sweepResearchThemeInvites, for the same reason: the event lives on
+   * Google and the service does not reach out, so the caller passes the guest list it can already
+   * see and names nobody. Everything about who belongs is decided here from the roster.
+   *
+   * Files proposals; sends nothing. Both calendar attendee actions are T3 admin-approval and
+   * `calendar.remove_attendees` is documented as never running unattended -- uninviting somebody
+   * reads as a judgement about whether they belong, and that stays a human's call. A settled week
+   * proposes nothing at all, which is what makes this safe to schedule.
+   */
+  /**
+   * The two signals this sweep is allowed to read, as one history the daily log can walk.
+   *
+   * Deliberately not `listMemberLocations` whole. That timeline also carries `self_reported` and
+   * `slack_profile` -- a member's own typed answer about where they live -- and the audience is
+   * specified as IP plus Slack zone, so a stale "Zurich" left in a profile from two years ago must
+   * not put somebody on a lunch invite.
+   *
+   * The place half comes from login events rather than from a `login_ip` observation, because
+   * nothing writes one: `recordMemberLocation` is only ever called for the three self- and
+   * Slack-sourced kinds, and `observationFor` would in any case reduce an IP to its country. The
+   * login row is where the city actually is (`AdminBotLoginLocation.city`, from the provider), so
+   * it is read directly and shaped into an entry here.
+   *
+   * The zone half is the `slack_timezone` observations, which is the signal that keeps arriving
+   * for somebody who never signs in -- exactly the gap the IP half cannot cover.
+   *
+   * `dailyLocationRows` splits what it is given by dimension: entries with a place feed the
+   * location column, entries with a timezone feed the zone column. These two sets are disjoint by
+   * construction, so each column sees one source and neither can vouch for the other's freshness.
+   */
+  private locationSignalsFor(memberId: string): AdminBotMemberLocationEntry[] {
+    const fromLogins = this.store
+      .listLoginEvents(memberId, ADMINBOT_LOCATION_LOGIN_SCAN)
+      .filter((event) => event.city || event.country)
+      .map((event) => ({
+        id: `loc_login_${event.id}`,
+        member_id: memberId,
+        observed_at: event.at,
+        source: "login_ip" as const,
+        raw: event.city ?? event.country ?? "",
+        ...(event.city ? { place_label: event.city } : {}),
+        ...(event.country ? { country: event.country } : {}),
+      }));
+    // The provider's own zone is deliberately dropped. It is an inference from the same IP that
+    // already gave the city, so counting it as a second signal would let one observation agree
+    // with itself -- and the zone the audience is specified against is the one Slack reports.
+    const fromSlack = this.store
+      .listMemberLocations(memberId)
+      .filter((entry) => entry.source === "slack_timezone" && entry.timezone);
+    return [...fromLogins, ...fromSlack];
+  }
+
+  sweepLocalEventAudience(
+    params: {
+      eventId: string;
+      calendarId: string;
+      /** Gazetteer label. "Zurich". */
+      city: string;
+      /** The city's IANA zone. "Europe/Zurich". */
+      zone: string;
+      /** The event's current guest list, as Google reports it. */
+      attendees: readonly string[];
+      /** The day to answer for; defaults to today, UTC. */
+      day?: string;
+    },
+    actor: string,
+  ): AdminBotServiceResponse<LocalEventAudience & { proposals: string[] }> {
+    if (!params.eventId.trim()) {
+      return serviceError(400, "eventId is required");
+    }
+    if (!params.city.trim() || !params.zone.trim()) {
+      return serviceError(400, "city and zone are required");
+    }
+    const day = (params.day || new Date().toISOString()).slice(0, 10);
+    const audience = localEventAudience({
+      members: this.store.listLabMembers().filter((member) => !adminBotIsAlumniMember(member)),
+      historyFor: (memberId) => this.locationSignalsFor(memberId),
+      city: params.city,
+      zone: params.zone,
+      attendees: params.attendees,
+      day,
+    });
+    const proposals: string[] = [];
+    if (audience.add.length > 0) {
+      const created = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${audience.add.length} to the ${params.city} event: ${audience.add
+          .map((row) => row.name)
+          .join(", ")}`,
+        target: { service: "google", channel: "calendar", target: params.eventId },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: params.eventId,
+          attendees: audience.add.map((row) => row.email),
+        },
+        undo_plan: "Remove them again from the event, which is the sibling action.",
+      });
+      if (created.ok) {
+        proposals.push(created.payload.id);
+      }
+    }
+    if (audience.remove.length > 0) {
+      const remaining = remainingAttendees(params.attendees, audience.remove);
+      // The connector refuses an empty `remaining_attendees`, and is right to: an empty list is
+      // what a failed read looks like, and "uninvite everybody" is never what this sweep means.
+      // Caught here too so the run reports it rather than filing a proposal that cannot execute.
+      if (remaining.length === 0) {
+        return serviceError(
+          409,
+          "refusing to propose a removal that would empty the guest list -- check the attendee list passed in",
+        );
+      }
+      const created = this.createProposal({
+        type: "calendar.remove_attendees",
+        summary: `Remove ${audience.remove.length} from the ${params.city} event: ${audience.remove
+          .map((row) => `${row.name} (${row.reason})`)
+          .join(", ")}`,
+        target: { service: "google", channel: "calendar", target: params.eventId },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: params.eventId,
+          remaining_attendees: remaining,
+          removed_attendees: audience.remove.map((row) => row.email),
+        },
+        undo_plan: "Re-add them to the event, which is the sibling action.",
+      });
+      if (created.ok) {
+        proposals.push(created.payload.id);
+      }
+    }
+    if (proposals.length > 0) {
+      this.recordAudit({
+        type: "calendar.local_audience_swept",
+        actor,
+        details: {
+          event_id: params.eventId,
+          city: params.city,
+          day,
+          added: audience.add.map((row) => row.member_id),
+          removed: audience.remove.map((row) => row.member_id),
+          held: audience.held.length,
+        },
+      });
+    }
+    return { ok: true, status: 200, payload: { ...audience, proposals } };
+  }
+
   sweepResearchThemeInvites(
     params: {
       calendarId: string;
@@ -1882,10 +2074,39 @@ export class AdminBotService {
       : serviceError(500, "published deadline proposal could not be reloaded");
   }
 
+  /**
+   * The deadline board's data: the freshest dataset this deployment can read, plus the corrections
+   * the lab has published on top of it.
+   *
+   * `deadlineDataset` re-reads and re-validates a file on every call so a re-collection lands
+   * without a rebuild, and it throws on anything it does not recognise -- a missing file, an empty
+   * `items`, a duplicate id, an impossible date (workflows/deadlines/runtime-dataset.ts). That
+   * throw must not reach the caller. `GET /deadlines/venues.json` is public and login-free and the
+   * board ships no bundled copy of its own, so an exception here does not degrade the page -- it
+   * empties it, for every visitor at once. Worse, the constructor reconciles every member's
+   * milestones through this same path, so a bad file stopped the service from starting at all.
+   *
+   * `generated` is the dataset compiled into this build, which is what the route already hands us
+   * and a valid read-only answer. Falling back to it costs freshness; failing costs the surface.
+   * Warned once rather than per call: the cause is a file, and this runs once per member at boot.
+   */
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
-    generated = this.options.deadlineDataset?.() ?? generated;
-    return mergePublishedDeadlines(generated, this.store.listPublishedDeadlines());
+    let dataset = generated;
+    try {
+      dataset = this.options.deadlineDataset?.() ?? generated;
+    } catch (error) {
+      if (!this.warnedDeadlineDatasetUnreadable) {
+        this.warnedDeadlineDatasetUnreadable = true;
+        console.warn(
+          `[adminbot] deadline dataset unreadable, serving the compiled snapshot: ${String(error)}`,
+        );
+      }
+    }
+    return mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines());
   }
+
+  /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
+  private warnedDeadlineDatasetUnreadable = false;
 
   private prepareDeadlinePublication(params: {
     proposalId: string;
@@ -2272,6 +2493,44 @@ export class AdminBotService {
         },
       });
       handled = true;
+    } else if (proposal.type === "email_review.resolve") {
+      // Handled here rather than by a connector, like `deadline.publish` above and for the same
+      // reason: the effect is a write to this store, not a message leaving the building, so there
+      // is no external call for a connector to make. Routing it outward would hit the fail-closed
+      // rule -- no connector handles this type, and nothing may be recorded as executed that
+      // nothing performed.
+      const settlement = emailReviewResolutionPayload(proposal);
+      if (!settlement) {
+        return this.executionFailure(proposal, 400, "email review resolution payload is invalid");
+      }
+      // The approver is the resolver. Read off the approval rather than the payload so the name in
+      // the audit row is the person the channel authenticated -- the whole reason this is an
+      // approval and not a tool call -- and fail closed when there is none, exactly as a deadline
+      // publication does.
+      const resolvedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!resolvedBy) {
+        return this.executionFailure(
+          proposal,
+          409,
+          "email review resolution has no named approver",
+        );
+      }
+      const applied = this.resolveEmailReview({
+        messageId: settlement.message_id,
+        resolution: settlement.resolution,
+        actor: resolvedBy,
+      });
+      // Its own guards decide this: the item may have been settled in the Control UI while the
+      // approval sat in Slack, or the stage it would close may have shut since. Either way the
+      // execution fails with that reason instead of reporting a resolution that did not happen.
+      if (!applied.ok) {
+        return this.executionFailure(proposal, applied.status, applied.error.message);
+      }
+      artifacts = {
+        resolution: applied.payload.resolution,
+        evidence_recorded: String(applied.payload.evidence_recorded),
+      };
+      handled = true;
     } else {
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
@@ -2403,6 +2662,12 @@ export class AdminBotService {
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
+    // The standing local event's audience. Setting the city is what opts the lab into stamping
+    // every member's sign-in with a place (workflows/identity/auth.ts) -- clearing it stops the
+    // collection, so the off switch is one empty field rather than a redeploy.
+    const locationAudienceCity = normalizeOptionalString(settings.location_audience_city);
+    const locationAudienceZone = normalizeOptionalString(settings.location_audience_zone);
+    const locationAudienceEventId = normalizeOptionalString(settings.location_audience_event_id);
     const next: AdminBotSettings = {
       ...current,
       ...(typeof settings.cv_recency_window_months === "number"
@@ -2422,6 +2687,15 @@ export class AdminBotService {
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
+      ...(locationAudienceCity === undefined
+        ? {}
+        : { location_audience_city: locationAudienceCity }),
+      ...(locationAudienceZone === undefined
+        ? {}
+        : { location_audience_zone: locationAudienceZone }),
+      ...(locationAudienceEventId === undefined
+        ? {}
+        : { location_audience_event_id: locationAudienceEventId }),
       ...(labManagerMemberId ? { lab_manager_member_id: labManagerMemberId } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
@@ -3577,6 +3851,16 @@ export class AdminBotService {
   }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const weekStart = adminBotWeekStart(now);
+    // The head professor is not asked for a weekly line, on any paper. She supervises nearly
+    // everything the lab writes, so the author lists put her on nearly every paper -- and a weekly
+    // update is an account of your own week's work on one paper, which is not what a supervisor's
+    // week is made of. sendMemberNudge already refuses to message her, so before this she was
+    // never actually asked; she was simply listed as owing a line on all of it, which showed up
+    // twice over -- as the whole lab's output in the admin's Sunday preview, and as a permanently
+    // unanswered row against her name on every paper card her coauthors read on a Monday.
+    // Dropped from the walk itself rather than filtered at the send, so the preview and the sweep
+    // keep agreeing with each other, which is the property collectWeeklyUpdateGaps exists to have.
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
     const papers = this.store
       .listPapers()
       .filter((paper) => !isPaperDormant(paper, now) && !isPaperClosed(paper))
@@ -3589,7 +3873,7 @@ export class AdminBotService {
         member_ids: [
           ...this.resolvePaperSlotOwner(paper, "first_author"),
           ...this.resolvePaperSlotOwner(paper, "coauthors"),
-        ],
+        ].filter((memberId) => !headProfessorId || memberId !== headProfessorId),
       }));
     const gaps = findWeeklyUpdateGaps({
       papers,
@@ -6834,6 +7118,81 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Put every undecided message to the reviewer, once each, as an approval they can answer.
+   *
+   * The queue this drains used to be reachable only through the Email Review tab, which is a page
+   * somebody has to remember to open -- so the handful of messages a pass cannot decide sat in it.
+   * Each one becomes an `email_review.resolve` proposal instead, which the approval channel puts in
+   * front of the reviewer and which carries the resolution to apply when they say yes.
+   *
+   * Two resolutions, and which one is proposed is decided here rather than guessed at by the
+   * reviewer. A message held because a PaperFlow bcc could not be matched is proposed as evidence
+   * when the queue offers exactly one open stage it could belong to -- that is the case where there
+   * is nothing to choose between. Everything else is proposed as a dismissal, which is what the
+   * queue's `unknown` items actually need: they are messages nobody can attach to anything, and
+   * clearing one writes no evidence and closes no stage.
+   *
+   * Said once per message per touch, through the ledger. The pass runs hourly and sees the same
+   * held message every time, so without that a single undecided email would mint a new approval
+   * every hour until it was answered.
+   */
+  proposeEmailReviewResolutions(
+    actor: string,
+    nowIso = new Date().toISOString(),
+  ): AdminBotServiceResponse<{ proposed: string[]; already_asked: string[] }> {
+    const queue = this.listEmailReviews();
+    if (!queue.ok) {
+      return queue;
+    }
+    const { reviews, paperflow_candidates: candidates } = queue.payload;
+    const ledger = this.nudgeLedgerIndex();
+    const proposed: string[] = [];
+    const alreadyAsked: string[] = [];
+    for (const review of reviews) {
+      // The updated stamp is part of the subject so a message the pass re-examines and holds again
+      // is asked about again, while one sitting untouched is asked exactly once.
+      const subject = `${review.message_id}|${review.updated_at}`;
+      if (this.hasNudgeBeenSaid(ledger, "email_review", subject)) {
+        alreadyAsked.push(review.message_id);
+        continue;
+      }
+      const only =
+        review.category === "paperflow_bcc" && candidates.length === 1 ? candidates[0] : undefined;
+      const resolution: AdminBotEmailReviewResolution = only
+        ? { kind: "paperflow_evidence", paper_id: only.paper_id, stage: only.stage }
+        : { kind: "dismissed" };
+      const summary = only
+        ? `Resolve held email from ${review.sender}: record as ${only.stage_label} evidence for ${only.title}`
+        : `Resolve held email from ${review.sender}: dismiss (${review.reason ?? review.category})`;
+      const created = this.createProposal({
+        type: "email_review.resolve",
+        summary,
+        // The message itself, not a person: what an approval on this decides is what happens to
+        // this row, and the reviewer is whoever the channel authenticated.
+        target: { service: "adminbot", channel: "adminbot", target: review.message_id },
+        proposed_payload: {
+          message_id: review.message_id,
+          thread_id: review.thread_id,
+          sender: review.sender,
+          ...(review.subject ? { subject: review.subject } : {}),
+          ...(review.reason ? { held_because: review.reason } : {}),
+          resolution,
+        },
+        undo_plan:
+          resolution.kind === "dismissed"
+            ? "Dismissing writes no evidence and closes no stage; the message stays in the mailbox and the audit row names who dismissed it."
+            : "Delete the recorded PaperFlow evidence for this stage, which reopens it for the chase.",
+      });
+      if (!created.ok) {
+        return serviceError(created.status, created.error.message);
+      }
+      this.markNudgeSaid("email_review", subject, actor, nowIso);
+      proposed.push(review.message_id);
+    }
+    return { ok: true, status: 200, payload: { proposed, already_asked: alreadyAsked } };
+  }
+
   /** Settle one held email after an administrator has made the decision automation refused. */
   resolveEmailReview(params: {
     messageId: string;
@@ -7856,7 +8215,14 @@ export class AdminBotService {
         const member = this.store.getLabMember(memberId);
         // A notification whose member is gone from the roster is not somebody to chase. It is left
         // in place rather than deleted -- this is a read.
-        if (!member || member.status === "alumni") {
+        //
+        // "Has left" through `adminBotIsAlumniMember`, which reads `member_type` as well as
+        // `status`. A `status`-only test -- which this was -- misses 22 of the lab's 24 alumni:
+        // the roster was imported from a spreadsheet that spells it in the type, and those 22
+        // carry no status at all. They are also the people least likely to ever answer a nudge, so
+        // their escalations never drain, which put departed members permanently at the top of the
+        // one queue on My Desk that asks the professor to go and chase somebody in person.
+        if (!member || adminBotIsAlumniMember(member)) {
           return [];
         }
         const escalatedAt = notifications
@@ -10341,6 +10707,143 @@ export class AdminBotService {
    * against. Filing calendar removals here as well would produce two proposals to drop one person
    * from one meeting. The delta still reports the surfaces so the summary says what is coming.
    */
+  /**
+   * The weekly onboarding pass: who the sheet says is new or newly re-typed, and has not been
+   * mailed about it.
+   *
+   * The spreadsheet is the source of truth for membership, and two of its edits should produce a
+   * mail -- a row appearing, and Member Type changing. Detection is `planOnboardingSweep`, which
+   * unions the live sheet/database mismatch with the `roster_sync.member_type_changed` rows the
+   * nightly sync leaves behind; see that module for why neither source alone is enough.
+   *
+   * Two ledgers, both already in the audit trail and neither invented here. `onboarding.guide_sent`
+   * is what stops a second mail -- it records `{ template_id, recipient }` on every send the
+   * Onboarding tab has ever made, which is why the sweep keys on the address. `onboarding_sweep.ran`
+   * is how the next run knows which applied changes it has already seen.
+   *
+   * Members *are* created, which `syncMemberRoster` deliberately refuses to do. The difference is
+   * the intent: that sweep reconciles two columns and a created member would be a side effect of a
+   * type edit, whereas a row appearing here is the lab saying somebody joined. The safety rails
+   * still hold -- nothing from the sheet sets privilege, status, access or email domain, so a new
+   * record lands at `external_collaborator` like every other import until an admin raises it.
+   *
+   * Mail goes out as an `onboarding.send_guide` proposal, never directly. That action executes
+   * through the same sender the Onboarding tab uses -- so the Slack Connect invite, the Drive
+   * folder, the project channels and the DCS request all happen, which a bare `email.send` would
+   * have promised and skipped -- and it is T3, so a human still looks at each joiner before the
+   * lab writes to them.
+   */
+  sweepOnboardingMail(params: {
+    sheet: RosterSheetParse;
+    actor: string;
+    dryRun?: boolean;
+  }): AdminBotServiceResponse<
+    OnboardingSweepPlan & { created: string[]; proposals: string[]; since: string }
+  > {
+    if (params.sheet.rows.length === 0) {
+      // The same refusal syncMemberRoster makes, for the same reason: an empty read is what a bad
+      // range or a revoked token looks like, and the plan built from it calls every member new.
+      return serviceError(
+        422,
+        "the member sheet returned no usable rows -- refusing to sweep onboarding against an empty read",
+      );
+    }
+    const members = this.store.listLabMembers();
+    const plan = planRosterSync({ sheet: params.sheet, members });
+    const events = this.store.listAuditEvents();
+
+    // Where the last pass got to. Absent on the first run, which is what makes that run fall back
+    // to the live mismatch -- the state the lab is in before any of this has ever looked.
+    const since =
+      events
+        .filter((event) => event.type === "onboarding_sweep.ran")
+        .map((event) => event.timestamp)
+        .toSorted()
+        .at(-1) ?? "";
+    const appliedChanges: Array<{ member_id: string; to: string }> = [];
+    const alreadyMailed = new Set<string>();
+    for (const event of events) {
+      if (event.type === "roster_sync.member_type_changed" && event.timestamp > since) {
+        const details = event.details as { member_id?: unknown; to?: unknown } | undefined;
+        if (typeof details?.member_id === "string" && typeof details.to === "string") {
+          appliedChanges.push({ member_id: details.member_id, to: details.to });
+        }
+        continue;
+      }
+      if (event.type === "onboarding.guide_sent") {
+        const details = event.details as
+          | { template_id?: unknown; recipient?: unknown; sent?: unknown }
+          | undefined;
+        // `sent: false` is a recorded attempt that did not go out, so it must not suppress a retry.
+        if (
+          details?.sent === true &&
+          typeof details.template_id === "string" &&
+          typeof details.recipient === "string"
+        ) {
+          alreadyMailed.add(`${details.recipient.trim().toLowerCase()}:${details.template_id}`);
+        }
+      }
+    }
+
+    const swept = planOnboardingSweep({
+      plan,
+      appliedChanges,
+      memberById: (memberId) => this.store.getLabMember(memberId),
+      alreadyMailed,
+      knownMemberIds: new Set(members.map((member) => member.id)),
+    });
+
+    const created: string[] = [];
+    const proposals: string[] = [];
+    if (!params.dryRun) {
+      for (const row of swept.create) {
+        // Name and email only. Privilege, status and access are governance fields and the sheet is
+        // not an authorization surface -- the same rule adminbot-member-sheet-poller states and the
+        // service principal enforces again.
+        const saved = this.upsertLabMember(
+          { id: row.member_id, name: row.name, email: row.email, member_type: row.member_type },
+          { source: "import", actor: params.actor },
+        );
+        if (saved.ok) {
+          created.push(row.member_id);
+        } else {
+          swept.skipped.push({ name: row.name, reason: saved.error.message });
+        }
+      }
+      for (const row of swept.mail) {
+        const created_ = this.createProposal({
+          type: "onboarding.send_guide",
+          summary: `Onboarding guide (${row.template_id}) to ${row.name} <${row.email}> -- ${row.reason}`,
+          target: { service: "google", channel: "email", target: row.email },
+          proposed_payload: {
+            template_id: row.template_id,
+            name: row.name,
+            email: row.email,
+            ...(row.member_id ? { member_id: row.member_id } : {}),
+          },
+          undo_plan:
+            "None: the mail is sent and the Slack invite minted. Follow up with the recipient directly.",
+        });
+        if (created_.ok) {
+          proposals.push(created_.payload.id);
+        } else {
+          swept.skipped.push({ name: row.name, reason: created_.error.message });
+        }
+      }
+      this.recordAudit({
+        type: "onboarding_sweep.ran",
+        actor: params.actor,
+        details: {
+          created,
+          owed_mail: swept.mail.map((row) => row.email),
+          proposals: proposals.length,
+          skipped: swept.skipped.length,
+        },
+      });
+    }
+    return { ok: true, status: 200, payload: { ...swept, created, proposals, since } };
+  }
+
   syncMemberRoster(params: {
     sheet: RosterSheetParse;
     actor: string;
@@ -12153,6 +12656,52 @@ export class AdminBotService {
 
 export function payloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+/**
+ * The resolution an `email_review.resolve` proposal is asking to have applied.
+ *
+ * Read defensively rather than cast: this payload is what an approval press turns into a write, so
+ * a shape that does not parse has to fail the execution loudly instead of resolving the wrong item
+ * or resolving it the wrong way.
+ */
+function emailReviewResolutionPayload(
+  proposal: AdminBotStoredProposal,
+): { message_id: string; resolution: AdminBotEmailReviewResolution } | undefined {
+  if (proposal.type !== "email_review.resolve") {
+    return undefined;
+  }
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const row = payload as Record<string, unknown>;
+  const messageId = typeof row.message_id === "string" ? row.message_id.trim() : "";
+  const resolution = row.resolution;
+  if (!messageId || !resolution || typeof resolution !== "object") {
+    return undefined;
+  }
+  const kind = (resolution as Record<string, unknown>).kind;
+  if (kind === "dismissed") {
+    return { message_id: messageId, resolution: { kind: "dismissed" } };
+  }
+  if (kind !== "paperflow_evidence") {
+    return undefined;
+  }
+  const paperId = (resolution as Record<string, unknown>).paper_id;
+  const stage = (resolution as Record<string, unknown>).stage;
+  if (
+    typeof paperId !== "string" ||
+    !paperId.trim() ||
+    typeof stage !== "string" ||
+    !stage.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    message_id: messageId,
+    resolution: { kind: "paperflow_evidence", paper_id: paperId, stage },
+  };
 }
 
 function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {

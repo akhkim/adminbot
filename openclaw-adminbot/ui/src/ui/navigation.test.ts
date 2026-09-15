@@ -11,6 +11,7 @@ import {
   normalizePath,
   pathForTab,
   subtitleForTab,
+  pathIsRoot,
   tabFromPath,
   titleForTab,
   type Tab,
@@ -273,6 +274,28 @@ describe("pathForTab", () => {
   it("prepends base path", () => {
     expect(pathForTab("chat", "/ui")).toBe("/ui/chat");
     expect(pathForTab("sessions", "/apps/openclaw")).toBe("/apps/openclaw/sessions");
+  });
+});
+
+// `tabFromPath` answers the root with a tab, which is the right thing to show and the wrong answer
+// to "did this visitor ask for a surface". Anything that lands a viewer somewhere of their own has
+// to be able to tell the two apart.
+describe("pathIsRoot", () => {
+  it("separates the root from a path that names a tab", () => {
+    expect(pathIsRoot("/")).toBe(true);
+    expect(pathIsRoot("")).toBe(true);
+    expect(pathIsRoot("/index.html")).toBe(true);
+    expect(pathIsRoot("/dashboard")).toBe(false);
+    expect(pathIsRoot("/my-desk")).toBe(false);
+    // The root still resolves to a tab; that is the case this exists to distinguish.
+    expect(tabFromPath("/")).toBe("dashboard");
+  });
+
+  it("reads the root through a base path", () => {
+    expect(pathIsRoot("/control", "/control")).toBe(true);
+    expect(pathIsRoot("/control/", "/control")).toBe(true);
+    expect(pathIsRoot("/control/index.html", "/control")).toBe(true);
+    expect(pathIsRoot("/control/dashboard", "/control")).toBe(false);
   });
 });
 

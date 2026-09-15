@@ -28,6 +28,11 @@ function member(id: string, privilege: string, status?: string) {
   return { id, name: id, privilege_level: privilege, ...(status ? { status } : {}) };
 }
 
+/** An alumnus the way the roster actually records one: the type says so, the status is absent. */
+function typedAlumnus(id: string, memberType = "alumni") {
+  return { id, name: id, privilege_level: "member", member_type: memberType };
+}
+
 function createHost(members = ROSTER): AdminBotPaperSlotsHost {
   return {
     settings: { adminBotUrl: "https://admin.safe.eu" } as UiSettings,
@@ -72,6 +77,22 @@ describe("who the nudge pass may message", () => {
     ]).map((entry) => entry.member_id);
     // Trial and external have no standing to be chased; alumni have left; "ghost" is on no roster.
     expect(kept).toEqual(["ada", "grace"]);
+  });
+
+  // How 22 of the lab's 24 alumni are actually recorded: the imported spreadsheet spells it in
+  // `member_type` and leaves `status` empty, so a status-only test let nearly all of them into the
+  // preview. They never received anything -- the send asks the same helper this now does -- so the
+  // count and the list of names simply disagreed with what pressing the button would do.
+  it("drops alumni the roster spells in member_type, with no status", () => {
+    const host = createHost([
+      member("ada", "member"),
+      typedAlumnus("alum-ann"),
+      typedAlumnus("alum-bo", "full, alumni"),
+    ]);
+    const kept = nudgeableBatches(host, [batch("ada"), batch("alum-ann"), batch("alum-bo")]).map(
+      (entry) => entry.member_id,
+    );
+    expect(kept).toEqual(["ada"]);
   });
 
   it("never messages the head of the lab", () => {

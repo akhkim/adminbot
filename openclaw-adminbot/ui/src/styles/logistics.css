@@ -1483,6 +1483,17 @@
   color: var(--muted);
 }
 
+/* The line under the title saying what this queue is for. Quieter than the rows it introduces --
+   it is read once, when you are learning the page, and skipped every time after that. Sits tight
+   under the heading so it reads as part of it rather than as the first item. */
+.professor__blurb {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
 .professor__list {
   margin: var(--space-3) 0 0;
   padding: 0;

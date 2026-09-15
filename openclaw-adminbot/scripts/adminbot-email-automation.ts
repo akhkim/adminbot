@@ -335,15 +335,40 @@ export function authorizeClassification(
 ): Classification {
   const sender = normalizeAddress(message.from);
   const privileged = privilegedSenders().has(sender);
-  // A calendar request from one of the handful of configured lab addresses is taken at its word.
-  // The confidence gate exists for mail from strangers, where a misread costs an unwanted action;
-  // here the sender is already trusted for exactly this, and the worst a shaky read produces is a
-  // wrong event on the lab calendar that the same person can fix in the calendar UI. Holding those
-  // for review meant every "put this in the calendar" note waited on a human, which is the thing
-  // the automation exists to avoid. Creation only -- nothing in this pass can remove an event.
-  const trustedCalendarRequest =
-    classification.category === "calendar_event" && privileged;
-  if (classification.confidence < 0.8 && !trustedCalendarRequest) {
+  // A task from one of the handful of configured lab addresses is taken at its word. The confidence
+  // gate exists for mail from strangers, where a misread costs an unwanted action; here the sender
+  // is already trusted for exactly this, and holding their requests meant every "put this in the
+  // calendar" note waited on a human, which is the thing the automation exists to avoid.
+  //
+  // These three are the tasks people hand over by forwarding something -- a seminar announcement,
+  // a talk notice, a receipt -- so the forward is the normal shape of the request and not a reason
+  // to distrust it. What makes that safe is not the sender's certainty but how little each one can
+  // do, and it is worth being explicit about, because "execute what this email says" would not be
+  // safe and this is not that:
+  //
+  //   calendar_event  creates an event and only creates one. Nothing in this pass removes or
+  //                   invites; a misread is a wrong row the same person deletes in the calendar UI.
+  //                   Inviting attendees is `calendar.send_invite`, a separate T3 action.
+  //   talk_entry      writes one row to the talk list. Same shape, same remedy.
+  //   reimbursement   fills the two forms and mails the package to `adminRecipient()` -- the lab's
+  //                   own admin, not a funder -- with the funding source and signature fields
+  //                   deliberately left blank "for human review". The forms arrive needing a person
+  //                   before they go anywhere, so the review is downstream and unavoidable rather
+  //                   than something this gate was providing.
+  //
+  // None of the three can reach an outside party or rewrite a record on the automation's own
+  // authority, which is the line. A category that could would not belong here however well the
+  // sender is known -- and the extraction checks below still hold reimbursement back when the
+  // numbers are incomplete, because a form with the wrong figures wastes the reviewer's time
+  // whoever sent it. Authority still comes from the actual Gmail From header and never from the
+  // forwarded body: the classifier prompt refuses to read instructions out of quoted text, and
+  // nothing here lets content name its own category or its own sender.
+  const trustedRequestCategory =
+    classification.category === "calendar_event" ||
+    classification.category === "talk_entry" ||
+    classification.category === "reimbursement";
+  const trustedRequest = trustedRequestCategory && privileged;
+  if (classification.confidence < 0.8 && !trustedRequest) {
     return {
       ...classification,
       category: "unknown",
@@ -352,17 +377,36 @@ export function authorizeClassification(
   }
   if (classification.category === "onboarding_followup") {
     const tracked = onboardingThread;
-    if (!tracked || sender !== tracked.candidate_email.toLowerCase()) {
+    // No tracked thread is still unknown: with nothing to bind the reply to, there is no candidate
+    // whose record this could update, and guessing one from the sender is how the wrong person's
+    // onboarding advances.
+    if (!tracked) {
       return {
         ...classification,
         category: "unknown",
-        reason: "onboarding follow-up is not from the tracked candidate",
+        reason: "onboarding follow-up matched no tracked onboarding thread",
       };
     }
+    // The address it arrives from no longer has to match. The thread is the identifier: these
+    // threads are looked up by `thread_id OR candidate_email` and are ones AdminBot itself opened
+    // with one candidate, so a reply on one is that candidate's reply. Requiring the sender to
+    // equal the tracked address held up the ordinary case -- somebody reads lab mail in Gmail and
+    // replies from there, or writes back from the new university account the thread is *about* --
+    // and every one of those waited on a human to read it and agree it was the same person.
+    //
+    // Bound to the tracked candidate rather than the sender, so a reply from a second address
+    // updates the candidate the thread names instead of opening a record under whatever address
+    // happened to send it. What the handler then does with the message is unchanged: it still only
+    // accepts a department address that appears in the mail, which is the guard that matters.
     return {
       ...classification,
       decision: tracked.decision,
-      candidateEmail: sender,
+      candidateEmail: tracked.candidate_email.toLowerCase(),
+      ...(sender === tracked.candidate_email.toLowerCase()
+        ? {}
+        : {
+            reason: `${classification.reason} (replied from ${sender}, bound to the thread's candidate ${tracked.candidate_email.toLowerCase()})`,
+          }),
     };
   }
   if (classification.category === "onboarding_instruction") {

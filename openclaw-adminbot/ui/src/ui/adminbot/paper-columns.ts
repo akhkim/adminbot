@@ -11,7 +11,6 @@ import { publicationTrack, presentationFormat, PUBLICATION_TRACKS, PRESENTATION_
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperSteps,
-  type AdminBotPaperStep,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
 import {
   adminBotPaperSlotRegistry,

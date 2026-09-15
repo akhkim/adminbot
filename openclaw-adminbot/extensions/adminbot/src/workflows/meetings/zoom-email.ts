@@ -144,11 +144,24 @@ function labelledValue(body: string, labels: readonly string[]): string | undefi
   return undefined;
 }
 
-/** The topic Zoom put in the subject: "Cloud Recording - <topic> is now available". */
+/**
+ * The topic Zoom put in the subject, across the templates it has actually mailed.
+ *
+ * Three patterns because Zoom's wording is not a contract and has moved between releases. The
+ * newest one ("Meeting assets for <topic> are ready!") is the one a utoronto account sends today,
+ * and it carries no "Topic:" line in the body either -- so without it every recording from that
+ * template filed as "Untitled Zoom meeting". That is worse than an ugly title: `matchArtifactToMeeting`
+ * falls back to the topic to decide which meeting a dropped transcript belongs to on a day with
+ * more than one, and every meeting sharing a name makes that undecidable.
+ *
+ * Ordered most specific first: the general "<topic> is now available" would otherwise take
+ * "Cloud Recording - X" and hand back the prefix along with the title.
+ */
 export function topicFromSubject(subject: string): string | undefined {
   const withoutForwardMarkers = subject.replace(/^\s*(?:(?:fwd?|re|fw)\s*:\s*)+/iu, "").trim();
   const match =
     /^cloud\s+recording\s*[-–—]\s*(.+?)\s+is\s+now\s+available/iu.exec(withoutForwardMarkers) ??
+    /^meeting\s+assets\s+for\s+(.+?)\s+are\s+ready/iu.exec(withoutForwardMarkers) ??
     /^(.+?)\s+is\s+now\s+available/iu.exec(withoutForwardMarkers);
   return match?.[1]?.trim() || undefined;
 }

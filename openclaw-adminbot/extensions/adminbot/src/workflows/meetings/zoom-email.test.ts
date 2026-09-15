@@ -170,4 +170,28 @@ describe("topicFromSubject", () => {
       "Lab Meeting",
     );
   });
+
+  // The template a utoronto account sends today. It carries no "Topic:" line in the body either,
+  // so before this every recording from it filed as "Untitled Zoom meeting" -- which also left
+  // matchArtifactToMeeting with no tiebreaker on a day with two meetings.
+  it("reads the newer assets-are-ready template, forwarded or not", () => {
+    expect(topicFromSubject("Meeting assets for Weekly Jinesis Meeting are ready!")).toBe(
+      "Weekly Jinesis Meeting",
+    );
+    expect(topicFromSubject("FW: Meeting assets for Weekly Jinesis Meeting are ready!")).toBe(
+      "Weekly Jinesis Meeting",
+    );
+  });
+
+  // The general pattern must not win over the specific one and hand back the prefix as the title.
+  it("keeps the older template's prefix out of the topic", () => {
+    expect(topicFromSubject("Cloud Recording - Reading Group is now available")).toBe(
+      "Reading Group",
+    );
+    expect(topicFromSubject("Your recording is now available")).toBe("Your recording");
+  });
+
+  it("has nothing to say about a subject that is not a notice", () => {
+    expect(topicFromSubject("Lunch?")).toBeUndefined();
+  });
 });

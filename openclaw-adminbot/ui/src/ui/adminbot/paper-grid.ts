@@ -23,7 +23,6 @@ import {
 } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import {
-  columnIndexOf,
   COLUMN_GROUPS,
   COLUMNS,
   gridColumns,
