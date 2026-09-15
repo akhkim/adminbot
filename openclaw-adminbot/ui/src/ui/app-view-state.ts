@@ -242,6 +242,11 @@ export type AppViewState = {
   endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
   tab: Tab;
+  /**
+   * This visit arrived on the root and has not been navigated since, so `tab` is a default nobody
+   * chose. Cleared by the first navigation of any kind; read once the session says who is looking.
+   */
+  landedWithoutATab?: boolean;
   onboarding: boolean;
   basePath: string;
   connected: boolean;

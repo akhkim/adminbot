@@ -6,6 +6,8 @@ import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
+  defaultTabForViewer,
+  isHeadProfessorViewer,
   resolveAccessRole,
   resolveAccessibleTab,
   visibleTabsForMember,
@@ -1152,6 +1154,45 @@ function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): 
     state.tab = allowed;
   }
   return state;
+}
+
+/**
+ * Send a viewer who named no tab to their own home, once there is enough loaded to know whose it is.
+ *
+ * Deliberately after the AdminBot load rather than inside the render pass: who the head professor
+ * is arrives with the settings, so on the first paint the answer is simply not known yet, and the
+ * generic home is the right thing to show while it is not. Going through `setTab` rather than
+ * assigning `state.tab` is what keeps the address bar, the tab's own data refresh and the chat
+ * teardown in step -- this is a navigation, it just is not one the viewer typed.
+ *
+ * One shot: `landedWithoutATab` is cleared by any navigation, this one included, so a professor who
+ * walks from My Desk to the dashboard stays there and a slow second load cannot yank her back.
+ */
+function applyViewerHome(state: AppViewState): void {
+  if (!state.landedWithoutATab) {
+    return;
+  }
+  const headProfessorMemberId = state.adminBotData?.settings?.head_professor_member_id;
+  if (!headProfessorMemberId) {
+    // Either the setting is unset or the settings did not load (a member-mode read does not fetch
+    // them). Leave the flag standing: nothing has been decided, and no later load should be
+    // prevented from deciding it.
+    return;
+  }
+  const role = resolveAccessRole({
+    signedIn: Boolean(state.memberId) || Boolean(state.memberPrivilegeLevel),
+    privilegeLevel: state.memberPrivilegeLevel,
+    gatewayConnected: state.connected,
+  });
+  const home = defaultTabForViewer({
+    role,
+    isHeadProfessor: isHeadProfessorViewer({ memberId: state.memberId, headProfessorMemberId }),
+  });
+  if (home === state.tab) {
+    state.landedWithoutATab = false;
+    return;
+  }
+  state.setTab(home);
 }
 
 type ChatWorkspaceFilesState = {
@@ -2711,7 +2752,11 @@ export function renderApp(state: AppViewState) {
     !state.adminBotError &&
     !state.adminBotData.loadedAt
   ) {
-    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+    void loadAdminBot(state, adminBotMode)
+      // The settings this needs arrive with that load, which is why it hangs off the end of it
+      // rather than being read during the render that started it.
+      .then(() => applyViewerHome(state))
+      .finally(() => requestHostUpdate?.());
   }
   // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
   // opening the tab drew an empty month and only the Refresh button or a month step would fetch
