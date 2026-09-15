@@ -578,7 +578,9 @@ describe("field guidance", () => {
     const help = container.querySelector(
       '[data-testid="paper-slot-help-p1-overleaf_edit"]',
     )?.parentElement;
-    expect(help?.textContent).toContain("address bar");
+    expect(help?.textContent).toContain("does not grant sharing access");
+    expect(help?.textContent).toContain("enable link sharing");
+    expect(help?.textContent).toContain("copy the edit or view link");
     expect(help?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/project/`);
   });
   // `pi_approval` is the only slot the authors cannot act on. Before this it looked like any other
