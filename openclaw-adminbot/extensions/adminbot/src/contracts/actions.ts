@@ -1802,6 +1802,15 @@ export type AdminBotPaperArtifactLinks = {
   brainstorming_doc_url?: string;
   overleaf_view_url?: string;
   overleaf_edit_url?: string;
+  /**
+   * Overleaf's link-sharing URL, which is a credential rather than an address.
+   *
+   * Separate from `overleaf_edit_url` because the two are not interchangeable despite both
+   * granting write access. That one holds a project id, which is inert on its own and is what
+   * PaperMentor is addressed with; this one holds a token that works for anyone who has it. A
+   * single field would have made "can PaperMentor review this" unanswerable from the value.
+   */
+  overleaf_share_url?: string;
   submission_url?: string;
   google_drive_pdf_url?: string;
   arxiv_url?: string;

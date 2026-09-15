@@ -34,6 +34,7 @@ import {
 export const adminBotPaperSlots = [
   "project_folder",
   "overleaf_view",
+  "overleaf_share",
   "overleaf_edit",
   "papermentor_review",
   "fixes_merged",
@@ -190,6 +191,16 @@ export type AdminBotPaperSlotDefinition = {
   /** `link` slots only: a path the URL must contain. Any one of them satisfies it. */
   urlPath?: readonly string[];
   /**
+   * `link` slots only: a pattern the whole pathname must match.
+   *
+   * For the one link shape `urlPath` cannot describe. A substring rule works when the meaningful
+   * part of a URL sits behind a fixed prefix -- `/project/`, `/read/`, `/abs/` -- and an Overleaf
+   * share link has no prefix at all: the token *is* the path. The rule that matters there is
+   * "exactly one segment", which is also what keeps this from quietly accepting the other two
+   * Overleaf shapes, since both of those have two.
+   */
+  urlPathPattern?: RegExp;
+  /**
    * Render this slot inside another one's row rather than as a row of its own.
    *
    * Four pairs of slots are two halves of one PaperFlow node -- the two Overleaf links are both
@@ -262,6 +273,34 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     urlPath: ["/read/"],
     hint: "Overleaf's read-only share link. Safe to paste in a channel — nobody can edit the paper with it.",
     example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
+  },
+  overleaf_share: {
+    subOf: "overleaf_edit",
+    kind: "link",
+    node: "OV",
+    owner: "first_author",
+    // Nothing waits on it. The project link is what the paper cannot proceed without; this is a
+    // second way to hand out the same write access, so gating a step on it would let a paper be
+    // held up by the absence of a convenience.
+    gates: null,
+    branch: "core",
+    label: "Overleaf share edit link",
+    upstream: ["project_folder"],
+    // Advisory, and never chased. Asking an author for this one would be asking them to mint a
+    // credential they may have had no reason to create -- see the hint.
+    required: false,
+    deadlineBearing: false,
+    urlHosts: OVERLEAF_HOSTS,
+    // One segment, which is the whole distinction: `/project/<id>` and `/read/<token>` both have
+    // two, so the shapes cannot collide. Length is bounded rather than pinned to the 22 characters
+    // Overleaf currently mints, since a fork is free to size its tokens differently.
+    urlPathPattern: /^\/[A-Za-z0-9]{12,64}\/?$/u,
+    hint:
+      "Overleaf's “Anyone with this link can edit” URL. This one is a credential, not an " +
+      "address: it grants write access to whoever holds it, without an invitation and without " +
+      "appearing in the project's member list. Everyone who can read this paper's record can use " +
+      "it. Prefer the project link above and invite coauthors by name where you can.",
+    example: `https://${OVERLEAF_COM_HOST}/1234567890abcdefghijkl#a1b2c3`,
   },
   overleaf_edit: {
     groupLabel: "Overleaf",
@@ -726,6 +765,11 @@ export function validateAdminBotPaperSlotUrl(
   const paths = definition.urlPath;
   if (paths?.length && !paths.some((path) => url.pathname.includes(path))) {
     return { ok: false, reason: `the link must be a ${paths.join(" or ")} URL` };
+  }
+  // Checked after the host, so a mistyped share link is told it is on the wrong Overleaf before it
+  // is told its path is wrong -- the host is the fixable half.
+  if (definition.urlPathPattern && !definition.urlPathPattern.test(url.pathname)) {
+    return { ok: false, reason: `that is not a ${definition.label.toLowerCase()}` };
   }
   return { ok: true };
 }

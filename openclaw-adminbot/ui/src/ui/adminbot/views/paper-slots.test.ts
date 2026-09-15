@@ -70,7 +70,7 @@ describe("renderPaperSlots", () => {
     // parent is a label with a status pill. The invariant that matters is unchanged: every field
     // in the registry is somewhere on the card.
     expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
-    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(5);
+    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(6);
   });
 
   it("draws the two halves of a node in one row rather than two", async () => {
