@@ -178,6 +178,42 @@ describe("renderAdminBotMeetings", () => {
   });
 });
 
+// The card's subtitle is what identifies a recording when the topic does not -- every notice from
+// the older template filed as "Untitled Zoom meeting", so the length beside the date is doing real
+// work rather than decorating.
+describe("how long the recording runs", () => {
+  it("reports the length Zoom stated, to the second", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: 98, duration_minutes: undefined }],
+    });
+    expect(view.textContent).toContain("1m 38s");
+  });
+
+  // 98 seconds rounded to minutes reads "2 min", and anything under thirty seconds rounds away to
+  // nothing and vanishes from the card entirely.
+  it("does not round a short clip into a minute count", () => {
+    const view = renderView({ meetings: [{ ...MEETING, duration_seconds: 20 }] });
+    expect(view.textContent).toContain("0m 20s");
+    expect(view.textContent).not.toContain("58 min");
+  });
+
+  it("switches to hours and minutes once it runs past an hour", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: 2 * 3600 + 5 * 60 + 9 }],
+    });
+    expect(view.textContent).toContain("2h 5m");
+  });
+
+  // The hand-filed meeting length is the last resort: it is the length of the *meeting*, which is
+  // not the length of the recording.
+  it("falls back to a hand-filed meeting length when no recording length is known", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: undefined, duration_minutes: 58 }],
+    });
+    expect(view.textContent).toContain("58 min");
+  });
+});
+
 describe("attendance nudge panel", () => {
   const NUDGE_PREVIEW = {
     streak: 2,

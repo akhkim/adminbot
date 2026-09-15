@@ -2924,6 +2924,8 @@ export type MeetingRecord = {
   topic: string;
   started_at: string;
   duration_minutes?: number;
+  /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
+  duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
   transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
   summary?: {

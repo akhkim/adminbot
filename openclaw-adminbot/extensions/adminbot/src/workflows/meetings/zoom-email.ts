@@ -39,6 +39,19 @@ const ZONE_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
 // otherwise swallow a closing bracket or quote from the surrounding markup.
 const SHARE_URL = /https?:\/\/[a-z0-9.-]*zoom\.us\/rec\/(?:share|play)\/[^\s<>"')\]]+/iu;
 
+/**
+ * How long the recording runs, from the line the assets template puts beside it.
+ *
+ * `Duration: 00:01:38` -- hours, minutes, seconds, and the hours field is present even on a
+ * two-minute clip. The older "is now available" template carries no duration at all, which is why
+ * this is optional rather than part of the notice's required shape.
+ *
+ * Anchored on the label because the body is full of other colon-separated clock-like text (the
+ * date line, and a share token that can contain digits and dashes); a bare HH:MM:SS match would
+ * find one of those first.
+ */
+const DURATION = /\bduration\s*:\s*(\d{1,3}):([0-5]\d):([0-5]\d)\b/iu;
+
 const MONTHS = [
   "january",
   "february",
@@ -68,6 +81,15 @@ export type ZoomRecordingNotice = {
   shareUrl: string;
   passcode?: string;
   meetingId?: string;
+  /**
+   * Recording length in seconds, when the notice states one.
+   *
+   * Seconds rather than minutes because the notice is precise to the second and a lab recording is
+   * routinely under a minute -- a test call, somebody starting the recording early. Rounding at
+   * the parse would turn "00:00:41" into either 0 or 1, and both are worse than the number Zoom
+   * actually wrote.
+   */
+  durationSeconds?: number;
 };
 
 /**
@@ -173,7 +195,10 @@ export function topicFromSubject(subject: string): string | undefined {
  * calendar/time.ts makes: an offset has to be correct for that date, and getting daylight saving
  * wrong moves a weekly meeting by an hour twice a year.
  */
-export function parseNoticeDate(text: string, fallbackZone = DEFAULT_MEETING_ZONE): string | undefined {
+export function parseNoticeDate(
+  text: string,
+  fallbackZone = DEFAULT_MEETING_ZONE,
+): string | undefined {
   const zone = ZONE_LABELS.find(([pattern]) => pattern.test(text))?.[1] ?? fallbackZone;
   const iso = ISO_DATE.exec(text);
   if (iso) {
@@ -232,6 +257,10 @@ export function parseZoomRecordingNotice(message: {
     "date",
   ]);
   const meetingId = MEETING_ID.exec(body)?.[1]?.replace(/[\s-]/gu, "");
+  const duration = DURATION.exec(body);
+  const durationSeconds = duration
+    ? Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3])
+    : undefined;
   return {
     topic:
       labelledValue(body, ["topic", "meeting topic"]) ??
@@ -244,6 +273,9 @@ export function parseZoomRecordingNotice(message: {
     shareUrl: shareUrl.replace(/[.,;]$/u, ""),
     ...(readPasscode(body) ? { passcode: readPasscode(body) } : {}),
     ...(meetingId ? { meetingId } : {}),
+    // Zero is dropped: Zoom writes 00:00:00 for a recording that failed to capture anything, and
+    // "0 min" on the card reads as a measurement rather than as the absence of one.
+    ...(durationSeconds ? { durationSeconds } : {}),
   };
 }
 
