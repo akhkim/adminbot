@@ -501,6 +501,7 @@ export type AdminBotPaperSaveInput = {
   // the entire change -- without it the grid would silently drop most of what was typed.
   overleafEditUrl?: string;
   overleafViewUrl?: string;
+  overleafShareUrl?: string;
   brainstormingDocUrl?: string;
   submissionUrl?: string;
   googleDrivePdfUrl?: string;
@@ -2596,6 +2597,7 @@ export async function saveAdminBotPaper(
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
     ...(paper.overleafViewUrl ? { overleaf_view_url: paper.overleafViewUrl } : {}),
+    ...(paper.overleafShareUrl ? { overleaf_share_url: paper.overleafShareUrl } : {}),
     ...(paper.brainstormingDocUrl ? { brainstorming_doc_url: paper.brainstormingDocUrl } : {}),
     ...(paper.submissionUrl ? { submission_url: paper.submissionUrl } : {}),
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),

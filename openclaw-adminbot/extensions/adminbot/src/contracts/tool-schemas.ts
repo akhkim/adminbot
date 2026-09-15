@@ -100,6 +100,7 @@ export const paperArtifactsSchema = Type.Object(
     brainstorming_doc_url: Type.Optional(Type.String()),
     overleaf_view_url: Type.Optional(Type.String()),
     overleaf_edit_url: Type.Optional(Type.String()),
+    overleaf_share_url: Type.Optional(Type.String()),
     submission_url: Type.Optional(Type.String()),
     google_drive_pdf_url: Type.Optional(Type.String()),
     arxiv_url: Type.Optional(Type.String()),

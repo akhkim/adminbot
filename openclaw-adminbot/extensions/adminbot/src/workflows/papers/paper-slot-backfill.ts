@@ -47,6 +47,7 @@ import {
 const ARTIFACT_SLOTS: Array<[string, AdminBotPaperSlot]> = [
   ["brainstorming_doc_url", "project_folder"],
   ["overleaf_view_url", "overleaf_view"],
+  ["overleaf_share_url", "overleaf_share"],
   ["overleaf_edit_url", "overleaf_edit"],
   ["submission_url", "submission"],
   ["google_drive_pdf_url", "drive_pdf_arxiv"],
