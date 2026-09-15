@@ -5449,6 +5449,42 @@ adminbot-deadlines-view {
   white-space: nowrap;
 }
 
+/* Quieter than the type and archival badges beside it: a location is context for the deadline,
+   not a classification of it, so it reads as labelled text rather than another uppercase chip. */
+.deadline-location {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.deadline-location__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--muted-strong);
+}
+
+.deadline-location__icon svg {
+  width: 0.875em;
+  height: 0.875em;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deadline-location__sites {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .deadline-priority[data-priority="primary"] {
   border-color: #c084fc;
   background: color-mix(in srgb, #c084fc 12%, transparent);
@@ -5815,7 +5851,9 @@ adminbot-deadlines-view {
 
 .deadline-table {
   width: 100%;
-  min-width: 76rem;
+  /* Raised from 76rem when the Location column landed, so the existing columns keep the widths
+     they were laid out for instead of the new one squeezing them. The wrapper scrolls. */
+  min-width: 86rem;
   border-collapse: collapse;
   font-size: var(--control-ui-text-sm);
 }
@@ -5887,6 +5925,14 @@ adminbot-deadlines-view {
 
 .deadline-table__venue {
   color: var(--muted) !important;
+  white-space: nowrap;
+}
+
+.deadline-table__location {
+  max-width: 16rem;
+  overflow: hidden;
+  color: var(--muted) !important;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -6097,6 +6143,13 @@ adminbot-deadlines-view {
     min-width: 0;
     max-width: 100%;
     flex-wrap: wrap;
+  }
+
+  /* A multi-site location is the longest thing on a card, so it wraps onto as many lines as it
+     needs here rather than being ellipsised down to the first city. */
+  .deadline-location__sites {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .deadline-group__row-date-wrap,

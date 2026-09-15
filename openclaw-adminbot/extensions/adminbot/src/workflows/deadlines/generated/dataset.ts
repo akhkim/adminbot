@@ -70,7 +70,8 @@ export const DEADLINE_VENUES = [
         "date": "2026-08-02",
         "kind": "date"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "aacl2026_demo",
@@ -129,7 +130,8 @@ export const DEADLINE_VENUES = [
         "ends": "2026-11-10",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "emnlp2026_commitment",
@@ -195,7 +197,8 @@ export const DEADLINE_VENUES = [
         "ends": "2026-10-29",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": "Budapest, Hungary"
   },
   {
     "id": "arr_2026_august",
@@ -265,7 +268,8 @@ export const DEADLINE_VENUES = [
         "date": "2026-10-11",
         "kind": "date"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "emnlp2026_ws_nlp4pi",
@@ -408,7 +412,8 @@ export const DEADLINE_VENUES = [
         "ends": "2026-12-11",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": "Sydney, Australia; Atlanta, USA; Paris, France"
   },
   {
     "id": "aacl2026_commitment",
@@ -474,7 +479,8 @@ export const DEADLINE_VENUES = [
         "ends": "2026-11-10",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "emnlp2026_ws_GroundLM_Shared_Tasks",
@@ -1076,7 +1082,8 @@ export const DEADLINE_VENUES = [
         "ends": "2026-11-10",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "emnlp2026_ws_WiNLP_ARR_Commitment",
@@ -11218,7 +11225,8 @@ export const DEADLINE_VENUES = [
       "id": "ICLR.cc/2027/Conference/-/Submission",
       "duedate_aoe": "2026-09-18 23:59:00",
       "expdate_aoe": "2026-09-19 00:29:00"
-    }
+    },
+    "conference_location": ""
   },
   {
     "id": "neurips2026_ws_AgenticLS",
@@ -11353,7 +11361,8 @@ export const DEADLINE_VENUES = [
       "id": "eacl.org/EACL/2027/Demo/-/Submission",
       "duedate_aoe": "2026-09-23 23:59:00",
       "expdate_aoe": "2026-09-24 00:29:00"
-    }
+    },
+    "conference_location": ""
   },
   {
     "id": "neurips2026_ws_InfPriv_Fast_Track",
@@ -11485,7 +11494,8 @@ export const DEADLINE_VENUES = [
         "ends": "2027-04-30",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "eacl2027_commitment",
@@ -11551,7 +11561,8 @@ export const DEADLINE_VENUES = [
         "ends": "2027-03-14",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "arr_2026_october",
@@ -11602,7 +11613,8 @@ export const DEADLINE_VENUES = [
         "date": "2026-12-20",
         "kind": "date"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "naacl2027_paper",
@@ -11655,7 +11667,8 @@ export const DEADLINE_VENUES = [
         "ends": "2027-06-05",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   },
   {
     "id": "neurips2026_ws_VERICODEGEN_Competition",
@@ -11779,6 +11792,7 @@ export const DEADLINE_VENUES = [
         "ends": "2027-06-05",
         "kind": "period"
       }
-    ]
+    ],
+    "conference_location": ""
   }
 ] as const;
