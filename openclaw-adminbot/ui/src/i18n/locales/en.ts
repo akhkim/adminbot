@@ -1290,6 +1290,10 @@ export const en: TranslationMap = {
     headcount: "{count} present",
     loading: "Loading meetings…",
     minutes: "{minutes} min",
+    // Under an hour and not a round number of minutes -- a short clip reads "1m 38s" rather than
+    // rounding to a minute count that is either 0 or wrong.
+    duration: "{minutes}m {seconds}s",
+    durationHours: "{hours}h {minutes}m",
     noTranscript: "No transcript has been attached, so there is no summary.",
     nudge: {
       title: "Who has stopped coming",
@@ -2228,8 +2232,10 @@ export const en: TranslationMap = {
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
-      intakeFormUrl: "Paste the response link if you have it, or mark that you cannot find it below.",
-      intakeFormSearch: "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
+      intakeFormUrl:
+        "Paste the response link if you have it, or mark that you cannot find it below.",
+      intakeFormSearch:
+        "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
       intakeFormUnavailable: "I cannot find my form response",
       oneOnOneFolderUrl:
         "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
