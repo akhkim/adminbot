@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --import tsx
 // Re-parse the Zoom recording notices already in Gmail, and update the meetings they filed.
 //
-//   node --import tsx scripts/adminbot-meeting-backfill.ts --database <path> [--apply]
+//   node --import tsx scripts/adminbot-meeting-backfill.ts --db <path> [--apply]
 //
 // Why this exists: the notice parser has learned three things the recordings on the tab predate --
 // the "Meeting assets for X are ready!" subject (77330cdd), the `Duration:` line, and the
@@ -58,9 +58,14 @@ function parseArgs(argv: string[]): Args {
     const index = argv.indexOf(flag);
     return index >= 0 ? argv[index + 1] : undefined;
   };
-  const databasePath = value("--database") ?? process.env.ADMINBOT_DATABASE_PATH ?? "";
+  // `--db` / ADMINBOT_DB_PATH, matching adminbot-availability-import and
+  // adminbot-meeting-artifacts. Deliberately no default: those scripts fall back to
+  // ~/.openclaw/state/adminbot.sqlite, but the *service* reads $REPO_ROOT/state/adminbot.sqlite
+  // (host/main.ts), and on a deployment where those are not the same file a default would quietly
+  // rewrite the wrong database. Naming it is cheap; picking the wrong one is not.
+  const databasePath = value("--db") ?? value("--database") ?? process.env.ADMINBOT_DB_PATH ?? "";
   if (!databasePath) {
-    throw new Error("--database <path> is required (or set ADMINBOT_DATABASE_PATH)");
+    throw new Error("--db <path> is required (or set ADMINBOT_DB_PATH)");
   }
   const account = value("--account") ?? process.env.ADMINBOT_BOT_EMAIL?.trim() ?? "";
   if (!account) {
