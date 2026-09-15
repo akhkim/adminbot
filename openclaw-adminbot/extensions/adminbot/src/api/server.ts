@@ -598,22 +598,94 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
   );
 }
 
+/**
+ * The executor arm for `onboarding.send_guide`.
+ *
+ * Wraps whatever connector the launcher injected and answers this one type in-process, because the
+ * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
+ * invites the project channels and files the DCS request before the mail goes out. Everything else
+ * falls through untouched.
+ *
+ * `handled: false` when no sender is configured, which is what the service turns into an audited
+ * execution failure -- the same answer it gives for any action no connector claimed. Silently
+ * reporting success would mark a guide sent that nobody received.
+ */
+function executorWithOnboardingGuide(
+  inner: AdminBotActionExecutor | undefined,
+  sender: () => AdminBotOnboardingSender | undefined,
+): AdminBotActionExecutor {
+  return {
+    async execute(proposal) {
+      if (proposal.type !== "onboarding.send_guide") {
+        return inner ? inner.execute(proposal) : { handled: false };
+      }
+      const send = sender();
+      if (!send) {
+        return { handled: false, reason: "no onboarding sender is configured" };
+      }
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      const templateId = typeof payload.template_id === "string" ? payload.template_id : "";
+      const name = typeof payload.name === "string" ? payload.name : "";
+      const email = typeof payload.email === "string" ? payload.email : "";
+      if (!templateId || !email) {
+        return { handled: false, reason: "template_id and email are required" };
+      }
+      const result = await send({
+        template_id: templateId,
+        name,
+        email,
+        ...(payload.values && typeof payload.values === "object"
+          ? { values: payload.values as Record<string, string | undefined> }
+          : {}),
+        ...(typeof payload.submit_dcs_form === "boolean"
+          ? { submit_dcs_form: payload.submit_dcs_form }
+          : {}),
+      });
+      if (!result.ok) {
+        // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
+        // state, and the reason is what an admin needs to see on the failed approval.
+        return { handled: true, delivered: false, reason: result.error.message };
+      }
+      return {
+        handled: true,
+        delivered: true,
+        artifacts: { template_id: result.payload.template_id, subject: result.payload.subject },
+      };
+    },
+  };
+}
+
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
   warnIfLabCalendarUnconfigured(options.calendarInviteRunner);
   let store: AdminBotServiceStore;
   let service: AdminBotService;
   let closeDurable: () => void = () => {};
+  // Late-bound on purpose. The onboarding sender is built further down because it reads settings
+  // off `service`, and the executor has to be handed to `service` before that. A holder resolved
+  // at execute time is what lets one arm of the executor reach forward to it without either
+  // construction having to move.
+  let onboardingSenderRef: AdminBotOnboardingSender | undefined;
+  const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
+    executorWithOnboardingGuide(executor, () => onboardingSenderRef);
+  const baseOptions = serviceOptions(options);
+  const wiredOptions: AdminBotServiceOptions = {
+    ...baseOptions,
+    // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
+    // executed in-process by the sender, not by the CLI connector, so a deployment with no
+    // executor at all still executes this one.
+    executor: withOnboarding(baseOptions.executor),
+  };
   if (options.databasePath) {
     const durable = createAdminBotSqliteService({
       databasePath: options.databasePath,
-      ...serviceOptions(options),
+      ...wiredOptions,
     });
     store = durable.store;
     service = durable.service;
     closeDurable = durable.close;
   } else {
     store = new AdminBotMemoryStore();
-    service = new AdminBotService(store, serviceOptions(options));
+    service = new AdminBotService(store, wiredOptions);
   }
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
@@ -725,6 +797,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         save: (invite) => service.saveSlackConnectInvite(invite),
       },
     });
+  // Close the late binding opened above: from here, an approved `onboarding.send_guide` executes
+  // through exactly the sender the Onboarding tab uses.
+  onboardingSenderRef = onboardingSender;
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -4459,6 +4534,49 @@ async function handleAuthenticatedRoute(
   // `force` is the exception and takes a real admin session. It skips the guard that stops a
   // truncated read from rewriting the roster, which is a judgement about a spreadsheet somebody has
   // looked at -- not something a cron job can assert on its own.
+  if (req.method === "POST" && url.pathname === "/onboarding/sheet-sweep/run") {
+    // The weekly onboarding pass. requirePrivileged, like the roster sync it reads alongside: the
+    // caller names nobody and supplies no copy -- the sheet is read here and every decision about
+    // who is owed a mail comes from the diff against the database.
+    //
+    // It writes member records for joining rows, which is the one thing the roster sync refuses to
+    // do; see sweepOnboardingMail for why the two differ. Nothing is mailed by this route.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const sweepBody = readRecord(await readJsonOrEmpty(req));
+    let sweepSheet;
+    try {
+      sweepSheet = await readRosterSheet(ctx.memberSheet);
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in sweepSheet) {
+      sendJson(res, sweepSheet.error.status, { error: { message: sweepSheet.error.message } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.sweepOnboardingMail({
+        sheet: sweepSheet.parsed,
+        actor: principalActor(principal),
+        dryRun: sweepBody.dry_run === true,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/roster-sync") {
     if (!requirePrivileged(res, principal)) {
       return;
@@ -4828,6 +4946,38 @@ async function handleAuthenticatedRoute(
         channels,
         calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
       }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/calendar/local-event-audience/run") {
+    // The standing local event -- the Zurich lunch -- reconciled against where people are.
+    //
+    // requirePrivileged, like the other sweeps: the caller names nobody. It passes the event id and
+    // the guest list it can already see, and every decision about who belongs is made from the
+    // roster. What comes back is a pair of T3 proposals an admin approves, so nothing here can put
+    // somebody on or off an invite unattended.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const eventId = asString(body.event_id);
+    if (!eventId) {
+      sendJson(res, 400, { error: { message: "event_id is required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.sweepLocalEventAudience(
+        {
+          eventId,
+          calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+          city: asString(body.city) || "Zurich",
+          zone: asString(body.zone) || "Europe/Zurich",
+          attendees: readStringList(body.attendees),
+          ...(asString(body.day) ? { day: asString(body.day) } : {}),
+        },
+        principalActor(principal),
+      ),
     );
     return;
   }

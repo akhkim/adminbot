@@ -727,6 +727,44 @@ describe("AdminBotService weekly updates", () => {
     expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
   });
 
+  it("never asks the head professor for a weekly line, on any paper", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U3",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+    // On the paper as a supervising coauthor, which is where she sits on nearly all of them.
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha", "Zhijing Jin"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // Out of the preview an admin reads, not merely out of the send: being listed as owing a line
+    // on every paper in the lab is the visible half of the problem.
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+
+    const sent = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(sent.asked.sort()).toEqual(["ada", "rahul"]);
+    // And no skip line for her either: she is not a delivery that failed, she was never owed one.
+    expect(sent.skipped).toEqual([]);
+  });
+
+  it("still asks everyone else when no head professor is configured", async () => {
+    const service = labWithPaper();
+    unwrap(service.updateSettings({ head_professor_member_id: "" } as never));
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+  });
+
   it("keeps the prose out of the audit line", () => {
     const service = labWithPaper();
     unwrap(
@@ -2717,13 +2755,17 @@ describe("AdminBotService", () => {
     );
 
     const folder = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
-    expect(unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: folder }))
-      .one_on_one_folder_url).toBe(folder);
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: folder }))
+        .one_on_one_folder_url,
+    ).toBe(folder);
 
     // The address bar's multi-account form is the same folder, and is what most people copy.
     const multiAccount = "https://drive.google.com/drive/u/1/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
-    expect(unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: multiAccount }))
-      .one_on_one_folder_url).toBe(multiAccount);
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: multiAccount }))
+        .one_on_one_folder_url,
+    ).toBe(multiAccount);
 
     // A query string is how Drive's own Share dialog hands the link over.
     expect(
@@ -5256,10 +5298,20 @@ describe("AdminBotService", () => {
     it("proposes again when the date is corrected", () => {
       const service = new AdminBotService();
       unwrap(
-        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-14" }),
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-14",
+        }),
       );
       unwrap(
-        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-15" }),
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-15",
+        }),
       );
       expect(birthdayProposals(service)).toHaveLength(2);
     });

@@ -423,7 +423,37 @@ describe("the escalation queue", () => {
     unwrap(await service.escalateStaleNudges("test"));
     expect(unwrap(service.listEscalatedNudges()).members).toHaveLength(1);
 
-    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", name: "Mei Chen", status: "alumni" } as never));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "mei",
+        name: "Mei Chen",
+        status: "alumni",
+      } as never),
+    );
+    expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
+  });
+
+  // The spelling 22 of the lab's 24 alumni actually carry: the roster was imported from a
+  // spreadsheet that records leaving in `member_type`, and those rows have no `status` at all.
+  // They are also the people least likely to ever answer a nudge, so their escalations never
+  // drain -- a status-only test left departed members sitting permanently at the top of the one
+  // queue on My Desk that asks the professor to go and chase somebody in person.
+  it("leaves out an alumnus the roster spells in member_type, with no status", async () => {
+    const { service } = serviceWith();
+    await nudgeMember(service, "mei", "Submission ID missing");
+    age(service, "mei", 6);
+    unwrap(await service.escalateStaleNudges("test"));
+    expect(unwrap(service.listEscalatedNudges()).members).toHaveLength(1);
+
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "mei",
+        name: "Mei Chen",
+        member_type: "full, alumni",
+      } as never),
+    );
     expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
   });
 

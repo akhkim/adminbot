@@ -426,12 +426,29 @@ export class AdminBotAuthService {
       // record rather than a stamp, so if the process dies between these two writes the timeline
       // is the half that survives. The member fields below can be re-derived from it; the reverse
       // is not true, because the next login overwrites them.
-      // Only the head professor's sign-ins carry a place, because hers is the only travel history
-      // the lab keeps (isTravelHistorySubject). Everybody else's login row stays what it has always
-      // been: a time and nothing more. Gating the write and not just the read is the point -- a
-      // location history nobody may read is still a location history, and the cheapest way not to
-      // hold 200 people's movements is not to record them.
-      if (loginEventId && isTravelHistorySubject(memberId, this.store.getSettings())) {
+      // Who gets a place stamped on their sign-in, and it is now two different answers.
+      //
+      // It used to be the head professor alone: hers was the only travel history the lab kept, and
+      // gating the write as well as the read was the point -- "a location history nobody may read
+      // is still a location history, and the cheapest way not to hold 200 people's movements is
+      // not to record them."
+      //
+      // `location_audience_city` opts the lab out of that. A standing local event whose guest list
+      // is "whoever is in Zurich" cannot be answered without knowing where people are, so setting
+      // it turns the stamp on for everybody. This is a real change in what the lab holds: a
+      // per-login movement record for all 200 members, not one. It is deliberately a setting
+      // rather than a constant so the lab opts in explicitly and can stop by clearing one field --
+      // and it is named for the feature that wanted it, so anybody asking "why are we keeping
+      // these" finds the answer rather than a bare boolean.
+      //
+      // The *read* stays where it was. `isTravelHistorySubject` still gates
+      // GET /lab/members/:id/travel, so the timeline page remains hers alone; the rows collected
+      // for everybody else are read only by the audience sweep, which reports a city and never a
+      // history. That asymmetry is exactly what the old comment warned about, and it is now a
+      // choice the lab has made rather than an oversight -- see docs/tools/adminbot-local-event.md.
+      const settings = this.store.getSettings();
+      const stampEveryone = Boolean(settings?.location_audience_city?.trim());
+      if (loginEventId && (stampEveryone || isTravelHistorySubject(memberId, settings))) {
         this.store.attachLoginEventLocation(loginEventId, location);
       }
       // Re-read rather than reuse the `member` from login(): logins can race, and this must

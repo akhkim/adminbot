@@ -159,3 +159,32 @@ describe("isTravelHistorySubject", () => {
     expect(isTravelHistorySubject("   ", { head_professor_member_id: "   " })).toBe(false);
   });
 });
+
+// The lab's second reason to stamp a sign-in with a place. `isTravelHistorySubject` is unchanged
+// and still answers "whose travel *timeline* do we keep"; the audience sweep needs a *current*
+// city for everybody, and opting into that is a separate, explicit switch. The two are tested
+// together because the write site in workflows/identity/auth.ts takes whichever says yes, and
+// somebody reading one of them needs to find the other.
+describe("the location-audience opt-in, alongside the travel-history subject", () => {
+  const stamps = (memberId: string, settings: Record<string, string>) =>
+    Boolean(settings.location_audience_city?.trim()) ||
+    isTravelHistorySubject(memberId, settings as { head_professor_member_id?: string });
+
+  it("stamps only the head professor while no audience city is set", () => {
+    const settings = { head_professor_member_id: "zhijing" };
+    expect(stamps("zhijing", settings)).toBe(true);
+    expect(stamps("ada", settings)).toBe(false);
+  });
+
+  it("stamps everybody once the lab names an audience city", () => {
+    const settings = { head_professor_member_id: "zhijing", location_audience_city: "Zurich" };
+    expect(stamps("ada", settings)).toBe(true);
+  });
+
+  // Clearing the field is the off switch, so it has to mean off -- including when an operator
+  // leaves whitespace behind rather than deleting the value.
+  it("stops stamping when the city is cleared or blank", () => {
+    expect(stamps("ada", { location_audience_city: "" })).toBe(false);
+    expect(stamps("ada", { location_audience_city: "   " })).toBe(false);
+  });
+});

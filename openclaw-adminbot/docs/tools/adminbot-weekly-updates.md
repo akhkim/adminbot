@@ -45,6 +45,15 @@ is a new question.
 Papers that are dormant or rejected are skipped: nobody owes a weekly line on a paper that is
 resting, and a sweep that asked would teach people to ignore it.
 
+The **head professor** is skipped too, on every paper — the member named by
+`head_professor_member_id` in AdminBot settings. She supervises nearly everything the lab writes,
+so the author lists put her on nearly every paper, and a weekly update is an account of your own
+week's work on one paper, which is not what a supervisor's week is made of. She was never actually
+messaged (`sendMemberNudge` refuses the head professor outright), but she was listed as owing a
+line on all of it, which showed twice over: as the whole lab's output in the admin's Sunday
+preview, and as a permanently unanswered row against her name on every card her coauthors read on
+a Monday. She is dropped from the walk itself, so the preview and the sweep keep agreeing.
+
 ### Environment
 
 | Variable | Required | What it does |
