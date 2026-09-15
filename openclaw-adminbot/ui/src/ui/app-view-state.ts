@@ -500,6 +500,8 @@ export type AppViewState = {
   adminBotBroadcastAvailability?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  /** Which My Desk row lists are open past their preview cap, by list id. */
+  professorExpandedLists: Set<string>;
   publishBroadcast?: (
     draft: {
       message: string;

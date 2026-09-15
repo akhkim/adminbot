@@ -48,6 +48,33 @@ function paper(fields: Partial<AdminBotPaperRecord> & { id: string }): AdminBotP
   } as AdminBotPaperRecord;
 }
 
+function piReviewRow(fields: Partial<PiReviewRow> = {}): PiReviewRow {
+  return {
+    paperId: "p1",
+    title: "Causal Garden Planning",
+    authors: ["Ada Lovelace"],
+    packageComplete: true,
+    ...fields,
+  };
+}
+
+function escalatedRow(fields: Partial<EscalatedNudgeRow> = {}): EscalatedNudgeRow {
+  return {
+    memberId: "mei",
+    name: "Mei Chen",
+    escalatedAt: "2026-08-20T09:00:00.000Z",
+    items: [
+      {
+        id: "n1",
+        title: "Submission ID missing",
+        body: "Still missing.",
+        createdAt: "2026-08-14T09:00:00.000Z",
+      },
+    ],
+    ...fields,
+  };
+}
+
 function profile(fields: Partial<MemberProfileOverviewRow> & { id: string }) {
   return {
     name: `Member ${fields.id}`,
@@ -63,6 +90,7 @@ function profile(fields: Partial<MemberProfileOverviewRow> & { id: string }) {
 
 function draw(overrides: Partial<ProfessorViewProps> = {}) {
   const opened: string[] = [];
+  const toggled: string[] = [];
   const draft: string[] = [];
   const expiry: string[] = [];
   const availability: string[] = [];
@@ -78,6 +106,8 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       escalated: [],
       piReview: [],
       onOpen: (tab) => opened.push(tab),
+      expanded: new Set<string>(),
+      onToggleExpand: (id) => toggled.push(id),
       broadcast: null,
       onBroadcastDraftChange: (value) => draft.push(value),
       onBroadcastExpiryChange: (value) => expiry.push(value),
@@ -87,7 +117,7 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
     }),
     container,
   );
-  return { container, opened, draft, expiry, availability, published };
+  return { container, opened, toggled, draft, expiry, availability, published };
 }
 
 /**
@@ -384,27 +414,126 @@ describe("renderProfessorView", () => {
   it("opens a draft in a new tab rather than navigating away from the desk", () => {
     const { container } = draw({
       papers: [
-        paper({ id: "a", artifacts: { overleaf_edit_url: "https://overleaf.com/project/1" } }),
+        paper({
+          id: "a",
+          title: "Draft A",
+          artifacts: { overleaf_edit_url: "https://overleaf.com/project/1" },
+        }),
       ],
     });
     const link = container.querySelector<HTMLAnchorElement>('[data-testid="professor-drafts"] a');
     expect(link?.href).toBe("https://overleaf.com/project/1");
     expect(link?.target).toBe("_blank");
     expect(link?.rel).toContain("noreferrer");
+    // The whole row is the link, not a title with a line of facts sitting outside it.
+    expect(link?.textContent).toContain("Draft A");
+    expect(link?.textContent).toContain("Mei Chen");
   });
 
-  it("caps a long queue and says how much it is not showing", () => {
+  it("keeps the PDF on an approval row reachable beside the row rather than inside it", () => {
     const { container } = draw({
-      requests: Array.from({ length: 8 }, (_, index) =>
-        request({ id: `r${index}`, deadline_at: `2026-0${(index % 9) + 1}-01T00:00:00Z` }),
-      ),
+      piReview: [piReviewRow({ drivePdfUrl: "https://drive.google.com/file/d/1" })],
     });
-    const items = container.querySelectorAll('[data-testid="professor-letters"] li');
-    expect(items).toHaveLength(5);
+    const row = container.querySelector('[data-testid="professor-pi-review"] .professor__row');
+    // A link inside a button is reachable by neither, so it sits outside it.
+    expect(row?.querySelector("a")).toBeNull();
+    const pdf = container.querySelector<HTMLAnchorElement>(
+      '[data-testid="professor-pi-review"] .professor__row-aside',
+    );
+    expect(pdf?.href).toBe("https://drive.google.com/file/d/1");
+  });
+
+  it("caps a long queue and offers the rest as a control rather than as a count", () => {
+    const letters = Array.from({ length: 8 }, (_, index) =>
+      request({ id: `r${index}`, deadline_at: `2026-0${(index % 9) + 1}-01T00:00:00Z` }),
+    );
+    const { container, toggled } = draw({ requests: letters });
+    expect(container.querySelectorAll('[data-testid="professor-letters"] li')).toHaveLength(5);
+
+    const more = container.querySelector<HTMLButtonElement>(
+      '[data-testid="professor-more-letters"]',
+    );
+    expect(more?.textContent).toContain("Show 3 more");
+    expect(more?.getAttribute("aria-expanded")).toBe("false");
+    expect(more?.getAttribute("aria-controls")).toBe("professor-list-letters");
+    more?.click();
+    expect(toggled).toEqual(["letters"]);
+
+    // The whole queue once it is open, and the switch now offers the way back.
+    const open = draw({ requests: letters, expanded: new Set(["letters"]) }).container;
+    expect(open.querySelectorAll('[data-testid="professor-letters"] li')).toHaveLength(8);
+    const fewer = open.querySelector('[data-testid="professor-more-letters"]');
+    expect(fewer?.textContent).toContain("Show fewer");
+    expect(fewer?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("says how many of how many when an opened list is still holding rows back", () => {
+    // Opening a list asks for the rest of it, not for all of a queue this long -- so it stops, and
+    // it says that it stopped rather than looking like the whole of a 25-letter term.
+    const { container } = draw({
+      requests: Array.from({ length: 25 }, (_, index) =>
+        request({ id: `r${index}`, deadline_at: "2026-03-01T00:00:00Z" }),
+      ),
+      expanded: new Set(["letters"]),
+    });
+    expect(container.querySelectorAll('[data-testid="professor-letters"] li')).toHaveLength(20);
+    expect(container.querySelector(".professor__more-note")?.textContent).toContain(
+      "Showing 20 of 25",
+    );
+    // The section's own count is still the real one.
     expect(
-      container.querySelector('[data-testid="professor-letters"] .professor__bucket-more')
-        ?.textContent,
-    ).toContain("3 more");
+      container
+        .querySelector('[data-testid="professor-letters"] .professor__count')
+        ?.textContent?.trim(),
+    ).toBe("25");
+  });
+
+  it("opens each list on its own, so the adoption columns do not move together", () => {
+    const behind = Array.from({ length: 7 }, (_, index) =>
+      profile({
+        id: `p${index}`,
+        missing_fields: ["orcid"],
+        timeline: { availability: 0, time_off: 0, milestones: 0, trips: 0, total: 0 },
+      }),
+    );
+    const { container } = draw({ profiles: behind, expanded: new Set(["adoption-profile"]) });
+    expect(
+      container.querySelectorAll('[data-testid="professor-adoption-profile"] li'),
+    ).toHaveLength(7);
+    expect(
+      container.querySelectorAll('[data-testid="professor-adoption-timeline"] li'),
+    ).toHaveLength(5);
+  });
+
+  it("makes every row a way through to the page that does the work", () => {
+    // The point of the change: the rows were the only thing worth looking at and the only thing you
+    // could not press.
+    const { container, opened } = draw({
+      requests: [request({ id: "a", deadline_at: "2026-02-01T00:00:00Z" })],
+      escalated: [escalatedRow()],
+      piReview: [piReviewRow()],
+      profiles: [profile({ id: "p", missing_fields: ["orcid"] })],
+    });
+    for (const [id, tab] of [
+      ["letters", "adminbotRecLetters"],
+      ["escalated", "adminbotAnnouncements"],
+      ["pi-review", "adminbotPapers"],
+      ["adoption-profile", "adminbotProfileOverview"],
+    ] as const) {
+      const row = container.querySelector<HTMLButtonElement>(
+        `#professor-list-${id} .professor__row`,
+      );
+      row?.click();
+      expect(opened, id).toContain(tab);
+    }
+  });
+
+  it("says what pressing a row does, for a reader who cannot see the chevron", () => {
+    const { container } = draw({
+      requests: [request({ id: "a", deadline_at: "2026-02-01T00:00:00Z" })],
+    });
+    const row = container.querySelector('[data-testid="professor-letters"] .professor__row');
+    expect(row?.querySelector(".sr-only")?.textContent).toContain("Open the request queue");
   });
 
   it("groups the letter queue into deadline windows and says how far off each one is", () => {

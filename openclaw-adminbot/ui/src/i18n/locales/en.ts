@@ -429,7 +429,12 @@ export const en: TranslationMap = {
       takeDown: "Take it down",
     },
     loading: "Reading…",
-    more: "+{count} more",
+    showMore: "Show {count} more",
+    showFewer: "Show fewer",
+    // Said only when an opened list is still holding rows back, so the number above it is never
+    // the size of a list you are looking at all of.
+    showing: "Showing {shown} of {total}",
+    newTab: "opens in a new tab",
     piReview: {
       // Each of the three paper queues below names the job it is asking for, because "a list of
       // papers" was true of all three and told her nothing about which to open. This one is a
