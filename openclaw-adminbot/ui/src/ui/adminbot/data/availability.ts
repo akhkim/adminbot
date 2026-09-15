@@ -7,6 +7,8 @@
 // written, so there is one validator (see extensions/adminbot/src/kernel/service.ts).
 
 import { html, type TemplateResult } from "lit-html";
+import type { DeadlineVenue } from "./deadlines.ts";
+import { AOE_TIMEZONE } from "./timezones.ts";
 
 export type AvailabilityRow = {
   start: string;
@@ -108,6 +110,47 @@ export function milestoneRows(value: unknown): MilestoneRow[] {
         ]
       : [];
   });
+}
+
+type DeadlineMilestoneSource = Pick<
+  DeadlineVenue,
+  "deadline_id" | "name" | "deadline_aoe" | "link"
+>;
+
+/**
+ * A deadline-board entry as a row on the member's own milestone list.
+ *
+ * The board states every deadline in AoE, so the clock is copied across with the zone that makes it
+ * mean what the venue said, and `deadline_id` is kept so the row can be recognised as that deadline
+ * later. Shared by the Time Availability picker and the Deadlines board's "Add to my timeline", so
+ * the two can never write different rows for the same deadline.
+ */
+export function deadlineMilestoneRow(venue: DeadlineMilestoneSource): MilestoneRow {
+  return {
+    deadline_id: venue.deadline_id,
+    date: venue.deadline_aoe.slice(0, 10),
+    label: venue.name,
+    time: venue.deadline_aoe.slice(11, 16),
+    timezone: AOE_TIMEZONE,
+    ...(venue.link ? { link: venue.link } : {}),
+  };
+}
+
+/**
+ * Whether this deadline is already on the member's list: by `deadline_id`, or by name and date for
+ * rows written before milestones carried an id.
+ */
+export function hasDeadlineMilestone(
+  milestones: readonly MilestoneRow[],
+  venue: Pick<DeadlineVenue, "deadline_id" | "name" | "deadline_aoe">,
+): boolean {
+  return milestones.some(
+    (row) =>
+      row.deadline_id === venue.deadline_id ||
+      (!row.deadline_id &&
+        row.label.trim() === venue.name.trim() &&
+        row.date === venue.deadline_aoe.slice(0, 10)),
+  );
 }
 
 export function timeOffRows(value: unknown): TimeOffRow[] {

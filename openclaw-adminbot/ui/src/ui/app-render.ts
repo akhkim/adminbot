@@ -110,6 +110,7 @@ import {
 } from "./adminbot/controllers/profile-overview.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
+import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -4100,6 +4101,21 @@ export function renderApp(state: AppViewState) {
                 role: accessRole,
                 memberId: state.memberId,
                 settings: state.settings,
+                // Null until the member's own record is in the roster: "Add to my timeline" writes
+                // the whole milestone list, so it must not be offered before that list is known.
+                timelineMilestones: (() => {
+                  const own = state.memberId
+                    ? state.adminBotData.members?.find((member) => member.id === state.memberId)
+                    : undefined;
+                  return own ? milestoneRows(own.milestones) : null;
+                })(),
+                onSaveTimeline: async (milestones) => {
+                  if (!state.memberId) {
+                    return false;
+                  }
+                  await saveAdminBotOwnSchedule(state, state.memberId, { milestones });
+                  return state.adminBotNotice?.kind === "success";
+                },
               }),
             )
           : nothing}

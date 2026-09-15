@@ -1470,3 +1470,128 @@ it("starts with a loading state and no bundled records", async () => {
   expect(container.textContent).toContain("Loading live deadlines");
   expect(container.textContent).not.toContain("ICLR 2027");
 });
+
+describe("add to my timeline", () => {
+  async function renderSignedIn(
+    options: Partial<Parameters<typeof renderDeadlines>[0]> = {},
+  ): Promise<HTMLElement> {
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderDeadlines({
+        role: "member",
+        memberId: "member-1",
+        proposalStore: new TestProposalStore(),
+        ...options,
+      }),
+      container,
+    );
+    await settle(container);
+    buttonNamed(container, "Cards").click();
+    await settle(container);
+    return container;
+  }
+
+  function addButtons(container: HTMLElement): HTMLButtonElement[] {
+    return [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid="deadline-add-to-timeline"]'),
+    ];
+  }
+
+  function venueFor(button: HTMLButtonElement): DeadlineVenue {
+    const label = button.getAttribute("aria-label");
+    return DEADLINE_VENUES.find(
+      (venue) => label === `Add to my timeline: ${venue.name} ${venue.deadline_label}`,
+    )!;
+  }
+
+  it("adds the deadline to the member's own milestones, keeping the ones they had", async () => {
+    const existing = [{ date: "2027-06-12", label: "Graduation" }];
+    const onSaveTimeline = vi.fn(async () => true);
+    const container = await renderSignedIn({ timelineMilestones: existing, onSaveTimeline });
+    const button = addButtons(container)[0];
+    expect(button).toBeDefined();
+    const label = button.getAttribute("aria-label")!;
+    button.click();
+    await settle(container);
+
+    expect(onSaveTimeline).toHaveBeenCalledTimes(1);
+    const [milestones] = onSaveTimeline.mock.calls[0] as unknown as [Array<Record<string, string>>];
+    expect(milestones).toHaveLength(2);
+    expect(milestones[0]).toEqual(existing[0]);
+    const added = milestones[1];
+    const venue = DEADLINE_VENUES.find((row) => row.deadline_id === added.deadline_id)!;
+    expect(label).toContain(venue.name);
+    expect(added).toMatchObject({
+      label: venue.name,
+      date: venue.deadline_aoe.slice(0, 10),
+      time: venue.deadline_aoe.slice(11, 16),
+      timezone: "Etc/GMT+12",
+    });
+  });
+
+  it("says a deadline is already on the timeline instead of offering it again", async () => {
+    const first = await renderSignedIn({
+      timelineMilestones: [],
+      onSaveTimeline: async () => true,
+    });
+    const venue = venueFor(addButtons(first)[0]);
+    document.body.innerHTML = "";
+
+    const container = await renderSignedIn({
+      timelineMilestones: [
+        {
+          deadline_id: venue.deadline_id,
+          date: venue.deadline_aoe.slice(0, 10),
+          label: venue.name,
+        },
+      ],
+      onSaveTimeline: async () => true,
+    });
+    expect(addButtons(container).map(venueFor)).not.toContain(venue);
+    expect(container.querySelector('[data-testid="deadline-on-timeline"]')?.textContent).toContain(
+      "On your timeline",
+    );
+  });
+
+  // A save writes the whole list. Offering the button before the member's list has loaded would let
+  // one click replace every milestone they already had.
+  it("offers nothing until the member's own milestones have loaded", async () => {
+    const container = await renderSignedIn({
+      timelineMilestones: null,
+      onSaveTimeline: async () => true,
+    });
+    expect(addButtons(container)).toHaveLength(0);
+  });
+
+  it("offers nothing to a signed-out visitor", async () => {
+    const container = await renderSignedIn({
+      role: "anonymous",
+      memberId: null,
+      timelineMilestones: [],
+      onSaveTimeline: async () => true,
+    });
+    expect(addButtons(container)).toHaveLength(0);
+  });
+
+  it("keeps the button off past deadlines", async () => {
+    const container = await renderSignedIn({
+      timelineMilestones: [],
+      onSaveTimeline: async () => true,
+    });
+    expect(addButtons(container).length).toBeGreaterThan(0);
+    buttonNamed(container, "Past").click();
+    await settle(container);
+    expect(addButtons(container)).toHaveLength(0);
+  });
+
+  it("says so when the save fails", async () => {
+    const container = await renderSignedIn({
+      timelineMilestones: [],
+      onSaveTimeline: async () => false,
+    });
+    addButtons(container)[0].click();
+    await settle(container);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Couldn't add it");
+  });
+});
