@@ -8,6 +8,7 @@ import {
   renderMyWork,
   resetMyWorkViewModeForTest,
   resetPaperSheetChoice,
+  showMyWorkCardsForTest,
   type MyWorkProps,
   ownPapers,
 } from "./my-work.ts";
@@ -163,6 +164,58 @@ function draw(options: DrawOptions = {}) {
     rerender: () => render(renderMyWork(state, props), container),
   };
 }
+
+// The page opens on the flat view, so every spec below that is about the card list, the sheet, or
+// one of the banners above them has to say so -- otherwise it would be asserting against a surface
+// it never meant to draw. Said once here rather than by clicking "Back to cards" in a hundred
+// places, and the specs that are about the default undo it themselves.
+beforeEach(() => showMyWorkCardsForTest());
+
+describe("the surface the page opens on, before anybody asks", () => {
+  // These are the ones about the default, so they put back what the hook above just cleared.
+  beforeEach(() => resetMyWorkViewModeForTest());
+  afterEach(() => resetMyWorkViewModeForTest());
+
+  const onLegacy = (container: HTMLElement) =>
+    container.querySelector('[data-testid="paper-legacy"]') !== null;
+
+  it("opens on the flat view", () => {
+    const { container } = draw();
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector('[data-testid="my-work-item-p1"]')).toBeNull();
+  });
+
+  // The sheet's own default -- an admin, or anybody carrying five papers -- used to decide this.
+  // It still decides cards against sheet; it just no longer decides what the page opens on.
+  it("outranks the sheet's own default", () => {
+    const papers = Array.from({ length: 6 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const { container } = draw({ papers, viewerIsAdmin: true });
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(false);
+  });
+
+  // An empty flat form says "Nothing here yet" and nothing else. The card list says it too and
+  // offers the form that fixes it, so a member with no papers still lands there.
+  it("leaves somebody with no papers on the cards", () => {
+    const { container } = draw({ scopedPapers: [] });
+    expect(onLegacy(container)).toBe(false);
+  });
+
+  // The whole reason the choice is remembered: a default that reasserted itself on the next render
+  // would make "Back to cards" a button that does nothing.
+  it("keeps the cards once the reader asks for them, and reopens on request", () => {
+    const first = draw();
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw();
+    expect(onLegacy(second.container)).toBe(false);
+    second.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')!
+      .click();
+
+    expect(onLegacy(draw().container)).toBe(true);
+  });
+});
 
 describe("renderMyWork", () => {
   it("opens as a list of cards with the form closed", () => {
@@ -1351,6 +1404,9 @@ describe("the sheet's width", () => {
 // as soon as it exists, and so does anybody carrying five papers, because at that size the visit is
 // a sweep across every row rather than a read of one card. Nobody loses the other surface -- the
 // button and "Back to cards" are the same two presses they always were.
+// Reached by pressing "Back to cards" off the flat view, which the hook at the top of this file
+// does for every spec here: the sheet's default answers cards against sheet, which is a question
+// the page only asks once the reader has left the flat view.
 describe("the surface the page opens on", () => {
   afterEach(() => resetPaperSheetChoice());
 

@@ -85,3 +85,63 @@
   font-size: 0.8em;
   font-weight: 400;
 }
+
+/* Minimizing a card.
+
+   The click target is the card's chrome, not a control tucked into the corner of it: on a page
+   that is every field of every paper, the thing somebody reaches for to put one paper away is the
+   paper. So the header takes the cursor, and a folded card takes it across its whole surface --
+   there is no form left inside it to click instead. */
+.paper-legacy__paper > .profile__section-head {
+  cursor: pointer;
+}
+
+.paper-legacy__paper--collapsed {
+  cursor: pointer;
+}
+
+/* The heading's own button. Stripped back to the heading it sits inside -- the fold is reachable
+   from the keyboard and announces whether it is open, and it should not also look like a button
+   bolted onto a title. */
+.paper-legacy__collapse {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Focus is drawn on the button rather than left to the browser's default box, which would trace
+   the full width of the header and read as the whole card being selected. */
+.paper-legacy__collapse:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.paper-legacy__collapse-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* A folded card is one line, so its title stops wrapping to two and the step beside it keeps its
+   place at the end of the row. */
+.paper-legacy__paper--collapsed .paper-legacy__collapse-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-legacy__collapsed-step {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
