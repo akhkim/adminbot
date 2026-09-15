@@ -201,6 +201,21 @@ describe("the surface the page opens on, before anybody asks", () => {
     expect(onLegacy(container)).toBe(false);
   });
 
+  // Worth pinning because it surprises: leaving the flat view hands back whatever the page would
+  // have opened on before the flat view moved in front of it, and for an administrator that is the
+  // sheet. The alternative -- forcing the cards here -- would make the sheet's own default
+  // unreachable, since the flat view now occupies the first screen it used to open on.
+  it("hands an admin back the sheet their own default asks for", () => {
+    const papers = Array.from({ length: 4 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const first = draw({ papers, viewerIsAdmin: true });
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw({ papers, viewerIsAdmin: true });
+    expect(second.container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(
+      true,
+    );
+  });
+
   // The whole reason the choice is remembered: a default that reasserted itself on the next render
   // would make "Back to cards" a button that does nothing.
   it("keeps the cards once the reader asks for them, and reopens on request", () => {
