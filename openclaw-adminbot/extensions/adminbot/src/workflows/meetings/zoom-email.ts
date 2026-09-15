@@ -255,6 +255,16 @@ export function parseZoomRecordingNotice(message: {
     "meeting time",
     "start time",
     "date",
+    // The forwarded header's own line, and the only date the assets template carries: that mail
+    // states a duration and a link and nothing else, so before this every recording from it took
+    // the *forward's* arrival time as the meeting time. Two meetings forwarded in one sitting then
+    // shared a timestamp, which is worse than an approximate one -- it made them indistinguishable
+    // on a tab whose titles were already identical.
+    //
+    // Last, so the older template's explicit "Date and time:" still wins, and safe because Zoom
+    // sends the notice within minutes of the meeting ending. `labelledValue` walks lines in order,
+    // so in a forward this finds the original Zoom header rather than the human's own.
+    "sent",
   ]);
   const meetingId = MEETING_ID.exec(body)?.[1]?.replace(/[\s-]/gu, "");
   const duration = DURATION.exec(body);

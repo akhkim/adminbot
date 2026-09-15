@@ -160,7 +160,12 @@ describe("meetingRecordId", () => {
 
 // The assets template, as a utoronto account actually receives it: no Topic line, no Meeting ID,
 // a Duration beside the recording and a share link that wraps across several lines.
-const ASSETS = `Meeting assets for Weekly Jinesis Meeting are ready!
+const ASSETS = `From: Zoom <no-reply@zoom.us>
+Sent: Wednesday, August 26, 2026 11:02 AM
+To: Andrew Kim <andrewkh.kim@mail.utoronto.ca>
+Subject: Meeting assets for Weekly Jinesis Meeting are ready!
+
+Meeting assets for Weekly Jinesis Meeting are ready!
 
 Recording
 
@@ -181,6 +186,19 @@ describe("the assets template a utoronto account receives", () => {
     // And the topic, which this template puts only in the subject.
     expect(notice?.topic).toBe("Weekly Jinesis Meeting");
     expect(notice?.shareUrl).toContain("utoronto.zoom.us/rec/share/");
+  });
+
+  // The template states no date at all, so before this the record took the *forward's* arrival
+  // time. Two meetings forwarded in one sitting then shared a timestamp -- worse than an
+  // approximate one on a tab whose titles were already identical.
+  it("takes the meeting time from the forwarded header Zoom sent", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "FW: Meeting assets for Weekly Jinesis Meeting are ready!",
+      body: ASSETS,
+    });
+    expect(notice?.startedAt?.slice(0, 10)).toBe("2026-08-26");
+    // And so the ingest stops filing its "date line did not parse" note against the record.
+    expect(notice?.startedAtText).toContain("August 26, 2026");
   });
 
   it("reads hours, which the field carries even on a short clip", () => {
