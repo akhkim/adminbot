@@ -280,7 +280,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     // the lab's own: every paper is now reviewed by PaperMentor before submission, and PaperMentor
     // only sees projects on the instance it is built into. A draft on overleaf.com is not refused
     // -- that is a real paper, and refusing the link would only cost the lab the record of it.
-    hint: `The URL in your address bar while editing. Hands over write access, so keep it to coauthors. Papers are reviewed by PaperMentor before submission, which can only read projects on ${ADMINBOT_LAB_OVERLEAF_HOST}.`,
+    hint: `This project URL identifies the paper for PaperMentor; it does not grant sharing access. To share, open Overleaf’s Share menu, enable link sharing, and copy the edit or view link. Papers are reviewed by PaperMentor before submission, which can only read projects on ${ADMINBOT_LAB_OVERLEAF_HOST}.`,
     example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
   },
   papermentor_review: {
