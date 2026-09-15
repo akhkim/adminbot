@@ -744,12 +744,10 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   research_topics: "Research topics",
   correspondence_email: "Correspondence email",
   whatsapp: "WhatsApp",
-  joined_month: "Joined month",
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
   cv_url: "CV",
-  intake_form_url: "Application form response link",
   openreview_id: "OpenReview",
 };
 
@@ -2651,6 +2649,16 @@ export type AdminBotMeetingRecordInput = {
   /** RFC3339. Falls back to when the notice was received if Zoom's date line did not parse. */
   started_at: string;
   duration_minutes?: number;
+  /**
+   * Recording length in seconds, as the Zoom notice stated it.
+   *
+   * Alongside `duration_minutes` rather than replacing it: that one is what a person types when
+   * filing a meeting by hand, and it is the length of the *meeting*. This is the length of the
+   * *recording*, which is a different number -- somebody starts recording late, or stops it before
+   * the conversation ends -- and it is exact, so the card can say "1m 38s" instead of rounding a
+   * short clip to nothing.
+   */
+  duration_seconds?: number;
   host_email?: string;
   recording: AdminBotMeetingRecordingLinks;
   transcript?: AdminBotMeetingTranscriptState;
