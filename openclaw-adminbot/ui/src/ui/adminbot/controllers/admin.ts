@@ -1,3 +1,4 @@
+import { taskFetch, taskActivities } from "../task-request.ts";
 import type {
   AdminBotReimbursementCheck,
   AdminBotReimbursementFunder,
@@ -340,6 +341,8 @@ export type WorkshopNudgeReviewState = {
 };
 
 export type WorkshopNudgeRunView = {
+  task_id?: string;
+  task_status?: string;
   status: "none" | "running" | "ready" | "failed";
   started_at?: string;
   finished_at?: string;
@@ -1601,6 +1604,7 @@ export async function refreshWorkshopNudgePreview(
     };
     return;
   }
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
   await loadWorkshopNudgePreview(host);
 }
 
@@ -1653,8 +1657,11 @@ export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void
     // While a pass is in flight the page checks back on its own, so somebody who pressed Refresh
     // and walked away comes back to the answer rather than to a spinner that stopped meaning
     // anything. Polling stops the moment the pass is terminal.
-    if (run.status === "running") {
-      setTimeout(() => void loadWorkshopNudgePreview(host), WORKSHOP_RUN_POLL_MS);
+    if (run.status === "running" && run.task_status !== "needs_retry" && run.task_status !== "shed") {
+      setTimeout(() => {
+        if ("isConnected" in host && host.isConnected === false) return;
+        void loadWorkshopNudgePreview(host);
+      }, WORKSHOP_RUN_POLL_MS);
     }
   } catch (error) {
     host.adminBotWorkshopNudges = {
@@ -2832,14 +2839,27 @@ export async function sendAdminBotReimbursementMessage(
     error: null,
     artifacts: [],
   };
+  const turn = host.adminBotReimbursement;
   try {
     const receipts = await Promise.all(files.map(receiptPayload));
-    const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_converse", {
-      message: userMessage,
-      messages: host.adminBotReimbursement.messages,
-      draft: host.adminBotReimbursement.draft,
-      ...(receipts.length ? { receipts } : {}),
-    })) as ReimbursementConversationResult;
+    const session = optionalSession(host);
+    const response = await taskFetch(`${session.baseUrl}/reimbursements/converse`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : {}),
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        messages: host.adminBotReimbursement.messages,
+        draft: host.adminBotReimbursement.draft,
+        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
+        ...(receipts.length ? { receipts } : {}),
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result?.error?.message ?? "Reimbursement task failed.");
+    if (host.adminBotReimbursement !== turn) return;
     host.adminBotReimbursement = {
       messages: [
         ...host.adminBotReimbursement.messages,
@@ -2862,6 +2882,7 @@ export async function sendAdminBotReimbursementMessage(
       ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
+    if (host.adminBotReimbursement !== turn) return;
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -2971,6 +2992,9 @@ export function setAdminBotReimbursementFunder(
 export function resetAdminBotReimbursement(
   host: Pick<AdminBotHost, "adminBotReimbursement">,
 ): void {
+  for (const activity of taskActivities.values()) {
+    if (activity.label.endsWith("/reimbursements/converse")) activity.detach();
+  }
   host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
 }
 
@@ -3009,9 +3033,9 @@ async function guestReimbursementRequest(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await (path === "/reimbursements/converse" ? taskFetch : fetch)(`${baseUrl}${path}`, {
       method: "POST",
-      // No credentials: the route is anonymous, and sending them would be misleading.
+      // Task requests use an isolated visitor cookie; generation remains stateless.
       credentials: "omit",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(payload),
@@ -3042,6 +3066,7 @@ export async function sendGuestReimbursementMessage(
     error: null,
     artifacts: [],
   };
+  const turn = host.adminBotReimbursement;
   try {
     const receipts = await Promise.all(files.map(receiptPayload));
     const result = (await guestReimbursementRequest(
@@ -3057,6 +3082,7 @@ export async function sendGuestReimbursementMessage(
         ...(receipts.length ? { receipts } : {}),
       },
     )) as ReimbursementConversationResult;
+    if (host.adminBotReimbursement !== turn) return;
     host.adminBotReimbursement = {
       messages: [
         ...host.adminBotReimbursement.messages,
@@ -3075,8 +3101,11 @@ export async function sendGuestReimbursementMessage(
       busy: false,
       error: null,
       artifacts: [],
+      ...(turn.funder ? { funder: turn.funder } : {}),
+      ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
+    if (host.adminBotReimbursement !== turn) return;
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,

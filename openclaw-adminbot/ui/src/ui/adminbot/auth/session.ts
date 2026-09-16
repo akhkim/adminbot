@@ -1,3 +1,4 @@
+import { isTaskPath, taskFetch } from "../task-request.ts";
 // Control UI module implements per-member AdminBot email+password auth.
 //
 // Talks to the standalone AdminBot service (default `http://<host>:8765`).
@@ -450,7 +451,7 @@ async function authedJson(
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await (isTaskPath(path) && method === "POST" ? taskFetch : fetch)(`${baseUrl}${path}`, {
       method,
       credentials: "omit",
       headers: {

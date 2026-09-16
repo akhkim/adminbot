@@ -1,5 +1,7 @@
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
+import { runAdminBotCvScan, retryWorkshopTask } from "./adminbot/controllers/task-jobs.ts";
+import "./adminbot/views/task-status.ts";
 import { html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
@@ -3281,6 +3283,10 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
+        <adminbot-task-status
+          .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+          .sessionContext=${loadStoredMemberSession()?.sessionToken ?? "visitor"}
+        ></adminbot-task-status>
         <!-- Settings only. The text is git and install plumbing -- "Update skipped:
              not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
              rendering above every page, including a member's own profile. Nobody but the admin who
@@ -4075,6 +4081,7 @@ export function renderApp(state: AppViewState) {
                 // calls -- so they are deliberately different actions.
                 onRefresh: () => void refreshWorkshopNudgePreview(state),
                 onCancelRun: () => void cancelWorkshopNudgeRun(state),
+                onRetryTask: () => void retryWorkshopTask(state),
                 // Replaces a pass that still claims to be running, instead of waiting out the
                 // server's stall window. Offered only from the in-progress card.
                 onForceRefresh: () => void refreshWorkshopNudgePreview(state, true),
@@ -4253,6 +4260,13 @@ export function renderApp(state: AppViewState) {
                       : {}),
                   },
                   {
+                    id: "cv-scan",
+                    name: "Scan CVs",
+                    description:
+                      "Read linked CVs and record changes. Review the result before publishing the digest.",
+                    ...state.adminBotCvScanJob,
+                  },
+                  {
                     id: "cv-digest",
                     name: "CV digest",
                     description:
@@ -4290,6 +4304,7 @@ export function renderApp(state: AppViewState) {
                   },
                 ],
                 onRunCommandJob: (id) => {
+                  if (id === "cv-scan") void runAdminBotCvScan(state);
                   if (id === "cv-digest") {
                     void runAdminBotCvDigestJob(state);
                   }

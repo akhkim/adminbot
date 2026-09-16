@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { taskFetch } from "../task-request.ts";
 
 export class LabSharingHowTo extends LitElement {
   @property() baseUrl = "";
@@ -37,12 +38,12 @@ export class LabSharingHowTo extends LitElement {
     const generation = ++this.generation;
     const request = new AbortController();
     this.request = request;
-    const timeout = setTimeout(() => request.abort(), 35_000);
+
     this.busy = true;
     this.answer = this.error = "";
     this.sources = [];
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/ask`, {
+      const response = await taskFetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/ask`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.sessionToken}`,
@@ -56,18 +57,17 @@ export class LabSharingHowTo extends LitElement {
         return;
       }
       if (!response.ok || !data.answered) {
-        throw new Error("unavailable");
+        throw new Error(data?.error?.message ?? "The guidebook could not answer.");
       }
       this.answer = typeof data.answer === "string" ? data.answer : "";
       this.sources = Array.isArray(data.sources)
         ? data.sources.filter((item: unknown) => typeof item === "string")
         : [];
-    } catch {
+    } catch (error) {
       if (generation === this.generation) {
-        this.error = "The guidebook could not answer. Try again or use the resource links below.";
+        this.error = error instanceof Error ? error.message : "The guidebook could not answer.";
       }
     } finally {
-      clearTimeout(timeout);
       if (generation === this.generation) {
         this.busy = false;
       }
