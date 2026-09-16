@@ -10870,6 +10870,14 @@ details[open] > .ov-expandable-toggle::after {
   text-wrap: pretty;
 }
 
+/* The standing "queue it for me" answer, offered inline on a saved task. It sits inside the task
+   callout under the Wait and Cancel buttons it is meant to replace, so it needs the gap that keeps
+   it from reading as a third button. The profile copy of the same control is a card and styles
+   itself as one. */
+.adminbot-wait-preference {
+  margin-top: var(--space-3);
+}
+
 /* Stacked, Jinesis first. Side by side made them compete for which one you were meant to use, and
    halved the width each form's date and project inputs had to work with. In a column the order
    states the answer: lab work first, everything else under it. */

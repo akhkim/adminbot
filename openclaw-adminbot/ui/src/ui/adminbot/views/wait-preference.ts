@@ -26,6 +26,15 @@ export class AdminBotWaitPreference extends LitElement {
   @state() private value?: boolean;
   @state() private failed = false;
 
+  /**
+   * Light DOM. Both hosts style their own children -- the profile card and the task callout are
+   * page CSS, not this element's -- and a shadow root would have left the control unstyled in
+   * each. It also lets the host's tests read this control the way they read the rest of the view.
+   */
+  protected override createRenderRoot(): HTMLElement {
+    return this;
+  }
+
   /** taskFetch does not add this; every authenticated caller supplies it, as task-history does. */
   private auth(): Record<string, string> {
     return this.sessionContext && this.sessionContext !== "visitor"
@@ -82,29 +91,38 @@ export class AdminBotWaitPreference extends LitElement {
       void this.load();
     }
   }
+  private control() {
+    return html`
+      <label class="adminbot-form__field adminbot-form__field--check">
+        <input
+          type="checkbox"
+          data-testid="wait-preference-toggle"
+          .checked=${this.value ?? false}
+          @change=${(event: Event) => void this.save((event.target as HTMLInputElement).checked)}
+        />
+        <span>
+          ${this.standalone
+            ? "Queue my requests when the assistant is busy, instead of asking me each time"
+            : "Don't ask me again — queue my requests when the model is busy"}
+        </span>
+      </label>
+      ${this.failed ? html`<p role="alert">That preference could not be saved. Try again.</p>` : ""}
+    `;
+  }
   override render() {
     if (!this.usable() || this.value === undefined) {
       return html``;
     }
-    return html`<div style=${this.standalone ? "margin:0.75rem 0" : "margin-top:0.5rem"}>
-      <label>
-        <input
-          type="checkbox"
-          .checked=${this.value}
-          @change=${(event: Event) => void this.save((event.target as HTMLInputElement).checked)}
-        />
-        ${this.standalone
-          ? "Queue my requests when the lab's model is busy, without asking"
-          : "Don't ask me again — queue my requests when the model is busy"}
-      </label>
-      ${this.standalone
-        ? html`<p class="muted">
-            One model serves the whole lab. With this off, a request that arrives while it is busy
-            waits for you to choose; with it on, it joins the queue and runs when a slot frees.
-          </p>`
-        : ""}
-      ${this.failed ? html`<p role="alert">That preference could not be saved. Try again.</p>` : ""}
-    </div>`;
+    // On the profile it is a card among the other cards, titled the way they are. The label
+    // carries the whole explanation rather than a subtitle: how much capacity the lab has is a
+    // fact that changes, and copy that states it goes quietly wrong when it does.
+    // Inline on a task it is one more line inside a callout that has already said why it matters.
+    return this.standalone
+      ? html`<section class="profile__section" data-testid="profile-wait-preference">
+          <h2 class="profile__section-title">Assistant requests</h2>
+          ${this.control()}
+        </section>`
+      : html`<div class="adminbot-wait-preference">${this.control()}</div>`;
   }
 }
 if (!customElements.get("adminbot-wait-preference")) {

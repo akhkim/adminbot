@@ -1684,16 +1684,17 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
+      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       <!-- Not a member field, so it sits outside the field list: the lab's model queue holds it,
            keyed by the signed-in principal. It is offered inline the first time a request is
            saved, which is when it means something; this is where someone who said yes then can
-           find it again. -->
+           find it again. Below the record and above the lab's own recognitions -- it is a choice
+           about this member's requests, not a fact the lab holds about them. -->
       <adminbot-wait-preference
         standalone
         .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
         .sessionContext=${loadStoredMemberSession()?.sessionToken ?? ""}
       ></adminbot-wait-preference>
-      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
