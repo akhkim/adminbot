@@ -36,7 +36,7 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
       ${["needs_retry", "shed"].includes(props.state.run?.task_status ?? "")
         ? html`<div class="callout warning" role="status">
             ${props.state.run?.task_status === "shed"
-              ? "The match is waiting for capacity. Choose Wait to keep it queued."
+              ? "The match is saved. Choose Wait to request a place in the queue."
               : "This match stopped during a step. Retry resumes it with completed work preserved."}
             <button class="btn" @click=${props.onRetryTask}>
               ${props.state.run?.task_status === "shed" ? "Wait" : "Retry uncertain step"}

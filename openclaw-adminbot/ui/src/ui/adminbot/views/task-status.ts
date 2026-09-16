@@ -62,7 +62,7 @@ function ordinalFor(id: string): number {
  * member to work out that a GPU is busy. Every string here says what happened on the server and,
  * where there is a decision, what each option does.
  */
-function taskCopy(label: string, status: string): TaskCopy {
+function taskCopy(label: string, status: string, actions: string[] = []): TaskCopy {
   switch (status) {
     case "shed":
       return {
@@ -79,17 +79,24 @@ function taskCopy(label: string, status: string): TaskCopy {
     case "needs_retry":
       return {
         state: `${label} interrupted`,
-        detail: "It stopped partway. Work already finished was kept; resuming picks up from there.",
+        detail: actions.includes("retry")
+          ? "It stopped partway. Work already finished was kept. The interrupted step may have run; Resume retries it."
+          : "The retry limit was reached. Review the outcome before starting a new request.",
       };
     case "cancelled":
-      return { state: `${label} cancelled`, detail: "Nothing was sent to the model." };
+      return { state: `${label} cancelled` };
     case "expired":
       return {
         state: `${label} expired`,
         detail: "Saved requests are kept for a day. Submit it again to run it.",
       };
     case "failed":
-      return { state: `${label} could not finish`, detail: "Submit it again to try once more." };
+      return {
+        state: `${label} could not finish`,
+        detail: actions.includes("retry")
+          ? "Resume this request to try again. Completed work is kept."
+          : "The retry limit was reached. Review the outcome before starting a new request.",
+      };
     case "completed":
       return { state: `${label} finished` };
     default:
@@ -181,7 +188,13 @@ export class AdminBotTaskStatus extends LitElement {
       if (generation !== this.generation) {
         return;
       }
-      if (!response.ok) {
+      if (result && typeof result === "object" && "task" in result) {
+        const view = (result as { task: TaskHandle }).task;
+        entry.task = { ...entry.task, ...view };
+        if (["cancelled", "expired"].includes(view.status)) {
+          this.recovered = this.recovered.filter((item) => item !== entry);
+        }
+      } else if (!response.ok) {
         entry.error = result?.error?.message ?? "The task result is unavailable.";
         entry.task = {
           ...entry.task,
@@ -193,12 +206,6 @@ export class AdminBotTaskStatus extends LitElement {
                 : "failed",
           actions: [],
         };
-      } else if (result && typeof result === "object" && "task" in result) {
-        // Every route but a completed /result answers with a status envelope, and a 200 on a
-        // queued task is one. Treating that as the answer marked recovered work "completed" and
-        // offered a status envelope as its result.
-        const view = (result as { task: TaskHandle }).task;
-        entry.task = { ...entry.task, ...view };
       } else {
         entry.result = result;
         entry.task = { ...entry.task, status: "completed", actions: ["result"] };
@@ -251,7 +258,7 @@ export class AdminBotTaskStatus extends LitElement {
   }
   override render() {
     const live = Array.from(taskActivities.values()).filter(
-      (activity) => activity.task || activity.message,
+      (activity) => activity.task || activity.message || activity.requestError,
     );
     const restored = this.recovered.filter((entry) => !entry.busy);
     // Only number when there is something to tell apart.
@@ -262,7 +269,7 @@ export class AdminBotTaskStatus extends LitElement {
         many && activity.task ? ` ${ordinalFor(activity.task.id)}` : ""
       }`;
       const copy = activity.task
-        ? taskCopy(label, activity.task.status)
+        ? taskCopy(label, activity.task.status, activity.task.actions)
         : {
             state: `${label} disconnected`,
             detail: "The connection dropped. Reconnecting picks up the same request.",
@@ -270,7 +277,8 @@ export class AdminBotTaskStatus extends LitElement {
       return html` <section class="callout" aria-label="Task progress">
         <p role="status">${copy.state}</p>
         ${copy.detail ? html`<p>${copy.detail}</p>` : ""}
-        ${!activity.task || activity.message?.startsWith("Connection lost")
+        ${activity.requestError ? html`<p role="alert">${activity.requestError}</p>` : ""}
+        ${!activity.task || activity.requestError || activity.message?.startsWith("Connection lost")
           ? html`<button class="btn" @click=${() => activity.act("status")}>Reconnect</button>`
           : ""}
         ${(activity.task?.actions ?? [])
@@ -302,11 +310,14 @@ export class AdminBotTaskStatus extends LitElement {
             ${taskCopy(
               `${taskLabel(entry.task.kind ?? "")}${many ? ` ${ordinalFor(entry.task.id)}` : ""}`,
               entry.task.status,
+              entry.task.actions,
             ).state}
           </p>
           ${(() => {
             const detail =
-              entry.error ?? taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).detail;
+              entry.error ??
+              taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status, entry.task.actions)
+                .detail;
             return detail ? html`<p role=${entry.error ? "alert" : "status"}>${detail}</p>` : "";
           })()}
           ${entry.result !== undefined
@@ -331,6 +342,12 @@ export class AdminBotTaskStatus extends LitElement {
                     </button>
                   `,
                 )}
+          ${entry.task.status === "shed"
+            ? html`<adminbot-wait-preference
+                .baseUrl=${this.baseUrl}
+                .sessionContext=${this.sessionContext}
+              ></adminbot-wait-preference>`
+            : ""}
         </section>
       `,
     )} `;

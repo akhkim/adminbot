@@ -212,3 +212,116 @@ describe("application task requests", () => {
     ).toBe(410);
   });
 });
+
+it.each([undefined, "omit" as const])(
+  "keeps member submissions, Wait and result bearer-only (%s)",
+  async (credentials) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(task("shed", ["wait"]))
+      .mockResolvedValueOnce(task("completed", ["result"]))
+      .mockResolvedValueOnce(json({ answer: "done" }));
+    vi.stubGlobal("fetch", fetcher);
+    const pending = taskFetch("http://localhost:8765/guidebook/ask", {
+      method: "POST",
+      credentials,
+      headers: { Authorization: "Bearer member" },
+    });
+    await until(() => taskActivities.values().next().value?.task?.status === "shed");
+    taskActivities.values().next().value!.act("wait");
+    expect((await pending).ok).toBe(true);
+    expect(fetcher.mock.calls.every(([, init]) => init.credentials === "omit")).toBe(true);
+  },
+);
+
+it("resumes a failed task using its existing handle", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(task("failed", ["retry"]))
+    .mockResolvedValueOnce(task("completed", ["result"]))
+    .mockResolvedValueOnce(json({ answer: "done" }));
+  vi.stubGlobal("fetch", fetcher);
+  const pending = taskFetch("http://localhost:8765/guidebook/ask", { method: "POST" });
+  await until(() => taskActivities.values().next().value?.task?.status === "failed");
+  taskActivities.values().next().value!.act("retry");
+  expect(await (await pending).json()).toEqual({ answer: "done" });
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    "http://localhost:8765/guidebook/ask",
+    "http://localhost:8765/tasks/task-1/retry",
+    "http://localhost:8765/tasks/task-1/result",
+  ]);
+});
+
+it("invalidates an expired visitor handle without silently replaying it", async () => {
+  sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "expired-visitor");
+  const bootstrap = json({ visitor: { ready: true } });
+  bootstrap.headers.set("X-AdminBot-Visitor", "new-visitor");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(task("shed", ["wait"]))
+    .mockResolvedValueOnce(json({ error: { message: "authentication required" } }, 401))
+    .mockResolvedValueOnce(bootstrap)
+    .mockResolvedValueOnce(json({ answer: "new request" }));
+  vi.stubGlobal("fetch", fetcher);
+  const controller = new AbortController();
+  const url = "http://localhost:8765/reimbursements/converse";
+  const pending = taskFetch(url, { method: "POST", body: "{}", signal: controller.signal });
+  const detached = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await until(() => taskActivities.values().next().value?.task?.status === "shed");
+  controller.abort();
+  await detached;
+  const expired = await taskFetch(url, { method: "POST", body: "{}" });
+  expect(expired.status).toBe(401);
+  expect((await expired.json()).error.message).toContain("may already have run");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[1][0]).toBe("http://localhost:8765/tasks/task-1");
+  expect(sessionStorage.getItem("adminbot-visitor:http://localhost:8765")).toBeNull();
+  expect(Object.keys(sessionStorage).filter((key) => key.startsWith("adminbot-task:"))).toEqual([]);
+  expect(await (await taskFetch(url, { method: "POST", body: "{}" })).json()).toEqual({
+    answer: "new request",
+  });
+  expect(fetcher.mock.calls[2][0]).toBe("http://localhost:8765/tasks/visitor");
+  expect(fetcher.mock.calls[3][1].headers.get("Idempotency-Key")).not.toBe(
+    fetcher.mock.calls[0][1].headers.get("Idempotency-Key"),
+  );
+});
+
+it("isolates saved submissions when visitor credentials change", async () => {
+  const url = "http://localhost:8765/reimbursements/converse";
+  sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "visitor-a");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(task("shed", ["wait"]))
+    .mockResolvedValueOnce(json({ answer: "b" }));
+  vi.stubGlobal("fetch", fetcher);
+  const controller = new AbortController();
+  const pending = taskFetch(url, { method: "POST", signal: controller.signal });
+  const detached = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await until(() => taskActivities.values().next().value?.task?.status === "shed");
+  controller.abort();
+  await detached;
+  sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "visitor-b");
+  await taskFetch(url, { method: "POST" });
+  expect(fetcher.mock.calls[1][0]).toBe(url);
+  expect(fetcher.mock.calls[1][1].headers.get("Idempotency-Key")).not.toBe(
+    fetcher.mock.calls[0][1].headers.get("Idempotency-Key"),
+  );
+});
+
+it.each([429, 503])("retains accepted work when a task action returns %s", async (status) => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(task("shed", ["wait", "cancel"]))
+    .mockResolvedValueOnce(json({ error: { message: "try later" } }, status))
+    .mockResolvedValueOnce(task("completed", ["result"]))
+    .mockResolvedValueOnce(json({ answer: "same task" }));
+  vi.stubGlobal("fetch", fetcher);
+  const pending = taskFetch("http://localhost:8765/guidebook/ask", { method: "POST" });
+  await until(() => taskActivities.values().next().value?.task?.status === "shed");
+  taskActivities.values().next().value!.act("wait");
+  await until(() => taskActivities.values().next().value?.requestError === "try later");
+  expect(taskActivities.values().next().value!.task!.actions).toContain("wait");
+  taskActivities.values().next().value!.act("wait");
+  expect(await (await pending).json()).toEqual({ answer: "same task" });
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/guidebook/ask"))).toHaveLength(1);
+});

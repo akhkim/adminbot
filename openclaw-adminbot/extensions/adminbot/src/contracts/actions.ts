@@ -2455,7 +2455,18 @@ export type AdminBotAuditEvent = {
     | "inference.expired"
     | "inference.refused"
     | "inference.escalation_proposed"
-    | "inference.escalated";
+    | "inference.escalated"
+    | "task.accepted"
+    | "task.shed"
+    | "task.queued"
+    | "task.running"
+    | "task.completed"
+    | "task.failed"
+    | "task.needs_retry"
+    | "task.cancelled"
+    | "task.expired"
+    | "task.step.running"
+    | "task.step.completed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

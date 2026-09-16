@@ -19,7 +19,11 @@ export async function listRecentTasks(
       /* Same-origin cookies can still identify this visitor. */
     }
   }
-  const response = await fetch(`${baseUrl}/tasks`, { headers, credentials: "include", signal });
+  const response = await fetch(`${baseUrl}/tasks`, {
+    headers,
+    credentials: headers.has("Authorization") ? "omit" : "include",
+    signal,
+  });
   if (response.status === 401 || response.status === 404) {
     return [];
   }

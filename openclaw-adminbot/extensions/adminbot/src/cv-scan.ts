@@ -24,6 +24,7 @@ import {
   type InferenceGate,
 } from "./inference/gate.js";
 import { currentTaskContext } from "./tasks/context.js";
+import { TaskInterruptedError, TaskNeedsRetryError } from "./tasks/runtime.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -131,9 +132,10 @@ export async function runAdminBotCvScan(
       });
     } catch (error) {
       // A task checkpoint must preserve uncertainty rather than turning it into a skipped member.
-      if (currentTaskContext()) {
+      if (error instanceof TaskInterruptedError || error instanceof TaskNeedsRetryError) {
         throw error;
       }
+      currentTaskContext()?.check();
       if (isInferenceDeferred(error)) {
         // The GPU had no room for this member's CV. Not a failure -- nothing was tried -- and the
         // snapshot is left alone so the next scan asks again. The queue row is named so the

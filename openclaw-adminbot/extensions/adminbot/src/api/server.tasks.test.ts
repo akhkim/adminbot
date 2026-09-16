@@ -425,3 +425,44 @@ it("counts a visitor's Wait and retry against the anonymous rate limit", async (
       .status,
   ).toBe(404);
 });
+
+it("rejects an expired visitor credential before creating a replacement owner or task", async () => {
+  const app = createAdminBotMockService({
+    reimbursementWorkflow: {
+      converse: async () => ({
+        assistant_message: "synthetic",
+        draft: {},
+        missing_fields: [],
+        ready: false,
+      }),
+      generate: async () => ({ artifacts: [] }),
+    } as never,
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsFormRunner: async () => {},
+  });
+  cleanups.push(() => app.close());
+  const base = await serve(app.server);
+  const bootstrap = await fetch(`${base}/tasks/visitor`, { method: "POST" });
+  const token = bootstrap.headers.get("x-adminbot-visitor")!;
+  // The fixture owns this database; expiring the row simulates the 24-hour boundary.
+  app.taskRuntime.store.db.exec("UPDATE adminbot_task_visitors SET expires_at = 0");
+  const before = app.taskRuntime.metrics().total;
+  for (const credential of [
+    { "X-AdminBot-Visitor": token },
+    { Cookie: `adminbot_visitor=${token}` },
+  ]) {
+    const response = await fetch(`${base}/reimbursements/converse`, {
+      method: "POST",
+      headers: {
+        ...credential,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "lost-response",
+      },
+      body: JSON.stringify({ message: "Synthetic lost response", draft: {} }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("x-adminbot-visitor")).toBeNull();
+  }
+  expect(app.taskRuntime.metrics().total).toBe(before);
+});

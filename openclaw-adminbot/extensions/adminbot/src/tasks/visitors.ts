@@ -30,6 +30,10 @@ export class VisitorSessions {
     return row?.owner;
   }
 
+  hasCredential(req: IncomingMessage): boolean {
+    return visitorToken(req) !== undefined;
+  }
+
   ensure(req: IncomingMessage, res: ServerResponse): string {
     const existing = this.resolve(req);
     if (existing) {

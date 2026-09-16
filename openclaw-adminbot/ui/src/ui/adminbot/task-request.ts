@@ -13,6 +13,7 @@ export type TaskActivity = {
   label: string;
   task?: TaskHandle;
   message?: string;
+  requestError?: string;
   act: (action: string) => void;
   detach: () => void;
 };
@@ -95,11 +96,46 @@ function save(key: string, value?: { submission: string; id?: string }) {
     /* No request content or credentials are persisted. */
   }
 }
+function taskBase(url: string): string {
+  const path = new URL(url, location.href).pathname;
+  const endpoint =
+    path.match(/\/tasks\/[^/]+(?:\/(?:retry|wait|cancel))?$/u)?.[0] ??
+    path.match(/\/cv\/blurb\/[^/]+$/u)?.[0] ??
+    [
+      "/reimbursements/converse",
+      "/lab-sharing/ask",
+      "/guidebook/ask",
+      "/papers/import/columns",
+      "/cv/scan",
+      "/privacy/tasks",
+    ].find((item) => path.endsWith(item));
+  return url.slice(0, -(endpoint?.length ?? path.length));
+}
 export async function taskFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
+  const path = new URL(url, location.href).pathname;
+  const base = taskBase(url);
+  const anonymous =
+    !headers.has("Authorization") &&
+    (path.endsWith("/reimbursements/converse") || /\/tasks\//u.test(path));
+  init.signal?.throwIfAborted();
+  if (anonymous && !headers.has("X-AdminBot-Visitor")) {
+    try {
+      const token = sessionStorage.getItem(`adminbot-visitor:${base}`);
+      if (token) {
+        headers.set("X-AdminBot-Visitor", token);
+      }
+    } catch {
+      /* Bootstrap can recover a same-origin cookie. */
+    }
+    if (!headers.has("X-AdminBot-Visitor") && path.endsWith("/reimbursements/converse")) {
+      headers.set("X-AdminBot-Visitor", await bootstrapVisitor(base));
+    }
+  }
+  init.signal?.throwIfAborted();
   // Hash the identity scope too: a different signed-in member must never inherit this handle.
   const bytes = new TextEncoder().encode(
-    `${url}\n${headers.get("Authorization") ?? "visitor"}\n${init.body ?? ""}`,
+    `${url}\n${init.method ?? "GET"}\n${headers.get("Authorization") ?? headers.get("X-AdminBot-Visitor") ?? "visitor"}\n${init.body ?? ""}`,
   );
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   const key = Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -138,22 +174,13 @@ async function runTask(
     act: (action) => wake?.(action),
     detach: abort,
   };
-  const options = { headers, credentials: "include" as const, signal: controller.signal };
-  const origin = url.slice(0, url.length - new URL(url, location.href).pathname.length);
-  // Service URLs can carry a deployment prefix. The endpoint path is the suffix we replace.
+  const options = {
+    headers,
+    credentials: init.credentials ?? (headers.has("Authorization") ? "omit" : "include"),
+    signal: controller.signal,
+  };
   const path = new URL(url, location.href).pathname;
-  const endpoint =
-    path.match(/\/tasks\/[^/]+(?:\/(?:retry|wait|cancel))?$/u)?.[0] ??
-    path.match(/\/cv\/blurb\/[^/]+$/u)?.[0] ??
-    [
-      "/reimbursements/converse",
-      "/lab-sharing/ask",
-      "/guidebook/ask",
-      "/papers/import/columns",
-      "/cv/scan",
-      "/privacy/tasks",
-    ].find((item) => path.endsWith(item));
-  const base = endpoint ? url.slice(0, -endpoint.length) : origin;
+  const base = taskBase(url);
   const explicitTask = path.match(/\/tasks\/([^/]+)(?:\/(retry|wait|cancel))?$/u);
   if (explicitTask) {
     identity.id = decodeURIComponent(explicitTask[1]);
@@ -163,16 +190,6 @@ async function runTask(
   const anonymous =
     !headers.has("Authorization") &&
     (path.endsWith("/reimbursements/converse") || /\/tasks\//u.test(path));
-  if (anonymous) {
-    try {
-      const token = sessionStorage.getItem(visitorKey);
-      if (token) {
-        headers.set("X-AdminBot-Visitor", token);
-      }
-    } catch {
-      /* Cookie remains available. */
-    }
-  }
   const taskUrl = () => `${base}/tasks/${encodeURIComponent(identity.id!)}`;
   const wait = (delay?: number): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -205,10 +222,6 @@ async function runTask(
       let response: Response;
       try {
         controller.signal.throwIfAborted();
-        if (anonymous && action === "submit" && !headers.has("X-AdminBot-Visitor")) {
-          headers.set("X-AdminBot-Visitor", await bootstrapVisitor(base));
-          controller.signal.throwIfAborted();
-        }
         response =
           action === "submit"
             ? await fetch(url, { ...init, ...options })
@@ -226,6 +239,25 @@ async function runTask(
         await wait();
         action = identity.id ? "status" : "submit";
         continue;
+      }
+      if (anonymous && response.status === 401) {
+        save(key);
+        try {
+          if (sessionStorage.getItem(visitorKey) === headers.get("X-AdminBot-Visitor")) {
+            sessionStorage.removeItem(visitorKey);
+          }
+        } catch {
+          /* The error still requires an explicit new submission. */
+        }
+        return new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "Your visitor session expired. The previous request can no longer be retrieved and may already have run. Review its outcome before submitting a new request.",
+            },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        );
       }
       if (anonymous) {
         const token = response.headers.get("X-AdminBot-Visitor");
@@ -262,6 +294,13 @@ async function runTask(
       const envelope = body as { task?: TaskHandle; error?: { message?: string } } | null;
       const task = envelope?.task;
       if (!task || typeof task.id !== "string") {
+        if (identity.id && (response.status === 429 || response.status >= 500)) {
+          activity.requestError =
+            envelope?.error?.message ?? "The service could not retrieve this request. Try again.";
+          notify();
+          action = await wait();
+          continue;
+        }
         if (response.ok || response.status === 404 || response.status === 410) {
           save(key);
         }
@@ -271,15 +310,23 @@ async function runTask(
       save(key, identity);
       activity.task = { ...task, actions: Array.isArray(task.actions) ? task.actions : [] };
       activity.message = envelope?.error?.message;
+      activity.requestError = undefined;
       notify();
       if (task.status === "completed") {
         action = "result";
         continue;
       }
-      if (["cancelled", "failed", "expired", "unsupported", "interrupted"].includes(task.status)) {
+      if (
+        ["cancelled", "expired", "unsupported", "interrupted"].includes(task.status) ||
+        (["failed", "needs_retry"].includes(task.status) &&
+          !activity.task.actions.includes("retry"))
+      ) {
         save(key);
         return new Response(
-          JSON.stringify({ error: { message: activity.message || `Task ${task.status}.` } }),
+          JSON.stringify({
+            task: activity.task,
+            error: { message: activity.message || `Task ${task.status}.` },
+          }),
           { status: 409, headers: { "Content-Type": "application/json" } },
         );
       }

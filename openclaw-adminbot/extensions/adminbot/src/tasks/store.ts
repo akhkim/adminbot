@@ -23,6 +23,8 @@ export type TaskRecord = {
   result?: unknown;
   progress?: Record<string, unknown>;
   error?: string;
+  executionAttempts?: number;
+  retryExhausted?: boolean;
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
@@ -328,7 +330,7 @@ export class TaskStore {
   audit(task: TaskRecord, event: string, step?: StepRecord): void {
     const entry = {
       id: `aud_${randomUUID()}`,
-      type: "inference.control_changed",
+      type: event,
       timestamp: new Date().toISOString(),
       actor: task.owner,
       details: {

@@ -1521,6 +1521,19 @@ async function submitRouteTask(
   kind: string,
   input: unknown,
 ) {
+  if (
+    principal.kind === "anonymous" &&
+    ctx.visitors.hasCredential(req) &&
+    !ctx.visitors.resolve(req)
+  ) {
+    sendJson(res, 401, {
+      error: {
+        message:
+          "Visitor session expired; establish a new session before submitting a new request.",
+      },
+    });
+    return;
+  }
   const owner =
     principal.kind === "anonymous" ? ctx.visitors.ensure(req, res) : taskOwner(principal);
   return submitHttpTask(

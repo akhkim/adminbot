@@ -179,3 +179,48 @@ it("bounds a hung remote stage without claiming application completion", async (
     vi.useRealTimers();
   }
 });
+
+it("retries a model HTTP failure without replaying a completed predecessor", async () => {
+  let first = 0;
+  let second = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async (_url, init) => {
+      const stage = JSON.parse(init.body!).stage;
+      const fail = stage === "answer" ? ++second === 1 : (++first, false);
+      return {
+        ok: !fail,
+        status: fail ? 503 : 200,
+        statusText: fail ? "Unavailable" : "OK",
+        text: async () => (fail ? "busy" : "answer"),
+      };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  runtime.register("test", 1, async () => {
+    for (const stage of ["classify", "answer"]) {
+      await runGated(gate, {
+        owner: "member",
+        caller: stage,
+        request: {
+          route: "chat/completions",
+          baseUrl: "http://127.0.0.1:8000/v1",
+          purpose: stage,
+          body: { stage },
+        },
+      });
+    }
+    return "done";
+  });
+  try {
+    const firstTask = runtime.submit({ kind: "test", owner: "member", input: {} });
+    expect((await firstTask.promise)?.status).toBe("needs_retry");
+    expect((await runtime.retry(firstTask.id, "member")!.promise)?.result).toBe("done");
+    expect({ first, second }).toEqual({ first: 1, second: 2 });
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});

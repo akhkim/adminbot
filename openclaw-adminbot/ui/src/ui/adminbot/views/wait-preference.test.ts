@@ -78,3 +78,62 @@ it("writes the new answer, and puts the box back when the write is refused", asy
   );
   expect(box(element)?.checked).toBe(true);
 });
+
+it.each(["member-b", "visitor"])(
+  "ignores a previous member's late preference after switching to %s",
+  async (next) => {
+    let resolve!: (response: Response) => void;
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((r) => {
+            resolve = r;
+          }),
+      )
+      .mockResolvedValueOnce(json({ inference_always_wait: false }));
+    vi.stubGlobal("fetch", fetcher);
+    const element = mount("member-a");
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    element.sessionContext = next;
+    await element.updateComplete;
+    if (next !== "visitor") {
+      await vi.waitFor(() => expect(box(element)?.checked).toBe(false));
+    }
+    resolve(json({ inference_always_wait: true }));
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    await element.updateComplete;
+    expect(box(element)?.checked).toBe(next === "visitor" ? undefined : false);
+    expect(fetcher.mock.calls.every(([, init]) => init.credentials === "omit")).toBe(true);
+  },
+);
+
+it("does not roll a new member's preference back when an old save fails", async () => {
+  let resolve!: (response: Response) => void;
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json({ inference_always_wait: false }))
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          resolve = r;
+        }),
+    )
+    .mockResolvedValueOnce(json({ inference_always_wait: true }));
+  vi.stubGlobal("fetch", fetcher);
+  const element = mount("member-a");
+  await vi.waitFor(() => expect(box(element)?.checked).toBe(false));
+  box(element)!.click();
+  await vi.waitFor(() => expect(box(element)?.disabled).toBe(true));
+  element.sessionContext = "member-b";
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  resolve(json({}, 500));
+  await new Promise((r) => {
+    setTimeout(r, 0);
+  });
+  await element.updateComplete;
+  expect(box(element)?.checked).toBe(true);
+  expect(element.querySelector('[role="alert"]')).toBeNull();
+});
