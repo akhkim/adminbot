@@ -325,3 +325,108 @@ it.each([429, 503])("retains accepted work when a task action returns %s", async
   expect(await (await pending).json()).toEqual({ answer: "same task" });
   expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/guidebook/ask"))).toHaveLength(1);
 });
+
+it("does not invent a previous request when an expired visitor's first submission is rejected", async () => {
+  sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "expired-visitor");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(json({ error: { message: "Visitor session expired" } }, 401));
+  vi.stubGlobal("fetch", fetcher);
+  const response = await taskFetch("http://localhost:8765/reimbursements/converse", {
+    method: "POST",
+    body: "{}",
+  });
+  const body = await response.json();
+  expect(response.status).toBe(401);
+  expect(body.error.message).toContain("not accepted");
+  expect(body.error.message).not.toContain("previous request");
+  expect(body.error.message).not.toContain("may already have run");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])(
+  "preserves uncertainty after a lost first response followed by visitor expiry (legacy=%s)",
+  async (legacy) => {
+    sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "visitor");
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("lost response"))
+      .mockResolvedValueOnce(json({ error: { message: "Visitor session expired" } }, 401));
+    vi.stubGlobal("fetch", fetcher);
+    const controller = new AbortController();
+    const url = "http://localhost:8765/reimbursements/converse";
+    const pending = taskFetch(url, { method: "POST", body: "{}", signal: controller.signal });
+    const detached = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await until(() => Boolean(taskActivities.values().next().value?.message));
+    controller.abort();
+    await detached;
+    if (legacy) {
+      const key = Object.keys(sessionStorage).find((item) => item.startsWith("adminbot-task:"))!;
+      const identity = JSON.parse(sessionStorage.getItem(key)!);
+      delete identity.unconfirmed;
+      sessionStorage.setItem(key, JSON.stringify(identity));
+    }
+    const response = await taskFetch(url, { method: "POST", body: "{}" });
+    expect((await response.json()).error.message).toContain("may already have run");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("shows a storage notice while continuing to poll the same accepted task", async () => {
+  const notice =
+    "A storage problem is delaying this request. It is still saved, and the service is retrying automatically.";
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      json(
+        { task: { id: "task-1", status: "running", actions: ["cancel"], requestError: notice } },
+        202,
+      ),
+    )
+    .mockResolvedValueOnce(task("completed", ["result"]))
+    .mockResolvedValueOnce(json({ answer: "done" }));
+  vi.stubGlobal("fetch", fetcher);
+  const element = new RequestTaskStatus();
+  document.body.append(element);
+  try {
+    const pending = taskFetch("http://localhost:8765/guidebook/ask", { method: "POST" });
+    await until(() => element.textContent?.includes(notice) ?? false);
+    expect(element.textContent).toContain("waiting for the service to recover");
+    expect(element.textContent).not.toContain("running now");
+    expect((await pending).ok).toBe(true);
+    expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/guidebook/ask"))).toHaveLength(1);
+  } finally {
+    element.remove();
+  }
+});
+
+it("preserves a polled task's error when the status envelope has no outer error", async () => {
+  const reason =
+    "Task execution attempt limit exceeded; review the outcome before submitting a new task";
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(task("running", ["cancel"]))
+    .mockResolvedValueOnce(
+      json({ task: { id: "task-1", status: "failed", actions: [], error: reason } }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const pending = taskFetch("http://localhost:8765/guidebook/ask", { method: "POST" });
+  await until(() => taskActivities.values().next().value?.task?.status === "running");
+  taskActivities.values().next().value!.act("status");
+  const response = await pending;
+  expect(response.status).toBe(409);
+  expect((await response.json()).error.message).toBe(reason);
+});
+
+it("retains uncertainty when a saved-task 409 response is truncated before visitor expiry", async () => {
+  sessionStorage.setItem("adminbot-visitor:http://localhost:8765", "visitor");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response('{"task":', { status: 409 }))
+    .mockResolvedValueOnce(json({ error: { message: "Visitor session expired" } }, 401));
+  vi.stubGlobal("fetch", fetcher);
+  const url = "http://localhost:8765/reimbursements/converse";
+  await taskFetch(url, { method: "POST", body: "{}" });
+  const response = await taskFetch(url, { method: "POST", body: "{}" });
+  expect((await response.json()).error.message).toContain("may already have run");
+});

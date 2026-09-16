@@ -178,3 +178,114 @@ it("keeps shutdown waiters attached when a terminal write fails", async () => {
     db.close();
   }
 });
+
+it("backs off blocked admission and exposes its owning task's storage notice", async () => {
+  vi.useFakeTimers();
+  const db = openInferenceTestDb();
+  const fetchImpl = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => "done",
+  }));
+  const gate = createInferenceGate({
+    db,
+    env: {},
+    fetchImpl,
+    config: inferenceTestConfig({ startPaused: true, queue: { maxAgeMs: 300_000 } }),
+  });
+  const pending = gate.run({ owner: "a", taskId: "task-a", caller: "test", request, wait: true });
+  db.exec(`CREATE TRIGGER fail_admission BEFORE INSERT ON adminbot_audit_events
+    WHEN NEW.event_type='inference.admitted' BEGIN SELECT RAISE(ABORT,'synthetic admission failure'); END`);
+  const exec = vi.spyOn(db, "exec");
+  const attempts = () => exec.mock.calls.filter(([sql]) => sql === "BEGIN IMMEDIATE").length;
+  try {
+    gate.resume();
+    expect(attempts()).toBe(1);
+    expect(gate.admissionNotice("task-a")).toContain("storage problem");
+    expect(gate.admissionNotice("other-task")).toBeUndefined();
+    gate.pause();
+    expect(gate.admissionNotice("task-a")).toBeUndefined();
+    gate.resume();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(attempts()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(attempts()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts()).toBe(3);
+    await vi.advanceTimersByTimeAsync(58_000);
+    expect(attempts()).toBe(7);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    db.exec("DROP TRIGGER fail_admission");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await pending).kind).toBe("completed");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(gate.admissionNotice("task-a")).toBeUndefined();
+  } finally {
+    exec.mockRestore();
+    db.exec("DROP TRIGGER IF EXISTS fail_admission");
+    await gate.shutdown();
+    db.close();
+    vi.useRealTimers();
+  }
+});
+
+it.each([false, true])(
+  "uses one cancellation audit shape before or after a storage retry (retry=%s)",
+  async (retry) => {
+    vi.useFakeTimers();
+    const db = openInferenceTestDb();
+    const gate = createInferenceGate({
+      db,
+      env: {},
+      fetchImpl: vi.fn(),
+      config: inferenceTestConfig({ startPaused: true }),
+    });
+    const controller = new AbortController();
+    const pending = gate.run({
+      owner: "a",
+      caller: "test",
+      request,
+      wait: true,
+      signal: controller.signal,
+    });
+    try {
+      if (retry) {
+        db.exec(`CREATE TRIGGER fail_cancel BEFORE INSERT ON adminbot_audit_events
+      WHEN NEW.event_type='inference.failed' BEGIN SELECT RAISE(ABORT,'synthetic cancellation failure'); END`);
+      }
+      controller.abort();
+      if (retry) {
+        db.exec("DROP TRIGGER fail_cancel");
+        gate.resume();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect((await pending).kind).toBe("failed");
+      const row = db
+        .prepare("SELECT event_json FROM adminbot_audit_events WHERE event_type='inference.failed'")
+        .get()!;
+      const details = JSON.parse(String(row.event_json)).details;
+      expect(Object.keys(details).toSorted()).toEqual([
+        "caller",
+        "duration_ms",
+        "in_flight",
+        "outcome",
+        "queue_depth",
+        "request_id",
+        "wait_ms",
+      ]);
+      expect(details).toMatchObject({
+        outcome: "cancelled",
+        duration_ms: 0,
+        wait_ms: expect.any(Number),
+      });
+    } finally {
+      db.exec("DROP TRIGGER IF EXISTS fail_cancel");
+      await gate.shutdown();
+      db.close();
+      vi.useRealTimers();
+    }
+  },
+);

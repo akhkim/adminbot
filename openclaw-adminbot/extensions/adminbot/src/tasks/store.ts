@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
+import type { AdminBotAuditEvent } from "../contracts/actions.js";
+
+export type TaskAuditEventType = Extract<AdminBotAuditEvent["type"], `task.${string}`>;
 
 export type TaskStatus =
   | "shed"
@@ -327,21 +330,20 @@ export class TaskStore {
     this.db.prepare(`DELETE FROM ${this.steps} WHERE task_id=?`).run(id);
     this.db.prepare(`DELETE FROM ${this.steps}_attempts WHERE task_id=?`).run(id);
   }
-  audit(task: TaskRecord, event: string, step?: StepRecord): void {
+  audit(task: TaskRecord, event: TaskAuditEventType, step?: StepRecord): void {
     const entry = {
       id: `aud_${randomUUID()}`,
       type: event,
       timestamp: new Date().toISOString(),
       actor: task.owner,
       details: {
-        task_event: event,
         task_id: task.id,
         kind: task.kind,
         version: task.version,
         status: task.status,
         ...(step ? { step_key: step.key, attempt: step.attempt, step_status: step.status } : {}),
       },
-    };
+    } satisfies AdminBotAuditEvent;
     this.db
       .prepare(
         "INSERT INTO adminbot_audit_events (id,action_id,event_type,timestamp,actor,event_json) VALUES(?,NULL,?,?,?,?)",

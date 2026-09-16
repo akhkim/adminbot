@@ -154,7 +154,7 @@ it("does not advertise Retry after a crash consumed the final execution attempt"
     status: "running",
     attempt: "old",
   });
-  const runtime = new TaskRuntime({ db, persist: true, maxAttempts: 1 });
+  const runtime = new TaskRuntime({ db, persist: true, maxExecutions: 1 });
   let calls = 0;
   runtime.register("work", 1, () => ++calls);
   try {

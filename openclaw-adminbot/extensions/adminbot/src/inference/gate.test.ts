@@ -1000,7 +1000,16 @@ describe("operator lifecycle", () => {
     expect(result.unchanged).toHaveLength(1);
     expect((await queued).kind).toBe("failed");
     expect(gate.cancelPending(ids, "operator").cancelled).toEqual([]);
-    expect(auditEvents(db).filter((e) => e.type === "inference.failed")).toHaveLength(2);
+    const cancelledEvents = auditEvents(db).filter((e) => e.type === "inference.failed");
+    expect(cancelledEvents).toHaveLength(2);
+    for (const event of cancelledEvents) {
+      expect(event.details).toMatchObject({
+        outcome: "cancelled",
+        cancelled_by: "operator",
+        duration_ms: 0,
+        wait_ms: expect.any(Number),
+      });
+    }
     model.release();
     expect((await running).kind).toBe("completed");
     expect(shed.kind).toBe("shed");

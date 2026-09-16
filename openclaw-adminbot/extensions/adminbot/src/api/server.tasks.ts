@@ -4,7 +4,7 @@ import type { TaskRecord } from "../tasks/store.js";
 import { sendJson } from "./server.http.js";
 import { inferenceCallContext } from "./server.inference.js";
 
-export function taskView(task: TaskRecord) {
+export function taskView(task: TaskRecord, requestError?: string) {
   const actions: string[] = [];
   if (task.status === "shed") {
     actions.push("wait");
@@ -26,6 +26,7 @@ export function taskView(task: TaskRecord) {
     updatedAt: task.updatedAt,
     expiresAt: task.expiresAt,
     error: task.error,
+    ...(requestError ? { requestError } : {}),
     actions,
   };
 }
@@ -46,14 +47,14 @@ function statusCode(task: TaskRecord): number {
   return 202;
 }
 
-function sendTask(res: ServerResponse, task: TaskRecord) {
+function sendTask(res: ServerResponse, task: TaskRecord, runtime: TaskRuntime) {
   const message =
     task.error ??
     (task.status === "shed"
       ? "Task saved. Choose Wait to run it."
       : `Task ${task.status.replaceAll("_", " ")}.`);
   sendJson(res, statusCode(task), {
-    task: taskView(task),
+    task: taskView(task, runtime.requestError(task)),
     ...(task.status === "completed" ? {} : { error: { message } }),
   });
 }
@@ -101,7 +102,7 @@ export async function submitHttpTask(
   if (task.status === "completed") {
     sendJson(res, 200, task.result);
   } else {
-    sendTask(res, task);
+    sendTask(res, task, runtime);
   }
 }
 
@@ -120,7 +121,7 @@ export async function handleTaskRoute(
         .list()
         .filter((task) => task.owner === owner || mayManageShared(task))
         .filter(mayRead)
-        .map(taskView),
+        .map((task) => taskView(task, runtime.requestError(task))),
     });
     return true;
   }
@@ -135,14 +136,14 @@ export async function handleTaskRoute(
   }
   const action = match[2];
   if (req.method === "GET" && !action) {
-    sendJson(res, 200, { task: taskView(task) });
+    sendJson(res, 200, { task: taskView(task, runtime.requestError(task)) });
     return true;
   }
   if (req.method === "GET" && action === "result") {
     if (task.status === "completed") {
       sendJson(res, 200, task.result);
     } else {
-      sendTask(res, task);
+      sendTask(res, task, runtime);
     }
     return true;
   }
@@ -155,10 +156,11 @@ export async function handleTaskRoute(
       } else {
         runtime.retry(task.id, task.owner);
       }
-      sendTask(res, runtime.get(task.id, task.owner) ?? task);
+      sendTask(res, runtime.get(task.id, task.owner) ?? task, runtime);
     } catch (error) {
+      const current = runtime.get(task.id, task.owner) ?? task;
       sendJson(res, 409, {
-        task: taskView(task),
+        task: taskView(current, runtime.requestError(current)),
         error: { message: error instanceof Error ? error.message : String(error) },
       });
     }

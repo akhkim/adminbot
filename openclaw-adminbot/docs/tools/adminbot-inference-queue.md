@@ -48,7 +48,10 @@ a client that polls cannot turn one request into two. When the task finishes, th
 answer to what they asked, not the classification that preceded it.
 
 A task that was interrupted mid-step and cannot safely be replayed becomes `needs_retry` and says
-so. Retry creates a fresh attempt and keeps every checkpoint that already completed.
+so. Retry creates a fresh attempt and keeps every checkpoint that already completed. The runner
+allows three task executions by default, counting the initial run, explicit retries, and resumed
+handler runs after a restart. This execution budget is separate from the 20,000 checkpoint-attempt
+ceiling, so it does not limit a task to three stages.
 
 ## Identity, and not duplicating work
 
@@ -105,6 +108,13 @@ ids and is the older, lower-level control.
 
 Every task and checkpoint transition writes an audit row with identifiers and an event code, and
 without the task's content.
+
+If storage fails while admitting a saved model call, the task status reports a storage problem
+while keeping the request saved. Admission retries back off from 1 second to a maximum of 30
+seconds. The retry does not create a new submission or consume another task execution. Cancellation
+remains available, but it can only be confirmed once its state change is recorded. Queue expiry
+also requires a successful state write; a storage outage is not treated as evidence that work was
+cancelled or expired.
 
 ## Persistence is off by default
 

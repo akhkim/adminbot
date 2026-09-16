@@ -188,6 +188,9 @@ export class AdminBotTaskStatus extends LitElement {
       if (generation !== this.generation) {
         return;
       }
+      if (!response.ok) {
+        entry.error = result?.error?.message ?? "The task result is unavailable.";
+      }
       if (result && typeof result === "object" && "task" in result) {
         const view = (result as { task: TaskHandle }).task;
         entry.task = { ...entry.task, ...view };
@@ -195,7 +198,6 @@ export class AdminBotTaskStatus extends LitElement {
           this.recovered = this.recovered.filter((item) => item !== entry);
         }
       } else if (!response.ok) {
-        entry.error = result?.error?.message ?? "The task result is unavailable.";
         entry.task = {
           ...entry.task,
           status:
@@ -268,17 +270,21 @@ export class AdminBotTaskStatus extends LitElement {
       const label = `${taskLabel(activity.label)}${
         many && activity.task ? ` ${ordinalFor(activity.task.id)}` : ""
       }`;
-      const copy = activity.task
-        ? taskCopy(label, activity.task.status, activity.task.actions)
-        : {
-            state: `${label} disconnected`,
-            detail: "The connection dropped. Reconnecting picks up the same request.",
-          };
+      const copy = activity.task?.requestError
+        ? { state: `${label} waiting for the service to recover`, detail: undefined }
+        : activity.task
+          ? taskCopy(label, activity.task.status, activity.task.actions)
+          : {
+              state: `${label} disconnected`,
+              detail: "The connection dropped. Reconnecting picks up the same request.",
+            };
       return html` <section class="callout" aria-label="Task progress">
         <p role="status">${copy.state}</p>
         ${copy.detail ? html`<p>${copy.detail}</p>` : ""}
         ${activity.requestError ? html`<p role="alert">${activity.requestError}</p>` : ""}
-        ${!activity.task || activity.requestError || activity.message?.startsWith("Connection lost")
+        ${!activity.task ||
+        (activity.requestError && !activity.task.requestError) ||
+        activity.message?.startsWith("Connection lost")
           ? html`<button class="btn" @click=${() => activity.act("status")}>Reconnect</button>`
           : ""}
         ${(activity.task?.actions ?? [])
@@ -316,6 +322,10 @@ export class AdminBotTaskStatus extends LitElement {
           ${(() => {
             const detail =
               entry.error ??
+              entry.task.requestError ??
+              (["failed", "needs_retry"].includes(entry.task.status)
+                ? entry.task.error
+                : undefined) ??
               taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status, entry.task.actions)
                 .detail;
             return detail ? html`<p role=${entry.error ? "alert" : "status"}>${detail}</p>` : "";

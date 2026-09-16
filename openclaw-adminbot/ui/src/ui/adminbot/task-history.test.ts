@@ -156,3 +156,30 @@ it("removes a recovered task after cancellation without relabeling it as failed"
   await vi.waitFor(() => expect(element.querySelector('[aria-label="Recovered task"]')).toBeNull());
   expect(element.textContent).not.toContain("could not finish");
 });
+
+it("shows the server's rejection reason when a recovered task response includes its handle", async () => {
+  const reason =
+    "Task execution attempt limit exceeded; review the outcome before submitting a new task";
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      json({ tasks: [{ ...completed, status: "failed", actions: ["retry"] }] }),
+    )
+    .mockResolvedValueOnce(
+      json(
+        { task: { ...completed, status: "failed", actions: [] }, error: { message: reason } },
+        409,
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const element = new RecoveredTaskStatus();
+  element.baseUrl = "http://localhost:8765";
+  element.sessionContext = "member-a";
+  document.body.append(element);
+  await vi.waitFor(() => expect(element.textContent).toContain("Resume"));
+  element.querySelector<HTMLButtonElement>('[aria-label="Recovered task"] button')!.click();
+  await vi.waitFor(() =>
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain(reason),
+  );
+  expect(element.textContent).not.toContain("Resume");
+});
