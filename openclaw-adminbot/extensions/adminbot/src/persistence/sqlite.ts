@@ -140,6 +140,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
+      -- WAL lets one writer and many readers coexist, but a second writer fails immediately
+      -- unless it is told to wait. The operational scripts default to this same file and are
+      -- run by hand while the service is up, so that second writer is a normal occurrence.
+      -- src/state/openclaw-state-db.ts and adminbot-email-automation.ts both set this already.
+      PRAGMA busy_timeout = 5000;
 
       CREATE TABLE IF NOT EXISTS adminbot_proposals (
         id TEXT PRIMARY KEY,
