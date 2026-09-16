@@ -77,6 +77,7 @@ export class TaskRuntime {
   private paused = false;
   private stopping = false;
   private closed = false;
+  private dispatchErrorReported = false;
   private timer?: ReturnType<typeof setInterval>;
   constructor(options: TaskRuntimeOptions = {}) {
     this.ownDb = !options.db;
@@ -145,27 +146,39 @@ export class TaskRuntime {
       throw new Error("Task runtime closed");
     }
     this.store.acquire();
-    this.started = true;
-    for (const id of this.store.idsByStatus("running")) {
-      const task = this.store.get(id)!;
-      if (task.status === "running") {
-        let uncertain = false;
-        for (const step of this.store.stepsWithStatus(task.id, "running")) {
-          if (step.status === "running") {
+    try {
+      this.store.transaction(() => {
+        for (const id of this.store.idsByStatus("running")) {
+          const task = this.store.get(id)!;
+          let uncertain = this.store.hasUncertainStep(id, true);
+          for (const step of this.store.stepsWithStatus(task.id, "running")) {
             if (!step.replaySafe) {
               step.status = "uncertain";
               this.store.saveStep(task.id, step);
               uncertain = true;
             }
           }
+          task.retryExhausted =
+            (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
+            this.store.attemptCount(task.id) >= this.options.maxAttempts;
+          this.update(
+            task,
+            uncertain ? "needs_retry" : "queued",
+            task.retryExhausted
+              ? "Task attempt limit exceeded; review the outcome before submitting a new task"
+              : uncertain
+                ? "Process interrupted a step; explicit retry required"
+                : undefined,
+          );
         }
-        this.update(
-          task,
-          uncertain ? "needs_retry" : "queued",
-          uncertain ? "Process interrupted a step; explicit retry required" : undefined,
-        );
-      }
+      });
+    } catch (error) {
+      // Recovery must finish before start becomes idempotent. A partial recovery cannot be
+      // left marked started, with neither active handlers nor a dispatch timer.
+      this.store.release();
+      throw error;
     }
+    this.started = true;
     this.timer = setInterval(() => this.drain(), 100);
     this.timer.unref();
     this.drain();
@@ -323,8 +336,10 @@ export class TaskRuntime {
           "Task attempt limit exceeded; review the outcome before submitting a new task",
         );
       }
-      this.store.resetUncertain(id);
-      this.update(task, this.admissionStatus(task.owner, true));
+      this.store.transaction(() => {
+        this.store.resetUncertain(id);
+        this.update(task, this.admissionStatus(task.owner, true));
+      });
     }
     this.drain();
     return this.submission(this.store.get(id)!);
@@ -503,6 +518,19 @@ export class TaskRuntime {
     if (!this.started || this.closed || this.stopping) {
       return;
     }
+    try {
+      this.dispatchQueued();
+      this.dispatchErrorReported = false;
+    } catch (error) {
+      // This also runs from a timer and promise finalizers. Letting a failed admission escape
+      // would crash the process even though its transaction left the accepted task queued.
+      if (!this.dispatchErrorReported) {
+        console.error("[adminbot] task dispatch failed; saved work will be retried", error);
+        this.dispatchErrorReported = true;
+      }
+    }
+  }
+  private dispatchQueued(): void {
     this.expire();
     if (this.paused) {
       return;
@@ -539,9 +567,9 @@ export class TaskRuntime {
         continue;
       }
       task.executionAttempts = (task.executionAttempts ?? 0) + 1;
+      this.forgetIdleOwners();
       this.update(task, "running");
       this.ownerLastServed.set(task.owner, (this.dispatchSequence += 1));
-      this.forgetIdleOwners();
       const controller = new AbortController();
       const done = Promise.resolve()
         .then(() => this.execute(task, handler, controller))
@@ -712,7 +740,7 @@ export class TaskRuntime {
       task.result = encodedResult;
       this.update(task, "completed");
     } catch (error) {
-      if (this.closed || this.store.get(task.id)?.status === "cancelled") {
+      if (this.closed) {
         return;
       }
       controller.abort(new TaskInterruptedError("Task handler stopped"));
@@ -723,6 +751,9 @@ export class TaskRuntime {
       // Recording `failed` is a second chance to reach a terminal state; if even that fails
       // there is nothing left to write, so say so where an operator will see it.
       try {
+        if (this.store.get(task.id)?.status === "cancelled") {
+          return;
+        }
         for (const step of this.store.stepsWithStatus(task.id, "running")) {
           if (step.status === "running" && !step.replaySafe) {
             step.status = "uncertain";
@@ -745,6 +776,9 @@ export class TaskRuntime {
         );
       } catch (recordingFailure) {
         try {
+          if (this.store.get(task.id)?.status === "cancelled") {
+            return;
+          }
           this.update(task, "failed", "The task failed and its outcome could not be recorded");
         } catch {
           console.error(
