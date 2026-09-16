@@ -13,9 +13,11 @@ import { resolveInferenceGateConfig } from "../extensions/adminbot/src/inference
 import {
   createInferenceGate,
   type InferenceGate,
+  runGated,
   type InferenceOutcome,
 } from "../extensions/adminbot/src/inference/gate.ts";
 import { AdminBotSqliteStore } from "../extensions/adminbot/src/persistence/sqlite.ts";
+import { TaskRuntime } from "../extensions/adminbot/src/tasks/runtime.ts";
 import { createAdminBotPrivacyBroker } from "../extensions/adminbot/src/privacy/broker.ts";
 import { DEADLINE_VENUES } from "../extensions/adminbot/src/workflows/deadlines/generated/dataset.ts";
 import { createLocalWorkshopMatcher } from "../extensions/adminbot/src/workflows/papers/workshop-match-llm.ts";
@@ -865,6 +867,153 @@ async function scenarioMatcher(o: Options): Promise<ScenarioResult> {
   }
 }
 
+/**
+ * The shared runner under a burst from many members at once.
+ *
+ * Every other scenario here drives the gate, whose unit is one model call. This one drives the
+ * task runtime, whose unit is the member's request, and whose workflow spends two model calls --
+ * the shape a privacy or reimbursement turn actually has. What it is looking for is the property
+ * the gate alone cannot show: that one member's backlog does not decide when another member is
+ * served, and that a task saved past its owner's share is resumed rather than re-run.
+ */
+async function scenarioRunner(o: Options): Promise<ScenarioResult> {
+  const mock = await startMock(o.port, ["--latency-ms", String(Math.min(o.latencyMs, 40))]);
+  const dbPath = freshFixture(o.artifactsDir, "runner");
+  const { store, gate } = openGate(dbPath, mock.baseUrl);
+  gate.start();
+  const owners = 24;
+  const perOwner = 5;
+  const share = 4;
+  const submissions = owners * perOwner;
+  // Owner of each task in the order the runtime started it, which is what the rotation shapes.
+  const dispatched: string[] = [];
+  const runtime = new TaskRuntime({
+    db: store.inferenceDatabase(),
+    maxRunning: 16,
+    maxQueued: 200,
+    maxInFlightPerOwner: share,
+    canDispatch: () => !gate.settings().paused,
+  });
+  runtime.register<{ owner: string; n: number }, string>("sim.turn", 1, async (input, ctx) => {
+    dispatched.push(ctx.owner);
+    // Two stages, each its own permit. A stage is a checkpoint, so a resumed task never repeats
+    // a stage it already finished.
+    const classified = await runGated(gate, {
+      caller: "load_sim.runner.classify",
+      request: chatRequest(mock.baseUrl, `classify ${input.owner}#${input.n}`),
+      timeoutMs: 30_000,
+    });
+    const answered = await runGated(gate, {
+      caller: "load_sim.runner.answer",
+      request: chatRequest(mock.baseUrl, `answer ${input.owner}#${input.n}`),
+      timeoutMs: 30_000,
+    });
+    if (classified.status >= 400 || answered.status >= 400) {
+      throw new Error(`model returned ${classified.status}/${answered.status}`);
+    }
+    return `${input.owner}#${input.n}`;
+  });
+  runtime.start();
+  try {
+    // Everyone arrives in the same tick, which is the case the pass condition is about.
+    const handles = Array.from({ length: submissions }, (_, i) => {
+      const owner = `member-${i % owners}`;
+      const n = Math.floor(i / owners);
+      return runtime.submit({
+        kind: "sim.turn",
+        owner,
+        key: `${owner}:turn-${n}`,
+        input: { owner, n },
+        wait: true,
+      });
+    });
+    const shedAtArrival = handles.filter((h) => h.status === "shed").length;
+    // Each member comes back for the rows their share deferred, the way pressing Wait does.
+    // Resubmitting the same key would be a second request; Wait reaches the row that exists.
+    await waitFor(
+      () => {
+        for (const handle of handles) {
+          const task = runtime.get(handle.id);
+          if (task?.status === "shed") runtime.wait(handle.id, task.owner);
+        }
+        return runtime.metrics().completed === submissions;
+      },
+      180_000,
+      "runner tasks did not all finish",
+    );
+    await untilIdle(gate);
+    const stats = await mock.stats();
+    const metrics = runtime.metrics();
+    const results = handles.map((h) => runtime.get(h.id)?.result);
+    // Position at which each owner's first task started. Under arrival order the last owner to
+    // be served waits behind every earlier owner's whole backlog; under rotation it does not.
+    const firstStart = new Map<string, number>();
+    dispatched.forEach((owner, index) => {
+      if (!firstStart.has(owner)) firstStart.set(owner, index);
+    });
+    const lastFirstStart = Math.max(...firstStart.values());
+    const checks: Check[] = [
+      {
+        name: `every one of ${submissions} requests from ${owners} members produced its own result`,
+        ok: new Set(results).size === submissions && results.every((r) => typeof r === "string"),
+        detail: `distinct results ${new Set(results).size}`,
+      },
+      {
+        name: "no request was lost: completed == submitted, nothing failed or left waiting",
+        ok:
+          metrics.completed === submissions &&
+          metrics.failed === 0 &&
+          metrics.needs_retry === 0 &&
+          metrics.shed === 0 &&
+          metrics.queued === 0,
+        detail: JSON.stringify(metrics.counts),
+      },
+      {
+        name: "no request was silently duplicated: exactly two model calls per task",
+        ok: stats.counters.served === submissions * 2,
+        detail: `served ${stats.counters.served}, expected ${submissions * 2}`,
+      },
+      {
+        name: "the mock never saw a duplicate request body",
+        ok: (stats.counters.duplicates ?? 0) === 0,
+        detail: JSON.stringify(stats.counters),
+      },
+      {
+        name: "model concurrency stayed within the configured capacity",
+        ok: stats.concurrency.peak_arrivals <= 2,
+        detail: JSON.stringify(stats.concurrency),
+      },
+      {
+        name: `a share of ${share} bounded each member, and the excess was saved rather than refused`,
+        ok: shedAtArrival > 0,
+        detail: `${shedAtArrival} of ${submissions} shed at arrival, all resumed by Wait`,
+      },
+      {
+        name: "no member waited behind another member's whole backlog",
+        // Rotation serves every member once before serving anyone a second time, so the last
+        // member to start does so within roughly one round. Arrival order would put them at
+        // owners * (perOwner - 1) or later, since every earlier member's share precedes them.
+        ok: lastFirstStart < owners * 2,
+        detail: `last member's first task started at position ${lastFirstStart} of ${submissions}; arrival order would be >= ${owners * (perOwner - 1)}`,
+      },
+    ];
+    return {
+      name: `runner: ${submissions} two-stage requests from ${owners} members arriving at once`,
+      checks,
+      notes: [
+        `runtime: ${JSON.stringify(metrics.counts)}`,
+        `mock: ${JSON.stringify(stats.concurrency)} ${JSON.stringify(stats.counters)}`,
+      ],
+    };
+  } finally {
+    await runtime.shutdown({ graceMs: 30_000 }).catch(() => undefined);
+    await untilIdle(gate, 30_000).catch(() => undefined);
+    gate.close();
+    store.close();
+    await mock.stop();
+  }
+}
+
 async function scenarioBroker(o: Options): Promise<ScenarioResult> {
   // The broker's multi-stage path under a burst: classify (local) -> remote (fails: no key) -> local.
   // Each task is two permits taken one after the other, never together.
@@ -1028,6 +1177,7 @@ async function main() {
     hang: scenarioHang,
     restart: scenarioRestart,
     matcher: scenarioMatcher,
+    runner: scenarioRunner,
     broker: scenarioBroker,
   };
   const chosen = o.scenario === "all" ? Object.keys(scenarios) : o.scenario.split(",");
