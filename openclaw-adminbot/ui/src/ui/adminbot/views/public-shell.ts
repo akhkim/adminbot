@@ -1,3 +1,4 @@
+import "./task-status.ts";
 // The Control UI as a visitor sees it: no session, no gateway connection, and only the surfaces
 // the access table opens to `anonymous` (see access.ts).
 //
@@ -241,6 +242,10 @@ export function renderPublicShell(state: AppViewState) {
             ? "content--public-deadlines"
             : ""}"
         >
+          <adminbot-task-status
+            .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+            sessionContext="visitor"
+          ></adminbot-task-status>
           ${state.tab === "adminbotDeadlines"
             ? renderPublicPanel(state)
             : html`<div class="card adminbot-card adminbot-card--wide">

@@ -69,8 +69,11 @@ export function createAdminBotSlackAdminExecutor(
         await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
-      if (proposal.type === "member_nudge.escalate") {
-        const payload = readGroupDmPayload(proposal);
+      if (proposal.type === "member_nudge.escalate" || proposal.type === "inference.escalate") {
+        // The same group-DM shape for both: one conversation with everybody who should hear it.
+        // The inference one opens a room with every admin, so the first to see it can say "on it"
+        // where the others watch, rather than three admins each restarting the same server.
+        const payload = readGroupDmPayload(proposal, proposal.type);
         const token = resolveSlackBotToken(env);
         await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
         return { handled: true };
@@ -340,13 +343,16 @@ async function removeFromSlackChannel(
   }
 }
 
-function readGroupDmPayload(proposal: AdminBotStoredProposal): {
+function readGroupDmPayload(
+  proposal: AdminBotStoredProposal,
+  typeName = "member_nudge.escalate",
+): {
   user_ids: string[];
   message: string;
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("member_nudge.escalate requires an object proposed_payload");
+    throw new Error(`${typeName} requires an object proposed_payload`);
   }
   const raw = (payload as Record<string, unknown>).user_ids;
   const userIds = Array.isArray(raw)
@@ -358,7 +364,7 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   // escalation queue on their own page -- so the only person this can reach is the member it is
   // about, which is the direction the old rule was protecting.
   if (userIds.length < 1) {
-    throw new Error("member_nudge.escalate requires at least one Slack user id");
+    throw new Error(`${typeName} requires at least one Slack user id`);
   }
   return {
     user_ids: userIds,

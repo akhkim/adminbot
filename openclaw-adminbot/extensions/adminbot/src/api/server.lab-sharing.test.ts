@@ -14,12 +14,15 @@ afterEach(async () => {
     await new Promise<void>((resolve, reject) => {
       mock.server.close((error) => (error ? reject(error) : resolve()));
     });
-    mock.close();
+    await mock.close();
   }
 });
 
 async function startLab() {
-  const mock = createAdminBotMockService({ serviceToken: SERVICE_TOKEN, allowedOrigins: ["http://127.0.0.1:5197"] });
+  const mock = createAdminBotMockService({
+    serviceToken: SERVICE_TOKEN,
+    allowedOrigins: ["http://127.0.0.1:5197"],
+  });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
     mock.server.listen(0, "127.0.0.1", () => {
@@ -234,7 +237,7 @@ describe("Lab Sharing routes", () => {
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.members).toHaveLength(1);
-      expect(Object.keys(data.members[0]).sort()).toEqual([
+      expect(Object.keys(data.members[0]).toSorted()).toEqual([
         "id",
         "matched_fields",
         "name",
@@ -524,10 +527,17 @@ it("supports compact mutation responses without changing legacy responses", asyn
   expect((await legacy.json()).requests).toHaveLength(1);
 });
 
-it("allows compact-response preference in an allowed-origin preflight",async()=>{
- const {baseUrl}=await startLab();
- const response=await fetch(`${baseUrl}/lab-sharing/requests/paper-1`,{method:"OPTIONS",headers:{Origin:"http://127.0.0.1:5197","Access-Control-Request-Method":"PUT","Access-Control-Request-Headers":"authorization,content-type,prefer"}});
- expect(response.headers.get("access-control-allow-headers")).toContain("Prefer");
+it("allows compact-response preference in an allowed-origin preflight", async () => {
+  const { baseUrl } = await startLab();
+  const response = await fetch(`${baseUrl}/lab-sharing/requests/paper-1`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://127.0.0.1:5197",
+      "Access-Control-Request-Method": "PUT",
+      "Access-Control-Request-Headers": "authorization,content-type,prefer",
+    },
+  });
+  expect(response.headers.get("access-control-allow-headers")).toContain("Prefer");
 });
 
   // The broadcast archive, end to end: admin publishes, every member reads back the history.

@@ -1,5 +1,9 @@
+import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import type { GuidebookFetch } from "../../guidebook/local-client.js";
+import { resolveInferenceGateConfig } from "../../inference/config.js";
+import { createInferenceGate, runGated } from "../../inference/gate.js";
+import { TaskRuntime } from "../../tasks/runtime.js";
 import {
   buildWorkshopMatchPrompt,
   createLocalWorkshopMatcher,
@@ -41,6 +45,16 @@ function paper(id: string): WorkshopNudgePaper {
     lab_author_names: ["Ada"],
     publication_sources: ["CV"],
   };
+}
+
+function memoryDb() {
+  const sqlite = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE adminbot_audit_events (
+    id TEXT PRIMARY KEY, action_id TEXT, event_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL, actor TEXT, event_json TEXT NOT NULL
+  )`);
+  return db;
 }
 
 function reply(body: unknown): Awaited<ReturnType<GuidebookFetch>> {
@@ -386,12 +400,67 @@ describe("keeping calls short enough to answer", () => {
     await createLocalWorkshopMatcher({ fetchImpl, env: {} })({ workshops, papers: [paper("p-1")] });
     expect(peak).toBe(2);
 
+    // The number that admits requests is the shared gate's, and the gate reads the same variable
+    // (inference/config.ts honors ADMINBOT_WORKSHOP_MATCH_CONCURRENCY as its capacity), so a
+    // deployment that raised it keeps its four -- through one counter rather than the matcher's own.
     peak = 0;
+    const env = { ADMINBOT_WORKSHOP_MATCH_CONCURRENCY: "4" };
+    const gate = createInferenceGate({
+      db: memoryDb(),
+      env,
+      config: resolveInferenceGateConfig({
+        ...env,
+        ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+        ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      }),
+    });
+    await createLocalWorkshopMatcher({ fetchImpl, env, gate })({
+      workshops,
+      papers: [paper("p-1")],
+    });
+    expect(peak).toBe(4);
+    gate.close();
+  });
+
+  it("does not retry a job the gate declined, so one job never becomes several rows", async () => {
+    // A shed or an expiry is a decision about capacity. The retry loop exists for tunnel blips;
+    // feeding it a queue decision hands the gate the same job again, up to three times.
+    const fetchImpl = vi.fn(async () => reply({ matches: [] })) as unknown as GuidebookFetch;
+    const env = {};
+    const gate = createInferenceGate({
+      db: memoryDb(),
+      env,
+      // Capacity one, and a line that holds nothing: the second submitter is shed every time.
+      config: resolveInferenceGateConfig({
+        ...env,
+        ADMINBOT_INFERENCE_CAPACITY: "1",
+        ADMINBOT_INFERENCE_QUEUE_MAX_DEPTH: "0",
+        ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+        ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      }),
+    });
+    const seen: Array<[number, number, number, string | undefined, number | undefined]> = [];
     await createLocalWorkshopMatcher({
       fetchImpl,
-      env: { ADMINBOT_WORKSHOP_MATCH_CONCURRENCY: "4" },
-    })({ workshops, papers: [paper("p-1")] });
-    expect(peak).toBe(4);
+      gate,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 2,
+      retryBackoffMs: 0,
+    })({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (done, total, failed, detail, deferred) =>
+        seen.push([done, total, failed, detail, deferred]),
+    });
+    // Two jobs, two submitters, one slot: exactly one of them ran; the other was shed once and
+    // counted as *deferred* -- not failed (the model was never asked) and not retried into the
+    // line three times.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(seen.at(-1)?.[2]).toBe(0);
+    expect(seen.at(-1)?.[4]).toBe(1);
+    expect(seen.at(-1)?.[3]).toMatch(/GPU busy/u);
+    expect(gate.stats().rows.shed).toBe(1);
+    gate.close();
   });
 
   it("says which workshop failed and why, alongside the count", async () => {
@@ -422,4 +491,113 @@ describe("keeping calls short enough to answer", () => {
     expect(seen[1]).toBe("Workshop a: the model did not answer in time");
     expect(seen.at(-1)).toBe("Workshop a: the model did not answer in time");
   });
+});
+
+it("resumes a task's original batch plan and reuses completed model batches", async () => {
+  const db = memoryDb();
+  const bodies: string[] = [];
+  const fetchImpl: GuidebookFetch = async (_url, init) => {
+    bodies.push(init.body ?? "");
+    if (bodies.length === 2) {
+      throw new Error("interrupted model exchange");
+    }
+    return reply({ matches: [] });
+  };
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+    maxAttemptsPerCall: 1,
+  });
+  const runtime = new TaskRuntime({ db });
+  runtime.register("matcher", 1, () =>
+    matcher({ papers: [paper("a"), paper("b")], workshops: [profile("one"), profile("two")] }),
+  );
+  try {
+    const submitted = runtime.submit({ owner: "service", kind: "matcher", input: {} });
+    expect((await submitted.promise)?.status).toBe("needs_retry");
+    const retried = runtime.retry(submitted.id, "service")!;
+    expect((await retried.promise)?.status).toBe("completed");
+    expect(bodies).toHaveLength(5);
+    expect(bodies.filter((body) => body === bodies[0])).toHaveLength(1);
+    expect(bodies.filter((body) => body === bodies[1])).toHaveLength(2);
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
+});
+
+it("lets an accepted interactive task join the GPU FIFO during a matcher sweep", async () => {
+  const db = memoryDb();
+  const seen: string[] = [];
+  const fetchImpl: GuidebookFetch = async (_url, init) => {
+    seen.push(JSON.parse(init.body ?? "{}").messages.at(-1).content);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    return reply({ matches: [] });
+  };
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_CAPACITY: "1",
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const runtime = new TaskRuntime({
+    db,
+    canStart: () => gate.stats().in_flight === 0,
+    canDispatch: () => !gate.settings().paused && !gate.settings().shutting_down,
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+  });
+  runtime.register("matcher", 1, () =>
+    matcher({
+      papers: Array.from({ length: 6 }, (_, i) => paper(`p${i}`)),
+      workshops: [profile("one")],
+    }),
+  );
+  runtime.register("interactive", 1, () =>
+    runGated(gate, {
+      owner: "member",
+      caller: "interactive",
+      request: {
+        route: "chat/completions",
+        baseUrl: "http://127.0.0.1:8000/v1",
+        purpose: "interactive",
+        body: { model: "m", messages: [{ role: "user", content: "interactive" }] },
+      },
+    }),
+  );
+  try {
+    const sweep = runtime.submit({ owner: "service", kind: "matcher", input: {} });
+    await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0), { interval: 1 });
+    const interactive = runtime.submit({ owner: "member", kind: "interactive", input: {} });
+    expect(interactive.status).toBe("shed");
+    const waiting = runtime.wait(interactive.id, "member")!;
+    expect((await waiting.promise)?.status).toBe("completed");
+    expect(seen.indexOf("interactive")).toBeLessThan(3);
+    expect((await sweep.promise)?.status).toBe("completed");
+    expect(seen).toHaveLength(7);
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
 });

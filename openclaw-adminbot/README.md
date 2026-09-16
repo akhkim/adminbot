@@ -156,6 +156,7 @@ The Control UI deploys to Vercel from the lab repo. The service deploys to Auror
 
 - [docs/tools/adminbot.md](docs/tools/adminbot.md) — service endpoint contract and the privacy gate
 - [docs/tools/adminbot-deadlines.md](docs/tools/adminbot-deadlines.md) — the venue/CFP tracker
+- [docs/tools/adminbot-inference-queue.md](docs/tools/adminbot-inference-queue.md) — sharing one GPU: the gate, the task runner, and their controls
 - [docs/tools/adminbot-openreview.md](docs/tools/adminbot-openreview.md) — reviewing-cycle reminders
 - [docs/tools/adminbot-reference-check.md](docs/tools/adminbot-reference-check.md) — citation verification
 - [docs/tools/adminbot-meetings.md](docs/tools/adminbot-meetings.md) — recorded meetings: links, attendance, summaries

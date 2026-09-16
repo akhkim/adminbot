@@ -808,7 +808,11 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
   const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
   const cvDigestPublisher = createCvDigestPublisher();
   return createAdminBotMockService({
-    databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
+    // The deployment reads state/adminbot.sqlite. The override exists so a reviewer can run the
+    // real service and UI over a generated fixture without a file anywhere near the live one --
+    // scripts/adminbot-fixture-db.ts refuses to write under state/ for the same reason.
+    databasePath:
+      process.env.ADMINBOT_DATABASE_PATH?.trim() || path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
     executor: createCompositeAdminBotExecutor([
       createAdminBotOverleafExecutor(),
@@ -838,13 +842,17 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     ...(deps.inviteToSlackConnect ? { inviteToSlackConnect: deps.inviteToSlackConnect } : {}),
     sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
     emailAutomationRunner: deps.runEmailAutomation,
-    reimbursementWorkflow: createAdminBotReimbursementWorkflow({
-      formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
-      mpiScriptPath: path.join(repoRoot, "scripts/adminbot_mpi_reimbursement.py"),
-    }),
-    cvScanDeps: createAdminBotCvScanDeps({
-      extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
-    }),
+    reimbursementWorkflowFactory: (gate) =>
+      createAdminBotReimbursementWorkflow({
+        gate,
+        formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
+        mpiScriptPath: path.join(repoRoot, "scripts/adminbot_mpi_reimbursement.py"),
+      }),
+    cvScanDepsFactory: (gate) =>
+      createAdminBotCvScanDeps({
+        gate,
+        extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
+      }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
     dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
@@ -888,5 +896,22 @@ export async function startAdminBotHost(deps: AdminBotHostDeps): Promise<void> {
     `AdminBot service with live gog/social/overleaf/message/openreview execution running on http://${SERVICE_HOST}:${port}`,
   );
   // Keep the service alive even when launched detached without an interactive stdin.
-  setInterval(() => {}, 2 ** 31 - 1);
+  const keepAlive = setInterval(() => {}, 2 ** 31 - 1);
+  let stopping = false;
+  const stop = () => {
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    clearInterval(keepAlive);
+    void service.close().then(
+      () => process.exit(0),
+      (error: unknown) => {
+        console.error("AdminBot shutdown failed:", error);
+        process.exit(1);
+      },
+    );
+  };
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
 }

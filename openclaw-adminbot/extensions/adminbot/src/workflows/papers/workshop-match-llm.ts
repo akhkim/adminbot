@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Judging which lab papers belong at which workshop, by reading the calls for papers.
 //
 // The unit of work is one workshop's call plus a handful of paper titles, because that is the
@@ -13,6 +14,12 @@
 // Loopback-only, like every other model call in this tree: on this deployment that is the tunnel
 // to Aurora's vLLM. Paper titles and topic summaries are lab-internal and do not leave the box.
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
+import {
+  isInferenceDeferred,
+  sharedInferenceGate,
+  type InferenceGate,
+} from "../../inference/gate.js";
+import { currentTaskContext, withTaskScope, taskStep } from "../../tasks/context.js";
 import type {
   WorkshopMatcher,
   WorkshopNudgePaper,
@@ -34,7 +41,7 @@ const DEFAULT_MODEL = "nvidia/Qwen3.5-122B-A10B-NVFP4";
 export const PAPERS_PER_REQUEST = 8;
 
 /**
- * Requests in flight.
+ * Requests in flight, from this pass.
  *
  * Two, because that is what the server admits: Aurora's vLLM runs with `--max-num-seqs 2`
  * (deploy/aurora/setup-qwen35-vllm.sh), so anything past two does not run faster, it queues
@@ -42,6 +49,16 @@ export const PAPERS_PER_REQUEST = 8;
  * six in flight, four of every six calls spent most of their budget waiting for a slot and then
  * timed out, and the retries queued behind them did the same: 24 of the first 37 calls of a pass
  * failed that way. ADMINBOT_WORKSHOP_MATCH_CONCURRENCY raises it for a server that admits more.
+ *
+ * This is no longer the count that protects the server. That count lives in the shared inference
+ * gate (inference/gate.ts), which every GPU caller in the tree goes through -- the CV scanner and
+ * the privacy broker could each have been the third pool of two that reproduced the incident above.
+ * What this number bounds now is how much of the *gate's* line a pass may occupy: a sweep is
+ * thousands of calls, and submitting the whole cross-product at once would fill the queue and shed
+ * every interactive member behind it. So the pass runs this many submitters, each of which hands one
+ * job to the gate and waits for it to come back before handing over the next. The line never holds
+ * more than this many matcher rows, and the gate's own FIFO puts an interactive arrival ahead of the
+ * matcher's next job rather than behind the whole sweep.
  */
 export const MAX_CONCURRENT_REQUESTS = 2;
 
@@ -142,11 +159,25 @@ export type WorkshopMatcherOptions = {
   maxAttemptsPerCall?: number;
   /** Pause between attempts. Exposed so a test does not have to spend it. */
   retryBackoffMs?: number;
+  /** The admission gate. Tests hand in their own; production uses the process-wide one. */
+  gate?: InferenceGate;
   /**
    * Called as each job settles, so a caller can persist progress while the pass runs. `detail`
    * is the most recent failure's message, so a pass that is losing calls can say why.
+   *
+   * `deferred` counts jobs the gate declined to run -- shed because the line was full, or expired
+   * in it. They are not failures: the model was never asked. They are reported apart from `failed`
+   * so "24 calls failed" (the tunnel, the model) and "24 batches deferred" (capacity) send an
+   * administrator to different places, and so a page never renders a deferred batch as "matched
+   * nothing".
    */
-  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
+  onProgress?: (
+    done: number,
+    total: number,
+    failed: number,
+    detail?: string,
+    deferred?: number,
+  ) => void;
 };
 
 const SYSTEM_PROMPT = `You decide which of a research lab's papers belong at a specific workshop.
@@ -286,6 +317,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
   const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
   const maxAttempts = Math.max(1, options.maxAttemptsPerCall ?? MAX_ATTEMPTS_PER_CALL);
   const retryBackoffMs = Math.max(0, options.retryBackoffMs ?? RETRY_BACKOFF_MS);
+  const gate = options.gate ?? sharedInferenceGate();
 
   return async ({ papers, workshops, onProgress, signal }) => {
     // One entry per paper, not per author. workshopNudgeInputsFromAdminBot repeats a paper once
@@ -301,25 +333,65 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     }
     const unique = [...distinct.values()];
 
-    const jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
+    let jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
     for (const workshop of workshops) {
       for (let start = 0; start < unique.length; start += batchSize) {
         jobs.push({ workshop, papers: unique.slice(start, start + batchSize) });
       }
     }
 
+    const batchPlan = await taskStep(
+      "matcher.batches",
+      { papers, workshops },
+      () =>
+        jobs.map((job) => ({
+          workshopId: job.workshop.workshop_id,
+          paperIds: job.papers.map((paper) => paper.paper_id),
+        })),
+      { replaySafe: true },
+    );
+    const workshopById = new Map(workshops.map((workshop) => [workshop.workshop_id, workshop]));
+    const paperById = distinct;
+    jobs = batchPlan.map((batch) => ({
+      workshop: workshopById.get(batch.workshopId)!,
+      papers: batch.paperIds.map((id) => paperById.get(id)!),
+    }));
     let done = 0;
     let failed = 0;
+    let deferred = 0;
+    const deferredHandles: string[] = [];
     let firstError: unknown;
     let lastFailure: string | undefined;
     const report = onProgress ?? options.onProgress;
     // Fired even before the first job settles, so the page stops saying "working out how many
     // papers and workshops to compare" the moment there is a number to say.
-    report?.(0, jobs.length, 0);
+    report?.(0, jobs.length, 0, undefined, 0);
     const results = await runWithConcurrency(jobs, concurrency, async (job) => {
       try {
-        return await runJobWithRetries(job);
+        return await withTaskScope(
+          `matcher:${createHash("sha256")
+            .update(
+              JSON.stringify([job.workshop.workshop_id, ...job.papers.map((p) => p.paper_id)]),
+            )
+            .digest("hex")}`,
+          () => runJobWithRetries(job),
+        );
       } catch (error) {
+        if (currentTaskContext()) {
+          throw error;
+        }
+        if (isInferenceDeferred(error)) {
+          // The gate did not run this batch. Not a failure -- the model was never asked -- and not
+          // an empty result either: an empty result is "this workshop matched nothing", which is a
+          // finding, and this is the absence of one. Counted apart, with the row handle kept so an
+          // operator can find the batch in the queue.
+          deferred += 1;
+          if ("id" in error.outcome) {
+            deferredHandles.push(error.outcome.id);
+          }
+          lastFailure = `${job.workshop.name}: ${error.message}`;
+          return [];
+        }
         // One workshop's batch could not be scored. The pass is thousands of calls and a single
         // unlucky one is not a reason to throw the rest away; it is counted, and the first cause
         // is kept in case it turns out to be every one of them. The latest cause travels with the
@@ -334,7 +406,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         // how a pass reaches 1671 of 2540 and stops: the total is fixed at the start, so every job
         // must report exactly once however it ends or the count never closes.
         done += 1;
-        report?.(done, jobs.length, failed, lastFailure);
+        report?.(done, jobs.length, failed, lastFailure, deferred);
       }
     });
 
@@ -344,7 +416,19 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
       // wrong thing.
       throw new Error(`${PURPOSE} pass was cancelled after ${done} of ${jobs.length} calls`);
     }
-    if (jobs.length > 0 && failed === jobs.length) {
+    if (jobs.length > 0 && deferred === jobs.length) {
+      // Nothing ran because the GPU had no room for any of it. Distinct from "the endpoint is
+      // down": the fix is to wait, not to check the tunnel, and the handles say which rows to look
+      // at. Thrown rather than returned as [], because [] would be read as "no paper fits any
+      // workshop", which is the one thing a pass that never asked the model must not claim.
+      throw new Error(
+        `${PURPOSE} pass was deferred: the GPU queue had no room for any of its ${jobs.length} ` +
+          `batches (queue rows ${deferredHandles.slice(0, 5).join(", ")}${
+            deferredHandles.length > 5 ? ", ..." : ""
+          }). Try again when the queue has drained.`,
+      );
+    }
+    if (jobs.length > 0 && failed + deferred === jobs.length && failed > 0) {
       // Nothing succeeded, so this is not a bad batch, it is the endpoint. Rethrow the original
       // cause rather than a summary: the refusal to talk to a non-loopback endpoint is a rule
       // about where paper titles may go, and replacing it with "could not reach the model" would
@@ -381,6 +465,16 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         try {
           return await runJob(job, requestTimeoutMs * attempt);
         } catch (error) {
+          if (currentTaskContext()) {
+            throw error;
+          }
+          if (isInferenceDeferred(error)) {
+            // The gate declined to run this -- expired in line, or the queue is full. That is a
+            // decision about capacity, not a blip in the tunnel, and retrying it would hand the
+            // gate the same job again: one job, several rows, exactly the duplication this exists
+            // to rule out. It is counted as a failed call and the pass moves on.
+            throw error;
+          }
           lastError = error;
           if (attempt < maxAttempts && !signal?.aborted && retryBackoffMs > 0) {
             await delay(retryBackoffMs * attempt);
@@ -413,13 +507,21 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
             json_schema: { name: "workshop_paper_matches", strict: true, schema: REPLY_SCHEMA },
           },
         },
-        // Without this one unanswered call holds the whole request open, which is exactly how a
-        // slow model server became "couldn't reach the AdminBot service" on the page. Combined
-        // with the pass signal so a cancelled pass does not sit out the remaining timeout of
-        // every call already in flight.
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-          : AbortSignal.timeout(timeoutMs),
+        // Cancellation only. The timeout goes to the gate as a duration (below), which starts the
+        // clock when the call is admitted -- not here, where the clock would start while the job
+        // was still waiting for a slot. That was the incident: a timer that had already spent most
+        // of its budget in the line before the model saw the request.
+        ...(signal ? { signal } : {}),
+        gate: {
+          gate,
+          owner: "system:workshop-match",
+          caller: "workshop_match.score",
+          // Unattended work waits. Nobody is watching a sweep to click "wait", and a shed here
+          // would silently drop a (workshop, batch) pair out of the answer.
+          wait: true,
+          timeoutMs,
+          apiKeyEnv: "VLLM_API_KEY",
+        },
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: buildWorkshopMatchPrompt(job.workshop, job.papers) },

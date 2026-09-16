@@ -700,7 +700,7 @@ describe("AdminBotService weekly updates", () => {
   it("does not ask the same person twice for the same week", async () => {
     const service = labWithPaper();
     const first = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
-    expect(first.asked.sort()).toEqual(["ada", "rahul"]);
+    expect(first.asked.toSorted()).toEqual(["ada", "rahul"]);
     // A crontab that fires hourly, a retry and a manual press all collapse into one nudge.
     const second = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
     expect(second.asked).toEqual([]);
@@ -709,7 +709,7 @@ describe("AdminBotService weekly updates", () => {
     const nextWeek = unwrap(
       await service.sendWeeklyUpdateNudges("cron", "2026-08-30T18:00:00.000Z"),
     );
-    expect(nextWeek.asked.sort()).toEqual(["ada", "rahul"]);
+    expect(nextWeek.asked.toSorted()).toEqual(["ada", "rahul"]);
   });
 
   it("leaves a rejected paper alone -- nobody owes a week on a paper that is not running", async () => {
@@ -4703,7 +4703,7 @@ describe("AdminBotService", () => {
       const recipients = result.created.map(
         (proposal) => (proposal.target as { recipientMemberId?: string })?.recipientMemberId,
       );
-      expect(recipients.sort()).toEqual(["blank1", "blank2"]);
+      expect(recipients.toSorted()).toEqual(["blank1", "blank2"]);
     });
 
     // The gap this sweep could not see before: a full member whose profile is complete but who
@@ -5419,7 +5419,7 @@ describe("AdminBotService", () => {
         }),
       );
       const fetchSlackTimezones = vi.fn(async (ids: string[]) => {
-        expect(ids.sort()).toEqual(["U1", "U2"]);
+        expect(ids.toSorted()).toEqual(["U1", "U2"]);
         // U1 has a zone; U2 was asked and Slack had none, which is null rather than absent.
         return new Map<string, string | null>([
           ["U1", "America/Toronto"],
@@ -5517,5 +5517,81 @@ describe("AdminBotService", () => {
       expect(fetchSlackTimezones).toHaveBeenCalledWith([]);
       expect(unwrap(service.listLabMembers()).members[0]?.timezone).toBe("America/Toronto");
     });
+  });
+});
+
+describe("AdminBotService inference escalation", () => {
+  it("proposes a T3 admin approval naming every Slack-linked admin, and records delivery only on execute", async () => {
+    const sent: Array<{ type: string; user_ids: string[] }> = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        async execute(proposal) {
+          const payload = proposal.proposed_payload as { user_ids: string[] };
+          sent.push({ type: proposal.type, user_ids: payload.user_ids });
+          return { handled: true };
+        },
+      },
+    });
+    for (const [id, slack] of [
+      ["admin-a", "U1"],
+      ["admin-b", "U2"],
+    ] as const) {
+      const saved = service.upsertLabMember({
+        id,
+        name: id,
+        privilege_level: "admin",
+        slack_user_id: slack,
+      });
+      if (!saved.ok) {
+        throw new Error(saved.error.message);
+      }
+    }
+    const proposed = service.proposeInferenceEscalation({
+      trigger: "queue_depth",
+      summary: "17 requests are waiting",
+      details: { queue_depth: 17 },
+      firedAt: "2026-09-12T10:00:00.000Z",
+    });
+    if (!proposed.ok) {
+      throw new Error(proposed.error.message);
+    }
+    expect(proposed.payload.type).toBe("inference.escalate");
+    expect(proposed.payload.risk_tier).toBe("T3");
+    expect(proposed.payload.status).toBe("pending");
+    // Nothing reached anyone yet, and the audit trail does not say otherwise.
+    expect(sent).toEqual([]);
+    expect(
+      service.listAuditEvents().filter((event) => event.type === "inference.escalated"),
+    ).toHaveLength(0);
+
+    const approved = service.approve(proposed.payload.id, {
+      payload_hash: proposed.payload.payload_hash,
+      approver_role: "admin",
+      approver_id: "admin-a",
+    });
+    if (!approved.ok) {
+      throw new Error(approved.error.message);
+    }
+    const executed = await service.execute(proposed.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      throw new Error(executed.error.message);
+    }
+    expect(sent).toEqual([{ type: "inference.escalate", user_ids: ["U1", "U2"] }]);
+    const delivered = service
+      .listAuditEvents()
+      .filter((event) => event.type === "inference.escalated");
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]?.details).toMatchObject({ trigger: "queue_depth", recipients: 2 });
+  });
+
+  it("refuses to propose when no admin can be reached on Slack", () => {
+    const service = new AdminBotService();
+    const proposed = service.proposeInferenceEscalation({
+      trigger: "health",
+      summary: "down",
+      details: {},
+      firedAt: "2026-09-12T10:00:00.000Z",
+    });
+    expect(proposed.ok).toBe(false);
   });
 });

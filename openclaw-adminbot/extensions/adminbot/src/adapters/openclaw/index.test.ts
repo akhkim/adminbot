@@ -42,6 +42,25 @@ describe("AdminBot tool handlers", () => {
     });
   });
 
+  it("returns a saved task with supported actions when privacy reasoning is shed", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      text: async () =>
+        JSON.stringify({
+          task: { id: "synthetic-task", status: "shed", actions: ["wait", "cancel"] },
+        }),
+    })) as FetchLike;
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+    expect(await tools.reason({ task: "Synthetic notes", privacy: "private" })).toMatchObject({
+      outcome: "task_status",
+      task: { id: "synthetic-task", status: "shed" },
+      user_message: expect.stringContaining("Ask the user whether to wait"),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps join form classification observational", async () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });

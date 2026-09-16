@@ -9,6 +9,7 @@ export async function handleLabSharingRoute(
   url: URL,
   service: AdminBotService,
   memberId: string,
+  submitQuestion?: (question: string) => Promise<void>,
 ): Promise<void> {
   if (url.pathname === "/lab-sharing/invites") {
     if (req.method === "GET") {
@@ -20,7 +21,9 @@ export async function handleLabSharingRoute(
       try {
         body = await readJson(req, 4096);
       } catch (error) {
-        if (!(error instanceof SyntaxError)) throw error;
+        if (!(error instanceof SyntaxError)) {
+          throw error;
+        }
         sendJson(res, 400, { error: { message: "Expected an invitation as JSON." } });
         return;
       }
@@ -33,7 +36,9 @@ export async function handleLabSharingRoute(
     try {
       body = await readJson(req, 4096);
     } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
       sendJson(res, 400, { error: { message: "Expected a question as JSON." } });
       return;
     }
@@ -43,7 +48,11 @@ export async function handleLabSharingRoute(
       sendJson(res, 400, { error: { message: "Enter a question of 1 to 1000 characters." } });
       return;
     }
-    sendJson(res, 200, await askMemberGuidebook(question.trim()));
+    if (submitQuestion) {
+      await submitQuestion(question.trim());
+    } else {
+      sendJson(res, 200, await askMemberGuidebook(question.trim()));
+    }
     return;
   }
   const detail = /^\/lab-sharing\/projects\/([^/]+)$/u.exec(url.pathname);
@@ -90,7 +99,9 @@ export async function handleLabSharingRoute(
     try {
       body = clear ? null : await readJson(req, 4096);
     } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
       sendJson(res, 400, { error: { message: "Expected valid JSON for a shared status." } });
       return;
     }

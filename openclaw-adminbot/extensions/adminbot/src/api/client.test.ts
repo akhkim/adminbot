@@ -213,4 +213,77 @@ describe("AdminBotClient", () => {
       message: expect.stringContaining("http://127.0.0.1:8765 is unreachable"),
     });
   });
+  it.each([202, 409, 410, 502])(
+    "preserves task handles from HTTP %s without choosing Wait or returning an answer",
+    async (status) => {
+      const state =
+        status === 202 ? "queued" : status === 409 ? "shed" : status === 410 ? "expired" : "failed";
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse(
+          {
+            task: {
+              id: "task-synthetic",
+              status: state,
+              actions: state === "shed" ? ["wait", "cancel"] : [],
+            },
+            error: { message: "Task status" },
+          },
+          status,
+        ),
+      );
+      const client = new AdminBotClient(
+        {
+          serviceBaseUrl: "http://127.0.0.1:8765",
+          allowInsecureRemoteService: false,
+          defaultDryRun: true,
+        },
+        fetchImpl,
+      );
+      const result = await client.runPrivacyTask({ task: "Synthetic input" });
+      expect(result).toMatchObject({
+        outcome: "task_status",
+        task: { id: "task-synthetic", status: state },
+        supported_actions: [
+          expect.objectContaining({ action: "status", path: "/tasks/task-synthetic" }),
+          ...(state === "shed"
+            ? [
+                expect.objectContaining({ action: "wait" }),
+                expect.objectContaining({ action: "cancel" }),
+              ]
+            : []),
+        ],
+      });
+      expect(result).not.toHaveProperty("output");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      if (state === "shed") {
+        expect(result).toHaveProperty(
+          "user_message",
+          expect.stringContaining("Ask the user whether to wait"),
+        );
+      }
+    },
+  );
+
+  it("retrieves the stored application result and only waits when called explicitly", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL) =>
+      String(input).endsWith("/result")
+        ? jsonResponse({ route: "local", output: "Synthetic final answer" })
+        : jsonResponse({ task: { id: "a/b", status: "queued", actions: ["cancel"] } }, 202),
+    );
+    const client = new AdminBotClient(
+      {
+        serviceBaseUrl: "http://127.0.0.1:8765",
+        allowInsecureRemoteService: false,
+        defaultDryRun: true,
+      },
+      fetchImpl,
+    );
+    await client.waitForTask("a/b");
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8765/tasks/a%2Fb/wait");
+    expect(await client.getTaskResult("a/b")).toEqual({
+      route: "local",
+      output: "Synthetic final answer",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });

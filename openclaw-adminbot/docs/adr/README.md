@@ -13,3 +13,4 @@ supersede with a new ADR instead.
 | [0005](0005-shared-is-the-helper-home.md)                        | src/shared is the helper home                                     | Accepted |
 | [0006](0006-deferred-monster-splits.md)                          | Deferred monster-file splits                                      | Accepted |
 | [0007](0007-adminbot-adopts-the-v2-taxonomy.md)                  | The AdminBot product tree adopts the v2 taxonomy                  | Accepted |
+| [0008](0008-the-task-runner-owns-the-request.md)                 | The task runner owns the request; the gate owns the model call    | Accepted |

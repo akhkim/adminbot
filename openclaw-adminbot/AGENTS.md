@@ -26,6 +26,12 @@ squashed sync commits, never as merges.
   social network without passing the approval gate.
 - **Unsupported action types fail closed.** Never record something as executed that no connector in
   `extensions/adminbot/src/connectors/` handled.
+- **Every call to the local model goes through the gate.** One vLLM serves the whole lab at
+  `--max-num-seqs 2`. A bare `fetch` to the GPU from a new caller re-creates the incident the gate
+  exists to prevent, so route it through `runGated` in `extensions/adminbot/src/inference/gate.ts`.
+  Work that spans more than one model call belongs on the task runner in
+  `extensions/adminbot/src/tasks/`, which owns the member's request rather than the call —
+  see [ADR-0008](docs/adr/0008-the-task-runner-owns-the-request.md).
 - **The Control UI access table is visibility, not security.** `ui/src/ui/adminbot/access.ts` hides
   tabs; the service re-checks every privileged route and the gateway enforces device scopes. A new
   privileged route needs a server-side check, not just a hidden tab.

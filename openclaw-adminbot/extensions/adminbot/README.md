@@ -111,6 +111,8 @@ under `workflows/`, one directory per domain feature.
 | `src/kernel/`            | `packages/kernel/`      | `service.ts` — propose → approve → execute → audit, policy, idempotency. Connector-agnostic.             |
 | `src/persistence/`       | `packages/persistence/` | The two `AdminBotServiceStore` implementations: `memory.ts` and `sqlite.ts` (the durable ledger).        |
 | `src/privacy/`           | `packages/privacy/`     | The redaction broker (`broker.ts`) and sensitive-term definitions (`sensitive-info-doc.ts`).             |
+| `src/inference/`         | (v1's own)              | The shared admission gate in front of the local model: capacity, the wait line, health, escalation.      |
+| `src/tasks/`             | (v1's own)              | The runner that owns a member's request across its stages -- checkpoints, ownership, results, recovery.  |
 | `src/api/`               | `apps/api/`             | `server.ts` — the loopback service, routes and auth gates. `client.ts` — the plugin-side client.         |
 | `src/adapters/openclaw/` | `adapters/openclaw/`    | The `adminbot_*` tool definitions the agent sees; thin wrappers over `api/client.ts`.                    |
 | `src/connectors/`        | `connectors/`           | Outbound vendor adapters; `composite.ts` dispatches an approved proposal, unhandled types fail closed.   |
@@ -157,7 +159,7 @@ between.
 
 ### `content/` (reviewed assets, not service source)
 
-| Directory                    | Role                                                                                                                                                                                                                                  | Pairs with                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Directory                    | Role                                                                                                                                                                                                            | Pairs with                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | `content/deadlines/`         | The canonical deadline dataset and board assets (`venues.json`, `dm-templates.json`, `deadlines-board.html`), refreshed by `scripts/adminbot-deadline-*.py`. Read by Python and shell as well as by TypeScript. | `src/workflows/deadlines/`  |
-| `content/onboarding-emails/` | Review notes only. The copy itself was folded into `src/workflows/onboarding/emails.ts` so a string ships with the service instead of being read off disk; the README keeps the decisions behind the copy.                            | `src/workflows/onboarding/` |
+| `content/onboarding-emails/` | Review notes only. The copy itself was folded into `src/workflows/onboarding/emails.ts` so a string ships with the service instead of being read off disk; the README keeps the decisions behind the copy.      | `src/workflows/onboarding/` |

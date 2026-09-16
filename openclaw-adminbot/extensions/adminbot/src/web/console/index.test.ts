@@ -51,7 +51,10 @@ describe("renderAdminBotWebUi", () => {
   it("keeps the session member only in a JS variable, never in web storage", () => {
     expect(html).toContain("let sessionMember = null");
     expect(html).not.toContain("localStorage");
-    expect(html).not.toContain("sessionStorage");
+    // Only the scoped anonymous visitor token is retained; member identity stays in memory.
+    expect(
+      [...html.matchAll(/sessionStorage\.setItem\(([^,]+)/gu)].map((match) => match[1]),
+    ).toEqual(['"adminbot.console.visitor"']);
   });
 
   it("renders a searchable roster picker for the claim flow that submits member_id", () => {
@@ -421,12 +424,12 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain('src="/deadlines"');
   });
 
-  it("drives the visitor reimbursement flow over the two anonymous routes only", () => {
+  it("drives visitor reimbursements and saved tasks with same-origin visitor cookies", () => {
     expect(html).toContain('fetch("/reimbursements/converse"');
     expect(html).toContain('fetch("/reimbursements/generate"');
     expect(html).toContain('id="reimb-form"');
     expect(html).toContain('id="reimb-generate"');
-    // No credentials on the anonymous path: the routes are open and carry no session.
+    // No member credential is added; same-origin fetch sends the scoped visitor cookie.
     const reimbursementBlock = html.slice(
       html.indexOf('fetch("/reimbursements/converse"'),
       html.indexOf('id="reimb-reset"'),

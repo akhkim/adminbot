@@ -129,3 +129,69 @@ describe("AdminBot privacy broker", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe("AdminBot privacy broker at a busy gate", () => {
+  it("surfaces a shed as the decision it is, with no fallback GPU call", async () => {
+    // The broker's classify catch used to turn *any* error into a full local run. A shed from the
+    // gate through that path would be a second request to the same busy GPU -- the exact
+    // duplication the gate exists to rule out.
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("../inference/gate.test-support.js");
+    const { InferenceDeferredError } = await import("../inference/gate.js");
+    const saturated = createSaturatedGate();
+    await settleMicrotasks();
+    const fetchImpl = vi.fn() as PrivacyBrokerFetch;
+    const audits: unknown[] = [];
+    const broker = createAdminBotPrivacyBroker(config, {
+      fetchImpl,
+      env,
+      gate: saturated.gate,
+      recordAudit: (event) => audits.push(event),
+    });
+
+    await expect(broker.handle({ task: "Explain merge sort" })).rejects.toBeInstanceOf(
+      InferenceDeferredError,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // No remote call either: the fail-closed rule says remote only after a local classification,
+    // and there was none.
+    expect(audits).toEqual([]);
+    expect(saturated.gate.stats().rows.shed).toBe(1);
+    saturated.release();
+  });
+
+  it("records a remote failure as an inference.failed event instead of swallowing it", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async (input) => {
+      call += 1;
+      if (String(input).includes("integrate.api.nvidia.com")) {
+        throw new Error("remote is down");
+      }
+      return call === 1
+        ? local({
+            classification: "generic",
+            sanitized_task: "Explain merge sort",
+            replacements: [],
+          })
+        : local("Local answer");
+    }) as PrivacyBrokerFetch;
+    const audits: Array<{ type: string; details?: Record<string, unknown> }> = [];
+    const broker = createAdminBotPrivacyBroker(config, {
+      fetchImpl,
+      env,
+      recordAudit: (event) => audits.push(event),
+    });
+    await expect(broker.handle({ task: "Explain merge sort" })).resolves.toEqual({
+      route: "local",
+      output: "Local answer",
+    });
+    expect(audits).toHaveLength(1);
+    // A code and the fallback taken -- never the message, which a remote or local model can fill
+    // with the task text it was given.
+    expect(audits[0]).toMatchObject({
+      type: "inference.failed",
+      details: { caller: "privacy_broker.remote", error_code: "Error", fallback: "local" },
+    });
+    expect(JSON.stringify(audits[0])).not.toContain("remote is down");
+  });
+});

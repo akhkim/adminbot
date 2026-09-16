@@ -27,7 +27,7 @@ afterEach(async () => {
     await new Promise<void>((resolve, reject) => {
       entry.mock.server.close((error) => (error ? reject(error) : resolve()));
     });
-    entry.mock.close();
+    await entry.mock.close();
     await rm(entry.sensitiveInfoPath, { force: true });
   }
 });
