@@ -26,6 +26,12 @@ export class AdminBotWaitPreference extends LitElement {
   @state() private value?: boolean;
   @state() private failed = false;
 
+  /** taskFetch does not add this; every authenticated caller supplies it, as task-history does. */
+  private auth(): Record<string, string> {
+    return this.sessionContext && this.sessionContext !== "visitor"
+      ? { Authorization: `Bearer ${this.sessionContext}` }
+      : {};
+  }
   private endpoint() {
     return `${this.baseUrl.replace(/\/$/u, "")}/inference/preferences`;
   }
@@ -40,7 +46,7 @@ export class AdminBotWaitPreference extends LitElement {
     }
     try {
       const response = await taskFetch(this.endpoint(), {
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", ...this.auth() },
       });
       if (!response.ok) {
         return;
@@ -58,7 +64,7 @@ export class AdminBotWaitPreference extends LitElement {
     try {
       const response = await taskFetch(this.endpoint(), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...this.auth() },
         body: JSON.stringify({ inference_always_wait: next }),
       });
       if (!response.ok) {
