@@ -29,6 +29,25 @@ function taskLabel(path: string): string {
 type TaskCopy = { state: string; detail?: string };
 
 /**
+ * A stable number per task, for the case where a member has more than one in flight.
+ *
+ * Two saved reimbursements render as two identical callouts otherwise, and pressing Wait on one
+ * of them is a guess. The number is assigned when the task is first seen and never reused, so it
+ * does not renumber when an earlier task finishes -- a label that moves under you is worse than
+ * no label. It is only shown when there is more than one to tell apart.
+ */
+const taskOrdinals = new Map<string, number>();
+function ordinalFor(id: string): number {
+  const existing = taskOrdinals.get(id);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const next = taskOrdinals.size + 1;
+  taskOrdinals.set(id, next);
+  return next;
+}
+
+/**
  * What a member reads. Assembled from the status alone, never from the server's error text.
  *
  * The earlier version concatenated a label, a raw status word and whatever message the service
@@ -215,80 +234,89 @@ export class AdminBotTaskStatus extends LitElement {
     super.disconnectedCallback();
   }
   override render() {
-    return html`${Array.from(taskActivities.values())
-      .filter((activity) => activity.task || activity.message)
-      .map((activity) => {
-        const label = taskLabel(activity.label);
-        const copy = activity.task
-          ? taskCopy(label, activity.task.status)
-          : {
-              state: `${label} disconnected`,
-              detail: "The connection dropped. Reconnecting picks up the same request.",
-            };
-        return html` <section class="callout" aria-label="Task progress">
-          <p role="status">${copy.state}</p>
-          ${copy.detail ? html`<p>${copy.detail}</p>` : ""}
-          ${!activity.task || activity.message?.startsWith("Connection lost")
-            ? html`<button class="btn" @click=${() => activity.act("status")}>Reconnect</button>`
-            : ""}
-          ${(activity.task?.actions ?? [])
-            .filter((action) => ["wait", "cancel", "retry"].includes(action))
-            .map(
-              (action) => html`
-                <button class="btn" @click=${() => activity.act(action)}>
-                  ${actionLabel(action)}
-                </button>
-              `,
-            )}
-          ${activity.task?.status === "shed"
-            ? html`<adminbot-wait-preference
-                .baseUrl=${this.baseUrl}
-                .sessionContext=${this.sessionContext}
-              ></adminbot-wait-preference>`
-            : ""}
-        </section>`;
-      })}
+    const live = Array.from(taskActivities.values()).filter(
+      (activity) => activity.task || activity.message,
+    );
+    const restored = this.recovered.filter((entry) => !entry.busy);
+    // Only number when there is something to tell apart.
+    const many = live.length + restored.length > 1;
+    return html`${live.map((activity) => {
+      const label = `${taskLabel(activity.label)}${
+        many && activity.task ? ` ${ordinalFor(activity.task.id)}` : ""
+      }`;
+      const copy = activity.task
+        ? taskCopy(label, activity.task.status)
+        : {
+            state: `${label} disconnected`,
+            detail: "The connection dropped. Reconnecting picks up the same request.",
+          };
+      return html` <section class="callout" aria-label="Task progress">
+        <p role="status">${copy.state}</p>
+        ${copy.detail ? html`<p>${copy.detail}</p>` : ""}
+        ${!activity.task || activity.message?.startsWith("Connection lost")
+          ? html`<button class="btn" @click=${() => activity.act("status")}>Reconnect</button>`
+          : ""}
+        ${(activity.task?.actions ?? [])
+          .filter((action) => ["wait", "cancel", "retry"].includes(action))
+          .map(
+            (action) => html`
+              <button class="btn" @click=${() => activity.act(action)}>
+                ${actionLabel(action)}
+              </button>
+            `,
+          )}
+        ${activity.task?.status === "shed"
+          ? html`<adminbot-wait-preference
+              .baseUrl=${this.baseUrl}
+              .sessionContext=${this.sessionContext}
+            ></adminbot-wait-preference>`
+          : ""}
+      </section>`;
+    })}
     ${this.historyError
       ? html`<p role="status">
           ${this.historyError} <button class="btn" @click=${() => this.restore()}>Reconnect</button>
         </p>`
       : ""}
-    ${this.recovered
-      .filter((entry) => !entry.busy)
-      .map(
-        (entry) => html`
-          <section class="callout" aria-label="Recovered task">
-            <p>${taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).state}</p>
-            ${(() => {
-              const detail =
-                entry.error ?? taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).detail;
-              return detail ? html`<p role=${entry.error ? "alert" : "status"}>${detail}</p>` : "";
-            })()}
-            ${entry.result !== undefined
-              ? html`
-                  <p
-                    style="white-space:pre-wrap;overflow-wrap:anywhere"
-                    .textContent=${applicationResultSummary(entry.result)}
-                  ></p>
-                  <a
-                    class="btn"
-                    download=${`task-${entry.task.id}-result.json`}
-                    href=${`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(entry.result, null, 2))}`}
-                    >Download result</a
-                  >
-                `
-              : (entry.task.actions ?? [])
-                  .filter((action) => ["wait", "cancel", "retry", "result"].includes(action))
-                  .map(
-                    (action) => html`
-                      <button class="btn" @click=${() => this.resume(entry, action)}>
-                        ${actionLabel(action)}
-                      </button>
-                    `,
-                  )}
-          </section>
-        `,
-      )} `;
+    ${restored.map(
+      (entry) => html`
+        <section class="callout" aria-label="Recovered task">
+          <p>
+            ${taskCopy(
+              `${taskLabel(entry.task.kind ?? "")}${many ? ` ${ordinalFor(entry.task.id)}` : ""}`,
+              entry.task.status,
+            ).state}
+          </p>
+          ${(() => {
+            const detail =
+              entry.error ?? taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).detail;
+            return detail ? html`<p role=${entry.error ? "alert" : "status"}>${detail}</p>` : "";
+          })()}
+          ${entry.result !== undefined
+            ? html`
+                <p
+                  style="white-space:pre-wrap;overflow-wrap:anywhere"
+                  .textContent=${applicationResultSummary(entry.result)}
+                ></p>
+                <a
+                  class="btn"
+                  download=${`task-${entry.task.id}-result.json`}
+                  href=${`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(entry.result, null, 2))}`}
+                  >Download result</a
+                >
+              `
+            : (entry.task.actions ?? [])
+                .filter((action) => ["wait", "cancel", "retry", "result"].includes(action))
+                .map(
+                  (action) => html`
+                    <button class="btn" @click=${() => this.resume(entry, action)}>
+                      ${actionLabel(action)}
+                    </button>
+                  `,
+                )}
+        </section>
+      `,
+    )} `;
   }
 }
 if (!customElements.get("adminbot-task-status")) {
