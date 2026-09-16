@@ -1,32 +1,15 @@
 /**
- * The durable half of the inference gate: one SQLite row per request, from arrival to the end.
+ * SQLite storage for inference requests. The gate pairs transitions with audit events
+ * in one transaction.
  *
- * Every state change here is one transaction that writes the row and its audit event together, so
- * the audit table can never say a request completed that the queue table says is still running, and
- * a crash between the two cannot leave a request with no record of what happened to it. That pairing
- * is what the load simulation reconciles against, and it only holds if no code path writes one
- * without the other -- which is why nothing outside this module touches the table.
+ * arrival -> running | queued | shed
+ * shed -> queued; queued -> running
+ * running -> completed | failed; queued -> failed (cancellation)
+ * queued | shed -> expired
  *
- * The states, and the only moves between them:
- *
- *   arrival --> running   (a slot was free)
- *   arrival --> queued    (the member is waiting for a slot)
- *   arrival --> shed      (no slot; the body is kept so the member can choose to wait later)
- *   shed    --> queued    (the member chose to wait)
- *   queued  --> running   (a slot freed; the claim is atomic)
- *   running --> completed | failed
- *   queued | shed --> expired
- *   running --> failed    (found running at startup: the process that held the claim died)
- *
- * `completed`, `failed` and `expired` are terminal and each is written exactly once. `shed` is not
- * terminal -- it is "awaiting the member's choice" -- so a request that is shed, then waited for,
- * then answered has one terminal event, not two.
- *
- * Request bodies and results are the private content of the lab (CVs, receipts, tasks). They are
- * stored so a shed request can be resumed without re-sending, and they are stripped by the retention
- * sweep once nobody could plausibly still come back for them. This is logical deletion: SQLite does
- * not zero freed pages and the WAL keeps recent content until checkpoint, so the write-up describes
- * it as such rather than as erasure.
+ * Recovery fails interrupted running rows rather than replaying them. Shed is nonterminal.
+ * Retention removes request, result, and error content from terminal rows; SQLite pages,
+ * WAL files, and backups may still contain it.
  */
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -42,15 +25,7 @@ export type InferenceFailureKind =
   | "interrupted"
   | `http_${number}`;
 
-/**
- * What the gate needs to make the call, and nothing it must not keep.
- *
- * No credential is stored. `apiKeyEnv` names the variable to read at dispatch, so a row re-admitted
- * after a restart authenticates with whatever the environment holds then, and a database copy
- * carries no bearer token. A caller that already holds its key hands it to the gate beside the
- * request (`InferenceGateRequest.apiKey`), where it lives in process memory for the life of the
- * call and no longer.
- */
+/** Store the credential variable name, never its value. Recovery resolves it from the new process environment. */
 export type InferenceRequestRecord = {
   route: "chat/completions" | "embeddings";
   baseUrl: string;
@@ -116,9 +91,10 @@ type AuditInput = {
   details: Record<string, unknown>;
 };
 
-export function ensureInferenceQueueSchema(db: DatabaseSync): void {
+export function ensureInferenceQueueSchema(db: DatabaseSync, temporary = false): void {
+  const schema = temporary ? "temp" : "main";
   db.exec(`
-    CREATE TABLE IF NOT EXISTS adminbot_inference_queue (
+    CREATE ${temporary ? "TEMP " : ""}TABLE IF NOT EXISTS adminbot_inference_queue (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL,
       submission_key TEXT NOT NULL,
@@ -146,21 +122,16 @@ export function ensureInferenceQueueSchema(db: DatabaseSync): void {
     );
 
     -- The wait line is read in arrival-to-the-line order, and the sweep reads by status.
-    CREATE INDEX IF NOT EXISTS adminbot_inference_queue_status_idx
+    CREATE INDEX IF NOT EXISTS ${schema}.adminbot_inference_queue_status_idx
       ON adminbot_inference_queue(status, queued_at, arrived_at);
 
     -- "Did this task's final step complete" is answered per (owner, task).
-    CREATE INDEX IF NOT EXISTS adminbot_inference_queue_task_idx
+    CREATE INDEX IF NOT EXISTS ${schema}.adminbot_inference_queue_task_idx
       ON adminbot_inference_queue(owner_id, stage_task, stage_final, status);
 
-    -- A member's retry must find the row it made, not make another. Partial, so the key is reserved
-    -- exactly as long as the row still carries its body: live rows always, finished rows -- completed,
-    -- failed, expired alike -- until the retention sweep strips them. A failed row that lost its key
-    -- reservation the moment it failed was the hole: a timeout, a lost response, and a retry under
-    -- the same key ran the request twice. Once the sweep has stripped a row the same key may be
-    -- submitted again; at that point it is a resubmission, and the new row says so by being new.
-    DROP INDEX IF EXISTS adminbot_inference_queue_submission_idx;
-    CREATE UNIQUE INDEX IF NOT EXISTS adminbot_inference_queue_submission_v2_idx
+    -- Reserve keys for active rows and retained terminal rows. Purging the request releases the key.
+    DROP INDEX IF EXISTS ${schema}.adminbot_inference_queue_submission_idx;
+    CREATE UNIQUE INDEX IF NOT EXISTS ${schema}.adminbot_inference_queue_submission_v2_idx
       ON adminbot_inference_queue(owner_id, submission_key)
       WHERE status IN ('queued', 'shed', 'running') OR request_json IS NOT NULL;
 
@@ -186,8 +157,9 @@ type RawRow = Omit<InferenceQueueRow, "request" | "result" | "stage" | "result_r
 };
 
 export class InferenceQueueStore {
-  constructor(private readonly db: DatabaseSync) {
-    ensureInferenceQueueSchema(db);
+  constructor(private readonly db: DatabaseSync, temporary = false) {
+    // TEMP queue rows disappear with the connection; audit and preferences remain in main.
+    ensureInferenceQueueSchema(db, temporary);
   }
 
   /** Runs `fn` in one transaction. Nested calls join the outer one rather than opening a second. */
@@ -400,6 +372,12 @@ export class InferenceQueueStore {
       )
       .run(at, kind, error.slice(0, 500), json, json ? Buffer.byteLength(json) : 0, id);
     return changed.changes === 1;
+  }
+
+  cancelPending(id: string, at: string): boolean {
+    return this.db.prepare(`UPDATE adminbot_inference_queue
+      SET status = 'failed', finished_at = ?, outcome = 'cancelled', error = 'Cancelled by operator'
+      WHERE id = ? AND status IN ('queued', 'shed')`).run(at, id).changes === 1;
   }
 
   expire(id: string, at: string): boolean {

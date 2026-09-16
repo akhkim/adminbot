@@ -1,16 +1,13 @@
 /**
- * Knobs for the shared inference gate, read from the environment.
- *
- * Environment rather than `AdminBotSettings`, on the precedent of ADMINBOT_WORKSHOP_MATCH_CONCURRENCY
- * and ADMINBOT_LOCAL_BASE_URL: every value here describes the GPU deployment the service is sitting
- * in front of -- how many sequences vLLM admits, how long a body may wait for it, how many failed
- * health probes mean it is gone -- and that is decided by whoever runs the unit, at deploy time, in
- * the same file that sets the model URL. `AdminBotSettings` is lab policy an administrator edits in
- * the UI (who the head professor is, where reimbursements go); a capacity figure there would let a
- * settings edit quietly oversubscribe the GPU and reproduce the incident this module exists to stop.
+ * Deployment settings for the shared inference gate. Environment variables follow the
+ * existing model URL and concurrency configuration; member wait preferences live in SQLite.
  */
 
 export type InferenceGateConfig = {
+  /** Opt-in persistence: the service runner recovers tasks; standalone gates recover model calls. */
+  persistAcrossRestarts: boolean;
+  startPaused: boolean;
+  shutdownGraceMs: number;
   /** Requests in flight to the local model. Anything past this queues here, not inside vLLM. */
   capacity: number;
   /** The model's time budget once admitted, for callers that do not name their own. */
@@ -49,14 +46,14 @@ export type InferenceGateConfig = {
   };
 };
 
-/**
- * Two, because that is what the server admits: Aurora's vLLM runs with `--max-num-seqs 2`
- * (deploy/aurora/setup-qwen35-vllm.sh). More than two in flight does not run faster; it queues
- * inside vLLM with the timeout already ticking, which is the recorded incident.
- */
+/** Matches the deployment script's vLLM --max-num-seqs 2. */
 export const DEFAULT_INFERENCE_CAPACITY = 2;
 
 export const DEFAULT_INFERENCE_GATE_CONFIG: InferenceGateConfig = {
+  persistAcrossRestarts: false,
+  startPaused: false,
+  // Allow admitted work up to six minutes to finish during shutdown.
+  shutdownGraceMs: 360_000,
   capacity: DEFAULT_INFERENCE_CAPACITY,
   // The matcher's first-attempt budget, which is the longest any caller here has needed.
   defaultTimeoutMs: 120_000,
@@ -89,77 +86,93 @@ export const DEFAULT_INFERENCE_GATE_CONFIG: InferenceGateConfig = {
 };
 
 const ENV_PREFIX = "ADMINBOT_INFERENCE_";
+const MAX_TIMER_MS = 2_147_483_647;
 
-/**
- * The configured gate, from `ADMINBOT_INFERENCE_*` with the defaults above underneath.
- *
- * ADMINBOT_WORKSHOP_MATCH_CONCURRENCY is honored as the capacity when the newer variable is unset,
- * because a deployment that raised it did so for the reason this gate exists and should not have to
- * learn a second name for the same number.
- */
+/** Read deployment settings, retaining the legacy matcher concurrency fallback. */
 export function resolveInferenceGateConfig(
   env: NodeJS.ProcessEnv = process.env,
-  overrides: DeepPartial<InferenceGateConfig> = {},
 ): InferenceGateConfig {
-  const read = (suffix: string, fallback: number, minimum = 0): number => {
+  const read = (
+    suffix: string,
+    fallback: number,
+    minimum = 0,
+    maximum = Number.MAX_SAFE_INTEGER,
+  ): number => {
     const raw = env[`${ENV_PREFIX}${suffix}`];
     const parsed = raw === undefined || raw.trim() === "" ? Number.NaN : Number(raw);
-    return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
+    return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
+      ? parsed
+      : fallback;
   };
+  const timer = (suffix: string, fallback: number, minimum = 0): number =>
+    read(suffix, fallback, minimum, MAX_TIMER_MS);
+  const defaults = DEFAULT_INFERENCE_GATE_CONFIG;
   const legacyConcurrency = Number(env.ADMINBOT_WORKSHOP_MATCH_CONCURRENCY);
   const capacityFallback =
-    Number.isInteger(legacyConcurrency) && legacyConcurrency > 0
+    Number.isSafeInteger(legacyConcurrency) && legacyConcurrency > 0
       ? legacyConcurrency
-      : DEFAULT_INFERENCE_GATE_CONFIG.capacity;
-  const defaults = DEFAULT_INFERENCE_GATE_CONFIG;
-  const resolved: InferenceGateConfig = {
-    capacity: Math.max(1, Math.floor(read("CAPACITY", capacityFallback, 1))),
-    defaultTimeoutMs: read("DEFAULT_TIMEOUT_MS", defaults.defaultTimeoutMs, 1),
+      : defaults.capacity;
+  return {
+    persistAcrossRestarts: /^(1|true)$/iu.test(env.ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS?.trim() ?? ""),
+    startPaused: /^(1|true)$/iu.test(env.ADMINBOT_INFERENCE_START_PAUSED?.trim() ?? ""),
+    shutdownGraceMs: timer("SHUTDOWN_GRACE_MS", defaults.shutdownGraceMs),
+    capacity: read("CAPACITY", capacityFallback, 1),
+    defaultTimeoutMs: timer("DEFAULT_TIMEOUT_MS", defaults.defaultTimeoutMs, 1),
     queue: {
-      maxDepth: Math.floor(read("QUEUE_MAX_DEPTH", defaults.queue.maxDepth)),
+      maxDepth: read("QUEUE_MAX_DEPTH", defaults.queue.maxDepth),
       maxAgeMs: read("QUEUE_MAX_AGE_MS", defaults.queue.maxAgeMs),
       retentionMs: read("QUEUE_RETENTION_MS", defaults.queue.retentionMs),
-      sweepIntervalMs: read("QUEUE_SWEEP_INTERVAL_MS", defaults.queue.sweepIntervalMs),
+      sweepIntervalMs: timer("QUEUE_SWEEP_INTERVAL_MS", defaults.queue.sweepIntervalMs),
       maxPayloadBytes: read("QUEUE_MAX_PAYLOAD_BYTES", defaults.queue.maxPayloadBytes),
       maxRetainedBytes: read("QUEUE_MAX_RETAINED_BYTES", defaults.queue.maxRetainedBytes),
     },
     health: {
-      intervalMs: read("HEALTH_INTERVAL_MS", defaults.health.intervalMs),
-      timeoutMs: read("HEALTH_TIMEOUT_MS", defaults.health.timeoutMs, 1),
-      failureThreshold: Math.max(
-        1,
-        Math.floor(read("HEALTH_FAILURE_THRESHOLD", defaults.health.failureThreshold, 1)),
-      ),
+      intervalMs: timer("HEALTH_INTERVAL_MS", defaults.health.intervalMs),
+      timeoutMs: timer("HEALTH_TIMEOUT_MS", defaults.health.timeoutMs, 1),
+      failureThreshold: read("HEALTH_FAILURE_THRESHOLD", defaults.health.failureThreshold, 1),
       staleAfterMs: read("HEALTH_STALE_AFTER_MS", defaults.health.staleAfterMs),
     },
     escalate: {
       queueAgeMs: read("ESCALATE_QUEUE_AGE_MS", defaults.escalate.queueAgeMs),
-      queueDepth: Math.floor(read("ESCALATE_QUEUE_DEPTH", defaults.escalate.queueDepth)),
-      healthFailures: Math.max(
-        1,
-        Math.floor(read("ESCALATE_HEALTH_FAILURES", defaults.escalate.healthFailures, 1)),
-      ),
+      queueDepth: read("ESCALATE_QUEUE_DEPTH", defaults.escalate.queueDepth),
+      healthFailures: read("ESCALATE_HEALTH_FAILURES", defaults.escalate.healthFailures, 1),
     },
-  };
-  return {
-    ...resolved,
-    ...(overrides.capacity !== undefined ? { capacity: Math.max(1, overrides.capacity) } : {}),
-    ...(overrides.defaultTimeoutMs !== undefined
-      ? { defaultTimeoutMs: Math.max(1, overrides.defaultTimeoutMs) }
-      : {}),
-    queue: { ...resolved.queue, ...stripUndefined(overrides.queue) },
-    health: { ...resolved.health, ...stripUndefined(overrides.health) },
-    escalate: { ...resolved.escalate, ...stripUndefined(overrides.escalate) },
   };
 }
 
-export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
-
-function stripUndefined<T extends object>(value: T | undefined): Partial<T> {
-  if (!value) {
-    return {};
+/** Direct callers supply complete configs; reject invalid limits before opening the gate. */
+export function validateInferenceGateConfig(config: InferenceGateConfig): void {
+  const integer = (name: string, value: number, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) => {
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+      throw new RangeError(
+        `Inference gate ${name} must be an integer from ${minimum} to ${maximum}`,
+      );
+    }
+  };
+  if (typeof config.persistAcrossRestarts !== "boolean") {
+    throw new TypeError("Inference gate persistAcrossRestarts must be a boolean");
   }
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as Partial<T>;
+  if (typeof config.startPaused !== "boolean") {
+    throw new TypeError("Inference gate startPaused must be a boolean");
+  }
+  integer("capacity", config.capacity, 1);
+  integer("shutdownGraceMs", config.shutdownGraceMs, 0, MAX_TIMER_MS);
+  integer("defaultTimeoutMs", config.defaultTimeoutMs, 1, MAX_TIMER_MS);
+  for (const key of [
+    "maxDepth",
+    "maxAgeMs",
+    "retentionMs",
+    "maxPayloadBytes",
+    "maxRetainedBytes",
+  ] as const) {
+    integer(`queue.${key}`, config.queue[key]);
+  }
+  integer("queue.sweepIntervalMs", config.queue.sweepIntervalMs, 0, MAX_TIMER_MS);
+  integer("health.intervalMs", config.health.intervalMs, 0, MAX_TIMER_MS);
+  integer("health.timeoutMs", config.health.timeoutMs, 1, MAX_TIMER_MS);
+  integer("health.failureThreshold", config.health.failureThreshold, 1);
+  integer("health.staleAfterMs", config.health.staleAfterMs);
+  integer("escalate.queueAgeMs", config.escalate.queueAgeMs);
+  integer("escalate.queueDepth", config.escalate.queueDepth);
+  integer("escalate.healthFailures", config.escalate.healthFailures, 1);
 }
