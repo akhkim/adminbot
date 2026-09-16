@@ -807,7 +807,11 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
   const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
   const cvDigestPublisher = createCvDigestPublisher();
   return createAdminBotMockService({
-    databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
+    // The deployment reads state/adminbot.sqlite. The override exists so a reviewer can run the
+    // real service and UI over a generated fixture without a file anywhere near the live one --
+    // scripts/adminbot-fixture-db.ts refuses to write under state/ for the same reason.
+    databasePath:
+      process.env.ADMINBOT_DATABASE_PATH?.trim() || path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
     executor: createCompositeAdminBotExecutor([
       createAdminBotOverleafExecutor(),
