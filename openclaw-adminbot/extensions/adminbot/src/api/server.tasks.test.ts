@@ -385,3 +385,43 @@ it("allows credentialed visitor bootstrap only from approved UI origins", async 
   expect(denied.headers.get("x-adminbot-visitor")).toBeNull();
   expect(app.taskRuntime.metrics().total).toBe(0);
 });
+
+it("counts a visitor's Wait and retry against the anonymous rate limit", async () => {
+  // The task routes are resolved before the anonymous allowlist and its limiter, so without an
+  // explicit check a visitor could bootstrap once, submit one turn, and then retry that row
+  // without limit -- unbounded inference against a GPU the whole lab shares, from an endpoint
+  // whose only abuse control is that limiter.
+  const app = createAdminBotMockService({
+    serviceToken: "synthetic-test-token",
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsFormRunner: async () => {},
+  });
+  cleanups.push(() => app.close());
+  const base = await serve(app.server);
+  const bootstrap = await fetch(`${base}/tasks/visitor`, { method: "POST" });
+  const visitor = { "X-AdminBot-Visitor": bootstrap.headers.get("x-adminbot-visitor")! };
+
+  // 60 per hour per address, one of which the bootstrap above already spent.
+  let refusedAt = 0;
+  for (let attempt = 1; attempt <= 61 && !refusedAt; attempt += 1) {
+    const response = await fetch(`${base}/tasks/synthetic-missing-id/wait`, {
+      method: "POST",
+      headers: visitor,
+    });
+    if (response.status === 429) {
+      refusedAt = attempt;
+    }
+  }
+  expect(refusedAt).toBeGreaterThan(0);
+
+  // Reads stay open: they spend no model time, and the UI polls status while a task runs.
+  expect((await fetch(`${base}/tasks`, { headers: visitor })).status).toBe(200);
+
+  // A member is authenticated, so the anonymous budget is not theirs to exhaust.
+  const member = { Authorization: "Bearer synthetic-test-token" };
+  expect(
+    (await fetch(`${base}/tasks/synthetic-missing-id/retry`, { method: "POST", headers: member }))
+      .status,
+  ).toBe(404);
+});
