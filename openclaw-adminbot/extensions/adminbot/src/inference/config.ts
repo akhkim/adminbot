@@ -15,6 +15,12 @@ export type InferenceGateConfig = {
   queue: {
     /** Waiting rows past this are shed even for members who asked to always wait. */
     maxDepth: number;
+    /**
+     * One owner's share of the waiting line, counting their queued and running tasks. Past it a
+     * task is shed rather than refused, so the owner keeps a row and a Wait. Service and system
+     * owners share a single identity each, so this bounds a fleet, not one agent.
+     */
+    maxPerOwner: number;
     /** A request older than this is never admitted; it expires with a "resubmit" status. */
     maxAgeMs: number;
     /** How long a finished row keeps its request and result bodies before the sweep strips them. */
@@ -61,6 +67,9 @@ export const DEFAULT_INFERENCE_GATE_CONFIG: InferenceGateConfig = {
     // Sixteen per slot. A deeper line is minutes of waiting at the model's real latency, and a
     // member told "32 ahead of you" is better served by "try later" than by a place in it.
     maxDepth: 32,
+    // Eight owners can hold a share each before the line is full, which is the mix a roster of
+    // this size produces. A member with a fifth question is told to wait, not turned away.
+    maxPerOwner: 4,
     maxAgeMs: 60 * 60 * 1000,
     // Bodies are CVs, receipts and private tasks. They stay only as long as a member could plausibly
     // still come back for the answer; the row's status metadata stays after.
@@ -120,6 +129,7 @@ export function resolveInferenceGateConfig(
     defaultTimeoutMs: timer("DEFAULT_TIMEOUT_MS", defaults.defaultTimeoutMs, 1),
     queue: {
       maxDepth: read("QUEUE_MAX_DEPTH", defaults.queue.maxDepth),
+      maxPerOwner: read("QUEUE_MAX_PER_OWNER", defaults.queue.maxPerOwner, 1),
       maxAgeMs: read("QUEUE_MAX_AGE_MS", defaults.queue.maxAgeMs),
       retentionMs: read("QUEUE_RETENTION_MS", defaults.queue.retentionMs),
       sweepIntervalMs: timer("QUEUE_SWEEP_INTERVAL_MS", defaults.queue.sweepIntervalMs),
@@ -158,6 +168,7 @@ export function validateInferenceGateConfig(config: InferenceGateConfig): void {
   integer("capacity", config.capacity, 1);
   integer("shutdownGraceMs", config.shutdownGraceMs, 0, MAX_TIMER_MS);
   integer("defaultTimeoutMs", config.defaultTimeoutMs, 1, MAX_TIMER_MS);
+  integer("queue.maxPerOwner", config.queue.maxPerOwner, 1);
   for (const key of [
     "maxDepth",
     "maxAgeMs",

@@ -212,6 +212,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     );
   });
 
+let shedAtBurst = 0;
+let sharePerOwner = 0;
 async function runSmoke() {
   type Payload = { task?: { id: string; status: string }; route?: string; output?: string };
   const request = async (
@@ -290,13 +292,37 @@ async function runSmoke() {
   );
   await request("/inference/resume", "POST");
   assert(!calls.some((call) => call.task === "Synthetic cancelled"));
+  // One caller bursting past their share of the line. Everything over it is saved rather than
+  // refused, so the client's job is to come back for those rows -- which is what a member does
+  // by pressing Wait, and what this loop stands in for. Nothing is resubmitted: each retry
+  // carries the same submission key and reaches the same row.
   const burstSize = 12;
+  const share = service.taskRuntime.metrics().maxInFlightPerOwner;
   const burst = await Promise.all(
     Array.from({ length: burstSize }, (_, i) => submit(`Synthetic burst ${i}`, `burst-${i}`, true)),
   );
+  const ids = burst.map((response) => {
+    assert(response.body.task, "Every burst submission keeps a task row");
+    return response.body.task.id;
+  });
+  sharePerOwner = share;
+  shedAtBurst = burst.filter((response) => response.body.task?.status === "shed").length;
+  assert(shedAtBurst > 0, `A burst of ${burstSize} past a share of ${share} must shed`);
+  await until(async () => {
+    let outstanding = 0;
+    for (const id of ids) {
+      const status = (await request(`/tasks/${id}`)).body.task?.status;
+      if (status === "completed") continue;
+      outstanding += 1;
+      // Wait is idempotent on a row that is already queued or running, so a client that polls
+      // cannot turn one request into two.
+      if (status === "shed") await request(`/tasks/${id}/wait`, "POST");
+    }
+    return outstanding === 0;
+  }, "Burst tasks did not all finish", 60_000);
   const outputs = await Promise.all(
-    burst.map(async (response, i) => {
-      const result = response.body.task ? await final(response.body.task.id) : response.body;
+    ids.map(async (id, i) => {
+      const result = await final(id);
       assert.deepEqual(result, {
         route: "local",
         output: `Completed synthetic result: Synthetic burst ${i}`,
@@ -305,14 +331,16 @@ async function runSmoke() {
     }),
   );
   assert.equal(new Set(outputs).size, burstSize);
+  assert.equal(new Set(ids).size, burstSize);
   assert.equal(peak, 1);
+  // Two calls per task and not one more: shedding and re-Waiting a row never re-ran its work.
   assert.equal(calls.length, 4 + burstSize * 2);
   const beforeShutdown = service.taskRuntime.metrics();
   assert.equal(beforeShutdown.completed, burstSize + 2);
   assert.equal(beforeShutdown.cancelled, 1);
   assert.equal(beforeShutdown.total, burstSize + 3);
   console.log(
-    `PASS ${burstSize} concurrent distinct tasks, ${burstSize * 2} model calls, peak ${peak}/1; cancelled task made zero calls.`,
+    `PASS ${burstSize} distinct tasks past a per-owner share of ${share}: ${shedAtBurst} saved and resumed, ${burstSize * 2} model calls, peak ${peak}/1, no duplicate work; cancelled task made zero calls.`,
   );
   await request(`${modelUrl}/demo/hold`, "POST");
   const interrupted = await submit("Synthetic shutdown", "shutdown");
@@ -342,6 +370,8 @@ async function runSmoke() {
       pause_blocks_dispatch: true,
       selected_task_cancellation: true,
       burst_distinct_results: burstSize,
+      burst_shed_then_resumed: shedAtBurst,
+      task_share_per_owner: sharePerOwner,
       model_capacity: 1,
       observed_model_peak: peak,
       live_shutdown_grace_ms: 100,

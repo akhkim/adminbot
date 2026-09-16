@@ -776,6 +776,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     db: taskDb,
     persist: persistTasks,
     maxQueued: inferenceConfig.queue.maxDepth,
+    maxInFlightPerOwner: inferenceConfig.queue.maxPerOwner,
     maxInputBytes: inferenceConfig.queue.maxPayloadBytes,
     maxResultBytes: inferenceConfig.queue.maxPayloadBytes,
     maxRetainedBytes: inferenceConfig.queue.maxRetainedBytes,
