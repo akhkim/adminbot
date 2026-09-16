@@ -1923,7 +1923,7 @@ export function adminBotConsoleScript(): string {
 
     // Reimbursement over the two open routes. The service treats this principal as anonymous and
     // lets it reach nothing else, so the packet it builds only ever contains what was typed here.
-    const reimbursement = { messages: [], draft: {}, ready: false };
+    const reimbursement = { messages: [], draft: {}, ready: false, taskId: null, pollTimer: null, visitorToken: null, pendingTurn: null };
 
     function renderReimbursementLog() {
       document.getElementById("reimb-log").innerHTML = reimbursement.messages
@@ -1934,11 +1934,102 @@ export function adminBotConsoleScript(): string {
         .join("") || '<p class="subtle">Describe the expense to get started.</p>';
     }
 
+    async function prepareReimbursementVisitor() {
+      if (reimbursement.visitorToken) return;
+      let stored = null;
+      try { stored = sessionStorage.getItem("adminbot.console.visitor"); } catch {}
+      const response = await fetch("/tasks/visitor", { method: "POST", headers: stored ? { "X-AdminBot-Visitor": stored } : {} });
+      if (!response.ok) throw new Error("Could not establish the visitor session. No task was submitted.");
+      const token = response.headers.get("X-AdminBot-Visitor");
+      if (!token) throw new Error("Visitor session response was incomplete. No task was submitted.");
+      reimbursement.visitorToken = token;
+      try { sessionStorage.setItem("adminbot.console.visitor", token); } catch {}
+    }
+
+    async function submitReimbursementTurn() {
+      const pending = reimbursement.pendingTurn;
+      if (!pending) return;
+      try {
+        await prepareReimbursementVisitor();
+        const response = await fetch("/reimbursements/converse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "Idempotency-Key": pending.key, "X-AdminBot-Visitor": reimbursement.visitorToken },
+          body: pending.input
+        });
+        const payload = await response.json();
+        if (!response.ok && !payload.task) throw new Error(payload?.error?.message || "Could not reach AdminBot.");
+        reimbursement.pendingTurn = null;
+        await applyReimbursementResponse(payload);
+      } catch (error) {
+        setStatus("reimb-status", error.message + " Your request is retained for reconnecting.", "error");
+        const reconnect = document.createElement("button");
+        reconnect.type = "button";
+        reconnect.textContent = "Reconnect saved request";
+        reconnect.addEventListener("click", () => { reconnect.disabled = true; void submitReimbursementTurn(); });
+        document.getElementById("reimb-status").appendChild(reconnect);
+      }
+    }
+
+    async function applyReimbursementResponse(payload) {
+      clearTimeout(reimbursement.pollTimer);
+      const task = payload && payload.task;
+      if (task && typeof task.id === "string" && typeof task.status === "string") {
+        reimbursement.taskId = task.id;
+        const taskPath = "/tasks/" + encodeURIComponent(task.id);
+        if (task.status === "completed") {
+          await readReimbursementTask(taskPath + "/result", "GET", task.id);
+          return;
+        }
+        setStatus("reimb-status", "Task " + task.status.replaceAll("_", " ") + ". " + (task.status === "shed" ? "Your input is saved. Choose Wait to run it." : (task.error || "")), "");
+        const status = document.getElementById("reimb-status");
+        const actions = Array.isArray(task.actions) ? task.actions : [];
+        for (const action of ["wait", "retry", "cancel"]) {
+          if (!actions.includes(action)) continue;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = action === "wait" ? "Wait" : action === "retry" ? "Retry" : "Cancel task";
+          button.addEventListener("click", () => { button.disabled = true; void readReimbursementTask(taskPath + "/" + action, "POST", task.id); });
+          status.appendChild(button);
+        }
+        const refresh = document.createElement("button");
+        refresh.type = "button";
+        refresh.textContent = "Refresh task status";
+        refresh.addEventListener("click", () => { void readReimbursementTask(taskPath, "GET", task.id); });
+        status.appendChild(refresh);
+        if (task.status === "queued" || task.status === "running") {
+          reimbursement.pollTimer = setTimeout(() => { void readReimbursementTask(taskPath, "GET", task.id); }, 1000);
+        }
+        return;
+      }
+      reimbursement.taskId = null;
+      reimbursement.draft = payload.draft || reimbursement.draft;
+      reimbursement.ready = payload.ready === true;
+      reimbursement.messages.push({ role: "adminbot", text: payload.assistant_message || payload.reply || "" });
+      renderReimbursementLog();
+      setStatus("reimb-status", reimbursement.ready ? "Ready to generate." : "", "");
+    }
+
+    async function readReimbursementTask(path, method, id) {
+      if (reimbursement.taskId !== id) return;
+      try {
+        // Same-origin visitor HttpOnly cookie authorizes only this visitor's tasks.
+        const response = await fetch(path, { method, headers: { Accept: "application/json", ...(reimbursement.visitorToken ? { "X-AdminBot-Visitor": reimbursement.visitorToken } : {}) } });
+        const payload = await response.json();
+        if (reimbursement.taskId !== id) return;
+        if (!response.ok && !payload.task) throw new Error(payload?.error?.message || "Could not read the saved task.");
+        await applyReimbursementResponse(payload);
+      } catch (error) {
+        setStatus("reimb-status", error.message, "error");
+      }
+    }
+
     document.getElementById("reimb-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
       const message = String(formData(form).message || "").trim();
       if (!message) return;
+      clearTimeout(reimbursement.pollTimer);
+      reimbursement.taskId = null;
       reimbursement.messages.push({ role: "user", text: message });
       // One vocabulary for both surfaces: the options come from adminBotMemberRoles in contracts.ts
     // rather than being retyped in markup, so the console and the Control UI cannot drift.
@@ -1956,22 +2047,8 @@ export function adminBotConsoleScript(): string {
     renderReimbursementLog();
       form.reset();
       setStatus("reimb-status", "Working…", "");
-      try {
-        const response = await fetch("/reimbursements/converse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ message, draft: reimbursement.draft })
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload?.error?.message || "Could not reach AdminBot.");
-        reimbursement.draft = payload.draft || reimbursement.draft;
-        reimbursement.ready = payload.ready === true;
-        reimbursement.messages.push({ role: "adminbot", text: payload.reply || "" });
-        renderReimbursementLog();
-        setStatus("reimb-status", reimbursement.ready ? "Ready to generate." : "", "");
-      } catch (error) {
-        setStatus("reimb-status", error.message, "error");
-      }
+      reimbursement.pendingTurn = { key: crypto.randomUUID(), input: JSON.stringify({ message, draft: reimbursement.draft }) };
+      await submitReimbursementTurn();
     });
 
     document.getElementById("reimb-generate").addEventListener("click", async () => {
@@ -1999,6 +2076,9 @@ export function adminBotConsoleScript(): string {
     });
 
     document.getElementById("reimb-reset").addEventListener("click", () => {
+      clearTimeout(reimbursement.pollTimer);
+      reimbursement.taskId = null;
+      reimbursement.pendingTurn = null;
       reimbursement.messages = [];
       reimbursement.draft = {};
       reimbursement.ready = false;
