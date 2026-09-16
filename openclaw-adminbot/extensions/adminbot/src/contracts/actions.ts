@@ -2324,6 +2324,7 @@ export type AdminBotAuditEvent = {
     // exists for it and the event is the only record. `escalation_proposed` is the gate asking an
     // administrator for help through the approval gate; `escalated` is recorded only once a
     // connector has actually delivered that ask, because a proposal nobody approved reached nobody.
+    | "inference.control_changed"
     | "inference.admitted"
     | "inference.queued"
     | "inference.shed"

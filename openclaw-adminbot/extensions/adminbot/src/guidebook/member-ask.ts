@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import type { InferenceGate } from "../inference/gate.js";
+import { currentTaskContext } from "../tasks/context.js";
 import { askGuidebook, defaultGuidebookAskConfig, type GuidebookAskConfig } from "./ask.js";
 import type { GuidebookFetch } from "./local-client.js";
 
@@ -15,6 +17,7 @@ export async function askMemberGuidebook(
   question: string,
   options: {
     env?: NodeJS.ProcessEnv;
+    gate?: InferenceGate;
     config?: GuidebookAskConfig;
     fetchImpl?: GuidebookFetch;
   } = {},
@@ -41,6 +44,7 @@ export async function askMemberGuidebook(
           indexPath,
         },
         env,
+        ...(options.gate ? { gate: options.gate } : {}),
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
         signal: AbortSignal.timeout(30_000),
         allowIndex: (index) =>
@@ -51,7 +55,13 @@ export async function askMemberGuidebook(
     return result.answered
       ? { answered: true, answer: result.answer, sources: result.sources }
       : unavailable();
-  } catch {
+  } catch (error) {
+    if (
+      currentTaskContext()?.signal.aborted ||
+      (error instanceof Error &&
+        ["TaskNeedsRetryError", "TaskInterruptedError", "AbortError"].includes(error.name))
+    )
+      throw error;
     return unavailable();
   }
 }

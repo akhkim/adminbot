@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Judging which lab papers belong at which workshop, by reading the calls for papers.
 //
 // The unit of work is one workshop's call plus a handful of paper titles, because that is the
@@ -18,6 +19,7 @@ import {
   sharedInferenceGate,
   type InferenceGate,
 } from "../../inference/gate.js";
+import { currentTaskContext, withTaskScope, taskStep } from "../../tasks/context.js";
 import type {
   WorkshopMatcher,
   WorkshopNudgePaper,
@@ -331,13 +333,22 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     }
     const unique = [...distinct.values()];
 
-    const jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
+    let jobs: Array<{ workshop: WorkshopProfile; papers: WorkshopNudgePaper[] }> = [];
     for (const workshop of workshops) {
       for (let start = 0; start < unique.length; start += batchSize) {
         jobs.push({ workshop, papers: unique.slice(start, start + batchSize) });
       }
     }
 
+    const batchPlan = await taskStep("matcher.batches", { papers, workshops }, () =>
+      jobs.map(job => ({ workshopId: job.workshop.workshop_id, paperIds: job.papers.map(paper => paper.paper_id) })),
+      { replaySafe: true });
+    const workshopById = new Map(workshops.map(workshop => [workshop.workshop_id, workshop]));
+    const paperById = distinct;
+    jobs = batchPlan.map(batch => ({
+      workshop: workshopById.get(batch.workshopId)!,
+      papers: batch.paperIds.map(id => paperById.get(id)!),
+    }));
     let done = 0;
     let failed = 0;
     let deferred = 0;
@@ -350,8 +361,16 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
     report?.(0, jobs.length, 0, undefined, 0);
     const results = await runWithConcurrency(jobs, concurrency, async (job) => {
       try {
-        return await runJobWithRetries(job);
+        return await withTaskScope(
+          `matcher:${createHash("sha256")
+            .update(
+              JSON.stringify([job.workshop.workshop_id, ...job.papers.map((p) => p.paper_id)]),
+            )
+            .digest("hex")}`,
+          () => runJobWithRetries(job),
+        );
       } catch (error) {
+        if (currentTaskContext()) throw error;
         if (isInferenceDeferred(error)) {
           // The gate did not run this batch. Not a failure -- the model was never asked -- and not
           // an empty result either: an empty result is "this workshop matched nothing", which is a
@@ -437,6 +456,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         try {
           return await runJob(job, requestTimeoutMs * attempt);
         } catch (error) {
+          if (currentTaskContext()) throw error;
           if (isInferenceDeferred(error)) {
             // The gate declined to run this -- expired in line, or the queue is full. That is a
             // decision about capacity, not a blip in the tunnel, and retrying it would hand the

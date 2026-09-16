@@ -1,3 +1,4 @@
+import { currentTaskContext } from "./tasks/context.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
@@ -129,6 +130,8 @@ export async function runAdminBotCvScan(
         removed,
       });
     } catch (error) {
+      // A task checkpoint must preserve uncertainty rather than turning it into a skipped member.
+      if (currentTaskContext()) throw error;
       if (isInferenceDeferred(error)) {
         // The GPU had no room for this member's CV. Not a failure -- nothing was tried -- and the
         // snapshot is left alone so the next scan asks again. The queue row is named so the
@@ -352,7 +355,7 @@ function formatNameList(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-function draftFromResults(results: AdminBotCvScanMemberResult[]): string {
+export function draftFromResults(results: AdminBotCvScanMemberResult[]): string {
   return buildNewsletterDraft(
     results
       // first_scan carries only recent entries (see above), so it contributes to the draft on
