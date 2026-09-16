@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { inferenceTestConfig } from "./config.test-support.js";
-import { createInferenceGate } from "./gate.js";
+import { createInferenceGate, type InferenceEscalation } from "./gate.js";
 import { openInferenceTestDb } from "./gate.test-support.js";
 
 const request = {
@@ -204,9 +204,6 @@ it("backs off blocked admission and exposes its owning task's storage notice", a
     expect(attempts()).toBe(1);
     expect(gate.admissionNotice("task-a")).toContain("storage problem");
     expect(gate.admissionNotice("other-task")).toBeUndefined();
-    gate.pause();
-    expect(gate.admissionNotice("task-a")).toBeUndefined();
-    gate.resume();
     await vi.advanceTimersByTimeAsync(999);
     expect(attempts()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -289,3 +286,118 @@ it.each([false, true])(
     }
   },
 );
+
+it.each(["completion", "arrival", "resume"])(
+  "retries admission immediately on %s while a fallback timer is pending",
+  async (event) => {
+    vi.useFakeTimers();
+    const db = openInferenceTestDb();
+    const releases: Array<() => void> = [];
+    const fetchImpl = vi.fn(async () => {
+      if (releases.length < 2) {
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
+      }
+      return { ok: true, status: 200, statusText: "OK", text: async () => "done" };
+    });
+    const gate = createInferenceGate({
+      db,
+      env: {},
+      fetchImpl,
+      config: inferenceTestConfig({ capacity: 2 }),
+    });
+    const first = gate.run({ owner: "a", caller: "test", request });
+    const second = gate.run({ owner: "b", caller: "test", request });
+    const queued = gate.run({ owner: "c", taskId: "task-c", caller: "test", request, wait: true });
+    try {
+      db.exec(`CREATE TRIGGER fail_admission BEFORE INSERT ON adminbot_audit_events
+      WHEN NEW.event_type='inference.admitted' BEGIN SELECT RAISE(ABORT,'transient storage fault'); END`);
+      releases[0]();
+      await first;
+      expect(gate.admissionNotice("task-c")).toBeDefined();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      db.exec("DROP TRIGGER fail_admission");
+      let arrival: ReturnType<typeof gate.run> | undefined;
+      if (event === "completion") {
+        releases[1]();
+        await second;
+      } else if (event === "arrival") {
+        arrival = gate.run({ owner: "d", caller: "test", request, wait: true });
+      } else {
+        gate.pause();
+        expect(gate.admissionNotice("task-c")).toBeUndefined();
+        gate.resume();
+      }
+      // Flush immediate promise work, but never advance the fallback timer's clock.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchImpl.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect((await queued).kind).toBe("completed");
+      if (arrival) {
+        await arrival;
+      }
+      releases[1]();
+      await second;
+      expect(gate.admissionNotice("task-c")).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      db.exec("DROP TRIGGER IF EXISTS fail_admission");
+      releases.forEach((release) => release());
+      await gate.shutdown();
+      db.close();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("evaluates other escalation conditions while one pending audit keeps failing", async () => {
+  const db = openInferenceTestDb();
+  const onEscalate = vi.fn(async ({ trigger }: InferenceEscalation) => ({
+    proposal_id: `proposal-${trigger}`,
+  }));
+  const gate = createInferenceGate({
+    db,
+    env: {},
+    onEscalate,
+    alert: vi.fn(),
+    config: inferenceTestConfig({
+      startPaused: true,
+      health: { failureThreshold: 1 },
+      escalate: { healthFailures: 1, queueDepth: 0 },
+    }),
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      statusText: "Unavailable",
+      text: async () => "",
+    }),
+  });
+  try {
+    db.exec(`CREATE TRIGGER fail_health_audit BEFORE INSERT ON adminbot_audit_events
+      WHEN NEW.event_type='inference.escalation_proposed' AND json_extract(NEW.event_json,'$.details.trigger')='health'
+      BEGIN SELECT RAISE(ABORT,'persistent health audit fault'); END`);
+    await gate.probeHealth();
+    expect(onEscalate.mock.calls.map(([entry]) => entry.trigger)).toEqual(["health"]);
+    void gate.run({ owner: "a", caller: "test", request, wait: true });
+    await gate.probeHealth();
+    expect(onEscalate.mock.calls.map(([entry]) => entry.trigger)).toEqual([
+      "health",
+      "queue_depth",
+    ]);
+    await gate.probeHealth();
+    expect(onEscalate).toHaveBeenCalledTimes(2);
+    db.exec("DROP TRIGGER fail_health_audit");
+    await gate.probeHealth();
+    expect(
+      db
+        .prepare(
+          "SELECT count(*) n FROM adminbot_audit_events WHERE event_type='inference.escalation_proposed'",
+        )
+        .get()!.n,
+    ).toBe(2);
+  } finally {
+    db.exec("DROP TRIGGER IF EXISTS fail_health_audit");
+    await gate.shutdown();
+    db.close();
+  }
+});
