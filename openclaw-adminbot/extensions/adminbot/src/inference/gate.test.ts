@@ -684,27 +684,49 @@ describe("inference gate review fixes", () => {
     expect(calls).toBe(2);
   });
 
-  it("admits atomically: an admission-audit failure leaves no orphaned running row and settles the waiter", async () => {
-    const db = openDb();
-    const model = controllableFetch();
-    const gate = makeGate(db, model.fetchImpl);
-    void gate.run({ owner: "x", caller: "t", request: request("a") });
-    void gate.run({ owner: "x", caller: "t", request: request("b") });
-    await settle();
-    const queued = gate.run({ owner: "x", caller: "t", request: request("c"), wait: true });
-    await settle();
-    // Break the audit table so the next admission's transaction fails.
-    db.exec("DROP TABLE adminbot_audit_events");
-    model.releaseAll();
-    const outcome = await queued;
-    expect(outcome.kind).toBe("failed");
-    // The row is still queued in the table (the failed transaction rolled back), not running.
-    const row = db
-      .prepare("SELECT status FROM adminbot_inference_queue WHERE request_json LIKE '%\"c\"%'")
-      .get() as { status: string };
-    expect(row.status).toBe("queued");
-    expect(gate.stats().in_flight).toBe(0);
-  });
+  it.each([false, true])(
+    "retains the waiter through admission failure (cancel=%s)",
+    async (cancel) => {
+      const db = openDb();
+      const model = controllableFetch();
+      const gate = makeGate(db, model.fetchImpl);
+      gate.pause("test");
+      const controller = new AbortController();
+      const pending = gate.run({
+        owner: "x",
+        caller: "t",
+        request: request("c"),
+        wait: true,
+        signal: controller.signal,
+      });
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      db.exec(`CREATE TRIGGER fail_admission BEFORE INSERT ON adminbot_audit_events
+      WHEN NEW.event_type = 'inference.admitted' BEGIN SELECT RAISE(ABORT, 'storage fault'); END`);
+      gate.resume("test");
+      await settle();
+      expect(settled).toBe(false);
+      expect(gate.stats().queued).toBe(1);
+      expect(model.pendingCount).toBe(0);
+      if (cancel) {
+        controller.abort();
+      }
+      db.exec("DROP TRIGGER fail_admission");
+      if (!cancel) {
+        await vi.waitFor(() => expect(model.pendingCount).toBe(1), { timeout: 2500 });
+        model.releaseAll();
+      }
+      const outcome = await pending;
+      expect(outcome.kind).toBe(cancel ? "failed" : "completed");
+      expect(gate.stats().rows.queued).toBe(0);
+      expect(gate.stats().in_flight).toBe(0);
+      expect(auditEvents(db).filter((event) => event.type === "inference.admitted")).toHaveLength(
+        cancel ? 0 : 1,
+      );
+    },
+  );
 
   it("emits completed only if the guarded transition won; a row settled by recovery stays failed", async () => {
     const db = openDb();

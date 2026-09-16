@@ -268,6 +268,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
   let sweepTimer: NodeJS.Timeout | undefined;
   let healthTimer: NodeJS.Timeout | undefined;
+  let admissionRetryTimer: NodeJS.Timeout | undefined;
 
   // Exponential moving average of service time, for the estimate a queued member is shown.
   let meanServiceMs: number | null = null;
@@ -700,46 +701,57 @@ export function createInferenceGate(options: InferenceGateOptions) {
     return wrapped;
   }
 
+  function retryAdmission(): void {
+    if (closed || admissionRetryTimer) {
+      return;
+    }
+    admissionRetryTimer = setTimeout(() => {
+      admissionRetryTimer = undefined;
+      pump();
+    }, 1000);
+    admissionRetryTimer.unref();
+  }
+
   /** Moves the head of the line into a free slot, until either runs out. */
   function pump(): void {
     if (closed || paused) {
       return;
     }
     while (inFlight < config.capacity && waiting.length > 0) {
-      const waiter = waiting.shift() as Waiter;
-      waiter.onAbort && waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      const waiter = waiting[0];
       const at = timestamp();
-      const row = store.get(waiter.id);
-      if (!row) {
-        continue;
-      }
-      if (Date.parse(row.expires_at) <= Date.parse(at)) {
-        const expired = expireRow(row, at);
-        for (const resolve of waiter.resolvers) {
-          resolve(expired);
-        }
-        continue;
-      }
-      let admitted: boolean;
+      let row: InferenceQueueRow | undefined;
+      let outcome: InferenceOutcome | undefined;
       try {
-        admitted = admitQueued(row, at);
-      } catch (error) {
-        // The admission transaction itself failed (database trouble). The row is untouched and
-        // still queued in the table; the waiter is told, rather than left hanging, and the row
-        // will be re-admitted by the next process's recovery.
-        const message = error instanceof Error ? error.message : String(error);
-        for (const resolve of waiter.resolvers) {
-          resolve({ kind: "failed", id: row.id, failure: "error", error: message, cause: error });
+        row = store.get(waiter.id);
+        if (!row) {
+          outcome = { kind: "refused", reason: "request row vanished" };
+        } else if (waiter.signal?.aborted) {
+          const message = "cancelled while waiting for a slot";
+          finishFailed(row, "cancelled", message, undefined, 0);
+          outcome = settledElsewhere(row);
+        } else if (Date.parse(row.expires_at) <= Date.parse(at)) {
+          outcome = expireRow(row, at);
+        } else if (!admitQueued(row, at)) {
+          outcome = settledElsewhere(row);
         }
-        continue;
+      } catch {
+        // The transaction rolled back. Keep the same promise, transport and abort listener:
+        // reporting failure here would leave live work eligible for an unobserved replay.
+        retryAdmission();
+        return;
       }
-      if (!admitted) {
-        // Somebody else changed the row under us (a sweep expired it, a cancel failed it). Whatever
-        // they wrote is the answer.
-        const outcome = settledElsewhere(row);
+      waiting.shift();
+      if (waiter.onAbort) {
+        waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      }
+      if (outcome) {
         for (const resolve of waiter.resolvers) {
           resolve(outcome);
         }
+        continue;
+      }
+      if (!row) {
         continue;
       }
       const claimed = { ...row, status: "running" as const, admitted_at: at, claimed_at: at };
@@ -787,15 +799,20 @@ export function createInferenceGate(options: InferenceGateOptions) {
           if (index < 0) {
             return;
           }
-          waiting.splice(index, 1);
           const message = "cancelled while waiting for a slot";
-          store.transaction(() => {
-            store.finishFailed(row.id, timestamp(), "cancelled", message);
-            auditRow("inference.failed", row, {
-              outcome: "cancelled",
-              wait_ms: waitedMs(row, timestamp()),
+          try {
+            store.transaction(() => {
+              store.finishFailed(row.id, timestamp(), "cancelled", message);
+              auditRow("inference.failed", row, {
+                outcome: "cancelled",
+                wait_ms: waitedMs(row, timestamp()),
+              });
             });
-          });
+          } catch {
+            retryAdmission();
+            return;
+          }
+          waiting.splice(index, 1);
           for (const r of waiter.resolvers) {
             r({ kind: "failed", id: row.id, failure: "cancelled", error: message });
           }
@@ -1462,6 +1479,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   /** Synchronous admission/timer stop. Await shutdown() before closing the database. */
   function close(): void {
     closed = true;
+    clearTimeout(admissionRetryTimer);
     if (sweepTimer) {
       clearInterval(sweepTimer);
     }
@@ -1556,7 +1574,15 @@ export async function runGated(
     for (;;) {
       task.check();
       try {
-        return await runGatedCall(gate, gatedRequest);
+        const response = await runGatedCall(gate, gatedRequest);
+        // A server error is not a completed checkpoint. Retaining a 503 as completed makes
+        // every explicit Resume reuse that failure even after the model recovers.
+        if (!response.ok) {
+          throw new Error(
+            `${request.request.purpose}: HTTP ${response.status} ${response.statusText}`,
+          );
+        }
+        return response;
       } catch (error) {
         // Internal backpressure is not an uncertain model attempt. Reuse the saved child row.
         if (!isInferenceDeferred(error) || error.outcome.kind !== "shed") {

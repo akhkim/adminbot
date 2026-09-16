@@ -42,8 +42,9 @@ Task saved. Choose Wait to run it.
 [Wait]  [Cancel]
 ```
 
-Wait puts the saved row in the line. It does not re-upload the input, and it is idempotent — a
-client that polls cannot turn one request into two. When the task finishes, the member gets the
+Wait asks to put the saved row in the line. If the queue or the owner's share is still full,
+it remains saved and offers Wait again. It does not re-upload the input, and it is idempotent —
+a client that polls cannot turn one request into two. When the task finishes, the member gets the
 answer to what they asked, not the classification that preceded it.
 
 A task that was interrupted mid-step and cannot safely be replayed becomes `needs_retry` and says
@@ -73,8 +74,8 @@ Bounding the backlog in total is not enough when a hundred people share it. Two 
   owner it served last, rather than following arrival order. Without this the share still leaves a
   member behind everything an earlier member already got dispatched.
 
-An idle service ignores both: the share divides a contended line, and there is nothing to divide
-when nothing is queued.
+The per-owner share applies even when the service is idle. Rotation matters only when multiple
+owners have queued work.
 
 Two consequences worth knowing. `service` is one owner for all OpenClaw agent traffic, so the share
 bounds a fleet rather than a single agent. And the workshop matcher is untouched by it — it submits

@@ -1034,11 +1034,13 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
       // Two stages, each its own permit. A stage is a checkpoint, so a resumed task never repeats
       // a stage it already finished.
       const classified = await runGated(gate, {
+        owner: ctx.owner,
         caller: "load_sim.runner.classify",
         request: chatRequest(mock.baseUrl, `classify ${input.owner}#${input.n}`),
         timeoutMs: 30_000,
       });
       const answered = await runGated(gate, {
+        owner: ctx.owner,
         caller: "load_sim.runner.answer",
         request: chatRequest(mock.baseUrl, `answer ${input.owner}#${input.n}`),
         timeoutMs: 30_000,

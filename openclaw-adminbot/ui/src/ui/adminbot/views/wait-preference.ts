@@ -1,6 +1,5 @@
 import { html, LitElement, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
-import { taskFetch } from "../task-request.ts";
 
 /**
  * The member's standing answer to "the lab's model is busy".
@@ -25,6 +24,8 @@ export class AdminBotWaitPreference extends LitElement {
   /** undefined until the service answers, so the box is never drawn with a guessed value. */
   @state() private value?: boolean;
   @state() private failed = false;
+  @state() private saving = false;
+  private generation = 0;
 
   /**
    * Light DOM. Both hosts style their own children -- the profile card and the task callout are
@@ -53,26 +54,48 @@ export class AdminBotWaitPreference extends LitElement {
     if (!this.usable()) {
       return;
     }
+    const generation = this.generation;
+    const baseUrl = this.baseUrl;
+    const sessionContext = this.sessionContext;
     try {
-      const response = await taskFetch(this.endpoint(), {
+      const response = await fetch(this.endpoint(), {
+        credentials: "omit",
         headers: { Accept: "application/json", ...this.auth() },
       });
       if (!response.ok) {
         return;
       }
       const body = (await response.json()) as { inference_always_wait?: boolean };
-      this.value = Boolean(body.inference_always_wait);
+      if (
+        generation === this.generation &&
+        baseUrl === this.baseUrl &&
+        sessionContext === this.sessionContext
+      ) {
+        this.value = Boolean(body.inference_always_wait);
+      }
     } catch {
       // A preference that cannot be read is simply not offered. Nothing else depends on it.
     }
   }
   private async save(next: boolean) {
+    if (!this.usable() || this.saving) {
+      return;
+    }
+    const generation = this.generation;
+    const baseUrl = this.baseUrl;
+    const sessionContext = this.sessionContext;
+    const current = () =>
+      generation === this.generation &&
+      baseUrl === this.baseUrl &&
+      sessionContext === this.sessionContext;
     const previous = this.value;
     this.value = next;
     this.failed = false;
+    this.saving = true;
     try {
-      const response = await taskFetch(this.endpoint(), {
+      const response = await fetch(this.endpoint(), {
         method: "PUT",
+        credentials: "omit",
         headers: { "Content-Type": "application/json", ...this.auth() },
         body: JSON.stringify({ inference_always_wait: next }),
       });
@@ -81,13 +104,33 @@ export class AdminBotWaitPreference extends LitElement {
       }
     } catch {
       // Say so rather than leaving a box that silently disagrees with the server.
-      this.value = previous;
-      this.failed = true;
+      if (current()) {
+        this.value = previous;
+        this.failed = true;
+      }
+    } finally {
+      if (current()) {
+        this.saving = false;
+      }
     }
   }
   protected override willUpdate(changed: PropertyValues) {
     if (changed.has("baseUrl") || changed.has("sessionContext")) {
+      this.generation++;
       this.value = undefined;
+      this.failed = false;
+      this.saving = false;
+      void this.load();
+    }
+  }
+  override disconnectedCallback() {
+    this.generation++;
+    super.disconnectedCallback();
+  }
+  override connectedCallback() {
+    super.connectedCallback();
+    if (this.hasUpdated) {
+      this.saving = false;
       void this.load();
     }
   }
@@ -98,6 +141,7 @@ export class AdminBotWaitPreference extends LitElement {
           type="checkbox"
           data-testid="wait-preference-toggle"
           .checked=${this.value ?? false}
+          ?disabled=${this.saving}
           @change=${(event: Event) => void this.save((event.target as HTMLInputElement).checked)}
         />
         <span>

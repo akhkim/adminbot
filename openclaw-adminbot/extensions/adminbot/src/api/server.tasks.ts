@@ -12,7 +12,7 @@ export function taskView(task: TaskRecord) {
   if (["shed", "queued", "running"].includes(task.status)) {
     actions.push("cancel");
   }
-  if (task.status === "needs_retry" || task.status === "failed") {
+  if ((task.status === "needs_retry" || task.status === "failed") && !task.retryExhausted) {
     actions.push("retry");
   }
   if (task.status === "completed") {

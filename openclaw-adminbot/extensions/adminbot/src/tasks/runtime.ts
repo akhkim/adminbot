@@ -314,6 +314,15 @@ export class TaskRuntime {
       return;
     }
     if (task.status === "needs_retry" || task.status === "failed") {
+      if (
+        task.retryExhausted ||
+        (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
+        this.store.attemptCount(id) >= this.options.maxAttempts
+      ) {
+        throw new Error(
+          "Task attempt limit exceeded; review the outcome before submitting a new task",
+        );
+      }
       this.store.resetUncertain(id);
       this.update(task, this.admissionStatus(task.owner, true));
     }
@@ -520,6 +529,16 @@ export class TaskRuntime {
         );
         continue;
       }
+      if ((task.executionAttempts ?? 0) >= this.options.maxAttempts) {
+        task.retryExhausted = true;
+        this.update(
+          task,
+          "failed",
+          "Task attempt limit exceeded; review the outcome before submitting a new task",
+        );
+        continue;
+      }
+      task.executionAttempts = (task.executionAttempts ?? 0) + 1;
       this.update(task, "running");
       this.ownerLastServed.set(task.owner, (this.dispatchSequence += 1));
       this.forgetIdleOwners();
@@ -712,10 +731,17 @@ export class TaskRuntime {
         }
         const uncertain = this.store.hasUncertainStep(task.id, true);
         const suspended = error instanceof TaskInterruptedError && this.stopping;
+        task.retryExhausted =
+          (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
+          this.store.attemptCount(task.id) >= this.options.maxAttempts;
         this.update(
           task,
           uncertain ? "needs_retry" : suspended && this.options.persist ? "queued" : "failed",
-          error instanceof Error ? error.message : String(error),
+          task.retryExhausted
+            ? "Task attempt limit exceeded; review the outcome before submitting a new task"
+            : error instanceof Error
+              ? error.message
+              : String(error),
         );
       } catch (recordingFailure) {
         try {

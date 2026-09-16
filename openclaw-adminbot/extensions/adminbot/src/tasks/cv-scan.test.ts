@@ -58,3 +58,56 @@ it("commits a CV snapshot with its change ledger and checkpoint, and retries a r
     await app.close();
   }
 });
+
+it("records an unreachable CV as failed and continues the persistent scan", async () => {
+  const fetched: string[] = [];
+  const app = createAdminBotMockService({
+    databasePath: ":memory:",
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsFormRunner: async () => {},
+    cvScanDeps: {
+      now: () => new Date(),
+      fetchPdf: async (url) => {
+        fetched.push(url);
+        if (url.includes("broken")) {
+          throw new Error("unreachable CV");
+        }
+        return new Uint8Array([1]);
+      },
+      extractText: async () => ({ ok: true, text: "Synthetic CV" }),
+      extractEntries: async () => [],
+    },
+  });
+  try {
+    for (const id of ["broken", "healthy"]) {
+      expect(
+        app.service.upsertLabMember({
+          id,
+          name: id,
+          email: `${id}@example.invalid`,
+          privilege_level: "member",
+          cv_url: `https://example.invalid/${id}.pdf`,
+        }).ok,
+      ).toBe(true);
+    }
+    const submitted = app.taskRuntime.submit({
+      owner: "service",
+      kind: "cv.scan",
+      input: {},
+      wait: true,
+    });
+    const task = await submitted.promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toMatchObject({
+      results: [
+        { member_id: "broken", status: "failed", reason: "unreachable CV" },
+        { member_id: "healthy", status: "first_scan" },
+      ],
+    });
+    expect(fetched).toHaveLength(2);
+    expect(app.store.getLabMember("healthy")?.cv_snapshot).toBeDefined();
+  } finally {
+    await app.close();
+  }
+});

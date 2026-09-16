@@ -575,3 +575,48 @@ it("reaches a terminal state even when the store fails while recording the failu
   await r.shutdown({ graceMs: 0 });
   db.close();
 });
+
+it("persists task lifecycle event types on the shared audit trail without task content", async () => {
+  const db = new DatabaseSync(":memory:");
+  const runtime = new TaskRuntime({ db });
+  runtime.register("test", 1, (_, ctx) => ctx.step("model", {}, () => "private-output"));
+  const task = runtime.submit({ owner: "member:a", kind: "test", input: "private-input" });
+  await task.promise;
+  const rows = db.prepare("SELECT event_type,event_json FROM adminbot_audit_events").all();
+  expect(rows.map((row) => row.event_type)).toEqual([
+    "task.accepted",
+    "task.running",
+    "task.step.running",
+    "task.step.completed",
+    "task.completed",
+  ]);
+  for (const row of rows) {
+    expect(JSON.parse(String(row.event_json)).type).toBe(row.event_type);
+  }
+  expect(JSON.stringify(rows)).not.toContain("private-input");
+  expect(JSON.stringify(rows)).not.toContain("private-output");
+  await runtime.shutdown({ graceMs: 0 });
+  db.close();
+});
+
+it.each([false, true])(
+  "bounds explicit retries, including failures before checkpoints (step=%s)",
+  async (step) => {
+    const runtime = new TaskRuntime({ maxAttempts: 2 });
+    let calls = 0;
+    const fail = () => {
+      calls++;
+      throw new Error("deterministic failure");
+    };
+    runtime.register("test", 1, (_, ctx) =>
+      step ? ctx.step("fail", {}, fail, { replaySafe: true }) : fail(),
+    );
+    const first = runtime.submit({ owner: "a", kind: "test", input: {} });
+    expect((await first.promise)?.status).toBe("failed");
+    const second = runtime.retry(first.id, "a")!;
+    expect((await second.promise)?.retryExhausted).toBe(true);
+    expect(() => runtime.retry(first.id, "a")).toThrow("attempt limit");
+    expect(calls).toBe(2);
+    await runtime.shutdown({ graceMs: 0 });
+  },
+);

@@ -114,3 +114,45 @@ it("continues a restored queued task into its final application result", async (
     "http://localhost:8765/tasks/saved-task/result",
   ]);
 });
+
+it("offers the wait preference on a recovered shed task with bearer-only history", async () => {
+  const fetcher = vi
+    .fn()
+    .mockImplementation(async (url) =>
+      String(url).endsWith("/tasks")
+        ? json({ tasks: [{ ...completed, status: "shed", actions: ["wait", "cancel"] }] })
+        : json({ inference_always_wait: false }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const element = new RecoveredTaskStatus();
+  element.baseUrl = "http://localhost:8765";
+  element.sessionContext = "member-a";
+  document.body.append(element);
+  await vi.waitFor(() =>
+    expect(
+      element.querySelector('[aria-label="Recovered task"] adminbot-wait-preference'),
+    ).not.toBeNull(),
+  );
+  expect(fetcher.mock.calls[0][1].credentials).toBe("omit");
+});
+
+it("removes a recovered task after cancellation without relabeling it as failed", async () => {
+  const fetcher = vi
+    .fn()
+    .mockImplementation(async (url) =>
+      String(url).endsWith("/tasks")
+        ? json({ tasks: [{ ...completed, status: "shed", actions: ["cancel"] }] })
+        : String(url).endsWith("/cancel")
+          ? json({ task: { ...completed, status: "cancelled", actions: [] } })
+          : json({ inference_always_wait: false }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const element = new RecoveredTaskStatus();
+  element.baseUrl = "http://localhost:8765";
+  element.sessionContext = "member-a";
+  document.body.append(element);
+  await vi.waitFor(() => expect(element.textContent).toContain("Cancel"));
+  element.querySelector<HTMLButtonElement>('[aria-label="Recovered task"] button')!.click();
+  await vi.waitFor(() => expect(element.querySelector('[aria-label="Recovered task"]')).toBeNull());
+  expect(element.textContent).not.toContain("could not finish");
+});
