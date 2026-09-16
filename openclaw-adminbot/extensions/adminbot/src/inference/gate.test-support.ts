@@ -8,7 +8,7 @@
  */
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
-import { resolveInferenceGateConfig } from "./config.js";
+import { inferenceTestConfig } from "./config.test-support.js";
 import { createInferenceGate, type InferenceGate } from "./gate.js";
 
 export function openInferenceTestDb(): DatabaseSync {
@@ -31,14 +31,7 @@ export function createSaturatedGate(): { gate: InferenceGate; release: () => voi
   const gate = createInferenceGate({
     db,
     env: {},
-    config: resolveInferenceGateConfig(
-      {},
-      {
-        capacity: 1,
-        queue: { maxDepth: 0, sweepIntervalMs: 0 },
-        health: { intervalMs: 0 },
-      },
-    ),
+    config: inferenceTestConfig({ capacity: 1, queue: { maxDepth: 0 } }),
   });
   let release: () => void = () => {};
   void gate.run({
