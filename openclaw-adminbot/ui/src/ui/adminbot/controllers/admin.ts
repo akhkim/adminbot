@@ -1,4 +1,3 @@
-import { taskFetch, taskActivities } from "../task-request.ts";
 import type {
   AdminBotReimbursementCheck,
   AdminBotReimbursementFunder,
@@ -60,6 +59,7 @@ import {
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
+import { taskFetch, taskActivities } from "../task-request.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -1657,9 +1657,15 @@ export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void
     // While a pass is in flight the page checks back on its own, so somebody who pressed Refresh
     // and walked away comes back to the answer rather than to a spinner that stopped meaning
     // anything. Polling stops the moment the pass is terminal.
-    if (run.status === "running" && run.task_status !== "needs_retry" && run.task_status !== "shed") {
+    if (
+      run.status === "running" &&
+      run.task_status !== "needs_retry" &&
+      run.task_status !== "shed"
+    ) {
       setTimeout(() => {
-        if ("isConnected" in host && host.isConnected === false) return;
+        if ("isConnected" in host && host.isConnected === false) {
+          return;
+        }
         void loadWorkshopNudgePreview(host);
       }, WORKSHOP_RUN_POLL_MS);
     }
@@ -1919,7 +1925,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
     // Last, so a governance field can never be overwritten by a profile key of the same name.
     // The service re-checks every key against its own whitelist regardless.
-    ...(member.profile ?? {}),
+    ...member.profile,
   };
 }
 
@@ -2832,7 +2838,9 @@ export async function sendAdminBotReimbursementMessage(
   files: File[],
 ): Promise<void> {
   const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) return;
+  if (!userMessage || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = {
     ...host.adminBotReimbursement,
     busy: true,
@@ -2858,8 +2866,12 @@ export async function sendAdminBotReimbursementMessage(
       }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result?.error?.message ?? "Reimbursement task failed.");
-    if (host.adminBotReimbursement !== turn) return;
+    if (!response.ok) {
+      throw new Error(result?.error?.message ?? "Reimbursement task failed.");
+    }
+    if (host.adminBotReimbursement !== turn) {
+      return;
+    }
     host.adminBotReimbursement = {
       messages: [
         ...host.adminBotReimbursement.messages,
@@ -2882,7 +2894,9 @@ export async function sendAdminBotReimbursementMessage(
       ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
-    if (host.adminBotReimbursement !== turn) return;
+    if (host.adminBotReimbursement !== turn) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -2892,7 +2906,9 @@ export async function sendAdminBotReimbursementMessage(
 }
 
 export async function generateAdminBotReimbursement(host: AdminBotHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
   try {
     const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_generate", {
@@ -2993,7 +3009,9 @@ export function resetAdminBotReimbursement(
   host: Pick<AdminBotHost, "adminBotReimbursement">,
 ): void {
   for (const activity of taskActivities.values()) {
-    if (activity.label.endsWith("/reimbursements/converse")) activity.detach();
+    if (activity.label.endsWith("/reimbursements/converse")) {
+      activity.detach();
+    }
   }
   host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
 }
@@ -3033,13 +3051,16 @@ async function guestReimbursementRequest(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await (path === "/reimbursements/converse" ? taskFetch : fetch)(`${baseUrl}${path}`, {
-      method: "POST",
-      // Task requests use an isolated visitor cookie; generation remains stateless.
-      credentials: "omit",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload),
-    });
+    response = await (path === "/reimbursements/converse" ? taskFetch : fetch)(
+      `${baseUrl}${path}`,
+      {
+        method: "POST",
+        // Task requests use an isolated visitor cookie; generation remains stateless.
+        credentials: "omit",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
   } catch {
     throw new Error("Could not reach the AdminBot service. Check that it is running.");
   }
@@ -3059,7 +3080,9 @@ export async function sendGuestReimbursementMessage(
   files: File[],
 ): Promise<void> {
   const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) return;
+  if (!userMessage || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = {
     ...host.adminBotReimbursement,
     busy: true,
@@ -3082,7 +3105,9 @@ export async function sendGuestReimbursementMessage(
         ...(receipts.length ? { receipts } : {}),
       },
     )) as ReimbursementConversationResult;
-    if (host.adminBotReimbursement !== turn) return;
+    if (host.adminBotReimbursement !== turn) {
+      return;
+    }
     host.adminBotReimbursement = {
       messages: [
         ...host.adminBotReimbursement.messages,
@@ -3105,7 +3130,9 @@ export async function sendGuestReimbursementMessage(
       ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
-    if (host.adminBotReimbursement !== turn) return;
+    if (host.adminBotReimbursement !== turn) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -3115,7 +3142,9 @@ export async function sendGuestReimbursementMessage(
 }
 
 export async function generateGuestReimbursement(host: GuestReimbursementHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
   try {
     const result = (await guestReimbursementRequest(

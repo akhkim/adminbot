@@ -105,6 +105,7 @@ async function postJson(
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
       `${purpose} could not reach ${endpoint} (${detail}). Is the local model serving there?`,
+      { cause: error },
     );
   }
   const raw = response.text;

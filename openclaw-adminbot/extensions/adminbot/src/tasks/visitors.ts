@@ -19,7 +19,9 @@ export class VisitorSessions {
 
   resolve(req: IncomingMessage): string | undefined {
     const token = visitorToken(req);
-    if (!token || !/^[A-Za-z0-9_-]{43}$/u.test(token)) return undefined;
+    if (!token || !/^[A-Za-z0-9_-]{43}$/u.test(token)) {
+      return undefined;
+    }
     const row = this.db
       .prepare("SELECT owner FROM adminbot_task_visitors WHERE token_hash = ? AND expires_at > ?")
       .get(createHash("sha256").update(token).digest("hex"), this.now()) as
@@ -39,7 +41,9 @@ export class VisitorSessions {
     const count = this.db.prepare("SELECT COUNT(*) AS count FROM adminbot_task_visitors").get() as {
       count: number;
     };
-    if (count.count >= 10_000) throw new Error("visitor session capacity reached; try again later");
+    if (count.count >= 10_000) {
+      throw new Error("visitor session capacity reached; try again later");
+    }
     const token = randomBytes(32).toString("base64url");
     const owner = `visitor:${randomUUID()}`;
     this.db

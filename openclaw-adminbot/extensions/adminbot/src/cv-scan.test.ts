@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { AdminBotMemoryStore } from "./persistence/memory.js";
 import type {
   AdminBotCvChangeEvent,
   AdminBotCvEntry,
@@ -17,6 +16,7 @@ import {
   runAdminBotCvScan,
   type AdminBotCvScanDeps,
 } from "./cv-scan.js";
+import { AdminBotMemoryStore } from "./persistence/memory.js";
 
 const SCANNED_AT = new Date("2026-08-05T12:00:00.000Z");
 
@@ -281,9 +281,7 @@ describe("isPublicIpAddress", () => {
 describe("assertPublicHost", () => {
   it("accepts a host that resolves entirely to public addresses", async () => {
     const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
-    await expect(
-      assertPublicHost("example.com", lookup as never),
-    ).resolves.toBeUndefined();
+    await expect(assertPublicHost("example.com", lookup as never)).resolves.toBeUndefined();
   });
 
   it("refuses a host whose addresses include a private one", async () => {
@@ -398,8 +396,9 @@ describe("normalizeCvDownloadUrl", () => {
 
   it("rewrites the Drive viewer link members actually paste", () => {
     // This exact shape returns ~80KB of HTML, which reaches PDFium as a "Data format error".
-    expect(at("https://drive.google.com/file/d/1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf/view?usp=sharing"))
-      .toBe("https://drive.google.com/uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf");
+    expect(
+      at("https://drive.google.com/file/d/1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf/view?usp=sharing"),
+    ).toBe("https://drive.google.com/uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf");
   });
 
   it("handles the older open?id= form", () => {
@@ -542,8 +541,9 @@ describe("publications", () => {
   it("does not extend that leniency to jobs", () => {
     // A bare year on a position means the model failed to read a month, and guessing would
     // announce a job nobody started.
-    expect(classifyRecency({ kind: "position", title: "T", organization: "O", start: "2026" }, now))
-      .toBe("undated");
+    expect(
+      classifyRecency({ kind: "position", title: "T", organization: "O", start: "2026" }, now),
+    ).toBe("undated");
   });
 
   it("credits one paper to every co-author it was seen on", () => {
@@ -569,9 +569,8 @@ describe("publications", () => {
 
 describe("CV extraction at a busy gate", () => {
   it("surfaces a shed from the gate with no second model call", async () => {
-    const { createSaturatedGate, settleMicrotasks } = await import(
-      "./inference/gate.test-support.js"
-    );
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("./inference/gate.test-support.js");
     const { InferenceDeferredError } = await import("./inference/gate.js");
     const { createAdminBotCvScanDeps } = await import("./cv-scan.js");
     const saturated = createSaturatedGate();
@@ -591,9 +590,8 @@ describe("CV extraction at a busy gate", () => {
   });
 
   it("drafts a blurb through the gate and surfaces a shed with no second model call", async () => {
-    const { createSaturatedGate, settleMicrotasks } = await import(
-      "./inference/gate.test-support.js"
-    );
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("./inference/gate.test-support.js");
     const { InferenceDeferredError } = await import("./inference/gate.js");
     const { draftMemberBlurb } = await import("./cv-scan.js");
     const saturated = createSaturatedGate();
@@ -609,9 +607,8 @@ describe("CV extraction at a busy gate", () => {
 
 describe("CV scan when the gate declines", () => {
   it("records the member as skipped with the queue handle, never as failed", async () => {
-    const { createSaturatedGate, settleMicrotasks } = await import(
-      "./inference/gate.test-support.js"
-    );
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("./inference/gate.test-support.js");
     const { createAdminBotCvScanDeps } = await import("./cv-scan.js");
     const saturated = createSaturatedGate();
     await settleMicrotasks();

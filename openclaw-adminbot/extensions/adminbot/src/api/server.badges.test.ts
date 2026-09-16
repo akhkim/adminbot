@@ -223,7 +223,11 @@ describe("AdminBot badge routes", () => {
     const assign = await fetch(`${baseUrl}/badges/assignments`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
-      body: JSON.stringify({ member_id: "pat", badge_id: badge.id, evidence: "Shipped the guide." }),
+      body: JSON.stringify({
+        member_id: "pat",
+        badge_id: badge.id,
+        evidence: "Shipped the guide.",
+      }),
     });
     expect(assign.status).toBe(200);
     await expect(assign.json()).resolves.toMatchObject({

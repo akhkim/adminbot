@@ -122,7 +122,9 @@ export function resolveInferenceGateConfig(
       ? legacyConcurrency
       : defaults.capacity;
   return {
-    persistAcrossRestarts: /^(1|true)$/iu.test(env.ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS?.trim() ?? ""),
+    persistAcrossRestarts: /^(1|true)$/iu.test(
+      env.ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS?.trim() ?? "",
+    ),
     startPaused: /^(1|true)$/iu.test(env.ADMINBOT_INFERENCE_START_PAUSED?.trim() ?? ""),
     shutdownGraceMs: timer("SHUTDOWN_GRACE_MS", defaults.shutdownGraceMs),
     capacity: read("CAPACITY", capacityFallback, 1),

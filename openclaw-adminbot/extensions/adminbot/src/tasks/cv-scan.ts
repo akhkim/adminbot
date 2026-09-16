@@ -15,7 +15,9 @@ export async function runPersistentCvScan(
     {},
     async () => {
       const members = service.listLabMembers();
-      if (!members.ok) throw new Error(members.error.message);
+      if (!members.ok) {
+        throw new Error(members.error.message);
+      }
       const settings = service.getSettings();
       return {
         members: members.payload.members,
@@ -64,7 +66,9 @@ export async function runPersistentCvScan(
         { replaySafe: true },
       ),
     );
-    if (!item.result) continue;
+    if (!item.result) {
+      continue;
+    }
     const commit = () => {
       const result = { ...item.result! };
       if (item.snapshot) {
@@ -77,7 +81,9 @@ export async function runPersistentCvScan(
           };
         }
         const saved = service.upsertLabMember({ ...current, cv_snapshot: item.snapshot });
-        if (!saved.ok) return { ...result, status: "failed" as const, reason: saved.error.message };
+        if (!saved.ok) {
+          return { ...result, status: "failed" as const, reason: saved.error.message };
+        }
       }
       if (result.status === "changed" || result.status === "first_scan") {
         ctx.store.recordCvChanges(

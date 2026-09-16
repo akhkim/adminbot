@@ -6,7 +6,10 @@ import { createInferenceGate } from "./gate.js";
 describe("inference deployment configuration", () => {
   it("requires explicit opt-in for cross-restart inference persistence", () => {
     expect(resolveInferenceGateConfig({}).persistAcrossRestarts).toBe(false);
-    expect(resolveInferenceGateConfig({ ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS: "true" }).persistAcrossRestarts).toBe(true);
+    expect(
+      resolveInferenceGateConfig({ ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS: "true" })
+        .persistAcrossRestarts,
+    ).toBe(true);
   });
   it("retains defaults and legacy concurrency, with the dedicated variable taking priority", () => {
     expect(resolveInferenceGateConfig({})).toEqual(DEFAULT_INFERENCE_GATE_CONFIG);

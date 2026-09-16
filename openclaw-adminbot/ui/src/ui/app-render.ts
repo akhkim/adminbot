@@ -1,8 +1,5 @@
-// oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
-// Control UI module implements app render behavior.
-import { runAdminBotCvScan, retryWorkshopTask } from "./adminbot/controllers/task-jobs.ts";
-import "./adminbot/views/task-status.ts";
 import { html, nothing } from "lit";
+import "./adminbot/views/task-status.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
@@ -102,13 +99,16 @@ import {
   saveAdminBotTrip,
   withdrawAdminBotTrip,
 } from "./adminbot/controllers/paper-slots.ts";
-import "./components/feedback-widget.ts";
 import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
+import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+// oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
+// Control UI module implements app render behavior.
+import { runAdminBotCvScan, retryWorkshopTask } from "./adminbot/controllers/task-jobs.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -4304,7 +4304,9 @@ export function renderApp(state: AppViewState) {
                   },
                 ],
                 onRunCommandJob: (id) => {
-                  if (id === "cv-scan") void runAdminBotCvScan(state);
+                  if (id === "cv-scan") {
+                    void runAdminBotCvScan(state);
+                  }
                   if (id === "cv-digest") {
                     void runAdminBotCvDigestJob(state);
                   }

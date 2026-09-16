@@ -135,9 +135,8 @@ describe("AdminBot privacy broker at a busy gate", () => {
     // The broker's classify catch used to turn *any* error into a full local run. A shed from the
     // gate through that path would be a second request to the same busy GPU -- the exact
     // duplication the gate exists to rule out.
-    const { createSaturatedGate, settleMicrotasks } = await import(
-      "../inference/gate.test-support.js"
-    );
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("../inference/gate.test-support.js");
     const { InferenceDeferredError } = await import("../inference/gate.js");
     const saturated = createSaturatedGate();
     await settleMicrotasks();
@@ -169,7 +168,11 @@ describe("AdminBot privacy broker at a busy gate", () => {
         throw new Error("remote is down");
       }
       return call === 1
-        ? local({ classification: "generic", sanitized_task: "Explain merge sort", replacements: [] })
+        ? local({
+            classification: "generic",
+            sanitized_task: "Explain merge sort",
+            replacements: [],
+          })
         : local("Local answer");
     }) as PrivacyBrokerFetch;
     const audits: Array<{ type: string; details?: Record<string, unknown> }> = [];

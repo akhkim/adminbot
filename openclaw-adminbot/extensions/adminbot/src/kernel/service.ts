@@ -2400,9 +2400,10 @@ export class AdminBotService {
       // steps that are *about* standing -- what compute they may request, what the lab expects of
       // them -- are re-asked. The clock restarts with them, so the follow-up chases the new cycle
       // rather than an account creation date years old.
-      onboarding: resolveMemberOnboarding(existing?.onboarding, {
-        ...(reopenReason ? { reopen: { reason: reopenReason, at: now } } : {}),
-      }),
+      onboarding: resolveMemberOnboarding(
+        existing?.onboarding,
+        reopenReason ? { reopen: { reason: reopenReason, at: now } } : {},
+      ),
       created_at: existing?.created_at ?? now,
       updated_at: now,
       ...availabilityStamp(existing, member, now),
@@ -4321,15 +4322,15 @@ export class AdminBotService {
     if (authorMemberIds(paper.author_links ?? []).includes(member.id)) {
       return true;
     }
-    const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
+    const authors = new Set(paper.authors.map((author) => author.trim().toLocaleLowerCase()));
     const unique = [member.id, member.email]
       .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
-      .some((value) => authors.includes(value));
+      .some((value) => authors.has(value));
     if (unique) {
       return true;
     }
     const name = member.name.trim().toLocaleLowerCase();
-    if (!name || !authors.includes(name)) {
+    if (!name || !authors.has(name)) {
       return false;
     }
     return (
@@ -5310,33 +5311,43 @@ export class AdminBotService {
         .toSorted()
         .at(-1);
       const owed = this.resolvePaperSlotOwner(paper, "first_author");
-      return {
-        paper_id: paper.id,
-        title: paper.title,
-        ...(paper.venue ? { venue: paper.venue } : {}),
-        ...(paper.deadline ? { deadline: paper.deadline } : {}),
-        current_step: paper.current_step,
-        provided_count: progress.provided,
-        required_count: progress.total,
-        dormant: isPaperDormant(paper, now),
-        closed: isPaperClosed(paper),
-        cycle_closed: isCycleClosed({ paper, slots: stored, drafts, attendees, reimbursements }),
-        missing_slots: actionable
-          .map((item) => item.slot)
-          .filter((slot): slot is AdminBotPaperSlot => Boolean(slot)),
-        missing_acceptance_details: missingAcceptanceDetails(paper),
-        attendance: {
-          yes: attendees.filter((row) => row.attending === "yes").length,
-          no: attendees.filter((row) => row.attending === "no").length,
-          unknown: attendees.filter((row) => row.attending === "unknown").length,
-          going: attendees.filter((row) => row.attending === "yes").map((row) => row.name),
+      return Object.assign(
+        {
+          paper_id: paper.id,
+          title: paper.title,
         },
-        escalating: actionable.some((item) =>
-          shouldEscalate(item, ledger.get(`paper_slot|${item.subjectId}`)),
-        ),
-        ...(owed[0] ? { first_author_member_id: owed[0] } : {}),
-        ...(lastNudged ? { last_nudged_at: lastNudged } : {}),
-      };
+        paper.venue ? { venue: paper.venue } : {},
+        paper.deadline ? { deadline: paper.deadline } : {},
+        {
+          current_step: paper.current_step,
+          provided_count: progress.provided,
+          required_count: progress.total,
+          dormant: isPaperDormant(paper, now),
+          closed: isPaperClosed(paper),
+          cycle_closed: isCycleClosed({
+            paper,
+            slots: stored,
+            drafts,
+            attendees,
+            reimbursements,
+          }),
+          missing_slots: actionable
+            .map((item) => item.slot)
+            .filter((slot): slot is AdminBotPaperSlot => Boolean(slot)),
+          missing_acceptance_details: missingAcceptanceDetails(paper),
+          attendance: {
+            yes: attendees.filter((row) => row.attending === "yes").length,
+            no: attendees.filter((row) => row.attending === "no").length,
+            unknown: attendees.filter((row) => row.attending === "unknown").length,
+            going: attendees.filter((row) => row.attending === "yes").map((row) => row.name),
+          },
+          escalating: actionable.some((item) =>
+            shouldEscalate(item, ledger.get(`paper_slot|${item.subjectId}`)),
+          ),
+        },
+        owed[0] ? { first_author_member_id: owed[0] } : {},
+        lastNudged ? { last_nudged_at: lastNudged } : {},
+      );
     });
     return { ok: true, status: 200, payload: { papers } };
   }
@@ -5505,12 +5516,14 @@ export class AdminBotService {
     now: Date,
   ): string {
     return buildNudgeMessage({
-      groups: [...groups.entries()].map(([title, group]) => ({
-        title,
-        ...(group.venue ? { venue: group.venue } : {}),
-        ...(group.deadline ? { deadline: group.deadline } : {}),
-        items: group.items.toSorted((left, right) => left.priority - right.priority),
-      })),
+      groups: [...groups.entries()].map(([title, group]) =>
+        Object.assign(
+          { title },
+          group.venue ? { venue: group.venue } : {},
+          group.deadline ? { deadline: group.deadline } : {},
+          { items: group.items.toSorted((left, right) => left.priority - right.priority) },
+        ),
+      ),
       now,
     });
   }
@@ -6009,13 +6022,17 @@ export class AdminBotService {
       payload: {
         reviews: this.store.listEmailReviews(),
         recent_resolutions: recentResolutions,
-        paperflow_candidates: stageResult.payload.items.map((item) => ({
-          paper_id: item.paper_id,
-          title: item.title,
-          stage: item.stage,
-          stage_label: adminBotPaperflowStageRegistry[item.stage].label,
-          ...(item.venue ? { venue: item.venue } : {}),
-        })),
+        paperflow_candidates: stageResult.payload.items.map((item) =>
+          Object.assign(
+            {
+              paper_id: item.paper_id,
+              title: item.title,
+              stage: item.stage,
+              stage_label: adminBotPaperflowStageRegistry[item.stage].label,
+            },
+            item.venue ? { venue: item.venue } : {},
+          ),
+        ),
       },
     };
   }
@@ -6477,20 +6494,22 @@ export class AdminBotService {
       const actorName = names.get(event.member_id);
       const subjectName = event.subject_member_id ? names.get(event.subject_member_id) : undefined;
       const paperTitle = parsed?.paperId ? titles.get(parsed.paperId) : undefined;
-      return {
-        id: event.id,
-        at: event.at,
-        subject: event.subject,
-        source: event.source,
-        actor_member_id: event.member_id,
-        slot_id: event.slot_id,
-        ...(actorName ? { actor_name: actorName } : {}),
-        ...(event.subject_member_id ? { subject_member_id: event.subject_member_id } : {}),
-        ...(subjectName ? { subject_member_name: subjectName } : {}),
-        ...(parsed?.paperId ? { paper_id: parsed.paperId } : {}),
-        ...(paperTitle ? { paper_title: paperTitle } : {}),
-        ...(parsed?.field ? { field_key: parsed.field } : {}),
-      } satisfies AdminBotRecentUpdate;
+      return Object.assign(
+        {
+          id: event.id,
+          at: event.at,
+          subject: event.subject,
+          source: event.source,
+          actor_member_id: event.member_id,
+          slot_id: event.slot_id,
+        },
+        actorName ? { actor_name: actorName } : {},
+        event.subject_member_id ? { subject_member_id: event.subject_member_id } : {},
+        subjectName ? { subject_member_name: subjectName } : {},
+        parsed?.paperId ? { paper_id: parsed.paperId } : {},
+        paperTitle ? { paper_title: paperTitle } : {},
+        parsed?.field ? { field_key: parsed.field } : {},
+      ) satisfies AdminBotRecentUpdate;
     });
     return { ok: true, status: 200, payload: { updates } };
   }
@@ -8153,39 +8172,38 @@ export class AdminBotService {
         const timeline = countTimelineEntries(member);
         const reminded = remindedAt.get(member.id);
         const selfEdited = lastSelfEditAt(member);
-        return {
-          id: member.id,
-          name: member.name,
-          ...(member.status ? { status: member.status } : {}),
-          ...(member.member_type ? { member_type: member.member_type } : {}),
-          privilege_level: member.privilege_level,
-          missing_fields: missing,
-          filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
-          // The adoption half of the same row: filled is "is there a value", this is "did the
-          // person it is about put it there".
-          self_filled_field_count: selfFilledFieldCount(member, MANDATORY_PROFILE_FIELDS),
-          projects: projectAdoption({
-            memberId: member.id,
-            paperIds: papers
-              .filter((paper) => this.memberOwnsPaper(member, paper))
-              .map((paper) => paper.id),
-            updates: weeklyUpdates,
-          }),
-          timeline,
-          activity: activity.get(member.id) ?? EMPTY_ACTIVITY,
-          // The audit trail wins when it has something: `last_login_at` is a single field that a
-          // bulk write can erase, and on this roster it has been. Falling back to it keeps rows
-          // correct for anyone whose sign-in predates the retention window.
-          ...((activity.get(member.id)?.last_login_at ?? member.last_login_at)
+        return Object.assign(
+          {
+            id: member.id,
+            name: member.name,
+          },
+          member.status ? { status: member.status } : {},
+          member.member_type ? { member_type: member.member_type } : {},
+          {
+            privilege_level: member.privilege_level,
+            missing_fields: missing,
+            filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
+            self_filled_field_count: selfFilledFieldCount(member, MANDATORY_PROFILE_FIELDS),
+            projects: projectAdoption({
+              memberId: member.id,
+              paperIds: papers
+                .filter((paper) => this.memberOwnsPaper(member, paper))
+                .map((paper) => paper.id),
+              updates: weeklyUpdates,
+            }),
+            timeline,
+            activity: activity.get(member.id) ?? EMPTY_ACTIVITY,
+          },
+          (activity.get(member.id)?.last_login_at ?? member.last_login_at)
             ? {
                 last_login_at: (activity.get(member.id)?.last_login_at ??
                   member.last_login_at) as string,
               }
-            : {}),
-          updated_at: member.updated_at,
-          ...(selfEdited ? { last_self_edit_at: selfEdited } : {}),
-          ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
-        };
+            : {},
+          { updated_at: member.updated_at },
+          selfEdited ? { last_self_edit_at: selfEdited } : {},
+          reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {},
+        );
       })
       .toSorted(byProfileProgress);
     return {
@@ -8605,7 +8623,7 @@ export class AdminBotService {
     for (const member of members) {
       const assessment = await this.assessMemberProfilePhoto(member, now);
       const review = {
-        ...(member.profile_photo_review ?? {}),
+        ...member.profile_photo_review,
         assessment,
       };
       this.store.saveLabMember({
@@ -8648,7 +8666,7 @@ export class AdminBotService {
       this.store.saveLabMember({
         ...latest,
         profile_photo_review: {
-          ...(latest.profile_photo_review ?? {}),
+          ...latest.profile_photo_review,
           last_guideline_dm_at: now,
         },
         updated_at: now,
@@ -8715,7 +8733,7 @@ export class AdminBotService {
     };
     const variants = [...existingVariants, variant];
     const review = {
-      ...(member.profile_photo_review ?? {}),
+      ...member.profile_photo_review,
       variants,
     };
     this.store.saveLabMember({
@@ -8786,7 +8804,7 @@ export class AdminBotService {
     this.store.saveLabMember({
       ...member,
       profile_photo_review: {
-        ...(member.profile_photo_review ?? {}),
+        ...member.profile_photo_review,
         variants,
         selected_variant_id: variant.id,
       },

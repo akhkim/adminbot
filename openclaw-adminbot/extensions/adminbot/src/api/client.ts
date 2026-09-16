@@ -278,7 +278,9 @@ export class AdminBotClient {
       [200, 202, 409, 410, 502].includes(response.status)
     ) {
       const taskResult = describeTaskResponse(parsed);
-      if (taskResult) return taskResult;
+      if (taskResult) {
+        return taskResult;
+      }
     }
     if (!response.ok) {
       throw new AdminBotServiceError(formatHttpError(response.status, response.statusText, parsed));
@@ -345,7 +347,9 @@ function formatHttpError(status: number, statusText: string, parsed: unknown): s
 }
 
 function describeTaskResponse(parsed: unknown): Record<string, unknown> | undefined {
-  if (!parsed || typeof parsed !== "object" || !("task" in parsed)) return;
+  if (!parsed || typeof parsed !== "object" || !("task" in parsed)) {
+    return;
+  }
   const task = parsed.task;
   if (
     !task ||
@@ -354,8 +358,9 @@ function describeTaskResponse(parsed: unknown): Record<string, unknown> | undefi
     typeof task.id !== "string" ||
     !("status" in task) ||
     typeof task.status !== "string"
-  )
+  ) {
     return;
+  }
   const taskPath = `/tasks/${encodeURIComponent(task.id)}`;
   const knownActions = new Set(["wait", "cancel", "retry", "result"]);
   const actions =
@@ -380,7 +385,9 @@ function describeTaskResponse(parsed: unknown): Record<string, unknown> | undefi
     expired:
       "The saved task expired. A new submission is required if the user still wants the work.",
   };
-  if (!messages[task.status]) return;
+  if (!messages[task.status]) {
+    return;
+  }
   return {
     ...parsed,
     outcome: "task_status",

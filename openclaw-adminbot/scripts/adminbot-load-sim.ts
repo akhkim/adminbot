@@ -5,8 +5,8 @@
 // node --import tsx scripts/adminbot-load-sim.ts --scenario all
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveInferenceGateConfig } from "../extensions/adminbot/src/inference/config.ts";
@@ -17,8 +17,8 @@ import {
   type InferenceOutcome,
 } from "../extensions/adminbot/src/inference/gate.ts";
 import { AdminBotSqliteStore } from "../extensions/adminbot/src/persistence/sqlite.ts";
-import { TaskRuntime } from "../extensions/adminbot/src/tasks/runtime.ts";
 import { createAdminBotPrivacyBroker } from "../extensions/adminbot/src/privacy/broker.ts";
+import { TaskRuntime } from "../extensions/adminbot/src/tasks/runtime.ts";
 import { DEADLINE_VENUES } from "../extensions/adminbot/src/workflows/deadlines/generated/dataset.ts";
 import { createLocalWorkshopMatcher } from "../extensions/adminbot/src/workflows/papers/workshop-match-llm.ts";
 import {
@@ -75,7 +75,10 @@ type MockStats = {
   duplicate_fingerprints: Array<{ fingerprint: string; count: number }>;
 };
 
-async function startMock(port: number, extra: string[] = []): Promise<{
+async function startMock(
+  port: number,
+  extra: string[] = [],
+): Promise<{
   proc: ChildProcess;
   baseUrl: string;
   controlUrl: string;
@@ -268,23 +271,32 @@ function reconcile(params: {
     terminalById.set(id, [...(terminalById.get(id) ?? []), event.type]);
   }
   const terminalRows = rows.filter((r) => ["completed", "failed", "expired"].includes(r.status));
-  const rowsWithoutTerminal = terminalRows.filter((r) => (terminalById.get(r.id) ?? []).length === 0);
+  const rowsWithoutTerminal = terminalRows.filter(
+    (r) => (terminalById.get(r.id) ?? []).length === 0,
+  );
   const rowsWithMany = rows.filter((r) => (terminalById.get(r.id) ?? []).length > 1);
   const completedTwice = [...terminalById.values()].filter(
     (types) => types.filter((t) => t === "inference.completed").length > 1,
   );
   checks.push({
     name: "exactly one terminal event per finished row",
-    ok: rowsWithoutTerminal.length === 0 && rowsWithMany.length === 0 && completedTwice.length === 0,
+    ok:
+      rowsWithoutTerminal.length === 0 && rowsWithMany.length === 0 && completedTwice.length === 0,
     detail: `${terminalRows.length} finished rows, ${rowsWithoutTerminal.length} without a terminal event, ${rowsWithMany.length} with several, ${completedTwice.length} completed twice`,
   });
 
   // 3. The status/result table agrees with the audit trail on what each row is.
   const statusMismatch = rows.filter((r) => {
     const types = terminalById.get(r.id) ?? [];
-    if (r.status === "completed") return types[0] !== "inference.completed" || !r.result_json;
-    if (r.status === "failed") return types[0] !== "inference.failed";
-    if (r.status === "expired") return types[0] !== "inference.expired";
+    if (r.status === "completed") {
+      return types[0] !== "inference.completed" || !r.result_json;
+    }
+    if (r.status === "failed") {
+      return types[0] !== "inference.failed";
+    }
+    if (r.status === "expired") {
+      return types[0] !== "inference.expired";
+    }
     return false;
   });
   checks.push({
@@ -421,7 +433,9 @@ async function scenarioBurst(o: Options): Promise<ScenarioResult> {
     // Every shed member now clicks "wait" -- twice, concurrently, to prove the second click is a
     // no-op -- and the stored bodies run without a re-send.
     for (const outcome of shed) {
-      if (outcome.kind !== "shed") continue;
+      if (outcome.kind !== "shed") {
+        continue;
+      }
       const owner = queueRows(store).find((r) => r.id === outcome.id)?.owner_id as string;
       // Queued if the slots are still busy, running if the burst has already drained -- either
       // way the second click changes nothing and reports the same state.
@@ -483,7 +497,13 @@ async function scenarioRetry(o: Options): Promise<ScenarioResult> {
       for (let attempt = 0; attempt < 3; attempt += 1) {
         runs.push(
           gate
-            .run({ owner: "ada", caller: "load_sim.retry", submissionKey: `k${i}`, wait: true, request: req(i) })
+            .run({
+              owner: "ada",
+              caller: "load_sim.retry",
+              submissionKey: `k${i}`,
+              wait: true,
+              request: req(i),
+            })
             .then(record(`k${i}`)),
         );
       }
@@ -491,7 +511,13 @@ async function scenarioRetry(o: Options): Promise<ScenarioResult> {
     // And one key whose second submission changes the payload.
     runs.push(
       gate
-        .run({ owner: "ada", caller: "load_sim.retry", submissionKey: "k0", wait: true, request: req(999) })
+        .run({
+          owner: "ada",
+          caller: "load_sim.retry",
+          submissionKey: "k0",
+          wait: true,
+          request: req(999),
+        })
         .then(record("k0")),
     );
     const outcomes = await Promise.all(runs);
@@ -515,7 +541,12 @@ async function scenarioRetry(o: Options): Promise<ScenarioResult> {
       detail: `${conflicts.length} conflict outcomes`,
     });
     // After completion a replay with the same key returns the stored result with no server call.
-    const replay = await gate.run({ owner: "ada", caller: "load_sim.retry", submissionKey: "k5", request: req(5) });
+    const replay = await gate.run({
+      owner: "ada",
+      caller: "load_sim.retry",
+      submissionKey: "k5",
+      request: req(5),
+    });
     const after = await mock.stats();
     checks.push({
       name: "replay after completion returns the stored result without a model call",
@@ -523,14 +554,26 @@ async function scenarioRetry(o: Options): Promise<ScenarioResult> {
       detail: `replay=${replay.kind} arrivals before/after=${stats.counters.arrivals}/${after.counters.arrivals}`,
     });
     // Ownership: somebody else with the same key gets their own row, and cannot read Ada's.
-    const other = await gate.run({ owner: "bob", caller: "load_sim.retry", submissionKey: "k5", wait: true, request: req(5) });
+    const other = await gate.run({
+      owner: "bob",
+      caller: "load_sim.retry",
+      submissionKey: "k5",
+      wait: true,
+      request: req(5),
+    });
     await untilIdle(gate);
     checks.push({
       name: "another owner's identical key is their own request; Ada's row is invisible to them",
-      ok: other.kind === "completed" && gate.status("bob", replay.kind === "completed" ? replay.id : "") === undefined,
+      ok:
+        other.kind === "completed" &&
+        gate.status("bob", replay.kind === "completed" ? replay.id : "") === undefined,
       detail: `bob=${other.kind}`,
     });
-    return { name: "retry: lost responses, concurrent duplicate submissions, payload conflict", checks, notes: [] };
+    return {
+      name: "retry: lost responses, concurrent duplicate submissions, payload conflict",
+      checks,
+      notes: [],
+    };
   } finally {
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
@@ -551,7 +594,13 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
   try {
     const runs = Array.from({ length: 10 }, (_, i) =>
       gate
-        .run({ owner: `m${i}`, caller: "load_sim.refuse", submissionKey: `r${i}`, wait: true, request: chatRequest(mock.baseUrl, `p${i}`) })
+        .run({
+          owner: `m${i}`,
+          caller: "load_sim.refuse",
+          submissionKey: `r${i}`,
+          wait: true,
+          request: chatRequest(mock.baseUrl, `p${i}`),
+        })
         .then((x) => (submitted.set(`r${i}`, [x]), x)),
     );
     const outcomes = await Promise.all(runs);
@@ -580,7 +629,11 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
       detail: "",
     });
     // Estimates are unavailable rather than extrapolated while down.
-    const shedStatus = await gate.run({ owner: "x", caller: "load_sim.refuse", request: chatRequest(mock.baseUrl, "late") });
+    const shedStatus = await gate.run({
+      owner: "x",
+      caller: "load_sim.refuse",
+      request: chatRequest(mock.baseUrl, "late"),
+    });
     checks.push({
       name: "a request arriving while the server is down is failed, not queued forever",
       ok: shedStatus.kind === "failed",
@@ -598,7 +651,9 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
 async function scenarioHang(o: Options): Promise<ScenarioResult> {
   const mock = await startMock(o.port, ["--fail-mode", "hang"]);
   const dbPath = freshFixture(o.artifactsDir, "hang");
-  const { store, gate } = openGate(dbPath, mock.baseUrl, { ADMINBOT_INFERENCE_DEFAULT_TIMEOUT_MS: "800" });
+  const { store, gate } = openGate(dbPath, mock.baseUrl, {
+    ADMINBOT_INFERENCE_DEFAULT_TIMEOUT_MS: "800",
+  });
   gate.start();
   const submitted = new Map<string, InferenceOutcome[]>();
   const t0 = Date.now();
@@ -608,13 +663,25 @@ async function scenarioHang(o: Options): Promise<ScenarioResult> {
     // 0.8s (clock at arrival) and not never (no timeout).
     const runs = Array.from({ length: 6 }, (_, i) =>
       gate
-        .run({ owner: `m${i}`, caller: "load_sim.hang", submissionKey: `h${i}`, wait: true, request: chatRequest(mock.baseUrl, `p${i}`) })
+        .run({
+          owner: `m${i}`,
+          caller: "load_sim.hang",
+          submissionKey: `h${i}`,
+          wait: true,
+          request: chatRequest(mock.baseUrl, `p${i}`),
+        })
         .then((x) => (submitted.set(`h${i}`, [x]), x)),
     );
     const outcomes = await Promise.all(runs);
     const elapsed = Date.now() - t0;
     const stats = await mock.stats();
-    const checks = reconcile({ store, submitted, mock: stats, capacity: 2, expectedTerminal: () => "failed" });
+    const checks = reconcile({
+      store,
+      submitted,
+      mock: stats,
+      capacity: 2,
+      expectedTerminal: () => "failed",
+    });
     checks.push({
       name: "every request timed out (not errored, not hung)",
       ok: outcomes.every((x) => x.kind === "failed" && x.failure === "timeout"),
@@ -656,7 +723,19 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
   try {
     const victim = spawn(
       process.execPath,
-      ["--import", "tsx", fileURLToPath(import.meta.url), "--child-role", "restart-victim", "--db", dbPath, "--port", String(o.port), "--requests", String(N)],
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(import.meta.url),
+        "--child-role",
+        "restart-victim",
+        "--db",
+        dbPath,
+        "--port",
+        String(o.port),
+        "--requests",
+        String(N),
+      ],
       { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
     );
     let victimOut = "";
@@ -680,15 +759,29 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
     for (const id of stale) {
       store
         .inferenceDatabase()
-        .prepare("UPDATE adminbot_inference_queue SET arrived_at = ?, queued_at = ?, expires_at = ? WHERE id = ?")
+        .prepare(
+          "UPDATE adminbot_inference_queue SET arrived_at = ?, queued_at = ?, expires_at = ? WHERE id = ?",
+        )
         .run(old, old, new Date(Date.now() - 60 * 60 * 1000).toISOString(), id);
     }
     store.close();
-    notes.push(`after kill: running=${runningBefore} queued=${queuedBefore.length}; backdated ${stale.length} past max_age`);
+    notes.push(
+      `after kill: running=${runningBefore} queued=${queuedBefore.length}; backdated ${stale.length} past max_age`,
+    );
 
     const survivor = spawn(
       process.execPath,
-      ["--import", "tsx", fileURLToPath(import.meta.url), "--child-role", "restart-survivor", "--db", dbPath, "--port", String(o.port)],
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(import.meta.url),
+        "--child-role",
+        "restart-survivor",
+        "--db",
+        dbPath,
+        "--port",
+        String(o.port),
+      ],
       { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
     );
     let survivorOut = "";
@@ -708,21 +801,31 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
     const after = new AdminBotSqliteStore(dbPath);
     const rows = queueRows(after);
     const events = auditEvents(after);
-    const interrupted = events.filter((e) => e.type === "inference.failed" && e.details?.outcome === "interrupted");
+    const interrupted = events.filter(
+      (e) => e.type === "inference.failed" && e.details?.outcome === "interrupted",
+    );
     const manifest = JSON.parse(fs.readFileSync(`${dbPath}.manifest.json`, "utf8")) as Array<{
       key: string;
       owner: string;
     }>;
     const submitted = new Map<string, InferenceOutcome[]>();
-    for (const entry of manifest) submitted.set(entry.key, []);
+    for (const entry of manifest) {
+      submitted.set(entry.key, []);
+    }
     const checks = reconcile({ store: after, submitted, capacity: 2 });
     checks.push({
       name: `every request in the victim's pre-kill manifest (${manifest.length}) has a row and a retrievable status`,
       ok:
         manifest.length === N &&
         manifest.every((entry) => {
-          const row = rows.find((r) => r.submission_key === entry.key && r.owner_id === entry.owner);
-          return row !== undefined && parsed.outcomes[row.id] !== undefined && parsed.outcomes[row.id]?.state !== "missing";
+          const row = rows.find(
+            (r) => r.submission_key === entry.key && r.owner_id === entry.owner,
+          );
+          return (
+            row !== undefined &&
+            parsed.outcomes[row.id] !== undefined &&
+            parsed.outcomes[row.id]?.state !== "missing"
+          );
         }),
       detail: `${manifest.filter((e) => rows.some((r) => r.submission_key === e.key)).length}/${manifest.length} manifest entries found as rows`,
     });
@@ -731,7 +834,9 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
       ok:
         parsed.recovered.interrupted === runningBefore &&
         interrupted.length === runningBefore &&
-        interrupted.every((e) => e.details?.claimed_by === pidLine && Boolean(e.details?.claimed_at)),
+        interrupted.every(
+          (e) => e.details?.claimed_by === pidLine && Boolean(e.details?.claimed_at),
+        ),
       detail: `${interrupted.length} interrupted events; claimed_by=${[...new Set(interrupted.map((e) => e.details?.claimed_by))].join(",")}`,
     });
     checks.push({
@@ -748,7 +853,10 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
       name: "every unexpired queued row was re-admitted and completed, with a retrievable result",
       ok:
         parsed.recovered.readmitted === readmitted.length &&
-        readmitted.every((r) => parsed.outcomes[r.id]?.state === "completed" && parsed.outcomes[r.id]?.result === true),
+        readmitted.every(
+          (r) =>
+            parsed.outcomes[r.id]?.state === "completed" && parsed.outcomes[r.id]?.result === true,
+        ),
       detail: `readmitted=${parsed.recovered.readmitted}/${readmitted.length}; states=${readmitted.map((r) => parsed.outcomes[r.id]?.state).join(",")}`,
     });
     checks.push({
@@ -771,7 +879,11 @@ async function scenarioRestart(o: Options): Promise<ScenarioResult> {
       detail: `peak_arrivals=${stats.concurrency.peak_arrivals}; the ${runningBefore} interrupted requests were still on the server when the survivor admitted its ${Math.min(2, readmitted.length)}`,
     });
     after.close();
-    return { name: `restart: ${N} always-wait requests, SIGKILL mid-queue, survivor recovers`, checks, notes };
+    return {
+      name: `restart: ${N} always-wait requests, SIGKILL mid-queue, survivor recovers`,
+      checks,
+      notes,
+    };
   } finally {
     await mock.stop();
   }
@@ -840,13 +952,21 @@ async function scenarioMatcher(o: Options): Promise<ScenarioResult> {
       },
       {
         name: "the interactive request was served after at most ~one matcher call, not after the sweep",
-        ok: interactive.kind === "completed" && interactiveWait < elapsed / 2 && interactiveWait < o.latencyMs * 3,
+        ok:
+          interactive.kind === "completed" &&
+          interactiveWait < elapsed / 2 &&
+          interactiveWait < o.latencyMs * 3,
         detail: `interactive waited ${interactiveWait}ms; sweep took ${elapsed}ms`,
       },
       {
         name: "the matcher never held more than capacity rows in the line",
-        ok: (auditEvents(store).map((e) => Number(e.details?.queue_depth ?? 0)).reduce((a, b) => Math.max(a, b), 0)) <= 3,
-        detail: `max queue_depth seen in audit=${auditEvents(store).map((e) => Number(e.details?.queue_depth ?? 0)).reduce((a, b) => Math.max(a, b), 0)}`,
+        ok:
+          auditEvents(store)
+            .map((e) => Number(e.details?.queue_depth ?? 0))
+            .reduce((a, b) => Math.max(a, b), 0) <= 3,
+        detail: `max queue_depth seen in audit=${auditEvents(store)
+          .map((e) => Number(e.details?.queue_depth ?? 0))
+          .reduce((a, b) => Math.max(a, b), 0)}`,
       },
       {
         name: "no duplicate bodies reached the server",
@@ -857,7 +977,9 @@ async function scenarioMatcher(o: Options): Promise<ScenarioResult> {
     return {
       name: "matcher: real workshop matcher end to end, with an interactive arrival mid-sweep",
       checks,
-      notes: [`${workshops.length} workshops x ${inputs.papers.length} papers (batch 4) = ${total} calls`],
+      notes: [
+        `${workshops.length} workshops x ${inputs.papers.length} papers (batch 4) = ${total} calls`,
+      ],
     };
   } finally {
     await untilIdle(gate, 30_000).catch(() => undefined);
@@ -934,7 +1056,9 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
       () => {
         for (const handle of handles) {
           const task = runtime.get(handle.id);
-          if (task?.status === "shed") runtime.wait(handle.id, task.owner);
+          if (task?.status === "shed") {
+            runtime.wait(handle.id, task.owner);
+          }
         }
         return runtime.metrics().completed === submissions;
       },
@@ -949,7 +1073,9 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
     // be served waits behind every earlier owner's whole backlog; under rotation it does not.
     const firstStart = new Map<string, number>();
     dispatched.forEach((owner, index) => {
-      if (!firstStart.has(owner)) firstStart.set(owner, index);
+      if (!firstStart.has(owner)) {
+        firstStart.set(owner, index);
+      }
     });
     const lastFirstStart = Math.max(...firstStart.values());
     const checks: Check[] = [
@@ -1036,7 +1162,11 @@ async function scenarioBroker(o: Options): Promise<ScenarioResult> {
     );
     const runs = Array.from({ length: 20 }, (_, i) =>
       broker
-        .handle({ task: `task ${i}`, privacy: "private" }, undefined, { owner: `m${i}`, wait: true, submissionKey: `b${i}` })
+        .handle({ task: `task ${i}`, privacy: "private" }, undefined, {
+          owner: `m${i}`,
+          wait: true,
+          submissionKey: `b${i}`,
+        })
         .then((r) => ({ ok: true as const, route: r.route }))
         .catch((error: Error) => ({ ok: false as const, error: error.name })),
     );
@@ -1047,7 +1177,10 @@ async function scenarioBroker(o: Options): Promise<ScenarioResult> {
     const checks: Check[] = [
       {
         name: "20 private tasks completed on the local route, each as two gated calls (classify + local)",
-        ok: results.every((r) => r.ok && r.route === "local") && rows.length === 40 && rows.every((r) => r.status === "completed"),
+        ok:
+          results.every((r) => r.ok && r.route === "local") &&
+          rows.length === 40 &&
+          rows.every((r) => r.status === "completed"),
         detail: `${results.filter((r) => r.ok).length} ok; ${rows.length} rows; states=${JSON.stringify(gate.stats().rows)}`,
       },
       {
@@ -1063,10 +1196,17 @@ async function scenarioBroker(o: Options): Promise<ScenarioResult> {
       {
         name: "each stage carries its own submission key derived from the task's",
         ok: rows.every((r) => /^b\d+:(classify|local)$/u.test(r.submission_key)),
-        detail: rows.slice(0, 2).map((r) => r.submission_key).join(","),
+        detail: rows
+          .slice(0, 2)
+          .map((r) => r.submission_key)
+          .join(","),
       },
     ];
-    return { name: "broker: 20 private tasks, two local stages each, under a burst", checks, notes: [`broker fallback audits recorded: ${audits.length}`] };
+    return {
+      name: "broker: 20 private tasks, two local stages each, under a burst",
+      checks,
+      notes: [`broker fallback audits recorded: ${audits.length}`],
+    };
   } finally {
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
@@ -1103,7 +1243,11 @@ async function runVictim(o: Options): Promise<never> {
       timeoutMs: 120_000,
     });
   }
-  await waitFor(() => gate.stats().in_flight === 2 && gate.stats().queued === o.requests - 2, 10_000, "victim did not fill");
+  await waitFor(
+    () => gate.stats().in_flight === 2 && gate.stats().queued === o.requests - 2,
+    10_000,
+    "victim did not fill",
+  );
   process.stdout.write(`VICTIM_PROCESS ${gate.processId}\nVICTIM_READY\n`);
   // Stay alive until killed.
   await new Promise(() => {});
@@ -1146,14 +1290,20 @@ function sleep(ms: number) {
 async function waitFor(condition: () => boolean, timeoutMs: number, message: string) {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error(message);
+    if (Date.now() > deadline) {
+      throw new Error(message);
+    }
     await sleep(25);
   }
 }
 
 // Drain calls before closing SQLite so their terminal events can still be recorded.
 async function untilIdle(gate: InferenceGate, timeoutMs = 120_000) {
-  await waitFor(() => gate.stats().in_flight === 0 && gate.stats().queued === 0, timeoutMs, "gate did not drain");
+  await waitFor(
+    () => gate.stats().in_flight === 0 && gate.stats().queued === 0,
+    timeoutMs,
+    "gate did not drain",
+  );
   // Let the last completion's transaction settle.
   await sleep(20);
 }
@@ -1193,21 +1343,36 @@ async function main() {
       const result = await run(o);
       results.push(result);
       log(result.name);
-      for (const note of result.notes) log(`  note: ${note}`);
+      for (const note of result.notes) {
+        log(`  note: ${note}`);
+      }
       for (const check of result.checks) {
-        log(`  ${check.ok ? "PASS" : "FAIL"} ${check.name}${check.detail ? ` -- ${check.detail}` : ""}`);
-        if (!check.ok) failed += 1;
+        log(
+          `  ${check.ok ? "PASS" : "FAIL"} ${check.name}${check.detail ? ` -- ${check.detail}` : ""}`,
+        );
+        if (!check.ok) {
+          failed += 1;
+        }
       }
     } catch (error) {
       failed += 1;
       log(`  ERROR ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-      results.push({ name, checks: [{ name: "scenario ran", ok: false, detail: String(error) }], notes: [] });
+      results.push({
+        name,
+        checks: [{ name: "scenario ran", ok: false, detail: String(error) }],
+        notes: [],
+      });
     }
   }
   fs.mkdirSync(o.artifactsDir, { recursive: true });
   const reportPath = path.join(o.artifactsDir, "report.json");
-  fs.writeFileSync(reportPath, `${JSON.stringify({ ran_at: new Date().toISOString(), options: o, results }, null, 2)}\n`);
-  log(`\n${failed === 0 ? "ALL CHECKS PASSED" : `${failed} CHECK(S) FAILED`}; report at ${reportPath}`);
+  fs.writeFileSync(
+    reportPath,
+    `${JSON.stringify({ ran_at: new Date().toISOString(), options: o, results }, null, 2)}\n`,
+  );
+  log(
+    `\n${failed === 0 ? "ALL CHECKS PASSED" : `${failed} CHECK(S) FAILED`}; report at ${reportPath}`,
+  );
   process.exit(failed === 0 ? 0 : 1);
 }
 

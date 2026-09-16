@@ -242,7 +242,10 @@ export function renderPublicShell(state: AppViewState) {
             ? "content--public-deadlines"
             : ""}"
         >
-        <adminbot-task-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} sessionContext="visitor"></adminbot-task-status>
+          <adminbot-task-status
+            .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+            sessionContext="visitor"
+          ></adminbot-task-status>
           ${state.tab === "adminbotDeadlines"
             ? renderPublicPanel(state)
             : html`<div class="card adminbot-card adminbot-card--wide">

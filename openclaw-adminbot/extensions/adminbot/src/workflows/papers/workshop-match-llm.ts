@@ -340,14 +340,21 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
       }
     }
 
-    const batchPlan = await taskStep("matcher.batches", { papers, workshops }, () =>
-      jobs.map(job => ({ workshopId: job.workshop.workshop_id, paperIds: job.papers.map(paper => paper.paper_id) })),
-      { replaySafe: true });
-    const workshopById = new Map(workshops.map(workshop => [workshop.workshop_id, workshop]));
+    const batchPlan = await taskStep(
+      "matcher.batches",
+      { papers, workshops },
+      () =>
+        jobs.map((job) => ({
+          workshopId: job.workshop.workshop_id,
+          paperIds: job.papers.map((paper) => paper.paper_id),
+        })),
+      { replaySafe: true },
+    );
+    const workshopById = new Map(workshops.map((workshop) => [workshop.workshop_id, workshop]));
     const paperById = distinct;
-    jobs = batchPlan.map(batch => ({
+    jobs = batchPlan.map((batch) => ({
       workshop: workshopById.get(batch.workshopId)!,
-      papers: batch.paperIds.map(id => paperById.get(id)!),
+      papers: batch.paperIds.map((id) => paperById.get(id)!),
     }));
     let done = 0;
     let failed = 0;
@@ -370,7 +377,9 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
           () => runJobWithRetries(job),
         );
       } catch (error) {
-        if (currentTaskContext()) throw error;
+        if (currentTaskContext()) {
+          throw error;
+        }
         if (isInferenceDeferred(error)) {
           // The gate did not run this batch. Not a failure -- the model was never asked -- and not
           // an empty result either: an empty result is "this workshop matched nothing", which is a
@@ -456,7 +465,9 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         try {
           return await runJob(job, requestTimeoutMs * attempt);
         } catch (error) {
-          if (currentTaskContext()) throw error;
+          if (currentTaskContext()) {
+            throw error;
+          }
           if (isInferenceDeferred(error)) {
             // The gate declined to run this -- expired in line, or the queue is full. That is a
             // decision about capacity, not a blip in the tunnel, and retrying it would hand the

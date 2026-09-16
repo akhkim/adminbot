@@ -35,8 +35,12 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
     <section class="adminbot-shell workshop-nudges" data-testid="adminbot-workshop-nudges">
       ${["needs_retry", "shed"].includes(props.state.run?.task_status ?? "")
         ? html`<div class="callout warning" role="status">
-            ${props.state.run?.task_status === "shed" ? "The match is waiting for capacity. Choose Wait to keep it queued." : "This match stopped during a step. Retry resumes it with completed work preserved."}
-            <button class="btn" @click=${props.onRetryTask}>${props.state.run?.task_status === "shed" ? "Wait" : "Retry uncertain step"}</button>
+            ${props.state.run?.task_status === "shed"
+              ? "The match is waiting for capacity. Choose Wait to keep it queued."
+              : "This match stopped during a step. Retry resumes it with completed work preserved."}
+            <button class="btn" @click=${props.onRetryTask}>
+              ${props.state.run?.task_status === "shed" ? "Wait" : "Retry uncertain step"}
+            </button>
           </div>`
         : nothing}
       ${props.state.error
@@ -193,7 +197,8 @@ function renderSendResult(props: WorkshopNudgesProps) {
     data-testid="workshop-nudges-send-result"
   >
     <strong>
-      Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
+      Sent ${sent.created} workshop
+      nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
         ? `, skipped ${sent.skipped.length}`
         : ""}.
     </strong>

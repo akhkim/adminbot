@@ -1,9 +1,9 @@
-import { TaskRuntime } from "../../tasks/runtime.js";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import type { GuidebookFetch } from "../../guidebook/local-client.js";
 import { resolveInferenceGateConfig } from "../../inference/config.js";
 import { createInferenceGate, runGated } from "../../inference/gate.js";
+import { TaskRuntime } from "../../tasks/runtime.js";
 import {
   buildWorkshopMatchPrompt,
   createLocalWorkshopMatcher,
@@ -493,48 +493,98 @@ describe("keeping calls short enough to answer", () => {
   });
 });
 
-
 it("resumes a task's original batch plan and reuses completed model batches", async () => {
   const db = memoryDb();
   const bodies: string[] = [];
   const fetchImpl: GuidebookFetch = async (_url, init) => {
     bodies.push(init.body ?? "");
-    if (bodies.length === 2) throw new Error("interrupted model exchange");
+    if (bodies.length === 2) {
+      throw new Error("interrupted model exchange");
+    }
     return reply({ matches: [] });
   };
-  const gate = createInferenceGate({ db, fetchImpl, env: {}, config: resolveInferenceGateConfig({ ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0", ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0" }) });
-  const matcher = createLocalWorkshopMatcher({ gate, fetchImpl, papersPerRequest: 1, maxConcurrentRequests: 1, maxAttemptsPerCall: 1 });
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+    maxAttemptsPerCall: 1,
+  });
   const runtime = new TaskRuntime({ db });
-  runtime.register("matcher", 1, () => matcher({ papers: [paper("a"), paper("b")], workshops: [profile("one"), profile("two")] }));
+  runtime.register("matcher", 1, () =>
+    matcher({ papers: [paper("a"), paper("b")], workshops: [profile("one"), profile("two")] }),
+  );
   try {
     const submitted = runtime.submit({ owner: "service", kind: "matcher", input: {} });
     expect((await submitted.promise)?.status).toBe("needs_retry");
     const retried = runtime.retry(submitted.id, "service")!;
     expect((await retried.promise)?.status).toBe("completed");
     expect(bodies).toHaveLength(5);
-    expect(bodies.filter(body => body === bodies[0])).toHaveLength(1);
-    expect(bodies.filter(body => body === bodies[1])).toHaveLength(2);
-  } finally { await runtime.shutdown({ graceMs: 0 }); await gate.shutdown(); db.close(); }
+    expect(bodies.filter((body) => body === bodies[0])).toHaveLength(1);
+    expect(bodies.filter((body) => body === bodies[1])).toHaveLength(2);
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
 });
-
 
 it("lets an accepted interactive task join the GPU FIFO during a matcher sweep", async () => {
   const db = memoryDb();
   const seen: string[] = [];
   const fetchImpl: GuidebookFetch = async (_url, init) => {
     seen.push(JSON.parse(init.body ?? "{}").messages.at(-1).content);
-    await new Promise(resolve => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 15));
     return reply({ matches: [] });
   };
-  const gate = createInferenceGate({ db, fetchImpl, env: {}, config: resolveInferenceGateConfig({ ADMINBOT_INFERENCE_CAPACITY: "1", ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0", ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0" }) });
-  const runtime = new TaskRuntime({ db, canStart: () => gate.stats().in_flight === 0,
-    canDispatch: () => !gate.settings().paused && !gate.settings().shutting_down });
-  const matcher = createLocalWorkshopMatcher({ gate, fetchImpl, papersPerRequest: 1, maxConcurrentRequests: 1 });
-  runtime.register("matcher", 1, () => matcher({ papers: Array.from({ length: 6 }, (_, i) => paper(`p${i}`)), workshops: [profile("one")] }));
-  runtime.register("interactive", 1, () => runGated(gate, { owner: "member", caller: "interactive", request: {
-    route: "chat/completions", baseUrl: "http://127.0.0.1:8000/v1", purpose: "interactive",
-    body: { model: "m", messages: [{ role: "user", content: "interactive" }] },
-  } }));
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_CAPACITY: "1",
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const runtime = new TaskRuntime({
+    db,
+    canStart: () => gate.stats().in_flight === 0,
+    canDispatch: () => !gate.settings().paused && !gate.settings().shutting_down,
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+  });
+  runtime.register("matcher", 1, () =>
+    matcher({
+      papers: Array.from({ length: 6 }, (_, i) => paper(`p${i}`)),
+      workshops: [profile("one")],
+    }),
+  );
+  runtime.register("interactive", 1, () =>
+    runGated(gate, {
+      owner: "member",
+      caller: "interactive",
+      request: {
+        route: "chat/completions",
+        baseUrl: "http://127.0.0.1:8000/v1",
+        purpose: "interactive",
+        body: { model: "m", messages: [{ role: "user", content: "interactive" }] },
+      },
+    }),
+  );
   try {
     const sweep = runtime.submit({ owner: "service", kind: "matcher", input: {} });
     await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0), { interval: 1 });
@@ -545,5 +595,9 @@ it("lets an accepted interactive task join the GPU FIFO during a matcher sweep",
     expect(seen.indexOf("interactive")).toBeLessThan(3);
     expect((await sweep.promise)?.status).toBe("completed");
     expect(seen).toHaveLength(7);
-  } finally { await runtime.shutdown({ graceMs: 0 }); await gate.shutdown(); db.close(); }
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
 });

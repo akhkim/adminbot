@@ -204,9 +204,7 @@ describe("POST /venue-papers/index", () => {
       // Still not out the next morning: read again, nothing changed, nothing embedded.
       const quiet = await index(true);
       expect(quiet.built).toEqual([]);
-      expect(quiet.skipped).toEqual([
-        { venue_id: "NeurIPS.cc/2026/Conference", paper_count: 0 },
-      ]);
+      expect(quiet.skipped).toEqual([{ venue_id: "NeurIPS.cc/2026/Conference", paper_count: 0 }]);
       expect(embed.mock.calls).toHaveLength(embedCallsBeforeResults);
 
       // Results land.

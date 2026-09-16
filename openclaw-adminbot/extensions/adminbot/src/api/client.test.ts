@@ -255,11 +255,12 @@ describe("AdminBotClient", () => {
       });
       expect(result).not.toHaveProperty("output");
       expect(fetchImpl).toHaveBeenCalledTimes(1);
-      if (state === "shed")
+      if (state === "shed") {
         expect(result).toHaveProperty(
           "user_message",
           expect.stringContaining("Ask the user whether to wait"),
         );
+      }
     },
   );
 

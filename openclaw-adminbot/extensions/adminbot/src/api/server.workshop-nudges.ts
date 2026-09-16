@@ -50,7 +50,9 @@ export type WorkshopNudgeSendResult = {
  */
 export function readWorkshopNudgeRun(service: AdminBotService, now?: Date): WorkshopNudgeRunView {
   const managed = latestManagedRun(service);
-  if (managed) return managed;
+  if (managed) {
+    return managed;
+  }
   const stored = service.latestWorkshopMatchRun();
   if (!stored) {
     return { status: "none" };
@@ -179,7 +181,7 @@ export function cancelWorkshopNudgeRun(params: {
   if (managed) {
     const latest = managed.runtime
       .list("system:workshop-match")
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .toSorted((a, b) => b.createdAt - a.createdAt)
       .find((task) => task.kind === "workshop.match");
     if (latest) {
       managed.runtime.cancel(latest.id, latest.owner);
@@ -232,17 +234,20 @@ export function startWorkshopNudgeRun(params: {
   if (managed) {
     const latest = managed.runtime
       .list("system:workshop-match")
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .toSorted((a, b) => b.createdAt - a.createdAt)
       .find((task) => task.kind === "workshop.match");
     if (latest && ["running", "queued", "shed"].includes(latest.status)) {
-      if (!params.force) return readWorkshopNudgeRun(params.service);
+      if (!params.force) {
+        return readWorkshopNudgeRun(params.service);
+      }
       managed.runtime.cancel(latest.id, latest.owner);
     }
     if (!latest) {
       const legacy = params.service.latestWorkshopMatchRun();
       if (legacy?.status === "running") {
-        if (!params.force && !workshopRunIsAbandoned(legacy, params.now))
+        if (!params.force && !workshopRunIsAbandoned(legacy, params.now)) {
           return readWorkshopNudgeRun(params.service);
+        }
         abandonWorkshopRun(params.service, legacy);
       }
     }
@@ -412,7 +417,9 @@ export async function previewWorkshopNudges(params: {
     }),
     { replaySafe: true },
   );
-  if (!allWorkshops.length) throw new Error("no upcoming workshop profiles are available");
+  if (!allWorkshops.length) {
+    throw new Error("no upcoming workshop profiles are available");
+  }
   const conferenceKey = params.conferenceKey?.trim();
   const workshops = workshopProfilesForConference(allWorkshops, conferenceKey);
   // Refused rather than silently widened. An admin who picked a conference and got the whole season
@@ -729,8 +736,10 @@ export function configureWorkshopTaskRuntime(
     const task = runtime
       .list("system:workshop-match")
       .filter((row) => row.kind === "workshop.match")
-      .sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (!task) return undefined;
+      .toSorted((a, b) => b.createdAt - a.createdAt)[0];
+    if (!task) {
+      return undefined;
+    }
     const view = projectTaskRun(task);
     return {
       id: task.id,
@@ -799,7 +808,7 @@ function latestManagedRun(service: AdminBotService): WorkshopNudgeRunView | unde
   const managed = workshopRuntimes.get(service);
   const task = managed?.runtime
     .list("system:workshop-match")
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .toSorted((a, b) => b.createdAt - a.createdAt)
     .find((row) => row.kind === "workshop.match");
   return task ? projectTaskRun(task) : undefined;
 }

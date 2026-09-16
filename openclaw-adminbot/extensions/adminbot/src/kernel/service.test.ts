@@ -700,7 +700,7 @@ describe("AdminBotService weekly updates", () => {
   it("does not ask the same person twice for the same week", async () => {
     const service = labWithPaper();
     const first = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
-    expect(first.asked.sort()).toEqual(["ada", "rahul"]);
+    expect(first.asked.toSorted()).toEqual(["ada", "rahul"]);
     // A crontab that fires hourly, a retry and a manual press all collapse into one nudge.
     const second = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
     expect(second.asked).toEqual([]);
@@ -709,7 +709,7 @@ describe("AdminBotService weekly updates", () => {
     const nextWeek = unwrap(
       await service.sendWeeklyUpdateNudges("cron", "2026-08-30T18:00:00.000Z"),
     );
-    expect(nextWeek.asked.sort()).toEqual(["ada", "rahul"]);
+    expect(nextWeek.asked.toSorted()).toEqual(["ada", "rahul"]);
   });
 
   it("leaves a rejected paper alone -- nobody owes a week on a paper that is not running", async () => {
@@ -4590,7 +4590,7 @@ describe("AdminBotService", () => {
       const recipients = result.created.map(
         (proposal) => (proposal.target as { recipientMemberId?: string })?.recipientMemberId,
       );
-      expect(recipients.sort()).toEqual(["blank1", "blank2"]);
+      expect(recipients.toSorted()).toEqual(["blank1", "blank2"]);
     });
 
     // The gap this sweep could not see before: a full member whose profile is complete but who
@@ -5180,10 +5180,20 @@ describe("AdminBotService", () => {
     it("proposes again when the date is corrected", () => {
       const service = new AdminBotService();
       unwrap(
-        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-14" }),
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-14",
+        }),
       );
       unwrap(
-        service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", birthday: "03-15" }),
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-15",
+        }),
       );
       expect(birthdayProposals(service)).toHaveLength(2);
     });
@@ -5296,7 +5306,7 @@ describe("AdminBotService", () => {
         }),
       );
       const fetchSlackTimezones = vi.fn(async (ids: string[]) => {
-        expect(ids.sort()).toEqual(["U1", "U2"]);
+        expect(ids.toSorted()).toEqual(["U1", "U2"]);
         // U1 has a zone; U2 was asked and Slack had none, which is null rather than absent.
         return new Map<string, string | null>([
           ["U1", "America/Toronto"],
@@ -5416,7 +5426,9 @@ describe("AdminBotService inference escalation", () => {
         privilege_level: "admin",
         slack_user_id: slack,
       });
-      if (!saved.ok) throw new Error(saved.error.message);
+      if (!saved.ok) {
+        throw new Error(saved.error.message);
+      }
     }
     const proposed = service.proposeInferenceEscalation({
       trigger: "queue_depth",
@@ -5424,7 +5436,9 @@ describe("AdminBotService inference escalation", () => {
       details: { queue_depth: 17 },
       firedAt: "2026-09-12T10:00:00.000Z",
     });
-    if (!proposed.ok) throw new Error(proposed.error.message);
+    if (!proposed.ok) {
+      throw new Error(proposed.error.message);
+    }
     expect(proposed.payload.type).toBe("inference.escalate");
     expect(proposed.payload.risk_tier).toBe("T3");
     expect(proposed.payload.status).toBe("pending");
@@ -5439,9 +5453,13 @@ describe("AdminBotService inference escalation", () => {
       approver_role: "admin",
       approver_id: "admin-a",
     });
-    if (!approved.ok) throw new Error(approved.error.message);
+    if (!approved.ok) {
+      throw new Error(approved.error.message);
+    }
     const executed = await service.execute(proposed.payload.id, { dry_run: false });
-    if (!executed.ok) throw new Error(executed.error.message);
+    if (!executed.ok) {
+      throw new Error(executed.error.message);
+    }
     expect(sent).toEqual([{ type: "inference.escalate", user_ids: ["U1", "U2"] }]);
     const delivered = service
       .listAuditEvents()

@@ -1,4 +1,3 @@
-import { isTaskPath, taskFetch } from "../task-request.ts";
 // Control UI module implements per-member AdminBot email+password auth.
 //
 // Talks to the standalone AdminBot service (default `http://<host>:8765`).
@@ -13,6 +12,7 @@ import type {
   AdminBotOpportunityDraft,
   AdminBotOpportunityView,
 } from "../data/opportunities-data.ts";
+import { isTaskPath, taskFetch } from "../task-request.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -451,18 +451,21 @@ async function authedJson(
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
   let response: Response;
   try {
-    response = await (isTaskPath(path) && method === "POST" ? taskFetch : fetch)(`${baseUrl}${path}`, {
-      method,
-      credentials: "omit",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    response = await (isTaskPath(path) && method === "POST" ? taskFetch : fetch)(
+      `${baseUrl}${path}`,
+      {
+        method,
+        credentials: "omit",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
+        // a JSON body is legal but pointless here, and some proxies drop it.
+        ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
       },
-      // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
-      // a JSON body is legal but pointless here, and some proxies drop it.
-      ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
-    });
+    );
   } catch {
     return { unreachable: true };
   }
@@ -1497,11 +1500,21 @@ export async function fetchCalendarEvents(
   baseUrl: string,
 ): Promise<AuthResult<{ events: CalendarEvent[]; calendar: LabCalendar | null }>> {
   const search = new URLSearchParams();
-  if (params.calendarId) search.set("calendar_id", params.calendarId);
-  if (params.from) search.set("from", params.from);
-  if (params.to) search.set("to", params.to);
-  if (params.query) search.set("query", params.query);
-  if (params.max) search.set("max", String(params.max));
+  if (params.calendarId) {
+    search.set("calendar_id", params.calendarId);
+  }
+  if (params.from) {
+    search.set("from", params.from);
+  }
+  if (params.to) {
+    search.set("to", params.to);
+  }
+  if (params.query) {
+    search.set("query", params.query);
+  }
+  if (params.max) {
+    search.set("max", String(params.max));
+  }
   const query = search.toString();
   const result = await authedJson(
     baseUrl,
@@ -3585,13 +3598,17 @@ export async function fetchEscalatedNudges(
         name: typeof row.name === "string" && row.name ? row.name : memberId,
         ...(typeof row.slack_user_id === "string" ? { slackUserId: row.slack_user_id } : {}),
         escalatedAt: typeof row.escalated_at === "string" ? row.escalated_at : "",
-        items: (row.notifications ?? []).map((entry) => ({
-          id: typeof entry.id === "string" ? entry.id : "",
-          title: typeof entry.title === "string" ? entry.title : "",
-          body: typeof entry.body === "string" ? entry.body : "",
-          createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
-          ...(typeof entry.tab === "string" ? { tab: entry.tab } : {}),
-        })),
+        items: (row.notifications ?? []).map((entry) =>
+          Object.assign(
+            {
+              id: typeof entry.id === "string" ? entry.id : "",
+              title: typeof entry.title === "string" ? entry.title : "",
+              body: typeof entry.body === "string" ? entry.body : "",
+              createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
+            },
+            typeof entry.tab === "string" ? { tab: entry.tab } : {},
+          ),
+        ),
       },
     ];
   });
@@ -4359,9 +4376,13 @@ export async function runPaperSlotReminder(
   baseUrl: string,
   recipientIds?: string[],
 ): Promise<AuthResult<{ created: number; skipped: number }>> {
-  const result = await authedJson(baseUrl, "/papers/slot-reminder/run", "POST", sessionToken, {
-    ...(recipientIds?.length ? { recipient_member_ids: recipientIds } : {}),
-  });
+  const result = await authedJson(
+    baseUrl,
+    "/papers/slot-reminder/run",
+    "POST",
+    sessionToken,
+    recipientIds?.length ? { recipient_member_ids: recipientIds } : {},
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }

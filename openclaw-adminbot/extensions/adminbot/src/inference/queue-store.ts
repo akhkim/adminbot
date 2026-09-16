@@ -157,7 +157,10 @@ type RawRow = Omit<InferenceQueueRow, "request" | "result" | "stage" | "result_r
 };
 
 export class InferenceQueueStore {
-  constructor(private readonly db: DatabaseSync, temporary = false) {
+  constructor(
+    private readonly db: DatabaseSync,
+    temporary = false,
+  ) {
     // TEMP queue rows disappear with the connection; audit and preferences remain in main.
     ensureInferenceQueueSchema(db, temporary);
   }
@@ -375,9 +378,13 @@ export class InferenceQueueStore {
   }
 
   cancelPending(id: string, at: string): boolean {
-    return this.db.prepare(`UPDATE adminbot_inference_queue
+    return (
+      this.db
+        .prepare(`UPDATE adminbot_inference_queue
       SET status = 'failed', finished_at = ?, outcome = 'cancelled', error = 'Cancelled by operator'
-      WHERE id = ? AND status IN ('queued', 'shed')`).run(at, id).changes === 1;
+      WHERE id = ? AND status IN ('queued', 'shed')`)
+        .run(at, id).changes === 1
+    );
   }
 
   expire(id: string, at: string): boolean {
@@ -460,8 +467,15 @@ export class InferenceQueueStore {
 }
 
 function fromRaw(raw: RawRow): InferenceQueueRow {
-  const { request_json, result_json, stage_name, stage_task, stage_final, result_retained, ...rest } =
-    raw;
+  const {
+    request_json,
+    result_json,
+    stage_name,
+    stage_task,
+    stage_final,
+    result_retained,
+    ...rest
+  } = raw;
   return {
     ...rest,
     timeout_ms: Number(rest.timeout_ms),

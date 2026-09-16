@@ -16,7 +16,9 @@ export function registerServiceTaskHandlers(runtime: TaskRuntime, ctx: AdminBotR
     }),
   );
   runtime.register("reimbursement", 1, (input, task) => {
-    if (!ctx.reimbursementWorkflow) throw new Error("reimbursement workflow is not configured");
+    if (!ctx.reimbursementWorkflow) {
+      throw new Error("reimbursement workflow is not configured");
+    }
     return ctx.reimbursementWorkflow.converse(input as AdminBotReimbursementRequest, undefined, {
       owner: task.owner,
       wait: true,
@@ -30,8 +32,9 @@ export function registerServiceTaskHandlers(runtime: TaskRuntime, ctx: AdminBotR
     if (
       snapshot.approvedHash !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_SHA256?.trim() ?? "") ||
       snapshot.indexPath !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_INDEX?.trim() ?? "")
-    )
+    ) {
       throw new Error("Member guidebook audience approval changed; submit a new question.");
+    }
     return askMemberGuidebook(snapshot.question, { gate: ctx.inferenceGate });
   });
   runtime.register("import-columns", 1, async (input) => ({
@@ -54,7 +57,9 @@ export function registerServiceTaskHandlers(runtime: TaskRuntime, ctx: AdminBotR
   });
   runtime.register("cv.scan", 1, async () => {
     const scan = await runPersistentCvScan(ctx, ctx.service);
-    if (!scan.ok) throw new Error(scan.failure.error.message);
+    if (!scan.ok) {
+      throw new Error(scan.failure.error.message);
+    }
     return scan.result;
   });
 }

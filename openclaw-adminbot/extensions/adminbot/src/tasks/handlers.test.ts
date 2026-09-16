@@ -10,10 +10,13 @@ function setup(failFinal = false, malformedFinal = false) {
   const fetchImpl: InferenceFetch = async (_url, init) => {
     const body = JSON.parse(init.body ?? "{}");
     const classification = Boolean(body.response_format);
-    if (classification) classified++;
-    else {
+    if (classification) {
+      classified++;
+    } else {
       generated++;
-      if (failFinal && generated === 1) throw new Error("connection interrupted");
+      if (failFinal && generated === 1) {
+        throw new Error("connection interrupted");
+      }
     }
     const content = classification
       ? JSON.stringify({
@@ -101,10 +104,11 @@ it("keeps task-level backpressure out of needs-retry even with no model waiting 
     env: {},
     config: inferenceTestConfig({ capacity: 1, queue: { maxDepth: 0 } }),
     fetchImpl: async () => {
-      if (++calls === 1)
+      if (++calls === 1) {
         await new Promise<void>((resolve) => {
           release = resolve;
         });
+      }
       return { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
     },
   });
@@ -130,23 +134,48 @@ it("keeps task-level backpressure out of needs-retry even with no model waiting 
   gate.database.close();
 });
 
-
 it("bounds a hung remote stage without claiming application completion", async () => {
   vi.useFakeTimers();
   const fetchImpl: InferenceFetch = async (url) => {
-    if (String(url).startsWith("https:")) return new Promise(() => {});
-    return { ok: true, status: 200, statusText: "OK", text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ classification: "generic", sanitized_task: "hello", replacements: [] }) } }] }) };
+    if (String(url).startsWith("https:")) {
+      return new Promise(() => {});
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  classification: "generic",
+                  sanitized_task: "hello",
+                  replacements: [],
+                }),
+              },
+            },
+          ],
+        }),
+    };
   };
   const gate = createInferenceGate({ config: inferenceTestConfig(), fetchImpl, env: {} });
   const runtime = new TaskRuntime({ db: gate.database });
-  const broker = createAdminBotPrivacyBroker(undefined, { gate, fetchImpl, env: { NVIDIA_API_KEY: "synthetic" } });
+  const broker = createAdminBotPrivacyBroker(undefined, {
+    gate,
+    fetchImpl,
+    env: { NVIDIA_API_KEY: "synthetic" },
+  });
   runtime.register("privacy", 1, () => broker.handle({ task: "hello" }));
   try {
     const submitted = runtime.submit({ owner: "a", kind: "privacy", input: {} });
     await vi.advanceTimersByTimeAsync(120_001);
     expect((await submitted.promise)?.status).toBe("needs_retry");
   } finally {
-    await runtime.shutdown({ graceMs: 0 }); await gate.shutdown(); gate.database.close();
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    gate.database.close();
     vi.useRealTimers();
   }
 });
