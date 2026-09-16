@@ -70,7 +70,9 @@ export class TaskRuntime {
     { promise: Promise<TaskRecord>; resolve: (r: TaskRecord) => void }
   >();
   private readonly ownDb: boolean;
-  private lastOwnerDispatched?: string;
+  /** Dispatch sequence number per owner, so the least recently served goes first. */
+  private readonly ownerLastServed = new Map<string, number>();
+  private dispatchSequence = 0;
   private started = false;
   private paused = false;
   private stopping = false;
@@ -373,33 +375,67 @@ export class TaskRuntime {
     };
   }
   private admissionStatus(owner: string, wait: boolean): "queued" | "shed" {
+    // The share binds first, and it binds even when the service is idle. An earlier version let
+    // an idle service admit anything, reasoning that a share divides a contended line and there
+    // was no line to divide. That is wrong: submit() drains after every admission, so the queue
+    // count returns to zero between submissions in one burst, the carve-out re-arms every time,
+    // and one owner reaches maxRunning. Measured at 20 running against a share of 4. "Idle right
+    // now" is not a reason to let one member take every running slot on a box the lab shares.
+    if (this.store.countInFlightForOwner(owner) >= this.options.maxInFlightPerOwner) {
+      return "shed";
+    }
     const queued = this.store.count("queued");
     const immediate =
       queued === 0 &&
       !this.paused &&
       this.active.size < this.options.maxRunning &&
       (this.options.canStart?.() ?? true);
-    // An idle service runs the work, whatever the owner already holds: the share exists to
-    // divide a contended line, and there is no line to divide here.
     if (immediate) {
       return "queued";
     }
-    if (!wait || queued >= this.options.maxQueued) {
-      return "shed";
-    }
-    // Past their share the task is saved, not refused. The member keeps a row and a Wait, which
-    // is the same status they would have seen from a full queue.
-    return this.store.countInFlightForOwner(owner) >= this.options.maxInFlightPerOwner
-      ? "shed"
-      : "queued";
+    // Past the shared line the task is saved, not refused: the member keeps a row and a Wait,
+    // which is the status they would have seen from a full queue.
+    return !wait || queued >= this.options.maxQueued ? "shed" : "queued";
   }
   /**
-   * Queued ids, rotated across owners rather than strict arrival order.
+   * Queued ids, ordered least-recently-served owner first rather than by arrival.
    *
    * Without this the share above is not enough: one owner whose burst is already dispatched
-   * still puts every later arrival behind all of it. Rotation starts after the owner served
-   * last, so no owner is first on every pass.
+   * still puts every later arrival behind all of it.
+   *
+   * An earlier version tracked only the owner served last and resumed after it. That is wrong
+   * whenever that owner has no rows left, which is the common case for anyone who submitted
+   * once: the index lookup misses, the cursor falls back to the head of the list, and the head
+   * is whoever holds the oldest queued row -- the owner with the standing backlog. Measured, it
+   * gave that owner every second dispatch no matter how many others were waiting. Ordering by
+   * when each owner was last served has no such fallback, and does not care whether an owner
+   * leaves the queue and comes back.
    */
+  /**
+   * Bound the turn map. An owner with nothing queued and nothing running is not competing, so
+   * forgetting them costs only that they count as never-served if they come back -- which is
+   * what an idle owner should be. Pruning is O(owners) and runs only when the map is large.
+   */
+  private forgetIdleOwners(): void {
+    if (this.ownerLastServed.size <= this.options.maxTasks) {
+      return;
+    }
+    const competing = new Set<string>();
+    for (const id of this.active.keys()) {
+      const owner = this.store.get(id)?.owner;
+      if (owner) {
+        competing.add(owner);
+      }
+    }
+    for (const row of this.store.queuedByOwner()) {
+      competing.add(row.owner);
+    }
+    for (const owner of this.ownerLastServed.keys()) {
+      if (!competing.has(owner)) {
+        this.ownerLastServed.delete(owner);
+      }
+    }
+  }
   private queuedInTurn(): string[] {
     const byOwner = new Map<string, string[]>();
     for (const row of this.store.queuedByOwner()) {
@@ -410,12 +446,15 @@ export class TaskRuntime {
         byOwner.set(row.owner, [row.id]);
       }
     }
-    const owners = [...byOwner.keys()];
+    // Insertion order is arrival order, so a stable sort leaves owners never served before --
+    // and owners served in the same pass -- in the order their oldest row arrived.
+    const owners = [...byOwner.keys()].sort(
+      (a, b) => (this.ownerLastServed.get(a) ?? -1) - (this.ownerLastServed.get(b) ?? -1),
+    );
     if (owners.length < 2) {
       return owners.length ? byOwner.get(owners[0]!)! : [];
     }
-    const previous = this.lastOwnerDispatched ? owners.indexOf(this.lastOwnerDispatched) : -1;
-    const start = previous + 1;
+    const start = 0;
     const order: string[] = [];
     for (let round = 0; ; round += 1) {
       let added = false;
@@ -482,7 +521,8 @@ export class TaskRuntime {
         continue;
       }
       this.update(task, "running");
-      this.lastOwnerDispatched = task.owner;
+      this.ownerLastServed.set(task.owner, (this.dispatchSequence += 1));
+      this.forgetIdleOwners();
       const controller = new AbortController();
       const done = Promise.resolve()
         .then(() => this.execute(task, handler, controller))
