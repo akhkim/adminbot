@@ -6350,8 +6350,15 @@ export class AdminBotService {
    * Plain pass-throughs: the pass is orchestrated in the route because it outlives the request,
    * and the service's job here is only to own the storage.
    */
+  private workshopRunReader?: () => AdminBotWorkshopMatchRun | undefined;
+
+  /** The task runner supplies live run state; historical previews remain in the domain store. */
+  setWorkshopMatchRunReader(reader: () => AdminBotWorkshopMatchRun | undefined): void {
+    this.workshopRunReader = reader;
+  }
+
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
-    return this.store.latestWorkshopMatchRun();
+    return this.workshopRunReader?.() ?? this.store.latestWorkshopMatchRun();
   }
 
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {

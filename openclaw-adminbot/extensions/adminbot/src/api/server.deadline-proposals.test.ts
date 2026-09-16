@@ -231,7 +231,7 @@ describe("deadline proposal API", () => {
       await new Promise<void>((resolve, reject) => {
         mock.server.close((error) => (error ? reject(error) : resolve()));
       });
-      mock.close();
+      await mock.close();
     }
   });
 
@@ -268,7 +268,7 @@ describe("deadline proposal API", () => {
       await new Promise<void>((resolve, reject) => {
         mock.server.close((error) => (error ? reject(error) : resolve()));
       });
-      mock.close();
+      await mock.close();
     }
   });
 });
