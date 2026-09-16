@@ -1694,7 +1694,7 @@ describe("venue location", () => {
     expect(cells.some((cell) => cell.textContent?.trim() === "—")).toBe(true);
   });
 
-  it("puts the location on a group heading rather than on every row beneath it", async () => {
+  it("puts the location on the group heading and on every workshop row beneath it", async () => {
     const container = await renderView();
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -1710,8 +1710,17 @@ describe("venue location", () => {
         .querySelector(".deadline-group__heading .deadline-location__sites")
         ?.textContent?.trim(),
     ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    // Twenty workshops that all meet in the same three cities say it once, on the heading.
-    expect(group.querySelectorAll(".deadline-group__row .deadline-location")).toHaveLength(0);
+    // Every workshop row carries it too. Deciding whether to submit is deciding whether to
+    // travel, and the heading scrolls out of view on a long group. The heading keeps its copy
+    // because that is what a collapsed group shows.
+    const rows = [...group.querySelectorAll<HTMLElement>(".deadline-group__row")];
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(
+        row.querySelector(".deadline-location__sites")?.textContent?.trim(),
+        "a workshop row with no location",
+      ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
+    }
   });
 
   it("puts the location on a standalone group row, which has no heading above it", async () => {

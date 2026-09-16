@@ -2098,10 +2098,18 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   /**
-   * `showLocation` is off by default because every row under a group heading shares that
-   * heading's location — printing "Sydney · Atlanta · Paris" against all twenty NeurIPS
-   * workshops says nothing the heading has not already said. A standalone group has no heading,
-   * so its one row turns it back on.
+   * `showLocation` puts the site on the row itself.
+   *
+   * Workshop rows turn it on: a reader deciding whether to submit is deciding whether to travel,
+   * and the heading's copy is out of view once a long group is scrolled. It is redundant with
+   * the heading by design -- the heading is what a *collapsed* group shows, and the rows are
+   * what an open one shows, so neither can be dropped in favour of the other.
+   *
+   * The honest limit: what this prints is the parent conference's location, because that is the
+   * only location the collector resolves (`PARENT_CONFERENCE_LOCATIONS`, keyed by family and
+   * year). For a single-site conference that is the workshop's city. For a multi-site one it is
+   * every site the conference runs at, since which of them a given workshop sits at is not a
+   * fact this pipeline has -- so the row says "one of these", never a city it guessed.
    */
   private renderGroupRow(
     entry: DeadlineBoardEntry,
@@ -2173,7 +2181,7 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-group__section-head">
           <strong>${label}</strong><span>${entries.length}</span>
         </p>
-        ${entries.map((entry) => this.renderGroupRow(entry, conference))}
+        ${entries.map((entry) => this.renderGroupRow(entry, conference, "workshops", true))}
       </section>
     `;
   }
