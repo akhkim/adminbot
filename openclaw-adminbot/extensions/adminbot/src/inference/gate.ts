@@ -269,6 +269,23 @@ export function createInferenceGate(options: InferenceGateOptions) {
   let sweepTimer: NodeJS.Timeout | undefined;
   let healthTimer: NodeJS.Timeout | undefined;
   let admissionRetryTimer: NodeJS.Timeout | undefined;
+  const backgroundFailures = new Set<string>();
+  const pendingEscalationAudits = new Map<
+    InferenceEscalationTrigger,
+    Parameters<InferenceQueueStore["audit"]>[0]
+  >();
+
+  function reportBackgroundFailure(operation: string, error: unknown): void {
+    if (!backgroundFailures.has(operation)) {
+      backgroundFailures.add(operation);
+      const message = `[adminbot] inference ${operation} failed (${errorCode(error) ?? "unknown"}); will retry`;
+      if (options.alert) {
+        options.alert(message);
+      } else {
+        console.error(message);
+      }
+    }
+  }
 
   // Exponential moving average of service time, for the estimate a queued member is shown.
   let meanServiceMs: number | null = null;
@@ -1150,7 +1167,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         expired += 1;
         continue;
       }
-      if (row.status === "queued") {
+      if (row.status === "queued" && !waiting.some((entry) => entry.id === row.id)) {
         waiting.push({ id: row.id, resolvers: [] });
         readmitted += 1;
       }
@@ -1166,9 +1183,14 @@ export function createInferenceGate(options: InferenceGateOptions) {
       if (Date.parse(row.expires_at) > Date.parse(at)) {
         continue;
       }
+      const outcome = expireRow(row, at);
+      // Keep the waiter attached until expiry commits, just as admission does. A rollback
+      // must not leave a queued row with nobody to deliver its eventual outcome to.
       const index = waiting.findIndex((entry) => entry.id === row.id);
       const waiter = index >= 0 ? waiting.splice(index, 1)[0] : undefined;
-      const outcome = expireRow(row, at);
+      if (waiter?.onAbort) {
+        waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      }
       for (const resolve of waiter?.resolvers ?? []) {
         resolve(outcome);
       }
@@ -1241,8 +1263,22 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   async function evaluateEscalations(): Promise<void> {
+    try {
+      await checkEscalations();
+      backgroundFailures.delete("escalation");
+    } catch (error) {
+      reportBackgroundFailure("escalation", error);
+    }
+  }
+
+  async function checkEscalations(): Promise<void> {
     if (closed) {
       return;
+    }
+    // Retrying an audit write must not propose the same escalation again.
+    for (const [trigger, entry] of pendingEscalationAudits) {
+      store.audit(entry);
+      pendingEscalationAudits.delete(trigger);
     }
     const conditions: Array<[InferenceEscalationTrigger, boolean, InferenceEscalation]> = [
       [
@@ -1308,7 +1344,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       if (proposalId) {
         armed.set(trigger, { proposal_id: proposalId });
       }
-      store.audit({
+      const entry: Parameters<InferenceQueueStore["audit"]>[0] = {
         type: "inference.escalation_proposed",
         actor: "system:inference-gate",
         ...(proposalId ? { action_id: proposalId } : {}),
@@ -1319,7 +1355,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
           queue_depth: depth(),
           in_flight: inFlight,
         },
-      });
+      };
+      pendingEscalationAudits.set(trigger, entry);
+      store.audit(entry);
+      pendingEscalationAudits.delete(trigger);
     }
   }
 
@@ -1327,15 +1366,29 @@ export function createInferenceGate(options: InferenceGateOptions) {
     if (started) {
       return { interrupted: 0, expired: 0, readmitted: 0 };
     }
-    started = true;
+    if (closed) {
+      throw new Error("inference gate is closed");
+    }
     const recovered =
       options.recoverExisting === false ? { interrupted: 0, expired: 0, readmitted: 0 } : recover();
+    started = true;
     if (config.queue.sweepIntervalMs > 0) {
-      sweepTimer = setInterval(() => sweep(), config.queue.sweepIntervalMs);
+      sweepTimer = setInterval(() => {
+        try {
+          sweep();
+          backgroundFailures.delete("sweep");
+        } catch (error) {
+          reportBackgroundFailure("sweep", error);
+        }
+      }, config.queue.sweepIntervalMs);
       sweepTimer.unref();
     }
     if (config.health.intervalMs > 0) {
-      healthTimer = setInterval(() => void probeHealth(), config.health.intervalMs);
+      healthTimer = setInterval(() => {
+        void probeHealth().catch((error: unknown) =>
+          reportBackgroundFailure("health probe", error),
+        );
+      }, config.health.intervalMs);
       healthTimer.unref();
     }
     return recovered;
@@ -1436,16 +1489,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
     }
     close();
     shutdownStartedAt = Date.now();
-    for (const waiter of waiting.splice(0)) {
-      if (waiter.onAbort) {
-        waiter.signal?.removeEventListener("abort", waiter.onAbort);
-      }
+    while (waiting.length > 0) {
+      const waiter = waiting[0];
       const row = store.get(waiter.id);
-      if (!row) {
-        continue;
-      }
       let outcome: InferenceOutcome;
-      if (config.persistAcrossRestarts) {
+      if (!row) {
+        outcome = { kind: "refused", reason: "request row vanished" };
+      } else if (config.persistAcrossRestarts) {
         outcome = {
           kind: "queued",
           id: row.id,
@@ -1459,6 +1509,12 @@ export function createInferenceGate(options: InferenceGateOptions) {
         const error = "Service shutting down. Restart persistence is disabled; resubmit the task.";
         finishFailed(row, "interrupted", error, undefined, 0);
         outcome = { kind: "failed", id: row.id, failure: "interrupted", error };
+      }
+      // A failed terminal write leaves this waiter available to a repeated shutdown call.
+      // Removing the whole line first would strand callers after the database recovered.
+      waiting.shift();
+      if (waiter.onAbort) {
+        waiter.signal?.removeEventListener("abort", waiter.onAbort);
       }
       for (const resolve of waiter.resolvers) {
         resolve(outcome);
