@@ -15,7 +15,7 @@
 // filled -- so the worst a wrong answer costs is one unticked row in a preview.
 
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
-import { isInferenceDeferred } from "../../inference/gate.js";
+import { isInferenceDeferred, type InferenceGate } from "../../inference/gate.js";
 
 const PURPOSE = "paper import column mapping";
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1";
@@ -82,6 +82,7 @@ export function createImportColumnMapper(options: {
   baseUrl?: string;
   model?: string;
   apiKey?: string;
+  gate?: InferenceGate;
 }): ImportColumnMapper {
   return async ({ unmapped, available, signal }) => {
     if (unmapped.length === 0 || available.length === 0) {
@@ -96,6 +97,7 @@ export function createImportColumnMapper(options: {
         ...(options.apiKey ? { apiKey: options.apiKey } : {}),
         ...(signal ? { signal } : {}),
         purposeLabel: PURPOSE,
+        gate: { gate: options.gate, caller: "papers.import-columns" },
         temperature: 0,
         maxTokens: 600,
         messages: [
