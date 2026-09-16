@@ -2668,6 +2668,29 @@ export class AdminBotService {
     const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
     const reimbursementDcsEmail = normalizeOptionalString(settings.reimbursement_dcs_email);
     const reimbursementMpiEmail = normalizeOptionalString(settings.reimbursement_mpi_email);
+    // The partner desks, normalized exactly as the two reimbursement addresses above are.
+    //
+    // Note what that inherits: `normalizeOptionalString` turns "" into undefined, so an empty
+    // field reads as "not supplied" and leaves a configured desk in place. A desk therefore
+    // cannot be un-set through this call -- switching a partner report off means clearing the
+    // row some other way. Kept consistent with its siblings rather than special-cased here,
+    // because two settings fields that disagree about what blank means is worse than one
+    // limitation that applies to all of them.
+    const dcsServerAccessEmail = normalizeOptionalString(settings.dcs_server_access_email);
+    const vectorRosterEmail = normalizeOptionalString(settings.vector_roster_email);
+    const papersSubmissionReportEmail = normalizeOptionalString(
+      settings.papers_submission_report_email,
+    );
+    const papersAcceptanceDcsEmail = normalizeOptionalString(settings.papers_acceptance_dcs_email);
+    const papersAcceptanceVectorEmail = normalizeOptionalString(
+      settings.papers_acceptance_vector_email,
+    );
+    const papersAcceptanceSriEmail = normalizeOptionalString(settings.papers_acceptance_sri_email);
+    // A list, so it is normalized by dropping blanks rather than by trimming one string. An empty
+    // array is a real answer -- "nobody at MPI is on this" -- and is kept rather than discarded.
+    const papersAcceptanceMpiEmails = settings.papers_acceptance_mpi_emails
+      ?.map((address) => address.trim())
+      .filter(Boolean);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
@@ -2688,6 +2711,25 @@ export class AdminBotService {
       ...(reimbursementMpiEmail === undefined
         ? {}
         : { reimbursement_mpi_email: reimbursementMpiEmail }),
+      ...(dcsServerAccessEmail === undefined
+        ? {}
+        : { dcs_server_access_email: dcsServerAccessEmail }),
+      ...(vectorRosterEmail === undefined ? {} : { vector_roster_email: vectorRosterEmail }),
+      ...(papersSubmissionReportEmail === undefined
+        ? {}
+        : { papers_submission_report_email: papersSubmissionReportEmail }),
+      ...(papersAcceptanceMpiEmails === undefined
+        ? {}
+        : { papers_acceptance_mpi_emails: papersAcceptanceMpiEmails }),
+      ...(papersAcceptanceDcsEmail === undefined
+        ? {}
+        : { papers_acceptance_dcs_email: papersAcceptanceDcsEmail }),
+      ...(papersAcceptanceVectorEmail === undefined
+        ? {}
+        : { papers_acceptance_vector_email: papersAcceptanceVectorEmail }),
+      ...(papersAcceptanceSriEmail === undefined
+        ? {}
+        : { papers_acceptance_sri_email: papersAcceptanceSriEmail }),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),

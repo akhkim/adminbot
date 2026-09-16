@@ -1503,6 +1503,35 @@ export type AdminBotLabMemberInput = {
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
   // member, and it is frequently neither of the other two.
   correspondence_email?: string;
+  /**
+   * The unix account DCS sponsors for this person, e.g. "akim".
+   *
+   * Stored rather than derived from the institutional address, even though it is usually its local
+   * part. The sysadmin's roster is keyed on this string, and a person whose account was minted
+   * under a different spelling than their mail would otherwise be reported under a name that does
+   * not exist on her side.
+   */
+  dcs_username?: string;
+  /**
+   * Whether this person holds a UofT affiliation, which is what makes a DCS account sponsorable.
+   *
+   * Its own field rather than a reading of `affiliation`: that column is free text and is empty
+   * for most of the roster, and "blank" would otherwise be reported to DCS as "not at UofT",
+   * which is a claim about somebody's eligibility rather than an absence of information.
+   */
+  at_uoft?: boolean;
+  /**
+   * Which clusters this person is allowed onto. See contracts/compute-access.ts.
+   *
+   * A list because the cell it feeds is multiple-choice, and because access accumulates: somebody
+   * on the H100 also has the Slurm cluster and the Slack account under it.
+   */
+  compute_access?: string[];
+  /**
+   * Vector's own categories, which decide how their sponsor reads the row: their PhD students and
+   * postdocs are counted against a different line than everybody else the lab sends over.
+   */
+  vector_role?: "phd" | "postdoc" | "other";
   // Kept for the rows the member-sheet import filled in; the profile page no longer offers it.
   // One named column per platform only ever covered the platforms someone thought of, so what the
   // page asks for now is `other_socials` below.
@@ -1673,6 +1702,36 @@ export type AdminBotSettingsInput = {
   reimbursement_dcs_email?: string;
   reimbursement_mpi_email?: string;
   /**
+   * The partner desks each recurring roster and paper report is mailed to.
+   *
+   * Settings rather than constants for the reason the reimbursement addresses above already give:
+   * these are people, a desk changes hands, and an address compiled into a release is a claim that
+   * silently goes nowhere. Unset means the pass refuses to send rather than guessing -- the same
+   * fail-closed rule, and a stronger case for it here, because every one of these recipients is
+   * outside the lab and a misdirected roster carries other people's names and emails.
+   */
+  /** DCS: the weekly server-access roster, and the ping when an account needs creating. */
+  dcs_server_access_email?: string;
+  /** Vector: the weekly sponsor roster. */
+  vector_roster_email?: string;
+  /** Where the submissions snapshot goes once a conference deadline passes. */
+  papers_submission_report_email?: string;
+  /**
+   * MPI, on an acceptance. Two addresses on one mail rather than two mails, because the desk is
+   * one desk -- the pair read the same queue and a second copy is a second thing to reconcile.
+   */
+  papers_acceptance_mpi_emails?: string[];
+  /**
+   * The other three partners, on an acceptance, one mail each.
+   *
+   * Separate fields rather than a list, so that a missing SRI address cannot silently shorten the
+   * DCS mail's recipient list -- each desk is either configured or it is not, and the pass reports
+   * which.
+   */
+  papers_acceptance_dcs_email?: string;
+  papers_acceptance_vector_email?: string;
+  papers_acceptance_sri_email?: string;
+  /**
    * When the weekly group meeting is, for the reminders that are aimed at it.
    *
    * Settings rather than a constant: the meeting moves, and a nudge that fires against a
@@ -1732,6 +1791,36 @@ export type AdminBotSettings = {
    */
   reimbursement_dcs_email?: string;
   reimbursement_mpi_email?: string;
+  /**
+   * The partner desks each recurring roster and paper report is mailed to.
+   *
+   * Settings rather than constants for the reason the reimbursement addresses above already give:
+   * these are people, a desk changes hands, and an address compiled into a release is a claim that
+   * silently goes nowhere. Unset means the pass refuses to send rather than guessing -- the same
+   * fail-closed rule, and a stronger case for it here, because every one of these recipients is
+   * outside the lab and a misdirected roster carries other people's names and emails.
+   */
+  /** DCS: the weekly server-access roster, and the ping when an account needs creating. */
+  dcs_server_access_email?: string;
+  /** Vector: the weekly sponsor roster. */
+  vector_roster_email?: string;
+  /** Where the submissions snapshot goes once a conference deadline passes. */
+  papers_submission_report_email?: string;
+  /**
+   * MPI, on an acceptance. Two addresses on one mail rather than two mails, because the desk is
+   * one desk -- the pair read the same queue and a second copy is a second thing to reconcile.
+   */
+  papers_acceptance_mpi_emails?: string[];
+  /**
+   * The other three partners, on an acceptance, one mail each.
+   *
+   * Separate fields rather than a list, so that a missing SRI address cannot silently shorten the
+   * DCS mail's recipient list -- each desk is either configured or it is not, and the pass reports
+   * which.
+   */
+  papers_acceptance_dcs_email?: string;
+  papers_acceptance_vector_email?: string;
+  papers_acceptance_sri_email?: string;
   /** See the note on AdminBotSettingsInput. Defaults live in contracts/group-meeting.ts. */
   group_meeting_weekday?: number;
   group_meeting_time?: string;

@@ -131,8 +131,8 @@
     },
     {
       "name": "adminbot-onboarding-sheet-sweep",
-      "description": "Weekly: create members for new spreadsheet rows and report who is owed an onboarding mail",
-      "cron": "40 6 * * 1",
+      "description": "Daily: create members for new contact-spreadsheet rows and report who is owed an onboarding mail",
+      "cron": "40 6 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-onboarding-sheet-sweep-cron.sh"
