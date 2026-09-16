@@ -34,6 +34,7 @@ export type TaskRuntimeOptions = {
   maxRunning?: number;
   maxTasks?: number;
   maxQueued?: number;
+  maxInFlightPerOwner?: number;
   maxInputBytes?: number;
   maxResultBytes?: number;
   maxSteps?: number;
@@ -69,6 +70,7 @@ export class TaskRuntime {
     { promise: Promise<TaskRecord>; resolve: (r: TaskRecord) => void }
   >();
   private readonly ownDb: boolean;
+  private lastOwnerDispatched?: string;
   private started = false;
   private paused = false;
   private stopping = false;
@@ -81,6 +83,9 @@ export class TaskRuntime {
       maxRunning: 32,
       maxTasks: 1000,
       maxQueued: 32,
+      // A share of the waiting line, not a quota on the member. Eight owners can each hold one
+      // share of a 32-deep queue, which is the mix a lab of this size actually produces.
+      maxInFlightPerOwner: 4,
       maxInputBytes: 2_000_000,
       maxResultBytes: 4_000_000,
       maxSteps: 10000,
@@ -94,6 +99,7 @@ export class TaskRuntime {
       "maxRunning",
       "maxTasks",
       "maxQueued",
+      "maxInFlightPerOwner",
       "maxInputBytes",
       "maxResultBytes",
       "maxSteps",
@@ -272,7 +278,7 @@ export class TaskRuntime {
       owner: params.owner,
       key: params.key,
       input,
-      status: this.admissionStatus(params.wait ?? false),
+      status: this.admissionStatus(params.owner, params.wait ?? false),
       createdAt: now,
       updatedAt: now,
       expiresAt: now + this.options.retentionMs,
@@ -293,7 +299,7 @@ export class TaskRuntime {
       return;
     }
     if (task.status === "shed") {
-      this.update(task, this.admissionStatus(true));
+      this.update(task, this.admissionStatus(task.owner, true));
     }
     this.drain();
     return this.submission(this.store.get(id)!);
@@ -307,7 +313,7 @@ export class TaskRuntime {
     }
     if (task.status === "needs_retry" || task.status === "failed") {
       this.store.resetUncertain(id);
-      this.update(task, this.admissionStatus(true));
+      this.update(task, this.admissionStatus(task.owner, true));
     }
     this.drain();
     return this.submission(this.store.get(id)!);
@@ -357,20 +363,73 @@ export class TaskRuntime {
       maxRunning: this.options.maxRunning,
       maxTasks: this.options.maxTasks,
       maxQueued: this.options.maxQueued,
-      retainedBytes: this.store.retainedBytes(),
+      maxInFlightPerOwner: this.options.maxInFlightPerOwner,
+      // Every read here has to survive a call made after shutdown: an operator dashboard polling
+      // metrics does not stop the instant the database closes.
+      retainedBytes: this.closed ? 0 : this.store.retainedBytes(),
       maxRetainedBytes: this.options.maxRetainedBytes,
       counts,
       ...counts,
     };
   }
-  private admissionStatus(wait: boolean): "queued" | "shed" {
+  private admissionStatus(owner: string, wait: boolean): "queued" | "shed" {
     const queued = this.store.count("queued");
     const immediate =
       queued === 0 &&
       !this.paused &&
       this.active.size < this.options.maxRunning &&
       (this.options.canStart?.() ?? true);
-    return immediate || (wait && queued < this.options.maxQueued) ? "queued" : "shed";
+    // An idle service runs the work, whatever the owner already holds: the share exists to
+    // divide a contended line, and there is no line to divide here.
+    if (immediate) {
+      return "queued";
+    }
+    if (!wait || queued >= this.options.maxQueued) {
+      return "shed";
+    }
+    // Past their share the task is saved, not refused. The member keeps a row and a Wait, which
+    // is the same status they would have seen from a full queue.
+    return this.store.countInFlightForOwner(owner) >= this.options.maxInFlightPerOwner
+      ? "shed"
+      : "queued";
+  }
+  /**
+   * Queued ids, rotated across owners rather than strict arrival order.
+   *
+   * Without this the share above is not enough: one owner whose burst is already dispatched
+   * still puts every later arrival behind all of it. Rotation starts after the owner served
+   * last, so no owner is first on every pass.
+   */
+  private queuedInTurn(): string[] {
+    const byOwner = new Map<string, string[]>();
+    for (const row of this.store.queuedByOwner()) {
+      const queue = byOwner.get(row.owner);
+      if (queue) {
+        queue.push(row.id);
+      } else {
+        byOwner.set(row.owner, [row.id]);
+      }
+    }
+    const owners = [...byOwner.keys()];
+    if (owners.length < 2) {
+      return owners.length ? byOwner.get(owners[0]!)! : [];
+    }
+    const previous = this.lastOwnerDispatched ? owners.indexOf(this.lastOwnerDispatched) : -1;
+    const start = previous + 1;
+    const order: string[] = [];
+    for (let round = 0; ; round += 1) {
+      let added = false;
+      for (let step = 0; step < owners.length; step += 1) {
+        const queue = byOwner.get(owners[(start + step) % owners.length]!)!;
+        if (round < queue.length) {
+          order.push(queue[round]!);
+          added = true;
+        }
+      }
+      if (!added) {
+        return order;
+      }
+    }
   }
   private expire(): void {
     const now = this.options.now();
@@ -400,7 +459,7 @@ export class TaskRuntime {
     if (this.paused) {
       return;
     }
-    for (const id of this.store.idsByStatus("queued")) {
+    for (const id of this.queuedInTurn()) {
       // Accepted waiting tasks must reach the model gate's FIFO even while its
       // permits are busy; admission shedding and dispatch pause are separate decisions.
       if (
@@ -423,6 +482,7 @@ export class TaskRuntime {
         continue;
       }
       this.update(task, "running");
+      this.lastOwnerDispatched = task.owner;
       const controller = new AbortController();
       const done = Promise.resolve()
         .then(() => this.execute(task, handler, controller))

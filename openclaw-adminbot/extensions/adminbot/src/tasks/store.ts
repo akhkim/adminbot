@@ -206,6 +206,27 @@ export class TaskStore {
         .all(status) as { id: string }[]
     ).map((row) => row.id);
   }
+  /** Queued ids with their owners, in arrival order, for the dispatcher's owner rotation. */
+  queuedByOwner(): { id: string; owner: string }[] {
+    return this.db
+      .prepare(
+        `SELECT id,owner FROM ${this.table} WHERE json_extract(record,'$.status')='queued' ORDER BY rowid`,
+      )
+      .all() as { id: string; owner: string }[];
+  }
+  /**
+   * Waiting plus running, which is what one owner is holding of the shared service. Counting
+   * only the waiting rows would let a burst that is already dispatched escape the share.
+   */
+  countInFlightForOwner(owner: string): number {
+    return (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM ${this.table} WHERE owner=? AND json_extract(record,'$.status') IN ('queued','running')`,
+        )
+        .get(owner) as { n: number }
+    ).n;
+  }
   expirable(now: number): { id: string; status: TaskStatus }[] {
     return this.db
       .prepare(

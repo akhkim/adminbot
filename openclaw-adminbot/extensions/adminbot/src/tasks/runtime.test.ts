@@ -477,3 +477,46 @@ it("dispatches an accepted wait into the model FIFO independently of immediate c
   expect((await paused.promise)!.result).toBe(2);
   await r.shutdown({ graceMs: 0 });
 });
+
+it("gives each owner a share of the waiting line and dispatches owners in turn", async () => {
+  // One member filling the queue must not put every later member behind all of it. The share
+  // bounds how much of the line one owner holds; the rotation bounds how long the next one waits.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started: string[] = [];
+  const r = new TaskRuntime({ maxRunning: 1, maxInFlightPerOwner: 2 });
+  r.register<{ tag: string }, string>("test", 1, async (input) => {
+    started.push(input.tag);
+    await held;
+    return input.tag;
+  });
+
+  // Fills the single running slot, so everything after this contends for the queue.
+  const running = r.submit({ kind: "test", owner: "ada", input: { tag: "ada-0" }, wait: true });
+  await tick();
+  expect(started).toEqual(["ada-0"]);
+
+  // ada holds one of her two shares already; the next fits, the one after it does not.
+  const adaSecond = r.submit({ kind: "test", owner: "ada", input: { tag: "ada-1" }, wait: true });
+  expect(adaSecond.status).toBe("queued");
+  const adaThird = r.submit({ kind: "test", owner: "ada", input: { tag: "ada-2" }, wait: true });
+  expect(adaThird.status).toBe("shed");
+  expect(adaThird.task.error).toBeUndefined();
+
+  // A different owner is unaffected by ada's share, and is not refused.
+  const bo = r.submit({ kind: "test", owner: "bo", input: { tag: "bo-0" }, wait: true });
+  expect(bo.status).toBe("queued");
+
+  // ada-1 arrived before bo-0, but ada was served last, so the rotation runs bo-0 first.
+  release();
+  expect((await running.promise)!.result).toBe("ada-0");
+  expect((await bo.promise)!.result).toBe("bo-0");
+  expect((await adaSecond.promise)!.result).toBe("ada-1");
+  expect(started.slice(0, 2)).toEqual(["ada-0", "bo-0"]);
+  // The shed task never ran, and is still the owner's to resume.
+  expect(started).not.toContain("ada-2");
+  expect(r.get(adaThird.id, "ada")!.status).toBe("shed");
+  await r.shutdown({ graceMs: 0 });
+});
