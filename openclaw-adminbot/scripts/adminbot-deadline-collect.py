@@ -16,6 +16,7 @@ Writes venues.json and its generated UI datasets; nothing is sent.
 """
 import concurrent.futures
 import datetime
+import html as html_module
 import json
 import os
 import re
@@ -568,6 +569,35 @@ PARENT_CONFERENCE_LOCATIONS = {
 }
 
 
+def conference_sites(location):
+    """The sites in a `conference_location`, which stores them semicolon-separated."""
+    return [site.strip() for site in (location or "").split(";") if site.strip()]
+
+
+def site_named_on_page(html, sites):
+    """Which one of a conference's sites a workshop's own page names, if exactly one.
+
+    A multi-site conference is several meetings, and a workshop belongs to one of them. The
+    workshop's own site is the only place that says which, and it says it in prose -- "Location
+    Sydney, Australia", "join us in Paris" -- rather than in a field.
+
+    The question is deliberately "which of *these three*" rather than "what city is on this
+    page". Lifting an arbitrary "City, Country" out of prose reads a sponsor's address as a
+    venue: measured over 40 NeurIPS 2026 workshops it resolved 6 and got 3 of those wrong,
+    including an "Austrian Institute" that is not a city at all. Matching against the closed set
+    the parent already published cannot make that mistake, and resolved 35 of the same 40.
+
+    Silence is the answer whenever the page names none of the sites or more than one, because
+    both mean the page has not said. The caller falls back to listing every site, which is what
+    the board did before it could tell them apart.
+    """
+    if len(sites) < 2:
+        return ""
+    text = _visible_text(html)
+    named = [site for site in sites if re.search(rf"\b{re.escape(site.split(',')[0].strip())}\b", text)]
+    return named[0] if len(named) == 1 else ""
+
+
 def is_generic_conference_cfp(url):
     parsed = urllib.parse.urlsplit(normalize_url(url))
     host = parsed.hostname.lower().removeprefix("www.") if parsed.hostname else ""
@@ -725,6 +755,12 @@ def _fetch_text_asset(url, timeout=15):
         body = response.read(6_000_000)
         charset = response.headers.get_content_charset() or "utf-8"
         return response.geturl(), body.decode(charset, errors="replace")
+
+
+def _visible_text(html):
+    """Readable text from a page, with script and style bodies dropped."""
+    text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S | re.I)
+    return re.sub(r"\s+", " ", html_module.unescape(re.sub(r"<[^>]+>", " ", text)))
 
 
 def _profile_with_deadline_assets(html, source_url, year):
@@ -950,8 +986,14 @@ def _github_pages_deadline_history(source_url, current_stamp, year, target_hint)
             return []
 
 
-def discover_workshop_profile(homepage, existing="", existing_status="unknown", year=None):
-    """Return the dedicated CFP, publication policy, and bounded matching profile."""
+def discover_workshop_profile(
+    homepage, existing="", existing_status="unknown", year=None, sites=()
+):
+    """Return the dedicated CFP, publication policy, and bounded matching profile.
+
+    `sites` is the parent conference's published sites. When it names more than one, the
+    workshop's own page is asked which of them it meets at -- see `site_named_on_page`.
+    """
     year = year or datetime.date.today().year
     homepage = normalize_url(homepage)
     previous = normalize_url(existing)
@@ -968,6 +1010,7 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown", 
     parser.feed(html)
     homepage_status = archival_status_from_html(html)
     homepage_profile = _profile_with_deadline_assets(html, final_homepage, year)
+    homepage_profile["_site"] = site_named_on_page(html, sites)
     base = urllib.parse.urldefrag(final_homepage)[0]
     if parser.anchors:
         anchor = urllib.parse.quote(parser.anchors[0], safe="-._~")
@@ -995,7 +1038,12 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown", 
                                            archival_status_from_html(candidate_html)),
                     _merge_workshop_profiles(
                         homepage_profile,
-                        _profile_with_deadline_assets(candidate_html, final_candidate, year),
+                        {
+                            **_profile_with_deadline_assets(
+                                candidate_html, final_candidate, year
+                            ),
+                            "_site": site_named_on_page(candidate_html, sites),
+                        },
                     ),
                 )
         except Exception:
@@ -1048,13 +1096,22 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         status = item.get("archival_status") or previous.get("archival_status", "unknown")
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = int(year_match.group(1)) if year_match else datetime.date.today().year
-        jobs.setdefault((homepage, year), (existing, status))
+        sites = tuple(
+            conference_sites(
+                PARENT_CONFERENCE_LOCATIONS.get(
+                    (item.get("venue_family", ""), str(year)), ""
+                )
+            )
+        )
+        jobs.setdefault((homepage, year), (existing, status, sites))
 
     found = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
-            executor.submit(discover_workshop_profile, homepage, existing, status, year): key
-            for key, (existing, status) in jobs.items()
+            executor.submit(
+                discover_workshop_profile, homepage, existing, status, year, sites
+            ): key
+            for key, (existing, status, sites) in jobs.items()
             for homepage, year in [key]
         }
         for future in concurrent.futures.as_completed(futures):
@@ -1062,7 +1119,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             try:
                 found[key] = future.result()
             except Exception:
-                existing, status = jobs[key]
+                existing, status, _sites = jobs[key]
                 found[key] = (existing, status, {})
 
     expanded = []
@@ -1116,7 +1173,8 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                         "deadline_source_kind", "deadline_source_status",
                         "deadline_source_precision", "deadline_source_evidence",
                         "deadline_official_url", "deadline_official_evidence",
-                        "deadline_extended", "deadline_history_status"):
+                        "deadline_extended", "deadline_history_status",
+                        "workshop_location"):
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
             item["link"] = (item["cfp_url"] or homepage
@@ -1134,6 +1192,12 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                     "profile_extracted_at"):
             default = [] if key == "topic_profile" else ""
             item[key] = profile.get(key, previous.get(key, default))
+        # Which of the parent's sites this workshop meets at, when its page said. An empty
+        # answer keeps the previous sweep's: a page that stopped naming its city has not
+        # moved the workshop to another continent.
+        item["workshop_location"] = profile.get("_site", "") or previous.get(
+            "workshop_location", ""
+        )
         candidates = profile.get("_deadline_candidates", [])
         if item.get("_stage"):
             candidates = [c for c in candidates if _candidate_is_abstract(c) == (item["_stage"] == "abstract")]
@@ -1552,6 +1616,13 @@ def classify(item):
     item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get(
         (family, group_year.group(1) if group_year else "unknown"), ""
     )
+    # The one site this workshop meets at, where its own page named one. Only ever a member of
+    # conference_location above, never a city from somewhere else, and empty for a single-site
+    # conference because there the inherited value is already the answer.
+    site = str(item.get("workshop_location", "")).strip()
+    item["workshop_location"] = (
+        site if site in conference_sites(item["conference_location"]) else ""
+    )
     if item["entry_type"] == "workshop":
         legacy_link = normalize_url(item.get("link", ""))
         homepage = normalize_url(policy_override.get("homepage_url", item.get("homepage_url", "")))
@@ -1784,7 +1855,7 @@ def write_outputs(items):
 
     # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
-            "conference_location",
+            "conference_location", "workshop_location",
             "entry_type", "archival_status", "venue_priority", "archival",
             "submission_type", "milestone", "schedule",
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
@@ -1828,6 +1899,13 @@ def write_outputs(items):
                 "   *  separated by \"; \" — NeurIPS 2026 runs in Sydney, Atlanta and Paris at once.\n"
                 "   *  Empty for a venue with no fixed location (ARR cycles) or none published. */\n"
                 "  conference_location?: string;\n"
+                "  /** The one site a workshop meets at, when its own page named one —\n"
+                "   *  always one of the sites in `conference_location`, never a city from\n"
+                "   *  anywhere else. Empty when the parent has a single site (the inherited\n"
+                "   *  value already answers it), when the page named none of them, or when it\n"
+                "   *  named several and so has not said which. Read it in preference to\n"
+                "   *  `conference_location`, and fall back to that when it is empty. */\n"
+                "  workshop_location?: string;\n"
                 "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
                 "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
                 "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
