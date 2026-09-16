@@ -973,7 +973,11 @@ export function createInferenceGate(options: InferenceGateOptions) {
       }
       case "shed":
         if (request.wait) {
-          const converted = wait(request.owner, row.id);
+          const converted = wait(request.owner, row.id, {
+            ...(request.signal ? { signal: request.signal } : {}),
+            ...(request.apiKey ? { apiKey: request.apiKey } : {}),
+            ...(request.fetchImpl ? { fetchImpl: request.fetchImpl } : {}),
+          });
           if (converted && converted.state !== "shed") {
             return attach(store.get(row.id) as InferenceQueueRow, request);
           }
@@ -1011,7 +1015,18 @@ export function createInferenceGate(options: InferenceGateOptions) {
    * line's capacity together, so two clicks cannot enqueue twice and an expired row cannot be
    * revived. A repeat click on a row that is no longer shed returns whatever it is now.
    */
-  function wait(owner: string, id: string): InferenceStatus | undefined {
+  /**
+   * `dispatch` carries the originating caller's abort signal, credential and transport onto the
+   * row it re-admits. Without it the waiter is dispatched unsignalled: cancelling the caller no
+   * longer stops the call, so an abandoned request keeps one of the model's two slots for its
+   * whole timeout. The operator route has no such caller and passes nothing, which is correct --
+   * an administrator pressing Wait on someone else's row has no signal to lend it.
+   */
+  function wait(
+    owner: string,
+    id: string,
+    dispatch?: Pick<InferenceGateRequest, "signal" | "apiKey" | "fetchImpl">,
+  ): InferenceStatus | undefined {
     if (closed) {
       return status(owner, id);
     }
@@ -1048,6 +1063,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         owner,
         caller: queued.caller,
         request: queued.request as InferenceRequestRecord,
+        ...dispatch,
       });
     }
     const current = store.get(id);

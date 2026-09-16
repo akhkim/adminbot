@@ -1140,3 +1140,65 @@ it("tells queued callers to resubmit on shutdown when restart persistence is dis
   expect((await active).kind).toBe("completed");
   await stopping;
 });
+
+it("carries the caller's credential onto a row it re-admits from shed", async () => {
+  // A shed row that a resubmission re-admits used to be enqueued with none of the originating
+  // caller's dispatch context -- no abort signal, no credential, and the global transport. The
+  // request then reached the model unauthenticated, and cancelling the caller stopped nothing:
+  // the row kept one of the model's two slots for its whole timeout.
+  const db = openDb();
+  const seen: Array<string | null> = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const callerFetch: InferenceFetch = async (_input, init) => {
+    seen.push(new Headers(init?.headers as HeadersInit).get("authorization"));
+    await held;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const gate = createInferenceGate({
+    db,
+    config: inferenceTestConfig({ capacity: 1, queue: { maxDepth: 1 } }),
+  });
+  gate.start();
+  try {
+    const call = (key: string, wait: boolean) =>
+      gate.run({
+        owner: "ada",
+        caller: "test",
+        submissionKey: key,
+        wait,
+        fetchImpl: callerFetch,
+        apiKey: "synthetic-key",
+        request: {
+          route: "chat/completions",
+          baseUrl: "http://127.0.0.1:8000/v1",
+          purpose: "test",
+          body: { model: "m", messages: [{ role: "user", content: key }] },
+        },
+        timeoutMs: 30_000,
+      });
+    const first = call("first", true);
+    await vi.waitFor(() => expect(gate.stats().in_flight).toBe(1));
+    const second = call("second", true);
+    await vi.waitFor(() => expect(gate.stats().queued).toBe(1));
+    // The line is full, so this one is saved rather than queued.
+    expect((await call("third", false)).kind).toBe("shed");
+    release();
+    await Promise.all([first, second]);
+    await vi.waitFor(() => expect(gate.stats().in_flight + gate.stats().queued).toBe(0));
+    expect(seen).toHaveLength(2);
+    // Resubmitting the same key with wait re-admits the saved row -- the path under test. It
+    // must reach the model carrying the credential the caller supplied, as the first two did.
+    expect((await call("third", true)).kind).toBe("completed");
+    expect(seen).toHaveLength(3);
+    expect(seen.filter((auth) => auth === "Bearer synthetic-key")).toHaveLength(3);
+  } finally {
+    gate.close();
+    db.close();
+  }
+});
