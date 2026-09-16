@@ -1009,6 +1009,9 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
   const submissions = owners * perOwner;
   // Owner of each task in the order the runtime started it, which is what the rotation shapes.
   const dispatched: string[] = [];
+  // Concurrent tasks per owner, so the share is measured rather than inferred from the shed count.
+  const inFlight = new Map<string, number>();
+  let peakInFlightPerOwner = 0;
   const runtime = new TaskRuntime({
     db: store.inferenceDatabase(),
     maxRunning: 16,
@@ -1018,29 +1021,39 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
   });
   runtime.register<{ owner: string; n: number }, string>("sim.turn", 1, async (input, ctx) => {
     dispatched.push(ctx.owner);
-    // Two stages, each its own permit. A stage is a checkpoint, so a resumed task never repeats
-    // a stage it already finished.
-    const classified = await runGated(gate, {
-      caller: "load_sim.runner.classify",
-      request: chatRequest(mock.baseUrl, `classify ${input.owner}#${input.n}`),
-      timeoutMs: 30_000,
-    });
-    const answered = await runGated(gate, {
-      caller: "load_sim.runner.answer",
-      request: chatRequest(mock.baseUrl, `answer ${input.owner}#${input.n}`),
-      timeoutMs: 30_000,
-    });
-    if (classified.status >= 400 || answered.status >= 400) {
-      throw new Error(`model returned ${classified.status}/${answered.status}`);
+    const held = (inFlight.get(ctx.owner) ?? 0) + 1;
+    inFlight.set(ctx.owner, held);
+    peakInFlightPerOwner = Math.max(peakInFlightPerOwner, held);
+    try {
+      // Two stages, each its own permit. A stage is a checkpoint, so a resumed task never repeats
+      // a stage it already finished.
+      const classified = await runGated(gate, {
+        caller: "load_sim.runner.classify",
+        request: chatRequest(mock.baseUrl, `classify ${input.owner}#${input.n}`),
+        timeoutMs: 30_000,
+      });
+      const answered = await runGated(gate, {
+        caller: "load_sim.runner.answer",
+        request: chatRequest(mock.baseUrl, `answer ${input.owner}#${input.n}`),
+        timeoutMs: 30_000,
+      });
+      if (classified.status >= 400 || answered.status >= 400) {
+        throw new Error(`model returned ${classified.status}/${answered.status}`);
+      }
+      return `${input.owner}#${input.n}`;
+    } finally {
+      inFlight.set(ctx.owner, (inFlight.get(ctx.owner) ?? 1) - 1);
     }
-    return `${input.owner}#${input.n}`;
   });
   runtime.start();
   try {
-    // Everyone arrives in the same tick, which is the case the pass condition is about.
+    // Everyone arrives in the same tick, which is the case the pass condition is about, and each
+    // member's whole burst arrives together. Interleaving them here -- `i % owners` -- would make
+    // the arrival order itself a round-robin, and the fairness check below would then pass with
+    // no rotation logic at all, because the last member's first row would already be 24th.
     const handles = Array.from({ length: submissions }, (_, i) => {
-      const owner = `member-${i % owners}`;
-      const n = Math.floor(i / owners);
+      const owner = `member-${Math.floor(i / perOwner)}`;
+      const n = i % perOwner;
       return runtime.submit({
         kind: "sim.turn",
         owner,
@@ -1101,8 +1114,8 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
       },
       {
         name: "the mock never saw a duplicate request body",
-        ok: (stats.counters.duplicates ?? 0) === 0,
-        detail: JSON.stringify(stats.counters),
+        ok: stats.duplicate_fingerprints.length === 0,
+        detail: `${stats.distinct_fingerprints} distinct fingerprints, ${stats.duplicate_fingerprints.length} duplicated`,
       },
       {
         name: "model concurrency stayed within the configured capacity",
@@ -1111,8 +1124,11 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
       },
       {
         name: `a share of ${share} bounded each member, and the excess was saved rather than refused`,
-        ok: shedAtArrival > 0,
-        detail: `${shedAtArrival} of ${submissions} shed at arrival, all resumed by Wait`,
+        // Each member submits perOwner at once, so exactly the excess over their share is shed,
+        // and every shed row is still theirs to resume -- none were refused outright.
+        ok:
+          shedAtArrival === owners * Math.max(0, perOwner - share) && peakInFlightPerOwner <= share,
+        detail: `${shedAtArrival} shed at arrival, expected ${owners * Math.max(0, perOwner - share)}; peak in flight for any one member ${peakInFlightPerOwner} of ${share}`,
       },
       {
         name: "no member waited behind another member's whole backlog",
@@ -1120,7 +1136,7 @@ async function scenarioRunner(o: Options): Promise<ScenarioResult> {
         // member to start does so within roughly one round. Arrival order would put them at
         // owners * (perOwner - 1) or later, since every earlier member's share precedes them.
         ok: lastFirstStart < owners * 2,
-        detail: `last member's first task started at position ${lastFirstStart} of ${submissions}; arrival order would be >= ${owners * (perOwner - 1)}`,
+        detail: `last member's first task started at position ${lastFirstStart} of ${submissions}; under arrival order it would be ${(owners - 1) * perOwner}, since every earlier member's whole burst precedes it`,
       },
     ];
     return {
