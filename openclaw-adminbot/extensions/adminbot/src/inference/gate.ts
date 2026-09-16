@@ -1,42 +1,17 @@
 /**
- * The one admission gate in front of the local model.
+ * Shared admission control for local inference. Each permit covers one HTTP call through
+ * response-body consumption; workflow stages acquire separate permits to avoid deadlocks.
+ * Timeouts start after admission. Caller cancellation also applies while queued.
  *
- * Every caller in this tree that sends a prompt to the GPU -- the privacy broker, the CV scanner,
- * the reimbursement intake, the workshop matcher, the guidebook -- sends it through here, and this
- * module holds the only count of requests in flight. That is the whole design: the recorded
- * incident (workshop-match-llm.ts) was six requests in flight against a server that admits two, each
- * with a timeout already ticking while it waited inside vLLM for a slot. Three callers with a
- * well-behaved pool of two each is exactly that incident, so the pools are gone and the counter is
- * shared.
- *
- * What the gate decides, for a request that arrives:
- *
- *  - A slot is free and nobody is ahead in line: run it now.
- *  - No slot, and the caller asked to wait (or the member's stored preference says always wait):
- *    queue it, durably, and run it when a slot frees -- in arrival order, so a fresh arrival never
- *    steps in front of somebody already waiting.
- *  - No slot, otherwise: shed. The request body is stored anyway, so the status handed back carries a
- *    handle the member can later use to say "wait after all" without re-sending. One row per request
- *    from the moment it arrives; a retry or a wait click finds the row. That is the duplicate guard.
- *
- * The timeout clock starts at admission. The caller passes a duration, and the AbortSignal that
- * enforces it is created here, after the slot is taken -- never before, or time spent waiting in
- * line would count against the model, which is the bug this replaces. The caller's own cancellation
- * signal is separate and is honored while queued.
- *
- * Decisions are typed outcomes, not errors. A caller that gets `shed` back must not retry, and a
- * caller that gets `queued` back must not fall back to another model call: either would turn one
- * request into two. Where a caller's contract cannot carry the outcome, `InferenceDeferredError`
- * wraps it at that boundary, and every catch on the way up rethrows it before any fallback.
- *
- * One permit per HTTP call, released in `finally` after the response body is consumed. The gate holds
- * nothing across a caller's workflow, so two multi-stage callers cannot each hold a slot while waiting
- * for the other's.
+ * Requests are persisted before dispatch or shedding. Shed requests can later join the FIFO
+ * queue. Owner-scoped submission keys deduplicate retries while their rows retain bodies.
+ * Queue decisions must propagate through callers without triggering fallback or retry.
  */
+import { currentTaskContext, currentTaskScope, currentTaskStepAttempt, taskStep } from "../tasks/context.js";
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
-import { DEFAULT_INFERENCE_GATE_CONFIG, type InferenceGateConfig } from "./config.js";
+import { DEFAULT_INFERENCE_GATE_CONFIG, validateInferenceGateConfig, type InferenceGateConfig } from "./config.js";
 import {
   InferenceQueueStore,
   type InferenceFailureKind,
@@ -57,15 +32,7 @@ export type {
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-/**
- * The base URL, proven to be on this machine.
- *
- * `purpose` is the whole phrase the message opens with ("guidebook answer", "meeting summary"),
- * because this guard is shared: every model call in the tree runs through the same loopback rule,
- * and an error naming the wrong subsystem sends the operator to the wrong config. Defined here rather
- * than in guidebook/local-client.ts (which re-exports it) because the gate is the last thing that
- * touches a URL before the socket opens, and the guard belongs at the last step.
- */
+/** Validate the endpoint at dispatch. `purpose` identifies the caller in configuration errors. */
 export function assertLoopbackUrl(value: string, purpose: string): string {
   const url = new URL(value.endsWith("/") ? value : `${value}/`);
   if (!LOOPBACK_HOSTS.has(url.hostname)) {
@@ -123,7 +90,7 @@ export type InferenceStatus = {
   message: string;
   /** Requests ahead of this one, for queued and shed rows. */
   ahead?: number;
-  /** `null` when the server is not healthy: extrapolating a healthy latency during an outage lies. */
+  /** `null` while unhealthy or before service latency has been measured. */
   estimated_wait_ms?: number | null;
   /** Whether "wait" is an available choice right now. */
   can_wait: boolean;
@@ -160,12 +127,7 @@ export type InferenceOutcome =
 
 export type InferenceDeferredKind = Exclude<InferenceOutcome["kind"], "completed" | "failed">;
 
-/**
- * A queue decision surfacing through a contract that has no room for it.
- *
- * Deliberately an Error subclass and nothing more: the point is to be caught and re-thrown, never
- * handled. A catch that sees one and falls back to another model call has made two requests of one.
- */
+/** Carry queue decisions through response-or-error APIs. Callers must propagate them without retry or fallback. */
 export class InferenceDeferredError extends Error {
   readonly outcome: Extract<InferenceOutcome, { kind: InferenceDeferredKind }>;
   constructor(outcome: Extract<InferenceOutcome, { kind: InferenceDeferredKind }>) {
@@ -186,7 +148,7 @@ export function isInferenceDeferred(error: unknown): error is InferenceDeferredE
 export type InferenceHealth = {
   state: "ok" | "degraded" | "down";
   consecutive_probe_failures: number;
-  /** Timeouts and transport errors since the last completion. Cleared by a completion. */
+  /** Timeouts, transport errors, and HTTP 5xx responses since the last successful completion. */
   consecutive_inference_failures: number;
   last_probe_ok_at?: string;
   last_probe_error?: string;
@@ -204,6 +166,10 @@ export type InferenceEscalation = {
 };
 
 export type InferenceGateStats = {
+  persist_across_restarts: boolean;
+  paused: boolean;
+  shutting_down: boolean;
+  shutdown_grace_ms: number;
   capacity: number;
   in_flight: number;
   queued: number;
@@ -217,7 +183,7 @@ export type InferenceGateStats = {
 };
 
 export type InferenceGateOptions = {
-  db: DatabaseSync;
+  db?: DatabaseSync;
   config?: InferenceGateConfig;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: InferenceFetch;
@@ -259,8 +225,10 @@ type Active = {
 export type InferenceGate = ReturnType<typeof createInferenceGate>;
 
 export function createInferenceGate(options: InferenceGateOptions) {
-  const store = new InferenceQueueStore(options.db);
   const config = options.config ?? DEFAULT_INFERENCE_GATE_CONFIG;
+  validateInferenceGateConfig(config);
+  const database = options.db ?? openMemoryDatabase();
+  const store = new InferenceQueueStore(database, !config.persistAcrossRestarts);
   const env = options.env ?? process.env;
   // A gate built with its own transport uses it for every request, whatever the caller handed in:
   // that is how a test stands one fake model behind every code path at once. A gate built without
@@ -286,6 +254,14 @@ export function createInferenceGate(options: InferenceGateOptions) {
   let inFlight = 0;
   let started = false;
   let closed = false;
+  let paused = config.startPaused;
+  let shutdownGraceMs = config.shutdownGraceMs;
+  const shutdownAbort = new AbortController();
+  let shutdownPromise: Promise<void> | undefined;
+  let shutdownStartedAt: number | undefined;
+  let shutdownFinished = false;
+  let shutdownTimer: NodeJS.Timeout | undefined;
+
   let sweepTimer: NodeJS.Timeout | undefined;
   let healthTimer: NodeJS.Timeout | undefined;
 
@@ -316,7 +292,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   function estimate(ahead: number): number | null {
     // Any unhealthy state, not only `down`: a degraded server is one whose recent calls timed out,
     // and its healthy-era mean says nothing about how long the next one will take.
-    if (health.state !== "ok" || meanServiceMs === null) {
+    if (paused || health.state !== "ok" || meanServiceMs === null) {
       return null;
     }
     // Everybody ahead plus this one, divided across the slots.
@@ -351,13 +327,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
     switch (row.status) {
       case "shed": {
         const ahead = depth();
-        const canWait = ahead < config.queue.maxDepth;
+        const canWait = ahead < config.queue.maxDepth || (!paused && inFlight < config.capacity && ahead === 0);
         return {
           ...base,
           ahead,
           estimated_wait_ms: estimate(ahead),
           can_wait: canWait,
-          message: canWait
+          message: paused ? (canWait ? "Inference paused by operator. Request saved; you may choose to wait." : "Inference paused and queue full. Request saved; try waiting later.") : canWait
             ? `GPU busy, ${ahead} ahead of you. Wait or try later.`
             : `GPU busy and the wait line is full (${ahead} waiting). Try later.`,
         };
@@ -369,16 +345,14 @@ export function createInferenceGate(options: InferenceGateOptions) {
           ahead,
           estimated_wait_ms: estimate(ahead),
           can_wait: false,
-          message: `Waiting for the GPU, ${ahead} ahead of you.`,
+          message: paused ? "Queue paused by operator. Request saved." : `Waiting for the GPU, ${ahead} ahead of you.`,
         };
       }
       case "running":
         return { ...base, can_wait: false, message: "Running on the GPU." };
       case "completed":
         if (row.stage && !row.stage.final && !taskDone(row)) {
-          // The step ran; the task it belonged to did not finish, because the workflow that would
-          // have run the next step ended when this one was shed. Saying "Done" here is the lie the
-          // review caught: a member whose classification completed has not had their note drafted.
+          // Completing classification alone does not complete the parent task.
           return {
             ...base,
             can_wait: false,
@@ -398,7 +372,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
           can_wait: false,
           message:
             row.outcome === "interrupted"
-              ? "The service restarted while this request was running, so its answer was lost. Resubmit it."
+              ? "This request was interrupted before its result could be delivered. Resubmit the task."
               : row.outcome === "cancelled"
                 ? "Cancelled."
                 : `Failed: ${row.error ?? "unknown error"}`,
@@ -457,11 +431,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   // Dispatch
   // ---------------------------------------------------------------------------------------------
 
-  /**
-   * Runs one admitted row. The permit is taken by the caller of this function (arrival or pump) and
-   * released here, in `finally`, after the body has been read -- so a permit is never held across
-   * anything but the HTTP exchange itself.
-   */
+  /** Consume one admitted HTTP response. `track` releases its permit when dispatch settles. */
   async function execute(
     row: InferenceQueueRow,
     fetchImpl: InferenceFetch,
@@ -478,14 +448,14 @@ export function createInferenceGate(options: InferenceGateOptions) {
       }
       // The timeout starts here, at admission -- see the file header.
       const timeout = AbortSignal.timeout(row.timeout_ms);
-      const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+      const signal = AbortSignal.any([timeout, shutdownAbort.signal, ...(callerSignal ? [callerSignal] : [])]);
       const base = assertLoopbackUrl(request.baseUrl, `${request.purpose} inference`);
       const apiKey =
         apiKeyInMemory || (request.apiKeyEnv ? env[request.apiKeyEnv]?.trim() : undefined);
       let response: Awaited<ReturnType<InferenceFetch>>;
       let text: string;
       try {
-        response = await fetchImpl(`${base}${request.route}`, {
+        response = await abortable(fetchImpl(`${base}${request.route}`, {
           method: "POST",
           // A loopback origin must not redirect private content to another host.
           redirect: "error",
@@ -496,10 +466,12 @@ export function createInferenceGate(options: InferenceGateOptions) {
           },
           body: JSON.stringify(request.body),
           signal,
-        });
-        text = await response.text();
+        }), signal);
+        text = await abortable(response.text(), signal);
       } catch (error) {
-        const kind: InferenceFailureKind = callerSignal?.aborted
+        const kind: InferenceFailureKind = shutdownAbort.signal.aborted
+          ? "interrupted"
+          : callerSignal?.aborted
           ? "cancelled"
           : timeout.aborted
             ? "timeout"
@@ -522,9 +494,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         return settleFailed(row, outcome, record, durationMs);
       }
       const finishedAt = timestamp();
-      // The ceiling is a ceiling: a result that would push retained bytes past it is delivered to
-      // the caller but not kept, and the row says so. Counting only request bytes at admission let
-      // a 1,000-byte cap end at 2,188 retained.
+      // Deliver the response even when the storage ceiling prevents retaining it.
       const resultBytes = Buffer.byteLength(JSON.stringify(record));
       const keep = store.retainedBytes() + resultBytes <= config.queue.maxRetainedBytes;
       const transitioned = store.transaction(() => {
@@ -613,7 +583,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   ): boolean {
     const finishedAt = timestamp();
     const transitioned = store.transaction(() => {
-      if (!store.finishFailed(row.id, finishedAt, kind, message, response)) {
+      const keep = response &&
+        store.retainedBytes() + Buffer.byteLength(JSON.stringify(response)) <= config.queue.maxRetainedBytes;
+      if (!store.finishFailed(row.id, finishedAt, kind, message, keep ? response : undefined)) {
         return false;
       }
       auditRow("inference.failed", row, {
@@ -631,11 +603,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
     } else if (kind !== "cancelled") {
       health.inference_failures += 1;
     }
-    if (kind === "timeout" || kind === "error") {
-      // Two timeouts with nothing succeeding in between is the shape of a hung server that still
-      // answers /v1/models; the probe alone would never notice. Escalation is evaluated here as
-      // well as on the probe and sweep timers, because with an empty queue and an answering probe
-      // nothing else would look.
+    if (!closed && (kind === "timeout" || kind === "error" || (response && response.status >= 500))) {
+      // Generation can fail while /models still answers. Evaluate even when the queue is empty.
       health.consecutive_inference_failures += 1;
       health.state = health.state === "down" ? "down" : "degraded";
       void evaluateEscalations();
@@ -708,7 +677,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
   /** Moves the head of the line into a free slot, until either runs out. */
   function pump(): void {
-    if (closed) {
+    if (closed || paused) {
       return;
     }
     while (inFlight < config.capacity && waiting.length > 0) {
@@ -783,6 +752,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         ...(request.apiKey ? { apiKey: request.apiKey } : {}),
         ...(request.signal ? { signal: request.signal } : {}),
       };
+      waiting.push(waiter);
       if (request.signal) {
         const onAbort = () => {
           const index = waiting.indexOf(waiter);
@@ -806,7 +776,6 @@ export function createInferenceGate(options: InferenceGateOptions) {
         }
         request.signal.addEventListener("abort", onAbort, { once: true });
       }
-      waiting.push(waiter);
       pump();
     });
   }
@@ -896,7 +865,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
     }
 
     // Slot free and nobody ahead: run. Somebody ahead means the slot is theirs the moment pump runs.
-    if (inFlight < config.capacity && waiting.length === 0) {
+    if (!paused && inFlight < config.capacity && waiting.length === 0) {
       admitArrival(row);
       const running = { ...row, status: "running" as const, admitted_at: arrivedAt, claimed_at: arrivedAt };
       return track(
@@ -959,11 +928,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
       case "shed":
         if (request.wait) {
           const converted = wait(request.owner, row.id);
-          if (converted?.state === "queued") {
-            const waiter = waiting.find((entry) => entry.id === row.id);
-            if (waiter) {
-              return new Promise((resolve) => waiter.resolvers.push(resolve));
-            }
+          if (converted && converted.state !== "shed") {
+            return attach(store.get(row.id) as InferenceQueueRow, request);
           }
           return Promise.resolve({ kind: "shed", id: row.id, status: converted ?? statusOf(row) });
         }
@@ -1000,6 +966,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
    * revived. A repeat click on a row that is no longer shed returns whatever it is now.
    */
   function wait(owner: string, id: string): InferenceStatus | undefined {
+    if (closed) return status(owner, id);
     const row = ownedRow(owner, id);
     if (!row) {
       return undefined;
@@ -1014,7 +981,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
         expireRow(fresh, at);
         return false;
       }
-      if (waiting.length >= config.queue.maxDepth) {
+      const canAdmitNow = !paused && inFlight < config.capacity && waiting.length === 0;
+      if (waiting.length >= config.queue.maxDepth && !canAdmitNow) {
         return false;
       }
       if (!store.convertToQueued(id, at)) {
@@ -1060,6 +1028,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
    *    waiting for their member's choice.
    */
   function recover(): { interrupted: number; expired: number; readmitted: number } {
+    if (!config.persistAcrossRestarts) return { interrupted: 0, expired: 0, readmitted: 0 };
     const at = timestamp();
     let interrupted = 0;
     let expired = 0;
@@ -1115,11 +1084,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   async function probeHealth(): Promise<InferenceHealth> {
+    if (closed) return { ...health };
     const base = assertLoopbackUrl(localBaseUrl, "inference health probe");
     try {
       const probeKey = env[localApiKeyEnv]?.trim();
       const response = await defaultFetch(`${base}models`, {
         method: "GET",
+        redirect: "error",
         headers: {
           Accept: "application/json",
           ...(probeKey ? { Authorization: `Bearer ${probeKey}` } : {}),
@@ -1135,8 +1106,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
       delete health.last_probe_error;
       // A listing that answers proves the process is up, not that generation works. Recent
       // inference failures keep the state degraded until a completion clears it.
-      if (health.state === "down") {
-        health.state = health.inference_timeouts > 0 && !recentInferenceSuccess() ? "degraded" : "ok";
+      if (health.state !== "ok") {
+        health.state = health.consecutive_inference_failures > 0 ? "degraded" : "ok";
       }
     } catch (error) {
       health.consecutive_probe_failures += 1;
@@ -1170,6 +1141,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   async function evaluateEscalations(): Promise<void> {
+    if (closed) return;
     const conditions: Array<[InferenceEscalationTrigger, boolean, InferenceEscalation]> = [
       [
         "queue_age",
@@ -1223,6 +1195,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       } catch (error) {
         escalation.details.proposal_error = error instanceof Error ? error.message : String(error);
       }
+      if (closed) return;
       if (proposalId) {
         armed.set(trigger, { proposal_id: proposalId });
       }
@@ -1235,12 +1208,14 @@ export function createInferenceGate(options: InferenceGateOptions) {
     }
   }
 
-  function start(): ReturnType<typeof recover> {
+  function start(options: { recoverExisting?: boolean } = {}): ReturnType<typeof recover> {
     if (started) {
       return { interrupted: 0, expired: 0, readmitted: 0 };
     }
     started = true;
-    const recovered = recover();
+    const recovered = options.recoverExisting === false
+      ? { interrupted: 0, expired: 0, readmitted: 0 }
+      : recover();
     if (config.queue.sweepIntervalMs > 0) {
       sweepTimer = setInterval(() => sweep(), config.queue.sweepIntervalMs);
       sweepTimer.unref();
@@ -1252,6 +1227,103 @@ export function createInferenceGate(options: InferenceGateOptions) {
     return recovered;
   }
 
+  function settings() {
+    return { paused, shutting_down: closed, shutdown_grace_ms: shutdownGraceMs, persist_across_restarts: config.persistAcrossRestarts };
+  }
+
+  function controlAudit(actor: string, operation: string, details = {}) {
+    store.audit({ type: "inference.control_changed", actor, details: { operation, ...details } });
+  }
+
+  function pause(actor = "system:inference-gate") {
+    if (closed) throw new Error("inference gate is shutting down");
+    if (!paused) {
+      controlAudit(actor, "pause");
+      paused = true;
+    }
+    return settings();
+  }
+
+  function resume(actor = "system:inference-gate") {
+    if (closed) throw new Error("inference gate is shutting down");
+    if (paused) {
+      controlAudit(actor, "resume");
+      paused = false;
+      pump();
+    }
+    return settings();
+  }
+
+  function cancelPending(ids: string[], actor = "system:inference-gate") {
+    const cancelled: string[] = [];
+    store.transaction(() => {
+      for (const id of new Set(ids)) {
+        const row = store.get(id);
+        if (!row || !store.cancelPending(id, timestamp())) continue;
+        auditRow("inference.failed", row, { outcome: "cancelled", cancelled_by: actor });
+        cancelled.push(id);
+      }
+    });
+    for (const id of cancelled) {
+      const index = waiting.findIndex((w) => w.id === id);
+      if (index < 0) continue;
+      const waiter = waiting.splice(index, 1)[0];
+      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      for (const resolve of waiter.resolvers) {
+        resolve({ kind: "failed", id, failure: "cancelled", error: "Cancelled by operator" });
+      }
+    }
+    return { cancelled, unchanged: [...new Set(ids)].filter((id) => !cancelled.includes(id)) };
+  }
+
+  // The grace budget is measured from shutdown's start, including live edits during draining.
+  function armShutdownDeadline() {
+    if (shutdownTimer) clearTimeout(shutdownTimer);
+    if (shutdownFinished || shutdownStartedAt === undefined || shutdownAbort.signal.aborted) return;
+    const remaining = Math.max(0, shutdownStartedAt + shutdownGraceMs - Date.now());
+    shutdownTimer = setTimeout(() => shutdownAbort.abort(new Error("shutdown grace period elapsed")), remaining);
+  }
+
+  function setShutdownGraceMs(value: number, actor = "system:inference-gate") {
+    if (!Number.isSafeInteger(value) || value < 0 || value > 2_147_483_647) {
+      throw new Error("shutdown_grace_ms must be an integer from 0 to 2147483647");
+    }
+    controlAudit(actor, "shutdown_grace", { shutdown_grace_ms: value });
+    shutdownGraceMs = value;
+    armShutdownDeadline();
+    return settings();
+  }
+
+  function shutdown(): Promise<void> {
+    if (shutdownPromise) return shutdownPromise;
+    close();
+    shutdownStartedAt = Date.now();
+    for (const waiter of waiting.splice(0)) {
+      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      const row = store.get(waiter.id);
+      if (!row) continue;
+      let outcome: InferenceOutcome;
+      if (config.persistAcrossRestarts) {
+        outcome = { kind: "queued", id: row.id, status: {
+          ...statusOf(row), message: "Service shutting down. Inference request saved for restart; its parent workflow will not resume automatically.",
+        } };
+      } else {
+        const error = "Service shutting down. Restart persistence is disabled; resubmit the task.";
+        finishFailed(row, "interrupted", error, undefined, 0);
+        outcome = { kind: "failed", id: row.id, failure: "interrupted", error };
+      }
+      for (const resolve of waiter.resolvers) resolve(outcome);
+    }
+    armShutdownDeadline();
+    shutdownPromise = Promise.allSettled([...active.values()].map((entry) => entry.promise))
+      .then(() => {
+        shutdownFinished = true;
+        if (shutdownTimer) clearTimeout(shutdownTimer);
+      });
+    return shutdownPromise;
+  }
+
+  /** Synchronous admission/timer stop. Await shutdown() before closing the database. */
   function close(): void {
     closed = true;
     if (sweepTimer) {
@@ -1264,6 +1336,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
   function stats(): InferenceGateStats {
     return {
+      ...settings(),
       capacity: config.capacity,
       in_flight: inFlight,
       queued: depth(),
@@ -1290,11 +1363,17 @@ export function createInferenceGate(options: InferenceGateOptions) {
     sweep,
     probeHealth,
     close,
+    shutdown,
+    pause,
+    resume,
+    cancelPending,
+    settings,
+    setShutdownGraceMs,
     stats,
     config,
     processId,
     /** The handle this gate writes to. Exposed so a server can build a durable gate on the same file. */
-    database: options.db,
+    database,
   };
 }
 
@@ -1325,6 +1404,31 @@ export async function runGated(
   gate: Pick<InferenceGate, "run">,
   request: InferenceGateRequest,
 ): Promise<InferenceResponseRecord> {
+  const task = currentTaskContext();
+  if (!task) return runGatedCall(gate, request);
+  const key = `${currentTaskScope()}:model:${request.caller}`;
+  return taskStep(key, request.request, async () => {
+    const gatedRequest: InferenceGateRequest = {
+      ...request, owner: task.owner, wait: true,
+      submissionKey: `${task.id}:${currentTaskStepAttempt()}`,
+      signal: request.signal ? AbortSignal.any([task.signal, request.signal]) : task.signal,
+    };
+    for (;;) {
+      task.check();
+      try { return await runGatedCall(gate, gatedRequest); }
+      catch (error) {
+        // Internal backpressure is not an uncertain model attempt. Reuse the saved child row.
+        if (!isInferenceDeferred(error) || error.outcome.kind !== "shed") throw error;
+        await abortable(new Promise<void>(resolve => setTimeout(resolve, 50)), gatedRequest.signal!);
+      }
+    }
+  });
+}
+
+async function runGatedCall(
+  gate: Pick<InferenceGate, "run">,
+  request: InferenceGateRequest,
+): Promise<InferenceResponseRecord> {
   const outcome = await gate.run(request);
   switch (outcome.kind) {
     case "completed":
@@ -1345,11 +1449,7 @@ export async function runGated(
 
 let shared: InferenceGate | undefined;
 
-/**
- * The gate every caller uses when none is handed to it. The server registers its durable one at
- * startup; a caller built before that (or in a test) gets an in-memory gate with the same counter
- * semantics, so there is never a second counter in the process -- only, at worst, a non-durable one.
- */
+/** Fallback for callers without an injected gate. The server registers its durable gate at startup. */
 export function sharedInferenceGate(): InferenceGate {
   if (!shared) {
     shared = createInferenceGate({ db: openMemoryDatabase() });
@@ -1374,4 +1474,14 @@ function openMemoryDatabase(): DatabaseSync {
     );
   `);
   return db;
+}
+
+// Bound transports that ignore AbortSignal, and detach the abort listener after settlement.
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    if (signal.aborted) abort();
+  });
 }
