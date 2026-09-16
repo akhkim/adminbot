@@ -1,7 +1,7 @@
 import { html, LitElement, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { listRecentTasks, applicationResultSummary, type RecoveredTask } from "../task-history.ts";
-import { taskActivities, taskChanges, taskFetch } from "../task-request.ts";
+import { taskActivities, taskChanges, taskFetch, type TaskHandle } from "../task-request.ts";
 import "./wait-preference.ts";
 
 function taskLabel(path: string): string {
@@ -37,14 +37,20 @@ type TaskCopy = { state: string; detail?: string };
  * no label. It is only shown when there is more than one to tell apart.
  */
 const taskOrdinals = new Map<string, number>();
-function ordinalFor(id: string): number {
-  const existing = taskOrdinals.get(id);
-  if (existing !== undefined) {
-    return existing;
+function rememberOrder(tasks: Array<TaskHandle | undefined>): void {
+  // Assign by submission time, not by the order they happen to render. Assigning on first paint
+  // numbered whichever task the map yielded first, so a second submission could come out as 1.
+  // Sorting the not-yet-numbered ones by createdAt gives a member the order they sent them in,
+  // and the numbers never move afterwards.
+  const fresh = tasks
+    .filter((task): task is TaskHandle => Boolean(task) && !taskOrdinals.has(task!.id))
+    .sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+  for (const task of fresh) {
+    taskOrdinals.set(task.id, taskOrdinals.size + 1);
   }
-  const next = taskOrdinals.size + 1;
-  taskOrdinals.set(id, next);
-  return next;
+}
+function ordinalFor(id: string): number {
+  return taskOrdinals.get(id) ?? 0;
 }
 
 /**
@@ -134,7 +140,11 @@ export class AdminBotTaskStatus extends LitElement {
         return;
       }
       const active = new Set(Array.from(taskActivities.values(), (entry) => entry.task?.id));
-      this.recovered = tasks.filter((task) => !active.has(task.id)).map((task) => ({ task }));
+      // Work the member may still act on or collect. A task they cancelled, or one that aged
+      // out, is neither -- leaving those on screen turns the tray into a list of old notices.
+      this.recovered = tasks
+        .filter((task) => !active.has(task.id) && !["cancelled", "expired"].includes(task.status))
+        .map((task) => ({ task }));
       for (const entry of this.recovered) {
         if (["queued", "running"].includes(entry.task.status)) {
           void this.resume(entry, "status");
@@ -183,6 +193,12 @@ export class AdminBotTaskStatus extends LitElement {
                 : "failed",
           actions: [],
         };
+      } else if (result && typeof result === "object" && "task" in result) {
+        // Every route but a completed /result answers with a status envelope, and a 200 on a
+        // queued task is one. Treating that as the answer marked recovered work "completed" and
+        // offered a status envelope as its result.
+        const view = (result as { task: TaskHandle }).task;
+        entry.task = { ...entry.task, ...view };
       } else {
         entry.result = result;
         entry.task = { ...entry.task, status: "completed", actions: ["result"] };
@@ -240,6 +256,7 @@ export class AdminBotTaskStatus extends LitElement {
     const restored = this.recovered.filter((entry) => !entry.busy);
     // Only number when there is something to tell apart.
     const many = live.length + restored.length > 1;
+    rememberOrder([...live.map((a) => a.task), ...restored.map((e) => e.task)]);
     return html`${live.map((activity) => {
       const label = `${taskLabel(activity.label)}${
         many && activity.task ? ` ${ordinalFor(activity.task.id)}` : ""

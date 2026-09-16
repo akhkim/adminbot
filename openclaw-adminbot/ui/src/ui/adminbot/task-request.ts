@@ -3,6 +3,8 @@ export type TaskHandle = {
   id: string;
   status: string;
   kind?: string;
+  /** Submission time, so a member's tasks number in the order they sent them. */
+  createdAt?: string | number;
   expiresAt?: string | number;
   actions: string[];
 };
