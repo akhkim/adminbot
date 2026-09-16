@@ -196,12 +196,11 @@ function renderSendResult(props: WorkshopNudgesProps) {
     role="status"
     data-testid="workshop-nudges-send-result"
   >
-    <strong>
-      Sent ${sent.created} workshop
-      nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
-        ? `, skipped ${sent.skipped.length}`
-        : ""}.
-    </strong>
+    <strong
+      >${`Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${
+        sent.skipped.length ? `, skipped ${sent.skipped.length}` : ""
+      }.`}</strong
+    >
     ${reasons.length
       ? html`<ul class="workshop-nudges__send-reasons">
           ${reasons.map(
