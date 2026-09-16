@@ -9,6 +9,7 @@ export async function handleLabSharingRoute(
   url: URL,
   service: AdminBotService,
   memberId: string,
+  submitQuestion?: (question: string) => Promise<void>,
 ): Promise<void> {
   if (url.pathname === "/lab-sharing/invites") {
     if (req.method === "GET") {
@@ -43,7 +44,8 @@ export async function handleLabSharingRoute(
       sendJson(res, 400, { error: { message: "Enter a question of 1 to 1000 characters." } });
       return;
     }
-    sendJson(res, 200, await askMemberGuidebook(question.trim()));
+    if (submitQuestion) await submitQuestion(question.trim());
+    else sendJson(res, 200, await askMemberGuidebook(question.trim()));
     return;
   }
   const detail = /^\/lab-sharing\/projects\/([^/]+)$/u.exec(url.pathname);

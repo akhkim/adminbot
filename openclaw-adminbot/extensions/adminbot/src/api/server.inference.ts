@@ -1,18 +1,6 @@
 /**
- * The HTTP face of the inference gate: how a member learns what happened to a request the GPU
- * could not take at once, and how they say "wait after all" without sending it again.
- *
- * Every route here derives the owner from the session, never from the body or the URL. A request
- * id is a handle, not authority: the gate hides another member's row completely (status, result,
- * wait and list all answer as if it did not exist), and this module is what makes the session the
- * only source of the owner it checks against. AGENTS.md is explicit that hiding a tab is not
- * security; this is the server-side half.
- *
- * Interactive callers (privacy tasks, reimbursement turns, blurb drafts) hand the gate three things
- * from the request: the owner, the member's answer to "wait or try later" (`X-Inference-Wait: 1`,
- * or the stored preference), and a submission key (`Idempotency-Key`). The key is what makes a
- * retry after a lost response find its row rather than make a second one; clients that do not send
- * one get no such protection, and the write-up says so.
+ * Session-owned inference status, results, wait choices, and preferences.
+ * Request IDs identify rows; the authenticated session authorizes access.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -103,13 +91,76 @@ export async function handleInferenceRoute(
   gate: InferenceGate,
   owner: string,
   privileged: boolean,
+  tasks?: { pause(): void; resume(): void; metrics(): { persist: boolean } },
 ): Promise<boolean> {
+  const controls = new Set([
+    "/inference/pause",
+    "/inference/resume",
+    "/inference/cancel-pending",
+    "/inference/settings",
+  ]);
+  if (controls.has(url.pathname)) {
+    if (!privileged) {
+      sendJson(res, 403, { error: { message: "insufficient privileges" } });
+      return true;
+    }
+    if (url.pathname === "/inference/settings" && req.method === "GET") {
+      sendJson(res, 200, { ...gate.settings(), ...(tasks ? { task_persistence: tasks.metrics().persist } : {}) });
+      return true;
+    }
+    if (url.pathname === "/inference/settings" && req.method === "PUT") {
+      const body = readRecord(await readJsonOrEmpty(req));
+      const value = body.shutdown_grace_ms;
+      if (
+        typeof value !== "number" ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        value > 2_147_483_647
+      ) {
+        sendJson(res, 400, {
+          error: { message: "shutdown_grace_ms must be an integer from 0 to 2147483647" },
+        });
+        return true;
+      }
+      sendJson(res, 200, gate.setShutdownGraceMs(value, owner));
+      return true;
+    }
+    if (req.method !== "POST" || url.pathname === "/inference/settings") return false;
+    if (url.pathname === "/inference/cancel-pending") {
+      const body = readRecord(await readJsonOrEmpty(req));
+      if (
+        !Array.isArray(body.request_ids) ||
+        body.request_ids.length === 0 ||
+        body.request_ids.length > 1000 ||
+        !body.request_ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 200)
+      ) {
+        sendJson(res, 400, {
+          error: { message: "request_ids must contain 1 to 1000 request IDs" },
+        });
+        return true;
+      }
+      sendJson(res, 200, gate.cancelPending(body.request_ids as string[], owner));
+      return true;
+    }
+    if (gate.settings().shutting_down) {
+      sendJson(res, 409, { error: { message: "inference gate is shutting down" } });
+      return true;
+    }
+    if (url.pathname === "/inference/pause") tasks?.pause();
+    else tasks?.resume();
+    sendJson(
+      res,
+      200,
+      url.pathname === "/inference/pause" ? gate.pause(owner) : gate.resume(owner),
+    );
+    return true;
+  }
   if (req.method === "GET" && url.pathname === "/inference/status") {
     if (!privileged) {
       sendJson(res, 403, { error: { message: "insufficient privileges" } });
       return true;
     }
-    sendJson(res, 200, gate.stats());
+    sendJson(res, 200, { ...gate.stats(), ...(tasks ? { tasks: tasks.metrics() } : {}) });
     return true;
   }
   if (url.pathname === "/inference/preferences") {

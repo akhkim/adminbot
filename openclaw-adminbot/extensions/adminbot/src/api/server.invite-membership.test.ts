@@ -23,7 +23,7 @@ afterEach(async () => {
     await new Promise<void>((resolve, reject) => {
       entry.mock.server.close((error) => (error ? reject(error) : resolve()));
     });
-    entry.mock.close();
+    await entry.mock.close();
     for (const cleanupPath of entry.cleanupPaths) {
       await rm(cleanupPath, { force: true });
     }

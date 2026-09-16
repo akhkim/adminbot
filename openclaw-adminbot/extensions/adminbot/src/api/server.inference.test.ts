@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
-import { resolveInferenceGateConfig } from "../inference/config.js";
+import { inferenceTestConfig } from "../inference/config.test-support.js";
 import { createInferenceGate, type InferenceFetch } from "../inference/gate.js";
 import { openInferenceTestDb } from "../inference/gate.test-support.js";
 import { createAdminBotMockService } from "./server.js";
@@ -24,10 +24,11 @@ afterEach(async () => {
     if (!entry) {
       continue;
     }
+    entry.mock.inferenceGate.setShutdownGraceMs(0, "test");
     await new Promise<void>((resolve, reject) => {
       entry.mock.server.close((error) => (error ? reject(error) : resolve()));
     });
-    entry.mock.close();
+    await entry.mock.close();
     for (const cleanupPath of entry.cleanupPaths) {
       await rm(cleanupPath, { force: true });
     }
@@ -84,10 +85,7 @@ async function startService(capacity = 1) {
     db: openInferenceTestDb(),
     env: {},
     fetchImpl: model.fetchImpl,
-    config: resolveInferenceGateConfig(
-      {},
-      { capacity, queue: { sweepIntervalMs: 0 }, health: { intervalMs: 0 } },
-    ),
+    config: inferenceTestConfig({ capacity }),
   });
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
@@ -176,12 +174,37 @@ async function loginToken(baseUrl: string, email: string): Promise<string> {
 describe("AdminBot inference routes", () => {
   it("sheds a busy privacy task with a handle, lets only its owner wait on it, and dedupes a retry", async () => {
     const { baseUrl, mock, gate, model } = await startService(1);
-    seedMember(mock, { id: "ada", name: "Ada", email: "ada@cs.toronto.edu", privilege_level: "member" });
-    seedMember(mock, { id: "bob", name: "Bob", email: "bob@cs.toronto.edu", privilege_level: "member" });
+    seedMember(mock, {
+      id: "ada",
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    seedMember(mock, {
+      id: "bob",
+      name: "Bob",
+      email: "bob@cs.toronto.edu",
+      privilege_level: "member",
+    });
     await approveClaim(mock, baseUrl, "ada", "ada@cs.toronto.edu");
     await approveClaim(mock, baseUrl, "bob", "bob@cs.toronto.edu");
     const ada = await loginToken(baseUrl, "ada@cs.toronto.edu");
     const bob = await loginToken(baseUrl, "bob@cs.toronto.edu");
+    mock.taskRuntime.pause();
+    const shared = mock.taskRuntime.submit({
+      kind: "workshop.match",
+      owner: "system:workshop-match",
+      input: {},
+    });
+    expect(
+      (
+        await fetch(`${baseUrl}/tasks/${shared.id}`, {
+          headers: { Authorization: `Bearer ${bob}` },
+        })
+      ).status,
+    ).toBe(404);
+    mock.taskRuntime.cancel(shared.id);
+    mock.taskRuntime.resume();
 
     // Bob takes the only slot and the model holds his call.
     const bobsTask = fetch(`${baseUrl}/privacy/tasks`, {
@@ -199,111 +222,79 @@ describe("AdminBot inference routes", () => {
     });
     expect(shed.status).toBe(409);
     const shedBody = (await shed.json()) as {
-      inference: { request_id: string; state: string; message: string; can_wait: boolean };
+      task: { id: string; status: string; actions: string[] };
     };
-    expect(shedBody.inference.state).toBe("shed");
-    expect(shedBody.inference.message).toMatch(/GPU busy, 0 ahead of you/u);
-    expect(shedBody.inference.can_wait).toBe(true);
-    const id = shedBody.inference.request_id;
-
-    // The same request again, response lost: same row, no new one.
+    expect(shedBody.task.status).toBe("shed");
+    expect(shedBody.task.actions).toContain("wait");
+    const id = shedBody.task.id;
     const retry = await fetch(`${baseUrl}/privacy/tasks`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${ada}`, "Idempotency-Key": "ada-1" }),
       body: JSON.stringify({ task: "Draft a note", privacy: "private" }),
     });
     expect(retry.status).toBe(409);
-    expect(((await retry.json()) as { inference: { request_id: string } }).inference.request_id).toBe(id);
-    expect(gate.stats().rows.shed).toBe(1);
-
-    // Bob cannot see, read, or convert Ada's request; a handle is not authority.
-    for (const route of [`/inference/requests/${id}`, `/inference/requests/${id}/result`]) {
-      const res = await fetch(`${baseUrl}${route}`, {
-        headers: { Authorization: `Bearer ${bob}` },
-      });
-      expect(res.status).toBe(404);
+    expect(((await retry.json()) as { task: { id: string } }).task.id).toBe(id);
+    expect(mock.taskRuntime.metrics().shed).toBe(1);
+    for (const route of [`/tasks/${id}`, `/tasks/${id}/result`]) {
+      expect(
+        (await fetch(`${baseUrl}${route}`, { headers: { Authorization: `Bearer ${bob}` } })).status,
+      ).toBe(404);
     }
-    const bobWait = await fetch(`${baseUrl}/inference/requests/${id}/wait`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${bob}` },
-    });
-    expect(bobWait.status).toBe(404);
-    expect(gate.stats().queued).toBe(0);
-    // And anonymously, nothing at all.
-    expect((await fetch(`${baseUrl}/inference/requests/${id}`)).status).toBe(401);
-
-    // Ada converts it to waiting without re-sending the task.
-    const wait = await fetch(`${baseUrl}/inference/requests/${id}/wait`, {
+    expect(
+      (
+        await fetch(`${baseUrl}/tasks/${id}/wait`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${bob}` },
+        })
+      ).status,
+    ).toBe(404);
+    expect((await fetch(`${baseUrl}/tasks/${id}`)).status).toBe(401);
+    const wait = await fetch(`${baseUrl}/tasks/${id}/wait`, {
       method: "POST",
       headers: { Authorization: `Bearer ${ada}` },
     });
     expect(wait.status).toBe(202);
-    expect(((await wait.json()) as { state: string }).state).toBe("queued");
+    expect(((await wait.json()) as { task: { status: string } }).task.status).toBe("running");
+    await until(() => gate.stats().queued === 1);
     expect(gate.stats().queued).toBe(1);
-    // A second click reports the current state and enqueues nothing more.
-    const again = await fetch(`${baseUrl}/inference/requests/${id}/wait`, {
+    const again = await fetch(`${baseUrl}/tasks/${id}/wait`, {
       method: "POST",
       headers: { Authorization: `Bearer ${ada}` },
     });
     expect(again.status).toBe(202);
     expect(gate.stats().queued).toBe(1);
-
-    // The model frees up. Bob's task is two calls (classify, then a local run), each its own permit;
-    // Ada's classify runs from the stored body in between, in line order. Release until both settle.
-    let bobsResponse: Response | undefined;
-    void bobsTask.then((response) => {
-      bobsResponse = response;
-    });
     await until(() => {
       model.releaseAll();
-      return bobsResponse !== undefined && gate.status("ada", id)?.state === "completed";
+      return (
+        mock.taskRuntime.get(id)?.status === "completed" && mock.taskRuntime.metrics().active === 0
+      );
     });
-    expect(bobsResponse?.status).toBe(200);
-
-    // What ran from the stored body is the *classification* step of Ada's task -- the workflow that
-    // would have drafted the note ended when the classification was shed. The step is complete; the
-    // task is not, and the status has to say exactly that rather than "Done".
-    const status = (await (
-      await fetch(`${baseUrl}/inference/requests/${id}`, {
-        headers: { Authorization: `Bearer ${ada}` },
-      })
-    ).json()) as { state: string; message: string; task_completed?: boolean; can_wait: boolean };
-    expect(status.state).toBe("completed");
-    expect(status.task_completed).toBe(false);
-    expect(status.can_wait).toBe(false);
-    expect(status.message).toMatch(/"classify" step finished, but the task it was part of did not/u);
-    expect(status.message).not.toMatch(/^Done/u);
-    const result = await fetch(`${baseUrl}/inference/requests/${id}/result`, {
+    expect([200, 202]).toContain((await bobsTask).status);
+    const result = await fetch(`${baseUrl}/tasks/${id}/result`, {
       headers: { Authorization: `Bearer ${ada}` },
     });
     expect(result.status).toBe(200);
-    const mine = await fetch(`${baseUrl}/inference/requests`, {
-      headers: { Authorization: `Bearer ${ada}` },
-    });
-    expect(((await mine.json()) as { requests: unknown[] }).requests).toHaveLength(1);
-
-    // The audit table saw one admitted and one completed for Ada's row and nothing twice. Read from
-    // the gate's own database: this test's gate is in-memory and separate from the service store,
-    // which is exactly the seam production closes by handing the gate the store's handle.
-    const events = (
-      gate.database
-        .prepare("SELECT event_json FROM adminbot_audit_events ORDER BY rowid")
-        .all() as Array<{ event_json: string }>
-    )
-      .map((row) => JSON.parse(row.event_json) as { type: string; details?: { request_id?: string } })
-      .filter((e) => e.details?.request_id === id);
-    expect(events.map((e) => e.type)).toEqual([
-      "inference.shed",
-      "inference.waited",
-      "inference.admitted",
-      "inference.completed",
-    ]);
+    expect(await result.json()).toEqual({ route: "local", output: expect.any(String) });
+    // Both application tasks completed their reasoning stage, not just classification.
+    expect(model.calls).toBe(4);
+    const mine = await fetch(`${baseUrl}/tasks`, { headers: { Authorization: `Bearer ${ada}` } });
+    expect(((await mine.json()) as { tasks: unknown[] }).tasks).toHaveLength(1);
   });
 
   it("stores and reads back the always-wait preference per member, and honors it on the next task", async () => {
     const { baseUrl, mock, gate, model } = await startService(1);
-    seedMember(mock, { id: "ada", name: "Ada", email: "ada@cs.toronto.edu", privilege_level: "member" });
-    seedMember(mock, { id: "bob", name: "Bob", email: "bob@cs.toronto.edu", privilege_level: "member" });
+    seedMember(mock, {
+      id: "ada",
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    seedMember(mock, {
+      id: "bob",
+      name: "Bob",
+      email: "bob@cs.toronto.edu",
+      privilege_level: "member",
+    });
     await approveClaim(mock, baseUrl, "ada", "ada@cs.toronto.edu");
     await approveClaim(mock, baseUrl, "bob", "bob@cs.toronto.edu");
     const ada = await loginToken(baseUrl, "ada@cs.toronto.edu");
@@ -333,16 +324,20 @@ describe("AdminBot inference routes", () => {
     });
     await until(() => gate.stats().queued === 1);
     // Not shed: Ada's preference put her in line without a header.
-    expect(gate.stats().rows.shed).toBe(0);
+    expect(mock.taskRuntime.metrics().shed).toBe(0);
     let adasResponse: Response | undefined;
     void adas.then((response) => {
       adasResponse = response;
     });
     await until(() => {
       model.releaseAll();
-      return adasResponse !== undefined;
+      return (
+        adasResponse !== undefined &&
+        mock.taskRuntime.metrics().active === 0 &&
+        mock.taskRuntime.metrics().queued === 0
+      );
     });
-    expect(adasResponse?.status).toBe(200);
+    expect([200, 202]).toContain(adasResponse?.status);
   });
 
   it("lets a browser preflight the wait header from an allowed origin", async () => {
@@ -352,7 +347,8 @@ describe("AdminBot inference routes", () => {
       headers: {
         Origin: "http://127.0.0.1:5173",
         "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-inference-wait",
+        "Access-Control-Request-Headers":
+          "authorization,content-type,idempotency-key,x-inference-wait",
       },
     });
     expect(preflight.status).toBe(204);
@@ -363,7 +359,12 @@ describe("AdminBot inference routes", () => {
 
   it("keeps /inference/status privileged", async () => {
     const { baseUrl, mock } = await startService(1);
-    seedMember(mock, { id: "pat", name: "Pat", email: "pat@cs.toronto.edu", privilege_level: "member" });
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
     await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
     const pat = await loginToken(baseUrl, "pat@cs.toronto.edu");
     expect(
@@ -375,5 +376,84 @@ describe("AdminBot inference routes", () => {
     });
     expect(asService.status).toBe(200);
     expect(((await asService.json()) as { capacity: number }).capacity).toBe(1);
+  });
+});
+
+describe("inference operator controls", () => {
+  it("requires privileges and validates live settings and explicit cancellation IDs", async () => {
+    const { baseUrl, mock, gate, model } = await startService();
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@example.invalid",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "pat", "pat@example.invalid");
+    const pat = await loginToken(baseUrl, "pat@example.invalid");
+    const adminHeaders = jsonHeaders({ Authorization: `Bearer ${SERVICE_TOKEN}` });
+    for (const route of ["pause", "resume", "cancel-pending", "settings"]) {
+      const method = route === "settings" ? "PUT" : "POST";
+      expect(
+        (
+          await fetch(`${baseUrl}/inference/${route}`, {
+            method,
+            headers: jsonHeaders({ Authorization: `Bearer ${pat}` }),
+            body: "{}",
+          })
+        ).status,
+      ).toBe(403);
+    }
+    expect(
+      (await fetch(`${baseUrl}/inference/pause`, { method: "POST", headers: adminHeaders })).status,
+    ).toBe(200);
+    const outcome = await gate.run({
+      owner: "service",
+      caller: "test",
+      request: {
+        route: "chat/completions",
+        baseUrl: "http://127.0.0.1:8000/v1",
+        purpose: "test",
+        body: { model: "m" },
+      },
+    });
+    expect(outcome.kind).toBe("shed");
+    expect(model.calls).toBe(0);
+    expect(
+      (
+        await fetch(`${baseUrl}/inference/settings`, {
+          method: "PUT",
+          headers: adminHeaders,
+          body: JSON.stringify({ shutdown_grace_ms: -1 }),
+        })
+      ).status,
+    ).toBe(400);
+    const updated = await fetch(`${baseUrl}/inference/settings`, {
+      method: "PUT",
+      headers: adminHeaders,
+      body: JSON.stringify({ shutdown_grace_ms: 25 }),
+    });
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).shutdown_grace_ms).toBe(25);
+    expect(
+      (
+        await fetch(`${baseUrl}/inference/cancel-pending`, {
+          method: "POST",
+          headers: adminHeaders,
+          body: "{}",
+        })
+      ).status,
+    ).toBe(400);
+    if (outcome.kind !== "shed") throw new Error("expected shed");
+    const cancelled = await fetch(`${baseUrl}/inference/cancel-pending`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ request_ids: [outcome.id] }),
+    });
+    expect((await cancelled.json()).cancelled).toEqual([outcome.id]);
+    const resumed = await fetch(`${baseUrl}/inference/resume`, {
+      method: "POST",
+      headers: adminHeaders,
+    });
+    expect((await resumed.json()).paused).toBe(false);
   });
 });

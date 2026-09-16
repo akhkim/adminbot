@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotWorkshopMatchRun } from "../contracts/paper-cycle.js";
 import type { AdminBotService } from "../kernel/service.js";
+import { taskStep } from "../tasks/context.js";
+import type { TaskRuntime } from "../tasks/runtime.js";
+import type { TaskRecord } from "../tasks/store.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import type { WorkshopMatcher } from "../workflows/papers/workshop-nudges.js";
 import {
@@ -46,6 +49,8 @@ export type WorkshopNudgeSendResult = {
  * making page-open trigger it is what put a batch job inside a request in the first place.
  */
 export function readWorkshopNudgeRun(service: AdminBotService, now?: Date): WorkshopNudgeRunView {
+  const managed = latestManagedRun(service);
+  if (managed) return managed;
   const stored = service.latestWorkshopMatchRun();
   if (!stored) {
     return { status: "none" };
@@ -73,6 +78,8 @@ export function readWorkshopNudgeRun(service: AdminBotService, now?: Date): Work
 }
 
 export type WorkshopNudgeRunView = {
+  task_id?: string;
+  task_status?: TaskRecord["status"];
   status: "none" | "running" | "ready" | "failed";
   started_at?: string;
   finished_at?: string;
@@ -168,6 +175,17 @@ export function cancelWorkshopNudgeRun(params: {
   service: AdminBotService;
   actor?: string;
 }): WorkshopNudgeRunView {
+  const managed = workshopRuntimes.get(params.service);
+  if (managed) {
+    const latest = managed.runtime
+      .list("system:workshop-match")
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .find((task) => task.kind === "workshop.match");
+    if (latest) {
+      managed.runtime.cancel(latest.id, latest.owner);
+      return readWorkshopNudgeRun(params.service);
+    }
+  }
   const existing = params.service.latestWorkshopMatchRun();
   if (existing?.status !== "running") {
     return readWorkshopNudgeRun(params.service);
@@ -210,6 +228,37 @@ export function startWorkshopNudgeRun(params: {
   /** Narrow this pass to one parent conference. Blank means the whole open season. */
   conferenceKey?: string;
 }): WorkshopNudgeRunView {
+  const managed = workshopRuntimes.get(params.service);
+  if (managed) {
+    const latest = managed.runtime
+      .list("system:workshop-match")
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .find((task) => task.kind === "workshop.match");
+    if (latest && ["running", "queued", "shed"].includes(latest.status)) {
+      if (!params.force) return readWorkshopNudgeRun(params.service);
+      managed.runtime.cancel(latest.id, latest.owner);
+    }
+    if (!latest) {
+      const legacy = params.service.latestWorkshopMatchRun();
+      if (legacy?.status === "running") {
+        if (!params.force && !workshopRunIsAbandoned(legacy, params.now))
+          return readWorkshopNudgeRun(params.service);
+        abandonWorkshopRun(params.service, legacy);
+      }
+    }
+    managed.match = params.match;
+    const submission = managed.runtime.submit({
+      kind: "workshop.match",
+      owner: "system:workshop-match",
+      wait: true,
+      input: {
+        now: params.now.toISOString(),
+        startedBy: params.startedBy,
+        conferenceKey: params.conferenceKey,
+      },
+    });
+    return projectTaskRun(submission.task);
+  }
   const existing = params.service.latestWorkshopMatchRun();
   if (existing?.status === "running") {
     if (!params.force && !workshopRunIsAbandoned(existing, params.now)) {
@@ -277,7 +326,9 @@ export function startWorkshopNudgeRun(params: {
           // Deferred batches ride in the detail line rather than a new column: the run table has
           // no field for them, and "N batches deferred (GPU queue full)" beside the last failure
           // is what an administrator needs to read to know whether to wait or to investigate.
-          const deferredNote = deferred ? `${deferred} batches deferred (GPU queue full)` : undefined;
+          const deferredNote = deferred
+            ? `${deferred} batches deferred (GPU queue full)`
+            : undefined;
           progress = {
             done,
             total,
@@ -349,13 +400,19 @@ export async function previewWorkshopNudges(params: {
   ) => void;
   signal?: AbortSignal;
 }): Promise<WorkshopNudgePreview> {
-  const papers = servicePayload(params.service.listPapers()).papers;
-  const members = servicePayload(params.service.listLabMembers()).members;
-  const attendees = servicePayload(params.service.listConferenceAttendance()).attendees;
-  const allWorkshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now);
-  if (!allWorkshops.length) {
-    throw new Error("no upcoming workshop profiles are available");
-  }
+  const { papers, members, attendees, allWorkshops, headProfessorMemberId } = await taskStep(
+    "matcher.manifest",
+    {},
+    async () => ({
+      papers: servicePayload(params.service.listPapers()).papers,
+      members: servicePayload(params.service.listLabMembers()).members,
+      attendees: servicePayload(params.service.listConferenceAttendance()).attendees,
+      allWorkshops: workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now),
+      headProfessorMemberId: servicePayload(params.service.getSettings()).head_professor_member_id,
+    }),
+    { replaySafe: true },
+  );
+  if (!allWorkshops.length) throw new Error("no upcoming workshop profiles are available");
   const conferenceKey = params.conferenceKey?.trim();
   const workshops = workshopProfilesForConference(allWorkshops, conferenceKey);
   // Refused rather than silently widened. An admin who picked a conference and got the whole season
@@ -366,9 +423,6 @@ export async function previewWorkshopNudges(params: {
   const conferenceLabel = conferenceKey
     ? workshops[0]?.parent_conference?.trim() || conferenceKey
     : undefined;
-  const headProfessorMemberId = servicePayload(
-    params.service.getSettings(),
-  ).head_professor_member_id;
   const source = workshopNudgeInputsFromAdminBot({
     papers,
     members,
@@ -659,4 +713,93 @@ function sentProposal(
   proposal: AdminBotStoredProposal,
 ): WorkshopNudgeSendResult["created"][number] {
   return { member_id: memberId, proposal_id: proposal.id, status: proposal.status };
+}
+
+type ManagedWorkshopRuntime = { runtime: TaskRuntime; match: WorkshopMatcher };
+const workshopRuntimes = new WeakMap<AdminBotService, ManagedWorkshopRuntime>();
+
+export function configureWorkshopTaskRuntime(
+  service: AdminBotService,
+  runtime: TaskRuntime,
+  match: WorkshopMatcher,
+  _now?: () => Date,
+): void {
+  workshopRuntimes.set(service, { runtime, match });
+  service.setWorkshopMatchRunReader(() => {
+    const task = runtime
+      .list("system:workshop-match")
+      .filter((row) => row.kind === "workshop.match")
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!task) return undefined;
+    const view = projectTaskRun(task);
+    return {
+      id: task.id,
+      status: view.status as AdminBotWorkshopMatchRun["status"],
+      started_at: view.started_at!,
+      finished_at: view.finished_at,
+      calls_done: view.calls_done ?? 0,
+      calls_total: view.calls_total ?? 0,
+      calls_failed: view.calls_failed,
+      error: view.error,
+      ...(view.preview ? { payload_json: JSON.stringify(view.preview) } : {}),
+    };
+  });
+  runtime.register("workshop.match", 1, async (raw, task) => {
+    const input = raw as { now: string; startedBy?: string; conferenceKey?: string };
+    const preview = await previewWorkshopNudges({
+      service,
+      match: workshopRuntimes.get(service)?.match ?? match,
+      now: new Date(input.now),
+      conferenceKey: input.conferenceKey,
+      signal: task.signal,
+      onProgress: (done, total, failed, detail) =>
+        task.progress({ calls_done: done, calls_total: total, calls_failed: failed, detail }),
+    });
+    task.commit("matcher.preview", preview, () => {
+      service.saveWorkshopMatchRun({
+        id: task.id,
+        status: "ready",
+        started_at: input.now,
+        started_by: input.startedBy,
+        finished_at: new Date().toISOString(),
+        calls_done: Number(runtime.get(task.id)?.progress?.calls_done ?? 0),
+        calls_total: Number(runtime.get(task.id)?.progress?.calls_total ?? 0),
+        calls_failed: Number(runtime.get(task.id)?.progress?.calls_failed ?? 0),
+        payload_json: JSON.stringify(preview),
+      });
+      return true;
+    });
+    return preview;
+  });
+}
+
+function projectTaskRun(task: TaskRecord): WorkshopNudgeRunView {
+  return {
+    status:
+      task.status === "completed"
+        ? "ready"
+        : ["running", "queued", "shed"].includes(task.status)
+          ? "running"
+          : "failed",
+    started_at: new Date(task.createdAt).toISOString(),
+    ...(["completed", "failed", "needs_retry", "cancelled", "expired"].includes(task.status)
+      ? { finished_at: new Date(task.updatedAt).toISOString() }
+      : {}),
+    ...(task.result ? { preview: task.result as WorkshopNudgePreview } : {}),
+    ...(task.error ? { error: task.error } : {}),
+    calls_done: Number(task.progress?.calls_done ?? 0),
+    calls_total: Number(task.progress?.calls_total ?? 0),
+    calls_failed: Number(task.progress?.calls_failed ?? 0),
+    task_id: task.id,
+    task_status: task.status,
+  };
+}
+
+function latestManagedRun(service: AdminBotService): WorkshopNudgeRunView | undefined {
+  const managed = workshopRuntimes.get(service);
+  const task = managed?.runtime
+    .list("system:workshop-match")
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .find((row) => row.kind === "workshop.match");
+  return task ? projectTaskRun(task) : undefined;
 }

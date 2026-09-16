@@ -96,6 +96,27 @@ export class AdminBotClient {
     return this.request("POST", "/guidebook/ask", request, signal);
   }
 
+  async getTask(taskId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("GET", `/tasks/${encodeURIComponent(taskId)}`, undefined, signal);
+  }
+
+  async getTaskResult(taskId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("GET", `/tasks/${encodeURIComponent(taskId)}/result`, undefined, signal);
+  }
+
+  /** Call only after an explicit wait choice; submitting a task never selects Wait automatically. */
+  async waitForTask(taskId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/wait`, {}, signal);
+  }
+
+  async cancelTask(taskId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/cancel`, {}, signal);
+  }
+
+  async retryTask(taskId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/retry`, {}, signal);
+  }
+
   async listPending(limit?: number, signal?: AbortSignal): Promise<unknown> {
     const params = typeof limit === "number" ? `?limit=${encodeURIComponent(String(limit))}` : "";
     return this.request("GET", `/proposals/pending${params}`, undefined, signal);
@@ -249,6 +270,16 @@ export class AdminBotClient {
     }
     const raw = await response.text();
     const parsed = raw.trim() ? parseJson(raw) : undefined;
+    // Deferred application tasks are useful tool results. Throwing only their message would
+    // discard the saved task identity, while interpreting HTTP 202 as an answer invents success.
+    if (
+      (["/privacy/tasks", "/guidebook/ask", "/reimbursements/converse"].includes(path) ||
+        path.startsWith("/tasks/")) &&
+      [200, 202, 409, 410, 502].includes(response.status)
+    ) {
+      const taskResult = describeTaskResponse(parsed);
+      if (taskResult) return taskResult;
+    }
     if (!response.ok) {
       throw new AdminBotServiceError(formatHttpError(response.status, response.statusText, parsed));
     }
@@ -311,4 +342,64 @@ function formatHttpError(status: number, statusText: string, parsed: unknown): s
     }
   }
   return `AdminBot service error ${status}: ${statusText}`;
+}
+
+function describeTaskResponse(parsed: unknown): Record<string, unknown> | undefined {
+  if (!parsed || typeof parsed !== "object" || !("task" in parsed)) return;
+  const task = parsed.task;
+  if (
+    !task ||
+    typeof task !== "object" ||
+    !("id" in task) ||
+    typeof task.id !== "string" ||
+    !("status" in task) ||
+    typeof task.status !== "string"
+  )
+    return;
+  const taskPath = `/tasks/${encodeURIComponent(task.id)}`;
+  const knownActions = new Set(["wait", "cancel", "retry", "result"]);
+  const actions =
+    "actions" in task && Array.isArray(task.actions)
+      ? task.actions.filter(
+          (action): action is string => typeof action === "string" && knownActions.has(action),
+        )
+      : [];
+  const messages: Record<string, string> = {
+    shed: "The task is saved but has not run. Ask the user whether to wait; do not resubmit the original input or claim an answer is ready.",
+    queued:
+      "The task is accepted and queued. Check its status, then retrieve the completed application result.",
+    running:
+      "The task is running. Check its status, then retrieve the completed application result.",
+    completed:
+      "The task completed. Retrieve its application result from the result endpoint before answering.",
+    needs_retry:
+      "A step was interrupted or is uncertain. Ask for an explicit retry decision; do not repeat the original operation automatically.",
+    failed:
+      "The application task failed. Its status contains the failure; no completed answer is available.",
+    cancelled: "The task was cancelled. No completed answer is available.",
+    expired:
+      "The saved task expired. A new submission is required if the user still wants the work.",
+  };
+  if (!messages[task.status]) return;
+  return {
+    ...parsed,
+    outcome: "task_status",
+    user_message: messages[task.status],
+    supported_actions: [
+      {
+        action: "status",
+        method: "GET",
+        path: taskPath,
+        tool: "adminbot_task",
+        arguments: { taskId: task.id, action: "status" },
+      },
+      ...actions.map((action) => ({
+        action,
+        method: action === "result" ? "GET" : "POST",
+        path: `${taskPath}/${action}`,
+        tool: "adminbot_task",
+        arguments: { taskId: task.id, action },
+      })),
+    ],
+  };
 }
