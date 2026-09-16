@@ -71,6 +71,8 @@ export async function askGuidebook(
     fetchImpl?: GuidebookFetch;
     env?: NodeJS.ProcessEnv;
     signal?: AbortSignal;
+    /** Model time once admitted. A caller wanting a shorter budget sends this, never a signal. */
+    timeoutMs?: number;
     gate?: InferenceGate;
     /** A caller-specific audience gate, evaluated before retrieval or model calls. */
     allowIndex?: (index: GuidebookIndex) => boolean;
@@ -133,6 +135,7 @@ export async function askGuidebook(
         apiKey: readApiKey(env, config.embeddingApiKeyEnv),
         gate: {
           gate: options.gate,
+          ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
           caller: "guidebook.embed",
           apiKeyEnv: config.embeddingApiKeyEnv,
         },
@@ -169,7 +172,12 @@ export async function askGuidebook(
     baseUrl: config.answerBaseUrl,
     model: config.answerModel,
     apiKey: readApiKey(env, config.answerApiKeyEnv),
-    gate: { gate: options.gate, caller: "guidebook.answer", apiKeyEnv: config.answerApiKeyEnv },
+    gate: {
+      gate: options.gate,
+      caller: "guidebook.answer",
+      apiKeyEnv: config.answerApiKeyEnv,
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {

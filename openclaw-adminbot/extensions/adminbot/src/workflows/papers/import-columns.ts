@@ -16,6 +16,7 @@
 
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
 import { isInferenceDeferred, type InferenceGate } from "../../inference/gate.js";
+import { currentTaskContext } from "../../tasks/context.js";
 
 const PURPOSE = "paper import column mapping";
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1";
@@ -126,6 +127,12 @@ export function createImportColumnMapper(options: {
         },
       });
     } catch (error) {
+      if (currentTaskContext()) {
+        // ctx.step has already rewrapped this, so the identity test below cannot fire inside a
+        // task -- and the empty mapping returned after it is exactly the "carried on as if it
+        // had asked" outcome the comment above forbids. Let the runtime own the outcome.
+        throw error;
+      }
       if (isInferenceDeferred(error)) {
         // A queue decision, not a model that could not answer. `{}` here would read as "the model
         // could not place any of these columns", and the importer would carry on as if it had
