@@ -169,11 +169,11 @@ import {
   readMemberSheet,
   readRosterSheet,
 } from "./server.member-sheet.js";
-import { handleTaskRoute, submitHttpTask } from "./server.tasks.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import { handleTaskRoute, submitHttpTask } from "./server.tasks.js";
 import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
@@ -1175,6 +1175,30 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     if (!owner) {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
+    }
+    // A visitor reaching a task route has not passed the anonymous limiter below -- this block
+    // returns before it -- and Wait and retry both start model work. Without this, one bootstrap
+    // plus one failed turn buys unlimited inference by retrying the same row, which is exactly
+    // what that limiter exists to stop. Reads are left alone: they spend no GPU time, and the
+    // status polling the UI does would exhaust a 60-per-hour budget in a minute.
+    if (visitor && req.method === "POST" && /\/(?:wait|retry)$/u.test(url.pathname)) {
+      const ip = remoteIp(req, ctx.trustProxyHeaders);
+      if (!ctx.anonymousRateLimiter.check(ip)) {
+        ctx.service.recordAnonymousReimbursementUse({
+          route: url.pathname,
+          outcome: "rate_limited",
+          ...(ip ? { ip } : {}),
+        });
+        sendJson(res, 429, {
+          error: { message: "too many reimbursement requests; please try again later" },
+        });
+        return;
+      }
+      ctx.service.recordAnonymousReimbursementUse({
+        route: url.pathname,
+        outcome: "accepted",
+        ...(ip ? { ip } : {}),
+      });
     }
     const handled = await handleTaskRoute(
       req,
