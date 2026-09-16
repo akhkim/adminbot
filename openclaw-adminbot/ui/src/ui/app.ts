@@ -854,6 +854,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotPreregMinConfidence = 0;
   @state() adminBotPreregMissingEdit = false;
   @state() nudgeBellOpen = false;
+  @state() adminBotCvScanJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
   @state() adminBotLabPapers: AdminBotLabPapersState = createEmptyLabPapersState();

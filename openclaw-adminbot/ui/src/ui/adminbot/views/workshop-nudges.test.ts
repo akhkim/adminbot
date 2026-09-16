@@ -363,3 +363,13 @@ describe("renderWorkshopNudges", () => {
     expect(container.textContent).not.toContain("calls failed");
   });
 });
+
+
+it("offers retry for the same uncertain task and Wait for shed work", () => {
+  const retry = vi.fn();
+  const { container } = draw(state({ run: { status: "failed", task_id: "task-synthetic", task_status: "needs_retry" } }), { onRetryTask: retry });
+  const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Retry uncertain step"));
+  expect(button).toBeTruthy(); button!.click(); expect(retry).toHaveBeenCalledOnce();
+  const shed = draw(state({ run: { status: "running", task_id: "task-synthetic", task_status: "shed" } }), { onRetryTask: retry });
+  expect(shed.container.textContent).toContain("Choose Wait");
+});
