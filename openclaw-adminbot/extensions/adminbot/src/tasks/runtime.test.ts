@@ -520,3 +520,31 @@ it("gives each owner a share of the waiting line and dispatches owners in turn",
   expect(r.get(adaThird.id, "ada")!.status).toBe("shed");
   await r.shutdown({ graceMs: 0 });
 });
+
+it("serves every waiting owner before serving a backlogged one twice", async () => {
+  // The two-owner test above covers one round, which is the one shape where ordering by
+  // least-recently-served and resuming after the owner served last agree. They diverge as soon
+  // as an owner's queue empties: an earlier implementation lost its cursor there and fell back
+  // to the head of the arrival-ordered list, which is the backlogged owner, handing them every
+  // second dispatch regardless of how many others were waiting.
+  const started: string[] = [];
+  const r = new TaskRuntime({ maxRunning: 1, maxInFlightPerOwner: 32 });
+  r.register<{ tag: string }, string>("test", 1, (input) => {
+    started.push(input.tag);
+    return input.tag;
+  });
+  for (let n = 0; n < 10; n += 1) {
+    r.submit({ kind: "test", owner: "ada", input: { tag: `ada-${n}` }, wait: true });
+  }
+  const singles = ["bo", "cy", "di", "eve", "fay"];
+  for (const owner of singles) {
+    r.submit({ kind: "test", owner, input: { tag: owner }, wait: true });
+  }
+  await vi.waitFor(() => expect(started.length).toBeGreaterThanOrEqual(6), { timeout: 5_000 });
+
+  // ada may lead -- she arrived first -- but every other owner is served before she is again.
+  expect(started[0]).toBe("ada-0");
+  expect(new Set(started.slice(1, 6))).toEqual(new Set(singles));
+  expect(started.slice(0, 6).filter((tag) => tag.startsWith("ada"))).toHaveLength(1);
+  await r.shutdown({ graceMs: 0 });
+});
