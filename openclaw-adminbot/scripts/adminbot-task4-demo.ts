@@ -228,6 +228,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 let shedAtBurst = 0;
 let sharePerOwner = 0;
+let immediateAtBurst = 0;
 async function runSmoke() {
   type Payload = { task?: { id: string; status: string }; route?: string; output?: string };
   const request = async (
@@ -319,10 +320,10 @@ async function runSmoke() {
   const burst = await Promise.all(
     Array.from({ length: burstSize }, (_, i) => submit(`Synthetic burst ${i}`, `burst-${i}`, true)),
   );
-  const ids = burst.map((response) => {
-    assert(response.body.task, "Every burst submission keeps a task row");
-    return response.body.task.id;
-  });
+  // A submission that finishes inside the 150ms response window answers with its result rather
+  // than a handle -- the existing immediate-success contract. Only the rest carry a row to poll.
+  const ids = burst.flatMap((response) => (response.body.task ? [response.body.task.id] : []));
+  immediateAtBurst = burstSize - ids.length;
   sharePerOwner = share;
   shedAtBurst = burst.filter((response) => response.body.task?.status === "shed").length;
   assert(shedAtBurst > 0, `A burst of ${burstSize} past a share of ${share} must shed`);
@@ -347,8 +348,8 @@ async function runSmoke() {
     60_000,
   );
   const outputs = await Promise.all(
-    ids.map(async (id, i) => {
-      const result = await final(id);
+    burst.map(async (response, i) => {
+      const result = response.body.task ? await final(response.body.task.id) : response.body;
       assert.deepEqual(result, {
         route: "local",
         output: `Completed synthetic result: Synthetic burst ${i}`,
@@ -357,7 +358,7 @@ async function runSmoke() {
     }),
   );
   assert.equal(new Set(outputs).size, burstSize);
-  assert.equal(new Set(ids).size, burstSize);
+  assert.equal(new Set(ids).size, ids.length);
   assert.equal(peak, 1);
   // Two calls per task and not one more: shedding and re-Waiting a row never re-ran its work.
   assert.equal(calls.length, 4 + burstSize * 2);
@@ -366,7 +367,7 @@ async function runSmoke() {
   assert.equal(beforeShutdown.cancelled, 1);
   assert.equal(beforeShutdown.total, burstSize + 3);
   console.log(
-    `PASS ${burstSize} distinct tasks past a per-owner share of ${share}: ${shedAtBurst} saved and resumed, ${burstSize * 2} model calls, peak ${peak}/1, no duplicate work; cancelled task made zero calls.`,
+    `PASS ${burstSize} distinct tasks past a per-owner share of ${share}: ${shedAtBurst} saved and resumed, ${immediateAtBurst} answered inside the response window, ${burstSize * 2} model calls, peak ${peak}/1, no duplicate work; cancelled task made zero calls.`,
   );
   await request(`${modelUrl}/demo/hold`, "POST");
   const interrupted = await submit("Synthetic shutdown", "shutdown");
@@ -397,6 +398,7 @@ async function runSmoke() {
       selected_task_cancellation: true,
       burst_distinct_results: burstSize,
       burst_shed_then_resumed: shedAtBurst,
+      burst_answered_immediately: immediateAtBurst,
       task_share_per_owner: sharePerOwner,
       model_capacity: 1,
       observed_model_peak: peak,
