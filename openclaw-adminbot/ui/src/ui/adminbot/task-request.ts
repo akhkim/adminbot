@@ -7,6 +7,8 @@ export type TaskHandle = {
   createdAt?: string | number;
   expiresAt?: string | number;
   actions: string[];
+  requestError?: string;
+  error?: string;
 };
 export type TaskActivity = {
   key: string;
@@ -69,18 +71,21 @@ export function isTaskPath(path: string): boolean {
     ].includes(path)
   );
 }
-function stored(key: string): { submission: string; id?: string } {
+type SubmissionIdentity = { submission: string; id?: string; unconfirmed?: boolean };
+function stored(key: string): SubmissionIdentity {
   try {
     const value = sessionStorage.getItem(storagePrefix + key);
     if (value) {
-      return JSON.parse(value);
+      const identity = JSON.parse(value) as SubmissionIdentity;
+      // Older saved handles did not record whether a submission response was lost.
+      return { ...identity, unconfirmed: identity.unconfirmed ?? !identity.id };
     }
   } catch {
     /* Storage can be disabled; the live request still retains identity. */
   }
-  return { submission: crypto.randomUUID() };
+  return { submission: crypto.randomUUID(), unconfirmed: false };
 }
-function save(key: string, value?: { submission: string; id?: string }) {
+function save(key: string, value?: SubmissionIdentity) {
   try {
     if (value) {
       // Bound stale reconnect handles; accepted server tasks have their own retention policy.
@@ -220,8 +225,15 @@ async function runTask(
     let action = explicitTask ? (explicitTask[2] ?? "status") : identity.id ? "status" : "submit";
     while (true) {
       let response: Response;
+      const priorSubmissionUnconfirmed = identity.unconfirmed;
       try {
         controller.signal.throwIfAborted();
+        if (action === "submit") {
+          // A later 401 must distinguish a rejected first submission from a lost response
+          // to work that could already exist, including after the browser reloads.
+          identity.unconfirmed = true;
+          save(key, identity);
+        }
         response =
           action === "submit"
             ? await fetch(url, { ...init, ...options })
@@ -252,8 +264,11 @@ async function runTask(
         return new Response(
           JSON.stringify({
             error: {
-              message:
-                "Your visitor session expired. The previous request can no longer be retrieved and may already have run. Review its outcome before submitting a new request.",
+              message: identity.id
+                ? "Your visitor session expired. The previous request can no longer be retrieved and may already have run. Review its outcome before submitting a new request."
+                : priorSubmissionUnconfirmed
+                  ? "Your visitor session expired. An earlier submission may already have run, but its outcome cannot be checked with this session. Review its outcome before submitting a new request."
+                  : "Your visitor session expired. This submission was not accepted. Submit again to start a new visitor session.",
             },
           }),
           { status: 401, headers: { "Content-Type": "application/json" } },
@@ -294,6 +309,16 @@ async function runTask(
       const envelope = body as { task?: TaskHandle; error?: { message?: string } } | null;
       const task = envelope?.task;
       if (!task || typeof task.id !== "string") {
+        if (
+          action === "submit" &&
+          response.status >= 400 &&
+          response.status < 500 &&
+          typeof envelope?.error?.message === "string" &&
+          !priorSubmissionUnconfirmed
+        ) {
+          identity.unconfirmed = false;
+          save(key, identity);
+        }
         if (identity.id && (response.status === 429 || response.status >= 500)) {
           activity.requestError =
             envelope?.error?.message ?? "The service could not retrieve this request. Try again.";
@@ -307,10 +332,13 @@ async function runTask(
         return response;
       }
       identity.id = task.id;
+      identity.unconfirmed = false;
       save(key, identity);
       activity.task = { ...task, actions: Array.isArray(task.actions) ? task.actions : [] };
-      activity.message = envelope?.error?.message;
-      activity.requestError = undefined;
+      activity.message = envelope?.error?.message ?? task.error;
+      activity.requestError =
+        task.requestError ??
+        (["failed", "needs_retry"].includes(task.status) ? activity.message : undefined);
       notify();
       if (task.status === "completed") {
         action = "result";

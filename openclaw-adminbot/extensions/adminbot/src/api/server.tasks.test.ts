@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { inferenceTestConfig } from "../inference/config.test-support.js";
-import { createInferenceGate, type InferenceFetch } from "../inference/gate.js";
+import { createInferenceGate, runGated, type InferenceFetch } from "../inference/gate.js";
 import { openInferenceTestDb } from "../inference/gate.test-support.js";
 import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
 import { TaskRuntime } from "../tasks/runtime.js";
@@ -465,4 +465,71 @@ it("rejects an expired visitor credential before creating a replacement owner or
     expect(response.headers.get("x-adminbot-visitor")).toBeNull();
   }
   expect(app.taskRuntime.metrics().total).toBe(before);
+});
+
+it("reports admission storage trouble on the owning task over HTTP and clears it on recovery", async () => {
+  const db = openInferenceTestDb();
+  let release!: () => void;
+  let calls = 0;
+  const request = {
+    route: "chat/completions" as const,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    body: { prompt: "synthetic" },
+    purpose: "storage review",
+  };
+  const gate = createInferenceGate({
+    db,
+    env: {},
+    config: inferenceTestConfig({ capacity: 1 }),
+    fetchImpl: async () => {
+      if (++calls === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const occupant = gate.run({ owner: "other", caller: "hold", request });
+  const app = createAdminBotMockService({
+    inferenceGate: gate,
+    serviceToken: "synthetic-token",
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsFormRunner: async () => {},
+  });
+  cleanups.push(async () => {
+    db.exec("DROP TRIGGER IF EXISTS fail_admission");
+    release();
+    await app.close();
+    db.close();
+  });
+  app.taskRuntime.register("review.storage", 1, () =>
+    runGated(gate, { owner: "service", caller: "review", request }),
+  );
+  const base = await serve(app.server);
+  const submitted = app.taskRuntime.submit({
+    owner: "service",
+    kind: "review.storage",
+    input: {},
+    wait: true,
+  });
+  await until(() => gate.stats().queued === 1 || undefined);
+  db.exec(`CREATE TRIGGER fail_admission BEFORE INSERT ON adminbot_audit_events
+    WHEN NEW.event_type='inference.admitted' BEGIN SELECT RAISE(ABORT,'synthetic storage failure'); END`);
+  release();
+  await occupant;
+  const headers = { Authorization: "Bearer synthetic-token" };
+  const get = () => fetch(`${base}/tasks/${submitted.id}`, { headers }).then((r) => r.json());
+  const blocked = await get();
+  expect(blocked.task.requestError).toContain("storage problem");
+  expect(blocked.task.actions).toContain("cancel");
+  expect(
+    (await fetch(`${base}/tasks`, { headers }).then((r) => r.json())).tasks[0].requestError,
+  ).toContain("storage problem");
+  db.exec("DROP TRIGGER fail_admission");
+  expect((await submitted.promise)?.status).toBe("completed");
+  expect((await get()).task.requestError).toBeUndefined();
+  expect(app.taskRuntime.get(submitted.id)?.executionAttempts).toBe(1);
+  expect(calls).toBe(2);
 });

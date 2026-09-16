@@ -911,6 +911,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     maxInputBytes: inferenceConfig.queue.maxPayloadBytes,
     maxResultBytes: inferenceConfig.queue.maxPayloadBytes,
     maxRetainedBytes: inferenceConfig.queue.maxRetainedBytes,
+    admissionNotice: (id) => inferenceGate.admissionNotice(id),
     canDispatch: () => {
       const stats = inferenceGate.settings();
       return !stats.paused && !stats.shutting_down;

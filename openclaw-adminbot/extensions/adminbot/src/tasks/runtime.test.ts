@@ -361,6 +361,7 @@ it("requires positive safe integer runtime resource limits", () => {
     "maxSteps",
     "maxRetainedBytes",
     "maxAttempts",
+    "maxExecutions",
     "retentionMs",
   ] as const;
   for (const field of fields) {
@@ -602,7 +603,7 @@ it("persists task lifecycle event types on the shared audit trail without task c
 it.each([false, true])(
   "bounds explicit retries, including failures before checkpoints (step=%s)",
   async (step) => {
-    const runtime = new TaskRuntime({ maxAttempts: 2 });
+    const runtime = new TaskRuntime({ maxExecutions: 2 });
     let calls = 0;
     const fail = () => {
       calls++;

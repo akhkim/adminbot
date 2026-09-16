@@ -57,6 +57,8 @@ export type InferenceFetch = (
 ) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
 
 export type InferenceGateRequest = {
+  /** In-memory link for reporting admission trouble on the owning task. */
+  taskId?: string;
   /** Who this request belongs to: a member id, or `system:<job>` for unattended work. */
   owner: string;
   /** Which code path sent it, for the audit trail: `privacy_broker.classify`, `cv_scan.extract`. */
@@ -177,6 +179,7 @@ export type InferenceGateStats = {
   capacity: number;
   in_flight: number;
   queued: number;
+  admission_blocked: boolean;
   shed: number;
   oldest_queued_age_ms: number | null;
   mean_service_ms: number | null;
@@ -215,6 +218,7 @@ export type InferenceGateOptions = {
 
 type Waiter = {
   id: string;
+  taskId?: string;
   resolvers: Array<(outcome: InferenceOutcome) => void>;
   fetchImpl?: InferenceFetch;
   apiKey?: string;
@@ -269,6 +273,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
   let sweepTimer: NodeJS.Timeout | undefined;
   let healthTimer: NodeJS.Timeout | undefined;
   let admissionRetryTimer: NodeJS.Timeout | undefined;
+  let admissionBlocked = false;
+  let admissionRetryDelayMs = 1000;
   const backgroundFailures = new Set<string>();
   const pendingEscalationAudits = new Map<
     InferenceEscalationTrigger,
@@ -370,11 +376,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
         return {
           ...base,
           ahead,
-          estimated_wait_ms: estimate(ahead),
+          estimated_wait_ms: admissionBlocked ? null : estimate(ahead),
           can_wait: false,
           message: paused
             ? "Queue paused by operator. Request saved."
-            : `Waiting for the GPU, ${ahead} ahead of you.`,
+            : admissionBlocked
+              ? "A storage problem is delaying this request. It is still saved, and the service is retrying automatically."
+              : `Waiting for the GPU, ${ahead} ahead of you.`,
         };
       }
       case "running":
@@ -630,7 +638,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       }
       auditRow("inference.failed", row, {
         ...auditableFailure(kind, cause, response?.status),
-        wait_ms: row.admitted_at ? waitedMs(row, row.admitted_at) : undefined,
+        wait_ms: waitedMs(row, row.admitted_at ?? finishedAt),
         duration_ms: durationMs,
       });
       return true;
@@ -719,19 +727,37 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function retryAdmission(): void {
+    admissionBlocked = true;
     if (closed || admissionRetryTimer) {
       return;
     }
     admissionRetryTimer = setTimeout(() => {
       admissionRetryTimer = undefined;
       pump();
-    }, 1000);
+    }, admissionRetryDelayMs);
+    admissionRetryDelayMs = Math.min(30_000, admissionRetryDelayMs * 2);
     admissionRetryTimer.unref();
+  }
+
+  function admissionRecovered(): void {
+    admissionBlocked = false;
+    admissionRetryDelayMs = 1000;
+    clearTimeout(admissionRetryTimer);
+    admissionRetryTimer = undefined;
+  }
+
+  function admissionNotice(taskId: string): string | undefined {
+    return !closed &&
+      !paused &&
+      admissionBlocked &&
+      waiting.some((waiter) => waiter.taskId === taskId)
+      ? "A storage problem is delaying this request. It is still saved, and the service is retrying automatically."
+      : undefined;
   }
 
   /** Moves the head of the line into a free slot, until either runs out. */
   function pump(): void {
-    if (closed || paused) {
+    if (closed || paused || admissionRetryTimer) {
       return;
     }
     while (inFlight < config.capacity && waiting.length > 0) {
@@ -758,6 +784,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         retryAdmission();
         return;
       }
+      admissionRecovered();
       waiting.shift();
       if (waiter.onAbort) {
         waiter.signal?.removeEventListener("abort", waiter.onAbort);
@@ -804,6 +831,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
     return new Promise<InferenceOutcome>((resolve) => {
       const waiter: Waiter = {
         id: row.id,
+        ...(request.taskId ? { taskId: request.taskId } : {}),
         resolvers: [resolve],
         ...(request.fetchImpl ? { fetchImpl: request.fetchImpl } : {}),
         ...(request.apiKey ? { apiKey: request.apiKey } : {}),
@@ -818,18 +846,15 @@ export function createInferenceGate(options: InferenceGateOptions) {
           }
           const message = "cancelled while waiting for a slot";
           try {
-            store.transaction(() => {
-              store.finishFailed(row.id, timestamp(), "cancelled", message);
-              auditRow("inference.failed", row, {
-                outcome: "cancelled",
-                wait_ms: waitedMs(row, timestamp()),
-              });
-            });
+            finishFailed(row, "cancelled", message, undefined, 0);
           } catch {
             retryAdmission();
             return;
           }
           waiting.splice(index, 1);
+          if (waiting.length === 0) {
+            admissionRecovered();
+          }
           for (const r of waiter.resolvers) {
             r({ kind: "failed", id: row.id, failure: "cancelled", error: message });
           }
@@ -1008,6 +1033,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       case "shed":
         if (request.wait) {
           const converted = wait(request.owner, row.id, {
+            ...(request.taskId ? { taskId: request.taskId } : {}),
             ...(request.signal ? { signal: request.signal } : {}),
             ...(request.apiKey ? { apiKey: request.apiKey } : {}),
             ...(request.fetchImpl ? { fetchImpl: request.fetchImpl } : {}),
@@ -1059,7 +1085,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
   function wait(
     owner: string,
     id: string,
-    dispatch?: Pick<InferenceGateRequest, "signal" | "apiKey" | "fetchImpl">,
+    dispatch?: Pick<InferenceGateRequest, "signal" | "apiKey" | "fetchImpl" | "taskId">,
   ): InferenceStatus | undefined {
     if (closed) {
       return status(owner, id);
@@ -1199,6 +1225,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
     const purged = store.purgeBodiesBefore(
       new Date(Date.parse(at) - config.queue.retentionMs).toISOString(),
     );
+    if (waiting.length === 0) {
+      admissionRecovered();
+    }
     void evaluateEscalations();
     return { expired, purged };
   }
@@ -1435,10 +1464,16 @@ export function createInferenceGate(options: InferenceGateOptions) {
     store.transaction(() => {
       for (const id of new Set(ids)) {
         const row = store.get(id);
-        if (!row || !store.cancelPending(id, timestamp())) {
+        const at = timestamp();
+        if (!row || !store.cancelPending(id, at)) {
           continue;
         }
-        auditRow("inference.failed", row, { outcome: "cancelled", cancelled_by: actor });
+        auditRow("inference.failed", row, {
+          ...auditableFailure("cancelled", undefined),
+          wait_ms: waitedMs(row, at),
+          duration_ms: 0,
+          cancelled_by: actor,
+        });
         cancelled.push(id);
       }
     });
@@ -1454,6 +1489,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
       for (const resolve of waiter.resolvers) {
         resolve({ kind: "failed", id, failure: "cancelled", error: "Cancelled by operator" });
       }
+    }
+    if (waiting.length === 0) {
+      admissionRecovered();
     }
     return { cancelled, unchanged: [...new Set(ids)].filter((id) => !cancelled.includes(id)) };
   }
@@ -1550,6 +1588,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
       capacity: config.capacity,
       in_flight: inFlight,
       queued: depth(),
+      admission_blocked: admissionBlocked && waiting.length > 0,
       shed: store.countByStatus().shed,
       oldest_queued_age_ms: oldestQueuedAgeMs(),
       mean_service_ms: meanServiceMs,
@@ -1580,6 +1619,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
     settings,
     setShutdownGraceMs,
     stats,
+    admissionNotice,
     config,
     processId,
     /** The handle this gate writes to. Exposed so a server can build a durable gate on the same file. */
@@ -1622,6 +1662,7 @@ export async function runGated(
   return taskStep(key, request.request, async () => {
     const gatedRequest: InferenceGateRequest = {
       ...request,
+      taskId: task.id,
       owner: task.owner,
       wait: true,
       submissionKey: `${task.id}:${currentTaskStepAttempt()}`,

@@ -39,10 +39,14 @@ export type TaskRuntimeOptions = {
   maxResultBytes?: number;
   maxSteps?: number;
   maxRetainedBytes?: number;
+  /** Total checkpoint attempts across the task journal. */
   maxAttempts?: number;
+  /** Task executions, including the initial run and explicit retries. */
+  maxExecutions?: number;
   retentionMs?: number;
   canStart?: () => boolean;
   canDispatch?: () => boolean;
+  admissionNotice?: (taskId: string) => string | undefined;
   now?: () => number;
 };
 type Handler = (input: unknown, ctx: TaskContext) => unknown | Promise<unknown>;
@@ -61,8 +65,10 @@ export class TaskInterruptedError extends Error {
 }
 export class TaskRuntime {
   readonly store: TaskStore;
-  private readonly options: Required<Omit<TaskRuntimeOptions, "db" | "canStart" | "canDispatch">> &
-    Pick<TaskRuntimeOptions, "canStart" | "canDispatch">;
+  private readonly options: Required<
+    Omit<TaskRuntimeOptions, "db" | "canStart" | "canDispatch" | "admissionNotice">
+  > &
+    Pick<TaskRuntimeOptions, "canStart" | "canDispatch" | "admissionNotice">;
   private readonly handlers = new Map<string, Handler>();
   private readonly active = new Map<string, { controller: AbortController; done: Promise<void> }>();
   private readonly waiters = new Map<
@@ -94,6 +100,7 @@ export class TaskRuntime {
       maxSteps: 10000,
       maxRetainedBytes: 64_000_000,
       maxAttempts: 20000,
+      maxExecutions: 3,
       retentionMs: 24 * 60 * 60 * 1000,
       now: Date.now,
       ...options,
@@ -109,6 +116,7 @@ export class TaskRuntime {
       "retentionMs",
       "maxRetainedBytes",
       "maxAttempts",
+      "maxExecutions",
     ] as const) {
       if (
         !Number.isSafeInteger(this.options[key]) ||
@@ -158,18 +166,28 @@ export class TaskRuntime {
               uncertain = true;
             }
           }
-          task.retryExhausted =
-            (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
-            this.store.attemptCount(task.id) >= this.options.maxAttempts;
+          const retryLimit = this.retryLimitError(task);
+          task.retryExhausted = Boolean(retryLimit);
           this.update(
             task,
             uncertain ? "needs_retry" : "queued",
-            task.retryExhausted
-              ? "Task attempt limit exceeded; review the outcome before submitting a new task"
+            retryLimit
+              ? retryLimit
               : uncertain
                 ? "Process interrupted a step; explicit retry required"
                 : undefined,
           );
+        }
+        // Limits may have changed since these retained failures were recorded.
+        for (const status of ["failed", "needs_retry"] as const) {
+          for (const id of this.store.idsByStatus(status)) {
+            const task = this.store.get(id)!;
+            const retryLimit = this.retryLimitError(task);
+            if (Boolean(task.retryExhausted) !== Boolean(retryLimit)) {
+              task.retryExhausted = Boolean(retryLimit);
+              this.update(task, status, retryLimit ?? task.error);
+            }
+          }
         }
       });
     } catch (error) {
@@ -209,6 +227,21 @@ export class TaskRuntime {
   }
   steps(id: string, owner?: string): StepRecord[] {
     return this.get(id, owner) ? this.store.journal(id) : [];
+  }
+  requestError(task: TaskRecord): string | undefined {
+    if (
+      this.closed ||
+      this.stopping ||
+      this.paused ||
+      terminal.has(task.status) ||
+      task.status === "shed"
+    ) {
+      return undefined;
+    }
+    if (task.status === "queued" && this.dispatchErrorReported) {
+      return "A storage problem is delaying this request. It is still saved, and the service is retrying automatically.";
+    }
+    return this.options.admissionNotice?.(task.id);
   }
   private update(task: TaskRecord, status: TaskStatus, error?: string): TaskRecord {
     task.status = status;
@@ -327,15 +360,15 @@ export class TaskRuntime {
       return;
     }
     if (task.status === "needs_retry" || task.status === "failed") {
-      if (
-        task.retryExhausted ||
-        (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
-        this.store.attemptCount(id) >= this.options.maxAttempts
-      ) {
-        throw new Error(
-          "Task attempt limit exceeded; review the outcome before submitting a new task",
-        );
+      const retryLimit = this.retryLimitError(task);
+      if (retryLimit) {
+        if (!task.retryExhausted || task.error !== retryLimit) {
+          task.retryExhausted = true;
+          this.update(task, task.status, retryLimit);
+        }
+        throw new Error(retryLimit);
       }
+      task.retryExhausted = false;
       this.store.transaction(() => {
         this.store.resetUncertain(id);
         this.update(task, this.admissionStatus(task.owner, true));
@@ -557,12 +590,12 @@ export class TaskRuntime {
         );
         continue;
       }
-      if ((task.executionAttempts ?? 0) >= this.options.maxAttempts) {
+      if ((task.executionAttempts ?? 0) >= this.options.maxExecutions) {
         task.retryExhausted = true;
         this.update(
           task,
           "failed",
-          "Task attempt limit exceeded; review the outcome before submitting a new task",
+          "Task execution attempt limit exceeded; review the outcome before submitting a new task",
         );
         continue;
       }
@@ -642,7 +675,7 @@ export class TaskRuntime {
         throw new Error("Task concurrent checkpoint limit exceeded");
       }
       if (this.store.attemptCount(task.id) >= this.options.maxAttempts) {
-        throw new Error("Task attempt limit exceeded; submit a new task");
+        throw new Error("Task checkpoint attempt limit exceeded; submit a new task");
       }
       if (!old && this.store.stepCount(task.id) >= this.options.maxSteps) {
         throw new Error("Task checkpoint limit exceeded");
@@ -762,17 +795,12 @@ export class TaskRuntime {
         }
         const uncertain = this.store.hasUncertainStep(task.id, true);
         const suspended = error instanceof TaskInterruptedError && this.stopping;
-        task.retryExhausted =
-          (task.executionAttempts ?? 0) >= this.options.maxAttempts ||
-          this.store.attemptCount(task.id) >= this.options.maxAttempts;
+        const retryLimit = this.retryLimitError(task);
+        task.retryExhausted = Boolean(retryLimit);
         this.update(
           task,
           uncertain ? "needs_retry" : suspended && this.options.persist ? "queued" : "failed",
-          task.retryExhausted
-            ? "Task attempt limit exceeded; review the outcome before submitting a new task"
-            : error instanceof Error
-              ? error.message
-              : String(error),
+          retryLimit ? retryLimit : error instanceof Error ? error.message : String(error),
         );
       } catch (recordingFailure) {
         try {
@@ -789,6 +817,15 @@ export class TaskRuntime {
         }
       }
     }
+  }
+  private retryLimitError(task: TaskRecord): string | undefined {
+    if ((task.executionAttempts ?? 0) >= this.options.maxExecutions) {
+      return "Task execution attempt limit exceeded; review the outcome before submitting a new task";
+    }
+    if (this.store.attemptCount(task.id) >= this.options.maxAttempts) {
+      return "Task checkpoint attempt limit exceeded; review the outcome before submitting a new task";
+    }
+    return undefined;
   }
   private ensureCapacity(value: unknown): void {
     // Keep per-task headroom for bounded error text and cancellation/uncertainty status
