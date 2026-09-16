@@ -111,7 +111,9 @@ without the task's content.
 
 If storage fails while admitting a saved model call, the task status reports a storage problem
 while keeping the request saved. Admission retries back off from 1 second to a maximum of 30
-seconds. The retry does not create a new submission or consume another task execution. Cancellation
+seconds as a fallback. A freed slot, new arrival, or operator resume tries admission immediately;
+success clears the fallback timer. The retry does not create a new submission or consume another
+task execution. Cancellation
 remains available, but it can only be confirmed once its state change is recorded. Queue expiry
 also requires a successful state write; a storage outage is not treated as evidence that work was
 cancelled or expired.

@@ -757,7 +757,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
   /** Moves the head of the line into a free slot, until either runs out. */
   function pump(): void {
-    if (closed || paused || admissionRetryTimer) {
+    // Backoff is a fallback, not an admission lock. A freed slot, arrival, or resume can
+    // discover storage recovery sooner; successful admission clears the pending timer.
+    if (closed || paused) {
       return;
     }
     while (inFlight < config.capacity && waiting.length > 0) {
@@ -1300,14 +1302,28 @@ export function createInferenceGate(options: InferenceGateOptions) {
     }
   }
 
+  function writeEscalationAudit(
+    trigger: InferenceEscalationTrigger,
+    entry: Parameters<InferenceQueueStore["audit"]>[0],
+  ): void {
+    const operation = `escalation audit:${trigger}`;
+    try {
+      store.audit(entry);
+      pendingEscalationAudits.delete(trigger);
+      backgroundFailures.delete(operation);
+    } catch (error) {
+      // Keep this event for retry without blocking other conditions or their audit writes.
+      reportBackgroundFailure(operation, error);
+    }
+  }
+
   async function checkEscalations(): Promise<void> {
     if (closed) {
       return;
     }
     // Retrying an audit write must not propose the same escalation again.
     for (const [trigger, entry] of pendingEscalationAudits) {
-      store.audit(entry);
-      pendingEscalationAudits.delete(trigger);
+      writeEscalationAudit(trigger, entry);
     }
     const conditions: Array<[InferenceEscalationTrigger, boolean, InferenceEscalation]> = [
       [
@@ -1355,7 +1371,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         armed.delete(trigger);
         continue;
       }
-      if (armed.has(trigger)) {
+      if (armed.has(trigger) || pendingEscalationAudits.has(trigger)) {
         continue;
       }
       armed.set(trigger, {});
@@ -1386,8 +1402,7 @@ export function createInferenceGate(options: InferenceGateOptions) {
         },
       };
       pendingEscalationAudits.set(trigger, entry);
-      store.audit(entry);
-      pendingEscalationAudits.delete(trigger);
+      writeEscalationAudit(trigger, entry);
     }
   }
 
