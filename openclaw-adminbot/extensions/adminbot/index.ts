@@ -52,6 +52,24 @@ export default defineToolPlugin({
         createAdminBotToolHandlers(resolveConfig(config)).runEmailAutomation(),
     }),
     tool({
+      name: "adminbot_task",
+      label: "AdminBot saved task",
+      description:
+        "Inspect or retrieve a saved AdminBot application task by its task ID. Use status for progress and result for the final validated application response. Use wait only when the user chooses to wait for a saved shed task, retry only after an explicit retry decision, and cancel when cancellation is requested. Uses the same authenticated service identity and never accepts a URL or performs external actions.",
+      optional: true,
+      parameters: Type.Object(
+        {
+          taskId: Type.String({ minLength: 1, maxLength: 200 }),
+          action: Type.Unsafe<"status" | "result" | "wait" | "cancel" | "retry">({
+            type: "string",
+            enum: ["status", "result", "wait", "cancel", "retry"],
+          }),
+        },
+        { additionalProperties: false },
+      ),
+      execute: (params, config) => createAdminBotToolHandlers(resolveConfig(config)).task(params),
+    }),
+    tool({
       name: "adminbot_reason",
       label: "AdminBot private reasoning",
       description:

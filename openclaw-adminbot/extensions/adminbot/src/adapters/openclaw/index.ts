@@ -208,6 +208,25 @@ export function createAdminBotToolHandlers(
   const signal = options.signal;
   return {
     runEmailAutomation: () => client.runEmailAutomation(signal),
+    task: (params: {
+      taskId: string;
+      action: "status" | "result" | "wait" | "cancel" | "retry";
+    }) => {
+      switch (params.action) {
+        case "status":
+          return client.getTask(params.taskId, signal);
+        case "result":
+          return client.getTaskResult(params.taskId, signal);
+        case "wait":
+          return client.waitForTask(params.taskId, signal);
+        case "cancel":
+          return client.cancelTask(params.taskId, signal);
+        case "retry":
+          return client.retryTask(params.taskId, signal);
+        default:
+          throw new Error("Unsupported saved task action");
+      }
+    },
     converseReimbursement: (params: ReimbursementConversationParams) =>
       client.converseReimbursement(params, signal),
     generateReimbursement: (params: { draft: Record<string, unknown> }) =>

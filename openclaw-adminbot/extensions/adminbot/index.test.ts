@@ -54,9 +54,46 @@ describe("adminbot plugin metadata", () => {
     );
     expect(manifest.contracts?.tools).toContain("adminbot_run_email_automation");
     expect(manifest.contracts?.tools).toContain("adminbot_reason");
+    expect(manifest.contracts?.tools).toContain("adminbot_task");
     expect(manifest.contracts?.tools).toContain("adminbot_list_lab_members");
     expect(manifest.contracts?.tools).toContain("adminbot_list_papers");
   });
+
+  it.each(["status", "result", "wait", "cancel", "retry"] as const)(
+    "registers callable saved-task %s with scoped identity and fixed paths",
+    async (action) => {
+      const fetch = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify(
+              action === "result"
+                ? { route: "local", output: "Synthetic final answer" }
+                : { task: { id: "synthetic/id", status: "queued", actions: ["cancel"] } },
+            ),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      );
+      vi.stubGlobal("fetch", fetch);
+      vi.stubEnv("ADMINBOT_SERVICE_TOKEN", "synthetic-service-token");
+      try {
+        const captured = createCapturedPluginRegistration({ id: "adminbot" });
+        adminbotPlugin.register(captured.api);
+        const target = captured.tools.find((entry) => entry.name === "adminbot_task");
+        expect(target).toBeDefined();
+        await target!.execute("model-call-task", { taskId: "synthetic/id", action });
+        expect(fetch).toHaveBeenCalledExactlyOnceWith(
+          `http://127.0.0.1:8765/tasks/synthetic%2Fid${action === "status" ? "" : `/${action}`}`,
+          expect.objectContaining({
+            method: action === "status" || action === "result" ? "GET" : "POST",
+            headers: expect.objectContaining({ Authorization: "Bearer synthetic-service-token" }),
+          }),
+        );
+      } finally {
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   // Approving and executing are reachable only from the Control UI, which the host marks with an
   // `rpc-` tool-call id. The `controlUiConfirmed` flag alone is model-visible and must not be
