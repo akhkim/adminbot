@@ -152,4 +152,25 @@ at production scale — 160 members by default, every address on an RFC-reserved
 write anywhere near `state/` or a runtime bundle.
 
 To drive the real Control UI over that fixture rather than the harness, point the service at it
-with `ADMINBOT_DATABASE_PATH` and run `pnpm ui:dev` alongside.
+with `ADMINBOT_DATABASE_PATH` and run `pnpm ui:dev` alongside. Four processes, in this order:
+
+```bash
+node scripts/adminbot-mock-local-model.mjs --concurrency 2 --latency-ms 900
+
+# Member sign-in needs the Gateway. The service mints a browser device token only when a shared
+# secret is configured, and the browser then opens a WebSocket to the Gateway. Without the secret
+# you get "This browser could not obtain its device credential"; with the secret but no Gateway
+# running, "Could not connect". The guest reimbursement path needs neither.
+OPENCLAW_GATEWAY_TOKEN=local-demo-secret \
+  node openclaw.mjs gateway run --allow-unconfigured --auth token --bind loopback --port 18789
+
+ADMINBOT_DATABASE_PATH=.artifacts/ui-demo.sqlite OPENCLAW_GATEWAY_TOKEN=local-demo-secret \
+  node --import tsx start-adminbot.ts
+
+pnpm ui:dev    # http://localhost:5173, already in the service's default allowed origins
+```
+
+`scripts/adminbot-seed-member-passwords.ts` gives every fixture member a login to sign in with.
+A task only defers when capacity is gone, so force it rather than waiting for luck: `POST
+/inference/pause` as an admin, submit, then `POST /inference/resume`. `ADMINBOT_INFERENCE_START_PAUSED=true`
+does the same from boot.
