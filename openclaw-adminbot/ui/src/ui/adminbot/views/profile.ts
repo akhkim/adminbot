@@ -26,10 +26,12 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { t } from "../../../i18n/index.ts";
 import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
+import "./wait-preference.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type {
   AssignedBadge,
   BadgeDefinition,
@@ -953,17 +955,26 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
-                    ${field.key === "intake_form_url" ? html`
-                      <label class="profile__form-row">
-                        <span>${t("profile.hints.intakeFormSearch")}</span>
-                        <span><input type="checkbox" name="intake_form_unavailable"
-                          .checked=${member.intake_form_unavailable === true}
-                          @change=${(event: Event) => {
-                            const input = event.currentTarget as HTMLInputElement;
-                            const link = input.form?.querySelector<HTMLInputElement>('[name="intake_form_url"]');
-                            if (input.checked && link) link.value = "";
-                          }} /> ${t("profile.hints.intakeFormUnavailable")}</span>
-                      </label>` : nothing}
+                    ${field.key === "intake_form_url"
+                      ? html` <label class="profile__form-row">
+                          <span>${t("profile.hints.intakeFormSearch")}</span>
+                          <span
+                            ><input
+                              type="checkbox"
+                              name="intake_form_unavailable"
+                              .checked=${member.intake_form_unavailable === true}
+                              @change=${(event: Event) => {
+                                const input = event.currentTarget as HTMLInputElement;
+                                const link = input.form?.querySelector<HTMLInputElement>(
+                                  '[name="intake_form_url"]',
+                                );
+                                if (input.checked && link) link.value = "";
+                              }}
+                            />
+                            ${t("profile.hints.intakeFormUnavailable")}</span
+                          >
+                        </label>`
+                      : nothing}
                   `,
                 )}
               </div>
@@ -1673,6 +1684,15 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
+      <!-- Not a member field, so it sits outside the field list: the lab's model queue holds it,
+           keyed by the signed-in principal. It is offered inline the first time a request is
+           saved, which is when it means something; this is where someone who said yes then can
+           find it again. -->
+      <adminbot-wait-preference
+        standalone
+        .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+        .sessionContext=${loadStoredMemberSession()?.sessionToken ?? ""}
+      ></adminbot-wait-preference>
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
       ${renderOnboardingPointer(state, props)}

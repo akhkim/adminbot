@@ -80,7 +80,10 @@ describe("application task requests", () => {
     const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
     await until(() => taskActivities.values().next().value?.task?.status === "needs_retry");
     await element.updateComplete;
-    expect(element.textContent).toContain("Retry uncertain step");
+    // What a member reads: what happened, what survived, and what the button will do.
+    expect(element.textContent).toContain("Guidebook answer interrupted");
+    expect(element.textContent).toContain("Work already finished was kept");
+    expect(element.textContent).toContain("Resume");
     expect(element.textContent).toContain("Cancel");
     element.remove();
     await rejected;
