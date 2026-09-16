@@ -697,19 +697,37 @@ export class TaskRuntime {
         return;
       }
       controller.abort(new TaskInterruptedError("Task handler stopped"));
-      for (const step of this.store.stepsWithStatus(task.id, "running")) {
-        if (step.status === "running" && !step.replaySafe) {
-          step.status = "uncertain";
-          this.store.saveStep(task.id, step);
+      // This is the last error boundary, and every line in it touches SQLite. A store failure
+      // here -- SQLITE_BUSY from a maintenance script writing the same file, a full disk --
+      // would otherwise reject `done`, which nothing awaits, leaving the task at `running`,
+      // absent from `active`, and its waiter unsettled: the member's Wait hangs until restart.
+      // Recording `failed` is a second chance to reach a terminal state; if even that fails
+      // there is nothing left to write, so say so where an operator will see it.
+      try {
+        for (const step of this.store.stepsWithStatus(task.id, "running")) {
+          if (step.status === "running" && !step.replaySafe) {
+            step.status = "uncertain";
+            this.store.saveStep(task.id, step);
+          }
+        }
+        const uncertain = this.store.hasUncertainStep(task.id, true);
+        const suspended = error instanceof TaskInterruptedError && this.stopping;
+        this.update(
+          task,
+          uncertain ? "needs_retry" : suspended && this.options.persist ? "queued" : "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      } catch (recordingFailure) {
+        try {
+          this.update(task, "failed", "The task failed and its outcome could not be recorded");
+        } catch {
+          console.error(
+            `[adminbot] task ${task.id} could not be moved to a terminal state`,
+            recordingFailure,
+          );
+          this.notify(task);
         }
       }
-      const uncertain = this.store.hasUncertainStep(task.id, true);
-      const suspended = error instanceof TaskInterruptedError && this.stopping;
-      this.update(
-        task,
-        uncertain ? "needs_retry" : suspended && this.options.persist ? "queued" : "failed",
-        error instanceof Error ? error.message : String(error),
-      );
     }
   }
   private ensureCapacity(value: unknown): void {

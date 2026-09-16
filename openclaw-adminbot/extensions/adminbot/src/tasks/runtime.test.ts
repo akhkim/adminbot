@@ -548,3 +548,30 @@ it("serves every waiting owner before serving a backlogged one twice", async () 
   expect(started.slice(0, 6).filter((tag) => tag.startsWith("ada"))).toHaveLength(1);
   await r.shutdown({ graceMs: 0 });
 });
+
+it("reaches a terminal state even when the store fails while recording the failure", async () => {
+  // execute's catch is the last error boundary and every line in it touches SQLite. Unguarded,
+  // a store failure there rejected a promise nobody awaits, and the task stayed at "running"
+  // with its waiter unsettled -- a member's Wait hanging until the service restarted.
+  const db = new DatabaseSync(":memory:");
+  const r = new TaskRuntime({ db });
+  r.register("test", 1, () => {
+    throw new Error("handler failed");
+  });
+  // The first store read inside that catch. One failure, so the retry below can still land.
+  const stepsWithStatus = r.store.stepsWithStatus.bind(r.store);
+  let firstRecording = true;
+  r.store.stepsWithStatus = (id, status) => {
+    if (firstRecording) {
+      firstRecording = false;
+      throw new Error("SQLITE_BUSY: database is locked");
+    }
+    return stepsWithStatus(id, status);
+  };
+  const submitted = r.submit({ kind: "test", owner: "a", input: null });
+  const settled = await submitted.promise;
+  expect(settled!.status).toBe("failed");
+  expect(r.get(submitted.id)!.status).toBe("failed");
+  await r.shutdown({ graceMs: 0 });
+  db.close();
+});
