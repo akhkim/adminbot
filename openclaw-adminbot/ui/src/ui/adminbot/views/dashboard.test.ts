@@ -597,3 +597,61 @@ describe("notifications on the dashboard", () => {
     expect(tabs).toEqual(["adminbotMeetings"]);
   });
 });
+
+// The one channel the lab has for telling everybody something at once. Top of the page, above the
+// attention stack, because this page is the first thing a member lands on after signing in.
+describe("the lab-wide broadcast", () => {
+  const live = {
+    id: "bcast_1",
+    availability: "away" as const,
+    message: "Sep 11-17: Zürich. Sep 18-20: Toronto.",
+    updated_at: "2026-09-10T18:00:00.000Z",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    updated_by: "zhijing",
+  };
+
+  it("shows the current broadcast above everything else", () => {
+    const container = renderPage(
+      createState({ adminBotBroadcast: live } as Partial<AppViewState>),
+      "member",
+    );
+    const banner = container.querySelector('[data-testid="dashboard-broadcast"]');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain("Zürich");
+    expect(banner?.textContent).toContain("Broadcast from Zhijing");
+    // Above the attention stack, not tucked in beside it.
+    const attention = container.querySelector('[data-testid="dashboard-attention"]');
+    expect(banner!.compareDocumentPosition(attention!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("shows nothing when there is no broadcast", () => {
+    expect(
+      renderPage(createState({ adminBotBroadcast: null } as Partial<AppViewState>), "member")
+        .querySelector('[data-testid="dashboard-broadcast"]'),
+    ).toBeNull();
+  });
+
+  // The page can hold a loaded broadcast across its own expiry, so the boundary is re-checked at
+  // render rather than trusted from load time.
+  it("stops showing one that has expired since it was loaded", () => {
+    const container = renderPage(
+      createState({
+        adminBotBroadcast: { ...live, expires_at: "2020-01-01T00:00:00.000Z" },
+      } as Partial<AppViewState>),
+      "member",
+    );
+    expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+
+  it("stops showing one that was withdrawn", () => {
+    const container = renderPage(
+      createState({
+        adminBotBroadcast: { ...live, retracted_at: "2026-09-11T00:00:00.000Z" },
+      } as Partial<AppViewState>),
+      "member",
+    );
+    expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+});

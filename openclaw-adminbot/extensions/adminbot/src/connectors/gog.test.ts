@@ -5,7 +5,12 @@ import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/
 import { emailPayloadSchema } from "../contracts/tool-schemas.js";
 import { AdminBotService } from "../kernel/service.js";
 import { renderEmailBodyHtml } from "./email-html.js";
-import { createGogAdminBotExecutor, readGogSheetRows, readGogSheetTabs } from "./gog.js";
+import {
+  createGogAdminBotExecutor,
+  createGogDriveProbe,
+  readGogSheetRows,
+  readGogSheetTabs,
+} from "./gog.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -506,5 +511,54 @@ describe("sheet.update_cells", () => {
     ).rejects.toThrow(/range is required/u);
 
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Drive probe", () => {
+  it("reads a file it can see, and says what it is called", async () => {
+    const probe = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        // Stands in for gog: records nothing, answers the metadata shape.
+        'process.stdout.write(JSON.stringify({ result: { id: "x", name: "Paper.pdf" } }))',
+        "--",
+      ],
+    });
+
+    await expect(probe("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toEqual({
+      status: "found",
+      name: "Paper.pdf",
+    });
+  });
+
+  it("reads Google's own not-found as evidence, and everything else as not knowing", async () => {
+    const missing = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stderr.write("File not found: 404"); process.exit(1)',
+        "--",
+      ],
+    });
+    await expect(missing("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toEqual({ status: "missing" });
+
+    const blocked = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: ["-e", 'process.stderr.write("permission denied"); process.exit(1)', "--"],
+    });
+    await expect(blocked("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "unreadable",
+    });
+  });
+
+  // The id is checked here as well as by the caller: this is the last point before it becomes a
+  // command-line argument.
+  it("refuses an id that is not one without shelling out at all", async () => {
+    const probe = createGogDriveProbe({ command: "definitely-not-a-command" });
+    await expect(probe("../../etc/passwd")).resolves.toEqual({
+      status: "unreadable",
+      reason: "not a Drive file id",
+    });
   });
 });

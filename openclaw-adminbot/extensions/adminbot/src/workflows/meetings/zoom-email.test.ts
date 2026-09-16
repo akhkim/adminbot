@@ -158,9 +158,83 @@ describe("meetingRecordId", () => {
   });
 });
 
+// The assets template, as a utoronto account actually receives it: no Topic line, no Meeting ID,
+// a Duration beside the recording and a share link that wraps across several lines.
+const ASSETS = `From: Zoom <no-reply@zoom.us>
+Sent: Wednesday, August 26, 2026 11:02 AM
+To: Andrew Kim <andrewkh.kim@mail.utoronto.ca>
+Subject: Meeting assets for Weekly Jinesis Meeting are ready!
+
+Meeting assets for Weekly Jinesis Meeting are ready!
+
+Recording
+
+Duration: 00:01:38
+Shareable link: https://utoronto.zoom.us/rec/share/VzjGRbnNi52i6HvK9LKLQRZgOf2S-BFHZ37JI8pj6y8jgU404WAZBq7Vsuof15W4.0mCRweMwiOvUT3ki
+View in Zoom
+
+Cloud recordings will be deleted automatically after they have been stored for 365 days.
+`;
+
+describe("the assets template a utoronto account receives", () => {
+  it("reads the duration Zoom states beside the recording", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "FW: Meeting assets for Weekly Jinesis Meeting are ready!",
+      body: ASSETS,
+    });
+    expect(notice?.durationSeconds).toBe(98);
+    // And the topic, which this template puts only in the subject.
+    expect(notice?.topic).toBe("Weekly Jinesis Meeting");
+    expect(notice?.shareUrl).toContain("utoronto.zoom.us/rec/share/");
+  });
+
+  // The template states no date at all, so before this the record took the *forward's* arrival
+  // time. Two meetings forwarded in one sitting then shared a timestamp -- worse than an
+  // approximate one on a tab whose titles were already identical.
+  it("takes the meeting time from the forwarded header Zoom sent", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "FW: Meeting assets for Weekly Jinesis Meeting are ready!",
+      body: ASSETS,
+    });
+    expect(notice?.startedAt?.slice(0, 10)).toBe("2026-08-26");
+    // And so the ingest stops filing its "date line did not parse" note against the record.
+    expect(notice?.startedAtText).toContain("August 26, 2026");
+  });
+
+  it("reads hours, which the field carries even on a short clip", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "Meeting assets for Long One are ready!",
+      body: ASSETS.replace("00:01:38", "02:05:09"),
+    });
+    expect(notice?.durationSeconds).toBe(2 * 3600 + 5 * 60 + 9);
+  });
+
+  // Zoom writes 00:00:00 when the recording captured nothing. Reporting that as a length would put
+  // "0m 0s" on the card, which reads as a measurement rather than as the absence of one.
+  it("treats a zero duration as no duration", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "Meeting assets for Empty are ready!",
+      body: ASSETS.replace("00:01:38", "00:00:00"),
+    });
+    expect(notice?.durationSeconds).toBeUndefined();
+  });
+
+  // The body is full of other colon-separated, clock-shaped text -- the date line, and a share
+  // token carrying digits and dashes -- so the match is anchored on the label.
+  it("does not mistake the date line or the share token for a duration", () => {
+    const notice = parseZoomRecordingNotice({
+      subject: "Cloud Recording - Reading Group is now available",
+      body: PLAIN,
+    });
+    expect(notice?.durationSeconds).toBeUndefined();
+  });
+});
+
 describe("normalizeNoticeBody", () => {
   it("strips quote markers so a forwarded body reads like the original", () => {
-    expect(normalizeNoticeBody("> > Topic: X\n>\n> Passcode: abcd")).toBe("Topic: X\n\nPasscode: abcd");
+    expect(normalizeNoticeBody("> > Topic: X\n>\n> Passcode: abcd")).toBe(
+      "Topic: X\n\nPasscode: abcd",
+    );
   });
 });
 
@@ -169,5 +243,29 @@ describe("topicFromSubject", () => {
     expect(topicFromSubject("Fwd: Re: Cloud Recording - Lab Meeting is now available")).toBe(
       "Lab Meeting",
     );
+  });
+
+  // The template a utoronto account sends today. It carries no "Topic:" line in the body either,
+  // so before this every recording from it filed as "Untitled Zoom meeting" -- which also left
+  // matchArtifactToMeeting with no tiebreaker on a day with two meetings.
+  it("reads the newer assets-are-ready template, forwarded or not", () => {
+    expect(topicFromSubject("Meeting assets for Weekly Jinesis Meeting are ready!")).toBe(
+      "Weekly Jinesis Meeting",
+    );
+    expect(topicFromSubject("FW: Meeting assets for Weekly Jinesis Meeting are ready!")).toBe(
+      "Weekly Jinesis Meeting",
+    );
+  });
+
+  // The general pattern must not win over the specific one and hand back the prefix as the title.
+  it("keeps the older template's prefix out of the topic", () => {
+    expect(topicFromSubject("Cloud Recording - Reading Group is now available")).toBe(
+      "Reading Group",
+    );
+    expect(topicFromSubject("Your recording is now available")).toBe("Your recording");
+  });
+
+  it("has nothing to say about a subject that is not a notice", () => {
+    expect(topicFromSubject("Lunch?")).toBeUndefined();
   });
 });

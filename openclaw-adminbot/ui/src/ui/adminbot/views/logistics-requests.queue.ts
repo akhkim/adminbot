@@ -14,6 +14,7 @@ import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
 import { formatFileSize, isSettledRequest } from "../data/logistics-requests.ts";
+import { logisticsStatusLabel } from "./logistics-status.ts";
 
 export type AdminBotLogisticsQueueProps = {
   requests: LogisticsRequest[];
@@ -38,14 +39,6 @@ const KIND_LABEL_KEY: Record<LogisticsRequest["kind"], string> = {
   document_signature: "logistics.templates.documentSignature",
   recommendation_letters: "logistics.templates.recommendationLetters",
   book_meeting: "logistics.templates.bookMeeting",
-};
-
-const STATUS_LABEL_KEY: Record<LogisticsRequestStatus, string> = {
-  submitted: "logistics.requests.status.submitted",
-  in_progress: "logistics.requests.status.inProgress",
-  completed: "logistics.requests.status.completed",
-  declined: "logistics.requests.status.declined",
-  withdrawn: "logistics.requests.status.withdrawn",
 };
 
 function formatInstant(instant: string | undefined): string {
@@ -177,10 +170,13 @@ function renderStatusCell(props: AdminBotLogisticsQueueProps, request: Logistics
            and the service refuses it here whoever asks. A request already withdrawn still shows
            what it is. -->
       ${(["submitted", "in_progress", "completed", "declined"] as const).map(
-        (status) => html`<option value=${status}>${t(STATUS_LABEL_KEY[status])}</option>`,
+        (status) =>
+          html`<option value=${status}>${logisticsStatusLabel(request.kind, status)}</option>`,
       )}
       ${request.status === "withdrawn"
-        ? html`<option value="withdrawn">${t(STATUS_LABEL_KEY.withdrawn)}</option>`
+        ? html`<option value="withdrawn">
+            ${logisticsStatusLabel(request.kind, "withdrawn")}
+          </option>`
         : nothing}
     </select>
   `;

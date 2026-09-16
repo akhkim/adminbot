@@ -99,6 +99,7 @@ import {
   parseSlotId,
   profileSlotId,
   type AdminBotLoginEvent,
+  type AdminBotLoginLocation,
   type AdminBotRecentUpdate,
   type AdminBotUpdateEvent,
   type AdminBotUpdateSource,
@@ -128,11 +129,14 @@ import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
   validateDeadlineProposalInput,
+  validateDeadlineSubmitterContact,
+  type DeadlineSubmitterContact,
   type DeadlineProposalInput,
   type DeadlineProposalView,
   type DeadlinePublicationPayload,
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
+import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
@@ -177,6 +181,13 @@ import {
   type AdminBotOpportunityStatus,
   type AdminBotOpportunityView,
 } from "../contracts/opportunities.js";
+import { adminBotOverleafProjectRef } from "../contracts/overleaf.js";
+import {
+  adminBotArxivId,
+  adminBotOpenReviewForumId,
+  adminBotTitlesLookLikeTheSamePaper,
+  type AdminBotArtifactProbe,
+} from "../contracts/paper-artifact-links.js";
 import {
   adminBotAttendanceStates,
   adminBotAttendeeKey,
@@ -195,10 +206,14 @@ import {
 } from "../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotBranchPriority,
+  adminBotPaperSlotVerifier,
+  validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
+  type AdminBotPaperSlotVerifier,
   type AdminBotPaperSlotInput,
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
+  type AdminBotPaperSlotStatus,
 } from "../contracts/paper-slots.js";
 import {
   adminBotWeeklyUpdateBodyMax,
@@ -217,14 +232,28 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
+import {
+  adminBotPaperMentorRunId,
+  type AdminBotPaperMentorRun,
+  type AdminBotPaperMentorRunInput,
+} from "../contracts/papermentor.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
   reconcileDeadlineMilestones,
 } from "../workflows/deadlines/member-milestones.js";
+import { mergePublishedDeadlines } from "../workflows/deadlines/published-dataset.js";
+import {
+  adminBotRecLetterReminderLeadDays,
+  recLetterReminderBody,
+  recLetterReminderLedgerSubject,
+  recLetterReminderSubject,
+  recLetterRemindersDue,
+} from "../workflows/logistics/rec-letter-reminders.js";
 import {
   byUrgency,
   prepareLogisticsRequest,
@@ -266,6 +295,11 @@ import {
 import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
+  localEventAudience,
+  remainingAttendees,
+  type LocalEventAudience,
+} from "../workflows/members/local-event-audience.js";
+import {
   detectLocationDrift,
   isNewObservation,
   latestBySource,
@@ -292,11 +326,19 @@ import {
 } from "../workflows/members/research-themes.js";
 import {
   type AdminBotThemedMeeting,
-  matchThemedMeetings,
+  matchMeetingsForChannel,
   matchTopicChannels,
   topicOfChannel,
   type AdminBotTopicChannelPrefix,
 } from "../workflows/members/topic-channels.js";
+import {
+  buildTravelHistory,
+  type AdminBotTravelHistory,
+} from "../workflows/members/travel-history.js";
+import {
+  planOnboardingSweep,
+  type OnboardingSweepPlan,
+} from "../workflows/onboarding/onboarding-sweep.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -346,11 +388,23 @@ import {
   waivePaperSlot,
   type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
+import { derivePaperStage, isStageAhead } from "../workflows/papers/paper-stage.js";
 import {
   openPaperflowStage,
   paperflowRecipient,
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
+import {
+  reviewProvesFixesMerged,
+  type PaperMentorContext,
+} from "../workflows/papers/papermentor-nudges.js";
+import {
+  buildPiReviewNotice,
+  isAwaitingPiReview,
+  piReviewLedgerSubject,
+  piReviewQueue,
+  type PiReviewRow,
+} from "../workflows/papers/pi-review.js";
 import {
   type Publication,
   type PublicationExclusion,
@@ -385,6 +439,8 @@ export type AdminBotServiceStore = {
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
   readDirectorStatus(): LabDirectorStatus | null;
+  /** The broadcast archive, newest first. */
+  listDirectorStatusHistory(limit?: number): LabDirectorStatus[];
   saveHelpRequest(request: LabHelpRequest): void;
   getHelpRequest(paperId: string): LabHelpRequest | undefined;
   listHelpRequests(): LabHelpRequest[];
@@ -485,6 +541,15 @@ export type AdminBotServiceStore = {
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+  /**
+   * One PaperMentor review, by its own id. First sighting wins, like the paperflow evidence
+   * below: the collector re-reads the same cached review until a newer one replaces it, so a
+   * second write of the same run is the same pass running again rather than news.
+   */
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void;
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined;
+  /** One paper's reviews newest first, or every paper's when the id is omitted. */
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   /** First sighting wins: a stage that already closed keeps the mail that closed it. */
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
@@ -526,6 +591,11 @@ export type AdminBotServiceStore = {
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
   appendLoginEvent(event: AdminBotLoginEvent): void;
+  appendTabVisit(visit: AdminBotTabVisit): void;
+  /** Every tab opening at or after `since`, newest first. */
+  listTabVisitsSince(since: string): AdminBotTabVisit[];
+  /** Fills in where an already-appended sign-in came from. See the note on the persistence side. */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void;
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
   listLoginEventsSince(since: string): AdminBotLoginEvent[];
   appendUpdateEvent(event: AdminBotUpdateEvent): void;
@@ -790,6 +860,12 @@ export type AdminBotSlackChannelNamingRecord = {
   rename_action_id?: string;
 };
 
+import {
+  ADMINBOT_TAB_ID_MAX_LENGTH,
+  summarizeTabVisits,
+  type AdminBotTabVisit,
+  type AdminBotTabVisitReport,
+} from "../contracts/tab-visits.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 import {
   adminBotCityChannelMinimumMembers,
@@ -856,6 +932,19 @@ export type AdminBotExecutorOutcome = {
   delivered?: boolean;
   /** Why it was not delivered, shown to whoever approved it. Only read when `delivered` is false. */
   reason?: string;
+  /**
+   * What the connector created, keyed by a name the action type defines.
+   *
+   * The point of it: when AdminBot performs the act, the lab does not have to go and check
+   * afterwards that it happened -- the connector knows the URL it just created, and that is better
+   * evidence than a member pasting one back in a week later. `social_media.post_publicly` reports
+   * `x_post` and `linkedin_post`, which are the slots they fill.
+   *
+   * Free-form on purpose. The executor seam is connector-agnostic and knows nothing about paper
+   * evidence; what each key means is the action type's business, and a connector that reports a
+   * key nobody reads costs nothing.
+   */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotActionExecutor = {
@@ -863,6 +952,7 @@ export type AdminBotActionExecutor = {
 };
 
 export type AdminBotServiceOptions = {
+  deadlineDataset?: () => readonly unknown[];
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
@@ -889,6 +979,23 @@ export type AdminBotServiceOptions = {
    * env var to unset rather than a code change.
    */
   paperflowPriorityMemberId?: string;
+  /**
+   * Asks Google whether a Drive file a paper points at is really there.
+   *
+   * Injected rather than imported, like every other outward-facing read: a deployment with no
+   * Google account wired simply has no probe, and the verification pass then confirms nothing
+   * rather than marking every link as broken. See contracts/drive-links.ts for why "I could not
+   * tell" is a first-class answer.
+   */
+  driveProbe?: AdminBotDriveProbe;
+  /**
+   * Asks arXiv and OpenReview about the public record of a paper.
+   *
+   * Injected like the Drive probe, and unset is the same answer: the slot goes unchecked. The
+   * OpenReview one is anonymous by design and can only ever confirm -- see the probe itself.
+   */
+  arxivProbe?: AdminBotArtifactProbe;
+  openReviewProbe?: AdminBotArtifactProbe;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -919,6 +1026,12 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
+  // T3 with the other outward mail, and deliberately not auto even though the recipient and the
+  // copy are both computed rather than caller-supplied. Approving it is the moment somebody looks
+  // at a joiner the spreadsheet produced and agrees they are real -- the sweep that files these
+  // reads a sheet a typo can reach, and the mail it triggers also provisions a Slack invite and a
+  // CS account request. Those are not things to undo.
+  "onboarding.send_guide": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the
   // attachments are the forms the service just generated, and the send only happens once every
@@ -946,11 +1059,29 @@ const DEFAULT_ACTION_POLICIES = {
   // The recipient is never chosen by the caller either -- it is the address of the member who asked
   // for the signature, read off the roster. resolvePolicy only honors auto_allowed below T2.
   "logistics.send_signed_document": autoPolicy("T1"),
+  // Auto (T1) on the same reasoning: the recipient is the head professor on file rather than an
+  // address a caller chose, and the body is composed here from the open letter requests and the
+  // clock. What is left for an approval to protect against is nothing -- and a deadline reminder
+  // that waited in Pending actions would arrive after the letter was late, which is the one
+  // failure this exists to prevent. resolvePolicy only honors auto_allowed below T2.
+  "logistics.rec_letter_reminder": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
+  // Approval-required, deliberately, even though the sweep composes the whole payload and would
+  // otherwise qualify for the same auto policy the nudges below carry. The approval *is* the
+  // feature here: it is the only surface in this system that knows which human is acting, because
+  // the channel checks the sender id the platform supplies rather than one a caller typed. An auto
+  // policy would resolve the item the moment it was proposed and there would be nobody deciding.
+  //
+  // T3 for the tier and `admin` for the role, matching the other actions whose effect is a write
+  // somebody else feels: attaching evidence closes a PaperFlow stage, and a closed stage stops the
+  // chase silently -- the failure is a message that never gets sent. Restricting it to one person
+  // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
+  // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
+  "email_review.resolve": approvalPolicy("T3", ["admin"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
   // reason: resolvePolicy only honors auto_allowed below T2. The recipients and the entire text are
@@ -1058,6 +1189,16 @@ const SLACK_CHANNEL_NAMING_RENAME_AFTER_MS = 48 * 60 * 60 * 1000;
 
 // Least-privilege baseline for a member created without an explicit tier.
 const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
+
+/**
+ * How many sign-ins back the audience sweep looks for a place.
+ *
+ * Only the most recent located one decides anything -- `dailyLocationRows` takes the latest
+ * observation at or before the day -- so this only has to be deep enough to find it past a run of
+ * unlocated rows (a private IP, a provider timeout, or any login from before the stamp was turned
+ * on). Two hundred covers months of daily sign-ins and still bounds the read.
+ */
+const ADMINBOT_LOCATION_LOGIN_SCAN = 200;
 
 /**
  * What the three-way DM says.
@@ -1232,7 +1373,10 @@ export class AdminBotService {
 
   private refreshStoredDeadlineMilestones(): void {
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(member.milestones);
+      const milestones = reconcileDeadlineMilestones(
+        member.milestones,
+        this.deadlineReadModel(DEADLINE_VENUES),
+      );
       if (milestones === member.milestones) {
         continue;
       }
@@ -1376,6 +1520,161 @@ export class AdminBotService {
    * `meetings` is passed in rather than read here: the events live on Google, the service does not
    * reach out, and the caller that already lists Wednesday's calendar is the one that has them.
    */
+  /**
+   * Refresh a standing local event's guest list from where people actually are.
+   *
+   * The Zurich lunch: a weekly event whose audience is "whoever is in Zurich", which nobody keeps
+   * accurate by hand. The decision itself is `localEventAudience` -- either a login IP in the city
+   * or a Slack zone of the city's puts somebody on, and only a *fresh* observation elsewhere takes
+   * them off, so a quiet fortnight never reads as a departure.
+   *
+   * Same division of labour as sweepResearchThemeInvites, for the same reason: the event lives on
+   * Google and the service does not reach out, so the caller passes the guest list it can already
+   * see and names nobody. Everything about who belongs is decided here from the roster.
+   *
+   * Files proposals; sends nothing. Both calendar attendee actions are T3 admin-approval and
+   * `calendar.remove_attendees` is documented as never running unattended -- uninviting somebody
+   * reads as a judgement about whether they belong, and that stays a human's call. A settled week
+   * proposes nothing at all, which is what makes this safe to schedule.
+   */
+  /**
+   * The two signals this sweep is allowed to read, as one history the daily log can walk.
+   *
+   * Deliberately not `listMemberLocations` whole. That timeline also carries `self_reported` and
+   * `slack_profile` -- a member's own typed answer about where they live -- and the audience is
+   * specified as IP plus Slack zone, so a stale "Zurich" left in a profile from two years ago must
+   * not put somebody on a lunch invite.
+   *
+   * The place half comes from login events rather than from a `login_ip` observation, because
+   * nothing writes one: `recordMemberLocation` is only ever called for the three self- and
+   * Slack-sourced kinds, and `observationFor` would in any case reduce an IP to its country. The
+   * login row is where the city actually is (`AdminBotLoginLocation.city`, from the provider), so
+   * it is read directly and shaped into an entry here.
+   *
+   * The zone half is the `slack_timezone` observations, which is the signal that keeps arriving
+   * for somebody who never signs in -- exactly the gap the IP half cannot cover.
+   *
+   * `dailyLocationRows` splits what it is given by dimension: entries with a place feed the
+   * location column, entries with a timezone feed the zone column. These two sets are disjoint by
+   * construction, so each column sees one source and neither can vouch for the other's freshness.
+   */
+  private locationSignalsFor(memberId: string): AdminBotMemberLocationEntry[] {
+    const fromLogins = this.store
+      .listLoginEvents(memberId, ADMINBOT_LOCATION_LOGIN_SCAN)
+      .filter((event) => event.city || event.country)
+      .map((event) => ({
+        id: `loc_login_${event.id}`,
+        member_id: memberId,
+        observed_at: event.at,
+        source: "login_ip" as const,
+        raw: event.city ?? event.country ?? "",
+        ...(event.city ? { place_label: event.city } : {}),
+        ...(event.country ? { country: event.country } : {}),
+      }));
+    // The provider's own zone is deliberately dropped. It is an inference from the same IP that
+    // already gave the city, so counting it as a second signal would let one observation agree
+    // with itself -- and the zone the audience is specified against is the one Slack reports.
+    const fromSlack = this.store
+      .listMemberLocations(memberId)
+      .filter((entry) => entry.source === "slack_timezone" && entry.timezone);
+    return [...fromLogins, ...fromSlack];
+  }
+
+  sweepLocalEventAudience(
+    params: {
+      eventId: string;
+      calendarId: string;
+      /** Gazetteer label. "Zurich". */
+      city: string;
+      /** The city's IANA zone. "Europe/Zurich". */
+      zone: string;
+      /** The event's current guest list, as Google reports it. */
+      attendees: readonly string[];
+      /** The day to answer for; defaults to today, UTC. */
+      day?: string;
+    },
+    actor: string,
+  ): AdminBotServiceResponse<LocalEventAudience & { proposals: string[] }> {
+    if (!params.eventId.trim()) {
+      return serviceError(400, "eventId is required");
+    }
+    if (!params.city.trim() || !params.zone.trim()) {
+      return serviceError(400, "city and zone are required");
+    }
+    const day = (params.day || new Date().toISOString()).slice(0, 10);
+    const audience = localEventAudience({
+      members: this.store.listLabMembers().filter((member) => !adminBotIsAlumniMember(member)),
+      historyFor: (memberId) => this.locationSignalsFor(memberId),
+      city: params.city,
+      zone: params.zone,
+      attendees: params.attendees,
+      day,
+    });
+    const proposals: string[] = [];
+    if (audience.add.length > 0) {
+      const created = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${audience.add.length} to the ${params.city} event: ${audience.add
+          .map((row) => row.name)
+          .join(", ")}`,
+        target: { service: "google", channel: "calendar", target: params.eventId },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: params.eventId,
+          attendees: audience.add.map((row) => row.email),
+        },
+        undo_plan: "Remove them again from the event, which is the sibling action.",
+      });
+      if (created.ok) {
+        proposals.push(created.payload.id);
+      }
+    }
+    if (audience.remove.length > 0) {
+      const remaining = remainingAttendees(params.attendees, audience.remove);
+      // The connector refuses an empty `remaining_attendees`, and is right to: an empty list is
+      // what a failed read looks like, and "uninvite everybody" is never what this sweep means.
+      // Caught here too so the run reports it rather than filing a proposal that cannot execute.
+      if (remaining.length === 0) {
+        return serviceError(
+          409,
+          "refusing to propose a removal that would empty the guest list -- check the attendee list passed in",
+        );
+      }
+      const created = this.createProposal({
+        type: "calendar.remove_attendees",
+        summary: `Remove ${audience.remove.length} from the ${params.city} event: ${audience.remove
+          .map((row) => `${row.name} (${row.reason})`)
+          .join(", ")}`,
+        target: { service: "google", channel: "calendar", target: params.eventId },
+        proposed_payload: {
+          calendar_id: params.calendarId,
+          event_id: params.eventId,
+          remaining_attendees: remaining,
+          removed_attendees: audience.remove.map((row) => row.email),
+        },
+        undo_plan: "Re-add them to the event, which is the sibling action.",
+      });
+      if (created.ok) {
+        proposals.push(created.payload.id);
+      }
+    }
+    if (proposals.length > 0) {
+      this.recordAudit({
+        type: "calendar.local_audience_swept",
+        actor,
+        details: {
+          event_id: params.eventId,
+          city: params.city,
+          day,
+          added: audience.add.map((row) => row.member_id),
+          removed: audience.remove.map((row) => row.member_id),
+          held: audience.held.length,
+        },
+      });
+    }
+    return { ok: true, status: 200, payload: { ...audience, proposals } };
+  }
+
   sweepResearchThemeInvites(
     params: {
       calendarId: string;
@@ -1596,6 +1895,8 @@ export class AdminBotService {
     submitterMemberId: string,
     idempotencyKey: string,
     existingDeadlines: readonly unknown[] = [],
+    submitterContact?: DeadlineSubmitterContact,
+    targetDeadlineId?: string,
   ): AdminBotServiceResponse<DeadlineProposalView> {
     const memberId = submitterMemberId.trim();
     const key = idempotencyKey.trim();
@@ -1609,14 +1910,37 @@ export class AdminBotService {
     if (!validation.ok) {
       return serviceError(400, firstDeadlineValidationError(validation.errors));
     }
+    const contact = validateDeadlineSubmitterContact(submitterContact);
+    if (!contact.ok) {
+      return serviceError(400, contact.error);
+    }
     const proposalId = `dlp_${randomUUID()}`;
-    const deadlineId = `community_${randomUUID()}`;
-    const duplicateIds = this.findDeadlineDuplicates(validation.value, existingDeadlines);
+    const target = targetDeadlineId
+      ? this.deadlineReadModel(existingDeadlines).find(
+          (row) => deadlineBoardEntryId(row) === targetDeadlineId,
+        )
+      : undefined;
+    if (targetDeadlineId && (!target || memberId.startsWith("visitor:deadline:"))) {
+      return serviceError(400, "a correction requires a member and an existing deadline");
+    }
+    const deadlineId = targetDeadlineId || `community_${randomUUID()}`;
+    const previousDeadline = target
+      ? String((target as Record<string, unknown>).deadline_aoe)
+      : undefined;
+    const duplicateIds = this.findDeadlineDuplicates(
+      validation.value,
+      existingDeadlines,
+      targetDeadlineId,
+    );
     const action = this.prepareDeadlinePublication({
       proposalId,
       deadlineId,
+      previousDeadline,
       revision: 1,
       submitterMemberId: memberId,
+      ...(memberId.startsWith("visitor:deadline:") && Object.keys(contact.value).length
+        ? { submitterContact: contact.value }
+        : {}),
       duplicateIds,
       deadline: validation.value,
       createdByMemberId: memberId,
@@ -1674,8 +1998,19 @@ export class AdminBotService {
     const next = this.prepareDeadlinePublication({
       proposalId,
       deadlineId: currentPayload.deadline_id,
+      previousDeadline:
+        current.status === "executed" && currentPayload.previous_deadline_aoe
+          ? (
+              this.deadlineReadModel(existingDeadlines).find(
+                (row) => deadlineBoardEntryId(row) === currentPayload.deadline_id,
+              ) as Record<string, string> | undefined
+            )?.deadline_aoe
+          : currentPayload.previous_deadline_aoe,
       revision: currentPayload.revision + 1,
       submitterMemberId: currentPayload.submitter_member_id,
+      ...(currentPayload.submitter_contact
+        ? { submitterContact: currentPayload.submitter_contact }
+        : {}),
       duplicateIds,
       deadline: validation.value,
       createdByMemberId: actorMemberId,
@@ -1754,35 +2089,59 @@ export class AdminBotService {
       : serviceError(500, "published deadline proposal could not be reloaded");
   }
 
+  /**
+   * The deadline board's data: the freshest dataset this deployment can read, plus the corrections
+   * the lab has published on top of it.
+   *
+   * `deadlineDataset` re-reads and re-validates a file on every call so a re-collection lands
+   * without a rebuild, and it throws on anything it does not recognise -- a missing file, an empty
+   * `items`, a duplicate id, an impossible date (workflows/deadlines/runtime-dataset.ts). That
+   * throw must not reach the caller. `GET /deadlines/venues.json` is public and login-free and the
+   * board ships no bundled copy of its own, so an exception here does not degrade the page -- it
+   * empties it, for every visitor at once. Worse, the constructor reconciles every member's
+   * milestones through this same path, so a bad file stopped the service from starting at all.
+   *
+   * `generated` is the dataset compiled into this build, which is what the route already hands us
+   * and a valid read-only answer. Falling back to it costs freshness; failing costs the surface.
+   * Warned once rather than per call: the cause is a file, and this runs once per member at boot.
+   */
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
-    const published = this.store.listPublishedDeadlines();
-    const byDeadline = new Map<string, PublishedDeadlineRecord[]>();
-    for (const record of published) {
-      const records = byDeadline.get(record.deadline_id) ?? [];
-      records.push(record);
-      byDeadline.set(record.deadline_id, records);
+    let dataset = generated;
+    try {
+      dataset = this.options.deadlineDataset?.() ?? generated;
+    } catch (error) {
+      if (!this.warnedDeadlineDatasetUnreadable) {
+        this.warnedDeadlineDatasetUnreadable = true;
+        console.warn(
+          `[adminbot] deadline dataset unreadable, serving the compiled snapshot: ${String(error)}`,
+        );
+      }
     }
-    return [
-      ...generated,
-      ...[...byDeadline.values()].map((records) => publishedDeadlineVenue(records)),
-    ];
+    return mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines());
   }
+
+  /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
+  private warnedDeadlineDatasetUnreadable = false;
 
   private prepareDeadlinePublication(params: {
     proposalId: string;
     deadlineId: string;
+    previousDeadline?: string;
     revision: number;
     submitterMemberId: string;
+    submitterContact?: DeadlineSubmitterContact;
     duplicateIds: string[];
     deadline: DeadlineProposalInput;
     createdByMemberId: string;
     idempotencyKey?: string;
   }): AdminBotStoredProposal {
     const payload: DeadlinePublicationPayload = {
+      ...(params.previousDeadline ? { previous_deadline_aoe: params.previousDeadline } : {}),
       proposal_id: params.proposalId,
       deadline_id: params.deadlineId,
       revision: params.revision,
       submitter_member_id: params.submitterMemberId,
+      ...(params.submitterContact ? { submitter_contact: params.submitterContact } : {}),
       duplicate_deadline_ids: params.duplicateIds,
       deadline: params.deadline,
     };
@@ -1805,7 +2164,7 @@ export class AdminBotService {
           : []),
       ],
       proposed_payload: payload,
-      rationale: "Publish a member-submitted deadline after administrator review.",
+      rationale: "Publish a submitted deadline after administrator review.",
       undo_plan: "Publish a corrected revision; prior revisions remain in the audit history.",
       ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
     });
@@ -1871,16 +2230,24 @@ export class AdminBotService {
       .listPublishedDeadlines()
       .filter((record) => record.proposal_id === payload.proposal_id)
       .toSorted((left, right) => right.revision - left.revision)[0];
+    const visitor = payload.submitter_member_id.startsWith("visitor:deadline:");
+    const member = visitor ? undefined : this.store.getLabMember(payload.submitter_member_id);
+    const email = visitor ? payload.submitter_contact?.email : member?.email;
     return {
       id: payload.proposal_id,
       deadline_id: payload.deadline_id,
       submitter_member_id: payload.submitter_member_id,
-      submitter_name:
-        this.store.getLabMember(payload.submitter_member_id)?.name.trim() || "Lab member",
+      submitter_name: visitor
+        ? payload.submitter_contact?.name || "External visitor"
+        : member?.name.trim() || "Lab member",
+      ...(email ? { submitter_email: email } : {}),
       status: current.status === "executed" ? "published" : current.status,
       current_revision: payload.revision,
       action_id: current.id,
       payload_hash: current.payload_hash,
+      ...(payload.previous_deadline_aoe
+        ? { previous_deadline_aoe: payload.previous_deadline_aoe }
+        : {}),
       duplicate_deadline_ids: payload.duplicate_deadline_ids,
       deadline: payload.deadline,
       revisions,
@@ -2096,6 +2463,7 @@ export class AdminBotService {
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
+    let artifacts: Record<string, string> = {};
     if (proposal.type === "deadline.publish") {
       const publication = deadlinePayload(proposal);
       if (!publication) {
@@ -2105,7 +2473,22 @@ export class AdminBotService {
       if (!publishedBy) {
         return this.executionFailure(proposal, 409, "deadline publication has no named approver");
       }
+      if (publication.previous_deadline_aoe) {
+        const target = this.deadlineReadModel(DEADLINE_VENUES).find(
+          (row) => deadlineBoardEntryId(row) === publication.deadline_id,
+        ) as Record<string, unknown> | undefined;
+        if (!target || target.deadline_aoe !== publication.previous_deadline_aoe) {
+          return this.executionFailure(
+            proposal,
+            409,
+            "Deadline changed; submit a fresh correction for review",
+          );
+        }
+      }
       this.store.savePublishedDeadline({
+        ...(publication.previous_deadline_aoe
+          ? { previous_deadline_aoe: publication.previous_deadline_aoe }
+          : {}),
         action_id: proposal.id,
         proposal_id: publication.proposal_id,
         deadline_id: publication.deadline_id,
@@ -2125,6 +2508,44 @@ export class AdminBotService {
         },
       });
       handled = true;
+    } else if (proposal.type === "email_review.resolve") {
+      // Handled here rather than by a connector, like `deadline.publish` above and for the same
+      // reason: the effect is a write to this store, not a message leaving the building, so there
+      // is no external call for a connector to make. Routing it outward would hit the fail-closed
+      // rule -- no connector handles this type, and nothing may be recorded as executed that
+      // nothing performed.
+      const settlement = emailReviewResolutionPayload(proposal);
+      if (!settlement) {
+        return this.executionFailure(proposal, 400, "email review resolution payload is invalid");
+      }
+      // The approver is the resolver. Read off the approval rather than the payload so the name in
+      // the audit row is the person the channel authenticated -- the whole reason this is an
+      // approval and not a tool call -- and fail closed when there is none, exactly as a deadline
+      // publication does.
+      const resolvedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!resolvedBy) {
+        return this.executionFailure(
+          proposal,
+          409,
+          "email review resolution has no named approver",
+        );
+      }
+      const applied = this.resolveEmailReview({
+        messageId: settlement.message_id,
+        resolution: settlement.resolution,
+        actor: resolvedBy,
+      });
+      // Its own guards decide this: the item may have been settled in the Control UI while the
+      // approval sat in Slack, or the stage it would close may have shut since. Either way the
+      // execution fails with that reason instead of reporting a resolution that did not happen.
+      if (!applied.ok) {
+        return this.executionFailure(proposal, applied.status, applied.error.message);
+      }
+      artifacts = {
+        resolution: applied.payload.resolution,
+        evidence_recorded: String(applied.payload.evidence_recorded),
+      };
+      handled = true;
     } else {
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
@@ -2134,6 +2555,7 @@ export class AdminBotService {
         handled = outcome.handled;
         delivered = outcome.delivered !== false;
         notDeliveredReason = outcome.reason ?? "";
+        artifacts = outcome.artifacts ?? {};
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -2169,6 +2591,7 @@ export class AdminBotService {
       ...baseResult,
       status: "executed",
     };
+    this.recordExecutedArtifacts(proposal, artifacts, now);
     proposal.status = "executed";
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
@@ -2267,6 +2690,12 @@ export class AdminBotService {
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
+    // The standing local event's audience. Setting the city is what opts the lab into stamping
+    // every member's sign-in with a place (workflows/identity/auth.ts) -- clearing it stops the
+    // collection, so the off switch is one empty field rather than a redeploy.
+    const locationAudienceCity = normalizeOptionalString(settings.location_audience_city);
+    const locationAudienceZone = normalizeOptionalString(settings.location_audience_zone);
+    const locationAudienceEventId = normalizeOptionalString(settings.location_audience_event_id);
     const next: AdminBotSettings = {
       ...current,
       ...(typeof settings.cv_recency_window_months === "number"
@@ -2286,6 +2715,15 @@ export class AdminBotService {
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
+      ...(locationAudienceCity === undefined
+        ? {}
+        : { location_audience_city: locationAudienceCity }),
+      ...(locationAudienceZone === undefined
+        ? {}
+        : { location_audience_zone: locationAudienceZone }),
+      ...(locationAudienceEventId === undefined
+        ? {}
+        : { location_audience_event_id: locationAudienceEventId }),
       ...(labManagerMemberId ? { lab_manager_member_id: labManagerMemberId } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
@@ -2352,7 +2790,9 @@ export class AdminBotService {
     if (Array.isArray(member.milestones)) {
       member = {
         ...member,
-        milestones: reconcileDeadlineMilestones(member.milestones) ?? [],
+        milestones:
+          reconcileDeadlineMilestones(member.milestones, this.deadlineReadModel(DEADLINE_VENUES)) ??
+          [],
       };
     }
     const existing = this.store.getLabMember(member.id);
@@ -2368,6 +2808,7 @@ export class AdminBotService {
       { ...member, name: member.name ?? existing?.name ?? "" },
       privilegeLevel,
       existing?.email,
+      this.deadlineReadModel(DEADLINE_VENUES),
     );
     if (validation) {
       return serviceError(400, validation);
@@ -3293,6 +3734,15 @@ export class AdminBotService {
   }
 
   private memberView(member: AdminBotLabMember): AdminBotLabMemberView {
+    if (member.milestones?.length) {
+      member = {
+        ...member,
+        milestones: reconcileDeadlineMilestones(
+          member.milestones,
+          this.deadlineReadModel(DEADLINE_VENUES),
+        ),
+      };
+    }
     const assigned = this.assignedBadgesFor(member.id);
     return { ...member, ...(assigned.length ? { assigned_badges: assigned } : {}) };
   }
@@ -3430,6 +3880,16 @@ export class AdminBotService {
   }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const weekStart = adminBotWeekStart(now);
+    // The head professor is not asked for a weekly line, on any paper. She supervises nearly
+    // everything the lab writes, so the author lists put her on nearly every paper -- and a weekly
+    // update is an account of your own week's work on one paper, which is not what a supervisor's
+    // week is made of. sendMemberNudge already refuses to message her, so before this she was
+    // never actually asked; she was simply listed as owing a line on all of it, which showed up
+    // twice over -- as the whole lab's output in the admin's Sunday preview, and as a permanently
+    // unanswered row against her name on every paper card her coauthors read on a Monday.
+    // Dropped from the walk itself rather than filtered at the send, so the preview and the sweep
+    // keep agreeing with each other, which is the property collectWeeklyUpdateGaps exists to have.
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
     const papers = this.store
       .listPapers()
       .filter((paper) => !isPaperDormant(paper, now) && !isPaperClosed(paper))
@@ -3442,7 +3902,7 @@ export class AdminBotService {
         member_ids: [
           ...this.resolvePaperSlotOwner(paper, "first_author"),
           ...this.resolvePaperSlotOwner(paper, "coauthors"),
-        ],
+        ].filter((memberId) => !headProfessorId || memberId !== headProfessorId),
       }));
     const gaps = findWeeklyUpdateGaps({
       papers,
@@ -4693,6 +5153,16 @@ export class AdminBotService {
         status: result.record.status,
       },
     });
+    // The evidence just changed, so where the paper is may have changed with it. Done here as well
+    // as hourly because the author who has just finished a step is the person most likely to look
+    // at the card next, and a stage that lags an hour behind the thing that released it reads as
+    // the system not having noticed.
+    this.syncOnePaperStage(
+      this.store.getPaper(params.paperId) ?? context.paper,
+      params.memberId,
+      new Date().toISOString(),
+      this.nudgeLedgerIndex(),
+    );
     return { ok: true, status: 200, payload: { slot: result.record } };
   }
 
@@ -4729,7 +5199,651 @@ export class AdminBotService {
       actor: params.memberId,
       details: { paper_id: params.paperId, slot: result.record.slot, reason: params.reason },
     });
+    // A waiver settles a slot, so it can release a step exactly as providing the artifact would --
+    // which is the point of waiving rather than leaving a genuinely inapplicable slot open.
+    this.syncOnePaperStage(
+      context.paper,
+      params.memberId,
+      new Date().toISOString(),
+      this.nudgeLedgerIndex(),
+    );
     return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /**
+   * Record that PaperMentor reviewed a paper, and tick the slot that says so.
+   *
+   * Every paper is reviewed before submission, and until now the lab's only evidence of that was
+   * the author ticking a box. This is the same fact arriving from the reviewer itself: the
+   * collector reads the review PaperMentor cached on the Overleaf host, summarizes it to counts --
+   * see contracts/papermentor.ts, which is the boundary that keeps the comments themselves on that
+   * machine -- and posts it here.
+   *
+   * The link between the two systems is the project id, taken from the Overleaf link the author
+   * already maintains as evidence. That is why Phase 0 had to come first: the id is read through
+   * `adminBotOverleafProjectRef`, so "which paper is this" is a comparison of two ids rather than
+   * anything that follows a URL.
+   *
+   * A review of a project no paper claims is a 404 rather than a stored orphan. Somebody reviewing
+   * a draft AdminBot has never heard of is a real and ordinary thing -- a paper nobody registered
+   * -- and a row filed against no paper would be invisible to every reader that matters.
+   */
+  recordPaperMentorRun(
+    actor: string,
+    input: AdminBotPaperMentorRunInput,
+    options: { nowIso?: string } = {},
+  ): AdminBotServiceResponse<{
+    paper_id: string;
+    run_id: string;
+    /** False when this exact run was already on file, which is the ordinary case on a re-run. */
+    recorded: boolean;
+    review_slot: AdminBotPaperSlotStatus;
+  }> {
+    const paper = this.paperForOverleafProject(input.project_id);
+    if (!paper) {
+      return serviceError(
+        404,
+        `no paper on file carries Overleaf project ${input.project_id}; add the project link to the paper first`,
+      );
+    }
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const runId = adminBotPaperMentorRunId(input.project_id, input.reviewed_at);
+    const existing = this.store.getPaperMentorRun(runId);
+    const run: AdminBotPaperMentorRun = {
+      ...input,
+      id: runId,
+      paper_id: paper.id,
+      ingested_at: existing?.ingested_at ?? nowIso,
+    };
+    if (!existing) {
+      this.store.savePaperMentorRun(run);
+    }
+    const reviewSlot = this.markPaperMentorReviewed(paper, run, nowIso);
+    // Audited on every pass, not only the first: a re-post is the collector saying the same review
+    // is still the newest one, and an audit row that appears once is no use for "when did we last
+    // hear from PaperMentor at all".
+    this.recordAudit({
+      type: "papermentor.run_recorded",
+      actor,
+      details: {
+        paper_id: paper.id,
+        project_id: input.project_id,
+        reviewed_at: input.reviewed_at,
+        comments: input.comments_total,
+        critical: input.by_severity.critical ?? 0,
+        failed_agents: input.failed_agents.length,
+        recorded: !existing,
+        review_slot: reviewSlot,
+      },
+    });
+    this.closeFixesMergedIfClean(paper, run, nowIso);
+    // The review just settled a slot that gates submission, so the paper may have moved. The
+    // ingest is the one evidence path with no member behind it, which is exactly why it has to say
+    // so here rather than wait for the hourly walk.
+    this.syncOnePaperStage(
+      this.store.getPaper(paper.id) ?? paper,
+      actor,
+      nowIso,
+      this.nudgeLedgerIndex(),
+    );
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        paper_id: paper.id,
+        run_id: runId,
+        recorded: !existing,
+        review_slot: reviewSlot,
+      },
+    };
+  }
+
+  /** One paper's PaperMentor reviews, newest first. */
+  listPaperMentorRuns(
+    paperId?: string,
+  ): AdminBotServiceResponse<{ runs: AdminBotPaperMentorRun[] }> {
+    if (paperId && !this.store.getPaper(paperId)) {
+      return serviceError(404, "paper not found");
+    }
+    return { ok: true, status: 200, payload: { runs: this.store.listPaperMentorRuns(paperId) } };
+  }
+
+  /**
+   * The paper a project id belongs to, by the link its author keeps.
+   *
+   * The evidence slot is asked first and the legacy `artifacts.overleaf_edit_url` second, because
+   * the slot is the field the paper card writes and the one an author is chased about; the
+   * artifact is where the same link lived before slots existed and is still filled by the grid.
+   */
+  private paperForOverleafProject(projectId: string): AdminBotPaperRecord | undefined {
+    const isThisProject = (url: string | undefined): boolean =>
+      Boolean(url && adminBotOverleafProjectRef(url)?.projectId === projectId);
+    const slot = this.store
+      .listPaperSlots()
+      .find((row) => row.slot === "overleaf_edit" && isThisProject(row.url));
+    if (slot) {
+      return this.store.getPaper(slot.paper_id);
+    }
+    return this.store
+      .listPapers()
+      .find((paper) => isThisProject(paper.artifacts?.overleaf_edit_url));
+  }
+
+  /**
+   * Move every paper to the step its evidence has released, and sign up the ones at the PI's gate.
+   *
+   * The stage half reads `gates` off the slot registry -- see workflows/papers/paper-stage.ts --
+   * which has been declared on every slot since the registry existed and, until now, read by
+   * nothing. A step is released when every required slot gating it is settled, and a paper is at
+   * the furthest released step. Forward only, and never past a step somebody set by hand: the
+   * point is to stop a paper sitting at `overleaf_writing` for a month after it was submitted,
+   * not to argue with an administrator about where it is.
+   *
+   * Deliberately not a gate. Nothing here blocks a paper from moving without its evidence -- the
+   * stepper stays open, as the slot registry's own note insists -- because a gate deadlocks the
+   * paper and the person who could clear it is the one being blocked. This only ever catches a
+   * paper up to what it has already proved.
+   *
+   * The PI half is the other thing a stage change should cause. `pi_approval` is the one slot
+   * owned by the head professor, and the nudge pipeline refuses to message her, so a prepared
+   * package used to reach the gate with nobody told. Now the paper signs itself up: it appears in
+   * her queue on My Desk, and she is told once. Nothing here ticks the box -- prepared is not
+   * permission, and that decision stays hers.
+   */
+  syncPaperStages(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): AdminBotServiceResponse<{
+    advanced: Array<{ paper_id: string; from: string; to: AdminBotPaperStep }>;
+    pi_review_requested: string[];
+    waiting_on_pi: number;
+  }> {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const ledger = this.nudgeLedgerIndex();
+    const advanced: Array<{ paper_id: string; from: string; to: AdminBotPaperStep }> = [];
+    const requested: string[] = [];
+    let waiting = 0;
+
+    for (const paper of this.store.listPapers()) {
+      const result = this.syncOnePaperStage(paper, actor, nowIso, ledger);
+      if (result.advanced) {
+        advanced.push(result.advanced);
+      }
+      if (result.piReviewRequested) {
+        requested.push(paper.id);
+      }
+      if (result.waitingOnPi) {
+        waiting += 1;
+      }
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      payload: { advanced, pi_review_requested: requested, waiting_on_pi: waiting },
+    };
+  }
+
+  /**
+   * One paper's stage and gate, shared by the hourly pass and by every slot write.
+   *
+   * Called from the write path as well so the card does not spend an hour claiming a paper is
+   * where it was before its author finished the step. Idempotent by construction -- an advance
+   * that has already happened is not ahead of anything, and the ledger holds the PI's notice to
+   * once per prepared package -- so running it twice in a second costs two reads.
+   */
+  private syncOnePaperStage(
+    paper: AdminBotPaperRecord,
+    actor: string,
+    nowIso: string,
+    ledger: Map<string, AdminBotNudgeLedgerRecord>,
+  ): {
+    advanced?: { paper_id: string; from: string; to: AdminBotPaperStep };
+    piReviewRequested?: boolean;
+    waitingOnPi?: boolean;
+  } {
+    const slots = this.store.listPaperSlots(paper.id);
+    const out: {
+      advanced?: { paper_id: string; from: string; to: AdminBotPaperStep };
+      piReviewRequested?: boolean;
+      waitingOnPi?: boolean;
+    } = {};
+
+    // A closed paper is not on its way anywhere: a rejection re-opens the record at the Overleaf
+    // draft, which is a decision somebody makes, not a stage to be advanced into.
+    if (!isPaperClosed(paper)) {
+      const stage = derivePaperStage(slots);
+      if (isStageAhead(paper.current_step, stage.step)) {
+        const from = paper.current_step;
+        this.store.savePaper({ ...paper, current_step: stage.step, updated_at: nowIso });
+        out.advanced = { paper_id: paper.id, from, to: stage.step };
+        this.recordAudit({
+          type: "paper.stage_advanced",
+          actor,
+          details: {
+            paper_id: paper.id,
+            from,
+            to: stage.step,
+            // The proof, named. This is the whole reason an advance is auditable rather than
+            // silent: the answer to "why does this say submission" is these four slots.
+            evidence: [...stage.evidence],
+            // And of those, the ones something outside the lab's own claim confirmed. Recorded
+            // separately rather than as a flag per slot because the question afterwards is "how
+            // much of this did we actually check": a paper advanced on four ticked boxes should
+            // not read the same as one advanced on three ticks and a file Google confirmed.
+            verified: stage.evidence.filter((slot) =>
+              slots.some((row) => row.slot === slot && row.verified_at),
+            ),
+            ...(stage.next ? { next: stage.next, blocking: [...stage.blocking] } : {}),
+          },
+        });
+      }
+    }
+
+    if (isPaperClosed(paper) || !isAwaitingPiReview(slots)) {
+      return out;
+    }
+    out.waitingOnPi = true;
+    const [row] = piReviewQueue([{ paper, slots }]);
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!row || !headProfessorId) {
+      return out;
+    }
+    const subject = piReviewLedgerSubject(row);
+    if (this.hasNudgeBeenSaid(ledger, "pi_review", subject)) {
+      return out;
+    }
+    const notice = buildPiReviewNotice(row);
+    // Written straight to her notifications rather than sent through `sendMemberNudge`, which
+    // refuses the head professor outright and is right to: this is not the lab chasing its PI
+    // through Slack, it is her own queue on her own page having something in it. The same shape
+    // the escalation list uses, for the same reason.
+    this.store.saveMemberNotification({
+      id: `notif_${randomUUID()}`,
+      member_id: headProfessorId,
+      kind: "paper_slot",
+      title: notice.title,
+      body: notice.body,
+      tab: "adminbotProfessor",
+      created_at: nowIso,
+    });
+    this.markNudgeSaid("pi_review", subject, headProfessorId, nowIso);
+    out.piReviewRequested = true;
+    this.recordAudit({
+      type: "paper.pi_review_requested",
+      actor,
+      details: {
+        paper_id: paper.id,
+        waiting_since: row.waiting_since ?? nowIso,
+        package_complete: row.package_complete,
+      },
+    });
+    return out;
+  }
+
+  /**
+   * File what a connector just created as evidence on the paper it belongs to.
+   *
+   * The last of the verifiers, and the only one that needs no checking at all: AdminBot published
+   * these posts, so the URLs come back from the act itself. A member pasting the link in a week
+   * later is the same fact arriving worse -- later, by hand, and only if they remember.
+   *
+   * Never overwrites. A slot somebody already filled keeps what it has, and a waived one stays
+   * waived: this fills a gap, it does not correct anybody.
+   */
+  private recordExecutedArtifacts(
+    proposal: AdminBotStoredProposal,
+    artifacts: Record<string, string>,
+    nowIso: string,
+  ): void {
+    if (proposal.type !== "social_media.post_publicly") {
+      return;
+    }
+    const payload = proposal.proposed_payload as { paper?: { id?: string } } | undefined;
+    const paperId = payload?.paper?.id;
+    if (!paperId || !this.store.getPaper(paperId)) {
+      return;
+    }
+    const stored = this.store.listPaperSlots(paperId);
+    for (const slot of ["x_post", "linkedin_post"] as const) {
+      const url = artifacts[slot]?.trim();
+      if (!url) {
+        continue;
+      }
+      const existing = stored.find((row) => row.slot === slot);
+      if (existing && existing.status !== "missing") {
+        continue;
+      }
+      // Checked before it is stored, like anything else that lands in a link slot: the connector
+      // built this URL from an id an API returned, and a malformed one should read as invalid
+      // rather than sit in the record looking like evidence.
+      const check = validateAdminBotPaperSlotUrl(slot, url);
+      this.store.savePaperSlot({
+        paper_id: paperId,
+        slot,
+        status: check.ok ? "provided" : "invalid",
+        url,
+        provided_at: nowIso,
+        ...(check.ok
+          ? { validated_at: nowIso, verified_by: "adminbot_post" as const, verified_at: nowIso }
+          : { invalid_reason: check.reason }),
+      });
+      this.recordAudit({
+        type: "paper_slot.updated",
+        actor: "adminbot",
+        details: { paper_id: paperId, slot, status: check.ok ? "provided" : "invalid" },
+      });
+    }
+    this.syncOnePaperStage(
+      this.store.getPaper(paperId) ?? ({ id: paperId } as AdminBotPaperRecord),
+      "adminbot",
+      nowIso,
+      this.nudgeLedgerIndex(),
+    );
+  }
+
+  /**
+   * Check the evidence that can be checked, and say so on the row.
+   *
+   * The distinction the whole pass exists for: a slot is *validated* when its value is the right
+   * shape -- which `validateAdminBotPaperSlotUrl` has always done, without ever fetching anything
+   * -- and *verified* when something outside the lab's own claim says the artifact is really
+   * there. Until now every piece of evidence on a paper was somebody's word, including the links:
+   * a Drive URL that parses proves a member typed a Drive URL.
+   *
+   * Three outcomes, and the middle one is the point:
+   *
+   *   - Found: the row is stamped `verified_by` / `verified_at`, and the stage audit can say which
+   *     of the evidence a machine confirmed rather than implying it confirmed all of it.
+   *   - Missing: Google says there is no such file. That is a contradiction of the evidence, so the
+   *     row goes `invalid` with a reason -- the same state a value that never parsed lands in, and
+   *     it re-opens the nudge with the reason attached rather than inventing a new mechanism.
+   *   - Unreadable: no account configured, a network that blinked, a file shared with a person and
+   *     not with the lab's account. Nothing is written. A paper must never stall because the lab
+   *     failed to ask, and the commonest cause of "cannot open" is a sharing setting rather than a
+   *     wrong link.
+   *
+   * A deployment with no probe wired verifies nothing and reports as much, which is the honest
+   * answer for a lab whose Google account this service has never been given.
+   */
+  async verifyPaperEvidence(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      verified: Array<{ paper_id: string; slot: AdminBotPaperSlot }>;
+      invalidated: Array<{ paper_id: string; slot: AdminBotPaperSlot }>;
+      unreadable: Array<{ paper_id: string; slot: AdminBotPaperSlot; reason: string }>;
+      /** Confirmed to exist, under a title that does not look like this paper's. */
+      mismatched: Array<{ paper_id: string; slot: AdminBotPaperSlot; found_title: string }>;
+      checked: number;
+    }>
+  > {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const verified: Array<{ paper_id: string; slot: AdminBotPaperSlot }> = [];
+    const invalidated: Array<{ paper_id: string; slot: AdminBotPaperSlot }> = [];
+    const unreadable: Array<{ paper_id: string; slot: AdminBotPaperSlot; reason: string }> = [];
+    const mismatched: Array<{ paper_id: string; slot: AdminBotPaperSlot; found_title: string }> =
+      [];
+    let checked = 0;
+
+    for (const paper of this.store.listPapers()) {
+      if (isPaperClosed(paper)) {
+        continue;
+      }
+      for (const row of this.store.listPaperSlots(paper.id)) {
+        if (row.status !== "provided" || row.verified_at || !row.url) {
+          continue;
+        }
+        const check = this.paperEvidenceCheck(row.slot, row.url);
+        if (!check) {
+          continue;
+        }
+        if (!check.id) {
+          // The link passed the slot's own host and path rules and still names nothing checkable:
+          // a URL shape this deployment has not seen, a share link with the id stripped, a venue
+          // that is not OpenReview. Not a contradiction -- the shape check accepted it -- so it is
+          // reported rather than invalidated.
+          unreadable.push({ paper_id: paper.id, slot: row.slot, reason: check.reason });
+          continue;
+        }
+        checked += 1;
+        const result = await check.probe(check.id);
+        if (result.status === "found") {
+          this.store.savePaperSlot({ ...row, verified_by: check.verifier, verified_at: nowIso });
+          verified.push({ paper_id: paper.id, slot: row.slot });
+          // A title the public record disagrees with is the mistake worth catching -- a link to
+          // somebody else's paper -- but it is not proof of one: papers get retitled between
+          // submission and posting, and a rename is not a reason to mark a real artifact invalid.
+          // Reported for a person to look at, and the row is left alone.
+          if (result.title && !adminBotTitlesLookLikeTheSamePaper(result.title, paper.title)) {
+            mismatched.push({ paper_id: paper.id, slot: row.slot, found_title: result.title });
+          }
+          continue;
+        }
+        if (result.status === "missing") {
+          this.store.savePaperSlot({
+            ...row,
+            status: "invalid",
+            invalid_reason: check.missingReason,
+            validated_at: undefined,
+          });
+          invalidated.push({ paper_id: paper.id, slot: row.slot });
+          continue;
+        }
+        unreadable.push({ paper_id: paper.id, slot: row.slot, reason: result.reason });
+      }
+    }
+
+    this.recordAudit({
+      type: "paper_evidence.verified",
+      actor,
+      details: {
+        checked,
+        verified: verified.length,
+        invalidated: invalidated.length,
+        unreadable: unreadable.length,
+        mismatched: mismatched.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { verified, invalidated, unreadable, mismatched, checked },
+    };
+  }
+
+  /**
+   * Which check a slot's link is due, if any, and what to say when it comes back empty-handed.
+   *
+   * One place rather than a branch per verifier in the walk above, because every check has the
+   * same shape -- pull an id out of the link, ask the outside world about it, and read the answer
+   * under the same three-outcome rule. A verifier this deployment has not wired simply has no
+   * probe, and the slot goes unchecked rather than unconfirmed-and-complained-about.
+   */
+  private paperEvidenceCheck(
+    slot: AdminBotPaperSlot,
+    url: string,
+  ):
+    | {
+        verifier: AdminBotPaperSlotVerifier;
+        probe: AdminBotArtifactProbe;
+        id?: string;
+        reason: string;
+        missingReason: string;
+      }
+    | undefined {
+    switch (adminBotPaperSlotVerifier[slot]) {
+      case "google_drive": {
+        const probe = this.options.driveProbe;
+        return probe
+          ? {
+              verifier: "google_drive",
+              probe,
+              ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
+              reason: "no Drive file id in the link",
+              missingReason:
+                "Google has no file at this link — check the URL, or that the lab account can see it",
+            }
+          : undefined;
+      }
+      case "arxiv": {
+        const probe = this.options.arxivProbe;
+        return probe
+          ? {
+              verifier: "arxiv",
+              probe,
+              ...(adminBotArxivId(url) ? { id: adminBotArxivId(url) } : {}),
+              reason: "no arXiv id in the link",
+              missingReason: "arXiv has no paper with this id — check the link",
+            }
+          : undefined;
+      }
+      case "openreview": {
+        const probe = this.options.openReviewProbe;
+        return probe
+          ? {
+              verifier: "openreview",
+              probe,
+              ...(adminBotOpenReviewForumId(url) ? { id: adminBotOpenReviewForumId(url) } : {}),
+              // Every other venue: CMT, HotCRP, a conference's own site. There is nothing to ask,
+              // and saying so is more useful than silence when somebody reads the run.
+              reason: "not an OpenReview submission, so there is nothing to ask",
+              // Unreachable in practice -- the OpenReview probe never reports `missing`, because
+              // a blind submission is invisible to an anonymous reader. Written out anyway so the
+              // day it gains a credentialed mode there is a sentence ready rather than a blank.
+              missingReason: "OpenReview has no submission with this id — check the link",
+            }
+          : undefined;
+      }
+      default:
+        // Including `papermentor` and `adminbot_post`: both are written by the thing that did the
+        // work, at the moment it did it, so there is nothing for a later pass to go and ask.
+        return undefined;
+    }
+  }
+
+  /** The papers waiting on the head professor's yes, oldest wait first. */
+  listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+    const papers = piReviewQueue(
+      this.store
+        .listPapers()
+        .filter((paper) => !isPaperClosed(paper))
+        .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) })),
+    );
+    return { ok: true, status: 200, payload: { papers } };
+  }
+
+  /**
+   * What the nudge layer needs to know about PaperMentor for one paper.
+   *
+   * Two facts, both already on file: which Overleaf the draft lives on -- so a paper PaperMentor
+   * physically cannot read is chased about *that* rather than about not having been reviewed --
+   * and the newest review, which carries the counts the fixes reminder quotes.
+   *
+   * Built per paper rather than once for the whole sweep because the runs are indexed by paper and
+   * the slot row is already in hand; the walk that calls this has both.
+   */
+  private paperMentorContext(
+    paper: AdminBotPaperRecord,
+    stored: AdminBotPaperSlotRecord[],
+  ): PaperMentorContext {
+    const link =
+      stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
+    const project = link ? adminBotOverleafProjectRef(link) : undefined;
+    const [latest] = this.store.listPaperMentorRuns(paper.id);
+    return {
+      ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
+      ...(latest ? { latest } : {}),
+    };
+  }
+
+  /**
+   * Tick `papermentor_review` on the strength of the review itself.
+   *
+   * Written straight to the store rather than through `setPaperSlot`, and deliberately: that path
+   * takes a member id, checks whether that member owns the paper, and files an update event that
+   * counts towards how much of the checklist its authors fill in themselves. None of those are
+   * true here. AdminBot saw the review; nobody ticked a box, and crediting an author for it would
+   * quietly inflate the one number that measures whether people are using the system.
+   *
+   * A waived slot is left alone. An admin who decided this paper does not need the review has
+   * overridden the requirement, and a review arriving afterwards does not undo their decision --
+   * the run is still recorded, which is what makes the override visible next to the evidence.
+   */
+  private markPaperMentorReviewed(
+    paper: AdminBotPaperRecord,
+    run: AdminBotPaperMentorRun,
+    nowIso: string,
+  ): AdminBotPaperSlotStatus {
+    const existing = this.store
+      .listPaperSlots(paper.id)
+      .find((row) => row.slot === "papermentor_review");
+    if (existing?.status === "waived") {
+      return "waived";
+    }
+    this.store.savePaperSlot({
+      paper_id: paper.id,
+      slot: "papermentor_review",
+      status: "provided",
+      // The review's own instant, not the ingest's: the slot should say when the paper was
+      // reviewed, which is the date its author will be asked about.
+      provided_at: run.reviewed_at,
+      validated_at: nowIso,
+      // The one piece of evidence on a paper that was never anybody's claim: the reviewer said it
+      // itself. `verified_by` is what lets the stage audit tell that apart from a ticked box.
+      verified_by: "papermentor",
+      verified_at: nowIso,
+    });
+    if ((paper.updated_at ?? "") < nowIso) {
+      this.store.savePaper({ ...paper, updated_at: nowIso });
+    }
+    return "provided";
+  }
+
+  /**
+   * Tick `fixes_merged` when a later review proves there is nothing left to merge.
+   *
+   * The second of the two PaperMentor verifiers, and the conservative one: only a review that
+   * follows an earlier one and comes back with no critical and no warning comments closes this.
+   * See `reviewProvesFixesMerged` for why a count that merely dropped is not enough.
+   *
+   * Like the review slot, this is written rather than nudged for, and credited to nobody: the
+   * evidence is the reviewer's, not an author's claim about their own work.
+   */
+  private closeFixesMergedIfClean(
+    paper: AdminBotPaperRecord,
+    latest: AdminBotPaperMentorRun,
+    nowIso: string,
+  ): void {
+    const [newest, previous] = this.store.listPaperMentorRuns(paper.id);
+    if (!newest || newest.id !== latest.id) {
+      // A run older than the one already on file: history arriving late, which says nothing about
+      // the state of the draft now.
+      return;
+    }
+    if (!reviewProvesFixesMerged({ latest, ...(previous ? { previous } : {}) })) {
+      return;
+    }
+    const existing = this.store.listPaperSlots(paper.id).find((row) => row.slot === "fixes_merged");
+    if (existing && isAdminBotPaperSlotSettled(existing.status)) {
+      return;
+    }
+    this.store.savePaperSlot({
+      paper_id: paper.id,
+      slot: "fixes_merged",
+      status: "provided",
+      provided_at: latest.reviewed_at,
+      validated_at: nowIso,
+      verified_by: "papermentor",
+      verified_at: nowIso,
+    });
+    this.recordAudit({
+      type: "paper_slot.updated",
+      actor: "papermentor",
+      details: { paper_id: paper.id, slot: "fixes_merged", status: "provided" },
+    });
   }
 
   /** Shared lookup and permission check behind both slot writes. */
@@ -5303,7 +6417,13 @@ export class AdminBotService {
       // rather than the number of half-filled rows -- see the note on the card read above.
       const attendees = this.conferenceRollCall(paper);
       const reimbursements = this.store.listPaperReimbursements(paper.id);
-      const actionable = actionablePaperSlots(paper, stored, now, drafts);
+      const actionable = actionablePaperSlots(
+        paper,
+        stored,
+        now,
+        drafts,
+        this.paperMentorContext(paper, stored),
+      );
       const progress = paperSlotProgress(paper.id, stored, drafts);
       const lastNudged = actionable
         .map((item) => ledger.get(`paper_slot|${item.subjectId}`)?.last_nudged_at)
@@ -5575,7 +6695,13 @@ export class AdminBotService {
       const stored = this.store.listPaperSlots(paper.id);
       const drafts = this.store.listSocialDrafts(paper.id);
 
-      for (const item of actionablePaperSlots(paper, stored, now, drafts)) {
+      for (const item of actionablePaperSlots(
+        paper,
+        stored,
+        now,
+        drafts,
+        this.paperMentorContext(paper, stored),
+      )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
         }
@@ -6037,6 +7163,81 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Put every undecided message to the reviewer, once each, as an approval they can answer.
+   *
+   * The queue this drains used to be reachable only through the Email Review tab, which is a page
+   * somebody has to remember to open -- so the handful of messages a pass cannot decide sat in it.
+   * Each one becomes an `email_review.resolve` proposal instead, which the approval channel puts in
+   * front of the reviewer and which carries the resolution to apply when they say yes.
+   *
+   * Two resolutions, and which one is proposed is decided here rather than guessed at by the
+   * reviewer. A message held because a PaperFlow bcc could not be matched is proposed as evidence
+   * when the queue offers exactly one open stage it could belong to -- that is the case where there
+   * is nothing to choose between. Everything else is proposed as a dismissal, which is what the
+   * queue's `unknown` items actually need: they are messages nobody can attach to anything, and
+   * clearing one writes no evidence and closes no stage.
+   *
+   * Said once per message per touch, through the ledger. The pass runs hourly and sees the same
+   * held message every time, so without that a single undecided email would mint a new approval
+   * every hour until it was answered.
+   */
+  proposeEmailReviewResolutions(
+    actor: string,
+    nowIso = new Date().toISOString(),
+  ): AdminBotServiceResponse<{ proposed: string[]; already_asked: string[] }> {
+    const queue = this.listEmailReviews();
+    if (!queue.ok) {
+      return queue;
+    }
+    const { reviews, paperflow_candidates: candidates } = queue.payload;
+    const ledger = this.nudgeLedgerIndex();
+    const proposed: string[] = [];
+    const alreadyAsked: string[] = [];
+    for (const review of reviews) {
+      // The updated stamp is part of the subject so a message the pass re-examines and holds again
+      // is asked about again, while one sitting untouched is asked exactly once.
+      const subject = `${review.message_id}|${review.updated_at}`;
+      if (this.hasNudgeBeenSaid(ledger, "email_review", subject)) {
+        alreadyAsked.push(review.message_id);
+        continue;
+      }
+      const only =
+        review.category === "paperflow_bcc" && candidates.length === 1 ? candidates[0] : undefined;
+      const resolution: AdminBotEmailReviewResolution = only
+        ? { kind: "paperflow_evidence", paper_id: only.paper_id, stage: only.stage }
+        : { kind: "dismissed" };
+      const summary = only
+        ? `Resolve held email from ${review.sender}: record as ${only.stage_label} evidence for ${only.title}`
+        : `Resolve held email from ${review.sender}: dismiss (${review.reason ?? review.category})`;
+      const created = this.createProposal({
+        type: "email_review.resolve",
+        summary,
+        // The message itself, not a person: what an approval on this decides is what happens to
+        // this row, and the reviewer is whoever the channel authenticated.
+        target: { service: "adminbot", channel: "adminbot", target: review.message_id },
+        proposed_payload: {
+          message_id: review.message_id,
+          thread_id: review.thread_id,
+          sender: review.sender,
+          ...(review.subject ? { subject: review.subject } : {}),
+          ...(review.reason ? { held_because: review.reason } : {}),
+          resolution,
+        },
+        undo_plan:
+          resolution.kind === "dismissed"
+            ? "Dismissing writes no evidence and closes no stage; the message stays in the mailbox and the audit row names who dismissed it."
+            : "Delete the recorded PaperFlow evidence for this stage, which reopens it for the chase.",
+      });
+      if (!created.ok) {
+        return serviceError(created.status, created.error.message);
+      }
+      this.markNudgeSaid("email_review", subject, actor, nowIso);
+      proposed.push(review.message_id);
+    }
+    return { ok: true, status: 200, payload: { proposed, already_asked: alreadyAsked } };
+  }
+
   /** Settle one held email after an administrator has made the decision automation refused. */
   resolveEmailReview(params: {
     messageId: string;
@@ -6382,6 +7583,85 @@ export class AdminBotService {
     this.store.saveWorkshopMatchRun(run);
   }
 
+  /**
+   * Record that somebody opened a tab.
+   *
+   * Takes the actor rather than looking one up: the caller knows whether an admin is viewing as
+   * somebody, and this must never file that browsing under the member being viewed (see
+   * contracts/tab-visits.ts).
+   *
+   * An unknown member is refused, for the same reason the roster refuses one anywhere else: a log
+   * that accepts any id is a log whose member column cannot be joined, and the purge sweep would
+   * leave those rows behind forever. A blank or over-long tab id is refused rather than trimmed --
+   * the UI sends a constant, so a bad one is a bug worth seeing, not a row worth keeping.
+   */
+  recordTabVisit(
+    memberId: string,
+    visit: { tab: string; at?: string; impersonated?: boolean },
+  ): AdminBotServiceResponse<{ recorded: true }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, "member not found");
+    }
+    const tab = visit.tab.trim();
+    if (!tab || tab.length > ADMINBOT_TAB_ID_MAX_LENGTH) {
+      return serviceError(400, "tab is required");
+    }
+    this.store.appendTabVisit({
+      id: `tabv_${randomUUID()}`,
+      member_id: memberId,
+      tab,
+      // The server's clock, never the browser's: a laptop with a wrong clock would otherwise place
+      // its visits outside every window and drag dwell gaps negative.
+      at: visit.at ?? new Date().toISOString(),
+      ...(visit.impersonated ? { impersonated: true } : {}),
+    });
+    return { ok: true, status: 200, payload: { recorded: true } };
+  }
+
+  /**
+   * How often each tab was opened over a window, and by how many people.
+   *
+   * Derived on read rather than kept as counters: a counter answers "how many" and nothing else,
+   * while the rows answer the questions that come after it -- who, in what order, how long -- and
+   * those are the ones a write-up needs. The window is days back from now because that is how the
+   * question is asked ("last month"), and it is returned in the payload so a reader can say what
+   * they measured.
+   */
+  tabVisitReport(options?: { days?: number }): AdminBotServiceResponse<AdminBotTabVisitReport> {
+    const days = clampReportDays(options?.days);
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    const visits = this.store.listTabVisitsSince(from.toISOString());
+    return {
+      ok: true,
+      status: 200,
+      payload: summarizeTabVisits(visits, {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        days,
+      }),
+    };
+  }
+
+  /**
+   * The rows themselves, for an analysis this service should not be in the business of doing.
+   *
+   * The report above answers the question the page asks; a paper asks different ones -- transition
+   * matrices, per-person sequences, time of day -- and every one of them wants the raw log rather
+   * than another endpoint. So this hands over the window and stops.
+   */
+  listTabVisits(options?: {
+    days?: number;
+  }): AdminBotServiceResponse<{ visits: AdminBotTabVisit[]; from: string; days: number }> {
+    const days = clampReportDays(options?.days);
+    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    return {
+      ok: true,
+      status: 200,
+      payload: { visits: this.store.listTabVisitsSince(from), from, days },
+    };
+  }
+
   /** Every sign-in this member has made, newest first. */
   listLoginEvents(
     memberId: string,
@@ -6394,6 +7674,46 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: { logins: this.store.listLoginEvents(memberId, limit) },
+    };
+  }
+
+  /**
+   * One member's sign-in log read as a travel timeline.
+   *
+   * The whole log, not a page of it: the point of the page this feeds is the shape of a year, and
+   * a limit would silently truncate the timeline into a lie about when somebody got home. The
+   * collapse to stays is what keeps the payload small -- a year of daily logins is a few dozen
+   * stays -- so the row count the reader sees is bounded by how much they actually travelled.
+   *
+   * The derivation is deliberately server-side and shared: the same stays back the timeline, the
+   * trip list and the CSV, and three readers each collapsing the log their own way is three
+   * answers to "how long was she in Singapore".
+   */
+  buildMemberTravelHistory(
+    memberId: string,
+    range?: { fromIso?: string; toIso?: string },
+  ): AdminBotServiceResponse<{ travel: AdminBotTravelHistory }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const from = range?.fromIso?.trim();
+    const to = range?.toIso?.trim();
+    // Filtered before the collapse, not after: a stay is a run of consecutive sign-ins, and
+    // dropping rows from the middle of one would split a single stay into two and report a
+    // departure and a return that never happened.
+    const events = this.store
+      .listLoginEvents(memberId)
+      .filter((event) => (!from || event.at >= from) && (!to || event.at <= to));
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        travel: buildTravelHistory(events, {
+          memberId,
+          ...(member.name ? { memberName: member.name } : {}),
+        }),
+      },
     };
   }
 
@@ -6531,6 +7851,8 @@ export class AdminBotService {
     source: AdminBotLocationSource;
     raw: string;
     timezone?: string;
+    /** The zone to stamp the collection time in local wall-clock; see `observationFor`'s note. */
+    zone?: string;
   }): AdminBotServiceResponse<{ recorded: boolean; entry?: AdminBotMemberLocationEntry }> {
     const entry = observationFor({
       memberId: params.memberId,
@@ -6538,6 +7860,7 @@ export class AdminBotService {
       raw: params.raw,
       observedAt: new Date().toISOString(),
       ...(params.timezone ? { timezone: params.timezone } : {}),
+      ...(params.zone ? { zone: params.zone } : {}),
     });
     if (!entry) {
       return { ok: true, status: 200, payload: { recorded: false } };
@@ -7025,7 +8348,14 @@ export class AdminBotService {
         const member = this.store.getLabMember(memberId);
         // A notification whose member is gone from the roster is not somebody to chase. It is left
         // in place rather than deleted -- this is a read.
-        if (!member || member.status === "alumni") {
+        //
+        // "Has left" through `adminBotIsAlumniMember`, which reads `member_type` as well as
+        // `status`. A `status`-only test -- which this was -- misses 22 of the lab's 24 alumni:
+        // the roster was imported from a spreadsheet that spells it in the type, and those 22
+        // carry no status at all. They are also the people least likely to ever answer a nudge, so
+        // their escalations never drain, which put departed members permanently at the top of the
+        // one queue on My Desk that asks the professor to go and chase somebody in person.
+        if (!member || adminBotIsAlumniMember(member)) {
           return [];
         }
         const escalatedAt = notifications
@@ -7527,6 +8857,10 @@ export class AdminBotService {
           memberId: stored.id,
           source: "slack_profile",
           raw: stored.slack_location,
+          // A Slack profile string names a place, not a zone, so there is usually nothing to render
+          // the collection time in; the member's own stated zone is used when they have set one, and
+          // otherwise the local stamp is left off rather than guessed from the place text.
+          ...(stored.timezone ? { zone: stored.timezone } : {}),
         });
       }
       updated += 1;
@@ -7638,6 +8972,9 @@ export class AdminBotService {
             source: "slack_timezone",
             raw: next,
             timezone: next,
+            // The Slack `tz` is itself the IANA zone, so the collection instant is stamped in the
+            // very clock this observation is about.
+            zone: next,
           });
         }
       }
@@ -9556,6 +10893,143 @@ export class AdminBotService {
    * against. Filing calendar removals here as well would produce two proposals to drop one person
    * from one meeting. The delta still reports the surfaces so the summary says what is coming.
    */
+  /**
+   * The weekly onboarding pass: who the sheet says is new or newly re-typed, and has not been
+   * mailed about it.
+   *
+   * The spreadsheet is the source of truth for membership, and two of its edits should produce a
+   * mail -- a row appearing, and Member Type changing. Detection is `planOnboardingSweep`, which
+   * unions the live sheet/database mismatch with the `roster_sync.member_type_changed` rows the
+   * nightly sync leaves behind; see that module for why neither source alone is enough.
+   *
+   * Two ledgers, both already in the audit trail and neither invented here. `onboarding.guide_sent`
+   * is what stops a second mail -- it records `{ template_id, recipient }` on every send the
+   * Onboarding tab has ever made, which is why the sweep keys on the address. `onboarding_sweep.ran`
+   * is how the next run knows which applied changes it has already seen.
+   *
+   * Members *are* created, which `syncMemberRoster` deliberately refuses to do. The difference is
+   * the intent: that sweep reconciles two columns and a created member would be a side effect of a
+   * type edit, whereas a row appearing here is the lab saying somebody joined. The safety rails
+   * still hold -- nothing from the sheet sets privilege, status, access or email domain, so a new
+   * record lands at `external_collaborator` like every other import until an admin raises it.
+   *
+   * Mail goes out as an `onboarding.send_guide` proposal, never directly. That action executes
+   * through the same sender the Onboarding tab uses -- so the Slack Connect invite, the Drive
+   * folder, the project channels and the DCS request all happen, which a bare `email.send` would
+   * have promised and skipped -- and it is T3, so a human still looks at each joiner before the
+   * lab writes to them.
+   */
+  sweepOnboardingMail(params: {
+    sheet: RosterSheetParse;
+    actor: string;
+    dryRun?: boolean;
+  }): AdminBotServiceResponse<
+    OnboardingSweepPlan & { created: string[]; proposals: string[]; since: string }
+  > {
+    if (params.sheet.rows.length === 0) {
+      // The same refusal syncMemberRoster makes, for the same reason: an empty read is what a bad
+      // range or a revoked token looks like, and the plan built from it calls every member new.
+      return serviceError(
+        422,
+        "the member sheet returned no usable rows -- refusing to sweep onboarding against an empty read",
+      );
+    }
+    const members = this.store.listLabMembers();
+    const plan = planRosterSync({ sheet: params.sheet, members });
+    const events = this.store.listAuditEvents();
+
+    // Where the last pass got to. Absent on the first run, which is what makes that run fall back
+    // to the live mismatch -- the state the lab is in before any of this has ever looked.
+    const since =
+      events
+        .filter((event) => event.type === "onboarding_sweep.ran")
+        .map((event) => event.timestamp)
+        .toSorted()
+        .at(-1) ?? "";
+    const appliedChanges: Array<{ member_id: string; to: string }> = [];
+    const alreadyMailed = new Set<string>();
+    for (const event of events) {
+      if (event.type === "roster_sync.member_type_changed" && event.timestamp > since) {
+        const details = event.details as { member_id?: unknown; to?: unknown } | undefined;
+        if (typeof details?.member_id === "string" && typeof details.to === "string") {
+          appliedChanges.push({ member_id: details.member_id, to: details.to });
+        }
+        continue;
+      }
+      if (event.type === "onboarding.guide_sent") {
+        const details = event.details as
+          | { template_id?: unknown; recipient?: unknown; sent?: unknown }
+          | undefined;
+        // `sent: false` is a recorded attempt that did not go out, so it must not suppress a retry.
+        if (
+          details?.sent === true &&
+          typeof details.template_id === "string" &&
+          typeof details.recipient === "string"
+        ) {
+          alreadyMailed.add(`${details.recipient.trim().toLowerCase()}:${details.template_id}`);
+        }
+      }
+    }
+
+    const swept = planOnboardingSweep({
+      plan,
+      appliedChanges,
+      memberById: (memberId) => this.store.getLabMember(memberId),
+      alreadyMailed,
+      knownMemberIds: new Set(members.map((member) => member.id)),
+    });
+
+    const created: string[] = [];
+    const proposals: string[] = [];
+    if (!params.dryRun) {
+      for (const row of swept.create) {
+        // Name and email only. Privilege, status and access are governance fields and the sheet is
+        // not an authorization surface -- the same rule adminbot-member-sheet-poller states and the
+        // service principal enforces again.
+        const saved = this.upsertLabMember(
+          { id: row.member_id, name: row.name, email: row.email, member_type: row.member_type },
+          { source: "import", actor: params.actor },
+        );
+        if (saved.ok) {
+          created.push(row.member_id);
+        } else {
+          swept.skipped.push({ name: row.name, reason: saved.error.message });
+        }
+      }
+      for (const row of swept.mail) {
+        const created_ = this.createProposal({
+          type: "onboarding.send_guide",
+          summary: `Onboarding guide (${row.template_id}) to ${row.name} <${row.email}> -- ${row.reason}`,
+          target: { service: "google", channel: "email", target: row.email },
+          proposed_payload: {
+            template_id: row.template_id,
+            name: row.name,
+            email: row.email,
+            ...(row.member_id ? { member_id: row.member_id } : {}),
+          },
+          undo_plan:
+            "None: the mail is sent and the Slack invite minted. Follow up with the recipient directly.",
+        });
+        if (created_.ok) {
+          proposals.push(created_.payload.id);
+        } else {
+          swept.skipped.push({ name: row.name, reason: created_.error.message });
+        }
+      }
+      this.recordAudit({
+        type: "onboarding_sweep.ran",
+        actor: params.actor,
+        details: {
+          created,
+          owed_mail: swept.mail.map((row) => row.email),
+          proposals: proposals.length,
+          skipped: swept.skipped.length,
+        },
+      });
+    }
+    return { ok: true, status: 200, payload: { ...swept, created, proposals, since } };
+  }
+
   syncMemberRoster(params: {
     sheet: RosterSheetParse;
     actor: string;
@@ -9913,6 +11387,132 @@ export class AdminBotService {
   }
 
   /**
+   * Mail the head professor the letters that come due in the next three days.
+   *
+   * The one thing AdminBot sends the head professor, and the exception is deliberate. Every nudge
+   * pipeline refuses that address -- see `sendMemberNudge` -- because the lab does not chase its
+   * PI: the escalation path runs *towards* her, so a sweep that messaged her would be the lab
+   * nagging the person the nagging is supposed to reach. This is the other direction. It is her
+   * own queue, about work only she can do, on a date her members chose; the desk it repeats is the
+   * rec-letter list on My Desk, which she has to be looking at to see.
+   *
+   * Its own action type rather than a member nudge for exactly that reason, so the refusal above
+   * stays absolute and this mail is a row an audit can find by name.
+   *
+   * One mail per pass however many letters are due, and said once per request per deadline. A
+   * school date that moves re-arms it against the new date, because the ledger subject carries the
+   * deadline; re-saving the same request does not.
+   */
+  async sweepRecLetterReminders(
+    actor: string,
+    options: { nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      recipient?: string;
+      reminded: Array<{
+        request_id: string;
+        member_id: string;
+        deadline_at: string;
+        days_until: number;
+      }>;
+    }>
+  > {
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
+    const ledger = this.nudgeLedgerIndex();
+    const due = recLetterRemindersDue(this.store.listLogisticsRequests(), now).filter(
+      (entry) =>
+        !this.hasNudgeBeenSaid(
+          ledger,
+          "rec_letter_reminder",
+          recLetterReminderLedgerSubject(entry),
+        ),
+    );
+    if (!due.length) {
+      // Quiet when nothing is close: a pass that mailed "no letters are due" every morning is a
+      // pass that teaches its one reader to filter it.
+      return { ok: true, status: 200, payload: { reminded: [] } };
+    }
+
+    // Resolved after the window rather than before it, so a deployment that has not named a head
+    // professor is only an error on a morning when there was something to say.
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!headProfessorId) {
+      return serviceError(409, "no head professor is configured to remind about letter deadlines");
+    }
+    const headProfessor = this.store.getLabMember(headProfessorId);
+    if (!headProfessor) {
+      return serviceError(409, "the configured head professor is not on the roster");
+    }
+    const recipient = headProfessor.email?.trim();
+    // Fail closed rather than guessing at an address: a reminder sent to the wrong inbox is a
+    // letter nobody writes, and the roster is the only place this address is allowed to come from.
+    if (!recipient) {
+      return serviceError(
+        409,
+        `${headProfessor.name} has no email address on the roster, so the letter reminder cannot be sent`,
+      );
+    }
+
+    const proposed = this.createProposal({
+      type: "logistics.rec_letter_reminder",
+      summary:
+        due.length === 1
+          ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_at.slice(0, 10)}`
+          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
+      target: { service: "email", channel: "email", target: recipient },
+      proposed_payload: {
+        to: recipient,
+        subject: recLetterReminderSubject(due),
+        body: recLetterReminderBody(due, resolveAdminBotControlUiUrl()),
+      },
+      undo_plan: "Send an email follow-up correcting or retracting the reminder.",
+    });
+    if (!proposed.ok) {
+      return serviceError(proposed.status, proposed.error.message);
+    }
+    const executed = await this.execute(proposed.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      // Unstamped on purpose, unlike the say-once sweeps that announce an event: the window is
+      // three days wide, so a send that failed this morning is worth trying again tomorrow while
+      // the letter is still worth writing. A reader who gets it twice has lost less than one who
+      // never gets it.
+      return serviceError(502, `could not email the letter reminder: ${executed.error.message}`);
+    }
+    for (const entry of due) {
+      this.markNudgeSaid(
+        "rec_letter_reminder",
+        recLetterReminderLedgerSubject(entry),
+        headProfessorId,
+        nowIso,
+      );
+    }
+    this.recordAudit({
+      type: "rec_letter_reminders.swept",
+      actor,
+      details: {
+        to: recipient,
+        lead_days: adminBotRecLetterReminderLeadDays,
+        reminded: due.length,
+        proposal_id: proposed.payload.id,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        recipient,
+        reminded: due.map((entry) => ({
+          request_id: entry.request_id,
+          member_id: entry.member_id,
+          deadline_at: entry.deadline_at,
+          days_until: entry.days_until,
+        })),
+      },
+    };
+  }
+
+  /**
    * Which project channel each collaborator is owed, from the papers they are on.
    *
    * The channel name comes from the project's alias -- the short name a person chose when the
@@ -10251,7 +11851,10 @@ export class AdminBotService {
     const skipped: AdminBotMemberNudgeSkip[] = [];
 
     for (const row of params.channels) {
-      const meetings = matchThemedMeetings(row.channel, params.meetings);
+      // Whichever family the channel is from: #meeting-xxx against a "Theme:" event, #proj-xxx
+      // against a "Proj:" one. One sweep covers both because the decision is identical either way
+      // -- the channel is the lab's own statement of who is on this work.
+      const meetings = matchMeetingsForChannel(row.channel, params.meetings);
       if (meetings.length === 0) {
         continue;
       }
@@ -11241,6 +12844,52 @@ export function payloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
+/**
+ * The resolution an `email_review.resolve` proposal is asking to have applied.
+ *
+ * Read defensively rather than cast: this payload is what an approval press turns into a write, so
+ * a shape that does not parse has to fail the execution loudly instead of resolving the wrong item
+ * or resolving it the wrong way.
+ */
+function emailReviewResolutionPayload(
+  proposal: AdminBotStoredProposal,
+): { message_id: string; resolution: AdminBotEmailReviewResolution } | undefined {
+  if (proposal.type !== "email_review.resolve") {
+    return undefined;
+  }
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const row = payload as Record<string, unknown>;
+  const messageId = typeof row.message_id === "string" ? row.message_id.trim() : "";
+  const resolution = row.resolution;
+  if (!messageId || !resolution || typeof resolution !== "object") {
+    return undefined;
+  }
+  const kind = (resolution as Record<string, unknown>).kind;
+  if (kind === "dismissed") {
+    return { message_id: messageId, resolution: { kind: "dismissed" } };
+  }
+  if (kind !== "paperflow_evidence") {
+    return undefined;
+  }
+  const paperId = (resolution as Record<string, unknown>).paper_id;
+  const stage = (resolution as Record<string, unknown>).stage;
+  if (
+    typeof paperId !== "string" ||
+    !paperId.trim() ||
+    typeof stage !== "string" ||
+    !stage.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    message_id: messageId,
+    resolution: { kind: "paperflow_evidence", paper_id: paperId, stage },
+  };
+}
+
 function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {
   return proposal.type === "deadline.publish" &&
     isDeadlinePublicationPayload(proposal.proposed_payload)
@@ -11295,72 +12944,6 @@ function deadlineInputFromBoardEntry(value: unknown): DeadlineProposalInput | un
   };
 }
 
-function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<string, unknown> {
-  const records = records_.toSorted((left, right) => left.revision - right.revision);
-  const latest = records.at(-1)!;
-  const validated = validateDeadlineProposalInput(latest.deadline);
-  if (!validated.ok) {
-    throw new Error(`published deadline ${latest.deadline_id} is invalid`);
-  }
-  const instant = new Date(validated.instant).getTime();
-  const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
-  const entryType = latest.deadline.entryType;
-  const family = latest.deadline.parentConference;
-  const parentGroup =
-    [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
-  const group =
-    entryType === "workshop" && family && !/\bworkshops?$/iu.test(parentGroup)
-      ? `${parentGroup} Workshops`
-      : parentGroup;
-  const label =
-    entryType === "arr_commitment"
-      ? "ARR commitment"
-      : entryType === "arr_direct_submission"
-        ? "ARR submission"
-        : entryType === "rebuttal"
-          ? "rebuttal ends"
-          : "submission";
-  return {
-    id: latest.deadline_id,
-    deadline_id: latest.deadline_id,
-    venue_id: latest.deadline_id,
-    venue_aliases: [latest.deadline_id],
-    name: latest.deadline.name,
-    venue_type:
-      entryType === "workshop" ? "workshop" : entryType === "rebuttal" ? "rebuttal" : "conference",
-    venue_group: group,
-    ...(family ? { venue_family: family } : {}),
-    entry_type: entryType,
-    archival_status: "unknown",
-    venue_priority: "standard",
-    archival: false,
-    stale: false,
-    deadline_label: label,
-    deadline_aoe: aoe,
-    link: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
-    homepage_url: latest.deadline.homepageUrl,
-    ...(latest.deadline.cfpUrl ? { cfp_url: latest.deadline.cfpUrl } : {}),
-    source_url: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
-    source_checked_at: latest.published_at,
-    ...(latest.deadline.openReviewUrl ? { openreview_url: latest.deadline.openReviewUrl } : {}),
-    revisions: records.map((record) => {
-      const revision = validateDeadlineProposalInput(record.deadline);
-      const revisionInstant = revision.ok ? new Date(revision.instant).getTime() : Number.NaN;
-      return {
-        observed_at: record.published_at,
-        deadline_aoe: Number.isFinite(revisionInstant)
-          ? new Date(revisionInstant - 12 * 60 * 60 * 1000)
-              .toISOString()
-              .replace("T", " ")
-              .slice(0, 19)
-          : aoe,
-        deadline_label: label,
-        link: record.deadline.cfpUrl || record.deadline.homepageUrl,
-      };
-    }),
-  };
-}
-
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
   "preferred_name",
@@ -11389,6 +12972,11 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "avatar_url",
   "cv_url",
   "intake_form_url",
+  "intake_form_unavailable",
+  // The member's own one-on-one folder. Self-editable because in practice either side creates it
+  // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
+  // looking at a blank row they cannot fill from the link already in their Drive.
+  "one_on_one_folder_url",
   "linkedin_url",
   // LinkedIn publishes no vanity-URL-to-URN mapping, so this is a value somebody has to look up --
   // but the member can look it up as easily as an admin, and the field's own help text has always
@@ -11412,6 +13000,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // What the member wants from the next merch order. Theirs to state and theirs to change, right
   // up until somebody places it.
   "merch_requests",
+  "next_position",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
   "personal_circumstances",
@@ -11553,6 +13142,20 @@ function approvalPolicy(
     approver_roles: approverRoles,
     min_approvals: minApprovals,
   };
+}
+
+/**
+ * How many days back a usage window may ask for.
+ *
+ * Clamped rather than validated because the caller is a query string: `?days=abc` and `?days=1e9`
+ * are the same mistake, and a usage page is not worth a 400. The ceiling is a year -- long enough
+ * for any question about a term, short enough that the sweep stays one indexed range scan.
+ */
+function clampReportDays(days: number | undefined, fallback = 30): number {
+  if (typeof days !== "number" || !Number.isFinite(days)) {
+    return fallback;
+  }
+  return Math.min(365, Math.max(1, Math.floor(days)));
 }
 
 function serviceError<T>(status: number, message: string): AdminBotServiceResponse<T> {
@@ -11837,6 +13440,7 @@ function validateLabMember(
   member: AdminBotLabMemberInput,
   privilegeLevel: AdminBotPrivilegeLevel,
   existingEmail?: string,
+  deadlines?: readonly unknown[],
 ): string | undefined {
   if (!member.id.trim()) {
     return "member id is required";
@@ -11855,6 +13459,12 @@ function validateLabMember(
   // according to the record and silent according to the sweeps.
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
+  }
+  if (
+    member.intake_form_unavailable !== undefined &&
+    typeof member.intake_form_unavailable !== "boolean"
+  ) {
+    return "application form unavailable must be true or false";
   }
   const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {
@@ -11950,7 +13560,7 @@ function validateLabMember(
       return urlError;
     }
   }
-  return validateAvailability(member);
+  return validateAvailability(member, deadlines);
 }
 
 // Every one of these is a *real* account-page shape check, not merely "is this a URL" -- a
@@ -11967,14 +13577,23 @@ type SocialUrlFieldSpec = {
     | "avatar_url"
     | "cv_url"
     | "intake_form_url"
+    | "one_on_one_folder_url"
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
     | "scholar_url";
   label: string;
+  freeText?: true;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
   hosts?: Set<string>;
   path?: RegExp;
+  // What to say when the host or the path rejects the value. The defaults are written for the
+  // account links -- "must point to GitHub", "must be a profile URL ... with a username in the
+  // path" -- and both are the wrong sentence for a field that wants a folder: a member reading
+  // "must be a profile URL" about their Drive link has no way to work out that the problem is
+  // having pasted a Doc. One message rather than two because for such a field the two failures are
+  // the same mistake described from different ends.
+  shapeMessage?: string;
   requireQueryParam?: string;
   // The field may also hold an inline `data:` image instead of a link out. Only the profile photo
   // does: the lab runs no object storage, so an uploaded picture is stored on the record itself
@@ -12011,7 +13630,7 @@ function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
   { field: "avatar_url", label: "profile photo", allowInlineImage: true },
-  { field: "cv_url", label: "CV" },
+  { field: "cv_url", label: "CV", freeText: true },
   {
     // A member's own intake answers. Google Forms hands each respondent a link to their single
     // submitted response, so the host is fixed and the path is always a /forms/ route -- checking
@@ -12022,10 +13641,21 @@ const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
     path: /^\/forms\/.+/u,
   },
   {
+    // A Drive *folder*, which is a narrower shape than "a Google link": /drive/folders/<id>, or the
+    // /drive/u/<n>/folders/<id> form the address bar shows when somebody is signed into more than
+    // one Google account. A Docs URL, a Sheets URL and a shared-drive file all fail here, which is
+    // the point -- see the field note in contracts/actions.ts.
+    field: "one_on_one_folder_url",
+    label: "1:1 folder",
+    hosts: new Set(["drive.google.com"]),
+    path: /^\/drive\/(?:u\/\d+\/)?folders\/[A-Za-z0-9_-]+\/?$/u,
+    shapeMessage:
+      "1:1 folder link must be a Google Drive folder (drive.google.com/drive/folders/...), not a document",
+  },
+  {
     field: "github_url",
     label: "GitHub",
-    hosts: new Set(["github.com", "www.github.com"]),
-    path: /^\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/?$/u,
+    freeText: true,
   },
   {
     field: "twitter_url",
@@ -12057,6 +13687,12 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
   if (!trimmed) {
     return undefined;
   }
+  if (spec.freeText) {
+    if (trimmed.length > 2000) return `${spec.label} cannot exceed 2000 characters`;
+    if (/^(?:javascript|data|vbscript):/iu.test(trimmed))
+      return `${spec.label} contains an unsafe URL scheme`;
+    return undefined;
+  }
   if (trimmed.startsWith("data:")) {
     return spec.allowInlineImage
       ? validateInlineImage(trimmed, spec)
@@ -12072,10 +13708,13 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
     return `${spec.label} link must use https`;
   }
   if (spec.hosts && !spec.hosts.has(parsed.hostname)) {
-    return `${spec.label} link must point to ${spec.label}`;
+    return spec.shapeMessage ?? `${spec.label} link must point to ${spec.label}`;
   }
   if (spec.path && !spec.path.test(parsed.pathname)) {
-    return `${spec.label} link must be a profile URL (e.g. a page with a username in the path)`;
+    return (
+      spec.shapeMessage ??
+      `${spec.label} link must be a profile URL (e.g. a page with a username in the path)`
+    );
   }
   if (spec.requireQueryParam && !parsed.searchParams.has(spec.requireQueryParam)) {
     return `${spec.label} link must include a ${spec.requireQueryParam} parameter`;
@@ -12349,7 +13988,10 @@ function validateDismissedDeadlines(member: AdminBotLabMemberInput): string | un
   return undefined;
 }
 
-function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
+function validateMilestones(
+  member: AdminBotLabMemberInput,
+  deadlines?: readonly unknown[],
+): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
   }
@@ -12373,7 +14015,7 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
     }
     if (
       row.deadline_id !== undefined &&
-      (typeof row.deadline_id !== "string" || !isDeadlineMilestoneId(row.deadline_id))
+      (typeof row.deadline_id !== "string" || !isDeadlineMilestoneId(row.deadline_id, deadlines))
     ) {
       return "milestone deadline_id must identify a deadline-board entry";
     }
@@ -12394,7 +14036,10 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
 // served to every admin is an unbounded write.
 const MAX_AVAILABILITY_NOTES_LENGTH = 2000;
 
-function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
+function validateAvailability(
+  member: AdminBotLabMemberInput,
+  deadlines?: readonly unknown[],
+): string | undefined {
   if (member.availability_notes !== undefined) {
     if (typeof member.availability_notes !== "string") {
       return "member availability notes must be a string";
@@ -12470,7 +14115,11 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member);
+  return (
+    validateMilestones(member, deadlines) ??
+    validateTrips(member) ??
+    validateDismissedDeadlines(member)
+  );
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

@@ -7,12 +7,14 @@
 // The order here is the order on screen, and the bands (`COLUMN_GROUPS`) are the unit the sheet
 // shows and hides.
 
-import { publicationTrack, presentationFormat, PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "./paper-classification.ts";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperSteps,
-  type AdminBotPaperStep,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  ADMINBOT_LAB_OVERLEAF_HOST,
+  OVERLEAF_COM_HOST,
+} from "../../../../extensions/adminbot/src/contracts/overleaf.js";
 import {
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
@@ -21,6 +23,12 @@ import {
 } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { blockerLog, fileBlockerInput } from "./blockers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
+import {
+  publicationTrack,
+  presentationFormat,
+  PUBLICATION_TRACKS,
+  PRESENTATION_FORMATS,
+} from "./paper-classification.ts";
 import {
   canonicalVenueId,
   effectiveVenueTargets,
@@ -482,7 +490,13 @@ const RECORD_COLUMNS: Column[] = [
     key: "publication_track",
     group: "decision",
     kind: "select",
-    options: [{ value: "", label: "Not said" }, ...PUBLICATION_TRACKS.map((value) => ({value, label: value[0].toUpperCase() + value.slice(1)}))],
+    options: [
+      { value: "", label: "Not said" },
+      ...PUBLICATION_TRACKS.map((value) => ({
+        value,
+        label: value[0].toUpperCase() + value.slice(1),
+      })),
+    ],
     save: "publicationTrack",
     read: publicationTrack,
     label: "Publication track",
@@ -511,27 +525,38 @@ const RECORD_COLUMNS: Column[] = [
     hosts: ["docs.google.com", "drive.google.com"],
     hint: "A doc or a Drive folder",
   },
+  // No `hosts` on either: both are slot-backed columns, so the cell check runs the registry's own
+  // validator (see `cellError`), which accepts the lab's Overleaf as well as overleaf.com. The
+  // literal list these used to carry was a second, staler copy of the same rule.
   {
     key: "overleaf_view_url",
     group: "links",
     slot: "overleaf_view",
-    format: "https://www.overleaf.com/read/…",
+    format: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/…`,
     save: "overleafViewUrl",
     label: "Overleaf (view)",
     short: "Overleaf view",
-    hosts: ["overleaf.com", "www.overleaf.com"],
     hint: "The read-only share link",
   },
   {
     key: "overleaf_edit_url",
     group: "links",
     slot: "overleaf_edit",
-    format: "https://www.overleaf.com/project/…",
+    format: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/…`,
     save: "overleafEditUrl",
     label: "Overleaf (edit)",
     short: "Overleaf edit",
-    hosts: ["overleaf.com", "www.overleaf.com"],
-    hint: "The project link coauthors can write in",
+    hint: "The project link coauthors can write in — on the lab's Overleaf, so PaperMentor can review it",
+  },
+  {
+    key: "overleaf_share_url",
+    group: "links",
+    slot: "overleaf_share",
+    format: `https://${OVERLEAF_COM_HOST}/…#…`,
+    save: "overleafShareUrl",
+    label: "Overleaf (share link)",
+    short: "Overleaf share",
+    hint: "The “anyone with this link can edit” URL — a credential, readable by everyone who can read this row",
   },
   {
     key: "submission_url",

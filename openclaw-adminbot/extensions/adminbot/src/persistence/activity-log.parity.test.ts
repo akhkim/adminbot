@@ -99,6 +99,62 @@ describe.each(stores)("%s store: activity log", (_name, makeStore) => {
     ]);
   });
 
+  it("returns tab visits in the window, newest first", () => {
+    const store = makeStore();
+    store.appendTabVisit({
+      id: "old",
+      member_id: "ada",
+      tab: "dashboard",
+      at: "2026-08-01T00:00:00.000Z",
+    });
+    store.appendTabVisit({
+      id: "new",
+      member_id: "ada",
+      tab: "adminbotPapers",
+      at: "2026-08-09T00:00:00.000Z",
+    });
+    expect(store.listTabVisitsSince("2026-08-05T00:00:00.000Z").map((v) => v.id)).toEqual(["new"]);
+    expect(store.listTabVisitsSince("2026-07-01T00:00:00.000Z").map((v) => v.id)).toEqual([
+      "new",
+      "old",
+    ]);
+  });
+
+  it("leaves a tab visit's impersonated flag absent rather than false", () => {
+    // The SQLite column is NOT NULL DEFAULT 0, so without the mapping every ordinary visit comes
+    // back carrying `impersonated: 0` -- falsy, and still a different object shape from the memory
+    // store's. `in`, not truthiness, for the same reason the self-edit case above uses it.
+    const store = makeStore();
+    store.appendTabVisit({
+      id: "plain",
+      member_id: "ada",
+      tab: "dashboard",
+      at: "2026-08-01T00:00:00.000Z",
+    });
+    store.appendTabVisit({
+      id: "viewed",
+      member_id: "grace",
+      tab: "profile",
+      at: "2026-08-02T00:00:00.000Z",
+      impersonated: true,
+    });
+    const visits = new Map(
+      store.listTabVisitsSince("2026-07-01T00:00:00.000Z").map((v) => [v.id, v]),
+    );
+    expect(visits.get("plain") && "impersonated" in visits.get("plain")!).toBe(false);
+    expect(visits.get("viewed")?.impersonated).toBe(true);
+  });
+
+  it("orders same-millisecond tab visits by insertion, newest first", () => {
+    // Two clicks inside one millisecond is rarer here than on a profile save, but the two stores
+    // still have to agree, and a timestamp alone cannot resolve it.
+    const store = makeStore();
+    const at = "2026-08-26T10:00:00.000Z";
+    store.appendTabVisit({ id: "first", member_id: "ada", tab: "dashboard", at });
+    store.appendTabVisit({ id: "second", member_id: "ada", tab: "profile", at });
+    expect(store.listTabVisitsSince(at).map((v) => v.id)).toEqual(["second", "first"]);
+  });
+
   it("leaves subject_member_id absent rather than null when the edit was a self-edit", () => {
     const store = makeStore();
     store.appendUpdateEvent(updateEvent({ id: "self" }));

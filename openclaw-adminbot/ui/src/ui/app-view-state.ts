@@ -221,6 +221,8 @@ export type AppViewState = {
     string,
     import("./adminbot/controllers/recent-edits.ts").RecentEditsState
   >;
+  /** The Travel tab's one record: the viewer's own. Never keyed by member -- see its controller. */
+  adminBotTravel: import("./adminbot/controllers/travel.ts").TravelState;
   adminBotMailingListPreview: import("./adminbot/auth/session.ts").PublicationDigestPreview | null;
   adminBotMailingListLoading: boolean;
   adminBotMailingListSending: boolean;
@@ -240,6 +242,11 @@ export type AppViewState = {
   endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
   tab: Tab;
+  /**
+   * This visit arrived on the root and has not been navigated since, so `tab` is a default nobody
+   * chose. Cleared by the first navigation of any kind; read once the session says who is looking.
+   */
+  landedWithoutATab?: boolean;
   onboarding: boolean;
   basePath: string;
   connected: boolean;
@@ -441,6 +448,25 @@ export type AppViewState = {
   labSharingInvitedMemberIds?: string[];
   labSharingRespondedInviteIds?: string[];
   labSharingOpenProjectIndex?: number;
+  /**
+   * Announcements composed on the Collaborate tab this session. Nothing stores them.
+   *
+   * Here rather than at module scope in the view so signing out drops them with the rest of the
+   * member's state: they carry the author's own name, and the next member on the same page load
+   * must not inherit them.
+   */
+  labSharingAnnouncements?: import("./adminbot/views/lab-sharing.ts").Announcement[];
+  /** What the service holds for this member: their posts, everybody else's, invites, the broadcast. */
+  labSharing?: import("./adminbot/data/lab-sharing.ts").LabSharingSnapshot;
+  labSharingLoading?: boolean;
+  /** One sentence per read that failed. The other strips still render. */
+  labSharingErrors?: string[];
+  /** Results of the member search strip, and what was typed to get them. */
+  labSharingMembers?: import("./adminbot/data/lab-sharing.ts").LabSharingMemberMatch[];
+  labSharingMembersTruncated?: boolean;
+  labSharingBusy?: boolean;
+  labSharingNotice?: string | null;
+  loadLabSharing?: () => Promise<void>;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
@@ -464,6 +490,32 @@ export type AppViewState = {
   adminBotMeetingNudgeError?: string | null;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
+  /** The live lab-wide broadcast, or null for none. `undefined` means "not loaded yet". */
+  adminBotBroadcast?: import("./adminbot/auth/session.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("./adminbot/auth/session.ts").LabBroadcast[];
+  loadBroadcast?: () => Promise<void>;
+  /** What is in the My Desk compose box. Undefined means "has not been opened since load". */
+  adminBotBroadcastDraft?: string;
+  adminBotBroadcastExpiry?: string;
+  adminBotBroadcastAvailability?: string;
+  adminBotBroadcastBusy?: boolean;
+  adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  /** The tab-usage window, null until the first read answers. */
+  adminBotTabUsage: import("./adminbot/auth/session.ts").TabVisitReport | null;
+  adminBotTabUsageDays: number;
+  adminBotTabUsageLoading: boolean;
+  adminBotTabUsageError: string | null;
+  adminBotTabUsageExporting: boolean;
+  adminBotTabUsageLoadedAt: number | null;
+  /** Which My Desk row lists are open past their preview cap, by list id. */
+  professorExpandedLists: Set<string>;
+  publishBroadcast?: (
+    draft: {
+      message: string;
+      availability: string;
+      expiresOn: string;
+    } | null,
+  ) => Promise<void>;
   adminBotNotificationsError?: string | null;
   adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;
@@ -512,6 +564,12 @@ export type AppViewState = {
   adminBotLogisticsSubmitting: boolean;
   adminBotLogisticsSubmitError: string | null;
   adminBotLogisticsSubmittedId: string | null;
+  adminBotLogisticsCallSheetNote: string | null;
+  adminBotSignatureForm: { driveUrl: string; deadline: string; context: string };
+  adminBotSignatureSubmitting: boolean;
+  adminBotSignatureError: string | null;
+  adminBotSignatureSubmitted: boolean;
+
   // The request the forms are currently holding a correction to, or null when what is on screen is
   // a new request. Submit sends a PUT for the first and a POST for the second.
   adminBotLogisticsEditingId: string | null;
@@ -533,6 +591,7 @@ export type AppViewState = {
   adminBotProfileOverview: import("./adminbot/auth/session.ts").MemberProfileOverviewRow[];
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/auth/session.ts").EscalatedNudgeRow[];
+  adminBotPiReview: import("./adminbot/auth/session.ts").PiReviewRow[];
   adminBotProfileOverviewFieldCount: number;
   adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;

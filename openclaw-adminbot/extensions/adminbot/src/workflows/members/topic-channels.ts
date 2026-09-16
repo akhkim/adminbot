@@ -169,20 +169,96 @@ export function matchThemedMeetings(
   channelName: string,
   meetings: readonly AdminBotThemedMeeting[],
 ): AdminBotThemedMeeting[] {
-  const parsed = topicOfChannel(channelName);
-  if (!parsed || parsed.prefix !== "meeting") {
+  return matchMeetingsForChannel(channelName, meetings, THEMED_MEETING_FAMILY);
+}
+
+/** The prefix every project meeting's title carries. */
+export const ADMINBOT_PROJECT_MEETING_PREFIX = "proj:";
+
+/**
+ * The project a recurring event's title names, or null when it is not one of ours.
+ *
+ * Mirrors `themeOfEvent` against the other family. The two prefixes are what keep the families
+ * apart on a calendar that holds both: "Theme: Causal Inference" is the Wednesday topic meeting,
+ * "Proj: Law to Benchmark" is one project's own standing call, and a sweep that filled one from the
+ * other's channel would put a project's collaborators on a meeting for everybody.
+ */
+export function projectOfEvent(summary: string): string | null {
+  const title = String(summary ?? "").trim();
+  if (!title.toLowerCase().startsWith(ADMINBOT_PROJECT_MEETING_PREFIX)) {
+    return null;
+  }
+  const project = title.slice(ADMINBOT_PROJECT_MEETING_PREFIX.length).trim();
+  return project || null;
+}
+
+/**
+ * A channel family and the event titles its meetings carry.
+ *
+ * Declared as a pair because the two halves only mean anything together: `#meeting-xxx` belongs to
+ * `Theme: xxx` and `#proj-xxx` to `Proj: xxx`, and crossing them is the one mistake this whole
+ * mechanism has to be unable to make.
+ */
+export type AdminBotMeetingFamily = {
+  /** The channel-name prefix, without the trailing hyphen. */
+  channelPrefix: string;
+  /** Reads the event title and returns the part to match on, or null when it is another family. */
+  titleTopic: (summary: string) => string | null;
+};
+
+export const THEMED_MEETING_FAMILY: AdminBotMeetingFamily = {
+  channelPrefix: "meeting",
+  titleTopic: themeOfEvent,
+};
+
+export const PROJECT_MEETING_FAMILY: AdminBotMeetingFamily = {
+  channelPrefix: "proj",
+  titleTopic: projectOfEvent,
+};
+
+export const ADMINBOT_MEETING_FAMILIES: readonly AdminBotMeetingFamily[] = [
+  THEMED_MEETING_FAMILY,
+  PROJECT_MEETING_FAMILY,
+];
+
+/**
+ * Which meetings a channel belongs to, in whichever family the channel is from.
+ *
+ * The matching rule is the one `matchThemedMeetings` documents and is unchanged: the channel's
+ * topic has to be fully present in the event's, never the reverse, because the cost of a loose
+ * match is a real person on a recurring invite they did not ask for.
+ *
+ * Note what that asymmetry means for a project whose channel and event disagree on a word:
+ * `#proj-law-to-benchmark` gives the single token `benchmark`, and an event titled
+ * "Proj: Law-to-Bench Weekly" gives `bench` and `weekly`, so they do not match and no invite is
+ * proposed. That is the rule working, not failing -- the two names are genuinely different, and the
+ * fix is to make them agree rather than to teach the matcher to guess at stems.
+ */
+export function matchMeetingsForChannel(
+  channelName: string,
+  meetings: readonly AdminBotThemedMeeting[],
+  family?: AdminBotMeetingFamily,
+): AdminBotThemedMeeting[] {
+  const name = String(channelName ?? "")
+    .trim()
+    .replace(/^#/u, "")
+    .toLowerCase();
+  const candidates = family ? [family] : ADMINBOT_MEETING_FAMILIES;
+  const owner = candidates.find((entry) => name.startsWith(`${entry.channelPrefix}-`));
+  if (!owner) {
     return [];
   }
-  const wanted = topicTokens(parsed.topic);
+  const topic = name.slice(owner.channelPrefix.length + 1);
+  const wanted = topicTokens(topic);
   if (wanted.length === 0) {
     return [];
   }
   return meetings.filter((meeting) => {
-    const theme = themeOfEvent(meeting.summary);
-    if (!theme) {
+    const eventTopic = owner.titleTopic(meeting.summary);
+    if (!eventTopic) {
       return false;
     }
-    const have = new Set(topicTokens(theme));
+    const have = new Set(topicTokens(eventTopic));
     return wanted.every((token) => have.has(token));
   });
 }

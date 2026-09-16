@@ -7,12 +7,14 @@ import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   fetchEscalatedNudges,
+  fetchPiReviewQueue,
   fetchMemberProfileOverview,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
   seedNudgeList,
   type EscalatedNudgeRow,
+  type PiReviewRow,
   type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
 } from "../auth/session.ts";
@@ -31,6 +33,7 @@ export type AdminBotProfileOverviewHost = {
   adminBotProfileOverviewNotice: string | null;
   /** Nudges raised to the head professor and still unanswered. Empty until the first read. */
   adminBotEscalatedNudges: EscalatedNudgeRow[];
+  adminBotPiReview: PiReviewRow[];
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -76,6 +79,10 @@ export async function loadAdminBotProfileOverview(
     // are the reason someone opened it, so the queue simply stays empty.
     const escalated = await fetchEscalatedNudges(wire.token, wire.baseUrl);
     host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
+    // The same page, the same reader, the same argument: the papers waiting on her yes are a
+    // queue on My Desk, and a third spinner for two rows is worse than loading them together.
+    const piReview = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+    host.adminBotPiReview = piReview.ok ? piReview.value : [];
   } finally {
     host.adminBotProfileOverviewLoading = false;
   }

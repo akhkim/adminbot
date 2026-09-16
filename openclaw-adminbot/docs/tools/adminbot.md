@@ -25,6 +25,7 @@ You need a local AdminBot service listening on loopback, for example
 
 | Endpoint                              | Purpose                                                           |
 | ------------------------------------- | ----------------------------------------------------------------- |
+| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                       |
 | `POST /proposals`                     | Create one typed action proposal.                                 |
 | `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
 | `GET /proposals/pending`              | Return pending approval items.                                    |
@@ -183,6 +184,35 @@ export OVERLEAF_ACCESS_TOKEN="..."
 
 Without these variables, approved execution fails closed and leaves the proposal
 approved for a later live run after the bridge is configured.
+
+### Which Overleaf a paper may live on
+
+Two hosts are accepted for both Overleaf evidence slots and for the edit action:
+`overleaf.com`, and the lab's own instance — `overleaf.safe.eu`, the one
+PaperMentor is built into. `contracts/overleaf.ts` holds both, and a deployment
+that runs its own names it instead:
+
+```bash
+export ADMINBOT_OVERLEAF_URL="https://overleaf.example.edu"
+```
+
+`overleaf.com` is never dropped: naming your own instance does not end
+collaboration with people who use the hosted one. The configured host is an
+addition to the check, never a way to switch it off.
+
+Both hosts are accepted and only one of them can be reviewed, which is the point
+of recording the difference rather than refusing the link. Every paper is
+reviewed by PaperMentor before submission, and PaperMentor only reads projects on
+the instance it is part of — so a draft on `overleaf.com` is a real paper that
+has to move before it can clear that step, which is a thing to tell its author
+early rather than a link to reject.
+
+`adminBotOverleafProjectRef` is how a link becomes something addressable: it
+checks the scheme, the host and the `/project/<id>` shape, and returns the id
+alone against a closed charset. Nothing follows a URL a member typed — the slot
+validator's rule (shape only, never a liveness fetch) holds here too — and
+`assertOverleafPayloadReady` refuses an approved edit whose destination is not
+one of these projects, so the bridge cannot be pointed at a host nobody chose.
 
 ## Set up AdminBot
 
@@ -542,6 +572,245 @@ windows are open-ended on the late side, because a sweep that fired only on exac
 exactly day 5 would miss every date the cron ran late for -- the ledger is what stops the open end
 becoming a daily repeat.
 
+## Where a paper is, and how it gets there
+
+`current_step` used to be a field somebody maintained. It is now derived from the paper's own
+evidence, and the derivation reads a field that has been on every slot since the registry existed
+and was read by nothing: `gates`, "the pipeline step this slot releases".
+
+A step is released when every **required** slot gating it is settled, and a paper is at the
+furthest released step. The trunk of the PaperFlow chart, in the registry's own words:
+
+| Step | Released by |
+| ---- | ----------- |
+| `overleaf_writing` | `project_folder` |
+| `submission` | `overleaf_edit`, `papermentor_review`, `fixes_merged`, `pdf_ready` |
+| `google_drive_pdf` | `submission`, `submission_id` |
+| `arxiv_polish` | `drive_pdf_arxiv`, `authors_ack`, `arxiv_paper_password`, `pi_approval` |
+| `social_posts` | `arxiv`, `x_draft`, `linkedin_draft`, `coauthor_feedback`, `social_final` |
+
+Advisory slots are out of it: `overleaf_view` gates `submission` too, and a paper whose authors only
+ever circulated the edit link is not stuck before submission because of it. A **waived** slot counts
+as settled, which is what waiving is for.
+
+Three properties, and each of them is about not lying:
+
+- **Contiguous.** The walk stops at the first step whose evidence is incomplete, so a poster
+  uploaded in week one cannot report a paper as being at `poster_making` while it is still being
+  written. The branches run in parallel off the compiled PDF; the trunk is what a stage means.
+- **Forward only.** A paper is advanced to the derived step and never dragged back, and never past
+  a step somebody set by hand. Evidence arrives late, gets corrected, gets waived.
+- **Not a gate.** Nothing here blocks a paper from moving without its evidence. The stepper stays
+  open, for the reason the slot registry gives: a hard gate deadlocks the paper, and the person who
+  could clear it is the one being blocked. This only catches a paper up to what it has proved.
+
+Every advance writes a `paper.stage_advanced` audit row naming the slots that released the step, so
+"why does this say submission" has an answer that is four pieces of evidence rather than "somebody
+changed a dropdown". It runs on every slot write — including the PaperMentor ingest, the one
+evidence path with no member behind it — and hourly as `adminbot-paper-stages` for anything that
+lands outside a write.
+
+### Checked, not just claimed
+
+A slot is **validated** when its value is the right shape and **verified** when something outside
+the lab's own claim says the artifact is really there. Until recently every piece of evidence on a
+paper was somebody's word — a Drive URL that parses proves a member typed a Drive URL — so
+`verified_by` / `verified_at` now sit alongside `provided_at` on the row, and the stage audit records
+which of the evidence was machine-confirmed. A paper advanced on four ticked boxes should not read
+the same as one advanced on three ticks and a file Google confirmed.
+
+Two verifiers are wired (`adminBotPaperSlotVerifier` names them, and a slot appears there only when
+its check exists):
+
+| Slot | Confirmed by |
+| ---- | ------------ |
+| `project_folder`, `drive_pdf_arxiv`, `slides`, `poster` | `gog drive get` — the file is really in Drive |
+| `papermentor_review` | the review being ingested at all |
+| `fixes_merged` | a **later** review that comes back with nothing critical and nothing to warn about |
+| `arxiv` | the arXiv export API — the paper is listed, under a title that matches |
+| `submission` | OpenReview's public API, **positively only** — see below |
+| `x_post`, `linkedin_post` | AdminBot posted them: the connector reports the URL it created |
+
+Most slots have no verifier and never will: "the author list is final" is a judgement, not a fact a
+machine can check.
+
+**OpenReview can only ever confirm.** The probe is anonymous, and a submission under blind review is
+invisible to a reader who is not on its committee — so "we cannot see it" and "there is no such
+paper" are the same HTTP answer. Reading that as absence would invalidate the evidence of every
+paper the lab currently has in review, so this probe never reports `missing`: it confirms what it
+can see and says "could not tell" about everything else. A submission on CMT, HotCRP or a venue's
+own site has no id to ask about at all, and the run says so rather than staying silent.
+
+**arXiv answers about titles as well as existence.** An unknown id does not 404 there — the feed
+comes back with one entry titled `Error`, which is the one case that counts as the outside world
+saying the paper is not there. When a paper *is* listed, its title is compared with the paper on
+file word-wise, loosely enough to survive a rename and a LaTeX-mangled colon. A mismatch is
+**reported, not acted on**: papers get retitled between submission and posting, and the row keeps
+its confirmation while the pass names it for a person to look at.
+
+**The posts need no check at all.** AdminBot publishes them through the approval gate, so the
+connector knows the URL it just created and reports it back on the execution outcome
+(`AdminBotExecutorOutcome.artifacts`). The slot is filled by the act rather than by somebody pasting
+a link back a week later — and never overwritten: a slot an author already filled keeps what it has.
+
+**Three outcomes, and the middle one is the design.** Found stamps the row. **Missing** — Google
+saying there is no such file — contradicts the evidence, so the row goes `invalid` with a reason,
+the same state a value that never parsed lands in, which re-opens the nudge with the reason
+attached. **Unreadable** — no account configured, a network that blinked, a file shared with a
+person but not with the lab's account — writes nothing at all. A paper must never stall because the
+lab failed to ask, and the commonest cause of "cannot open" is a sharing setting rather than a wrong
+link. So what stops a paper is a contradiction, never a silence: a deployment with no Google account
+wired confirms nothing and advances exactly as before.
+
+The `fixes_merged` inference is deliberately narrow. The ask is "merge the cheap ones", so a comment
+count that merely dropped proves somebody did some work, not that the step is done — that stays the
+author's tick. What a machine can say for certain is the other end: the reviewer read the draft
+again and found nothing serious, so there is nothing left to merge. It needs a previous run, too — a
+first review that comes back clean says the paper was already good, not that fixes were merged.
+
+`POST /papers/evidence/verify/run` is the pass, and `adminbot-paper-stages` runs it **before** the
+stage walk: a link the check is about to contradict must not release a step first.
+
+The one slot still waiting on someone else is `pdf_ready`: proving a project compiles cleanly means
+asking the lab's Overleaf for a compile status, which is the same upstream work the headless
+PaperMentor trigger needs — a service-token path in `jiarui-liu/overleaf`. Until that exists it stays
+an author's tick, chased like any other.
+
+### The PI's gate
+
+`pi_approval` is PaperFlow's `GT` — *prepared is not permission* — and it is the only slot owned by
+the head professor. **Nothing in AdminBot ticks it.** What is automated is the asking, which until
+now happened nowhere: the nudge sweep computed the item, resolved its owner to the head professor,
+and `sendMemberNudge` refused to message her — correctly, since the lab does not chase its PI — so a
+prepared package reached the gate with nobody told.
+
+A paper now signs itself up. When `drive_pdf_arxiv` and `authors_ack` are both settled and the yes
+has not been given, the paper appears in **Waiting on your yes to post** on My Desk, and she is told
+once, as a notification on her own page rather than a DM. The queue is derived from the slots, so a
+paper leaves it the moment she ticks the box or an admin waives it, and there is no second list to
+fall out of step. The say-once key carries when the package became ready, so a paper prepared again
+— revised, re-submitted, a second arXiv version — announces itself again.
+
+A missing `arxiv_paper_password` does not hold the decision up: the row says the package is
+incomplete and she can still say yes, because that is the authors' errand and not her decision.
+
+## PaperMentor reviews
+
+Every paper is reviewed by PaperMentor -- the multi-agent reviewer built into the lab's own
+Overleaf -- before it is submitted. `papermentor_review` has been an evidence slot since the slot
+registry existed, but it was a `bool`: the author ticked a box and the lab took their word for it,
+which meant `fixes_merged` was chased with no idea whether there was anything to fix.
+
+Now the reviewer says so itself.
+
+**What is kept, and what is not.** PaperMentor writes each finished review to
+`/var/lib/overleaf/ai-tutor-cache/<project id>/review_comments.json` on the Overleaf host, and
+attaches the comments themselves to the author's project as threads. AdminBot keeps **only the
+counting half**: when the review ran, how many comments, by severity and category, how many landed
+in each file, and which agents failed. Not one word of the comments, the quoted text, the paper
+type summary or the agents' error prose. Those are unpublished paper content, they already exist
+where they are useful, and `contracts/papermentor.ts` is the boundary that keeps them there --
+written as an allow-list, so a field the fork adds later arrives as nothing rather than as a leak.
+
+**How a review finds its paper.** By the Overleaf project id, read out of the link the author
+already keeps as evidence (`overleaf_edit`, or the older `artifacts.overleaf_edit_url`). Both sides
+go through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything that
+follows a URL. A review of a project no paper claims is refused with a 404 and named in the run
+summary rather than stored as an orphan -- that is usually a paper nobody registered, which is the
+thing for somebody to go and fix.
+
+**What it changes on the paper.** The `papermentor_review` slot is marked provided, dated from the
+review rather than from the ingest, and with no member credited: nobody ticked a box, and crediting
+an author would inflate the number that measures whether people are using the checklist. A slot an
+admin **waived** stays waived -- the review is still recorded next to it, which is what makes the
+override visible.
+
+**The collector.** `scripts/adminbot-papermentor-runs.ts`, wrapped by
+`scripts/adminbot-papermentor-cron.sh` and registered as `adminbot-papermentor-runs` (hourly). It
+reads the cache directory, summarizes each review and posts it to
+`POST /papers/papermentor/runs` under the service token. Idempotent by construction: a run is
+identified by its project and the instant it ran, so re-reading the same cached file records
+nothing new and needs no local cursor.
+
+```bash
+# Where PaperMentor caches its reviews, if not the default above.
+export ADMINBOT_PAPERMENTOR_CACHE_DIR="/var/lib/overleaf/ai-tutor-cache"
+# Where to post them, if not the loopback service.
+export ADMINBOT_URL="https://adminbot.example:8443"
+
+scripts/adminbot-papermentor-cron.sh --dry-run          # read and summarize, post nothing
+scripts/adminbot-papermentor-cron.sh --since 2026-09-01 # ignore reviews older than this
+```
+
+Run it on the Overleaf host with `ADMINBOT_URL` pointed at the service, or on the AdminBot host
+with the cache directory mounted or synced and `ADMINBOT_URL` left unset. A first pass against a
+full cache would otherwise report a year of old reviews as news, which is what `--since` is for.
+
+`GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
+operator checking the collector is working.
+
+**What the lab chases.** The review is a step on the evidence checklist, so it rides the paper-slot
+nudge sweep rather than a sweep of its own -- one message per person per cadence, however many
+papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
+added to the line:
+
+| The paper | The line says |
+| --------- | ------------- |
+| Draft is on `overleaf.com` | it has to move to the lab's Overleaf before PaperMentor can read it at all |
+| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project |
+| Reviewed, fixes still open | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)" |
+
+The first is the one worth having. Every paper is reviewed before submission and PaperMentor only
+reads its own instance, so a draft on `overleaf.com` cannot clear the step at all -- and the worst
+moment to discover that is deadline week. The link is on the paper from the start, so the lab can
+say it in week one.
+
+**Freshness.** A review older than `adminBotPaperMentorFreshnessDays` (**21 days**) re-opens
+`papermentor_review` in the nudge, saying how old the last one was. A draft three weeks into a
+writing push is a different paper: the sections the review called thin have been rewritten, and the
+ones written since have never been read. Three weeks is a guess at how fast a draft moves rather
+than a fact about this lab, which is why it is a named constant.
+
+Two deliberate limits on that. It only re-opens while the paper is **unsubmitted** -- re-reviewing a
+paper that is already with a venue is work that cannot change anything -- and it is **not a write**:
+the stored row keeps saying the review happened, because it did. Only the chase knows about
+staleness, so the paper card still shows the tick; a card that reads "reviewed, and due for another"
+is the next piece of UI work, not something the sweep should fake by clearing a row.
+
+## Recommendation letter deadlines
+
+The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
+purpose -- the lab does not chase its PI, and the escalation path runs *towards* her -- so this is a
+typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
+relaxed. The direction is what makes it different: it is her own queue, about work only she can do,
+on dates her members chose.
+
+**Three days before** a recommendation-letter request comes due, the letters in that window are
+mailed to the head professor's roster address in one message -- however many are due, because four
+separate reminders in one morning is the desk being nagged, and the letters are written in one
+sitting anyway. The mail names each member, the deadline, how far off it is and the schools on the
+request, and links to the requests themselves.
+
+The window is read off the request's own `deadline_at`, the same field My Desk's letter queue sorts
+on, so the mail and the queue can never disagree about which letter is next. Whole days are
+**floored** rather than rounded up: the reminder fires on the first morning fewer than four whole
+days are left, which for the end-of-day deadlines the form produces is the calendar day three days
+before. My Desk rounds the same gap the other way for its badge, which is right for a list read at a
+glance and wrong for a countdown that has to fire on one particular morning.
+
+Said once per request per deadline, tracked in the nudge ledger under `rec_letter_reminder`. The
+subject carries the deadline, so **a school date that moves re-arms the reminder** against the new
+one while re-saving the same request does not. The late side is open, so a pass that did not run
+yesterday still sends today rather than skipping the letter; a settled, withdrawn or dateless
+request is never in the window at all.
+
+Fail-closed on the recipient: the address is the head professor on file (`head_professor_member_id`
+in settings, and the `email` on that roster row), never a constant in the source. A deployment that
+has named no head professor, or whose professor has no address, **refuses the pass** on a morning
+when something was due rather than guessing at an inbox -- and stays quiet on a morning when nothing
+was. A send that fails is not stamped, so it is retried the next morning while the letter is still
+worth writing.
+
 ## City channels
 
 A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,
@@ -721,6 +990,9 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
 | `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after   |
+| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate        |
+| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers    |
+| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                    |
 | `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                   |
 | `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                     |
 | `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                           |
@@ -1163,3 +1435,27 @@ The zone comes from `resolveAttendeeZoneAt`, resolved against the event's own da
 first: a logged trip covering that day, then an explicit `timezone`, then a zone guessed from
 `current_city`, then from `location`. So September invites read in Berlin time and October invites
 read in home time without the member touching anything twice.
+
+## Visitor deadline proposals
+
+Visitors can use **Propose a new deadline** without signing in and optionally provide their name and email for follow-up. Proposal card headers show a **Visitor** or **Lab member** badge. Reviewing administrators can see those details; they are not included in the public deadline feed. Signed-in submissions use the member's existing name and email. Contact details are stored separately from deadline fields and retained across revisions. Administrators can revise, reject, or publish submissions; publication requires approval of the current payload hash.
+
+`POST /public/deadline-proposals` accepts the deadline fields as JSON and optional `submitter_contact: { name, email }`. Successful requests return `202 {"status":"received"}`. An optional `Idempotency-Key` header (up to 200 characters) supports retries; the UI supplies it automatically. Reusing a key preserves the original submission and contact details, including across restarts.
+
+Requests are subject to the origin allowlist, a 16 KiB body limit, and field validation. Each address can make five submission attempts per hour. Rate-limited requests return `429` with `Retry-After`. Address resolution follows the existing trusted-proxy configuration. Rate limits are held in memory and reset on restart.
+
+### Deadline refresh and reviewed corrections
+
+Signed-in members can choose **Suggest deadline correction** from the menu beside an existing deadline. The existing publication proposal flow records the target and its prior date in the immutable payload. Administrators review the before/after dates and approve the exact payload hash. Publication replaces the target by stable ID, retains its milestone and history, and refuses a stale correction when the accepted date has changed in the meantime. Visitors can propose new deadlines but cannot correct existing ones.
+
+The service reads `extensions/adminbot/content/deadlines/venues.json` on each deadline request; set `ADMINBOT_DEADLINE_DATASET_PATH` for a different location. The collector honors the same dataset-path variable and replaces that file atomically. The deadline page starts empty and loads only server data, matching the member timeline convention. Visible pages reload every five minutes. Initial failures show an error and Retry button; failed refreshes retain the last successful server response with an explicit error. Bundled data is never substituted. Collection therefore does not require a service rebuild or restart. A missing or malformed runtime dataset fails the request instead of silently serving the compiled snapshot. Deploying code still requires the normal build and restart.
+
+Cron consumers read the accepted `/deadlines/venues.json` projection, including approved corrections, using `ADMINBOT_DEADLINE_READ_URL` (default `http://127.0.0.1:8765/deadlines/venues.json` in the cron wrapper). Standalone Python invocations without that variable use the local dataset. Matching stores the stable deadline ID; reminders resolve its current date before computing cadence. Regenerate legacy matches before enabling reminders: entries without a resolvable ID are skipped. Calendar corrections appear on the next configured calendar sync. Approved corrections remain authoritative if later collection disagrees and require another reviewed correction to change them.
+
+The collector checks eligible sources daily from fourteen days before through seven days after their deadline, weekly for other workshops, and fortnightly for other tracked OpenReview conferences. ICLR 2027 abstract/full-paper and EACL 2027 demo milestones have exact invitation mappings and refresh on the same cadence. ARR cycles and AACL, EMNLP, EACL, and NAACL submission/commitment rows are refreshed from exact labeled official-table rows; missing or ambiguous rows preserve the previous date with uncertainty. The historical NeurIPS rebuttal constant remains a manually checked source. The daily `adminbot-deadline-refresh-venues` job already exists in `config/adminbot-cron.json`; inspect and synchronize that job with `scripts/adminbot-cron-sync.sh --dry-run --only adminbot-deadline-refresh-venues` and then the same command without `--dry-run`. Do not create a duplicate job or enable unrelated delivery jobs during setup.
+
+Explicit abstract and full-paper dates are retained separately. A matched OpenReview invitation due date takes precedence over a conflicting CFP announcement; unmatched stages remain provisional. Invitation expiry is recorded separately from the due date. Source failures do not constitute a successful source check, and the board's latest-check date describes the newest individual observation, not verification of the entire dataset.
+
+### Deadline jobs after Aurora deployment
+
+Register the two deadline jobs explicitly after deployment using the [deadline cron setup](adminbot-deadline-cron-setup.md) procedure. Normal service starts and restarts do not change cron registration.

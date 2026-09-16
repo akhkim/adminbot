@@ -116,18 +116,25 @@ type TimeAllocationTooltipProps = {
 export type TimeAllocationInterval = "day" | "week" | "month";
 const DAY_MS = 86_400_000;
 const TIME_CHART_ELEMENT = "adminbot-effort-stack-chart";
-// Keep the standalone EffortStackChart palette and its stable first-seen color assignment.
-const CHART_COLORS = [
-  "#3575DA",
-  "#00676E",
-  "#F6511D",
-  "#188B3E",
-  "#783810",
-  "#F7615D",
-  "#8B5CF6",
-  "#D4A72C",
+// The palette lives in styles/time-allocation-chart.css, not here, because the two themes need
+// different steps of the same hue and a hex in this file can only be one of them. Read as CSS
+// variables: recharts passes `fill` straight onto the SVG element, so `var(...)` resolves there
+// like anywhere else, and switching theme repaints the chart with no JavaScript and no re-render.
+//
+// Order is the assignment order and is stable per category (first seen, first slot). Nothing here
+// cycles past the eighth: a ninth category takes the neutral rather than a second turn at blue,
+// which would put one colour on two series in the same stack.
+export const CHART_COLORS = [
+  "var(--adminbot-chart-series-1)",
+  "var(--adminbot-chart-series-2)",
+  "var(--adminbot-chart-series-3)",
+  "var(--adminbot-chart-series-4)",
+  "var(--adminbot-chart-series-5)",
+  "var(--adminbot-chart-series-6)",
+  "var(--adminbot-chart-series-7)",
+  "var(--adminbot-chart-series-8)",
 ] as const;
-const CHART_NEUTRAL_COLOR = "#9AA0AA";
+export const CHART_NEUTRAL_COLOR = "var(--adminbot-chart-neutral)";
 const AWAY_BACKGROUND_KEY = "__away_background__";
 // Recharts omits a Bar's background when that series is exactly zero. A tiny transparent value,
 // held to one rendered pixel, gives the whole-day background an anchor without changing any
@@ -930,11 +937,14 @@ function EffortStackChart({
                     createElement("rect", {
                       width: 8,
                       height: 8,
-                      fill: "#4B5563",
+                      // Tokens, not fixed greys: a slate block and a pale hatch were picked against
+                      // the dark theme, and on the light one they landed as a dark bar with a hatch
+                      // that had nothing to show through it.
+                      fill: "var(--bg-muted)",
                     }),
                     createElement("path", {
                       d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
-                      stroke: "#CBD5E1",
+                      stroke: "var(--text-muted)",
                       strokeWidth: 1.5,
                     }),
                   ),
@@ -957,7 +967,7 @@ function EffortStackChart({
                         createElement("rect", { width: 8, height: 8, fill: color }),
                         createElement("path", {
                           d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
-                          stroke: "#FFFFFF",
+                          stroke: "var(--bg-elevated)",
                           strokeOpacity: 0.68,
                           strokeWidth: 1.5,
                         }),
@@ -967,25 +977,25 @@ function EffortStackChart({
                 ),
                 createElement(CartesianGrid, {
                   strokeDasharray: "3 3",
-                  stroke: "#2A2E35",
+                  stroke: "var(--border)",
                   vertical: false,
                 }),
                 createElement(XAxis, {
                   dataKey: "label",
-                  tick: { fontSize: 11, fill: "#9AA0AA" },
+                  tick: { fontSize: 11, fill: "var(--text-muted)" },
                   interval: 0,
                 }),
                 createElement(YAxis, {
-                  tick: { fontSize: 12, fill: "#9AA0AA" },
+                  tick: { fontSize: 12, fill: "var(--text-muted)" },
                   domain: [0, () => yAxisMaximum(segments)],
                   tickFormatter: (value: number) => formatPercentage(value),
                 }),
                 createElement(Tooltip, {
                   content: createElement(TimeAllocationTooltip, { notes: taskNotes, outsideKeys }),
-                  cursor: { fill: "rgba(255,255,255,0.04)" },
+                  cursor: { fill: "var(--bg-hover)", fillOpacity: 0.5 },
                 }),
                 createElement(Legend, {
-                  wrapperStyle: { fontSize: 12, color: "#9AA0AA" },
+                  wrapperStyle: { fontSize: 12, color: "var(--text-muted)" },
                   content: createElement(TimeAllocationLegend, {
                     categories,
                     colors,
@@ -994,7 +1004,9 @@ function EffortStackChart({
                 }),
                 createElement(ReferenceLine, {
                   y: 100,
-                  stroke: "#F7615D",
+                  // A threshold, so it wears the status token rather than a hue out of the series
+                  // palette -- which is where this red came from, and it was still slot 6 there.
+                  stroke: "var(--danger)",
                   strokeDasharray: "4 4",
                   strokeOpacity: 0.6,
                 }),

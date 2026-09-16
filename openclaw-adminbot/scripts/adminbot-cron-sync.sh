@@ -59,19 +59,26 @@ done
 
 # The store is read once. Asking the gateway per job turns a sixteen-job sync into sixteen round
 # trips, and a partial answer halfway through would leave the set half-applied.
-existing="$($OPENCLAW cron list --json 2>/dev/null || echo '[]')"
+existing="$($OPENCLAW cron list --all --json)"
 
-python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > /tmp/adminbot-cron-plan.$$
+PLAN="$(mktemp)"
+trap 'rm -f "$PLAN"' EXIT
+
+python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
 import json, shlex, sys
 
 manifest_path, repo_root, existing_raw, dry_run, only = sys.argv[1:6]
 manifest = json.load(open(manifest_path))
 
-try:
-    parsed = json.loads(existing_raw)
-except json.JSONDecodeError:
-    parsed = []
+parsed = json.loads(existing_raw)
 rows = parsed.get("jobs", parsed) if isinstance(parsed, dict) else parsed
+if not isinstance(rows, list) or any(not isinstance(row, dict) or not row.get("name") or not row.get("id") for row in rows):
+    raise SystemExit("Invalid cron listing; refusing to register jobs")
+selected = [row for row in rows if not only or row["name"] == only]
+if len({row["name"] for row in selected}) != len(selected):
+    raise SystemExit("Duplicate cron names; resolve duplicates before syncing")
+if only and only not in {job["name"] for job in manifest["jobs"]}:
+    raise SystemExit("Unknown manifest job: " + only)
 # Name -> id. `cron edit` selects by id positionally, not by name: passing --name to it *renames*
 # the job, and without an id it refused every edit with "Missing required argument id". The store is
 # the only place the id exists, which is why the listing is read for more than a membership test.
@@ -137,7 +144,7 @@ while IFS=$'\t' read -r verb name args <&3; do
       fi
       ;;
   esac
-done 3< /tmp/adminbot-cron-plan.$$
-rm -f /tmp/adminbot-cron-plan.$$
+done 3< "$PLAN"
+rm -f "$PLAN"
 
 exit "$status"

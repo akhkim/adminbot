@@ -16,6 +16,7 @@ Writes venues.json and its generated UI datasets; nothing is sent.
 """
 import concurrent.futures
 import datetime
+import html as html_module
 import json
 import os
 import re
@@ -30,6 +31,11 @@ from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from adminbot_conference_deadlines import (
+    CONFERENCE_INVITATIONS,
+    fetch_invitation_observations as read_invitation_observations,
+    refresh_configured_conferences as refresh_conference_milestones,
+)
 from adminbot_deadlines import AoEClock, is_sweep_due
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,8 +60,10 @@ from adminbot_workshop_deadlines import (  # noqa: E402
     group_final_submission_deadline,
     reconcile_deadline_candidates,
     select_official_candidate,
+    split_workshop_milestones,
+    _candidate_is_abstract,
 )
-OUT  = os.path.join(DEADLINES_DIR, "venues.json")
+OUT = os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH") or os.path.join(DEADLINES_DIR, "venues.json")
 
 # --- curated, source-verified conference milestones (AoE 23:59:59) ---
 #
@@ -161,7 +169,7 @@ CONFERENCES = [
          submission_type="commitment",
          deadline_label="commitment", deadline_aoe="2026-10-11 23:59:59",
          notification_aoe="2026-11-12 23:59:59", link="https://2027.eacl.org/calls/papers/"),
-    # NAACL 2027 runs on the October cycle: submit into it by Oct 12, commit by Dec 20.
+    # NAACL 2027 runs on the October cycle: submit into it by Oct 12, commit by Dec 23.
     # Source: https://aclrollingreview.org/dates and https://2027.naacl.org/
     dict(id="naacl2027_paper", name="NAACL 2027 (main, ARR submission)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
@@ -171,7 +179,7 @@ CONFERENCES = [
     dict(id="naacl2027_commitment", name="NAACL 2027 (main, ARR commitment)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
          submission_type="commitment",
-         deadline_label="commitment", deadline_aoe="2026-12-20 23:59:59",
+         deadline_label="commitment", deadline_aoe="2026-12-23 23:59:00",
          notification_aoe="", link="https://2027.naacl.org/"),
 ]
 
@@ -561,6 +569,35 @@ PARENT_CONFERENCE_LOCATIONS = {
 }
 
 
+def conference_sites(location):
+    """The sites in a `conference_location`, which stores them semicolon-separated."""
+    return [site.strip() for site in (location or "").split(";") if site.strip()]
+
+
+def site_named_on_page(html, sites):
+    """Which one of a conference's sites a workshop's own page names, if exactly one.
+
+    A multi-site conference is several meetings, and a workshop belongs to one of them. The
+    workshop's own site is the only place that says which, and it says it in prose -- "Location
+    Sydney, Australia", "join us in Paris" -- rather than in a field.
+
+    The question is deliberately "which of *these three*" rather than "what city is on this
+    page". Lifting an arbitrary "City, Country" out of prose reads a sponsor's address as a
+    venue: measured over 40 NeurIPS 2026 workshops it resolved 6 and got 3 of those wrong,
+    including an "Austrian Institute" that is not a city at all. Matching against the closed set
+    the parent already published cannot make that mistake, and resolved 35 of the same 40.
+
+    Silence is the answer whenever the page names none of the sites or more than one, because
+    both mean the page has not said. The caller falls back to listing every site, which is what
+    the board did before it could tell them apart.
+    """
+    if len(sites) < 2:
+        return ""
+    text = _visible_text(html)
+    named = [site for site in sites if re.search(rf"\b{re.escape(site.split(',')[0].strip())}\b", text)]
+    return named[0] if len(named) == 1 else ""
+
+
 def is_generic_conference_cfp(url):
     parsed = urllib.parse.urlsplit(normalize_url(url))
     host = parsed.hostname.lower().removeprefix("www.") if parsed.hostname else ""
@@ -718,6 +755,12 @@ def _fetch_text_asset(url, timeout=15):
         body = response.read(6_000_000)
         charset = response.headers.get_content_charset() or "utf-8"
         return response.geturl(), body.decode(charset, errors="replace")
+
+
+def _visible_text(html):
+    """Readable text from a page, with script and style bodies dropped."""
+    text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S | re.I)
+    return re.sub(r"\s+", " ", html_module.unescape(re.sub(r"<[^>]+>", " ", text)))
 
 
 def _profile_with_deadline_assets(html, source_url, year):
@@ -943,8 +986,14 @@ def _github_pages_deadline_history(source_url, current_stamp, year, target_hint)
             return []
 
 
-def discover_workshop_profile(homepage, existing="", existing_status="unknown", year=None):
-    """Return the dedicated CFP, publication policy, and bounded matching profile."""
+def discover_workshop_profile(
+    homepage, existing="", existing_status="unknown", year=None, sites=()
+):
+    """Return the dedicated CFP, publication policy, and bounded matching profile.
+
+    `sites` is the parent conference's published sites. When it names more than one, the
+    workshop's own page is asked which of them it meets at -- see `site_named_on_page`.
+    """
     year = year or datetime.date.today().year
     homepage = normalize_url(homepage)
     previous = normalize_url(existing)
@@ -961,6 +1010,7 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown", 
     parser.feed(html)
     homepage_status = archival_status_from_html(html)
     homepage_profile = _profile_with_deadline_assets(html, final_homepage, year)
+    homepage_profile["_site"] = site_named_on_page(html, sites)
     base = urllib.parse.urldefrag(final_homepage)[0]
     if parser.anchors:
         anchor = urllib.parse.quote(parser.anchors[0], safe="-._~")
@@ -988,7 +1038,12 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown", 
                                            archival_status_from_html(candidate_html)),
                     _merge_workshop_profiles(
                         homepage_profile,
-                        _profile_with_deadline_assets(candidate_html, final_candidate, year),
+                        {
+                            **_profile_with_deadline_assets(
+                                candidate_html, final_candidate, year
+                            ),
+                            "_site": site_named_on_page(candidate_html, sites),
+                        },
                     ),
                 )
         except Exception:
@@ -1011,9 +1066,8 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
     """Re-read workshop CFP sites, on the cadence rather than all of them every run.
 
     This is the expensive half of the sweep -- one HTTP request per workshop site, 140 of them --
-    and the half that earns a 429. A workshop within three days of its deadline is re-read daily,
-    because a late extension is exactly what the board exists to catch; everything else waits a
-    fortnight. A skipped workshop keeps every value the last sweep established, `profile_extracted_at`
+    and the half that earns a 429. Near-deadline and recently expired milestones are checked
+    daily; other workshops wait a week. A skipped workshop keeps every value the last sweep established, `profile_extracted_at`
     included, so its clock measures from the last real read.
     """
     skipped = 0
@@ -1023,11 +1077,10 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         if item.get("venue_type") != "workshop":
             continue
         previous = previous_by_id.get(item.get("id"), {})
-        if clock and not force_refresh and not is_sweep_due(
-            clock,
-            "workshop",
-            item.get("deadline_aoe", "") or previous.get("deadline_aoe", ""),
-            previous.get("profile_extracted_at"),
+        stages = [previous_by_id.get(item.get("id", "") + "_abstract", {}), item]
+        if clock and not force_refresh and not any(
+            stage and is_sweep_due(clock, "workshop", stage.get("deadline_aoe", ""),
+                                   previous.get("profile_extracted_at")) for stage in stages
         ):
             skipped += 1
             continue
@@ -1043,13 +1096,22 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         status = item.get("archival_status") or previous.get("archival_status", "unknown")
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = int(year_match.group(1)) if year_match else datetime.date.today().year
-        jobs.setdefault((homepage, year), (existing, status))
+        sites = tuple(
+            conference_sites(
+                PARENT_CONFERENCE_LOCATIONS.get(
+                    (item.get("venue_family", ""), str(year)), ""
+                )
+            )
+        )
+        jobs.setdefault((homepage, year), (existing, status, sites))
 
     found = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
-            executor.submit(discover_workshop_profile, homepage, existing, status, year): key
-            for key, (existing, status) in jobs.items()
+            executor.submit(
+                discover_workshop_profile, homepage, existing, status, year, sites
+            ): key
+            for key, (existing, status, sites) in jobs.items()
             for homepage, year in [key]
         }
         for future in concurrent.futures.as_completed(futures):
@@ -1057,9 +1119,25 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             try:
                 found[key] = future.result()
             except Exception:
-                existing, status = jobs[key]
+                existing, status, _sites = jobs[key]
                 found[key] = (existing, status, {})
 
+    expanded = []
+    for item in items:
+        if item.get("venue_type") != "workshop" or item.get("id") not in due_ids:
+            expanded.append(item)
+            previous_abstract = previous_by_id.get(item.get("id", "") + "_abstract")
+            if previous_abstract:
+                expanded.append(dict(previous_abstract))
+            continue
+        homepage = normalize_url(item.get("homepage_url", ""))
+        year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+        year = int(year_match.group(1)) if year_match else datetime.date.today().year
+        profile = found.get((homepage, year), ("", "", {}))[2]
+        rows = split_workshop_milestones(item, profile.get("_deadline_candidates", []), year)
+        expanded.extend(rows)
+        due_ids.update(row["id"] for row in rows)
+    items[:] = expanded
     history_requests = []
 
     def finish_deadline_history(item, deadline, source_revisions):
@@ -1071,8 +1149,9 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             if deadline["deadline_extended"]
             else "not_extended"
         )
-        item["_source_observed"] = True
-        item["source_checked_at"] = checked_at()
+        if item.get("_source_observed") or item.get("profile_extracted_at") == checked_at():
+            item["_source_observed"] = True
+            item["source_checked_at"] = checked_at()
 
     for item in items:
         if item.get("venue_type") != "workshop":
@@ -1082,6 +1161,8 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         if clock and not force_refresh and item.get("id") not in due_ids:
             # Not due: carry the last sweep's answers forward verbatim. Falling through would
             # overwrite them with the empty default and read as "this workshop lost its CFP".
+            item["source_checked_at"] = previous.get("source_checked_at", "")
+            item["deadline_label"] = previous.get("deadline_label", item.get("deadline_label", "submission"))
             item["cfp_url"] = previous.get("cfp_url", item.get("cfp_url", ""))
             item["archival_status"] = previous.get(
                 "archival_status", item.get("archival_status", "unknown")
@@ -1092,7 +1173,8 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                         "deadline_source_kind", "deadline_source_status",
                         "deadline_source_precision", "deadline_source_evidence",
                         "deadline_official_url", "deadline_official_evidence",
-                        "deadline_extended", "deadline_history_status"):
+                        "deadline_extended", "deadline_history_status",
+                        "workshop_location"):
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
             item["link"] = (item["cfp_url"] or homepage
@@ -1110,14 +1192,23 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                     "profile_extracted_at"):
             default = [] if key == "topic_profile" else ""
             item[key] = profile.get(key, previous.get(key, default))
+        # Which of the parent's sites this workshop meets at, when its page said. An empty
+        # answer keeps the previous sweep's: a page that stopped naming its city has not
+        # moved the workshop to another continent.
+        item["workshop_location"] = profile.get("_site", "") or previous.get(
+            "workshop_location", ""
+        )
+        candidates = profile.get("_deadline_candidates", [])
+        if item.get("_stage"):
+            candidates = [c for c in candidates if _candidate_is_abstract(c) == (item["_stage"] == "abstract")]
         deadline = reconcile_deadline_candidates(
-            profile.get("_deadline_candidates", []),
-            item.get("_openreview_deadline", "") or item.get("deadline_aoe", ""),
+            candidates,
+            item.get("_openreview_deadline", ""),
             item.get("openreview_url", ""),
             year,
             item.get("_group_final_deadline", ""),
             item.get("_group_final_evidence", ""),
-            f"{item.get('id', '')} {item.get('name', '')}",
+            f"{item.get('id', '')} {item.get('name', '')} {item.get('_stage', '')}",
         )
         if deadline["deadline_aoe"]:
             for key in (
@@ -1248,6 +1339,15 @@ def _group_final_submission_deadline(content):
     return group_final_submission_deadline(content)
 
 
+def fetch_invitation_observations(invitation_ids):
+    return read_invitation_observations(invitation_ids, _openreview_get, _aoe_stamp, OPENREVIEW_INVITATION_BATCH_SIZE)
+
+
+def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=False):
+    return refresh_conference_milestones(items, previous_by_id, clock, force_refresh,
+        read_invitations=fetch_invitation_observations, fetch_html=_fetch_html, checked_at=checked_at)
+
+
 def fetch_workshop_source(source, previous_by_id=None):
     """Every workshop under one family-year's OpenReview parent group."""
     parent = source["parent"]
@@ -1260,13 +1360,20 @@ def fetch_workshop_source(source, previous_by_id=None):
         if group.get("id", "").startswith(pref)
         and "/" not in group.get("id", "")[len(pref):]
     ]
+    invitation_metadata = {}
     observed_deadlines = (
         {} if source["deadline_aoe"]
         else _openreview_submission_deadlines(
             [group["id"] for group in groups],
-            include_expired=(source["family"] == "NeurIPS" and source["year"] == 2026),
+            include_expired=True,
+            metadata=invitation_metadata,
         )
     )
+    full_ids = {
+        group["id"]: _group_value(group.get("content", {}), "full_submission_invitation_id")
+        for group in groups
+    }
+    full_observations = fetch_invitation_observations([value for value in full_ids.values() if isinstance(value, str) and value])
     for g in groups:
         gid = g.get("id", "")
         rest = gid[len(pref):]
@@ -1279,6 +1386,10 @@ def fetch_workshop_source(source, previous_by_id=None):
         route = _submission_type(source["family"], rest)
         observed_deadline = source["deadline_aoe"] or observed_deadlines.get(gid, "")
         allow_official_only = source["family"] == "NeurIPS" and source.get("year") == 2026
+        if (observed_deadline and not previous and not allow_official_only
+                and AoEClock.resolve().has_passed(observed_deadline)):
+            # Expired invitations are needed to recheck tracked cutoffs, not to backfill every old track.
+            continue
         if not observed_deadline and not previous and not allow_official_only:
             continue
         final_submission_deadline = (
@@ -1302,6 +1413,9 @@ def fetch_workshop_source(source, previous_by_id=None):
             openreview_url=review_url,
             source_url=review_url,
             _openreview_deadline=observed_deadline,
+            _full_submission_deadline=full_observations.get(full_ids.get(gid), {}).get("duedate_aoe", ""),
+            openreview_full_invitation=full_observations.get(full_ids.get(gid), {}),
+            openreview_invitation=invitation_metadata.get(gid, {}),
             _group_final_deadline=final_submission_deadline,
             _group_final_evidence=str(_group_value(c, "date") or "")[:700],
             _source_observed=bool(observed_deadline or final_submission_deadline),
@@ -1347,7 +1461,7 @@ def _openreview_submission_deadline(group_id):
     return ""
 
 
-def _openreview_submission_deadlines(group_ids, include_expired=False):
+def _openreview_submission_deadlines(group_ids, include_expired=False, metadata=None):
     """AoE deadlines for public Submission invitations, fetched in bounded batches."""
     deadlines = {}
     for start in range(0, len(group_ids), OPENREVIEW_INVITATION_BATCH_SIZE):
@@ -1365,7 +1479,13 @@ def _openreview_submission_deadlines(group_ids, include_expired=False):
             suffix = "/-/Submission"
             duedate = invitation.get("duedate")
             if invitation_id.endswith(suffix) and isinstance(duedate, (int, float)) and duedate > 0:
-                deadlines[invitation_id[:-len(suffix)]] = _aoe_stamp(duedate)
+                group_id = invitation_id[:-len(suffix)]
+                deadlines[group_id] = _aoe_stamp(duedate)
+                if metadata is not None:
+                    metadata[group_id] = {"id": invitation_id, "duedate_aoe": _aoe_stamp(duedate)}
+                    expiration = invitation.get("expdate")
+                    if isinstance(expiration, (int, float)) and expiration > 0:
+                        metadata[group_id]["expdate_aoe"] = _aoe_stamp(expiration)
     return deadlines
 
 
@@ -1461,7 +1581,7 @@ def classify(item):
     """
     item.pop("group_label", None)
     item.pop("_source_observed", None)
-    for key in ("_openreview_deadline", "_group_final_deadline", "_group_final_evidence"):
+    for key in ("_openreview_deadline", "_full_submission_deadline", "_group_final_deadline", "_group_final_evidence"):
         item.pop(key, None)
     family = item.get("venue_family") or family_of(item.get("venue_group", ""), item.get("name", ""))
     item["venue_family"] = family
@@ -1487,6 +1607,22 @@ def classify(item):
     # Kept while older calendar/matcher consumers migrate. New surfaces use the
     # explicit status above so an unknown venue is never presented as safe.
     item["archival"] = item["archival_status"] == "archival"
+    # Where the event meets, for every entry type rather than workshops only. A workshop inherits
+    # this from the conference it is attached to, but so does the conference's own main track,
+    # demo track and rebuttal window — leaving it on the workshop branch meant the board could
+    # name three cities against a NeurIPS workshop and none against NeurIPS itself. Families the
+    # table does not carry stay empty rather than guessing a city.
+    group_year = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+    item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get(
+        (family, group_year.group(1) if group_year else "unknown"), ""
+    )
+    # The one site this workshop meets at, where its own page named one. Only ever a member of
+    # conference_location above, never a city from somewhere else, and empty for a single-site
+    # conference because there the inherited value is already the answer.
+    site = str(item.get("workshop_location", "")).strip()
+    item["workshop_location"] = (
+        site if site in conference_sites(item["conference_location"]) else ""
+    )
     if item["entry_type"] == "workshop":
         legacy_link = normalize_url(item.get("link", ""))
         homepage = normalize_url(policy_override.get("homepage_url", item.get("homepage_url", "")))
@@ -1509,7 +1645,6 @@ def classify(item):
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = year_match.group(1) if year_match else "unknown"
         item["parent_conference_key"] = f"{family.lower()}-{year}"
-        item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get((family, year), "")
         topics = item.get("topic_profile")
         item["topic_profile"] = topics if isinstance(topics, list) and topics else [item["name"]]
         if not str(item.get("topic_evidence", "")).strip():
@@ -1678,7 +1813,18 @@ def write_outputs(items):
                      "OpenReview cutoffs; source conflicts remain in each record's provenance. "
                      "Conference-wide notification cutoffs remain shared."),
                count=len(items), items=items)
-    json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
+    # Readers must see a complete old or new snapshot, never a partially written file.
+    descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(OUT), prefix=".venues-", suffix=".json")
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(doc, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, OUT)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     print(f"wrote {OUT} with {len(items)} items")
 
     # The checked-in HTML is also directly runnable, so keep its embedded data in
@@ -1709,6 +1855,7 @@ def write_outputs(items):
 
     # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
+            "conference_location", "workshop_location",
             "entry_type", "archival_status", "venue_priority", "archival",
             "submission_type", "milestone", "schedule",
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
@@ -1747,6 +1894,18 @@ def write_outputs(items):
                 "  track?: string;\n"
                 "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
                 "  venue_family?: string;\n"
+                "  /** Where the parent conference meets, e.g. \"Budapest, Hungary\". A workshop\n"
+                "   *  inherits its conference's location. A multi-site event lists every site,\n"
+                "   *  separated by \"; \" — NeurIPS 2026 runs in Sydney, Atlanta and Paris at once.\n"
+                "   *  Empty for a venue with no fixed location (ARR cycles) or none published. */\n"
+                "  conference_location?: string;\n"
+                "  /** The one site a workshop meets at, when its own page named one —\n"
+                "   *  always one of the sites in `conference_location`, never a city from\n"
+                "   *  anywhere else. Empty when the parent has a single site (the inherited\n"
+                "   *  value already answers it), when the page named none of them, or when it\n"
+                "   *  named several and so has not said which. Read it in preference to\n"
+                "   *  `conference_location`, and fall back to that when it is empty. */\n"
+                "  workshop_location?: string;\n"
                 "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
                 "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
                 "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
@@ -1811,7 +1970,7 @@ def main():
     # One clock for the whole run, so every cadence decision agrees about "now" and a sweep that
     # straddles midnight cannot re-read half the board on one interval and half on another.
     clock = AoEClock.resolve()
-    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
+    items = refresh_configured_conferences([dict(item) for item in CONFERENCES], previous_by_id, clock, force_refresh) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
         previous_by_id, clock
     )
     fetched, failures = fetch_workshops(previous_by_id)

@@ -510,13 +510,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/decision-popup.ts",
-      "text": "TODO · email the coauthors"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/decision-popup.ts",
       "text": "Track"
     },
     {
@@ -1977,6 +1970,300 @@
     },
     {
       "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Accepted"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Accepted venue"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Accepted year"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Archival"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Archival?"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "arXiv"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "arXiv paper password"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Author roles"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Authors"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Completed on"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Current step"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Decision"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Done"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Drive PDF (arXiv version)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Evidence"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Feedback givers"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Links"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Non-archival"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Not heard yet"
+    },
+    {
+      "count": 3,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Not said"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Not yet"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Open blockers"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Overleaf (edit)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Overleaf (view)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "People"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Poster"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Presentation"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Project"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Project doc / folder"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Rejected"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Report a blocker"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Short name"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Slides"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Started on"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Submission"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Target venue"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Target venues, with odds"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Title"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Topic"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Venue"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/paper-columns.ts",
+      "text": "Venue decision"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "Which columns to show"
+    },
+    {
+      "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
@@ -2015,14 +2302,14 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Bulk link entry"
+      "text": "Clear"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Clear"
+      "text": "Every field, one row per paper"
     },
     {
       "count": 2,
@@ -2030,6 +2317,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Import a sheet"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/paper-grid.ts",
+      "text": "loading evidence…"
     },
     {
       "count": 1,
@@ -2058,223 +2352,6 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/paper-grid.ts",
       "text": "Recent changes"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Accepted"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Accepted venue"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Accepted year"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Archival"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Archival?"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "arXiv"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "arXiv paper password"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Author roles"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Authors"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Current step"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Drive PDF (arXiv version)"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Feedback givers"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Non-archival"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Not heard yet"
-    },
-    {
-      "count": 2,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Not said"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Open blockers"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Overleaf (edit)"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Overleaf (view)"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Poster"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Presentation"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Project doc / folder"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Rejected"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Short name"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Slides"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Started on"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Submission"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Target venue"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Target venues, with odds"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Title"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Topic"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/adminbot/paper-grid.ts",
-      "text": "Venue decision"
     },
     {
       "count": 1,
@@ -2620,7 +2697,7 @@
       "text": "Clear selection"
     },
     {
-      "count": 5,
+      "count": 6,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2674,6 +2751,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Current step"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Decisions AdminBot deliberately leaves to an administrator."
     },
     {
       "count": 1,
@@ -3157,6 +3241,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Research, staffing, and publication context"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Review queues"
     },
     {
       "count": 1,
@@ -3758,6 +3849,13 @@
       "kind": "object-property",
       "name": "title",
       "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "Emails need a decision"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
       "text": "Next steps are ready"
     },
     {
@@ -4255,6 +4353,13 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Accept/reject"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "All archival statuses"
     },
     {
@@ -4361,6 +4466,118 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Workshops"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "AdminBot held these messages instead of guessing. Attach valid venue evidence to stop that paper's reminder, or dismiss mail that changes nothing."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Attach to the open stage for"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Choose a paper and stage"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Classified as"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Emails needing review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "From"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Messages AdminBot cannot safely match will appear here."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Needs review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "No emails need review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "No paper currently has an open venue stage."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Not paper evidence"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Open in Gmail"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Received"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Resolving a card changes AdminBot's evidence ledger, not the original Gmail message or its labels."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "The 20 most recent decisions are kept here for verification."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/email-review.ts",
+      "text": "Why AdminBot stopped"
     },
     {
       "count": 1,
@@ -4795,13 +5012,6 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "cais"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/my-work.ts",
-      "text": "Cancel"
     },
     {
       "count": 2,
@@ -5284,6 +5494,20 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Dismiss"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Found by the weekly sweep — not submitted by a member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "Host / Organiser"
     },
     {
@@ -5319,6 +5543,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "read off"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "Reject"
     },
     {
@@ -5334,6 +5565,27 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "TBA"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "the page it came from"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "the programme page"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Use this date"
     },
     {
       "count": 1,
@@ -5914,7 +6166,35 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": ", and every section of the"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": ", as shown by the example above &mdash; with itemized expenses in each category, including the description / clear business purpose of the expense"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Amount"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "and"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Both forms are drafted for you by the LLM assistant in the box on this page: it reads your receipts and fills the forms in. It can misread an amount, a date, or a category, and it cannot know anything the receipts do not say &mdash; so treat what it produces as a first draft, and check every line against the receipts yourself. The steps below are on you, not on the assistant."
     },
     {
       "count": 1,
@@ -5949,6 +6229,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "DCS Expense Form"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Description"
     },
     {
@@ -5959,7 +6246,7 @@
       "text": "Details the assistant will place into both canonical forms."
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
@@ -5970,7 +6257,42 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Fill out the highlighted section of the"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Form preview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "gizelda.pereira@utoronto.ca"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "If you combine personal travel with business travel, you need to provide airfare comparisons from the same time you booked your flight, showing the pricing of the business leg of your trip only. In general, connect with Gizelda to get compliant supporting documentation."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Include descriptions of pick-up and drop-off locations for Taxi / Rideshare / Public Transport trips."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Include names of all attendees (first and last) if claiming a hospitality expense (a meal paid for the research group). The most senior person at the meal must be the one paying &mdash; e.g. if Zhijing is present at a research group lunch meeting, Zhijing pays for the meal."
     },
     {
       "count": 1,
@@ -5992,6 +6314,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Purpose"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Read this before trusting the generated forms"
     },
     {
       "count": 1,
@@ -6033,6 +6362,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "the amount claimed for each one."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Title"
     },
     {
@@ -6054,7 +6390,28 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Trip Summary Form"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
       "text": "Up to 12 PDFs or photos, 12 MB each. Add files with your first message."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "with both completed forms and the receipts, and provide any other information she needs."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/reimbursements.ts",
+      "text": "Without audit-compliant documentation, there is a risk of being unable to reimburse the expenses."
     },
     {
       "count": 1,
@@ -6097,6 +6454,111 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/time-availability.ts",
       "text": "Trip Away"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Countries"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Days observed away"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "home"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Home base"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "No sign-in in this window could be placed, so there is no timeline to draw yet."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Not enough places in this window to say where home is, so no stay is marked as travel. Widen the range, or wait for more sign-ins."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Observed"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Place"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Reading your sign-in log…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Sign-ins"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Span"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "These are the first and last sign-ins seen from each place, so a real trip started before the first date and ended after the last. Treat the spans as a floor, not as an itinerary."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Timeline"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Trips"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/travel.ts",
+      "text": "Your own travel, worked out from where each of your sign-ins came from. Nobody else's record is reachable from this page."
     },
     {
       "count": 1,

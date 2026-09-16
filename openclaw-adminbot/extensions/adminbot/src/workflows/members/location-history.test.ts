@@ -6,6 +6,7 @@ import {
   latestBySource,
   observationFor,
   profileCountry,
+  renderInZone,
   selfReportedChange,
 } from "./location-history.js";
 
@@ -94,6 +95,56 @@ describe("observationFor", () => {
       timezone: "Europe/Berlin",
     });
     expect(stated?.timezone).toBe("Europe/Berlin");
+  });
+
+  it("stamps the collection time in the source's zone without claiming that zone", () => {
+    // A login IP resolves to a country and a zone. The zone must never become the entry's
+    // `timezone` (that stays an inference-free field), but it is exactly what tells the collection
+    // instant in local wall-clock -- which is the axis a residency day is counted on.
+    const entry = observationFor({
+      memberId: "m-ada",
+      source: "login_ip",
+      raw: "Canada",
+      // 03:30 UTC is the small hours of the next day in UTC, but still the evening before in
+      // Toronto -- the case the local stamp exists to get right.
+      observedAt: "2026-08-12T03:30:00.000Z",
+      zone: "America/Toronto",
+    });
+    expect(entry?.observed_at).toBe("2026-08-12T03:30:00.000Z");
+    expect(entry?.observed_at_local).toBe("2026-08-11T23:30:00-04:00");
+    expect(entry?.timezone).toBeUndefined();
+  });
+
+  it("leaves the local stamp off when the source gave no zone", () => {
+    const entry = observationFor({
+      memberId: "m-ada",
+      source: "login_ip",
+      raw: "Canada",
+      observedAt: "2026-08-12T03:30:00.000Z",
+    });
+    expect(entry?.observed_at_local).toBeUndefined();
+  });
+});
+
+describe("renderInZone", () => {
+  it("carries the zone's offset at that instant, so DST is not a fixed guess", () => {
+    // Same wall-clock target across the DST boundary: Toronto is -04:00 in August and -05:00 in
+    // January. A fixed offset would misdate one of them, and a year of residency spans both.
+    expect(renderInZone("2026-08-12T03:30:00.000Z", "America/Toronto")).toBe(
+      "2026-08-11T23:30:00-04:00",
+    );
+    expect(renderInZone("2026-01-12T03:30:00.000Z", "America/Toronto")).toBe(
+      "2026-01-11T22:30:00-05:00",
+    );
+  });
+
+  it("renders UTC as a +00:00 offset, not a bare Z", () => {
+    expect(renderInZone("2026-08-12T09:00:00.000Z", "UTC")).toBe("2026-08-12T09:00:00+00:00");
+  });
+
+  it("returns undefined for an unknown zone or an unparseable instant", () => {
+    expect(renderInZone("2026-08-12T09:00:00.000Z", "Mars/Olympus")).toBeUndefined();
+    expect(renderInZone("not-a-date", "America/Toronto")).toBeUndefined();
   });
 });
 

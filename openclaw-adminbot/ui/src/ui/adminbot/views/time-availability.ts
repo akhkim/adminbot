@@ -39,6 +39,8 @@ import { icons } from "../../icons.ts";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import {
   availabilityRows,
+  deadlineMilestoneRow,
+  hasDeadlineMilestone,
   milestoneRows,
   timeOffRows,
   tripRows,
@@ -58,6 +60,8 @@ import {
 import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import {
+  CHART_COLORS,
+  CHART_NEUTRAL_COLOR,
   renderTimeAllocationChart,
   type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
@@ -295,18 +299,6 @@ export type AdminBotTimeAvailabilityProps = {
 };
 
 const DAY_MS = 86_400_000;
-// Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
-const CHART_COLORS = [
-  "#3575DA",
-  "#00676E",
-  "#F6511D",
-  "#188B3E",
-  "#783810",
-  "#F7615D",
-  "#8B5CF6",
-  "#D4A72C",
-] as const;
-const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
@@ -1436,13 +1428,7 @@ function addableDeadlines(
     if (shown.has(entry.venue.deadline_id)) {
       return false;
     }
-    return !milestones.some(
-      (row) =>
-        row.deadline_id === entry.venue.deadline_id ||
-        (!row.deadline_id &&
-          row.label.trim() === entry.venue.name.trim() &&
-          row.date === entry.venue.deadline_aoe.slice(0, 10)),
-    );
+    return !hasDeadlineMilestone(milestones, entry.venue);
   });
 }
 
@@ -1498,21 +1484,8 @@ function renderAddDeadline(
           if (!picked) {
             return;
           }
-          const { venue } = picked;
           props.onSaveSchedule(props.selectedMemberId, {
-            milestones: [
-              ...milestones,
-              {
-                deadline_id: venue.deadline_id,
-                date: venue.deadline_aoe.slice(0, 10),
-                label: venue.name,
-                // The snapshot states every deadline in AoE, so the clock is copied across with the
-                // zone that makes it mean what the conference said.
-                time: venue.deadline_aoe.slice(11, 16),
-                timezone: AOE_TIMEZONE,
-                ...(venue.link ? { link: venue.link } : {}),
-              },
-            ],
+            milestones: [...milestones, deadlineMilestoneRow(picked.venue)],
           });
         }}
       >
@@ -1576,6 +1549,7 @@ function renderBigDeadlines(
     .map((entry) => ({
       date: entry.venue.deadline_aoe.slice(0, 10),
       deadline_id: undefined as string | undefined,
+      venue_deadline_id: entry.venue.deadline_id,
       instant: entry.instant,
       label: entry.venue.name,
       link: entry.venue.link,
@@ -1601,7 +1575,13 @@ function renderBigDeadlines(
   // Conferences are added after the member's own rows are capped, so a full personal list can
   // never push them off the banner. Sorted by instant rather than by date so two things on the
   // same day fall in the order they actually happen.
-  const rows = [...mine, ...conferences].toSorted((left, right) => left.instant - right.instant);
+  // A member can also add one of these four themselves, from the Deadlines board. Their own row is
+  // the one they can remove, so it wins and the lab's copy is not listed a second time.
+  const ownDeadlineIds = new Set(mine.map((row) => row.deadline_id).filter(Boolean));
+  const rows = [
+    ...mine,
+    ...conferences.filter((row) => !ownDeadlineIds.has(row.venue_deadline_id)),
+  ].toSorted((left, right) => left.instant - right.instant);
 
   return html`
     <aside class="adminbot-time-availability__deadlines" data-testid="time-availability-deadlines">

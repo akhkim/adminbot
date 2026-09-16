@@ -13,8 +13,8 @@
 // polls here: the list is fetched once when the tab opens, so the DOM is a safe place for the two
 // fields of an admin's recovery form.
 import { html, nothing } from "lit";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { t } from "../../../i18n/index.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
@@ -62,13 +62,32 @@ function formatStart(startedAt: string): string {
     : parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
+/**
+ * How long the recording runs.
+ *
+ * Three sources, most exact first: the length the Zoom notice stated, the transcript's own, and a
+ * meeting length typed by hand. The first two are seconds and are rendered as such, because the
+ * lab's recordings are routinely short -- a 98-second clip rounded to minutes reads "2 min", and
+ * one under thirty seconds rounds to nothing at all and disappears from the card.
+ *
+ * `duration_minutes` stays the last resort rather than the first: it is the length of the
+ * *meeting* somebody filed by hand, which is a different number from the length of the recording.
+ */
 function formatDuration(meeting: MeetingRecord): string | undefined {
-  const minutes =
-    meeting.duration_minutes ??
-    (meeting.transcript?.duration_seconds
-      ? Math.round(meeting.transcript.duration_seconds / 60)
-      : undefined);
-  return minutes ? t("adminbotMeetings.minutes", { minutes: String(minutes) }) : undefined;
+  const seconds = meeting.duration_seconds ?? meeting.transcript?.duration_seconds;
+  if (seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return hours
+      ? t("adminbotMeetings.durationHours", { hours: String(hours), minutes: String(minutes) })
+      : t("adminbotMeetings.duration", {
+          minutes: String(minutes),
+          seconds: String(seconds % 60),
+        });
+  }
+  return meeting.duration_minutes
+    ? t("adminbotMeetings.minutes", { minutes: String(meeting.duration_minutes) })
+    : undefined;
 }
 
 /**

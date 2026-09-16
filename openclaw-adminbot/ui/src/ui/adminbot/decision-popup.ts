@@ -138,6 +138,15 @@ export type DecisionBannerProps = {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   /**
+   * Close it for good.
+   *
+   * Distinct from "Not now", which shrinks the banner and leaves the news on the page. This is the
+   * author saying they are done with it, so it writes the seen stamp on the way out -- the same
+   * one Save writes -- and the banner does not come back on the next load. The paper card still
+   * carries the decision; what goes away is the prompt about it.
+   */
+  onDismiss: () => void;
+  /**
    * Already recorded, and nothing changed since.
    *
    * The banner stays on screen either way. Making it disappear on save read as the page eating
@@ -179,6 +188,35 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
     }
   };
 
+  // Dismissing an answer that was never recorded still has to persist, or the banner is back on
+  // the next load and "close" meant nothing. Saving the stamp alone leaves every other field as it
+  // was: closing is not an answer, and must not write one.
+  const dismiss = () => {
+    if (!props.saved) {
+      props.onSavePaper({
+        id: paper.id,
+        title: paper.title,
+        authors: paper.authors ?? [],
+        currentStep: paper.current_step as AdminBotPaperStep,
+        decisionSeen: seenStamp(paper, decision),
+      });
+    }
+    props.onDismiss();
+  };
+
+  const dismissButton = html`
+    <button
+      type="button"
+      class="btn btn--sm"
+      data-testid=${`decision-dismiss-${paper.id}`}
+      aria-label="Close this decision"
+      title="Close"
+      @click=${dismiss}
+    >
+      ✕
+    </button>
+  `;
+
   const hasAnswer = Boolean(
     draft.track || draft.presentation || draft.attending || draft.nextVenue,
   );
@@ -204,14 +242,17 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
           ${decision === "accept" ? html`Accepted to ${venue}` : html`Not accepted at ${venue}`} ·
           <span class="decision-banner__paper">${paper.title}</span>
         </span>
-        <button
-          type="button"
-          class="btn btn--sm"
-          data-testid=${`decision-expand-${paper.id}`}
-          @click=${props.onToggleCollapsed}
-        >
-          Open
-        </button>
+        <div class="decision-banner__actions">
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid=${`decision-expand-${paper.id}`}
+            @click=${props.onToggleCollapsed}
+          >
+            Open
+          </button>
+          ${dismissButton}
+        </div>
       </section>
     `;
   }
@@ -231,14 +272,17 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
           </div>
           <div class="decision-banner__paper">${paper.title}</div>
         </div>
-        <button
-          type="button"
-          class="btn btn--sm"
-          data-testid=${`decision-collapse-${paper.id}`}
-          @click=${props.onToggleCollapsed}
-        >
-          Not now
-        </button>
+        <div class="decision-banner__actions">
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid=${`decision-collapse-${paper.id}`}
+            @click=${props.onToggleCollapsed}
+          >
+            Not now
+          </button>
+          ${dismissButton}
+        </div>
       </div>
 
       ${decision === "accept"

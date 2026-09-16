@@ -2,6 +2,7 @@
 // which slots the nudge sweep would actually chase.
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST, ADMINBOT_OVERLEAF_URL_ENV } from "../../contracts/overleaf.js";
 import type { AdminBotSocialDraftRecord } from "../../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotRegistry,
@@ -76,7 +77,7 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(24);
+    expect(adminBotPaperSlots).toHaveLength(25);
     for (const slot of adminBotPaperSlots) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
@@ -115,6 +116,7 @@ describe("the registry", () => {
       }
       expect(definition.urlHosts).toBeUndefined();
       expect(definition.urlPath).toBeUndefined();
+      expect(definition.urlPathPattern).toBeUndefined();
     }
   });
 
@@ -123,6 +125,13 @@ describe("the registry", () => {
     // circulates only the edit link would sit on an open checklist item forever.
     expect(adminBotPaperSlotRegistry.overleaf_edit.required).toBe(true);
     expect(adminBotPaperSlotRegistry.overleaf_view.required).toBe(false);
+  });
+
+  it("keeps the share link advisory and ungating, since it is a convenience, not an artifact", () => {
+    // It grants the same write access as the project link, so a paper that has one is not more
+    // finished than a paper that does not -- and an author who never minted one is not behind.
+    expect(adminBotPaperSlotRegistry.overleaf_share.required).toBe(false);
+    expect(adminBotPaperSlotRegistry.overleaf_share.gates).toBeNull();
   });
 
   it("no longer carries the slots the revision removed", () => {
@@ -135,7 +144,7 @@ describe("the registry", () => {
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
     const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
-    expect(rows).toHaveLength(24);
+    expect(rows).toHaveLength(25);
     expect(rows.find((row) => row.slot === "overleaf_edit")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
   });
@@ -198,6 +207,74 @@ describe("value validation", () => {
     expect(
       validateAdminBotPaperSlotUrl("overleaf_view", "https://www.overleaf.com/read/abcdef"),
     ).toEqual({ ok: true });
+  });
+
+  it("takes an Overleaf share link, whose token is the whole path", () => {
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_share",
+        "https://www.overleaf.com/1234567890abcdefghijkl#a1b2c3",
+      ),
+    ).toEqual({ ok: true });
+    // The fragment is a client-side anchor Overleaf never sees, so a link without one is the
+    // same link and must not be refused.
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_share",
+        "https://www.overleaf.com/1234567890abcdefghijkl",
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("will not let the three Overleaf shapes stand in for one another", () => {
+    // The share slot takes one path segment; the other two shapes have two. That is what stops a
+    // token being stored where PaperMentor expects an id it can address, and vice versa.
+    for (const wrong of [
+      "https://www.overleaf.com/project/6a03485faf2be710dce38b2f",
+      "https://www.overleaf.com/read/xzqvbnmklpqr",
+    ]) {
+      expect(validateAdminBotPaperSlotUrl("overleaf_share", wrong)).toMatchObject({ ok: false });
+    }
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_edit",
+        "https://www.overleaf.com/1234567890abcdefghijkl",
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_view",
+        "https://www.overleaf.com/1234567890abcdefghijkl",
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("takes a project on the lab's own Overleaf, which is where PaperMentor can read it", () => {
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_edit",
+        `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      validateAdminBotPaperSlotUrl(
+        "overleaf_view",
+        `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("takes the instance a deployment configured, on top of the two it ships with", () => {
+    const env = { [ADMINBOT_OVERLEAF_URL_ENV]: "https://tex.example.edu" };
+    expect(
+      validateAdminBotPaperSlotUrl("overleaf_edit", "https://tex.example.edu/project/64ab", {
+        env,
+      }),
+    ).toEqual({ ok: true });
+    // Still not anywhere at all: the configured host is an addition, not a way to turn the check off.
+    expect(
+      validateAdminBotPaperSlotUrl("overleaf_edit", "https://evil.example/project/64ab", { env }),
+    ).toMatchObject({ ok: false });
   });
 
   it("takes a Drive folder as well as a doc for the project folder", () => {

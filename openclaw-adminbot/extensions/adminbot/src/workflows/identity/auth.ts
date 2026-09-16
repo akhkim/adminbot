@@ -16,6 +16,7 @@ import {
 import type { AdminBotServiceStore } from "../../kernel/service.js";
 import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
+import { isTravelHistorySubject } from "../members/travel-history.js";
 import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
 
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
@@ -356,11 +357,11 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
-    this.recordLoginTime(member.id);
+    const loginEventId = this.recordLoginTime(member.id);
     if (this.geolocateIp && request.remoteIp) {
       // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
       // sign-in itself, and must never make login wait on a third-party API.
-      void this.recordLoginLocation(member.id, request.remoteIp);
+      void this.recordLoginLocation(member.id, request.remoteIp, loginEventId);
     }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
   }
@@ -382,10 +383,10 @@ export class AdminBotAuthService {
    * Re-reads rather than reusing the `member` from login() for the same reason the location writer
    * does: logins race, and this must touch one field and never clobber a concurrent profile edit.
    */
-  private recordLoginTime(memberId: string): void {
+  private recordLoginTime(memberId: string): string | undefined {
     const current = this.store.getLabMember(memberId);
     if (!current) {
-      return;
+      return undefined;
     }
     const now = this.now().toISOString();
     this.store.saveLabMember({ ...current, last_login_at: now, updated_at: now });
@@ -395,7 +396,14 @@ export class AdminBotAuthService {
     //
     // Same choke point on purpose: a login that stamps the field but not the log, or the reverse,
     // is two sources of truth that disagree with nobody able to say which drifted.
-    this.store.appendLoginEvent({ id: randomUUID(), member_id: memberId, at: now });
+    //
+    // The id is returned so the geolocation below can stamp *this* sign-in with where it came
+    // from. Matching on (member, timestamp) instead would be a guess: two tabs signing in within
+    // the same second are two rows, and the travel timeline is only as good as the row the
+    // location lands on.
+    const loginEventId = randomUUID();
+    this.store.appendLoginEvent({ id: loginEventId, member_id: memberId, at: now });
+    return loginEventId;
   }
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
@@ -404,11 +412,44 @@ export class AdminBotAuthService {
   // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
   // self-reported and are deliberately never touched here -- an inferred country must not silently
   // overwrite what a member told us about themselves.
-  private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
+  private async recordLoginLocation(
+    memberId: string,
+    remoteIp: string,
+    loginEventId?: string,
+  ): Promise<void> {
     try {
       const location = await this.geolocateIp?.(remoteIp);
       if (!location || (!location.country && !location.continent && !location.city)) {
         return;
+      }
+      // The sign-in row first, before the member row: it is the only one of the two that is a
+      // record rather than a stamp, so if the process dies between these two writes the timeline
+      // is the half that survives. The member fields below can be re-derived from it; the reverse
+      // is not true, because the next login overwrites them.
+      // Who gets a place stamped on their sign-in, and it is now two different answers.
+      //
+      // It used to be the head professor alone: hers was the only travel history the lab kept, and
+      // gating the write as well as the read was the point -- "a location history nobody may read
+      // is still a location history, and the cheapest way not to hold 200 people's movements is
+      // not to record them."
+      //
+      // `location_audience_city` opts the lab out of that. A standing local event whose guest list
+      // is "whoever is in Zurich" cannot be answered without knowing where people are, so setting
+      // it turns the stamp on for everybody. This is a real change in what the lab holds: a
+      // per-login movement record for all 200 members, not one. It is deliberately a setting
+      // rather than a constant so the lab opts in explicitly and can stop by clearing one field --
+      // and it is named for the feature that wanted it, so anybody asking "why are we keeping
+      // these" finds the answer rather than a bare boolean.
+      //
+      // The *read* stays where it was. `isTravelHistorySubject` still gates
+      // GET /lab/members/:id/travel, so the timeline page remains hers alone; the rows collected
+      // for everybody else are read only by the audience sweep, which reports a city and never a
+      // history. That asymmetry is exactly what the old comment warned about, and it is now a
+      // choice the lab has made rather than an oversight -- see docs/tools/adminbot-local-event.md.
+      const settings = this.store.getSettings();
+      const stampEveryone = Boolean(settings?.location_audience_city?.trim());
+      if (loginEventId && (stampEveryone || isTravelHistorySubject(memberId, settings))) {
+        this.store.attachLoginEventLocation(loginEventId, location);
       }
       // Re-read rather than reuse the `member` from login(): logins can race, and this must
       // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.
@@ -438,6 +479,10 @@ export class AdminBotAuthService {
           source: "login_ip",
           raw: location.country,
           observedAt: this.now().toISOString(),
+          // The zone IPinfo returned for this IP, used only to stamp the collection time in local
+          // wall-clock -- it is never written to the entry's `timezone`, which stays reserved for a
+          // stated zone. Absent on the Lite tier, which leaves `observed_at_local` unset.
+          zone: location.timezone,
         });
         const latest = latestBySource(this.store.listMemberLocations(memberId, 20)).get("login_ip");
         if (entry && isNewObservation(latest, entry)) {

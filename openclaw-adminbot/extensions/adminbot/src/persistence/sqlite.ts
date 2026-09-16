@@ -62,6 +62,8 @@ import type {
 } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
+import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { ensureInferenceQueueSchema } from "../inference/queue-store.js";
 import {
   AdminBotService,
@@ -86,6 +88,7 @@ import {
 } from "./lab-sharing-interest.js";
 import {
   ensureDirectorStatusSchema,
+  listDirectorStatusHistory,
   saveDirectorStatus,
   readDirectorStatus,
 } from "./lab-sharing-status.js";
@@ -356,6 +359,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         provided_by_member_id TEXT,
         provided_at TEXT,
         validated_at TEXT,
+        -- What confirmed the artifact is really there, as opposed to the value being the right
+        -- shape. Nullable and usually null: most slots have no verifier at all.
+        verified_by TEXT,
+        verified_at TEXT,
         invalid_reason TEXT,
         waived_by_member_id TEXT,
         waived_reason TEXT,
@@ -402,6 +409,34 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         confidence REAL,
         PRIMARY KEY (paper_id, stage)
       );
+
+      -- One PaperMentor review of one project: that it ran, and what it counted.
+      --
+      -- The comments themselves are not here and never will be. They are unpublished paper content
+      -- and they already exist where they are useful -- as threads in the author's own project --
+      -- so what this table holds is the part the lab chases on: when the review happened, how many
+      -- comments it produced, how severe, and which agents did not finish. See contracts/papermentor.ts.
+      --
+      -- Keyed by "<project id>:<reviewedAt>" rather than by paper, because a paper is reviewed
+      -- many times and each run is its own fact. The id is what makes re-reading the collector's
+      -- source file a no-op.
+      CREATE TABLE IF NOT EXISTS adminbot_papermentor_runs (
+        id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        reviewed_at TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        model TEXT,
+        paper_type TEXT,
+        comments_total INTEGER NOT NULL,
+        by_severity TEXT NOT NULL,
+        by_category TEXT NOT NULL,
+        by_document TEXT NOT NULL,
+        failed_agents TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_papermentor_runs_paper_idx
+        ON adminbot_papermentor_runs(paper_id, reviewed_at DESC);
 
       -- The social draft itself, kept because consent is asked against a specific wording.
       CREATE TABLE IF NOT EXISTS adminbot_paper_social_drafts (
@@ -652,6 +687,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_login_events_at_idx
         ON adminbot_login_events(at DESC);
 
+      -- Which Control UI tab was opened, by whom, when. The third of these logs and the same shape
+      -- for the same reason: the question is a distribution, so it has to be rows.
+      --
+      -- The tab column holds the UI's own tab id, stored as sent -- see contracts/tab-visits.ts
+      -- for why this side does not police the list. impersonated is 0/1 rather than absent so a
+      -- reader can exclude an admin's "view as" browsing without joining anything.
+      CREATE TABLE IF NOT EXISTS adminbot_tab_visits (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        tab TEXT NOT NULL,
+        at TEXT NOT NULL,
+        impersonated INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- The window sweep is the only read; the member index is what makes dwell derivable, since
+      -- that walks one member's visits in order.
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_at_idx
+        ON adminbot_tab_visits(at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_member_idx
+        ON adminbot_tab_visits(member_id, at);
+
       -- Who changed which field of what, when. slot_id is namespaced by subject (see
       -- contracts/activity-log.ts) so profile fields and paper slots share one table without
       -- colliding.
@@ -708,6 +764,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
+    this.migrateLoginEventColumns();
   }
 
   /**
@@ -771,6 +828,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     );
   }
 
+  /**
+   * Give an `adminbot_login_events` written before travel history its four location columns.
+   *
+   * All nullable: every row that already exists was written when only the timestamp was recorded,
+   * and there is no way to recover where those sign-ins came from. They read back as located
+   * nowhere, which is exactly what is known about them -- backfilling them from the member's
+   * current `last_login_city` would invent a travel history that never happened.
+   */
+  private migrateLoginEventColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_login_events)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    for (const column of ["country", "continent", "city", "timezone"]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_login_events ADD COLUMN ${column} TEXT`);
+      }
+    }
+  }
+
   private migrateWorkshopMatchRuns(): void {
     const columns = new Set(
       (
@@ -822,6 +900,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     );
     if (!columns.has("value_note")) {
       this.db.exec("ALTER TABLE adminbot_paper_slots ADD COLUMN value_note TEXT");
+    }
+    // Nullable with no default, like every other column added here: every row that already exists
+    // reads back as unconfirmed, which is exactly what it is. Nothing is re-checked on upgrade --
+    // the verification pass finds them in its own time.
+    for (const column of ["verified_by", "verified_at"]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_paper_slots ADD COLUMN ${column} TEXT`);
+      }
     }
     if (!columns.has("nudge_count")) {
       return;
@@ -1472,6 +1558,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
     ["adminbot_badge_assignments", "member_id"],
     ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
@@ -1535,6 +1622,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
     ["adminbot_badge_assignments", "member_id"],
     ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
@@ -1869,6 +1957,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       "adminbot_paper_conference_attendees",
       "adminbot_paper_reimbursements",
       "adminbot_paperflow_evidence",
+      "adminbot_papermentor_runs",
       // Left behind until now, against the comment above. A weekly update is the one row on a
       // paper that only its author can write, so an orphan of it is somebody's work attributed to
       // a paper that no longer exists -- and it is counted by the adoption rate.
@@ -1897,10 +1986,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           provided_by_member_id,
           provided_at,
           validated_at,
+          verified_by,
+          verified_at,
           invalid_reason,
           waived_by_member_id,
           waived_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(paper_id, slot) DO UPDATE SET
           status = excluded.status,
           url = excluded.url,
@@ -1909,6 +2000,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           provided_by_member_id = excluded.provided_by_member_id,
           provided_at = excluded.provided_at,
           validated_at = excluded.validated_at,
+          verified_by = excluded.verified_by,
+          verified_at = excluded.verified_at,
           invalid_reason = excluded.invalid_reason,
           waived_by_member_id = excluded.waived_by_member_id,
           waived_reason = excluded.waived_reason`,
@@ -1923,6 +2016,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.provided_by_member_id ?? null,
         record.provided_at ?? null,
         record.validated_at ?? null,
+        record.verified_by ?? null,
+        record.verified_at ?? null,
         record.invalid_reason ?? null,
         record.waived_by_member_id ?? null,
         record.waived_reason ?? null,
@@ -2240,6 +2335,56 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => paperSlotFromRow(row));
   }
 
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void {
+    // First sighting wins. The collector re-reads the same cached review on every pass until a
+    // newer one overwrites it, so a second write of the same run id is that pass running again --
+    // and `ingested_at` should stay the moment the lab first heard about the review.
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_papermentor_runs
+          (id, paper_id, project_id, reviewed_at, ingested_at, model, paper_type,
+           comments_total, by_severity, by_category, by_document, failed_agents)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(
+        record.id,
+        record.paper_id,
+        record.project_id,
+        record.reviewed_at,
+        record.ingested_at,
+        record.model ?? null,
+        record.paper_type ?? null,
+        record.comments_total,
+        JSON.stringify(record.by_severity),
+        JSON.stringify(record.by_category),
+        JSON.stringify(record.by_document),
+        JSON.stringify(record.failed_agents),
+      );
+  }
+
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined {
+    const row = this.db.prepare("SELECT * FROM adminbot_papermentor_runs WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? paperMentorRunFromRow(row) : undefined;
+  }
+
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_papermentor_runs WHERE paper_id = ? ORDER BY reviewed_at DESC, id",
+            )
+            .all(paperId)
+        : this.db
+            .prepare("SELECT * FROM adminbot_papermentor_runs ORDER BY reviewed_at DESC, id")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map(paperMentorRunFromRow);
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins. A stage that already closed stays closed with the mail that closed it:
     // a later bcc on the same decision is the author forwarding the thread again, and letting it
@@ -2304,6 +2449,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
   readDirectorStatus(): LabDirectorStatus | null {
     return readDirectorStatus(this.db);
+  }
+  listDirectorStatusHistory(limit?: number): LabDirectorStatus[] {
+    return listDirectorStatusHistory(this.db, limit);
   }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);
@@ -2531,6 +2679,34 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
       )
       .all(since) as AdminBotLoginEvent[];
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.db
+      .prepare(
+        "INSERT INTO adminbot_tab_visits (id, member_id, tab, at, impersonated) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(visit.id, visit.member_id, visit.tab, visit.at, visit.impersonated ? 1 : 0);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, member_id, tab, at, impersonated FROM adminbot_tab_visits
+         WHERE at >= ? ORDER BY at DESC, rowid DESC`,
+      )
+      .all(since) as Array<{
+      id: string;
+      member_id: string;
+      tab: string;
+      at: string;
+      impersonated: number;
+    }>;
+    // 0/1 back to a boolean, and absent rather than `false`: the memory store never writes the
+    // field at all when it is off, and the two stores are meant to be indistinguishable.
+    return rows.map(({ impersonated, ...visit }) =>
+      impersonated ? { ...visit, impersonated: true } : visit,
+    );
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {
@@ -3310,9 +3486,28 @@ function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord
     ...optional("provided_by_member_id"),
     ...optional("provided_at"),
     ...optional("validated_at"),
+    ...optional("verified_by"),
+    ...optional("verified_at"),
     ...optional("invalid_reason"),
     ...optional("waived_by_member_id"),
     ...optional("waived_reason"),
+  };
+}
+
+function paperMentorRunFromRow(row: Record<string, unknown>): AdminBotPaperMentorRun {
+  return {
+    id: String(row.id),
+    paper_id: String(row.paper_id),
+    project_id: String(row.project_id),
+    reviewed_at: String(row.reviewed_at),
+    ingested_at: String(row.ingested_at),
+    ...optionalText(row, "model"),
+    ...optionalText(row, "paper_type"),
+    comments_total: Number(row.comments_total),
+    by_severity: parseJson<Record<string, number>>(String(row.by_severity)),
+    by_category: parseJson<Record<string, number>>(String(row.by_category)),
+    by_document: parseJson<AdminBotPaperMentorRun["by_document"]>(String(row.by_document)),
+    failed_agents: parseJson<string[]>(String(row.failed_agents)),
   };
 }
 

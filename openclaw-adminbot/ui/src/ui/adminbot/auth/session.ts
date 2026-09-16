@@ -169,6 +169,7 @@ export type LabMember = {
   openreview_id?: string | null;
   cv_url?: string | null;
   intake_form_url?: string | null;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string | null;
   twitter_url?: string | null;
   github_url?: string | null;
@@ -205,6 +206,7 @@ export type MemberProfileUpdate = {
   // set it could hide or invent their own career changes.
   cv_url?: string;
   intake_form_url?: string;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;
@@ -1669,7 +1671,20 @@ export async function updateCalendarEvent(
 
 export async function inviteToCalendarEvent(
   eventId: string,
-  request: { attendees: string[]; summary?: string; rationale?: string },
+  request: {
+    attendees: string[];
+    /**
+     * Addresses to take off the event, for an exclusive send.
+     *
+     * Paired with `remaining_attendees` and never sent alone: the calendar write behind a removal
+     * replaces the guest list rather than subtracting from it, so the route refuses a removal that
+     * does not say what should be left.
+     */
+    remove?: string[];
+    remaining_attendees?: string[];
+    summary?: string;
+    rationale?: string;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<CalendarActionResult>> {
@@ -2923,6 +2938,8 @@ export type MeetingRecord = {
   topic: string;
   started_at: string;
   duration_minutes?: number;
+  /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
+  duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
   transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
   summary?: {
@@ -3056,6 +3073,71 @@ export async function sendMeetingAttendanceNudges(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: result.body as MeetingAttendanceNudgeResult };
+}
+
+/**
+ * One lab-wide broadcast from the head of the lab.
+ *
+ * Mirrors LabDirectorStatus in extensions/adminbot/src/contracts/lab-sharing-status.ts. `id` and
+ * `retracted_at` are optional here and not there: a service older than the archive answers without
+ * them, and this page should render that rather than crash on it.
+ */
+export type LabBroadcast = {
+  id?: string;
+  availability: "available" | "busy" | "away" | "unknown";
+  message: string;
+  expires_at: string;
+  updated_at: string;
+  updated_by: string;
+  retracted_at?: string;
+};
+
+/**
+ * The current broadcast and the archive behind it.
+ *
+ * Both come from one read, because the banner and the "Zhijing's updates" list are two views of the
+ * same answer and a second round trip would let them disagree about which entry is current.
+ */
+export async function fetchLabBroadcasts(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = await authedJson(baseUrl, "/lab-sharing/status", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return {
+    ok: true,
+    value: { status: body?.status ?? null, history: body?.history ?? [] },
+  };
+}
+
+/**
+ * Publish a broadcast, or take the current one down.
+ *
+ * Admin-only server-side; this is the write half of `fetchLabBroadcasts`. `clear` retracts rather
+ * than deletes -- see the contract note -- so the archive keeps it either way.
+ */
+export async function publishLabBroadcast(
+  draft: { availability: LabBroadcast["availability"]; message: string; expires_at: string } | null,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = draft
+    ? await authedJson(baseUrl, "/lab-sharing/status", "PUT", sessionToken, draft)
+    : await authedJson(baseUrl, "/lab-sharing/status/clear", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return { ok: true, value: { status: body?.status ?? null, history: body?.history ?? [] } };
 }
 
 export type MemberNotification = {
@@ -3238,6 +3320,13 @@ export type LogisticsMeeting = {
   timezone?: string;
   length_minutes?: number;
   submitted_at?: string;
+  /** Free-text location, which is what the call sheet's city column actually holds. */
+  city?: string;
+  doc_prep_url?: string;
+  /** Tri-state: absent is "not answered", which is not the same as "no". */
+  whatsapp_hello?: boolean;
+  /** yyyy-mm-dd after which the call stops being worth placing. */
+  latest_ok_date?: string;
 };
 
 export type LogisticsRequestInput = {
@@ -3308,11 +3397,21 @@ export async function fetchLogisticsRequest(
   return { ok: true, value: result.body as LogisticsRequest };
 }
 
+/**
+ * A submitted request, plus what the automatic call-sheet push made of it.
+ *
+ * Only a `book_meeting` carries `call_sheet`, and only where the deployment has the queue wired
+ * up -- so it is optional, and its absence means "no call sheet was involved", never "it failed".
+ */
+export type SubmittedLogisticsRequest = LogisticsRequest & {
+  call_sheet?: { queued: boolean; message: string };
+};
+
 export async function submitLogisticsRequest(
   input: LogisticsRequestInput,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LogisticsRequest>> {
+): Promise<AuthResult<SubmittedLogisticsRequest>> {
   const result = await authedJson(baseUrl, "/logistics/requests", "POST", sessionToken, input);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -3320,7 +3419,34 @@ export async function submitLogisticsRequest(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as LogisticsRequest };
+  return { ok: true, value: result.body as SubmittedLogisticsRequest };
+}
+
+/**
+ * Files the signature request on the lab's Google Form.
+ *
+ * Posted through AdminBot rather than from the browser: the form's first column is who is asking,
+ * and the service answers it from the roster instead of trusting whatever the page sends.
+ */
+export async function submitSignatureFormRequest(
+  input: { drive_url: string; deadline: string; context?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ submitted: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/logistics/signature-form",
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { submitted: boolean } };
 }
 
 /** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */
@@ -3512,6 +3638,133 @@ export type MemberProfileOverview = {
   mandatoryFieldCount: number;
 };
 
+/** One tab's share of a usage window, as the page reads it. */
+export type TabVisitRate = {
+  tab: string;
+  visits: number;
+  members: number;
+  visitsPerDay: number;
+  dwellSecondsMedian: number;
+  dwellSecondsTotal: number;
+  dwellSamples: number;
+  firstAt: string;
+  lastAt: string;
+};
+
+export type TabVisitReport = {
+  from: string;
+  to: string;
+  days: number;
+  visits: number;
+  members: number;
+  impersonatedVisits: number;
+  tabs: TabVisitRate[];
+};
+
+/** One row of the log, as the CSV writes it. Deliberately the service's own field names. */
+export type TabVisitRow = {
+  id: string;
+  member_id: string;
+  tab: string;
+  at: string;
+  impersonated?: boolean;
+};
+
+/**
+ * Tell the service a tab was opened.
+ *
+ * Returns nothing and throws nothing: navigation must not wait on this and must not break when it
+ * fails. A dropped visit is a gap in a usage log; a navigation that stalls or a page that errors
+ * because analytics was unreachable is a broken tool, and the second is much worse than the first.
+ */
+export async function recordTabVisit(
+  sessionToken: string,
+  baseUrl: string,
+  tab: string,
+): Promise<void> {
+  try {
+    await authedJson(baseUrl, "/ui/tab-visits", "POST", sessionToken, { tab });
+  } catch {
+    // Same reasoning as the unreachable branch: a usage log is never worth a visible failure.
+  }
+}
+
+export async function fetchTabVisitReport(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitReport>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    from?: string;
+    to?: string;
+    days?: number;
+    visits?: number;
+    members?: number;
+    impersonated_visits?: number;
+    tabs?: Array<Record<string, unknown>>;
+  } | null;
+  return {
+    ok: true,
+    value: {
+      from: body?.from ?? "",
+      to: body?.to ?? "",
+      days: body?.days ?? days,
+      visits: body?.visits ?? 0,
+      members: body?.members ?? 0,
+      impersonatedVisits: body?.impersonated_visits ?? 0,
+      tabs: (body?.tabs ?? []).map((row) => ({
+        tab: typeof row.tab === "string" ? row.tab : "",
+        visits: numberOr(row.visits),
+        members: numberOr(row.members),
+        visitsPerDay: numberOr(row.visits_per_day),
+        dwellSecondsMedian: numberOr(row.dwell_seconds_median),
+        dwellSecondsTotal: numberOr(row.dwell_seconds_total),
+        dwellSamples: numberOr(row.dwell_samples),
+        firstAt: typeof row.first_at === "string" ? row.first_at : "",
+        lastAt: typeof row.last_at === "string" ? row.last_at : "",
+      })),
+    },
+  };
+}
+
+/** The raw rows behind the report, for the analysis that happens outside this tool. */
+export async function fetchTabVisitRows(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitRow[]>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits/rows?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { visits?: TabVisitRow[] } | null;
+  return { ok: true, value: body?.visits ?? [] };
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 export async function fetchMemberProfileOverview(
   sessionToken: string,
   baseUrl: string,
@@ -3555,6 +3808,66 @@ export type EscalatedNudgeRow = {
   escalatedAt: string;
   items: Array<{ id: string; title: string; body: string; createdAt: string; tab?: string }>;
 };
+
+/** One paper waiting on the head professor's yes to post. */
+export type PiReviewRow = {
+  paperId: string;
+  title: string;
+  authors: string[];
+  venue?: string;
+  /** When the package became ready, which is what the queue is ordered by. */
+  waitingSince?: string;
+  /** The lab's copy of the exact PDF that would go public. */
+  drivePdfUrl?: string;
+  /** Whether everything else the arXiv package needs is on file. */
+  packageComplete: boolean;
+};
+
+/**
+ * The papers at the PI gate (GET /papers/pi-review).
+ *
+ * A 404 reads as an empty queue for the same reason the escalation queue does: the page ships from
+ * Vercel on merge and the service follows on the host, so a service that predates the route should
+ * render as "nothing waiting", not as a broken panel.
+ */
+export async function fetchPiReviewQueue(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PiReviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/pi-review", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: Array<Record<string, unknown>> };
+  const rows = (body.papers ?? []).flatMap((row) => {
+    const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
+    const title = typeof row.title === "string" ? row.title : "";
+    if (!paperId || !title) {
+      return [];
+    }
+    const authors = Array.isArray(row.authors)
+      ? row.authors.filter((name): name is string => typeof name === "string")
+      : [];
+    return [
+      {
+        paperId,
+        title,
+        authors,
+        ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
+        ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
+        ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+        packageComplete: row.package_complete === true,
+      },
+    ];
+  });
+  return { ok: true, value: rows };
+}
 
 /**
  * The escalation queue (GET /nudges/escalated).
@@ -4036,6 +4349,67 @@ function readRecentUpdates(
   }
   const body = result.body as { updates?: RecentUpdateRow[] } | null;
   return { ok: true, value: body?.updates ?? [] };
+}
+
+/**
+ * One run of sign-ins from a single place. Mirrors AdminBotTravelStay in the service, which is
+ * where the collapse from raw logins to stays happens and where the reasoning for it lives.
+ */
+export type TravelStayRow = {
+  id: string;
+  city?: string;
+  country?: string;
+  continent?: string;
+  timezone?: string;
+  first_seen: string;
+  last_seen: string;
+  login_count: number;
+  observed_days: number;
+  away: boolean;
+};
+
+/** Mirrors AdminBotTravelHistory. */
+export type TravelHistoryRow = {
+  member_id: string;
+  member_name?: string;
+  home_city?: string;
+  home_country?: string;
+  stays: TravelStayRow[];
+  login_count: number;
+  unlocated_login_count: number;
+};
+
+/**
+ * One member's travel timeline, derived from their sign-in log.
+ *
+ * The range is passed to the service rather than applied here: a stay is a run of consecutive
+ * sign-ins, so trimming the log after the collapse would cut a stay in half and report a departure
+ * that never happened.
+ */
+export async function fetchMemberTravelHistory(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  range?: { fromIso?: string; toIso?: string },
+): Promise<AuthResult<TravelHistoryRow | null>> {
+  const query = new URLSearchParams();
+  if (range?.fromIso) query.set("from", range.fromIso);
+  if (range?.toIso) query.set("to", range.toIso);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/travel${suffix}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { travel?: TravelHistoryRow } | null;
+  return { ok: true, value: body?.travel ?? null };
 }
 
 export type PaperSlotRow = {

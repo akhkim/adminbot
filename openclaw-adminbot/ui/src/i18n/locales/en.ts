@@ -412,10 +412,48 @@ export const en: TranslationMap = {
   },
 
   professor: {
+    broadcast: {
+      title: "Broadcast to the lab",
+      hint: "Shown at the top of every member's dashboard until the date below.",
+      placeholder: "e.g. Sept 11-17: Zürich. Sept 18-20: Toronto. Then back to Europe.",
+      none: "Nothing being broadcast",
+      until: "Showing until {date}",
+      showsUntil: "Show until",
+      availability: "Status",
+      availability_away: "Away",
+      availability_busy: "Busy",
+      availability_available: "Available",
+      availability_unknown: "Not stated",
+      post: "Post to the lab",
+      update: "Update broadcast",
+      takeDown: "Take it down",
+    },
     loading: "Reading…",
-    more: "+{count} more",
+    showMore: "Show {count} more",
+    showFewer: "Show fewer",
+    // Said only when an opened list is still holding rows back, so the number above it is never
+    // the size of a list you are looking at all of.
+    showing: "Showing {shown} of {total}",
+    newTab: "opens in a new tab",
+    piReview: {
+      // Each of the three paper queues below names the job it is asking for, because "a list of
+      // papers" was true of all three and told her nothing about which to open. This one is a
+      // decision on a finished thing.
+      title: "Approve before it goes public",
+      blurb:
+        "The package is finished and the PDF is final. Nothing is posted until you say yes, so these are stopped until you look.",
+      empty: "No paper is waiting on your approval.",
+      open: "Open the papers",
+      since: "ready {date}",
+      pdf: "Read the PDF",
+      incomplete: "paper password still missing",
+    },
     escalated: {
-      title: "Waiting on a word from you",
+      // Not a paper queue: what is missing here is information, and the only thing left to try is
+      // her asking the person directly.
+      title: "Missing information — needs a word from you",
+      blurb:
+        "AdminBot asked these people repeatedly and got nothing back. It has stopped asking; a message from you is what is left.",
       items: "{count} things outstanding",
       empty: "Nobody has ignored a nudge long enough to reach you.",
       open: "Write to them",
@@ -442,7 +480,11 @@ export const en: TranslationMap = {
       },
     },
     drafts: {
-      title: "Overleaf reading queue",
+      // The other paper queue, and the one nothing is blocked on. Named for the reading rather
+      // than for Overleaf, which is only where the draft happens to live.
+      title: "Read and comment while they are still writing",
+      blurb:
+        "Drafts still being written, on Overleaf. Nobody is blocked on you here — this is the window where your comments can still change the paper.",
       empty: "No drafts are waiting to be read.",
       open: "Open Active Papers",
     },
@@ -461,10 +503,52 @@ export const en: TranslationMap = {
     },
   },
 
+  tabUsage: {
+    title: "Which tabs the lab opens",
+    blurb:
+      "Every tab switch, counted. The other pages here count what members filled in; this counts what they came to look at, which is the only way to tell an unwanted tab from an unfindable one.",
+    window: "Window",
+    days: "{count} days",
+    loading: "Reading\u2026",
+    empty: "No tab visits recorded in this window yet.",
+    refresh: "Refresh",
+    export: "Download CSV",
+    exporting: "Preparing\u2026",
+    untimed: "\u2014",
+    seconds: "{count}s",
+    minutes: "{count}m",
+    minutesSeconds: "{minutes}m {seconds}s",
+    totals: {
+      visits: "visits",
+      members: "people",
+      tabs: "tabs opened",
+      impersonated: "while viewing as",
+    },
+    column: {
+      tab: "Tab",
+      visits: "Visits",
+      members: "People",
+      perDay: "Per day",
+      dwell: "Median time",
+      last: "Last opened",
+    },
+    // Said on the page, not left for whoever reads the numbers next year: each clause is a way the
+    // table can be over-read, and the export is what a real analysis should start from.
+    caveat:
+      "Time on a tab is inferred from the gap to that person's next tab, capped at 30 minutes, so the last tab of a sitting is counted as a visit but not timed. A visit is one tab switch, not one read. Rows recorded while an admin was viewing as somebody are counted here and flagged in the CSV.",
+    error: {
+      signIn: "Sign in to read tab usage.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "Tab usage is admin-only.",
+      failed: "Could not read tab usage.",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    myDesk: "My Desk",
   },
 
   tabs: {
@@ -482,7 +566,9 @@ export const en: TranslationMap = {
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
+    adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
+    adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -535,7 +621,9 @@ export const en: TranslationMap = {
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+    adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
+    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -1158,6 +1246,10 @@ export const en: TranslationMap = {
   },
   dashboard: {
     more: "+{count} more",
+    broadcast: {
+      title: "Broadcast from Zhijing",
+      posted: "Posted {when}",
+    },
     nudgeWarning: {
       unread: "{count} thing(s) the lab has asked you for",
       important: "{count} important thing(s) still outstanding",
@@ -1246,6 +1338,10 @@ export const en: TranslationMap = {
     headcount: "{count} present",
     loading: "Loading meetings…",
     minutes: "{minutes} min",
+    // Under an hour and not a round number of minutes -- a short clip reads "1m 38s" rather than
+    // rounding to a minute count that is either 0 or wrong.
+    duration: "{minutes}m {seconds}s",
+    durationHours: "{hours}h {minutes}m",
     noTranscript: "No transcript has been attached, so there is no summary.",
     nudge: {
       title: "Who has stopped coming",
@@ -1558,6 +1654,16 @@ export const en: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  adminbotTravel: {
+    error: {
+      signIn: "Sign in to read your travel history.",
+      forbidden: "You can only read your own travel history.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read your travel history.",
+    },
+  },
   recentEdits: {
     title: "Recent edits",
     loading: "reading…",
@@ -1695,6 +1801,17 @@ export const en: TranslationMap = {
         declined: "Declined",
         withdrawn: "Withdrawn",
       },
+      // Letter requests are named for the letter, not the request. "Submitted" on a signature
+      // request means the member filed it; on a letter request every reader takes it to mean the
+      // letter has gone to the school, which is the one thing it never means -- a letter nobody has
+      // written yet showed as "Submitted" and a letter already uploaded showed as "Done".
+      recLetterStatus: {
+        submitted: "To submit",
+        inProgress: "In progress",
+        completed: "Submitted",
+        declined: "Declined",
+        withdrawn: "Withdrawn",
+      },
       error: {
         signIn: "Sign in to send and read logistics requests.",
         unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",
@@ -1728,8 +1845,16 @@ export const en: TranslationMap = {
     },
     signature: {
       title: "Document Signature",
-      sub: "Signature requests are filed on a Google Form now. It asks for the documents and everything the signer needs to know.",
-      openForm: "Open the signature form",
+      sub: "Fill this in and AdminBot files it on the lab's signature form for you. Your name is taken from the roster.",
+      driveUrl: "Link to the document",
+      deadline: "Deadline",
+      context: "Context of signing (optional)",
+      contextPlaceholder:
+        "Example: this is the visa letter for the Montreal workshop — the deadline is the 8th.",
+      send: "Send the signature request",
+      sending: "Sending…",
+      submitted: "Filed on the lab's signature form.",
+      openForm: "Open the form yourself",
       dropTitle: "Drop documents here, or click to choose",
       dropHint: "PDF, Word, or a photo of the page.",
       remove: "Remove {name}",
@@ -1794,10 +1919,11 @@ export const en: TranslationMap = {
     },
     meeting: {
       title: "Meetings to book",
-      sub: "Meeting requests are filed on the lab contact spreadsheet now. Add a row on the Meeting Requests tab.",
-      openSheet: "Open the meeting requests tab",
+      sub: "Ask for a call. Each row is checked and then added to the call queue for review.",
+      openSheet: "Open the call queue",
       // The one thing a member can leave blank and not find out until nobody schedules their call.
-      mandatory: "Column D is mandatory — a row without it cannot be scheduled.",
+      mandatory:
+        "The doc prep link is mandatory, and it has to open for anyone with the link — a row without one is not queued.",
       submitted: "Submitted",
       notSubmitted: "Not yet",
       purpose: "What the call is for",
@@ -1806,6 +1932,15 @@ export const en: TranslationMap = {
       timezone: "Time zone",
       length: "Call length (min)",
       lengthPlaceholder: "ex. 30",
+      city: "Your city / when you can take calls",
+      cityPlaceholder: "ex. Toronto, or evenings IST",
+      docPrep: "Doc prep of your questions",
+      docPrepPlaceholder: "https://docs.google.com/document/d/…",
+      whatsappHello: "Said hello on WhatsApp?",
+      whatsappUnanswered: "—",
+      whatsappYes: "Yes",
+      whatsappNo: "Not yet",
+      latestOk: "Call still useful until",
       add: "Add a meeting",
       removeRow: "Remove meeting row {row}",
       empty: "No meetings requested yet. Add a row to ask for one.",
@@ -1837,6 +1972,9 @@ export const en: TranslationMap = {
         empty: "Fill the request in before sending it.",
         noName: "Every school needs its name filled in.",
         noPurpose: "Every meeting needs a purpose.",
+        noDocPrep:
+          "Every meeting needs a doc prep link. It is what the call is spent on, and a request " +
+          "without one cannot go on the queue.",
         fileTooBig: "{name} is larger than 5MB. Send a smaller copy or a link to it.",
         requestTooBig: "The files on this request come to more than 20MB altogether.",
         signedOut: "Sign in to send this request.",
@@ -1891,10 +2029,11 @@ export const en: TranslationMap = {
       searchPrompt: "Type to search for a member by name, project, or interests.",
     },
     invites: {
-      title: "Your invites",
+      title: "Invitations you have asked for",
       view: "View",
-      viewTitle: "Project details",
+      viewTitle: "Invitation details",
       from: "Invited by {name}",
+      to: "To {name}",
       owner: "Owner",
       membersNeeded: "Members needed",
       hoursPerWeek: "Hours / week",
@@ -1919,11 +2058,19 @@ export const en: TranslationMap = {
     },
     announcements: {
       title: "Announcements",
+      // The only panel on this tab with no service behind it, and it says so on its face.
+      sample: "Sample data — nothing here is saved",
       add: "Add",
       composeTitle: "New announcement",
       bodyPlaceholder: "What do people need to know?",
       send: "Send announcement",
       cancel: "Cancel",
+      // Nothing is seeded, because a seeded post has to be signed by somebody and every name here
+      // would be a person who never said it.
+      empty: "No announcements yet.",
+      justNow: "just now",
+      // Only before the viewer's own profile read lands; their real name is what normally signs it.
+      authorFallback: "You",
     },
   },
   profile: {
@@ -2063,14 +2210,16 @@ export const en: TranslationMap = {
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
       merchRequests: "Merch requests",
+      nextPosition: "Next position you're looking for",
       personalCircumstances: "Personal circumstances and/or medical conditions",
       birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
       otherSocials: "Other social media",
-      cvUrl: "CV (PDF link)",
+      cvUrl: "CV",
       intakeFormUrl: "Application form response link",
+      oneOnOneFolderUrl: "Link to 1:1 Folder",
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
@@ -2105,6 +2254,8 @@ export const en: TranslationMap = {
     },
     help: {
       trigger: "What is {field}?",
+      nextPosition:
+        "What is the next position/thing in life you are looking for? And when is your ideal move? How can Zhijing help you?",
       personalCircumstances:
         "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:
@@ -2115,6 +2266,8 @@ export const en: TranslationMap = {
         "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
         'A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to "anyone with the link can view", otherwise it will open for you but not for anyone else.',
+      oneOnOneFolderUrl:
+        "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
       elevatorPitch:
         "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
     },
@@ -2123,11 +2276,17 @@ export const en: TranslationMap = {
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
       correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
-      github: "Your profile page, not a repository: github.com/username",
+      github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
-      intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      intakeFormUrl:
+        "Paste the response link if you have it, or mark that you cannot find it below.",
+      intakeFormSearch:
+        "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
+      intakeFormUnavailable: "I cannot find my form response",
+      oneOnOneFolderUrl:
+        "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
       hoursPerWeek:
         "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",

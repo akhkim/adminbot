@@ -164,8 +164,27 @@ function parseMeeting(value: unknown): AdminBotLogisticsMeeting | null {
     ...(submittedAt && !Number.isNaN(Date.parse(submittedAt))
       ? { submitted_at: new Date(submittedAt).toISOString() }
       : {}),
+    ...optionalKey("city", record.city, 120),
+    // Kept as typed rather than normalized here. Whether the link is one anybody can open is a
+    // question only the network can answer, so it is asked on the way to the sheet, not on the way
+    // in -- storing a bad link is how the member gets told which link to fix.
+    ...optionalKey("doc_prep_url", record.doc_prep_url, 500),
+    ...(typeof record.whatsapp_hello === "boolean"
+      ? { whatsapp_hello: record.whatsapp_hello }
+      : {}),
+    // Only a calendar date survives: the field answers "how long does this stay worth doing", and
+    // a half-parsed "end of the month" would sort as an instant nobody meant.
+    ...(ISO_DATE.test(text(record.latest_ok_date, 20))
+      ? { latest_ok_date: text(record.latest_ok_date, 20) }
+      : {}),
   };
-  return meeting.purpose || meeting.preferred_time || meeting.length_minutes ? meeting : null;
+  return meeting.purpose ||
+    meeting.preferred_time ||
+    meeting.length_minutes ||
+    meeting.doc_prep_url ||
+    meeting.city
+    ? meeting
+    : null;
 }
 
 export function isLogisticsRequestKind(value: unknown): value is AdminBotLogisticsRequestKind {

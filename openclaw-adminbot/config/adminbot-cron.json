@@ -130,6 +130,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-onboarding-sheet-sweep",
+      "description": "Weekly: create members for new spreadsheet rows and report who is owed an onboarding mail",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-onboarding-sheet-sweep-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-meeting-membership",
       "description": "Reconcile the standing invite against the roster and file the removals as proposals",
       "cron": "35 6 * * *",
@@ -261,6 +271,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-meeting-invites",
+      "description": "Put each #meeting-xxx and #proj-xxx channel's members on that meeting's calendar invite; proposes, never invites",
+      "cron": "50 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-meeting-invites-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-project-channels",
       "description": "Open #proj-<alias> for each project and invite its external collaborators",
       "cron": "30 10 * * 1-5",
@@ -277,6 +297,36 @@
       "argv": [
         "bash",
         "scripts/adminbot-rec-letter-channel-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paper-stages",
+      "description": "Verify paper evidence, advance each paper on it, and queue the ones at the PI's gate",
+      "cron": "45 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-paper-stages-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-papermentor-runs",
+      "description": "Collect PaperMentor's cached reviews and record them against their papers",
+      "cron": "35 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-papermentor-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-rec-letter-reminders",
+      "description": "Mail the head professor the letters due within three days",
+      "cron": "25 10 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-reminder-cron.sh"
       ],
       "timeoutSeconds": 900
     },
@@ -317,6 +367,16 @@
       "argv": [
         "bash",
         "scripts/adminbot-prereg-nudge-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-local-event-audience",
+      "description": "Reconcile the Zurich lunch guest list with where members are",
+      "cron": "0 7 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-local-event-audience-cron.sh"
       ],
       "timeoutSeconds": 900
     },

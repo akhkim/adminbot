@@ -2,7 +2,10 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
-import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  adminBotExternalCollaboratorSubgroups,
+  adminBotIsAlumniMember,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
 import {
   formatAdminBotMemberRoles,
@@ -379,6 +382,38 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     return;
   }
   form.closest<HTMLElement>("[popover]")?.hidePopover();
+}
+
+/**
+ * Roster rows whose edit popover has been opened, and whose form is therefore built.
+ *
+ * The members sheet draws a popover per row, and each one holds a ~19-field form. For 77 people
+ * that was 14,507 nodes of editor -- four fifths of the panel -- built on every render for forms
+ * nobody had asked to see. This defers that work to the first click on a row's Edit button.
+ *
+ * Deliberately *defer*, not mount-and-unmount: an id is never removed. Once a row's form exists it
+ * stays, so everything about it after the first open is exactly as it was before this -- the same
+ * markup, the same prefilled values, a half-typed draft still sitting there when the popover is
+ * reopened, and `memberAutosaveTimers` still keyed on a form that is still in the tree. A version
+ * that rendered only the *open* row would be smaller again and would silently change all of that.
+ *
+ * Module state rather than a prop for the same reason `memberAutosaveTimers` is: it is a fact
+ * about this browser's session with the sheet, not about the roster, and nothing outside this file
+ * needs to read it. The set survives panel remounts, which only means a row opened earlier is
+ * still cheap to open again.
+ */
+const openedMemberEditors = new Set<string>();
+
+/** Note that a row's editor has been asked for, and repaint so the form is there when it opens. */
+function openMemberEditor(memberId: string, props: AdminBotProps): void {
+  if (openedMemberEditors.has(memberId)) {
+    return;
+  }
+  openedMemberEditors.add(memberId);
+  // The popover itself is opened natively by `popovertarget` on the same click, synchronously.
+  // This repaint lands in the microtask before the browser paints, so the form is in place by the
+  // time anything is shown -- the same ordering the recent-edits popover already relies on.
+  props.onRerender?.();
 }
 
 // Debounced autosave for the edit-member popover: every change lands on the record without the
@@ -934,6 +969,49 @@ function filterMemberSpreadsheet(event: Event): void {
   if (count) count.textContent = `${visible} ${visible === 1 ? "person" : "people"}`;
 }
 
+/**
+ * Above this many options, a field is typed into rather than picked from.
+ *
+ * Two reasons, and the second is what set the number. A list this long is not a dropdown anyone
+ * scrolls -- `timezone` offers the 418 zones `Intl.supportedValuesOf` knows, and finding
+ * America/Toronto in that is typing, not picking. And this control is drawn once per roster row:
+ * the members sheet renders an edit popover for all 77 people up front, so a 418-option `<select>`
+ * became 32,682 `<option>` nodes, 95% of everything on the page, none of it visible until somebody
+ * clicks Edit. It cost ~3.4s to render the panel where the papers panel -- same popover-per-row
+ * shape, same row count -- cost 190ms.
+ *
+ * A `<datalist>` fixes the duplication because it is referenced by id: one list in the document
+ * serves every input that names it, however many rows there are. Set well above the longest real
+ * vocabulary (member roles, 10) so this never quietly turns a genuine dropdown into a text box.
+ */
+const INLINE_OPTION_LIMIT = 40;
+
+/** The shared `<datalist>` id for a field whose options are too many to inline per row. */
+function sharedOptionListId(fieldKey: string): string {
+  return `adminbot-field-options-${fieldKey}`;
+}
+
+/** Fields whose options are shared through a datalist rather than repeated in every row. */
+function sharedOptionFields(): ProfileField[] {
+  return PROFILE_FIELDS.filter(
+    (field) => field.type === "dropdown" && (field.options?.length ?? 0) > INLINE_OPTION_LIMIT,
+  );
+}
+
+/**
+ * The shared option lists, rendered once for the whole panel.
+ *
+ * Must be in the document for the inputs that name it to offer anything, but not inside any one
+ * row -- putting it in the row loop is the duplication this exists to remove.
+ */
+function renderSharedOptionLists() {
+  return html`${sharedOptionFields().map(
+    (field) => html`<datalist id=${sharedOptionListId(field.key)}>
+      ${(field.options ?? []).map((option) => html`<option value=${option}></option>`)}
+    </datalist>`,
+  )}`;
+}
+
 // Shared roster fields for the admin add/edit-member popovers. When a member is
 // supplied the fields are prefilled and the id is locked, so the same
 // submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
@@ -961,6 +1039,17 @@ function renderRegistryField(
   const control = (() => {
     switch (field.type) {
       case "dropdown":
+        // Long lists are typed into against one shared datalist; see INLINE_OPTION_LIMIT. The
+        // control still posts under the field key, so submitMemberForm reads it back unchanged.
+        if ((field.options?.length ?? 0) > INLINE_OPTION_LIMIT) {
+          return html`<input
+            name=${field.key}
+            list=${sharedOptionListId(field.key)}
+            placeholder="Not set"
+            .value=${value}
+            autocomplete="off"
+          />`;
+        }
         return html`<select name=${field.key}>
           <option value="" ?selected=${!value}>Not set</option>
           ${(field.options ?? []).map(
@@ -1193,6 +1282,9 @@ function renderMemberEditsPopover(member: AdminBotLabMember, index: number, prop
 
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
+  // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
+  // the document to have anything to open. Only the form inside waits for the first click --
+  // see `openedMemberEditors`.
   return html`
     <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
       <button
@@ -1205,18 +1297,20 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
       </button>
       <div class="card-title">Edit member</div>
       <div class="card-sub">${member.name} · ${member.id}</div>
-      <form
-        class="adminbot-form"
-        @submit=${(event: Event) => submitMemberForm(event, props)}
-        @input=${(event: Event) => queueMemberAutosave(event, props)}
-        @change=${(event: Event) => queueMemberAutosave(event, props)}
-      >
-        ${renderMemberFormFields(member)}
-        <div class="adminbot-form__actions">
-          <button class="btn btn--sm primary" type="submit">Save member</button>
-        </div>
-      </form>
-      ${renderDeleteMember(member, props)}
+      ${openedMemberEditors.has(member.id)
+        ? html`<form
+              class="adminbot-form"
+              @submit=${(event: Event) => submitMemberForm(event, props)}
+              @input=${(event: Event) => queueMemberAutosave(event, props)}
+              @change=${(event: Event) => queueMemberAutosave(event, props)}
+            >
+              ${renderMemberFormFields(member)}
+              <div class="adminbot-form__actions">
+                <button class="btn btn--sm primary" type="submit">Save member</button>
+              </div>
+            </form>
+            ${renderDeleteMember(member, props)}`
+        : nothing}
     </article>
   `;
 }
@@ -1296,28 +1390,34 @@ function renderMemberSelfEditPopover(
       <div class="card-sub">
         Access level, status, and email are managed by admins and cannot be changed here.
       </div>
-      <form
-        class="adminbot-form"
-        @submit=${(event: Event) => submitSelfProfileForm(event, member.id, props)}
-      >
-        <div class="form-grid adminbot-form__grid">
-          ${PROFILE_FIELDS.filter((field) => !field.adminOnly).map((field) =>
-            renderRegistryField(field, member, selfLegacyFallback[field.key] ?? ""),
-          )}
-          <label class="adminbot-form__field"
-            ><span>Slack user id</span
-            ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
-          /></label>
-        </div>
-        <label class="adminbot-form__field"
-          ><span>Additional notes</span
-          ><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
-        </label>
-        <div class="adminbot-form__actions">
-          <button class="btn btn--sm primary" type="submit">Save my profile</button>
-        </div>
-      </form>
-      ${renderAvailabilitySchedule(member.availability, member.time_off, member.name ?? member.id)}
+      ${openedMemberEditors.has(member.id)
+        ? html`<form
+              class="adminbot-form"
+              @submit=${(event: Event) => submitSelfProfileForm(event, member.id, props)}
+            >
+              <div class="form-grid adminbot-form__grid">
+                ${PROFILE_FIELDS.filter((field) => !field.adminOnly).map((field) =>
+                  renderRegistryField(field, member, selfLegacyFallback[field.key] ?? ""),
+                )}
+                <label class="adminbot-form__field"
+                  ><span>Slack user id</span
+                  ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
+                /></label>
+              </div>
+              <label class="adminbot-form__field"
+                ><span>Additional notes</span
+                ><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
+              </label>
+              <div class="adminbot-form__actions">
+                <button class="btn btn--sm primary" type="submit">Save my profile</button>
+              </div>
+            </form>
+            ${renderAvailabilitySchedule(
+              member.availability,
+              member.time_off,
+              member.name ?? member.id,
+            )}`
+        : nothing}
     </article>
   `;
 }
@@ -1360,6 +1460,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
   ].toSorted((left, right) => left.localeCompare(right));
   return html`
     <section class="adminbot-member-sheet">
+      ${renderSharedOptionLists()}
       <div class="adminbot-member-sheet__heading">
         <div>
           <strong>People database</strong>
@@ -1481,6 +1582,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                         popovertarget=${rowEdit === "admin"
                           ? `adminbot-edit-member-${index}`
                           : `adminbot-self-edit-member-${index}`}
+                        @click=${() => openMemberEditor(member.id, props)}
                       >
                         ${rowEdit === "admin" ? "Edit" : "Edit my profile"}
                       </button>`}
@@ -2282,6 +2384,18 @@ function renderTravelConference(conference: ConferenceRoster) {
   `;
 }
 
+/**
+ * One Overleaf column's cell: the link, or the em dash that says the field is empty.
+ *
+ * The link keeps its own word rather than a bare "Open" repeated down two columns -- a screen
+ * reader's list of links is read out of the table, where "Open, Open, Open" names nothing.
+ */
+function overleafCell(url: string | undefined, label: string) {
+  return url
+    ? html`<a href=${url} target="_blank" rel="noreferrer noopener">${label}</a>`
+    : html`<span class="venue-table__missing">—</span>`;
+}
+
 function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminBotProps) {
   const venues = PRE_REGISTRATION_VENUES.filter((venue) => {
     const days = daysUntil(venue.deadline);
@@ -2350,13 +2464,20 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                     <th scope="col">Title</th>
                     <th scope="col">Venue</th>
                     <th scope="col">Authors</th>
-                    <th scope="col">Overleaf</th>
+                    <th scope="col">Overleaf (edit)</th>
+                    <th scope="col">Overleaf (view)</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${rows.map(({ paper, targets }) => {
-                    const link =
-                      paper.artifacts?.overleaf_edit_url ?? paper.artifacts?.overleaf_view_url;
+                    // A column each, not one cell holding whichever came first. They are two
+                    // different things -- the project coauthors write in, and the read-only link
+                    // you send someone you are not adding to the project -- so which one a paper
+                    // is missing is itself worth reading down the column.
+                    // Trimmed, not `??`: a stored empty string is a blank field, and taking it as
+                    // an answer showed a link to nowhere in a column that has its own "—".
+                    const editUrl = paper.artifacts?.overleaf_edit_url?.trim();
+                    const viewUrl = paper.artifacts?.overleaf_view_url?.trim();
                     return html`<tr>
                       <td class="venue-table__title">${paper.title}</td>
                       <td class="venue-table__venue">
@@ -2368,13 +2489,8 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                         )}
                       </td>
                       <td class="venue-table__authors">${(paper.authors ?? []).join(", ")}</td>
-                      <td class="venue-table__link">
-                        ${link
-                          ? html`<a href=${link} target="_blank" rel="noreferrer noopener"
-                              >Overleaf</a
-                            >`
-                          : html`<span class="venue-table__missing">—</span>`}
-                      </td>
+                      <td class="venue-table__link">${overleafCell(editUrl, "Edit")}</td>
+                      <td class="venue-table__link">${overleafCell(viewUrl, "View")}</td>
                     </tr>`;
                   })}
                 </tbody>
@@ -2772,13 +2888,19 @@ function hasCompletedOnboardingStep(member: AdminBotLabMember, stepId: string): 
 }
 
 // Additive, like selectAllVisibleRecipients: adds the laggards to whatever is already picked.
+//
+// "Has left" goes through `adminBotIsAlumniMember`, which reads `member_type` as well as `status`:
+// the roster spells it in the type for 22 of the lab's 24 alumni, with no status at all. Somebody
+// who left mid-onboarding has every remaining step unticked forever, so a `status`-only test --
+// which this was -- ticked nearly all of them into the recipient list on one press. The send
+// refused them (`sendMemberNudge` asks the same helper), but they still had to be unpicked by hand.
 function selectOnboardingLaggards(
   props: AdminBotProps,
   members: AdminBotLabMember[],
   stepId: string,
 ): void {
   const laggards = members
-    .filter((member) => member.status !== "alumni" && member.status !== "external")
+    .filter((member) => !adminBotIsAlumniMember(member) && member.status !== "external")
     .filter((member) => !hasCompletedOnboardingStep(member, stepId))
     .map((member) => member.id);
   props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...laggards])]);

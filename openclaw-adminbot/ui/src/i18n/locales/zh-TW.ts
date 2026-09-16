@@ -442,6 +442,7 @@ export const zh_TW: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    myDesk: "My Desk",
   },
   tabs: {
     dashboard: "Dashboard",
@@ -459,6 +460,7 @@ export const zh_TW: TranslationMap = {
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
     adminbotProfessor: "My Desk",
+    adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -512,6 +514,7 @@ export const zh_TW: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotProfessor: "What is waiting on you, across every queue.",
+    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -1523,6 +1526,16 @@ export const zh_TW: TranslationMap = {
       failed: "The mailing list request failed.",
     },
   },
+  adminbotTravel: {
+    error: {
+      signIn: "Sign in to read your travel history.",
+      forbidden: "You can only read your own travel history.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read your travel history.",
+    },
+  },
   recentEdits: {
     title: "最近的修改",
     loading: "讀取中…",
@@ -2012,6 +2025,7 @@ export const zh_TW: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
+      nextPosition: "Next position you're looking for",
       personalCircumstances: "Medical conditions",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
@@ -2052,6 +2066,8 @@ export const zh_TW: TranslationMap = {
     },
     help: {
       trigger: "What is {field}?",
+      nextPosition:
+        "What is the next position/thing in life you are looking for? And when is your ideal move? How can Zhijing help you?",
       personalCircumstances:
         "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:

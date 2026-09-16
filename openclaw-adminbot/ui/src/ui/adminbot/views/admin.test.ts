@@ -84,11 +84,169 @@ beforeAll(() => {
   (HTMLElement.prototype as { hidePopover?: () => void }).hidePopover ??= () => undefined;
 });
 
-function renderToDiv(props: AdminBotProps): HTMLElement {
+/**
+ * Render the panel with every row's edit popover built, which is what a person sees.
+ *
+ * The roster sheet defers each row's edit form until its Edit button is first clicked, so that
+ * 77 popovers' worth of fields are not built for forms nobody opened. In a browser the click
+ * opens the popover natively and repaints in the same tick; here the click is made and the panel
+ * re-rendered, which is the same two steps. Assertions about the editor stay written the way they
+ * were -- query the container -- rather than every one of them learning about the deferral.
+ *
+ * `openEditors: false` renders it the way the panel first paints, for the tests that are about the
+ * deferral itself.
+ */
+function renderToDiv(props: AdminBotProps, options: { openEditors?: boolean } = {}): HTMLElement {
   const container = document.createElement("div");
+  render(renderAdminBot(props), container);
+  if (options.openEditors === false) {
+    return container;
+  }
+  // By the popover they target, not by class: the row's edit-history button shares that class and
+  // fetches on click, and clicking it here would make "nothing is asked for until somebody asks"
+  // untestable.
+  const editButtons = container.querySelectorAll<HTMLButtonElement>(
+    'button[popovertarget^="adminbot-edit-member-"], button[popovertarget^="adminbot-self-edit-member-"]',
+  );
+  if (editButtons.length === 0) {
+    return container;
+  }
+  for (const button of editButtons) {
+    button.click();
+  }
   render(renderAdminBot(props), container);
   return container;
 }
+
+// The members sheet draws an edit popover for every row up front, so anything inside one is paid
+// for once per person on the roster. `timezone` offers the 418 zones Intl knows: as a per-row
+// <select> that was 32,682 <option> nodes for 77 people -- 95% of everything on the page, none of
+// it visible until somebody clicks Edit -- and the panel took ~3.4s to render where the papers
+// panel, same popover-per-row shape and same row count, took 190ms. One shared <datalist> is
+// referenced by id, so the list exists once however many rows there are.
+describe("renderAdminBot members panel — long option lists are shared, not repeated", () => {
+  const roster = Array.from({ length: 12 }, (_, i) =>
+    member({ id: `m${i}`, name: `Member ${i}`, email: `m${i}@lab.co` }),
+  );
+  const draw = (count: number) =>
+    renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: roster.slice(0, count),
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+
+  it("renders the timezone list once for the whole sheet, not once per row", () => {
+    const container = draw(12);
+    const lists = container.querySelectorAll("datalist#adminbot-field-options-timezone");
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.querySelectorAll("option").length).toBeGreaterThan(40);
+    // And no row carries its own copy.
+    expect(container.querySelectorAll('select[name="timezone"]')).toHaveLength(0);
+  });
+
+  it("points every row's timezone control at that one list", () => {
+    const container = draw(12);
+    const inputs = [...container.querySelectorAll<HTMLInputElement>('input[name="timezone"]')];
+    expect(inputs.length).toBeGreaterThan(1);
+    for (const input of inputs) {
+      expect(input.getAttribute("list")).toBe("adminbot-field-options-timezone");
+    }
+  });
+
+  // The property that actually keeps the panel fast: adding people must not multiply the option
+  // nodes. Short vocabularies (status, privilege) still inline per row and do scale -- the point
+  // is that the long one no longer does.
+  it("does not grow the timezone option count as the roster grows", () => {
+    const count = (n: number) =>
+      draw(n).querySelectorAll("datalist#adminbot-field-options-timezone option").length;
+    expect(count(12)).toBe(count(1));
+  });
+});
+
+// Each roster row carries an edit popover holding a ~19-field form. For 77 people that was four
+// fifths of the panel's DOM, built for forms nobody had opened. The form now waits for the first
+// click on that row's Edit button.
+describe("renderAdminBot members panel — the edit form waits to be asked for", () => {
+  // Ids unique to this block: the set of opened editors is module state that outlives one test,
+  // so a shared id would let an earlier test's click decide this one's answer.
+  const lazyRoster = [
+    member({ id: "lazy-one", name: "Lazy One", email: "one@lab.co" }),
+    member({ id: "lazy-two", name: "Lazy Two", email: "two@lab.co" }),
+  ];
+  const lazyProps = () =>
+    baseProps({
+      mode: "admin",
+      data: { ...createEmptyAdminBotDashboardData(), members: lazyRoster, loadedAt: Date.now() },
+    });
+
+  it("draws the popover shell but not the form, until a row is opened", () => {
+    const container = renderToDiv(lazyProps(), { openEditors: false });
+    // The shell has to exist: `popovertarget` resolves against its id, so without it the button
+    // has nothing to open.
+    expect(container.querySelector("#adminbot-edit-member-0")).not.toBeNull();
+    expect(container.querySelector("#adminbot-edit-member-0 form")).toBeNull();
+    // No row carries a field yet. The one that remains is the Add-member form, which is rendered
+    // once for the sheet rather than per row and is meant to be ready to type into.
+    expect(
+      container.querySelectorAll('[id^="adminbot-edit-member-"] input[name="timezone"]'),
+    ).toHaveLength(0);
+    expect(container.querySelectorAll('input[name="timezone"]')).toHaveLength(1);
+  });
+
+  it("builds that row's form on the click, and only that row's", () => {
+    const props = lazyProps();
+    const container = document.createElement("div");
+    render(renderAdminBot(props), container);
+    container
+      .querySelector<HTMLButtonElement>("button[popovertarget=adminbot-edit-member-0]")
+      ?.click();
+    render(renderAdminBot(props), container);
+    expect(container.querySelector("#adminbot-edit-member-0 form")).not.toBeNull();
+    expect(container.querySelector("#adminbot-edit-member-1 form")).toBeNull();
+  });
+
+  // Deferred, not mounted-and-unmounted. Once a row's form is built it stays built, so a draft
+  // typed into it is still there when the popover is reopened and the autosave timer still has a
+  // form in the tree to read.
+  it("keeps the form once built, including what was typed into it", () => {
+    const props = lazyProps();
+    const container = document.createElement("div");
+    render(renderAdminBot(props), container);
+    container
+      .querySelector<HTMLButtonElement>("button[popovertarget=adminbot-edit-member-1]")
+      ?.click();
+    render(renderAdminBot(props), container);
+    const role = container.querySelector<HTMLInputElement>(
+      '#adminbot-edit-member-1 input[name="location"]',
+    );
+    expect(role).not.toBeNull();
+    role!.value = "half typed";
+    // Another render for any reason at all -- a roster refresh, a notice landing.
+    render(renderAdminBot(props), container);
+    expect(
+      container.querySelector<HTMLInputElement>('#adminbot-edit-member-1 input[name="location"]')
+        ?.value,
+    ).toBe("half typed");
+  });
+
+  // The deferral is about when the markup is built, never about what is in it.
+  it("offers the same fields it always did once opened", () => {
+    const opened = renderToDiv(lazyProps());
+    const names = [...opened.querySelectorAll<HTMLElement>("#adminbot-edit-member-0 [name]")].map(
+      (el) => el.getAttribute("name"),
+    );
+    for (const field of PROFILE_FIELDS.filter((entry) => entry.type !== "image")) {
+      expect(names, field.key).toContain(field.key);
+    }
+    expect(names).toContain("id");
+    expect(names).toContain("privilegeLevel");
+  });
+});
 
 describe("renderAdminBot members panel — edit affordance", () => {
   it("renders a per-row Edit action and a prefilled edit popover in admin mode", () => {
@@ -914,6 +1072,16 @@ describe("renderAdminBot announcements panel", () => {
         status: "alumni" as const,
         onboarding: step("current"),
       },
+      // The spelling 22 of the lab's 24 alumni actually carry: the type says they left and the
+      // status is absent. Somebody who leaves mid-onboarding has every remaining step unticked
+      // forever, so a status-only test swept all of them in on one press.
+      {
+        ...members[0],
+        id: "left-typed",
+        name: "Left Typed",
+        member_type: "full, alumni",
+        onboarding: step("current"),
+      },
     ];
     const container = renderToDiv(
       baseProps({
@@ -936,8 +1104,9 @@ describe("renderAdminBot announcements panel", () => {
       (button) => button.textContent?.trim() === "Select: LinkedIn not joined",
     );
     laggardsButton?.dispatchEvent(new Event("click", { bubbles: true }));
-    // A member with no checklist at all counts as not-joined; alumni are never nudged, and the
-    // existing manual selection is kept (additive, like "Select all visible").
+    // A member with no checklist at all counts as not-joined; alumni are never nudged however the
+    // roster spells it, and the existing manual selection is kept (additive, like "Select all
+    // visible").
     expect(new Set(recipients)).toEqual(new Set(["existing", "pending", "no-checklist"]));
   });
 
@@ -1249,6 +1418,7 @@ describe("pre-registration venue table", () => {
       current_step: "overleaf_writing",
       artifacts: {
         overleaf_edit_url: "https://overleaf.com/project/abc",
+        overleaf_view_url: "https://overleaf.com/read/abc",
         venue_targets: JSON.stringify([
           { venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 50 },
           { venue_id: "arr_2026_october", label: "ARR October", confidence: 99 },
@@ -1267,6 +1437,20 @@ describe("pre-registration venue table", () => {
       },
     },
     { id: "c", title: "Not registered", authors: [], current_step: "overleaf_writing" },
+    {
+      id: "e",
+      title: "Read-only link only",
+      authors: ["Dan"],
+      current_step: "overleaf_writing",
+      artifacts: {
+        // A blank edit field, which is what the grid stores when somebody clears the cell.
+        overleaf_edit_url: "   ",
+        overleaf_view_url: "https://overleaf.com/read/xyz",
+        venue_targets: JSON.stringify([
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 40 },
+        ]),
+      },
+    },
     {
       id: "d",
       title: "Registered from its own card",
@@ -1294,7 +1478,7 @@ describe("pre-registration venue table", () => {
 
   it("shows one row per paper, not one per venue", () => {
     const board = draw().querySelector('[data-testid="prereg-board"]');
-    expect(board?.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(board?.querySelectorAll("tbody tr")).toHaveLength(4);
   });
 
   it("lists a paper registered through the card picker, not just through the dialog", () => {
@@ -1319,11 +1503,11 @@ describe("pre-registration venue table", () => {
     );
   });
 
-  it("carries the spreadsheet's four columns", () => {
-    const head = draw().querySelector('[data-testid="prereg-board"] thead')?.textContent ?? "";
-    for (const column of ["Title", "Venue", "Authors", "Overleaf"]) {
-      expect(head).toContain(column);
-    }
+  it("carries the spreadsheet's columns, with a column per Overleaf link", () => {
+    const head = draw().querySelector('[data-testid="prereg-board"] thead');
+    expect(
+      [...(head?.querySelectorAll("th") ?? [])].map((cell) => cell.textContent?.trim()),
+    ).toEqual(["Title", "Venue", "Authors", "Overleaf (edit)", "Overleaf (view)"]);
   });
 
   it("filtering to a venue drops papers not aimed at it", () => {
@@ -1342,6 +1526,36 @@ describe("pre-registration venue table", () => {
   it("marks a missing Overleaf link rather than leaving the cell ambiguous", () => {
     const board = draw("iclr2027_paper").querySelector('[data-testid="prereg-board"]');
     expect(board?.querySelector(".venue-table__missing")).not.toBeNull();
+  });
+
+  /** The two Overleaf cells of the row whose title contains `title`, in column order. */
+  function overleafCells(venue: string, title: string) {
+    const row = [...draw(venue).querySelectorAll('[data-testid="prereg-board"] tbody tr')].find(
+      (entry) => entry.textContent?.includes(title),
+    );
+    return [...(row?.querySelectorAll(".venue-table__link") ?? [])];
+  }
+
+  // The project link and the read-only share link are different things -- one is who may write,
+  // the other is what you send someone you are not adding to the project -- so each gets a column
+  // and a row carrying both offers both.
+  it("gives each Overleaf link its own column", () => {
+    const [edit, view] = overleafCells("arr_2026_october", "Aimed at both");
+    expect(edit?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/project/abc");
+    expect(edit?.querySelector("a")?.textContent?.trim()).toBe("Edit");
+    expect(view?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/read/abc");
+    expect(view?.querySelector("a")?.textContent?.trim()).toBe("View");
+  });
+
+  // Which link a paper is missing is the thing a column of its own makes readable: the edit cell
+  // says "—" while the view cell beside it is filled. A blank stored field is a blank field, not
+  // an answer -- reading it as one put a link to nowhere in a column that has its own em dash.
+  it("marks the empty column and keeps the filled one when only one link exists", () => {
+    const [edit, view] = overleafCells("arr_2026_october", "Read-only link only");
+    expect(edit?.querySelector("a")).toBeNull();
+    expect(edit?.querySelector(".venue-table__missing")).not.toBeNull();
+    expect(view?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/read/xyz");
+    expect(view?.querySelector(".venue-table__missing")).toBeNull();
   });
 });
 

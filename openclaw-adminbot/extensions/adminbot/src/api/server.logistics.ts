@@ -9,6 +9,7 @@
 // Takes the resolved member rather than the router's principal union, so this file imports nothing
 // from server.ts and the two cannot form a cycle.
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { submitSignatureForm } from "../connectors/signature-form.js";
 import {
   adminBotLogisticsRequestStatuses,
   type AdminBotLogisticsAttachment,
@@ -31,8 +32,22 @@ const LOGISTICS_BODY_LIMIT_BYTES = Math.ceil(MAX_REQUEST_BYTES * 1.4);
 /** Only what the routes need off the session: who is asking, and whether they speak for the lab. */
 export type LogisticsRouteMember = {
   id: string;
+  name?: string;
   privilege_level: string;
 };
+
+/**
+ * What to do with a `book_meeting` request the moment it is submitted.
+ *
+ * Injected rather than imported so this file keeps its one structural promise -- it pulls nothing
+ * from server.ts, and the two cannot form a cycle. The router owns the call sheet, so the router
+ * supplies the closure; a deployment with no sheet configured supplies nothing and the route
+ * behaves exactly as it did before.
+ */
+export type MeetingRequestHook = (requestId: string) => Promise<{
+  queued: boolean;
+  message: string;
+}>;
 
 export async function handleLogisticsRoute(
   req: IncomingMessage,
@@ -40,8 +55,12 @@ export async function handleLogisticsRoute(
   url: URL,
   service: AdminBotService,
   member: LogisticsRouteMember,
+  onMeetingRequested?: MeetingRequestHook,
 ): Promise<void> {
   const isAdmin = member.privilege_level === "admin";
+  // Falls back to the id rather than sending a blank first column: a row nobody can be matched to
+  // is worse than an ugly one, and an unnamed roster row is a thing to fix on the profile.
+  const memberName = member.name?.trim() || member.id;
   if (req.method === "GET" && url.pathname === "/logistics/requests") {
     // The whole of the access decision, and it is one argument: an admin reads the lab's queue,
     // everyone else reads their own requests.
@@ -50,7 +69,38 @@ export async function handleLogisticsRoute(
   }
   if (req.method === "POST" && url.pathname === "/logistics/requests") {
     const body = (await readJson(req, LOGISTICS_BODY_LIMIT_BYTES)) as AdminBotLogisticsRequestInput;
-    sendServiceResult(res, service.submitLogisticsRequest(member.id, body));
+    const submitted = service.submitLogisticsRequest(member.id, body);
+    // A meeting request is answered by a row on the call sheet, so it is proposed here rather than
+    // waiting for somebody to remember to run the queue push. The request is saved either way:
+    // this decorates the response, it never decides it.
+    if (!submitted.ok || submitted.payload.kind !== "book_meeting" || !onMeetingRequested) {
+      sendServiceResult(res, submitted);
+      return;
+    }
+    const call_sheet = await onMeetingRequested(submitted.payload.id);
+    // Additive: every existing field of the request is still the body of this response, so a
+    // client that knows nothing about the call sheet reads it exactly as before.
+    sendJson(res, submitted.status, { ...submitted.payload, call_sheet });
+    return;
+  }
+  // The signature request, filed on the lab's Google Form on the member's behalf. It is their own
+  // request to their own lab -- the same four answers they used to type into the form themselves --
+  // so it is sent as they press the button rather than proposed for an admin to approve.
+  if (req.method === "POST" && url.pathname === "/logistics/signature-form") {
+    const body = readRecord(await readJson(req, LOGISTICS_BODY_LIMIT_BYTES));
+    const result = await submitSignatureForm({
+      // The roster's name, not one the browser sends: the form's first column is who is asking,
+      // and it is not a field anybody should be able to answer for somebody else.
+      name: memberName,
+      driveUrl: asString(body.drive_url),
+      deadline: asString(body.deadline),
+      ...(asString(body.context) ? { context: asString(body.context) } : {}),
+    });
+    if (!result.ok) {
+      sendJson(res, 502, { error: { message: result.error } });
+      return;
+    }
+    sendJson(res, 200, { submitted: true });
     return;
   }
   const withdraw = /^\/logistics\/requests\/([^/]+)\/withdraw$/u.exec(url.pathname);

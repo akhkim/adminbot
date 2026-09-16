@@ -29,6 +29,16 @@ export const adminBotActionTypes = [
   "calendar.cancel",
   "email.draft",
   "email.send",
+  // The onboarding guide for one person, sent through the same path the Onboarding tab uses.
+  //
+  // Its own type rather than `email.send` because sending it is not only sending: the path mints a
+  // Slack Connect invite, provisions a Drive folder, invites the project channels and files the DCS
+  // account request, and the copy tells the reader those are coming. An `email.send` carrying the
+  // rendered body would deliver the promise and none of the provisioning, which is the failure
+  // guide-sender.ts orders its steps to prevent. The payload therefore names the template and the
+  // recipient and lets the sender compose, rather than carrying a body an approver could edit into
+  // something the provisioning no longer matches.
+  "onboarding.send_guide",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -53,6 +63,33 @@ export const adminBotActionTypes = [
   // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
   // an attachment), so it is a typed action rather than a call out of the service.
   "logistics.send_signed_document",
+  // The letter deadline reminder that lands on the head professor's desk three days out. Its own
+  // type rather than a `member_nudge.send` because the nudge pipeline deliberately refuses to
+  // message the head professor -- the lab does not chase its PI -- and this is the one mail that
+  // is addressed to that desk about its own queue rather than about somebody else's chore. The
+  // recipient is the head professor on file and the body is composed from the request log, so
+  // nothing about who it reaches or what it says comes from a caller.
+  "logistics.rec_letter_reminder",
+  /**
+   * One message the hourly inbox pass could not decide, put to the reviewer as an approval.
+   *
+   * The queue it drains is the four-or-so messages a pass leaves behind, and until now the only way
+   * to clear one was to open the Control UI and work the Email Review tab. That is a page somebody
+   * has to remember to visit, so items sat there.
+   *
+   * An approval rather than an agent tool, and the distinction is the whole point. A tool call
+   * carries no caller identity -- `ToolPluginExecutionContext` has the tool-call id and the runtime
+   * api and nothing about who is typing -- so "only Andrew may resolve these" would have to trust
+   * whoever claimed to be him. An approval is checked against the sender id the platform supplies:
+   * `isSlackApprovalAuthorizedSender` in the Slack plugin tests the real Slack user against the
+   * account's allowFrom list, which is why chat approval is switched off everywhere else and why
+   * this rides the approval path instead of going around it.
+   *
+   * The payload names one resolution AdminBot already believes is right -- a paper and the stage
+   * the message is evidence for, or a dismissal -- so approving is a press rather than an answer.
+   * What is being approved is the resolution, not merely the reading.
+   */
+  "email_review.resolve",
   "member_nudge.send",
   // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
   // type rather than a member_nudge.send with two targets: the audit trail should be able to
@@ -450,12 +487,10 @@ export const adminBotMandatoryProfileFields = [
   "research_topics",
   "correspondence_email",
   "whatsapp",
-  "joined_month",
   "github_url",
   "linkedin_url",
   "linkedin_urn",
   "cv_url",
-  "intake_form_url",
   "openreview_id",
 ] as const;
 
@@ -715,12 +750,10 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   research_topics: "Research topics",
   correspondence_email: "Correspondence email",
   whatsapp: "WhatsApp",
-  joined_month: "Joined month",
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
   cv_url: "CV",
-  intake_form_url: "Application form response link",
   openreview_id: "OpenReview",
 };
 
@@ -780,12 +813,20 @@ export function adminBotSlackActivityOf(member: {
  */
 export const adminBotConfidentialMemberFields = [
   "personal_circumstances",
+  // Where someone wants to move next, and when. Written for the person who can help with it, not
+  // for a roster their current collaborators read: "applying for PhDs in December" is a fact about
+  // a job search, and a member should not have to weigh who else sees it before answering.
+  "next_position",
   // A personal phone number. It is on the record because the admins need to reach somebody on a
   // conference day, not so that the roster publishes it to everyone who opens devtools.
   "whatsapp",
   // Their application. It is the most one-reader document on the record -- written for the people
   // deciding, and nobody else's to reread afterwards.
   "intake_form_url",
+  "intake_form_unavailable",
+  // Where a member's one-on-one notes live. Same reason: written for two people, and the roster
+  // should not be the thing that tells the other 198 where to look.
+  "one_on_one_folder_url",
 ] as const;
 
 /**
@@ -1299,6 +1340,7 @@ export type AdminBotCvScanResult = {
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
+  preferred_name?: string;
   /**
    * The lab spreadsheet's "Member Type" column, verbatim ("full", "full, coauthor-major",
    * "alumni", "external-prof", ...).
@@ -1337,6 +1379,12 @@ export type AdminBotLabMemberInput = {
    * is nothing here worth hiding, and whoever is placing the order needs to read it.
    */
   merch_requests?: string;
+  /**
+   * Where the member wants to go next -- the position or move they are aiming for, when they want
+   * it to happen, and what the lab can do to help. Free text: the useful answers are sentences,
+   * not a job title picked off a list.
+   */
+  next_position?: string;
   /**
    * Free text a member may share about health or family circumstances. Confidential: see
    * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.
@@ -1406,6 +1454,21 @@ export type AdminBotLabMemberInput = {
   // -- the lab cannot derive it from the shared form URL, which is why it is a field they fill in
   // rather than a link the profile can render for them.
   intake_form_url?: string;
+  intake_form_unavailable?: boolean;
+  /**
+   * The Google Drive folder holding this member's one-on-one notes.
+   *
+   * A folder and never a document: the notes accumulate one file per meeting, so the stable thing
+   * to store is the container. Validated as a Drive *folder* URL (see SOCIAL_URL_FIELDS in
+   * kernel/service.ts) rather than any Google link, because a pasted Doc link here is the first
+   * meeting's notes filed as if it were the whole series -- it looks right until the second
+   * meeting, and then quietly stops being the answer to "where are my one-on-ones".
+   *
+   * Confidential (adminBotConfidentialMemberFields): the folder is Drive-permissioned anyway, but
+   * what the roster would otherwise publish to every signed-in member is *that these notes exist
+   * and where*, which is between the member and the admins keeping them.
+   */
+  one_on_one_folder_url?: string;
   linkedin_url?: string;
   // The numeric LinkedIn URN behind a member's profile ("ACoAAB..." or the digits form), which the
   // social automation needs to @-mention someone in a post: LinkedIn's API addresses people by URN,
@@ -1581,6 +1644,19 @@ export type AdminBotSettingsInput = {
   // source tree, and /settings is admin-gated on read as well as write.
   head_professor_whatsapp?: string;
   /**
+   * The city a standing local event's guest list is drawn from ("Zurich"), and the zone that city
+   * sits in ("Europe/Zurich").
+   *
+   * Setting the city is load-bearing beyond this sweep: it is what opts the lab into stamping
+   * every member's sign-in with the place the IP resolved to. Until it is set, only the head
+   * professor's sign-ins carry a place (workflows/members/travel-history.ts explains why), and the
+   * audience sweep has no IP signal to read for anybody else. Clearing it stops the collection.
+   */
+  location_audience_city?: string;
+  location_audience_zone?: string;
+  /** The event whose guest list the weekly sweep reconciles. */
+  location_audience_event_id?: string;
+  /**
    * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
    *
    * Separate from `head_professor_member_id` because the two answer different questions. The head
@@ -1627,6 +1703,19 @@ export type AdminBotSettings = {
   cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
+  /**
+   * The city a standing local event's guest list is drawn from ("Zurich"), and the zone that city
+   * sits in ("Europe/Zurich").
+   *
+   * Setting the city is load-bearing beyond this sweep: it is what opts the lab into stamping
+   * every member's sign-in with the place the IP resolved to. Until it is set, only the head
+   * professor's sign-ins carry a place (workflows/members/travel-history.ts explains why), and the
+   * audience sweep has no IP signal to read for anybody else. Clearing it stops the collection.
+   */
+  location_audience_city?: string;
+  location_audience_zone?: string;
+  /** The event whose guest list the weekly sweep reconciles. */
+  location_audience_event_id?: string;
   /**
    * Where AdminBot's admin-facing notices land: the lab manager, not the head professor.
    *
@@ -1719,6 +1808,15 @@ export type AdminBotPaperArtifactLinks = {
   brainstorming_doc_url?: string;
   overleaf_view_url?: string;
   overleaf_edit_url?: string;
+  /**
+   * Overleaf's link-sharing URL, which is a credential rather than an address.
+   *
+   * Separate from `overleaf_edit_url` because the two are not interchangeable despite both
+   * granting write access. That one holds a project id, which is inert on its own and is what
+   * PaperMentor is addressed with; this one holds a token that works for anyone who has it. A
+   * single field would have made "can PaperMentor review this" unanswerable from the value.
+   */
+  overleaf_share_url?: string;
   submission_url?: string;
   google_drive_pdf_url?: string;
   arxiv_url?: string;
@@ -2163,6 +2261,8 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
+    // One pass of a standing local event's guest list against where people actually are.
+    | "calendar.local_audience_swept"
     // One pass over the back catalogue, linking printed author names to the people they name.
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.
@@ -2189,6 +2289,24 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // The three-day letter warning to the head professor's inbox. One row per pass that actually
+    // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
+    // she hear about this letter, and when" has an answer that does not depend on her mailbox.
+    | "rec_letter_reminders.swept"
+    // One PaperMentor review, as the collector reported it. Recorded on every pass rather than
+    // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
+    // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
+    | "papermentor.run_recorded"
+    // A paper moving itself along the trunk on the strength of its own evidence, and the slots
+    // that released the step. The audit row is the proof: "why is this paper at submission" has an
+    // answer that names four pieces of evidence rather than "somebody changed a dropdown".
+    // One pass of the evidence checker: how much was confirmed, how much contradicted, and how
+    // much it could not tell. Counts rather than rows -- which paper is which is on the rows.
+    | "paper_evidence.verified"
+    | "paper.stage_advanced"
+    // The head professor being signed up to decide, once per prepared package. Never an approval:
+    // nothing in AdminBot ticks `pi_approval`.
+    | "paper.pi_review_requested"
     // The nightly roster sync. Three rows rather than one because they answer three different
     // questions after the fact: what one person's Member Type became and what that cost them, what
     // Slack removals it filed, and whether the pass ran at all (a refused pass records a
@@ -2209,6 +2327,9 @@ export type AdminBotAuditEvent = {
     | "prereg.nudged"
     | "paper.deleted"
     | "onboarding.guide_sent"
+    // One weekly pass over the sheet for joiners and re-typed members. Its timestamp is what the
+    // next pass reads to know which applied type changes it has already seen.
+    | "onboarding_sweep.ran"
     | "members.disengagement_swept"
     | "settings.updated"
     // What somebody thought of one surface. Carries the rating, never the comment -- a comment can
@@ -2461,6 +2582,22 @@ export type AdminBotMemberLocationEntry = {
    * not the same claim, and countries with several zones would make it a guess presented as fact.
    */
   timezone?: string;
+  /**
+   * The same instant as `observed_at`, rendered in the local wall-clock of wherever the
+   * observation came from, offset included (`2026-08-11T23:30:00-04:00`).
+   *
+   * `observed_at` is UTC, which is the right key for ordering and dedup but the wrong one for the
+   * one question this data is kept to answer: a residency day is a *local* calendar day. A sign-in
+   * at 23:30 in Toronto is one Canada day; recorded only as `...T03:30:00Z` it lands on the next
+   * UTC date and would be miscounted at every month boundary. This field is that instant told in
+   * the zone that owns the day, so the count is done against the clock the border uses.
+   *
+   * A rendering, not a second claim: it carries a numeric offset, never a zone name, so it says
+   * nothing `timezone` does not and cannot be mistaken for a self-reported zone. Absent whenever
+   * the collecting source had no zone to render it in -- an offset invented from a country would
+   * be the exact guess the `timezone` note above refuses.
+   */
+  observed_at_local?: string;
 };
 
 /** What the member is being asked to confirm, and the evidence for asking. */
@@ -2547,6 +2684,16 @@ export type AdminBotMeetingRecordInput = {
   /** RFC3339. Falls back to when the notice was received if Zoom's date line did not parse. */
   started_at: string;
   duration_minutes?: number;
+  /**
+   * Recording length in seconds, as the Zoom notice stated it.
+   *
+   * Alongside `duration_minutes` rather than replacing it: that one is what a person types when
+   * filing a meeting by hand, and it is the length of the *meeting*. This is the length of the
+   * *recording*, which is a different number -- somebody starts recording late, or stops it before
+   * the conversation ends -- and it is exact, so the card can say "1m 38s" instead of rounding a
+   * short clip to nothing.
+   */
+  duration_seconds?: number;
   host_email?: string;
   recording: AdminBotMeetingRecordingLinks;
   transcript?: AdminBotMeetingTranscriptState;
@@ -2755,6 +2902,38 @@ export type AdminBotLogisticsMeeting = {
   length_minutes?: number;
   /** When the member added the row, which is what decides order of service. */
   submitted_at?: string;
+  /**
+   * Where the member is, in their own words -- "Zurich", "IST time zone", "Pacific".
+   *
+   * Kept as free text next to the machine-readable `timezone` rather than folded into it, because
+   * the call is placed by a human between flights: "Toronto" and "flexible after 6pm" are both
+   * answers she can act on, and neither survives being parsed into an IANA zone.
+   */
+  city?: string;
+  /**
+   * The document of questions written before the call.
+   *
+   * Stored as the member typed it and validated separately -- see `doc-prep-link.ts`. A link that
+   * nobody but its author can open is the failure this field exists to catch, so an unreachable
+   * one is kept on the request rather than rejected at submit: the member needs to see what they
+   * gave in order to fix its sharing.
+   */
+  doc_prep_url?: string;
+  /**
+   * Whether the member has messaged a "hello" on WhatsApp, so their number is findable there.
+   *
+   * Tri-state on purpose: `undefined` is "not answered", which is a different thing from "no" and
+   * is what most rows in the sheet actually hold today.
+   */
+  whatsapp_hello?: boolean;
+  /**
+   * yyyy-mm-dd after which the call is no longer worth placing.
+   *
+   * Distinct from `preferred_time`: these calls are not booked into a slot, they are placed at a
+   * trip break, so the useful question is not "when would you like it" but "how long does this
+   * stay worth doing".
+   */
+  latest_ok_date?: string;
 };
 
 export type AdminBotLogisticsRequestInput = {

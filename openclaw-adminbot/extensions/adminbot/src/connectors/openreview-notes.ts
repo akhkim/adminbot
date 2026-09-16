@@ -12,6 +12,8 @@
 // the accept list. A venue that has not released decisions simply answers with nothing, which is
 // the honest answer rather than a list of papers that are not in yet.
 
+import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
+
 const BASE_URL = "https://api2.openreview.net";
 const LOGIN_TIMEOUT_MS = 20_000;
 const PAGE_TIMEOUT_MS = 60_000;
@@ -166,4 +168,57 @@ function listValue(field: unknown): string[] {
   return value.flatMap((entry) =>
     typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
   );
+}
+
+/**
+ * Asks OpenReview whether one forum is really there, and what it is called.
+ *
+ * Anonymous, like the accepted-papers read above, and that is what decides the answer it is
+ * allowed to give. A submission under blind review is invisible to a reader who is not on its
+ * committee, so "we cannot see it" and "there is no such paper" are the same HTTP answer -- and
+ * reading that as absence would invalidate the evidence of every paper the lab currently has in
+ * review. This probe therefore **never** reports `missing`: it confirms what it can see and says
+ * "could not tell" about everything else.
+ *
+ * That still catches the thing worth catching, because the check that matters here is positive:
+ * a forum that answers with a title the lab can compare against the paper on file.
+ */
+export function createOpenReviewForumProbe(
+  options: { fetchImpl?: typeof globalThis.fetch; baseUrl?: string } = {},
+): AdminBotArtifactProbe {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const baseUrl = options.baseUrl ?? BASE_URL;
+  return async (forumId) => {
+    if (!/^[A-Za-z0-9_-]{4,64}$/u.test(forumId)) {
+      return { status: "unreadable", reason: "not an OpenReview id" };
+    }
+    try {
+      const response = await fetchImpl(
+        `${baseUrl}/notes?forum=${encodeURIComponent(forumId)}&limit=1`,
+        { signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) },
+      );
+      if (!response.ok) {
+        return { status: "unreadable", reason: `OpenReview answered ${response.status}` };
+      }
+      const body = (await response.json()) as { notes?: Array<Record<string, unknown>> };
+      const note = body.notes?.[0];
+      if (!note) {
+        return {
+          status: "unreadable",
+          reason: "OpenReview showed no note — a blind submission looks the same as none",
+        };
+      }
+      const content = (note.content ?? {}) as Record<string, unknown>;
+      const titleField = content.title as { value?: unknown } | string | undefined;
+      const title =
+        typeof titleField === "string"
+          ? titleField
+          : typeof titleField?.value === "string"
+            ? titleField.value
+            : undefined;
+      return { status: "found", ...(title ? { title: title.trim() } : {}) };
+    } catch (error) {
+      return { status: "unreadable", reason: (error as Error).message.slice(0, 200) };
+    }
+  };
 }

@@ -29,6 +29,13 @@ import {
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
+import {
+  isPaperMentorReviewStale,
+  paperMentorFixesDetail,
+  paperMentorReviewDetail,
+  paperMentorReviewState,
+  type PaperMentorContext,
+} from "./papermentor-nudges.js";
 
 /** A paper this old is dormant: it is not late, it is resting, and nudging it trains people to ignore nudges. */
 const DORMANT_MONTHS = 24;
@@ -345,6 +352,7 @@ export function actionablePaperSlots(
   stored: AdminBotPaperSlotRecord[],
   now: Date,
   drafts: AdminBotSocialDraftRecord[] = [],
+  papermentor: PaperMentorContext = {},
 ): NudgeItem[] {
   if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
     return [];
@@ -353,6 +361,13 @@ export function actionablePaperSlots(
   const settled = (slot: AdminBotPaperSlot) =>
     isAdminBotPaperSlotSettled(rows.get(slot)?.status ?? "missing");
 
+  // What the reviewer has said about this paper, which two of the slots below speak for. A review
+  // that has gone stale re-opens its own slot -- and only while the paper is unsubmitted, because
+  // asking somebody to re-review a paper that is already with a venue is asking for work that
+  // cannot change anything. The stored row keeps saying the review happened: it did.
+  const reviewState = paperMentorReviewState(papermentor, now);
+  const reviewStale = isPaperMentorReviewStale(reviewState) && !settled("submission");
+
   const out: NudgeItem[] = [];
   for (const slot of adminBotPaperSlots) {
     const definition = adminBotPaperSlotRegistry[slot];
@@ -360,20 +375,32 @@ export function actionablePaperSlots(
       continue;
     }
     const record = rows.get(slot);
-    if (!record || isAdminBotPaperSlotSettled(record.status)) {
+    if (!record) {
+      continue;
+    }
+    const reopened = slot === "papermentor_review" && reviewStale;
+    if (isAdminBotPaperSlotSettled(record.status) && !reopened) {
       continue;
     }
     if (!definition.upstream.every(settled)) {
       continue;
     }
+    // Three sources for the line under the label, in the order they matter: a value the service
+    // refused, what the reviewer said, and nothing.
+    const detail =
+      record.status === "invalid" && record.invalid_reason
+        ? `the value on file was rejected: ${record.invalid_reason}`
+        : slot === "papermentor_review"
+          ? paperMentorReviewDetail(reviewState)
+          : slot === "fixes_merged"
+            ? paperMentorFixesDetail(papermentor.latest, now)
+            : undefined;
     out.push({
       domain: "paper_slot",
       subjectId: adminBotPaperSlotSubjectId(paper.id, slot),
       owner: definition.owner,
       label: definition.label,
-      ...(record.status === "invalid" && record.invalid_reason
-        ? { detail: `the value on file was rejected: ${record.invalid_reason}` }
-        : {}),
+      ...(detail ? { detail } : {}),
       priority: adminBotPaperSlotBranchPriority[definition.branch],
       deadlineBearing: definition.deadlineBearing,
       slot,

@@ -6,6 +6,19 @@ import {
   startControlUiE2eServer,
   type ControlUiE2eServer,
 } from "../../../test-helpers/control-ui-e2e.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
+
+const workshopFixture = DEADLINE_VENUES.find((venue) => venue.name.includes("Document Intelligence"))!;
+const layoutVenues = ["Document Intelligence Workshop", "Example Research Workshop"].map(
+  (name, index) => ({
+    ...workshopFixture,
+    id: `layout-workshop-${index}`,
+    deadline_id: `layout-workshop-${index}`,
+    name,
+    venue_group: "Example 2026 Workshops",
+    deadline_aoe: "2026-09-14 23:59:00",
+  }),
+);
 
 const executablePath = resolvePlaywrightChromiumExecutablePath(chromium.executablePath());
 const describeLayout = canRunPlaywrightChromium(executablePath) ? describe : describe.skip;
@@ -32,6 +45,9 @@ describeLayout("mounted deadline layout", () => {
         await page.clock.setFixedTime(new Date("2026-09-09T12:00:00Z"));
         await page.route("**/*", (route) =>
           route.request().url().startsWith(server.baseUrl) ? route.continue() : route.abort(),
+        );
+        await page.route("**/deadlines/venues.json", (route) =>
+          route.fulfill({ json: { items: layoutVenues } }),
         );
         await page.goto(`${server.baseUrl}adminbot/deadlines`);
         await page.locator(".deadline-group__summary").first().waitFor();
@@ -105,14 +121,10 @@ describeLayout("mounted deadline layout", () => {
               const history = workshop
                 ?.querySelector(".deadline-card__history-trigger")
                 ?.getBoundingClientRect();
-              const dateText = workshop?.querySelector("time");
               const icon = workshop?.querySelector(".deadline-card__history-trigger svg");
               return {
-                iconTextRatio:
-                  dateText && icon
-                    ? icon.getBoundingClientRect().width /
-                      Number.parseFloat(getComputedStyle(dateText).fontSize)
-                    : 0,
+                iconWidth: icon?.getBoundingClientRect().width ?? 0,
+                targetWidth: history?.width ?? 0,
                 historyBesideDate: Boolean(date && history && history.top < date.bottom),
                 compact:
                   mode !== "Groups" ||
@@ -123,7 +135,8 @@ describeLayout("mounted deadline layout", () => {
               };
             }, view);
             expect(result.count).toBeGreaterThan(0);
-            expect(result.iconTextRatio, "history icon scales with date text").toBeCloseTo(1, 1);
+            expect(result.iconWidth, "compact deadline menu icon").toBe(14);
+            expect(result.targetWidth, "deadline menu touch target").toBeGreaterThanOrEqual(32);
             if (width === 390 && scale >= 2) {
               expect(result.historyBesideDate, "history follows the wrapped date inline").toBe(
                 true,

@@ -9,6 +9,7 @@
 // <dialog> and some selection state that dies with it.
 
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../extensions/adminbot/src/contracts/overleaf.js";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
 import {
   CONFIDENCE_CHOICES,
@@ -107,7 +108,7 @@ export function openPreRegistrationDialog(deps: PreRegistrationDeps): void {
           it. Add it here and it is saved with the registration.
         </p>
         <input class="prereg__overleaf" type="url" data-el="overleaf"
-          placeholder="https://overleaf.com/project/65f2a1c9d4e3b7a801f6"
+          placeholder="https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6"
           value="${escapeHtml(overleafDraft)}" />
       </section>`;
   };

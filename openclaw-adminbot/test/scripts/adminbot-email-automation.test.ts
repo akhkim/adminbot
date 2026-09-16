@@ -55,6 +55,84 @@ afterAll(() => {
 });
 
 describe("adminbot email automation", () => {
+  // The thread is the identifier, not the address. These threads are ones AdminBot opened with one
+  // candidate, so a reply on one is that candidate's -- and holding it for review because they
+  // replied from Gmail, or from the new university account the thread is about, was most of what
+  // the review queue actually contained.
+  it("accepts an onboarding follow-up that arrives from another address on the tracked thread", () => {
+    const tracked = { candidate_email: "Candidate@Example.edu", decision: "accept" as const };
+    const authorized = authorizeClassification(
+      message({ from: "candidate.personal@gmail.com" }),
+      classification({ category: "onboarding_followup", confidence: 0.95 }),
+      tracked,
+    );
+    expect(authorized.category).toBe("onboarding_followup");
+    expect(authorized.decision).toBe("accept");
+    // Bound to the candidate the thread names, never to the address that happened to send it.
+    expect(authorized.candidateEmail).toBe("candidate@example.edu");
+    expect(authorized.reason).toContain("candidate.personal@gmail.com");
+  });
+
+  it("still refuses an onboarding follow-up with no tracked thread to bind it to", () => {
+    const authorized = authorizeClassification(
+      message({ from: "someone@example.com" }),
+      classification({ category: "onboarding_followup", confidence: 0.95 }),
+    );
+    expect(authorized.category).toBe("unknown");
+    expect(authorized.reason).toContain("matched no tracked onboarding thread");
+  });
+
+  // Trust widened past the confidence gate for the two categories whose worst outcome is a row
+  // somebody deletes, so the people who configured the deployment stop reviewing their own notes.
+  it("takes a shaky talk entry from a lab address at its word", () => {
+    const shaky = classification({ category: "talk_entry", confidence: 0.4 });
+    expect(
+      authorizeClassification(message({ from: "pi@example.edu" }), shaky).category,
+    ).toBe("talk_entry");
+    // Same read from a stranger still waits for a human.
+    expect(
+      authorizeClassification(message({ from: "stranger@example.com" }), shaky).category,
+    ).toBe("unknown");
+  });
+
+  // Forwarding is how these tasks arrive -- a seminar announcement, a receipt -- so a forward from
+  // a lab address is the request, not a reason to doubt it. What bounds the risk is the effect:
+  // creation only for the calendar, and a reimbursement package that lands in the lab's own admin
+  // inbox with the signature fields left blank.
+  it("acts on a forwarded calendar or reimbursement task from a lab address", () => {
+    for (const category of ["calendar_event", "reimbursement"] as const) {
+      const shaky = classification({ category, confidence: 0.4 });
+      expect(
+        authorizeClassification(
+          message({ from: "pi@example.edu", subject: "Fwd: seminar next week" }),
+          shaky,
+        ).category,
+      ).toBe(category);
+      expect(
+        authorizeClassification(
+          message({
+            from: "pi@example.edu",
+            subject: "receipts",
+            body: "---------- Forwarded message ---------\nFrom: vendor@elsewhere.org\nInvoice attached.",
+          }),
+          shaky,
+        ).category,
+      ).toBe(category);
+    }
+  });
+
+  // The sender is still the whole authority. A forward from outside is not a way in.
+  it("still refuses the same forwarded task from a stranger", () => {
+    for (const category of ["calendar_event", "reimbursement", "talk_entry"] as const) {
+      expect(
+        authorizeClassification(
+          message({ from: "stranger@example.com", subject: "Fwd: seminar next week" }),
+          classification({ category, confidence: 0.4 }),
+        ).category,
+      ).toBe("unknown");
+    }
+  });
+
   it("accepts high-confidence student outreach for LLM-guided handling", () => {
     expect(authorizeClassification(message(), classification()).category).toBe(
       "student_reachout",
@@ -144,8 +222,12 @@ describe("adminbot email automation", () => {
     // The bypass is the sender's, not the category's: the same hedged read from outside is still
     // held for a person.
     expect(authorizeClassification(message(), hedged).category).toBe("unknown");
-    // And it does not leak to the other privileged categories, where a low-confidence read means
-    // forms or a CV line built from an email nobody was sure about.
+    // Reimbursement used to be excluded here, on the reading that a hedged classification meant
+    // forms built from an email nobody was sure about. It is included now: the package it produces
+    // is mailed to the lab's own admin with the funding-source and signature fields deliberately
+    // blank, so a person handles it before it reaches anyone -- and the extraction checks in
+    // prepareReimbursement, which are about the figures rather than the sender, still hold an
+    // incomplete one back. The category being wrong costs one ignored draft in your own inbox.
     expect(
       authorizeClassification(
         message({ from: "pi@example.edu" }),
@@ -155,7 +237,7 @@ describe("adminbot email automation", () => {
           reason: "maybe expenses",
         }),
       ).category,
-    ).toBe("unknown");
+    ).toBe("reimbursement");
   });
 
   it("refuses any calendar command that is not a create or a read", () => {

@@ -232,4 +232,53 @@ describe("standalone deadline board", () => {
       dom.window.close();
     }
   });
+
+  // A third of the live board carries a date the sweep itself does not trust -- the CFP and
+  // OpenReview disagree, or the portal cutoff was never verified -- and this page used to show none
+  // of it, so every date read as equally settled. The console's card already said so; this is the
+  // same fact in the same words on the surface visitors actually read.
+  it("says when a date is not confirmed, in every view", () => {
+    const unsure = [
+      {
+        ...workshops[0],
+        id: "disagreeing-workshop",
+        name: "Disagreeing Workshop",
+        deadline_source_status: "cfp_disagrees_with_openreview",
+      },
+      {
+        ...workshops[1],
+        id: "unverified-workshop",
+        name: "Unverified Workshop",
+        deadline_source_status: "portal_unverified",
+      },
+    ];
+    const dom = new JSDOM(renderDeadlinesWebUi(unsure), {
+      runScripts: "dangerously",
+      url: "http://localhost/deadlines",
+    });
+    try {
+      const document = dom.window.document;
+
+      // All three views live in the DOM at once, so every count below is scoped to its own
+      // markup -- an unscoped querySelectorAll sees the same venue three times.
+      document.querySelector<HTMLButtonElement>("#v-groups")!.click();
+      const badges = [
+        ...document.querySelectorAll<HTMLElement>(".deadline-group .badge--unconfirmed"),
+      ];
+      expect(badges.map((badge) => badge.textContent)).toEqual(["dates disagree", "unconfirmed"]);
+      expect(badges[0]?.title).toContain("Sources disagree");
+      expect(badges[1]?.title).toContain("portal cutoff is unverified");
+      // And the long form still reaches the row, where the rest of the caveats live.
+      expect(document.body.textContent).toContain("Sources disagree");
+
+      document.querySelector<HTMLButtonElement>("#v-cards")!.click();
+      expect(document.querySelectorAll(".card .badge--unconfirmed")).toHaveLength(2);
+
+      document.querySelector<HTMLButtonElement>("#v-table")!.click();
+      const notes = [...document.querySelectorAll<HTMLElement>("tbody .cnote")];
+      expect(notes.map((note) => note.textContent)).toEqual(["unconfirmed", "unconfirmed"]);
+    } finally {
+      dom.window.close();
+    }
+  });
 });

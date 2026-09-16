@@ -2891,6 +2891,116 @@ describe("the calendar routes", () => {
     expect(executed[0]?.payload.from).toBeUndefined();
   });
 
+  // An exclusive send: the tab's filters are the whole guest list, so the same call adds the people
+  // who match and takes off the roster members who no longer do.
+  it("adds and removes in one call, as two typed actions", async () => {
+    const executed: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({
+            type: proposal.type,
+            payload: proposal.proposed_payload as Record<string, unknown>,
+          });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["new@cs.toronto.edu"],
+        remove: ["gone@cs.toronto.edu"],
+        remaining_attendees: ["stays@cs.toronto.edu", "new@cs.toronto.edu"],
+        summary: "Lab retreat",
+      }),
+    });
+    expect(response.status).toBe(200);
+
+    // Added first, so a failure between the two leaves the event over-inclusive rather than short
+    // of the people who were supposed to be on it.
+    expect(executed.map((entry) => entry.type)).toEqual([
+      "calendar.add_attendees",
+      "calendar.remove_attendees",
+    ]);
+    expect(executed[1]?.payload).toMatchObject({
+      event_id: "evt-9",
+      removed_attendees: ["gone@cs.toronto.edu"],
+      remaining_attendees: ["stays@cs.toronto.edu", "new@cs.toronto.edu"],
+    });
+  });
+
+  it("removes without adding when the filters only narrowed", async () => {
+    const executed: string[] = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.type);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: [],
+        remove: ["gone@cs.toronto.edu"],
+        remaining_attendees: ["stays@cs.toronto.edu"],
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(executed).toEqual(["calendar.remove_attendees"]);
+  });
+
+  // The write behind a removal replaces the guest list rather than subtracting from it, so both of
+  // these would quietly uninvite people the caller never meant to touch.
+  it("refuses a removal that would clear the event or drop the people it just invited", async () => {
+    const executed: string[] = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.type);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const cleared = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ remove: ["gone@cs.toronto.edu"], remaining_attendees: [] }),
+    });
+    expect(cleared.status).toBe(422);
+    await expect(cleared.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("refusing to clear") },
+    });
+
+    const orphaned = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["new@cs.toronto.edu"],
+        remove: ["gone@cs.toronto.edu"],
+        // Predates the add, so executing this would take the new invitee straight back off.
+        remaining_attendees: ["stays@cs.toronto.edu"],
+      }),
+    });
+    expect(orphaned.status).toBe(422);
+    await expect(orphaned.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("new@cs.toronto.edu") },
+    });
+
+    // Neither refusal reached Google.
+    expect(executed).toEqual([]);
+  });
+
   // Every calendar write failed with `Google API error (400 badRequest)` because the wall-clock
   // time went to Google unresolved. An already-absolute time must still pass through untouched.
   it("passes an already-absolute time through unchanged", async () => {
@@ -2997,6 +3107,14 @@ describe("the calendar routes", () => {
       body: JSON.stringify({ attendees: [] }),
     });
     expect(noAttendees.status).toBe(400);
+
+    // Neither half named is still nothing to do; a removal alone is a real send (tested above).
+    const neither = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ attendees: [], remove: [] }),
+    });
+    expect(neither.status).toBe(400);
 
     const noTimes = await fetch(`${baseUrl}/calendar/events`, {
       method: "POST",

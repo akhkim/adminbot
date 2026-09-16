@@ -212,6 +212,74 @@
   margin-top: 0;
 }
 
+/* ── The signature request form ──────────────────────────────────────────────────────────────
+   Three fields where the tab used to hold a link out to the Google Form. They wear the same shell
+   as Supporting Content directly above them -- section, card-title, card-sub, stacked label over
+   control -- because the two are read as one page and a form built out of bare `adminbot-form__field`
+   labels was not styled at all: those input rules are scoped to an `.adminbot-form` ancestor this
+   section does not have, so the controls fell back to the browser's own. */
+.logistics-signature__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-4);
+}
+
+/* A date is a fixed-width thing; stretching it to the card's width reads as a text box that has
+   lost its content. Bounded rather than sized, so a locale with a longer format still fits. */
+.logistics-signature__field--short {
+  max-width: 18rem;
+}
+
+.logistics-signature__input,
+.logistics-signature__note {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.logistics-signature__note {
+  resize: vertical;
+}
+
+.logistics-signature__input::placeholder,
+.logistics-signature__note::placeholder {
+  color: var(--placeholder);
+}
+
+.logistics-signature__input:focus-visible,
+.logistics-signature__note:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* The send button and the way out to the form sit on one line, the link quiet beside the button:
+   it is the fallback for a send Google refuses, not a second way of doing the same thing. */
+.logistics-signature__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+}
+
+.logistics-signature__status {
+  margin: var(--space-3) 0 0;
+}
+
+/* The link carries a top margin from when it stood alone under the heading; inside the actions row
+   the row's own alignment places it, and the margin only pushed it off the button's baseline. */
+.logistics-signature__actions .logistics-signature__link {
+  margin-top: 0;
+}
+
 /* .adminbot-form's input rules are scoped to that parent class and pin a control-height, which
    would squash a textarea -- so this surface styles its own, as the reimbursement composer does. */
 .logistics-supporting__description {
@@ -673,6 +741,14 @@
    for the answer to whichever button they pressed. */
 .logistics-request__status--ok {
   color: var(--ok);
+}
+
+/* What the call sheet made of a meeting request, next to the confirmation. Muted and on its own
+   line: the request landed either way, and this is the follow-up -- a doc prep link to fix, or a
+   row already in the queue -- not a second verdict on the submit. */
+.logistics-request__status--note {
+  display: block;
+  color: var(--text-muted);
 }
 
 /* Why Submit would refuse, sitting between the status and the buttons. Not an error color: nothing
@@ -1407,6 +1483,17 @@
   color: var(--muted);
 }
 
+/* The line under the title saying what this queue is for. Quieter than the rows it introduces --
+   it is read once, when you are learning the page, and skipped every time after that. Sits tight
+   under the heading so it reads as part of it rather than as the first item. */
+.professor__blurb {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
 .professor__list {
   margin: var(--space-3) 0 0;
   padding: 0;
@@ -1419,9 +1506,83 @@
 
 .professor__list li {
   display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+/* An opened list scrolls inside itself rather than pushing the sections below it off the screen:
+   the point of opening one queue is to read it without losing the page it sits on. */
+.professor__list[data-open="true"] {
+  max-height: 22rem;
+  overflow-y: auto;
+  /* Room for the focus ring on the last row, which a scroll container would otherwise clip. */
+  padding: 2px;
+  margin-inline: -2px;
+}
+
+/* The row itself, which is now the way through to whatever it is about. Reset to look like the
+   text it replaced: a row that announced itself as a button with a border and a background would
+   put five buttons where the page wants a readable list. The affordance is the hover ground, the
+   chevron, and the focus ring -- enough to invite a click, quiet enough to still read as a queue. */
+.professor__row {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  margin-inline-start: calc(-1 * var(--space-2));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.professor__row:hover {
+  background: var(--bg-hover);
+}
+
+.professor__row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   align-items: baseline;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* Sits still at the end of the row, and only colours in on hover: a chevron per row at full
+   strength is five arrows pointing at nothing in particular. */
+.professor__row-go {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.professor__row:hover .professor__row-go,
+.professor__row:focus-visible .professor__row-go {
+  opacity: 1;
+}
+
+.professor__row-go svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* A row's second errand -- the PDF on a paper waiting for approval -- kept outside the row button
+   so both are reachable. */
+.professor__row-aside {
+  flex: none;
+  align-self: center;
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
 }
 
 .professor__when {
@@ -1435,6 +1596,64 @@
   margin: var(--space-3) 0 0;
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
+}
+
+/* The broadcast composer. Carries the accent edge the dashboard banner does, so the box she types
+   into and the strip the lab reads are visibly the same object seen from both ends. */
+.professor__broadcast {
+  border-inline-start: 3px solid var(--accent, currentColor);
+}
+
+.professor__broadcast-box {
+  margin-top: var(--space-3);
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: inherit;
+}
+
+/* Wraps to one control per row on a narrow screen rather than squeezing a date input to nothing. */
+.professor__broadcast-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.professor__broadcast-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted-strong);
+}
+
+/* Pushed to the trailing edge so the buttons sit together, and drop below the fields when the row
+   wraps rather than stranding a lone button beside a date. */
+.professor__broadcast-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.professor__broadcast-notice {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__broadcast-notice--error {
+  color: var(--danger, var(--warn));
+}
+
+.professor__broadcast-notice--success {
+  color: var(--muted-strong);
 }
 
 /* The adoption columns. `auto-fit` rather than three fixed tracks: at a narrow width three columns
@@ -1480,13 +1699,48 @@
   color: var(--danger, var(--warn));
 }
 
-/* Everything past the visible slice, counted once under the last bucket rather than per window --
-   a "+2 more" inside each of four buckets says nothing about how long the queue actually is. */
-.professor__bucket-more {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
+/* The switch that opens the rest of the list, counted once for the whole queue rather than per
+   window -- a "+2 more" inside each of four buckets says nothing about how long the queue is. */
+.professor__more {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
+.professor__more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+.professor__more-btn:hover {
+  text-decoration: underline;
+}
+
+.professor__more-chevron {
+  display: inline-flex;
+}
+
+.professor__more-chevron svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.professor__more-note {
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Quieter than it was. It is no longer the only way off the page -- every row is -- so it reads as
+   what it now does: the whole queue, with the filters and sorting this page deliberately lacks. */
 .professor__open {
   display: inline-flex;
   align-items: center;
@@ -1498,4 +1752,140 @@
    reads as its own thing rather than as the last line of the suggestions. */
 .onboarding-checklist__section {
   margin-top: var(--space-5);
+}
+
+/* Tab Usage: which parts of AdminBot the lab opens.
+   A table of eleven-odd rows read by comparing them to each other, so the bar under each tab name
+   is doing the real work and the digits are there to check it. */
+.tab-usage__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tab-usage__blurb {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+  max-width: 72ch;
+}
+
+.tab-usage__windows {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/* The three totals, sized like the My Desk counts: the number is the point and the word under it
+   is the caption. */
+.tab-usage__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-usage__total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tab-usage__total-value {
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.tab-usage__total-label {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.tab-usage__table {
+  width: 100%;
+  margin-top: var(--space-3);
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.tab-usage__table th,
+.tab-usage__table td {
+  padding: var(--space-2) var(--space-2);
+  text-align: start;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tab-usage__table thead th {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tab-usage__numeric {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.tab-usage__tab {
+  font-weight: 500;
+  min-width: 12rem;
+}
+
+.tab-usage__tab-name {
+  display: block;
+}
+
+/* Scaled against the busiest tab rather than against the total: the question the eye asks of this
+   column is "how does this compare to the one at the top", and a share-of-total bar answers a
+   different one badly -- with a dozen tabs every bar is short. */
+.tab-usage__bar {
+  display: block;
+  width: var(--share, 0%);
+  min-width: 2px;
+  height: 3px;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.tab-usage__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.tab-usage__actions svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.tab-usage__caveat {
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  max-width: 82ch;
+}
+
+.tab-usage__empty {
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.tab-usage__error {
+  margin: var(--space-3) 0 0;
+  color: var(--danger);
+  font-size: var(--control-ui-text-sm);
 }

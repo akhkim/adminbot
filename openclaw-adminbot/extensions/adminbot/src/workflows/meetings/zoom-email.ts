@@ -39,6 +39,19 @@ const ZONE_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
 // otherwise swallow a closing bracket or quote from the surrounding markup.
 const SHARE_URL = /https?:\/\/[a-z0-9.-]*zoom\.us\/rec\/(?:share|play)\/[^\s<>"')\]]+/iu;
 
+/**
+ * How long the recording runs, from the line the assets template puts beside it.
+ *
+ * `Duration: 00:01:38` -- hours, minutes, seconds, and the hours field is present even on a
+ * two-minute clip. The older "is now available" template carries no duration at all, which is why
+ * this is optional rather than part of the notice's required shape.
+ *
+ * Anchored on the label because the body is full of other colon-separated clock-like text (the
+ * date line, and a share token that can contain digits and dashes); a bare HH:MM:SS match would
+ * find one of those first.
+ */
+const DURATION = /\bduration\s*:\s*(\d{1,3}):([0-5]\d):([0-5]\d)\b/iu;
+
 const MONTHS = [
   "january",
   "february",
@@ -68,6 +81,15 @@ export type ZoomRecordingNotice = {
   shareUrl: string;
   passcode?: string;
   meetingId?: string;
+  /**
+   * Recording length in seconds, when the notice states one.
+   *
+   * Seconds rather than minutes because the notice is precise to the second and a lab recording is
+   * routinely under a minute -- a test call, somebody starting the recording early. Rounding at
+   * the parse would turn "00:00:41" into either 0 or 1, and both are worse than the number Zoom
+   * actually wrote.
+   */
+  durationSeconds?: number;
 };
 
 /**
@@ -144,11 +166,24 @@ function labelledValue(body: string, labels: readonly string[]): string | undefi
   return undefined;
 }
 
-/** The topic Zoom put in the subject: "Cloud Recording - <topic> is now available". */
+/**
+ * The topic Zoom put in the subject, across the templates it has actually mailed.
+ *
+ * Three patterns because Zoom's wording is not a contract and has moved between releases. The
+ * newest one ("Meeting assets for <topic> are ready!") is the one a utoronto account sends today,
+ * and it carries no "Topic:" line in the body either -- so without it every recording from that
+ * template filed as "Untitled Zoom meeting". That is worse than an ugly title: `matchArtifactToMeeting`
+ * falls back to the topic to decide which meeting a dropped transcript belongs to on a day with
+ * more than one, and every meeting sharing a name makes that undecidable.
+ *
+ * Ordered most specific first: the general "<topic> is now available" would otherwise take
+ * "Cloud Recording - X" and hand back the prefix along with the title.
+ */
 export function topicFromSubject(subject: string): string | undefined {
   const withoutForwardMarkers = subject.replace(/^\s*(?:(?:fwd?|re|fw)\s*:\s*)+/iu, "").trim();
   const match =
     /^cloud\s+recording\s*[-–—]\s*(.+?)\s+is\s+now\s+available/iu.exec(withoutForwardMarkers) ??
+    /^meeting\s+assets\s+for\s+(.+?)\s+are\s+ready/iu.exec(withoutForwardMarkers) ??
     /^(.+?)\s+is\s+now\s+available/iu.exec(withoutForwardMarkers);
   return match?.[1]?.trim() || undefined;
 }
@@ -160,7 +195,10 @@ export function topicFromSubject(subject: string): string | undefined {
  * calendar/time.ts makes: an offset has to be correct for that date, and getting daylight saving
  * wrong moves a weekly meeting by an hour twice a year.
  */
-export function parseNoticeDate(text: string, fallbackZone = DEFAULT_MEETING_ZONE): string | undefined {
+export function parseNoticeDate(
+  text: string,
+  fallbackZone = DEFAULT_MEETING_ZONE,
+): string | undefined {
   const zone = ZONE_LABELS.find(([pattern]) => pattern.test(text))?.[1] ?? fallbackZone;
   const iso = ISO_DATE.exec(text);
   if (iso) {
@@ -217,8 +255,22 @@ export function parseZoomRecordingNotice(message: {
     "meeting time",
     "start time",
     "date",
+    // The forwarded header's own line, and the only date the assets template carries: that mail
+    // states a duration and a link and nothing else, so before this every recording from it took
+    // the *forward's* arrival time as the meeting time. Two meetings forwarded in one sitting then
+    // shared a timestamp, which is worse than an approximate one -- it made them indistinguishable
+    // on a tab whose titles were already identical.
+    //
+    // Last, so the older template's explicit "Date and time:" still wins, and safe because Zoom
+    // sends the notice within minutes of the meeting ending. `labelledValue` walks lines in order,
+    // so in a forward this finds the original Zoom header rather than the human's own.
+    "sent",
   ]);
   const meetingId = MEETING_ID.exec(body)?.[1]?.replace(/[\s-]/gu, "");
+  const duration = DURATION.exec(body);
+  const durationSeconds = duration
+    ? Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3])
+    : undefined;
   return {
     topic:
       labelledValue(body, ["topic", "meeting topic"]) ??
@@ -231,6 +283,9 @@ export function parseZoomRecordingNotice(message: {
     shareUrl: shareUrl.replace(/[.,;]$/u, ""),
     ...(readPasscode(body) ? { passcode: readPasscode(body) } : {}),
     ...(meetingId ? { meetingId } : {}),
+    // Zero is dropped: Zoom writes 00:00:00 for a recording that failed to capture anything, and
+    // "0 min" on the card reads as a measurement rather than as the absence of one.
+    ...(durationSeconds ? { durationSeconds } : {}),
   };
 }
 

@@ -7,8 +7,11 @@ import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
+  defaultTabForViewer,
+  isHeadProfessorViewer,
   resolveAccessRole,
   resolveAccessibleTab,
+  visibleTabsForMember,
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
@@ -74,6 +77,7 @@ import {
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
   submitAdminBotLogisticsRequest,
+  submitAdminBotSignatureForm,
   updateAdminBotLogisticsRequest,
   withdrawAdminBotLogisticsRequest,
 } from "./adminbot/controllers/logistics.ts";
@@ -108,7 +112,10 @@ import {
 } from "./adminbot/controllers/profile-overview.ts";
 import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { runAdminBotCvScan, retryWorkshopTask } from "./adminbot/controllers/task-jobs.ts";
+import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
+import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
@@ -182,6 +189,7 @@ import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
+import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
@@ -548,6 +556,9 @@ function adminBotLogisticsSubmitProps(
     submitting: state.adminBotLogisticsSubmitting,
     submitError: state.adminBotLogisticsSubmitError,
     submitted: Boolean(state.adminBotLogisticsSubmittedId),
+    ...(state.adminBotLogisticsCallSheetNote
+      ? { submittedNote: state.adminBotLogisticsCallSheetNote }
+      : {}),
     submitBlocked: blocked,
     hasContent: adminBotLogisticsHasContent(state, template),
     editing: Boolean(state.adminBotLogisticsEditingId),
@@ -585,6 +596,7 @@ function adminBotLogisticsSubmitProps(
       void (async () => {
         resetAdminBotLogisticsForm(state, template);
         state.adminBotLogisticsSubmittedId = null;
+        state.adminBotLogisticsCallSheetNote = null;
         state.adminBotLogisticsSubmitError = null;
         await clearAdminBotLogisticsDraft(template, adminBotLogisticsScope(state));
         requestHostUpdate?.();
@@ -835,6 +847,10 @@ const lazyDeadlines = createLazyView(
 );
 const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
+  notifyLazyViewChanged,
+);
+const lazyTravel = createLazyView(
+  () => import("./adminbot/views/travel.ts"),
   notifyLazyViewChanged,
 );
 const lazyGrantReport = createLazyView(
@@ -1143,6 +1159,45 @@ function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): 
     state.tab = allowed;
   }
   return state;
+}
+
+/**
+ * Send a viewer who named no tab to their own home, once there is enough loaded to know whose it is.
+ *
+ * Deliberately after the AdminBot load rather than inside the render pass: who the head professor
+ * is arrives with the settings, so on the first paint the answer is simply not known yet, and the
+ * generic home is the right thing to show while it is not. Going through `setTab` rather than
+ * assigning `state.tab` is what keeps the address bar, the tab's own data refresh and the chat
+ * teardown in step -- this is a navigation, it just is not one the viewer typed.
+ *
+ * One shot: `landedWithoutATab` is cleared by any navigation, this one included, so a professor who
+ * walks from My Desk to the dashboard stays there and a slow second load cannot yank her back.
+ */
+function applyViewerHome(state: AppViewState): void {
+  if (!state.landedWithoutATab) {
+    return;
+  }
+  const headProfessorMemberId = state.adminBotData?.settings?.head_professor_member_id;
+  if (!headProfessorMemberId) {
+    // Either the setting is unset or the settings did not load (a member-mode read does not fetch
+    // them). Leave the flag standing: nothing has been decided, and no later load should be
+    // prevented from deciding it.
+    return;
+  }
+  const role = resolveAccessRole({
+    signedIn: Boolean(state.memberId) || Boolean(state.memberPrivilegeLevel),
+    privilegeLevel: state.memberPrivilegeLevel,
+    gatewayConnected: state.connected,
+  });
+  const home = defaultTabForViewer({
+    role,
+    isHeadProfessor: isHeadProfessorViewer({ memberId: state.memberId, headProfessorMemberId }),
+  });
+  if (home === state.tab) {
+    state.landedWithoutATab = false;
+    return;
+  }
+  state.setTab(home);
 }
 
 type ChatWorkspaceFilesState = {
@@ -2702,7 +2757,11 @@ export function renderApp(state: AppViewState) {
     !state.adminBotError &&
     !state.adminBotData.loadedAt
   ) {
-    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+    void loadAdminBot(state, adminBotMode)
+      // The settings this needs arrive with that load, which is why it hangs off the end of it
+      // rather than being read during the render that started it.
+      .then(() => applyViewerHome(state))
+      .finally(() => requestHostUpdate?.());
   }
   // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
   // opening the tab drew an empty month and only the Refresh button or a month step would fetch
@@ -2770,6 +2829,7 @@ export function renderApp(state: AppViewState) {
     // point the next person's Submit at a request they do not own.
     state.adminBotLogisticsEditingId = null;
     state.adminBotLogisticsSubmittedId = null;
+    state.adminBotLogisticsCallSheetNote = null;
     resetAdminBotLogisticsForm(state, "documentSignature");
     resetAdminBotLogisticsForm(state, "recommendationLetters");
     resetAdminBotLogisticsForm(state, "bookMeeting");
@@ -2780,6 +2840,15 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotLettersDraft(state, logisticsScope),
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => requestHostUpdate?.());
+  }
+  if (
+    state.tab === "adminbotTabUsage" &&
+    hasMemberSession &&
+    !state.adminBotTabUsageLoading &&
+    state.adminBotTabUsageLoadedAt === null
+  ) {
+    state.adminBotTabUsageLoadedAt = Date.now();
+    void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
   // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
   // opened, and re-read after a reminder run clears the stamp.
@@ -2792,6 +2861,18 @@ export function renderApp(state: AppViewState) {
   ) {
     state.adminBotProfileOverviewLoadedAt = Date.now();
     void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
+  }
+  // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
+  // while somebody is reading their own year off it, and the only thing that re-reads it is the
+  // range buttons, which pass their own range through.
+  if (
+    state.tab === "adminbotTravel" &&
+    hasMemberSession &&
+    !state.adminBotTravel.loading &&
+    !state.adminBotTravel.error &&
+    state.adminBotTravel.history === null
+  ) {
+    void loadAdminBotTravel(state).finally(() => requestHostUpdate?.());
   }
   // My Projects & Papers reads the same way: the overview when the tab opens, and again after a
   // nudge run or a slot write clears the stamp. Individual papers' slots are fetched per card, in
@@ -2848,6 +2929,12 @@ export function renderApp(state: AppViewState) {
     // Stamped before the await so a second render during the fetch does not start a second one.
     state.adminBotNotifications = [];
     void state.loadNotifications().finally(() => requestHostUpdate?.());
+  }
+  // The lab-wide broadcast, on the same once-per-session footing and for the same reason: it is
+  // read on whichever tab the member lands on, so the dashboard has it the moment they go there.
+  if (hasMemberSession && state.adminBotBroadcast === undefined && state.loadBroadcast) {
+    state.adminBotBroadcast = null;
+    void state.loadBroadcast().finally(() => requestHostUpdate?.());
   }
   // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
   // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
@@ -3200,7 +3287,11 @@ export function renderApp(state: AppViewState) {
             <div class="sidebar-shell__body">
               <nav class="sidebar-nav">
                 ${TAB_GROUPS.map((group) => {
-                  const groupTabs = visibleTabsForRole(group.tabs as readonly Tab[], accessRole);
+                  const groupTabs = visibleTabsForMember(
+                    group.tabs as readonly Tab[],
+                    accessRole,
+                    state.adminBotOnboarding?.steps,
+                  );
                   // A group whose every tab is out of reach renders nothing at all, header
                   // included: an empty "Settings" heading reads as a broken sidebar.
                   if (groupTabs.length === 0) {
@@ -3367,10 +3458,77 @@ export function renderApp(state: AppViewState) {
               papers: state.adminBotData?.papers ?? [],
               profiles: state.adminBotProfileOverview ?? [],
               escalated: state.adminBotEscalatedNudges ?? [],
+              piReview: state.adminBotPiReview ?? [],
               onOpen: (tab) => state.setTab(tab),
+              expanded: state.professorExpandedLists,
+              onToggleExpand: (id) => {
+                const next = new Set(state.professorExpandedLists);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                state.professorExpandedLists = next;
+                requestHostUpdate?.();
+              },
+              broadcast: state.adminBotBroadcast ?? null,
+              broadcastDraft: state.adminBotBroadcastDraft,
+              broadcastExpiry: state.adminBotBroadcastExpiry,
+              broadcastAvailability: state.adminBotBroadcastAvailability,
+              broadcastBusy: state.adminBotBroadcastBusy,
+              broadcastNotice: state.adminBotBroadcastNotice,
+              onBroadcastDraftChange: (value) => {
+                state.adminBotBroadcastDraft = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastExpiryChange: (value) => {
+                state.adminBotBroadcastExpiry = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastAvailabilityChange: (value) => {
+                state.adminBotBroadcastAvailability = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastPublish: (draft) => {
+                void state.publishBroadcast?.(draft).finally(() => requestHostUpdate?.());
+              },
             })
           : nothing}
+        ${state.tab === "adminbotTravel" && adminBotMode === "admin"
+          ? renderLazyView(lazyTravel, (m) =>
+              m.renderTravel({
+                history: state.adminBotTravel.history,
+                range: state.adminBotTravel.range,
+                loading: state.adminBotTravel.loading,
+                error: state.adminBotTravel.error,
+                onRangeChange: (range) => void loadAdminBotTravel(state, { range }),
+              }),
+            )
+          : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "adminbotTabUsage"
+          ? renderAdminBotTabUsage({
+              report: state.adminBotTabUsage,
+              days: state.adminBotTabUsageDays,
+              loading: state.adminBotTabUsageLoading,
+              exporting: state.adminBotTabUsageExporting,
+              error: state.adminBotTabUsageError,
+              onDaysChange: (days) => {
+                state.adminBotTabUsageDays = days;
+                // Clearing the stamp is what asks for the new window, the same way the reminder
+                // run asks the overview to re-read itself.
+                state.adminBotTabUsageLoadedAt = null;
+                requestHostUpdate?.();
+              },
+              onRefresh: () => {
+                state.adminBotTabUsageLoadedAt = null;
+                requestHostUpdate?.();
+              },
+              onExport: () => {
+                void exportAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
+              },
+            })
+          : nothing}
         ${state.tab === "adminbotProfileOverview"
           ? renderAdminBotProfileOverview({
               members: state.adminBotProfileOverview,
@@ -3453,6 +3611,7 @@ export function renderApp(state: AppViewState) {
                   }
                   state.adminBotLogisticsEditingId = requestId;
                   state.adminBotLogisticsSubmittedId = null;
+                  state.adminBotLogisticsCallSheetNote = null;
                   state.adminBotLogisticsSubmitError = null;
                   state.adminBotLogisticsMode = "make";
                   state.adminBotLogisticsOpenRequest = null;
@@ -3538,6 +3697,20 @@ export function renderApp(state: AppViewState) {
                 onAttachmentsChange: (files) => {
                   state.adminBotLogisticsAttachments = files;
                 },
+                form: state.adminBotSignatureForm,
+                onForm: (patch) => {
+                  state.adminBotSignatureForm = { ...state.adminBotSignatureForm, ...patch };
+                  // Editing after a send re-arms the tab: "Sent" must not describe something older
+                  // than what is on screen.
+                  state.adminBotSignatureSubmitted = false;
+                  state.adminBotSignatureError = null;
+                  requestHostUpdate?.();
+                },
+                onSendForm: () =>
+                  submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
+                sendingForm: state.adminBotSignatureSubmitting,
+                formError: state.adminBotSignatureError,
+                formSent: state.adminBotSignatureSubmitted,
                 saving: state.adminBotLogisticsSaving,
                 savedAt: state.adminBotLogisticsSavedAt,
                 saveError: state.adminBotLogisticsSaveError,
@@ -3739,6 +3912,12 @@ export function renderApp(state: AppViewState) {
               // The pre-registration and decision banners belong to whoever is reading. Active
               // Papers, which shares this renderer, does not set this.
               personal: true,
+              // Which surface the page opens on, not what it lets anyone do: an administrator
+              // arrives here to file links across every paper at once, so the sheet is their first
+              // screen from the third paper on, where a member gets it from the fifth. The role is
+              // the one already resolved for the whole render, so this cannot disagree with the
+              // tabs beside it.
+              viewerIsAdmin: accessRole === "admin",
             })
           : nothing}
         <!-- Active Papers opens one card, from the row that names it. It used to render the whole
@@ -4018,6 +4197,21 @@ export function renderApp(state: AppViewState) {
                 role: accessRole,
                 memberId: state.memberId,
                 settings: state.settings,
+                // Null until the member's own record is in the roster: "Add to my timeline" writes
+                // the whole milestone list, so it must not be offered before that list is known.
+                timelineMilestones: (() => {
+                  const own = state.memberId
+                    ? state.adminBotData.members?.find((member) => member.id === state.memberId)
+                    : undefined;
+                  return own ? milestoneRows(own.milestones) : null;
+                })(),
+                onSaveTimeline: async (milestones) => {
+                  if (!state.memberId) {
+                    return false;
+                  }
+                  await saveAdminBotOwnSchedule(state, state.memberId, { milestones });
+                  return state.adminBotNotice?.kind === "success";
+                },
               }),
             )
           : nothing}

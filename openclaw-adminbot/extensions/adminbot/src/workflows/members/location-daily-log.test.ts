@@ -4,6 +4,7 @@ import {
   CARRY_LIMIT_DAYS,
   countryDayTotals,
   dailyLocationRows,
+  daysInCountry,
   formatLocationDayCsv,
   formatLocationObservationCsv,
 } from "./location-daily-log.js";
@@ -188,12 +189,12 @@ describe("formatLocationDayCsv", () => {
       entry(),
     ]);
     const lines = csv.trimEnd().split("\n");
-    expect(lines[0]).toBe("observed_at,source,raw,country,place_label,timezone");
+    expect(lines[0]).toBe("observed_at,observed_at_local,source,raw,country,place_label,timezone");
     // Sorted oldest-first regardless of input order, and the four days between the two
     // observations produce no rows at all.
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toBe("2026-08-10T09:00:00.000Z,login_ip,Canada,Canada,,");
-    expect(lines[2]).toBe("2026-08-14T09:00:00.000Z,login_ip,Germany,Germany,,");
+    expect(lines[1]).toBe("2026-08-10T09:00:00.000Z,,login_ip,Canada,Canada,,");
+    expect(lines[2]).toBe("2026-08-14T09:00:00.000Z,,login_ip,Germany,Germany,,");
   });
 
   it("carries a Slack zone through the observation export", () => {
@@ -206,7 +207,19 @@ describe("formatLocationDayCsv", () => {
       }),
     ]);
     expect(csv.trimEnd().split("\n")[1]).toBe(
-      "2026-08-10T09:00:00.000Z,slack_timezone,Europe/Amsterdam,,,Europe/Amsterdam",
+      "2026-08-10T09:00:00.000Z,,slack_timezone,Europe/Amsterdam,,,Europe/Amsterdam",
+    );
+  });
+
+  it("exports the local collection stamp beside the UTC one", () => {
+    const csv = formatLocationObservationCsv([
+      entry({
+        observed_at: "2026-08-10T03:30:00.000Z",
+        observed_at_local: "2026-08-09T23:30:00-04:00",
+      }),
+    ]);
+    expect(csv.trimEnd().split("\n")[1]).toBe(
+      "2026-08-10T03:30:00.000Z,2026-08-09T23:30:00-04:00,login_ip,Canada,Canada,,",
     );
   });
 
@@ -219,5 +232,109 @@ describe("formatLocationDayCsv", () => {
       }),
     );
     expect(csv).toContain('"Toronto, Ontario"');
+  });
+});
+
+describe("counting on the local calendar", () => {
+  // The whole reason the local stamp is stored: a sign-in at 23:30 in Toronto is one Canada day,
+  // and its UTC stamp (03:30 the next date) files it on the wrong day. The default `utc` basis
+  // keeps every existing caller unchanged; `local` is what a residency count asks for.
+  const lateNight: AdminBotMemberLocationEntry = {
+    id: "loc-late",
+    member_id: "m-zj",
+    observed_at: "2026-08-12T03:30:00.000Z",
+    observed_at_local: "2026-08-11T23:30:00-04:00",
+    source: "login_ip",
+    raw: "Canada",
+    country: "Canada",
+  };
+
+  it("files an observation on its UTC day by default and its local day when asked", () => {
+    const utc = dailyLocationRows({ history: [lateNight], from: "2026-08-11", to: "2026-08-12" });
+    expect(utc.find((row) => row.day === "2026-08-12")?.basis).toBe("observed");
+    expect(utc.find((row) => row.day === "2026-08-11")?.basis).toBe("unknown");
+
+    const local = dailyLocationRows({
+      history: [lateNight],
+      from: "2026-08-11",
+      to: "2026-08-12",
+      dayBasis: "local",
+    });
+    expect(local.find((row) => row.day === "2026-08-11")?.basis).toBe("observed");
+  });
+
+  it("falls back to the UTC day when an entry carries no local stamp", () => {
+    const noLocal = { ...lateNight, observed_at_local: undefined };
+    const local = dailyLocationRows({
+      history: [noLocal],
+      from: "2026-08-11",
+      to: "2026-08-12",
+      dayBasis: "local",
+    });
+    expect(local.find((row) => row.day === "2026-08-12")?.basis).toBe("observed");
+    expect(local.find((row) => row.day === "2026-08-11")?.basis).toBe("unknown");
+  });
+});
+
+describe("daysInCountry", () => {
+  function day(dayOfMonth: string, country: string, offset: string): AdminBotMemberLocationEntry {
+    return {
+      id: `loc-${dayOfMonth}`,
+      member_id: "m-zj",
+      observed_at: `2026-08-${dayOfMonth}T12:00:00.000Z`,
+      observed_at_local: `2026-08-${dayOfMonth}T08:00:00${offset}`,
+      source: "login_ip",
+      raw: country,
+      country,
+    };
+  }
+
+  it("counts local days in the country, observed and carried apart", () => {
+    // In Canada on the 10th, still there (carried) the 11th, gone to Germany the 12th.
+    const history = [day("10", "Canada", "-04:00"), day("12", "Germany", "+02:00")];
+    const canada = daysInCountry({
+      history,
+      country: "Canada",
+      from: "2026-08-10",
+      to: "2026-08-12",
+    });
+    // Observed on the 10th; carried the 11th; the 12th belongs to Germany.
+    expect(canada).toEqual({ country: "Canada", observed_days: 1, carried_days: 1 });
+  });
+
+  it("matches the country name case-insensitively", () => {
+    const history = [day("10", "Canada", "-04:00")];
+    expect(
+      daysInCountry({ history, country: "canada", from: "2026-08-10", to: "2026-08-10" })
+        .observed_days,
+    ).toBe(1);
+  });
+
+  it("puts a late-night sign-in on the local day the border would count", () => {
+    const lateNight: AdminBotMemberLocationEntry = {
+      id: "loc-late",
+      member_id: "m-zj",
+      observed_at: "2026-08-12T03:30:00.000Z",
+      observed_at_local: "2026-08-11T23:30:00-04:00",
+      source: "login_ip",
+      raw: "Canada",
+      country: "Canada",
+    };
+    // The window is a single local day -- the 11th -- which the UTC stamp would miss entirely.
+    expect(
+      daysInCountry({
+        history: [lateNight],
+        country: "Canada",
+        from: "2026-08-11",
+        to: "2026-08-11",
+      }),
+    ).toEqual({ country: "Canada", observed_days: 1, carried_days: 0 });
+  });
+
+  it("counts zero for a country with no days in the window", () => {
+    const history = [day("10", "Canada", "-04:00")];
+    expect(
+      daysInCountry({ history, country: "France", from: "2026-08-10", to: "2026-08-12" }),
+    ).toEqual({ country: "France", observed_days: 0, carried_days: 0 });
   });
 });

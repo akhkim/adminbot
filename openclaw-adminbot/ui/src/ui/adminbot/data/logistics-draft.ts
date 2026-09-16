@@ -126,7 +126,8 @@ export type RecommendationLettersDraftHost = {
 /**
  * One row of the Book Meeting request table.
  *
- * A meeting request is four facts and a timestamp, which is a spreadsheet and not a form: the
+ * A meeting request is a handful of facts and a timestamp, which is a spreadsheet and not a form:
+ * the
  * people who schedule these are reading many at once, and a form per request made them open each
  * one to find out whether it was a fifteen-minute check-in or an hour-long committee call.
  *
@@ -145,6 +146,15 @@ export type MeetingRequestRow = {
   // Minutes, as a string: it is typed, and the same "everything is a string" rule the schools
   // table follows keeps the parser one-path.
   lengthMinutes: string;
+  // Where they are, in their own words. Separate from `timezone` because "Toronto" and "flexible
+  // after 6pm" are both answers somebody placing a call can use, and neither is an IANA zone.
+  city: string;
+  // The document of questions to read before the call. Whether it opens is checked server-side.
+  docPrepUrl: string;
+  // "yes" | "no" | "", stored as a string like every other cell here. Empty is unanswered.
+  whatsappHello: string;
+  // yyyy-mm-dd, as typed into a date input.
+  latestOkDate: string;
 };
 
 export type MeetingRequestDraft = { meetings: MeetingRequestRow[]; savedAt: number };
@@ -268,6 +278,10 @@ export function createMeetingRow(fields: Partial<MeetingRequestRow> = {}): Meeti
     preferredTime: "",
     timezone: localTimezone(),
     lengthMinutes: "",
+    city: "",
+    docPrepUrl: "",
+    whatsappHello: "",
+    latestOkDate: "",
     // Stamped here, not on save: the column answers "when did they ask", and a save-time stamp
     // would move every row forward each time the member touched any other one.
     submittedAt: Date.now(),
@@ -277,7 +291,16 @@ export function createMeetingRow(fields: Partial<MeetingRequestRow> = {}): Meeti
 }
 
 export function isEmptyMeetingRow(row: MeetingRequestRow): boolean {
-  return !row.purpose.trim() && !row.preferredTime.trim() && !row.lengthMinutes.trim();
+  // A row carrying only a doc prep link is not empty: pasting the link first and writing the topic
+  // second is a normal order to fill this in, and discarding it would lose the harder half.
+  return (
+    !row.purpose.trim() &&
+    !row.preferredTime.trim() &&
+    !row.lengthMinutes.trim() &&
+    !row.city.trim() &&
+    !row.docPrepUrl.trim() &&
+    !row.latestOkDate.trim()
+  );
 }
 
 function parseMeetingRow(value: unknown): MeetingRequestRow | null {
@@ -293,6 +316,10 @@ function parseMeetingRow(value: unknown): MeetingRequestRow | null {
   const preferredTime = text("preferredTime");
   const timezone = text("timezone");
   const lengthMinutes = text("lengthMinutes");
+  const city = text("city");
+  const docPrepUrl = text("docPrepUrl");
+  const whatsappHello = text("whatsappHello");
+  const latestOkDate = text("latestOkDate");
   return createMeetingRow({
     ...(purpose === undefined ? {} : { purpose }),
     ...(preferredTime === undefined ? {} : { preferredTime }),
@@ -300,6 +327,10 @@ function parseMeetingRow(value: unknown): MeetingRequestRow | null {
     // it on purpose, and putting the browser's zone back would silently answer for them.
     ...(timezone === undefined ? {} : { timezone }),
     ...(lengthMinutes === undefined ? {} : { lengthMinutes }),
+    ...(city === undefined ? {} : { city }),
+    ...(docPrepUrl === undefined ? {} : { docPrepUrl }),
+    ...(whatsappHello === undefined ? {} : { whatsappHello }),
+    ...(latestOkDate === undefined ? {} : { latestOkDate }),
     // A stored stamp is kept as it is; only a row that never had one gets today's clock, which is
     // the least wrong answer available for a record written before the column existed.
     ...(typeof record.submittedAt === "number" && record.submittedAt > 0

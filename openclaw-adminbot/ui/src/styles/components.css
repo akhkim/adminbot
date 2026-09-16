@@ -11902,7 +11902,7 @@ select.input:focus {
   color: var(--accent, var(--text));
 }
 
-/* ── the member-type filter, on Active Papers and Profile Completeness ──────────────────────
+/* ── the member-type filter, on Active Papers, Profile Completeness and the Calendar ────────
    A <fieldset> of checkboxes with two class names that had no rules behind them: it drew with the
    browser's own fieldset border and default boxes, next to toolbars built out of the app's chips.
    It is the same control it was -- checkboxes, because four options fit on screen at once and a

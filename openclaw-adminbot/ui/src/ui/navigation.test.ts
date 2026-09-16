@@ -11,6 +11,7 @@ import {
   normalizePath,
   pathForTab,
   subtitleForTab,
+  pathIsRoot,
   tabFromPath,
   titleForTab,
   type Tab,
@@ -69,9 +70,11 @@ describe("iconForTab", () => {
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
+      adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
       adminbotProfessor: "lobster",
+      adminbotTravel: "globe",
       adminbotMeetings: "play",
       adminbotTimeAvailability: "clock",
       adminbotSignatures: "penLine",
@@ -128,9 +131,11 @@ describe("titleForTab", () => {
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
+      adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
+      adminbotTravel: "Travel",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -184,10 +189,12 @@ describe("subtitleForTab", () => {
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+      adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
       adminbotMailingList: "Mail our publications for a date range to one address.",
       adminbotProfessor: "What is waiting on you, across every queue.",
+      adminbotTravel: "Where you have been, from your own sign-ins.",
       adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
       adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -273,6 +280,28 @@ describe("pathForTab", () => {
   });
 });
 
+// `tabFromPath` answers the root with a tab, which is the right thing to show and the wrong answer
+// to "did this visitor ask for a surface". Anything that lands a viewer somewhere of their own has
+// to be able to tell the two apart.
+describe("pathIsRoot", () => {
+  it("separates the root from a path that names a tab", () => {
+    expect(pathIsRoot("/")).toBe(true);
+    expect(pathIsRoot("")).toBe(true);
+    expect(pathIsRoot("/index.html")).toBe(true);
+    expect(pathIsRoot("/dashboard")).toBe(false);
+    expect(pathIsRoot("/my-desk")).toBe(false);
+    // The root still resolves to a tab; that is the case this exists to distinguish.
+    expect(tabFromPath("/")).toBe("dashboard");
+  });
+
+  it("reads the root through a base path", () => {
+    expect(pathIsRoot("/control", "/control")).toBe(true);
+    expect(pathIsRoot("/control/", "/control")).toBe(true);
+    expect(pathIsRoot("/control/index.html", "/control")).toBe(true);
+    expect(pathIsRoot("/control/dashboard", "/control")).toBe(false);
+  });
+});
+
 describe("tabFromPath", () => {
   it("returns tab for valid path", () => {
     expect(tabFromPath("/chat")).toBe("chat");
@@ -304,6 +333,7 @@ describe("tabFromPath", () => {
       "/adminbot/members": "adminbotMembers",
       "/adminbot/opportunities": "adminbotOpportunities",
       "/adminbot/profile-overview": "adminbotProfileOverview",
+      "/adminbot/tab-usage": "adminbotTabUsage",
       "/adminbot/professor": "adminbotProfessor",
       "/adminbot/time-availability": "adminbotTimeAvailability",
       "/adminbot/meetings": "adminbotMeetings",

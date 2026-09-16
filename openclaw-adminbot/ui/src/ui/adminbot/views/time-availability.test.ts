@@ -1031,6 +1031,34 @@ describe("the split tables and the deadline panel", () => {
     }
   });
 
+  // The Deadlines board can add one of the four to a member's own list. Listing it again as the
+  // lab's row would show the same deadline twice; the member's copy is the removable one, so it wins.
+  it("lists a conference once when the member has also added it themselves", () => {
+    const { venue } = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    const panel = renderView({
+      members: [
+        member({
+          milestones: [
+            {
+              deadline_id: venue.deadline_id,
+              date: venue.deadline_aoe.slice(0, 10),
+              label: venue.name,
+              time: venue.deadline_aoe.slice(11, 16),
+              timezone: "Etc/GMT+12",
+            },
+          ],
+        } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const rows = [...panel.querySelectorAll("li")].filter(
+      (row) =>
+        row.querySelector(".adminbot-time-availability__deadline-label")?.textContent?.trim() ===
+        venue.name,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dataset.own).toBe("true");
+  });
+
   // Four archival conferences is the right default and a bad restriction: the venue somebody needs
   // on their timeline is often a workshop or the fifth conference down. The picker reaches every
   // entry, and copies the snapshot's own cutoff across so nobody retypes an AoE deadline wrong.

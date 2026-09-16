@@ -1,9 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
+import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
-import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
+import {
+  createOpenReviewForumProbe,
+  createOpenReviewNotesReader,
+} from "../connectors/openreview-notes.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -32,14 +36,17 @@ import {
 } from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import {
   isAdminBotOpportunityCategory,
   type AdminBotOpportunityInput,
 } from "../contracts/opportunities.js";
+import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
+import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
 import { buildNewsletterDraft, type AdminBotCvScanDeps } from "../cv-scan.js";
 import { resolveInferenceGateConfig } from "../inference/config.js";
 import {
@@ -76,6 +83,7 @@ import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calen
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
+import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
 import {
   AdminBotAuthService,
@@ -87,6 +95,7 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
+import { isTravelHistorySubject } from "../workflows/members/travel-history.js";
 import {
   ADMINBOT_LAB_EMAIL_ENV,
   adminBotLabCalendarId,
@@ -125,11 +134,17 @@ import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
+import { type CallSheetSource, defaultCallSheet } from "./call-sheet-config.js";
 import {
   describeMemberSheetReadFailure,
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import {
+  previewCallSheetPush,
+  proposeCallSheetPush,
+  queueCallSheetRow,
+} from "./server.call-sheet.js";
 import {
   PayloadTooLargeError,
   asString,
@@ -155,6 +170,10 @@ import {
   readRosterSheet,
 } from "./server.member-sheet.js";
 import { handleTaskRoute, submitHttpTask } from "./server.tasks.js";
+import {
+  createPublicDeadlineLimiter,
+  handlePublicDeadlineProposal,
+} from "./server.public-deadline-proposals.js";
 import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
@@ -280,6 +299,17 @@ export type AdminBotMockServiceOptions = {
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   /**
+   * Asks Google whether a Drive file is really there, for the evidence-verification pass.
+   *
+   * Injected for the same reason `readDrivePdfBase64` is: reaching Google is the composition
+   * layer's job, and a deployment without an account simply leaves this unset -- the pass then
+   * confirms nothing rather than marking every link as broken.
+   */
+  driveProbe?: AdminBotDriveProbe;
+  /** Asks arXiv and OpenReview about a paper's public record; unset means those slots go unchecked. */
+  arxivProbe?: AdminBotArtifactProbe;
+  openReviewProbe?: AdminBotArtifactProbe;
+  /**
    * The lab's member spreadsheet, as the Membership tab's grid reads and writes it.
    *
    * Injected rather than imported for the same reason as readDrivePdfBase64: the route stays
@@ -287,6 +317,18 @@ export type AdminBotMockServiceOptions = {
    * wiring. Absent means this deployment has no roster to show, and the route says so.
    */
   memberSheet?: AdminBotMemberSheetSource;
+  /**
+   * The tab Zhijing's WhatsApp call queue lives on. Injected on the same terms as `memberSheet`.
+   */
+  callSheet?: CallSheetSource;
+  /**
+   * Propose a call-sheet row the moment a `book_meeting` request is submitted.
+   *
+   * Defaults on (ADMINBOT_CALL_SHEET_AUTO_QUEUE=0 turns it off). Route tests that submit meeting
+   * requests pass false: the push checks a doc-prep link over the network and reads the workbook,
+   * and neither belongs in a test about who the wire lets in.
+   */
+  autoQueueMeetingRequests?: boolean;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -533,6 +575,9 @@ export type AdminBotRouteContext = {
    */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   memberSheet?: AdminBotMemberSheetSource;
+  callSheet?: CallSheetSource;
+  /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
+  autoQueueMeetingRequests: boolean;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -541,6 +586,7 @@ export type AdminBotRouteContext = {
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
+  publicDeadlineLimiter: ReturnType<typeof createPublicDeadlineLimiter>;
   // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
@@ -570,22 +616,94 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
   );
 }
 
+/**
+ * The executor arm for `onboarding.send_guide`.
+ *
+ * Wraps whatever connector the launcher injected and answers this one type in-process, because the
+ * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
+ * invites the project channels and files the DCS request before the mail goes out. Everything else
+ * falls through untouched.
+ *
+ * `handled: false` when no sender is configured, which is what the service turns into an audited
+ * execution failure -- the same answer it gives for any action no connector claimed. Silently
+ * reporting success would mark a guide sent that nobody received.
+ */
+function executorWithOnboardingGuide(
+  inner: AdminBotActionExecutor | undefined,
+  sender: () => AdminBotOnboardingSender | undefined,
+): AdminBotActionExecutor {
+  return {
+    async execute(proposal) {
+      if (proposal.type !== "onboarding.send_guide") {
+        return inner ? inner.execute(proposal) : { handled: false };
+      }
+      const send = sender();
+      if (!send) {
+        return { handled: false, reason: "no onboarding sender is configured" };
+      }
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      const templateId = typeof payload.template_id === "string" ? payload.template_id : "";
+      const name = typeof payload.name === "string" ? payload.name : "";
+      const email = typeof payload.email === "string" ? payload.email : "";
+      if (!templateId || !email) {
+        return { handled: false, reason: "template_id and email are required" };
+      }
+      const result = await send({
+        template_id: templateId,
+        name,
+        email,
+        ...(payload.values && typeof payload.values === "object"
+          ? { values: payload.values as Record<string, string | undefined> }
+          : {}),
+        ...(typeof payload.submit_dcs_form === "boolean"
+          ? { submit_dcs_form: payload.submit_dcs_form }
+          : {}),
+      });
+      if (!result.ok) {
+        // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
+        // state, and the reason is what an admin needs to see on the failed approval.
+        return { handled: true, delivered: false, reason: result.error.message };
+      }
+      return {
+        handled: true,
+        delivered: true,
+        artifacts: { template_id: result.payload.template_id, subject: result.payload.subject },
+      };
+    },
+  };
+}
+
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
   warnIfLabCalendarUnconfigured(options.calendarInviteRunner);
   let store: AdminBotServiceStore;
   let service: AdminBotService;
   let closeDurable: () => void = () => {};
+  // Late-bound on purpose. The onboarding sender is built further down because it reads settings
+  // off `service`, and the executor has to be handed to `service` before that. A holder resolved
+  // at execute time is what lets one arm of the executor reach forward to it without either
+  // construction having to move.
+  let onboardingSenderRef: AdminBotOnboardingSender | undefined;
+  const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
+    executorWithOnboardingGuide(executor, () => onboardingSenderRef);
+  const baseOptions = serviceOptions(options);
+  const wiredOptions: AdminBotServiceOptions = {
+    ...baseOptions,
+    // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
+    // executed in-process by the sender, not by the CLI connector, so a deployment with no
+    // executor at all still executes this one.
+    executor: withOnboarding(baseOptions.executor),
+  };
   if (options.databasePath) {
     const durable = createAdminBotSqliteService({
       databasePath: options.databasePath,
-      ...serviceOptions(options),
+      ...wiredOptions,
     });
     store = durable.store;
     service = durable.service;
     closeDurable = durable.close;
   } else {
     store = new AdminBotMemoryStore();
-    service = new AdminBotService(store, serviceOptions(options));
+    service = new AdminBotService(store, wiredOptions);
   }
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
@@ -641,6 +759,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // deployment that has not named a spreadsheet has no grid at all, which is a clearer answer
   // than a tab that fails at the CLI when somebody opens it.
   const memberSheet = options.memberSheet ?? defaultMemberSheet(process.env);
+  // The call queue's own tab in the same workbook. Separate from `memberSheet` because a
+  // deployment can point the two at different files, and because the roster's tab title is not
+  // this one's.
+  const callSheet = options.callSheet ?? defaultCallSheet(process.env);
+  // Whether a submitted meeting request proposes its own row. On unless a deployment turns it off,
+  // because a queue nobody pushes is the state this replaced -- but it is a switch rather than a
+  // constant: it checks a link over the network and reads the workbook on somebody's form submit,
+  // and a deployment (or a route test) has to be able to say no to that.
+  const autoQueueMeetingRequests =
+    options.autoQueueMeetingRequests ?? process.env.ADMINBOT_CALL_SHEET_AUTO_QUEUE !== "0";
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
   // request identically. Undefined when no script path is configured, which the sender reports
   // rather than silently skipping.
@@ -687,6 +815,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         save: (invite) => service.saveSlackConnectInvite(invite),
       },
     });
+  // Close the late binding opened above: from here, an approved `onboarding.send_guide` executes
+  // through exactly the sender the Onboarding tab uses.
+  onboardingSenderRef = onboardingSender;
   // The shared GPU gate uses a connection-local queue unless restart persistence is enabled.
   // The task runner owns application recovery; model rows remain transport diagnostics.
   // It is also installed as a compatibility default for standalone callers. Service-owned callers receive
@@ -803,6 +934,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
+    ...(callSheet ? { callSheet } : {}),
+    autoQueueMeetingRequests,
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(reimbursementWorkflow ? { reimbursementWorkflow } : {}),
     ...(serviceToken ? { serviceToken } : {}),
@@ -848,6 +981,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     allowedOrigins,
     refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
+    publicDeadlineLimiter: createPublicDeadlineLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
@@ -922,6 +1056,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
 
 function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOptions {
   return {
+    deadlineDataset: () => readDeadlineDataset(),
     ...(typeof options.auditRetentionDays === "number"
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
@@ -932,6 +1067,13 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
     ...(options.polishSlackProfilePhoto
       ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
       : {}),
+    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    // Defaulted here rather than injected from the launcher, like `venuePapersReader` above:
+    // both are credential-free reads of a public API, so the composition root has nothing to add
+    // and a deployment gets them by existing. The Drive probe is the one that needs an account,
+    // which is why it is the one that stays injected.
+    arxivProbe: options.arxivProbe ?? createArxivProbe(),
+    openReviewProbe: options.openReviewProbe ?? createOpenReviewForumProbe(),
   };
 }
 
@@ -999,6 +1141,18 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
   }
   if (url.pathname.startsWith("/auth/")) {
     await handleAuthRoute(req, res, ctx, url);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/public/deadline-proposals") {
+    await handlePublicDeadlineProposal(
+      req,
+      res,
+      ctx.service,
+      ctx.publicDeadlineLimiter,
+      remoteIp(req, ctx.trustProxyHeaders),
+      DEADLINE_VENUES,
+    );
     return;
   }
 
@@ -1577,6 +1731,17 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.listEmailReviews());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/automation/email/review/propose") {
+    // `requirePrivileged`, not `requireMemberPrivileged`, unlike the two routes around it: this is
+    // a machine-driven pass like the paper stage walk, and it decides nothing. It turns each held
+    // message into an approval for a person to answer, which is the opposite of acting on one --
+    // the resolve route below still refuses the service principal, because that is the write.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.proposeEmailReviewResolutions(principalActor(principal)));
     return;
   }
   const emailReview = /^\/automation\/email\/review\/([^/]+)$/u.exec(url.pathname);
@@ -2294,6 +2459,8 @@ async function handleAuthenticatedRoute(
         principal.member.id,
         idempotencyKey,
         DEADLINE_VENUES,
+        undefined,
+        asString(body.targetDeadlineId) || undefined,
       ),
     );
     return;
@@ -2519,19 +2686,82 @@ async function handleAuthenticatedRoute(
     const eventId = decodeURIComponent(calendarInvite[1]);
     const body = readRecord(await readJson(req));
     const attendees = readStringList(body.attendees);
-    if (!attendees.length) {
-      sendJson(res, 400, { error: { message: "attendees are required" } });
+    // An exclusive send: the Calendar tab's filters are the whole guest list, so roster members on
+    // the event that the filters exclude come off it in the same call.
+    const remove = readStringList(body.remove);
+    const remaining = readStringList(body.remaining_attendees);
+    if (!attendees.length && !remove.length) {
+      sendJson(res, 400, { error: { message: "attendees or remove are required" } });
       return;
     }
+    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
+    const label = asString(body.summary) || eventId;
+    const rationale = asString(body.rationale) || "Invited from the Calendar tab by an admin.";
+
+    if (remove.length) {
+      // The write behind a removal replaces the guest list rather than subtracting from it (see
+      // buildCalendarRemoveAttendeesArgs), so a caller that asks to remove somebody has to name the
+      // list it means to leave behind. An empty one is either a caller that forgot or a plan that
+      // would clear the event, and both are refused rather than guessed at -- the same reading
+      // `planInviteMembership` gives an empty attendee list.
+      if (!remaining.length) {
+        sendJson(res, 422, {
+          error: {
+            message:
+              "remaining_attendees is required when removing, and must not be empty — refusing to clear the guest list",
+          },
+        });
+        return;
+      }
+      // Everyone being invited has to survive the replace. Without this an add followed by a
+      // removal whose remaining list predates it would uninvite the people just added.
+      const missing = attendees.filter(
+        (email) =>
+          !remaining.some((keep) => keep.trim().toLowerCase() === email.trim().toLowerCase()),
+      );
+      if (missing.length) {
+        sendJson(res, 422, {
+          error: {
+            message: `remaining_attendees must include everyone being invited; missing ${missing.join(", ")}`,
+          },
+        });
+        return;
+      }
+    }
+
+    // Add first, then replace. Either order lands the same guest list -- `remaining_attendees`
+    // already contains the invitees -- but adding first means a failure between the two leaves the
+    // event over-inclusive rather than short of the people who were supposed to be on it.
+    if (attendees.length) {
+      const added = await executeCalendarAction(service, principal, {
+        type: "calendar.add_attendees",
+        summary: `Invite ${attendees.length} to ${label}`,
+        payload: { calendar_id: calendarId, event_id: eventId, attendees },
+        rationale,
+      });
+      if (!added.ok) {
+        sendServiceResult(res, added);
+        return;
+      }
+      if (!remove.length) {
+        sendJson(res, 200, added.payload);
+        return;
+      }
+    }
+
     await runCalendarAction(res, service, principal, {
-      type: "calendar.add_attendees",
-      summary: `Invite ${attendees.length} to ${asString(body.summary) || eventId}`,
+      type: "calendar.remove_attendees",
+      summary: `Remove ${remove.length} from ${label}`,
       payload: {
-        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        calendar_id: calendarId,
         event_id: eventId,
-        attendees,
+        // Both halves travel: the ledger records who was dropped, and the connector writes the set
+        // that remains.
+        removed_attendees: remove,
+        remaining_attendees: remaining,
       },
-      rationale: asString(body.rationale) || "Invited from the Calendar tab by an admin.",
+      rationale,
+      undo_plan: "Re-invite the removed attendees with calendar.add_attendees.",
     });
     return;
   }
@@ -3037,6 +3267,36 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
+    return;
+  }
+  const memberTravel = /^\/lab\/members\/([^/]+)\/travel$/u.exec(url.pathname);
+  if (req.method === "GET" && memberTravel) {
+    const memberId = decodeURIComponent(memberTravel[1]!);
+    // Your own, and only if you are the one member the lab keeps a travel history for. This is the
+    // most sensitive read in the service, so it is narrower than every other member route: not
+    // "self or an admin" but "self, and the head professor". An admin reading somebody else's
+    // movements is the thing this feature must not become, and it was asked for so one person could
+    // track her own trips -- so that is exactly what it serves and no more.
+    //
+    // A 404 rather than a 403: to anyone who is not the subject this route does not exist, which is
+    // also true of the data behind it, since nobody else's sign-ins are stamped with a place
+    // (isTravelHistorySubject, and the write side in workflows/identity/auth.ts).
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    // Unwrapped explicitly so a settings read that somehow failed denies rather than defaults: an
+    // unreadable configuration is not a reason to widen the one route that must never widen.
+    const settings = service.getSettings();
+    const subject = isTravelHistorySubject(memberId, settings.ok ? settings.payload : undefined);
+    if (!isSelf || !subject) {
+      sendJson(res, 404, { error: { message: "no travel history for this member" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.buildMemberTravelHistory(memberId, {
+        ...(url.searchParams.get("from") ? { fromIso: url.searchParams.get("from")! } : {}),
+        ...(url.searchParams.get("to") ? { toIso: url.searchParams.get("to")! } : {}),
+      }),
+    );
     return;
   }
   const paperEdits = /^\/papers\/([^/]+)\/recent-edits$/u.exec(url.pathname);
@@ -3619,7 +3879,18 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "member session required" } });
       return;
     }
-    await handleLogisticsRoute(req, res, url, ctx.service, principal.member);
+    const callSheetForSubmit = ctx.autoQueueMeetingRequests ? ctx.callSheet : undefined;
+    await handleLogisticsRoute(
+      req,
+      res,
+      url,
+      ctx.service,
+      principal.member,
+      callSheetForSubmit
+        ? (requestId) =>
+            queueCallSheetRow(service, callSheetForSubmit, principalActor(principal), requestId)
+        : undefined,
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {
@@ -3691,6 +3962,72 @@ async function handleAuthenticatedRoute(
     // Read-only, and the same records GET /papers already returns to any signed-in member -- this
     // just adds what is outstanding on each. The write and the send below are the gated halves.
     sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/evidence/verify/run") {
+    // Asks Google whether the files a paper points at are really there. A read, and one whose
+    // targets come from the rows already on file rather than from the caller -- so it takes
+    // requirePrivileged like the other machine-driven passes. A deployment with no Google account
+    // wired answers zero checked rather than failing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.verifyPaperEvidence(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/stages/run") {
+    // Where each paper is, recomputed from its own evidence. Nothing here is caller-supplied: the
+    // walk reads the slot registry's `gates` and the rows already on file, so this takes
+    // requirePrivileged like the other machine-driven passes. It advances papers and files the
+    // PI's queue; it approves nothing.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.syncPaperStages(principalActor(principal)));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/pi-review") {
+    // The head professor's own queue, which is also an admin read: the lab manager needs to see
+    // what is held up at the gate to know whether to ask her about it.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listPiReviewQueue());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/papermentor/runs") {
+    // The collector on the Overleaf host, reporting one review it found cached there. Privileged
+    // like the other machine-driven routes: nothing here is composed by a person, and which paper
+    // it lands on is resolved from the project id rather than named by the caller.
+    //
+    // The body is re-read through the contract's own parser rather than trusted. It arrives from a
+    // script the lab wrote, over a network, and the parser is what keeps this route a counting
+    // surface: a payload that tried to carry comment text would have that text dropped rather
+    // than stored.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const run = parsePaperMentorRunInput(await readJsonOrEmpty(req));
+    if (!run) {
+      sendJson(res, 400, {
+        error: { message: "a PaperMentor run needs at least project_id and reviewed_at" },
+      });
+      return;
+    }
+    sendServiceResult(res, service.recordPaperMentorRun(principalActor(principal), run));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/papermentor/runs") {
+    // What has been ingested, for an operator checking the collector is working and for the cron
+    // summary. Privileged: it is the whole lab's review history, which is governance rather than
+    // something every member is owed about everyone else's drafts.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.listPaperMentorRuns(url.searchParams.get("paper_id") ?? undefined),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/conference-rosters") {
@@ -4291,6 +4628,38 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, editResult);
     return;
   }
+  // The WhatsApp call queue: which open `book_meeting` requests have a doc prep document that can
+  // actually be opened, and a proposal to put those on Zhijing's tab. Admin-gated on both verbs --
+  // GET names every member with an open call request and what they want to talk about, which is
+  // not the requester's own data, and POST reaches Google.
+  if (url.pathname === "/logistics/call-sheet" && (req.method === "GET" || req.method === "POST")) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.callSheet) {
+      sendJson(res, 503, {
+        error: {
+          message: "this deployment has no call spreadsheet configured; set ADMINBOT_CALL_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const requestIds =
+      req.method === "POST"
+        ? ((await readJsonOrEmpty(req)) as { request_ids?: string[] }).request_ids
+        : undefined;
+    const options = requestIds?.length ? { request_ids: requestIds } : {};
+    const callResult =
+      req.method === "GET"
+        ? await previewCallSheetPush(service, ctx.callSheet, options)
+        : await proposeCallSheetPush(service, ctx.callSheet, principalActor(principal), options);
+    if ("error" in callResult) {
+      sendJson(res, callResult.error.status, { error: { message: callResult.error.message } });
+      return;
+    }
+    sendJson(res, 200, callResult);
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/membership/sheet/onboard/preview") {
     // Composes the very mails onboarding would queue, so it shows member addresses and rendered
     // email bodies: the same gate as executing, even though it writes nothing.
@@ -4373,6 +4742,49 @@ async function handleAuthenticatedRoute(
   // `force` is the exception and takes a real admin session. It skips the guard that stops a
   // truncated read from rewriting the roster, which is a judgement about a spreadsheet somebody has
   // looked at -- not something a cron job can assert on its own.
+  if (req.method === "POST" && url.pathname === "/onboarding/sheet-sweep/run") {
+    // The weekly onboarding pass. requirePrivileged, like the roster sync it reads alongside: the
+    // caller names nobody and supplies no copy -- the sheet is read here and every decision about
+    // who is owed a mail comes from the diff against the database.
+    //
+    // It writes member records for joining rows, which is the one thing the roster sync refuses to
+    // do; see sweepOnboardingMail for why the two differ. Nothing is mailed by this route.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const sweepBody = readRecord(await readJsonOrEmpty(req));
+    let sweepSheet;
+    try {
+      sweepSheet = await readRosterSheet(ctx.memberSheet);
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in sweepSheet) {
+      sendJson(res, sweepSheet.error.status, { error: { message: sweepSheet.error.message } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.sweepOnboardingMail({
+        sheet: sweepSheet.parsed,
+        actor: principalActor(principal),
+        dryRun: sweepBody.dry_run === true,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/roster-sync") {
     if (!requirePrivileged(res, principal)) {
       return;
@@ -4552,6 +4964,41 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
     return;
   }
+  if (req.method === "POST" && url.pathname === "/ui/tab-visits") {
+    // Any signed-in member records their own navigation, and only their own: the id comes from the
+    // session, never from the body, so one member cannot write visits as another. On a "view as"
+    // session it lands on the admin who is actually browsing, flagged -- see
+    // contracts/tab-visits.ts for why that distinction is the whole validity of the log.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "sign in required" } });
+      return;
+    }
+    const visitBody = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.recordTabVisit(principalActor(principal), {
+        tab: asString(visitBody.tab),
+        ...(principal.impersonator ? { impersonated: true } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ui/tab-visits") {
+    // Everybody's browsing at once is a governance read, like the completeness sweep below it: a
+    // member may write their own visits and may not read the lab's.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.tabVisitReport({ days: asDays(url.searchParams.get("days")) }));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ui/tab-visits/rows") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listTabVisits({ days: asDays(url.searchParams.get("days")) }));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/members/profile-overview") {
     // Everybody's completeness at once is a governance read, unlike the incomplete-fields scan
     // above which answers "is my own profile done" for any signed-in member's dashboard.
@@ -4700,19 +5147,80 @@ async function handleAuthenticatedRoute(
           return channel ? [{ channel, slack_user_ids: ids }] : [];
         })
       : [];
-    if (meetings.length === 0 || channels.length === 0) {
-      sendJson(res, 400, {
-        error: { message: "meetings and channels must both be non-empty" },
-      });
+    if (channels.length === 0) {
+      sendJson(res, 400, { error: { message: "channels must be non-empty" } });
       return;
+    }
+    // `meetings` is now optional: the service host has a calendar client of its own, so a caller
+    // that can see Slack but not Google -- which is every cron wrapper -- sends the channels alone
+    // and the events are read here. An explicit list still wins, which is what keeps the tests and
+    // any existing caller working.
+    let resolvedMeetings = meetings;
+    if (resolvedMeetings.length === 0) {
+      if (!ctx.readCalendarEvents) {
+        sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+        return;
+      }
+      try {
+        const events = await ctx.readCalendarEvents({
+          calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+          max: 250,
+        });
+        resolvedMeetings = events.flatMap((event) =>
+          event.summary ? [{ event_id: event.id, summary: event.summary }] : [],
+        );
+      } catch (error) {
+        // A failed read must not become "no meetings matched", which is a silent no-op that reads
+        // like a clean run. Same reasoning as the invite-membership route above.
+        sendJson(res, 502, {
+          error: {
+            message: `could not read the calendar: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        });
+        return;
+      }
     }
     sendServiceResult(
       res,
       await service.syncThemedMeetingInvites(principalActor(principal), {
-        meetings,
+        meetings: resolvedMeetings,
         channels,
         calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
       }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/calendar/local-event-audience/run") {
+    // The standing local event -- the Zurich lunch -- reconciled against where people are.
+    //
+    // requirePrivileged, like the other sweeps: the caller names nobody. It passes the event id and
+    // the guest list it can already see, and every decision about who belongs is made from the
+    // roster. What comes back is a pair of T3 proposals an admin approves, so nothing here can put
+    // somebody on or off an invite unattended.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const eventId = asString(body.event_id);
+    if (!eventId) {
+      sendJson(res, 400, { error: { message: "event_id is required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.sweepLocalEventAudience(
+        {
+          eventId,
+          calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+          city: asString(body.city) || "Zurich",
+          zone: asString(body.zone) || "Europe/Zurich",
+          attendees: readStringList(body.attendees),
+          ...(asString(body.day) ? { day: asString(body.day) } : {}),
+        },
+        principalActor(principal),
+      ),
     );
     return;
   }
@@ -4790,6 +5298,16 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.syncRecLetterChannel(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/logistics/rec-letter-reminders/run") {
+    // Which letters are close, who hears about it and what the mail says are all computed from the
+    // request log, the clock and the head-professor setting, so this takes requirePrivileged like
+    // the other cron-triggered sweeps: there is no caller-supplied recipient or text.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sweepRecLetterReminders(principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/nudges/escalate/run") {
@@ -4925,6 +5443,20 @@ function updateLimit(url: URL): number | undefined {
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
+/**
+ * A `?days=` value as a number, or undefined when it is absent or not one.
+ *
+ * Undefined rather than a default: the window's default belongs to the service, which is what the
+ * two readers of this log and any later one share.
+ */
+function asDays(raw: string | null): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const days = Number(raw);
+  return Number.isFinite(days) ? days : undefined;
+}
+
 function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (isPrivileged(principal)) {
     return true;
@@ -5008,6 +5540,59 @@ async function readGroupMeetingInvite(
   }
 }
 
+/**
+ * One calendar action, all the way through propose -> approve -> execute, as a result.
+ *
+ * Returns rather than responds so a route can run more than one and still answer once. The
+ * exclusive invite needs exactly that: adding people and removing people are two typed actions
+ * with two audit rows, and collapsing them into one would lose which of the two failed.
+ */
+async function executeCalendarAction(
+  service: AdminBotService,
+  principal: Extract<AdminBotPrincipal, { kind: "member" }>,
+  action: {
+    type: string;
+    summary: string;
+    payload: Record<string, unknown>;
+    rationale: string;
+    /** How to reverse it, for the ledger. Worth carrying on anything that takes something away. */
+    undo_plan?: string;
+  },
+): Promise<AdminBotServiceResponse<{ action_id: string; status: string; executed_at?: string }>> {
+  const created = service.createProposal({
+    type: action.type as AdminBotActionProposal["type"],
+    summary: action.summary,
+    proposed_payload: action.payload,
+    rationale: action.rationale,
+    ...(action.undo_plan ? { undo_plan: action.undo_plan } : {}),
+  });
+  if (!created.ok) {
+    return created;
+  }
+  const approved = service.approve(created.payload.id, {
+    payload_hash: created.payload.payload_hash,
+    approver_role: "admin",
+    approver_id: principal.member.id,
+    note: "Admin acted directly from the Calendar tab.",
+  });
+  if (!approved.ok) {
+    return approved;
+  }
+  const executed = await service.execute(created.payload.id, { dry_run: false });
+  if (!executed.ok) {
+    return executed;
+  }
+  return {
+    ok: true,
+    status: 200,
+    payload: {
+      action_id: created.payload.id,
+      status: executed.payload.status,
+      ...(executed.payload.executed_at ? { executed_at: executed.payload.executed_at } : {}),
+    },
+  };
+}
+
 async function runCalendarAction(
   res: ServerResponse,
   service: AdminBotService,
@@ -5017,38 +5602,15 @@ async function runCalendarAction(
     summary: string;
     payload: Record<string, unknown>;
     rationale: string;
+    undo_plan?: string;
   },
 ): Promise<void> {
-  const created = service.createProposal({
-    type: action.type as AdminBotActionProposal["type"],
-    summary: action.summary,
-    proposed_payload: action.payload,
-    rationale: action.rationale,
-  });
-  if (!created.ok) {
-    sendServiceResult(res, created);
+  const result = await executeCalendarAction(service, principal, action);
+  if (!result.ok) {
+    sendServiceResult(res, result);
     return;
   }
-  const approved = service.approve(created.payload.id, {
-    payload_hash: created.payload.payload_hash,
-    approver_role: "admin",
-    approver_id: principal.member.id,
-    note: "Admin acted directly from the Calendar tab.",
-  });
-  if (!approved.ok) {
-    sendServiceResult(res, approved);
-    return;
-  }
-  const executed = await service.execute(created.payload.id, { dry_run: false });
-  if (!executed.ok) {
-    sendServiceResult(res, executed);
-    return;
-  }
-  sendJson(res, 200, {
-    action_id: created.payload.id,
-    status: executed.payload.status,
-    executed_at: executed.payload.executed_at,
-  });
+  sendJson(res, 200, result.payload);
 }
 
 // Escalation-sensitive governance (global settings, sensitive-info read/write, registration

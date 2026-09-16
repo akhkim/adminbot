@@ -1,5 +1,6 @@
 /** Admin console body markup: the auth gate, the shell, and one section per panel. */
 import { ADMINBOT_BOT_EMAIL_ENV, resolveAdminBotDriveAccount } from "../../contracts/actions.js";
+import { resolveAdminBotLabOverleafHost } from "../../contracts/overleaf.js";
 
 // The importer account the callout tells members to share their planning doc with. Resolved here
 // rather than baked into the copy so the page can never name an account this deployment does not
@@ -204,7 +205,7 @@ export function adminBotConsoleMarkup(): string {
               <label>Title<input name="title" required placeholder="Causal Garden Planning"></label>
               <label>Authors<input name="authors" required placeholder="alice, bob"></label>
               <label>Current step<select name="current_step" id="paper-step"></select></label>
-              <label>Overleaf edit URL<input name="overleaf_edit_url" placeholder="https://www.overleaf.com/..."></label>
+              <label>Overleaf edit URL<input name="overleaf_edit_url" placeholder="https://${resolveAdminBotLabOverleafHost()}/project/..."></label>
               <label>Google Drive PDF<input name="google_drive_pdf_url" placeholder="https://drive.google.com/..."></label>
               <label>Reminder status
                 <select name="reminder_status">

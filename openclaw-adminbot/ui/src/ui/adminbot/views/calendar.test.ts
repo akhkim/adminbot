@@ -106,7 +106,9 @@ describe("the draft panel", () => {
 
   it("surfaces the reason a draft was refused", () => {
     const container = renderToDiv(
-      state({ calendarDraftError: "the draft ends before it starts" } as Partial<AppViewState>),
+      state({
+        calendarDraftError: "the draft ends before it starts",
+      } as Partial<AppViewState>),
     );
     expect(container.textContent).toContain("the draft ends before it starts");
   });
@@ -124,7 +126,9 @@ describe("the invite panel", () => {
 
   it("lists who matches and why", () => {
     const container = renderToDiv(
-      state({ calendarAudience: { conference: "NeurIPS 2026" } } as Partial<AppViewState>),
+      state({
+        calendarAudience: { conference: "NeurIPS 2026" },
+      } as Partial<AppViewState>),
     );
     const matches = container.querySelector('[data-testid="calendar-matches"]');
     expect(matches?.textContent).toContain("Ada Lovelace");
@@ -162,7 +166,9 @@ describe("the invite panel", () => {
 
   it("cannot send until an event is picked", () => {
     const container = renderToDiv(
-      state({ calendarAudience: { conference: "NeurIPS 2026" } } as Partial<AppViewState>),
+      state({
+        calendarAudience: { conference: "NeurIPS 2026" },
+      } as Partial<AppViewState>),
     );
     const button = container.querySelector<HTMLButtonElement>(
       '[data-testid="calendar-send-invite"]',
@@ -182,7 +188,103 @@ describe("the invite panel", () => {
       '[data-testid="calendar-send-invite"]',
     );
     expect(button?.disabled).toBe(false);
-    expect(button?.textContent).toContain("(1)");
+    expect(button?.textContent).toContain("+1");
+  });
+
+  // The filters are the guest list, so the panel has to show what leaves as plainly as what joins
+  // -- before the confirm click, not in the notice afterwards.
+  it("names the roster members the filters take off the event", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({
+              id: "here",
+              name: "Here",
+              email: "here@cs.toronto.edu",
+              location: "Toronto",
+            }),
+            member({
+              id: "away",
+              name: "Away",
+              email: "away@cs.toronto.edu",
+              location: "Berlin",
+            }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "speaker@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+
+    const removals = container.querySelector('[data-testid="calendar-removals"]');
+    expect(removals?.textContent).toContain("Away");
+    expect(removals?.textContent).toContain("does not match the filters");
+    // The guest is reported as kept, never offered as a removal.
+    expect(removals?.textContent).not.toContain("speaker@elsewhere.org");
+    expect(container.querySelector('[data-testid="calendar-kept-guests"]')?.textContent).toContain(
+      "speaker@elsewhere.org",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
+        ?.textContent,
+    ).toContain("−1");
+  });
+
+  // Removing people is a real send even when nobody is joining, so the button cannot stay disabled
+  // on an invite count of zero.
+  it("enables the button for a send that only removes", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({
+              id: "away",
+              name: "Away",
+              email: "away@cs.toronto.edu",
+              location: "Berlin",
+            }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "stays@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="calendar-send-invite"]',
+    );
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent).toContain("−1");
   });
 
   // Someone with no address would otherwise be counted on screen and then quietly missing from the
@@ -191,7 +293,14 @@ describe("the invite panel", () => {
     const container = renderToDiv(
       state({
         adminBotData: {
-          members: [member({ id: "m2", name: "Mei Chen", email: undefined, location: "Toronto" })],
+          members: [
+            member({
+              id: "m2",
+              name: "Mei Chen",
+              email: undefined,
+              location: "Toronto",
+            }),
+          ],
           papers: [],
           proposals: [],
           executions: [],
@@ -229,7 +338,10 @@ describe("the two-step send", () => {
 
   it("arms on the first click and sends on the second", () => {
     const sendCalendarInvites = vi.fn().mockResolvedValue(undefined);
-    const view = state({ ...armed, sendCalendarInvites } as Partial<AppViewState>);
+    const view = state({
+      ...armed,
+      sendCalendarInvites,
+    } as Partial<AppViewState>);
     let container = renderToDiv(view);
     container
       .querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
@@ -249,7 +361,10 @@ describe("the two-step send", () => {
 
   // Consent to mail one set of people is not consent to mail a different one.
   it("disarms when the filter changes", () => {
-    const view = state({ ...armed, calendarConfirming: "invite" } as Partial<AppViewState>);
+    const view = state({
+      ...armed,
+      calendarConfirming: "invite",
+    } as Partial<AppViewState>);
     const container = renderToDiv(view);
     const select = container.querySelector<HTMLSelectElement>(
       '[data-testid="calendar-filter-home-city"]',
@@ -268,7 +383,13 @@ describe("editing an event with a prompt", () => {
     const view = state({
       calendarMonth: "2026-09-01",
       calendarOpenEventId: "evt-1",
-      calendarEvents: [{ id: "evt-1", summary: "Lab retreat", start: "2026-09-15T13:00:00-04:00" }],
+      calendarEvents: [
+        {
+          id: "evt-1",
+          summary: "Lab retreat",
+          start: "2026-09-15T13:00:00-04:00",
+        },
+      ],
       calendarDraft: {
         summary: "Old draft",
         start: "2026-08-18T13:00",
@@ -284,7 +405,9 @@ describe("editing an event with a prompt", () => {
   });
 
   it("says which event it is changing, and offers a way out", () => {
-    const view = state({ calendarEditingEventId: "evt-1" } as Partial<AppViewState>);
+    const view = state({
+      calendarEditingEventId: "evt-1",
+    } as Partial<AppViewState>);
     const container = renderToDiv(view);
     expect(container.querySelector('[data-testid="calendar-editing"]')?.textContent).toContain(
       "Lab retreat",
@@ -322,7 +445,12 @@ describe("the month grid", () => {
         start: "2026-09-15T13:00:00-04:00",
         end: "2026-09-15T17:00:00-04:00",
       },
-      { id: "evt-2", summary: "Reading week", start: "2026-09-21", all_day: true },
+      {
+        id: "evt-2",
+        summary: "Reading week",
+        start: "2026-09-21",
+        all_day: true,
+      },
     ],
     calendarSource: {
       id: "jinesis.lab@gmail.com",
@@ -361,7 +489,10 @@ describe("the month grid", () => {
   // happened to cover.
   it("reloads when the month changes", () => {
     const loadCalendarEvents = vi.fn().mockResolvedValue(undefined);
-    const view = state({ ...september, loadCalendarEvents } as Partial<AppViewState>);
+    const view = state({
+      ...september,
+      loadCalendarEvents,
+    } as Partial<AppViewState>);
     const container = renderToDiv(view);
     container
       .querySelector<HTMLButtonElement>('[data-testid="calendar-month-next"]')
@@ -468,7 +599,11 @@ describe("the event card", () => {
   const withGuests = {
     calendarMonth: "2026-09-01",
     calendarOpenEventId: "evt-1",
-    calendarSource: { id: "jinesis.lab@gmail.com", timezone: "America/Toronto", embed_url: "u" },
+    calendarSource: {
+      id: "jinesis.lab@gmail.com",
+      timezone: "America/Toronto",
+      embed_url: "u",
+    },
     calendarEvents: [
       {
         id: "evt-1",
@@ -551,7 +686,13 @@ describe("the event card", () => {
     const container = renderToDiv(
       state({
         ...withGuests,
-        calendarEvents: [{ id: "evt-1", summary: "Solo hold", start: "2026-09-15T13:00:00-04:00" }],
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Solo hold",
+            start: "2026-09-15T13:00:00-04:00",
+          },
+        ],
       } as Partial<AppViewState>),
     );
     expect(container.querySelector('[data-testid="calendar-event-card"]')?.textContent).toContain(
@@ -603,7 +744,10 @@ describe("the result of a write", () => {
   it("shows a failure where the operator is looking", () => {
     const container = renderToDiv(
       state({
-        adminBotNotice: { kind: "error", text: "gog calendar create failed: token expired" },
+        adminBotNotice: {
+          kind: "error",
+          text: "gog calendar create failed: token expired",
+        },
       } as Partial<AppViewState>),
     );
     const notice = container.querySelector('[data-testid="calendar-notice"]');
@@ -662,7 +806,11 @@ describe("the assistant", () => {
   it("clears the conversation on Start over", () => {
     const view = state({
       calendarMessages: [{ role: "user", content: "x" }],
-      calendarDraft: { summary: "x", start: "2026-08-18T13:00", end: "2026-08-18T14:00" },
+      calendarDraft: {
+        summary: "x",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+      },
       calendarEditingEventId: "evt-1",
     } as Partial<AppViewState>);
     const container = renderToDiv(view);
@@ -716,6 +864,76 @@ describe("calendarInviteSelection", () => {
       } as Partial<AppViewState>),
     );
     expect(selection.emails).toEqual([]);
+  });
+
+  it("carries the removals and the exact list the event is left with", () => {
+    const selection = calendarInviteSelection(
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({
+              id: "here",
+              name: "Here",
+              email: "here@cs.toronto.edu",
+              location: "Toronto",
+            }),
+            member({
+              id: "away",
+              name: "Away",
+              email: "away@cs.toronto.edu",
+              location: "Berlin",
+            }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "speaker@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+
+    expect(selection.emails).toEqual(["here@cs.toronto.edu"]);
+    expect(selection.remove).toEqual(["away@cs.toronto.edu"]);
+    // The write replaces rather than subtracts, so everyone being invited has to be in here.
+    expect(selection.remaining.toSorted()).toEqual([
+      "here@cs.toronto.edu",
+      "speaker@elsewhere.org",
+    ]);
+    // The half a reader will question later is the half the ledger has to explain.
+    expect(selection.reason).toContain("removed");
+  });
+
+  // The refusal that matters most: no filter means no audience has been chosen, which must never
+  // read as "the audience is nobody, so take everybody off".
+  it("removes nobody when no filter is set", () => {
+    const selection = calendarInviteSelection(
+      state({
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["ada@cs.toronto.edu", "someone@elsewhere.org"],
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+    );
+    expect(selection.emails).toEqual([]);
+    expect(selection.remove).toEqual([]);
   });
 });
 
@@ -802,13 +1020,21 @@ describe("attendee local times on the invite list", () => {
 });
 
 describe("trips on the calendar", () => {
-  const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" };
+  const berlin = {
+    start: "2026-09-01",
+    end: "2026-09-30",
+    city: "Berlin",
+    timezone: "Europe/Berlin",
+  };
 
   it("marks the days a member is away, naming them when it is only one", () => {
     const container = renderToDiv(
       state({
         calendarMonth: "2026-09-01",
-        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ trips: [berlin] })],
+        },
       } as Partial<AppViewState>),
     );
     const marker = container.querySelector('[data-testid="calendar-trips-2026-09-15"]');
@@ -825,7 +1051,11 @@ describe("trips on the calendar", () => {
           ...state().adminBotData,
           members: [
             member({ trips: [berlin] }),
-            member({ id: "m2", name: "Mei Chen", trips: [{ ...berlin, city: "Tokyo" }] }),
+            member({
+              id: "m2",
+              name: "Mei Chen",
+              trips: [{ ...berlin, city: "Tokyo" }],
+            }),
           ],
         },
       } as Partial<AppViewState>),
@@ -839,7 +1069,10 @@ describe("trips on the calendar", () => {
     const container = renderToDiv(
       state({
         calendarMonth: "2026-10-01",
-        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ trips: [berlin] })],
+        },
       } as Partial<AppViewState>),
     );
     expect(container.querySelector('[data-testid="calendar-trips-2026-10-15"]')).toBeNull();
@@ -851,7 +1084,12 @@ describe("trips on the calendar", () => {
         calendarAudience: { conference: "NeurIPS 2026" },
         calendarSelectedEventId: "evt-1",
         calendarEvents: [
-          { id: "evt-1", summary: "Lab meeting", start: "2026-09-15T14:00:00Z", attendees: [] },
+          {
+            id: "evt-1",
+            summary: "Lab meeting",
+            start: "2026-09-15T14:00:00Z",
+            attendees: [],
+          },
         ],
         adminBotData: {
           ...state().adminBotData,
@@ -862,5 +1100,102 @@ describe("trips on the calendar", () => {
     const matches = container.querySelector('[data-testid="calendar-matches"]');
     expect(matches?.textContent).toContain("in Berlin");
     expect(matches?.textContent).toMatch(/(?:16|4):00/u);
+  });
+});
+
+describe("the member-type filter on the invite panel", () => {
+  const roster = [
+    member({
+      id: "full",
+      name: "Full Person",
+      email: "full@lab.org",
+      member_type: "full",
+    }),
+    member({
+      id: "alum",
+      name: "Old Hand",
+      email: "alum@lab.org",
+      member_type: "alumni",
+    }),
+    member({ id: "blank", name: "Never Filled In", email: "blank@lab.org" }),
+  ];
+
+  function panel(overrides: Partial<AppViewState> = {}): AppViewState {
+    return state({
+      calendarSelectedEventId: "evt-1",
+      adminBotData: {
+        members: roster,
+        papers: [],
+        proposals: [],
+        executions: [],
+        nudges: [],
+        settings: null,
+        sensitiveInfo: null,
+        loadedAt: Date.now(),
+      },
+      calendarEvents: [
+        {
+          id: "evt-1",
+          summary: "Monday group meeting",
+          start: "2026-09-14T09:30:00-04:00",
+          attendees: ["full@lab.org", "alum@lab.org", "blank@lab.org"],
+        },
+      ],
+      ...overrides,
+    } as unknown as Partial<AppViewState>);
+  }
+
+  it("ticks a type onto the filter", () => {
+    const view = panel();
+    const container = renderToDiv(view);
+    const box = container.querySelector<HTMLInputElement>('[data-testid="calendar-type-full"]');
+    box!.checked = true;
+    box!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(view.calendarAudience?.memberTypes).toEqual(["full"]);
+  });
+
+  // Clearing the last box has to read as "no member-type filter", not as a filter matching nobody
+  // -- the second would offer a plan that takes the whole roster off the event.
+  it("drops the filter entirely when the last type is unticked", () => {
+    const view = panel({
+      calendarAudience: { memberTypes: ["full"] },
+    } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    const box = container.querySelector<HTMLInputElement>('[data-testid="calendar-type-full"]');
+    box!.checked = false;
+    box!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(view.calendarAudience?.memberTypes).toBeUndefined();
+    expect(
+      renderToDiv(view).querySelector('[data-testid="calendar-no-matches"]')?.textContent,
+    ).toContain("Pick at least one filter");
+  });
+
+  it("takes the excluded types off the event and holds back the undecided", () => {
+    const container = renderToDiv(
+      panel({
+        calendarAudience: { memberTypes: ["full"] },
+      } as Partial<AppViewState>),
+    );
+    const removals = container.querySelector('[data-testid="calendar-removals"]');
+    expect(removals?.textContent).toContain("Old Hand");
+    expect(removals?.textContent).not.toContain("Never Filled In");
+    expect(container.querySelector('[data-testid="calendar-undecided"]')?.textContent).toContain(
+      "Never Filled In",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
+        ?.textContent,
+    ).toContain("−1");
+  });
+
+  it("says the audience was chosen on member type in the reason it records", () => {
+    const selection = calendarInviteSelection(
+      panel({
+        calendarAudience: { memberTypes: ["full", "coauthor-major"] },
+      } as Partial<AppViewState>),
+    );
+    expect(selection.reason).toContain("member type full/coauthor-major");
+    expect(selection.remaining).toContain("blank@lab.org");
+    expect(selection.remove).toEqual(["alum@lab.org"]);
   });
 });

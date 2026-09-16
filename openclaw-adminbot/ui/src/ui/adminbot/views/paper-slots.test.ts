@@ -2,6 +2,7 @@
 // answer on file cannot be used.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
 import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
@@ -69,7 +70,7 @@ describe("renderPaperSlots", () => {
     // parent is a label with a status pill. The invariant that matters is unchanged: every field
     // in the registry is somewhere on the card.
     expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
-    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(5);
+    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(6);
   });
 
   it("draws the two halves of a node in one row rather than two", async () => {
@@ -413,7 +414,9 @@ describe("renderPaperSlots", () => {
   it("shows the accepted shape on a link slot, from the same rules the service enforces", async () => {
     const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    expect(overleaf?.textContent).toContain("overleaf.com");
+    // The lab's own instance, because that is the one PaperMentor can review -- the example is
+    // steering, not just shape.
+    expect(overleaf?.textContent).toContain(ADMINBOT_LAB_OVERLEAF_HOST);
     expect(overleaf?.textContent).toContain("/project/");
   });
 });
@@ -575,7 +578,44 @@ describe("field guidance", () => {
     const help = container.querySelector(
       '[data-testid="paper-slot-help-p1-overleaf_edit"]',
     )?.parentElement;
-    expect(help?.textContent).toContain("address bar");
-    expect(help?.textContent).toContain("overleaf.com/project/");
+    expect(help?.textContent).toContain("does not grant sharing access");
+    expect(help?.textContent).toContain("enable link sharing");
+    expect(help?.textContent).toContain("copy the edit or view link");
+    expect(help?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/project/`);
+  });
+  // `pi_approval` is the only slot the authors cannot act on. Before this it looked like any other
+  // unfilled field -- "Missing", and the word "the PI" in grey -- so a paper that was genuinely on
+  // her desk read as one nobody had picked up. The condition is the same one that puts it on her
+  // queue (contracts/paper-slots.ts), so the two screens cannot disagree.
+  describe("the PI's gate, as the authors see it", () => {
+    const atGate = [
+      row({ slot: "drive_pdf_arxiv", status: "provided", url: "https://drive.example/p.pdf" }),
+      row({ slot: "authors_ack", status: "provided", provided_at: "2026-09-08T10:00:00.000Z" }),
+    ];
+
+    it("tells the authors the paper has gone to her, and when", async () => {
+      const { container } = await draw(atGate);
+      const note = container.querySelector('[data-testid="paper-slot-pi-sent-p1"]');
+      expect(note?.textContent).toContain("Sent to Zhijing to review");
+      expect(note?.textContent).toContain("2026-09-08");
+    });
+
+    it("says nothing about her until the package is actually prepared", async () => {
+      const { container } = await draw([
+        row({ slot: "drive_pdf_arxiv", status: "provided", url: "https://drive.example/p.pdf" }),
+      ]);
+      expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
+      // Still the plain owner line, so the row does not claim a hand-off that has not happened.
+      const parent = container.querySelector('[data-testid="paper-slot-row-p1-pi_approval"]');
+      expect(parent?.textContent).toContain("the PI");
+    });
+
+    it("stops saying it once she has ticked it", async () => {
+      const { container } = await draw([
+        ...atGate,
+        row({ slot: "pi_approval", status: "provided" }),
+      ]);
+      expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
+    });
   });
 });

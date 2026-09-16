@@ -678,9 +678,10 @@
   gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
      desktop sidebar the extra height only spreads a group out. Tightened again now that the admin
-     group is seven entries instead of ten: the sidebar's job is to be read in one glance, and the
-     whole tree fits without scrolling at 30px where it did not at 34. */
-  min-height: 30px;
+     group is seven entries instead of ten: the sidebar's job is to be read in one glance. The
+     floor is the 18px icon, so 26px is 4px of breathing room either side of it -- below that the
+     icon starts to crowd the edge of its own hover/active fill. */
+  min-height: 26px;
   padding: 0 11px;
   line-height: 1.3;
   border-radius: var(--radius-md);
@@ -721,7 +722,9 @@
 .nav-item__text {
   font-size: var(--control-ui-text-sm);
   font-weight: 500;
-  line-height: 3;
+  /* Matches the row's own line-height: at 3 the label's line box was 36px, taller than the 30px
+     row it sits in, so it -- not min-height -- was setting how far apart the rows sat. */
+  line-height: 1.3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
   /* The label is what gives way when a row is too narrow -- the badge beside it stays whole,
@@ -1341,15 +1344,56 @@
   flex-direction: column;
   gap: var(--space-12);
   width: 100%;
-  max-width: 75rem;
 }
 
-/* Personal work remains at the dashboard's established reading width. The public deadline tool
-   below uses its full board width so it is the same component, not a compressed dashboard mode. */
+/* Full width, like the deadline board below them. These three used to hold a 62rem reading width
+   while the page allowed 75rem, so widening the page alone changed nothing -- the cap that was
+   being seen was this one. The summaries grid is `repeat(auto-fit, minmax(18rem, 1fr))` and turns
+   the room into more columns; the attention stack spends it on wider cards, which is the trade
+   this asks for. */
 .dashboard__attention,
+.dashboard__broadcast,
 .dashboard__summaries {
   width: 100%;
-  max-width: 62rem;
+}
+
+/* The lab-wide broadcast. Carries an accent rule down its leading edge rather than a filled panel:
+   it sits above the attention stack, which is already a column of cards, and a second filled block
+   at the top of that column reads as one more task rather than as somebody talking. */
+.dashboard__broadcast {
+  border-inline-start: 3px solid var(--accent, currentColor);
+  border-radius: var(--radius-2, 6px);
+  background: var(--surface-2, transparent);
+  padding: var(--space-3) var(--space-4);
+}
+
+.dashboard__broadcast-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dashboard__broadcast-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* The message is written as lines -- travel dates, one place per line -- so the newlines the author
+   typed are the ones the reader sees. */
+.dashboard__broadcast-body {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.dashboard__broadcast-meta {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8125rem;
+  opacity: 0.65;
 }
 
 .dashboard__deadlines {
@@ -1506,7 +1550,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  max-width: 62rem;
 }
 
 .getting-started__progress {
@@ -2325,11 +2368,14 @@
    My Profile
    =========================================== */
 
+/* The full width of the content pane, deliberately, where every other page here caps at 62rem.
+   This page is two dozen short fields, and its grid is `repeat(auto-fill, minmax(18rem, 1fr))` --
+   so the width it is given turns into more columns rather than longer lines, and the cap was
+   spending a third of a wide screen on nothing while the fields it was protecting sat four deep. */
 .profile {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  max-width: 62rem;
 }
 
 .my-work {
@@ -4685,6 +4731,10 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
 }
 
+.deadline-proposal__form [hidden] {
+  display: none;
+}
+
 .deadline-proposal__form label > span {
   font-weight: 600;
 }
@@ -4777,6 +4827,47 @@ adminbot-deadlines-view {
   margin: var(--space-2) 0;
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
+}
+
+.deadline-proposal-row__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.deadline-proposal-row__source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.deadline-proposal-row__source[data-source="visitor"] {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.deadline-proposal-row__source > span,
+.deadline-proposal-row__source svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.deadline-proposal-row__source svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .deadline-proposal-row__heading > span,
@@ -5155,6 +5246,12 @@ adminbot-deadlines-view {
   white-space: nowrap;
 }
 
+/* Which stage the collapsed row is counting down to, so folding a conference cannot hide it. */
+.deadline-group__next-stage {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .deadline-group__panel {
   border-top: 1px solid var(--border-strong);
 }
@@ -5186,7 +5283,7 @@ adminbot-deadlines-view {
 
 .deadline-group__row {
   display: grid;
-  grid-template-columns: 7.75rem 13rem minmax(0, 1fr) auto;
+  grid-template-columns: 7.75rem 15rem minmax(0, 1fr) auto;
   grid-template-areas: "countdown date main source";
   align-items: center;
   gap: var(--space-3);
@@ -5196,6 +5293,25 @@ adminbot-deadlines-view {
 
 .deadline-group__row:last-child {
   border-bottom: 0;
+}
+
+/* A stage the venue acts on, not one the lab submits to: same grid, quieter ink, no countdown
+   and no source button. The empty countdown cell is what keeps the date column aligned with the
+   submissions it sits between. */
+.deadline-group__row--milestone {
+  background: var(--bg-muted);
+}
+
+.deadline-group__row--milestone .deadline-group__row-name {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* A conference span ("Apr 26 – Apr 30, 2027") is longer than any AoE cutoff and must wrap rather
+   than push the name column off the row. */
+.deadline-group__row--milestone .deadline-group__row-date {
+  color: var(--muted);
+  white-space: normal;
 }
 
 .deadline-group__row:hover {
@@ -5245,7 +5361,7 @@ adminbot-deadlines-view {
   display: inline-flex;
   grid-area: date;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .deadline-group__row .deadline-card__actions {
@@ -5330,6 +5446,42 @@ adminbot-deadlines-view {
 .deadline-classification {
   display: inline-flex;
   gap: var(--space-2);
+  white-space: nowrap;
+}
+
+/* Quieter than the type and archival badges beside it: a location is context for the deadline,
+   not a classification of it, so it reads as labelled text rather than another uppercase chip. */
+.deadline-location {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.deadline-location__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--muted-strong);
+}
+
+.deadline-location__icon svg {
+  width: 0.875em;
+  height: 0.875em;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deadline-location__sites {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -5505,7 +5657,7 @@ adminbot-deadlines-view {
 .deadline-table__date-row {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .deadline-card__date-row {
@@ -5541,25 +5693,33 @@ adminbot-deadlines-view {
   display: inline-flex;
   align-items: center;
   margin: 0;
+  margin-inline-start: 0;
   font-size: var(--control-ui-text-sm);
   white-space: nowrap;
 }
 
-.btn.deadline-card__history-trigger {
-  width: 2em;
-  min-width: 2em;
-  height: 2em;
-  min-height: 2em;
+.btn.deadline-card__history-trigger,
+.btn.deadline-card__correction-trigger {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   font-size: inherit;
 }
 
-.btn.deadline-card__history-trigger svg {
-  width: 1em;
-  height: 1em;
+.btn.deadline-card__history-trigger svg,
+.btn.deadline-card__correction-trigger svg {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
+}
+
+.btn.deadline-card__correction-trigger svg {
+  width: 13px;
+  height: 13px;
 }
 
 .deadline-card__history[data-change="extended"] .deadline-card__history-trigger:not(:disabled) {
@@ -5571,11 +5731,12 @@ adminbot-deadlines-view {
   color: var(--accent-hover);
 }
 
+
 .deadline-card__history-panel[popover] {
   position: fixed;
   position-area: block-start span-inline-end;
-  width: max-content;
-  max-width: min(32rem, calc(100vw - 2 * var(--space-4)));
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--space-4));
   max-height: min(24rem, calc(100vh - 2 * var(--space-4)));
   margin: 0 0 var(--space-2);
   padding: var(--space-3);
@@ -5588,6 +5749,47 @@ adminbot-deadlines-view {
   font-size: var(--control-ui-text-sm);
   line-height: 1.45;
   white-space: normal;
+}
+
+.deadline-details__header,
+.deadline-details__history,
+.deadline-details__footer {
+  display: grid;
+  gap: 8px;
+}
+
+.deadline-details__header > strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.deadline-details__history,
+.deadline-details__footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.deadline-details__history > strong {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.deadline-card__history-panel .deadline-details__header p,
+.deadline-card__history-panel .deadline-details__history p,
+.deadline-card__history-panel .deadline-details__history ul {
+  margin: 0;
+}
+
+.deadline-details__footer .deadline-card__actions {
+  margin: 0;
+  padding: 0;
+}
+
+.deadline-details__footer > .btn {
+  justify-content: center;
+  min-height: 36px;
 }
 
 .deadline-card__history-panel ul {
@@ -5649,7 +5851,9 @@ adminbot-deadlines-view {
 
 .deadline-table {
   width: 100%;
-  min-width: 76rem;
+  /* Raised from 76rem when the Location column landed, so the existing columns keep the widths
+     they were laid out for instead of the new one squeezing them. The wrapper scrolls. */
+  min-width: 86rem;
   border-collapse: collapse;
   font-size: var(--control-ui-text-sm);
 }
@@ -5721,6 +5925,14 @@ adminbot-deadlines-view {
 
 .deadline-table__venue {
   color: var(--muted) !important;
+  white-space: nowrap;
+}
+
+.deadline-table__location {
+  max-width: 16rem;
+  overflow: hidden;
+  color: var(--muted) !important;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -5933,6 +6145,13 @@ adminbot-deadlines-view {
     flex-wrap: wrap;
   }
 
+  /* A multi-site location is the longest thing on a card, so it wraps onto as many lines as it
+     needs here rather than being ellipsised down to the first city. */
+  .deadline-location__sites {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .deadline-group__row-date-wrap,
   .deadline-card__date-row {
     display: block;
@@ -5941,7 +6160,7 @@ adminbot-deadlines-view {
 
   .deadline-group__row-date-wrap > .deadline-card__history,
   .deadline-card__date-row > .deadline-card__history {
-    margin-inline-start: var(--space-1);
+    margin-inline-start: 0;
     vertical-align: middle;
   }
 
@@ -5950,7 +6169,7 @@ adminbot-deadlines-view {
   }
 }
 
-@container deadline-board (max-width: 60em) {
+@container deadline-board (max-width: 64em) {
   .deadline-group__row {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
@@ -6313,6 +6532,10 @@ adminbot-deadlines-view {
   background: #fff;
   cursor: grab;
   touch-action: none;
+  /* The pointerdown handler only cancels selections that start inside the canvas. A drag that
+     starts on the title bar and sweeps down across the chart would still highlight mermaid's
+     HTML labels, since they are ordinary selectable text. */
+  user-select: none;
 }
 
 .flowmap__canvas.is-dragging {
@@ -6534,6 +6757,14 @@ adminbot-deadlines-view {
 /* A quiet secondary accent for this surface: the lab-collab tab gets a muted teal instead of the
    app-wide blue, so the section reads as its own place without shouting. Stays low-key for dark
    mode -- this is a work surface, not a highlight reel. */
+/* The two strips that came from the other implementation sit inside this container now rather than
+   beside it. They carry their own section shell, so the page's padding and column gap belong to the
+   container alone -- nested, they were paying for both. */
+.lab-sharing .lab-sharing {
+  max-width: none;
+  padding: 0;
+}
+
 .lab-sharing {
   --ls-accent: #715fb3;
   --ls-accent-hover: #8375b8;
@@ -8993,6 +9224,17 @@ adminbot-deadlines-view {
   line-height: 1.4;
 }
 
+/* The one slot the authors cannot act on, once it is genuinely with the PI. Reads as a standing
+   fact about where the paper is rather than as a hint about a field, so it carries the accent rule
+   the rest of the muted notes do not. */
+.paper-slot__note--sent {
+  padding: var(--space-1) var(--space-2);
+  border-radius: 8px;
+  border-inline-start: 2px solid var(--border-strong);
+  background: var(--bg-accent);
+  color: var(--text);
+}
+
 .paper-slot__error {
   margin: var(--space-2) 0 0;
   padding: var(--space-1) var(--space-2);
@@ -9648,6 +9890,14 @@ adminbot-deadlines-view {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+/* "Not now" and "Close" sit together as one block against the head's space-between, so the pair
+   stays on the right instead of the close button being pushed to a line of its own. */
+.decision-banner__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
 }
 
 .decision-banner__eyebrow {
@@ -10594,4 +10844,36 @@ adminbot-paper-visibility { display: block; min-width: 0; margin-bottom: var(--s
   .decision-banner__row > .decision-banner__label { flex-basis: 100%; }
   .my-work__section-head { flex-direction: column; align-items: stretch; }
   .my-work .my-work__section-actions { justify-content: flex-start; }
+}
+
+/* "Zhijing's updates": the archive under the current broadcast. A plain list rather than cards --
+   these are things that were said and are no longer being said, so they should read as a record
+   somebody scans, not as a stack of live notices competing with the one above them. */
+.lab-sharing-status__history {
+  margin-top: var(--space-5);
+}
+
+.lab-sharing-status__history-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lab-sharing-status__history-item {
+  border-inline-start: 2px solid var(--border, currentColor);
+  padding-inline-start: var(--space-3);
+}
+
+/* The author's own line breaks, same as the banner. */
+.lab-sharing-status__history-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.lab-sharing-status__retracted {
+  font-style: italic;
 }

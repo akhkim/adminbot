@@ -117,9 +117,20 @@ export const TAB_PAGES = [
       "adminbotProfileOverview",
       "adminbotGrantReport",
       "adminbotMailingList",
+      // Which parts of AdminBot the lab opens. It sits with the completeness columns because it is
+      // the other half of that question: those count what members filled in, this counts what they
+      // came to look at, and a blank column next to an unopened tab is a different problem from a
+      // blank column next to a busy one.
+      "adminbotTabUsage",
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
+  // My Desk and Travel are one page because they are the same reader asking about themselves --
+  // what is waiting on me, and where have I been. Travel does not belong in the Admin group beside
+  // the lab-wide boards: it is nobody's queue, it names one person, and a sidebar entry of its own
+  // would read as a surveillance tool sitting next to the roster rather than as the professor's own
+  // record of their own year.
+  { page: "myDesk", tabs: ["adminbotProfessor", "adminbotTravel"] },
   // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
   // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
   // which put "award Ada a badge" a page away from the roster that says who Ada is.
@@ -200,7 +211,9 @@ export type Tab =
   | "adminbotMembers"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
+  | "adminbotTabUsage"
   | "adminbotProfessor"
+  | "adminbotTravel"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -287,7 +300,9 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotMembers: "/members",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
+  adminbotTabUsage: "/tab-usage",
   adminbotProfessor: "/professor",
+  adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
   adminbotSignatures: "/signatures",
@@ -343,7 +358,9 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/opportunities": "adminbotOpportunities",
   "/adminbot/papers": "adminbotPapers",
   "/adminbot/professor": "adminbotProfessor",
+  "/adminbot/travel": "adminbotTravel",
   "/adminbot/profile-overview": "adminbotProfileOverview",
+  "/adminbot/tab-usage": "adminbotTabUsage",
   "/adminbot/rec-letters": "adminbotRecLetters",
   "/adminbot/registrations": "adminbotRegistrations",
   "/adminbot/badges": "adminbotBadges",
@@ -428,7 +445,7 @@ export function groupTitleForTab(tab: Tab): string | null {
   return t(`nav.${group.label}`);
 }
 
-export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+function normalizedTabPath(pathname: string, basePath: string): string {
   const base = normalizeBasePath(basePath);
   let path = pathname || "/";
   if (base) {
@@ -438,16 +455,31 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
       path = path.slice(base.length);
     }
   }
-  let normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
-  if (normalized.endsWith("/index.html")) {
-    normalized = "/";
-  }
+  const normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
+  return normalized.endsWith("/index.html") ? "/" : normalized;
+}
+
+export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+  const normalized = normalizedTabPath(pathname, basePath);
   // The root is home: the dashboard for anyone signed in. Because a visitor may not see it, the
   // coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
     return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
+}
+
+/**
+ * Whether the path is the root rather than a named tab.
+ *
+ * `tabFromPath` answers the root with `dashboard`, which is the right tab to show and the wrong
+ * answer to "did this visitor ask for a surface". Home is a default standing in for a choice
+ * nobody made, and the two cases part company once a viewer has a home of their own: see
+ * `defaultTabForViewer`. The URL is rewritten to the resolved tab on load, so this has to be read
+ * from the address the visit arrived on, before that happens.
+ */
+export function pathIsRoot(pathname: string, basePath = ""): boolean {
+  return normalizedTabPath(pathname, basePath) === "/";
 }
 
 export function inferBasePathFromPathname(pathname: string): string {
@@ -507,8 +539,12 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotProfileOverview":
       return "check";
+    case "adminbotTabUsage":
+      return "barChart";
     case "adminbotProfessor":
       return "lobster";
+    case "adminbotTravel":
+      return "globe";
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";

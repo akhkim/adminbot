@@ -134,6 +134,20 @@ export type MemberAuthHost = {
   adminBotOnboardingAcknowledged: boolean;
   adminBotOnboardingBusyStepId: string | null;
   adminBotOnboardingError: string | null;
+  // Collaborate's state, declared here only so signing out can drop it. All optional: the hosts
+  // that drive this flow without rendering the tab (tests, the console) never set any of them.
+  labSharing?: import("../data/lab-sharing.ts").LabSharingSnapshot | undefined;
+  labSharingLoading?: boolean;
+  labSharingErrors?: string[];
+  labSharingMembers?: import("../data/lab-sharing.ts").LabSharingMemberMatch[];
+  labSharingAnnouncements?: import("../views/lab-sharing.ts").Announcement[];
+  labSharingNotice?: string | null;
+  labSharingSearchQuery?: string;
+  labSharingAskProjectId?: string;
+  labSharingAskComment?: string;
+  labSharingAskTags?: string[];
+  labSharingInvitedMemberIds?: string[];
+  labSharingRespondedInviteIds?: string[];
   // Optional so the auth flow can be driven by hosts that never render the gate (tests, the
   // console). Signing out closes it so the visitor lands on the public shell, not the form.
   authGateVisible?: boolean;
@@ -678,6 +692,24 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.profileBadgeNominationsError = null;
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
+  // Collaborate, which this function used to walk straight past. Its snapshot is one member's own
+  // record -- the help requests they posted, the invitations they sent, who they searched for --
+  // and the announcements are content they wrote under their name. Left in place, the next person
+  // to sign in on the same page load saw the last one's, until a reload or their own read replaced
+  // it. Cleared here with everything else rather than in the view, because signing out is what
+  // makes it stale and this is the one place that knows it happened.
+  host.labSharing = undefined;
+  host.labSharingLoading = false;
+  host.labSharingErrors = [];
+  host.labSharingMembers = [];
+  host.labSharingAnnouncements = [];
+  host.labSharingNotice = null;
+  host.labSharingSearchQuery = "";
+  host.labSharingAskProjectId = "";
+  host.labSharingAskComment = "";
+  host.labSharingAskTags = [];
+  host.labSharingInvitedMemberIds = [];
+  host.labSharingRespondedInviteIds = [];
   host.loginMode = "signin";
   // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
   clearSignedOutView(host);

@@ -1,3 +1,4 @@
+import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type {
   AdminBotReimbursementCheck,
   AdminBotReimbursementFunder,
@@ -13,6 +14,7 @@ import {
   type MeetingRecord,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
+  type LabBroadcast,
   type MemberNotification,
   type AdminBotEmailReviewItem,
   type AdminBotEmailReviewPaperflowCandidate,
@@ -63,19 +65,25 @@ import { taskFetch, taskActivities } from "../task-request.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
-// Mirrors `adminBotExternalCollaboratorSubgroups` in extensions/adminbot/src/contracts/actions.ts. Copied
-// rather than imported for the same reason as AdminBotPrivilegeLevel above: the Control UI does not
-// reach across the extensions boundary. Only meaningful while privilege_level is
-// "external_collaborator" — the service rejects it on any other level and clears it on promotion.
+/**
+ * The service's subgroup vocabulary, derived rather than copied.
+ *
+ * This was a hand-written union of eight, "copied rather than imported" so the Control UI need not
+ * reach across the extensions boundary. It drifted: `own_pace_advisee` and
+ * `coauthor_discussant_designer` were added to the contract and never reached the copy, and because
+ * the members panel casts the form value straight to this type (views/admin.ts), assigning either
+ * of them produced a value the UI's own types said could not exist. The dropdown had already been
+ * switched to iterate the contract's list for exactly this reason -- the type is the half that was
+ * left behind.
+ *
+ * Derived from that same list, so the two can no longer disagree. The boundary argument no longer
+ * holds either: this file already imports the reimbursement-rules contract a few lines up.
+ *
+ * Only meaningful while privilege_level is "external_collaborator" — the service rejects it on any
+ * other level and clears it on promotion.
+ */
 export type AdminBotExternalCollaboratorSubgroup =
-  | "interviewee"
-  | "slightly_better_than_emails"
-  | "acquaintance"
-  | "alumni"
-  | "coauthor_minor"
-  | "coauthor_major"
-  | "disappearing_coauthor"
-  | "external_prof";
+  (typeof adminBotExternalCollaboratorSubgroups)[number];
 
 export type AdminBotAccessGrant = {
   service: string;
@@ -496,6 +504,7 @@ export type AdminBotPaperSaveInput = {
   // the entire change -- without it the grid would silently drop most of what was typed.
   overleafEditUrl?: string;
   overleafViewUrl?: string;
+  overleafShareUrl?: string;
   brainstormingDocUrl?: string;
   submissionUrl?: string;
   googleDrivePdfUrl?: string;
@@ -816,6 +825,11 @@ export type AdminBotHost = {
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
+  adminBotBroadcast?: LabBroadcast | null;
+  adminBotBroadcastHistory?: LabBroadcast[];
+  adminBotBroadcastDraft?: string;
+  adminBotBroadcastBusy?: boolean;
+  adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -2596,6 +2610,7 @@ export async function saveAdminBotPaper(
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
     ...(paper.overleafViewUrl ? { overleaf_view_url: paper.overleafViewUrl } : {}),
+    ...(paper.overleafShareUrl ? { overleaf_share_url: paper.overleafShareUrl } : {}),
     ...(paper.brainstormingDocUrl ? { brainstorming_doc_url: paper.brainstormingDocUrl } : {}),
     ...(paper.submissionUrl ? { submission_url: paper.submissionUrl } : {}),
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),

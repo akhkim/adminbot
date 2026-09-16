@@ -2,6 +2,7 @@ import {
   deadlineProposalEntryTypes,
   validateDeadlineProposalInput,
   type DeadlineProposalInput,
+  type DeadlineSubmitterContact,
   type DeadlineProposalView,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.js";
 import type { UiSettings } from "../../storage.ts";
@@ -10,13 +11,22 @@ import type { DeadlineVenue } from "./deadlines.ts";
 
 export const DEADLINE_PROPOSAL_ENTRY_TYPES = deadlineProposalEntryTypes;
 export const validateDeadlineProposal = validateDeadlineProposalInput;
-export type { DeadlineProposalInput };
+export type { DeadlineProposalInput, DeadlineSubmitterContact };
 export type DeadlineProposal = DeadlineProposalView;
 
 export interface DeadlineProposalStore {
   list(): Promise<DeadlineProposal[]>;
   listPublished(): Promise<DeadlineVenue[]>;
-  submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal>;
+  submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal>;
+  submitPublic(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    contact?: DeadlineSubmitterContact,
+  ): Promise<void>;
   revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal>;
   decide(proposal: DeadlineProposal, decision: "published" | "rejected"): Promise<DeadlineProposal>;
 }
@@ -55,13 +65,29 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
     return (body as { items?: DeadlineVenue[] }).items ?? [];
   }
 
-  async submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal> {
+  async submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal> {
     return (await this.request("/deadline-proposals", {
       method: "POST",
       authenticated: true,
-      body: input,
+      body: { ...input, ...(targetDeadlineId ? { targetDeadlineId } : {}) },
       headers: { "Idempotency-Key": idempotencyKey },
     })) as DeadlineProposal;
+  }
+
+  async submitPublic(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    contact?: DeadlineSubmitterContact,
+  ): Promise<void> {
+    await this.request("/public/deadline-proposals", {
+      method: "POST",
+      body: { ...input, submitter_contact: contact },
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
   }
 
   async revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal> {

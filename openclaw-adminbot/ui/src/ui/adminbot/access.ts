@@ -101,9 +101,19 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everybody's completeness at once, which is a governance read; the service re-checks it.
 
   adminbotProfileOverview: "admin",
+  // Everybody's browsing at once, which is the lab's data and not one member's. The service gates
+  // the read as well -- this only decides whether the tab is offered.
+  adminbotTabUsage: "admin",
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",
+  // A location history, and the narrowest read in the service: GET /lab/members/:id/travel serves
+  // the head professor her own record and 404s everybody else, admins included, because hers is the
+  // only travel history the lab keeps. This entry is visibility only and is deliberately looser
+  // than the route -- another admin can reach the tab and will find nothing behind it, which is the
+  // honest outcome and not a leak. Tightening it here would need the session to carry who the head
+  // professor is, which is a wider change than a tab label is worth.
+  adminbotTravel: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
@@ -147,6 +157,40 @@ export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[
   return tabs.filter((tab) => canAccessTab(tab, role));
 }
 
+/**
+ * Whether the member has nothing left on their checklist.
+ *
+ * An empty list is not complete. The checklist is generated when a registration is approved, so a
+ * member who arrived another way -- a seeded roster row, an admin-created record -- has no steps
+ * and never will, and reading that as "finished" would hide a tab that was never shown a checklist
+ * in the first place. Typed structurally rather than against `MemberOnboardingStep` so the access
+ * table stays a leaf module with no view or session imports.
+ */
+export function isOnboardingComplete(
+  steps: readonly { status: string }[] | undefined | null,
+): boolean {
+  return Boolean(steps?.length) && (steps ?? []).every((step) => step.status === "complete");
+}
+
+/**
+ * The tabs to draw in navigation: what the role may reach, minus what this member has finished
+ * with.
+ *
+ * Only Getting Started leaves this way, and only once every step is ticked. It is a checklist with
+ * an end, and a tab that stays in the sidebar forever after it is finished is one more permanent
+ * item competing with the ones that still want something. The page itself stays reachable at its
+ * own path -- the completed list is still a record, and Lab Members shows it too -- so a bookmark
+ * or a link from elsewhere does not break.
+ */
+export function visibleTabsForMember(
+  tabs: readonly Tab[],
+  role: AccessRole,
+  onboardingSteps: readonly { status: string }[] | undefined | null,
+): Tab[] {
+  const finished = isOnboardingComplete(onboardingSteps);
+  return visibleTabsForRole(tabs, role).filter((tab) => tab !== "gettingStarted" || !finished);
+}
+
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
 // longer allowed after signing out. Deliberately the least privileged surface that role can see.
 export function defaultTabForRole(role: AccessRole): Tab {
@@ -157,4 +201,52 @@ export function defaultTabForRole(role: AccessRole): Tab {
 // default. Signing out mid-session lands on a permitted surface rather than an empty panel.
 export function resolveAccessibleTab(tab: Tab, role: AccessRole): Tab {
   return canAccessTab(tab, role) ? tab : defaultTabForRole(role);
+}
+
+/**
+ * Who is looking, where that is more than which role they hold.
+ *
+ * The head professor is deliberately not a fourth entry in `ACCESS_ROLES`. That list is a ladder --
+ * `canAccessTab` compares ranks -- and a `pi` rung above `admin` would be a rung nobody else can
+ * see past: every `role === "admin"` test in app-render (the `viewerIsAdmin` props, the meeting
+ * nudges, the announcement controls) would read false for the one person in the lab who most
+ * plainly is an admin, and would do it silently. She is not a higher privilege than an admin; she
+ * is a particular admin, and that is a different question from what a role answers. So it is
+ * carried alongside the role rather than inside it.
+ *
+ * Whether she may *see* My Desk is still the role's answer and unchanged -- `adminbotProfessor` is
+ * admin-visible, because everything on it is an admin read. This only decides where she starts.
+ */
+export type ViewerIdentity = {
+  role: AccessRole;
+  /** True only for the member named by `head_professor_member_id` in AdminBot settings. */
+  isHeadProfessor?: boolean;
+};
+
+/** Whether this viewer is the member the settings name as head professor. */
+export function isHeadProfessorViewer(params: {
+  memberId?: string | null;
+  headProfessorMemberId?: string | null;
+}): boolean {
+  const head = params.headProfessorMemberId?.trim();
+  const viewer = params.memberId?.trim();
+  // Both required: an unset setting must not make everybody the PI, and a viewer with no member id
+  // is the break-glass gateway operator, who is an admin without being a person on the roster.
+  return Boolean(head) && Boolean(viewer) && head === viewer;
+}
+
+/**
+ * Where a viewer lands when they named no tab -- the root, rather than a link to a surface.
+ *
+ * My Desk for the head professor. It is the one page assembled around what is waiting on *her*
+ * (the letter queue, the papers at her gate, the roster's timelines), so for her it is home in the
+ * sense the dashboard is home for everybody else; the dashboard summarises the same queues one
+ * remove further out. Nobody else's landing changes: this is the PI's own page, not a better
+ * default.
+ */
+export function defaultTabForViewer(viewer: ViewerIdentity): Tab {
+  if (viewer.isHeadProfessor && canAccessTab("adminbotProfessor", viewer.role)) {
+    return "adminbotProfessor";
+  }
+  return defaultTabForRole(viewer.role);
 }

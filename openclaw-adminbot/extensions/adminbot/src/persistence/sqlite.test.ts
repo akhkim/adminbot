@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import { createAdminBotSqliteService } from "./sqlite.js";
 
 const tempDirs: string[] = [];
@@ -80,6 +81,58 @@ describe("AdminBotSqliteStore", () => {
     expect(
       unwrap(second.service.listPaperSlots("p1")).slots.every((slot) => slot.status === "missing"),
     ).toBe(true);
+    second.close();
+  });
+
+  it("keeps PaperMentor runs across service instances, and files each review once", () => {
+    const databasePath = tempDbPath();
+    const projectUrl = `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`;
+    const run = {
+      project_id: "65f2a1c9d4e3b7a801f6",
+      reviewed_at: "2026-09-12T11:04:09.221Z",
+      model: "gpt-5.2-chat-latest",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_category: { abstract: 1, results: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+      failed_agents: ["figures"],
+    };
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "ada", name: "Ada", privilege_level: "member" }));
+    unwrap(
+      first.service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada"],
+        current_step: "overleaf_writing",
+        artifacts: { overleaf_edit_url: projectUrl },
+      }),
+    );
+    unwrap(first.service.recordPaperMentorRun("cron", run));
+    // The second post is the collector re-reading the same cached review, which is its ordinary
+    // state between reviews rather than news.
+    expect(unwrap(first.service.recordPaperMentorRun("cron", run)).recorded).toBe(false);
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    const { runs } = unwrap(second.service.listPaperMentorRuns("p1"));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      paper_id: "p1",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+      failed_agents: ["figures"],
+    });
+    // The evidence slot the review ticks survives with it, so a restart does not un-review a paper.
+    expect(
+      unwrap(second.service.listPaperSlots("p1")).slots.find(
+        (slot) => slot.slot === "papermentor_review",
+      )?.status,
+    ).toBe("provided");
+
+    unwrap(second.service.deletePaper("p1"));
+    expect(unwrap(second.service.listPaperMentorRuns()).runs).toEqual([]);
     second.close();
   });
 

@@ -28,7 +28,11 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -46,7 +50,10 @@ import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
 import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
-import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
+import {
+  ADMINBOT_BROADCAST_HISTORY_LIMIT,
+  type LabDirectorStatus,
+} from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -60,6 +67,8 @@ import type {
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
+import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
@@ -84,12 +93,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   listHelpInterests(): LabHelpInterest[] {
     return [...this.helpInterests.values()].map((row) => structuredClone(row));
   }
-  private directorStatus: LabDirectorStatus | null = null;
+  // Append-only, newest first, mirroring persistence/lab-sharing-status.ts. A null save retracts
+  // the newest live entry rather than dropping it: the archive is the point.
+  private directorBroadcasts: LabDirectorStatus[] = [];
   saveDirectorStatus(status: LabDirectorStatus | null): void {
-    this.directorStatus = structuredClone(status);
+    if (status) {
+      this.directorBroadcasts.unshift(structuredClone(status));
+      return;
+    }
+    const latest = this.directorBroadcasts[0];
+    if (latest && !latest.retracted_at) {
+      this.directorBroadcasts[0] = { ...latest, retracted_at: new Date().toISOString() };
+    }
   }
   readDirectorStatus(): LabDirectorStatus | null {
-    return structuredClone(this.directorStatus);
+    return structuredClone(this.directorBroadcasts[0] ?? null);
+  }
+  listDirectorStatusHistory(limit = ADMINBOT_BROADCAST_HISTORY_LIMIT): LabDirectorStatus[] {
+    return this.directorBroadcasts.slice(0, Math.max(1, limit)).map((row) => structuredClone(row));
   }
   private readonly helpRequests = new Map<string, LabHelpRequest>();
   saveHelpRequest(request: LabHelpRequest): void {
@@ -130,6 +151,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly paperSlots = new Map<string, AdminBotPaperSlotRecord>();
   // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
   private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
+  private readonly paperMentorRuns = new Map<string, AdminBotPaperMentorRun>();
   private readonly emailReviews = new Map<string, AdminBotEmailReviewItem>();
   private readonly resolvedEmailReviews = new Map<string, AdminBotResolvedEmailReviewItem>();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
@@ -151,6 +173,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // event, so a plain array is the whole implementation.
   private readonly workshopMatchRuns = new Map<string, AdminBotWorkshopMatchRun>();
   private readonly loginEvents: AdminBotLoginEvent[] = [];
+  private readonly tabVisits: AdminBotTabVisit[] = [];
   private readonly updateEvents: AdminBotUpdateEvent[] = [];
   private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
   private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
@@ -447,6 +470,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
     purgeList(this.memberLocations, "member_locations", (entry) => entry.member_id === memberId);
     purgeList(this.loginEvents, "login_events", (entry) => entry.member_id === memberId);
+    purgeList(this.tabVisits, "tab_visits", (entry) => entry.member_id === memberId);
     // Either column makes the row this member's, unlike the merge, which repoints them
     // independently: there is no survivor to attribute the other half to.
     purgeList(
@@ -568,6 +592,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       if (entry.member_id === fromMemberId) {
         this.loginEvents[index] = { ...entry, member_id: toMemberId };
         bump("login_events");
+      }
+    }
+    for (const [index, entry] of this.tabVisits.entries()) {
+      if (entry.member_id === fromMemberId) {
+        this.tabVisits[index] = { ...entry, member_id: toMemberId };
+        bump("tab_visits");
       }
     }
     // Both columns, for the reason the SQLite sweep spells out: moving who typed without moving
@@ -746,6 +776,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       );
   }
 
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void {
+    // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: the collector
+    // re-reads the same cached review until a newer one replaces it.
+    if (this.paperMentorRuns.has(record.id)) {
+      return;
+    }
+    this.paperMentorRuns.set(record.id, record);
+  }
+
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined {
+    return this.paperMentorRuns.get(id);
+  }
+
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
+    return [...this.paperMentorRuns.values()]
+      .filter((record) => paperId === undefined || record.paper_id === paperId)
+      .toSorted(
+        (left, right) =>
+          right.reviewed_at.localeCompare(left.reviewed_at) || left.id.localeCompare(right.id),
+      );
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: a stage that
     // already closed keeps the mail that closed it.
@@ -851,6 +903,29 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.loginEvents.push(event);
   }
 
+  /**
+   * The one in-place write either log has. See the SQLite side for why enriching a row is not the
+   * same as editing the fact it records.
+   *
+   * Each field falls back to what is already there, matching the COALESCE over there: a later
+   * country-only answer must not blank a city an earlier one resolved.
+   */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    const index = this.loginEvents.findIndex((event) => event.id === id);
+    const existing = this.loginEvents[index];
+    if (!existing) {
+      return;
+    }
+    const merged = { ...existing };
+    for (const field of ["country", "continent", "city", "timezone"] as const) {
+      const value = location[field];
+      if (value) {
+        merged[field] = value;
+      }
+    }
+    this.loginEvents[index] = merged;
+  }
+
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
     return recentFirst(
       this.loginEvents.filter((event) => event.member_id === memberId),
@@ -860,6 +935,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
     return recentFirst(this.loginEvents.filter((event) => event.at >= since));
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.tabVisits.push(visit);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    return recentFirst(this.tabVisits.filter((visit) => visit.at >= since));
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {

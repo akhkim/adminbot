@@ -35,6 +35,11 @@ type DrawOptions = {
   submitting?: boolean;
   submitError?: string | null;
   submitted?: boolean;
+  submittedNote?: string;
+  signatureForm?: { driveUrl: string; deadline: string; context: string };
+  sendingForm?: boolean;
+  formError?: string | null;
+  formSent?: boolean;
   submitBlocked?: SubmitBlock | null;
   hasContent?: boolean;
   editing?: boolean;
@@ -98,6 +103,7 @@ function submitProps(options: DrawOptions, onSubmit: () => void) {
     submitting: options.submitting ?? false,
     submitError: options.submitError ?? null,
     submitted: options.submitted ?? false,
+    ...(options.submittedNote ? { submittedNote: options.submittedNote } : {}),
     hasContent: options.hasContent ?? true,
     editing: options.editing ?? false,
     onCancelEdit: () => {
@@ -118,6 +124,12 @@ function draw(options: DrawOptions = {}): Drawn {
   discardCount = 0;
   cancelEditCount = 0;
   const signatureChanges: File[][] = [];
+  const signatureFormPatches: Partial<{
+    driveUrl: string;
+    deadline: string;
+    context: string;
+  }>[] = [];
+  let signatureSends = 0;
   const attachmentChanges: File[][] = [];
   const descriptionChanges: string[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
@@ -191,6 +203,15 @@ function draw(options: DrawOptions = {}): Drawn {
         onDescriptionChange: (next) => descriptionChanges.push(next),
         attachments: options.attachments ?? [],
         onAttachmentsChange: (next) => attachmentChanges.push(next),
+        form: options.signatureForm ?? { driveUrl: "", deadline: "", context: "" },
+        onForm: (patch) => signatureFormPatches.push(patch),
+        onSendForm: () => {
+          signatureSends += 1;
+          return true;
+        },
+        sendingForm: options.sendingForm ?? false,
+        formError: options.formError ?? null,
+        formSent: options.formSent ?? false,
         saving: options.saving ?? false,
         savedAt: options.savedAt ?? null,
         saveError: options.saveError ?? null,
@@ -262,6 +283,10 @@ function draw(options: DrawOptions = {}): Drawn {
     answers,
     noteChanges,
     signatureChanges,
+    signatureFormPatches,
+    get signatureSends() {
+      return signatureSends;
+    },
     attachmentChanges,
     descriptionChanges,
     schoolChanges,
@@ -510,10 +535,92 @@ describe("the signature Google Form signpost", () => {
   });
 
   // Nothing is filed from this tab any more, so none of the request controls belong on the card.
+  // It files a row on the lab's Google Form, not a logistics request, so the request's own Save and
+  // Submit have nothing to do here -- only the button that sends the form.
   it("carries no Save or Submit, since the form is what files the request", () => {
     const { container } = draw({ signatureEditing: false });
     expect(container.querySelector("[data-testid='logistics-submit']")).toBeNull();
-    expect(container.querySelector(".logistics-request__actions")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-save']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-signature-submit']")).not.toBeNull();
+  });
+
+  // It sits under Supporting Content on the same page, so it wears the same shell: a section with a
+  // card title, stacked label-over-control fields, and controls the page styles rather than the
+  // browser. `adminbot-form__field` alone is not that -- those rules need an `.adminbot-form`
+  // ancestor this section does not have.
+  it("wears the section shell the rest of the tab uses", () => {
+    const { container } = draw({ signatureEditing: false });
+    const section = container.querySelector('[data-testid="logistics-signature-section"]');
+    expect(section?.classList.contains("logistics-request__section")).toBe(true);
+    expect(section?.querySelector(".card-title")).not.toBeNull();
+    for (const testId of [
+      "logistics-signature-drive-url",
+      "logistics-signature-deadline",
+      "logistics-signature-context",
+    ]) {
+      const control = container.querySelector(`[data-testid="${testId}"]`);
+      expect(control?.className).toMatch(/logistics-signature__(input|note)/u);
+      expect(control?.closest(".logistics-signature__field")).not.toBeNull();
+    }
+  });
+
+  // The form's three member-answered questions. The fourth, their name, is the service's to answer.
+  it("collects the link, the deadline and the optional context", () => {
+    const { container, signatureFormPatches } = draw({ signatureEditing: false });
+    const link = container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-signature-drive-url']",
+    );
+    link!.value = "https://drive.google.com/file/d/abc/view";
+    link!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signatureFormPatches.at(-1)).toEqual({
+      driveUrl: "https://drive.google.com/file/d/abc/view",
+    });
+    expect(
+      container.querySelector<HTMLInputElement>("[data-testid='logistics-signature-deadline']")
+        ?.type,
+    ).toBe("date");
+    expect(container.querySelector("[data-testid='logistics-signature-context']")).not.toBeNull();
+  });
+
+  it("will not send until the link and the deadline are both there", () => {
+    const bare = draw({ signatureEditing: false });
+    expect(
+      bare.container.querySelector<HTMLButtonElement>("[data-testid='logistics-signature-submit']")
+        ?.disabled,
+    ).toBe(true);
+    const ready = draw({
+      signatureEditing: false,
+      signatureForm: {
+        driveUrl: "https://drive.google.com/x",
+        deadline: "2026-09-30",
+        context: "",
+      },
+    });
+    const button = ready.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-signature-submit']",
+    );
+    expect(button?.disabled).toBe(false);
+    button?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(ready.signatureSends).toBe(1);
+  });
+
+  // Google can refuse, and the link out is the door the member had before this existed.
+  it("says what the form answered, and keeps the link out", () => {
+    const { container } = draw({
+      signatureEditing: false,
+      formError: "the form answered 401",
+    });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-error']")?.textContent,
+    ).toContain("401");
+    expect(container.querySelector("[data-testid='logistics-signature-form-link']")).not.toBeNull();
+  });
+
+  it("says so once it landed", () => {
+    const { container } = draw({ signatureEditing: false, formSent: true });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-submitted']")?.textContent,
+    ).toContain("signature form");
   });
 
   // The one case that still needs the old editor: a request filed before the switch, being fixed.
@@ -540,8 +647,11 @@ describe("request actions", () => {
     );
     const actions = request?.querySelector(".logistics-request__actions");
     expect(actions).not.toBeNull();
-    // Last thing in the card, after both sections.
-    expect(request?.lastElementChild).toBe(actions);
+    // After the table it acts on. It is no longer the last thing in the card: the link that opens
+    // the queue for reading sits below it, because reading the queue is not part of filing a row.
+    expect(request?.querySelector(".logistics-schools")?.compareDocumentPosition(actions!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(actionButtons(container).map((button) => button.textContent?.trim())).toEqual([
       "Discard",
       "Save",
@@ -614,6 +724,26 @@ describe("request actions", () => {
       "Sent to the lab.",
     );
     expect(container.querySelector("[data-testid='logistics-blocked']")).toBeNull();
+  });
+
+  // The request landed; the row it proposes for itself may not have. Both are true at once, so the
+  // confirmation keeps its place and the call sheet's sentence sits under it.
+  it("carries what the call sheet made of a meeting request", () => {
+    const { container } = draw({
+      submitted: true,
+      submittedNote: "a row with this name and topic is already in the queue",
+    });
+    expect(container.querySelector("[data-testid='logistics-submitted']")?.textContent).toContain(
+      "Sent to the lab.",
+    );
+    expect(
+      container.querySelector("[data-testid='logistics-submitted-note']")?.textContent,
+    ).toContain("already in the queue");
+  });
+
+  it("says nothing about the call sheet when there is nothing to say", () => {
+    const { container } = draw({ submitted: true });
+    expect(container.querySelector("[data-testid='logistics-submitted-note']")).toBeNull();
   });
 
   it("shows a submit failure ahead of anything the local draft has to say", () => {
@@ -1062,7 +1192,10 @@ describe("request modes", () => {
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
     expect(rows.map((row) => row.textContent?.replace(/\s+/gu, " ").trim())).toEqual([
-      "Recommendation Letters Dec 1, 2026 Submitted",
+      // All three are stored as the same `submitted`/`in_progress`, and the letter row is the one
+      // that must not read "Submitted": the request has been sent, the letter has not. The other
+      // two kinds are the thing being asked for, so they still say it. See logistics-status.ts.
+      "Recommendation Letters Dec 1, 2026 To submit",
       // A signature request names no date, so it says so rather than inventing one.
       "Document Signature No deadline In progress",
       "Book Meeting Sep 1, 2026 Submitted",
@@ -1326,7 +1459,7 @@ describe("correcting a request already sent", () => {
     expect(drawn.cancelledEdits).toBe(1);
   });
 
-  it("points a new meeting request at the contact spreadsheet tab, not at a form", () => {
+  it("offers the form for a new meeting request, and the sheet only for reading the queue", () => {
     const { container } = draw({ template: "bookMeeting", meetingEditing: false });
     const link = container.querySelector<HTMLAnchorElement>(
       "[data-testid='logistics-meeting-sheet-link']",
@@ -1338,16 +1471,20 @@ describe("correcting a request already sent", () => {
     );
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toContain("noopener");
-    // No table to fill in on this path.
-    expect(container.querySelector("[data-testid='logistics-meeting']")).toBeNull();
+    // The table is the point of the tab now: the doc prep link has to be collected somewhere the
+    // service can check it before it reaches her queue.
+    expect(container.querySelector("[data-testid='logistics-meeting']")).not.toBeNull();
   });
 
   // The one field somebody can leave blank and not find out until their call never gets scheduled.
-  it("says column D is mandatory before the member opens the sheet", () => {
+  // Named by what it is rather than by its column letter, since it is now filled in here.
+  it("says the doc prep link is mandatory, and that it has to open", () => {
     const { container } = draw({ template: "bookMeeting", meetingEditing: false });
-    expect(
-      container.querySelector("[data-testid='logistics-meeting-mandatory']")?.textContent,
-    ).toContain("Column D is mandatory");
+    const mandatory = container.querySelector(
+      "[data-testid='logistics-meeting-mandatory']",
+    )?.textContent;
+    expect(mandatory).toContain("doc prep link is mandatory");
+    expect(mandatory).toContain("open for anyone with the link");
   });
 
   it("says nothing about correcting on a form holding a new request", () => {
@@ -1453,7 +1590,8 @@ describe("book meeting", () => {
     return draw({ ...options, template: "bookMeeting" });
   }
 
-  it("lays a request out as a row: when they asked, what for, when, on whose clock, how long", () => {
+  // Every column the call queue needs, in the order the queue reads them.
+  it("lays a request out as a row, through to the columns the call queue needs", () => {
     const { container } = drawMeeting({ meetings: [createMeetingRow()] });
     const names = [...container.querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
@@ -1462,6 +1600,10 @@ describe("book meeting", () => {
       "Preferred time",
       "Time zone",
       "Call length (min)",
+      "Your city / when you can take calls",
+      "Doc prep of your questions",
+      "Said hello on WhatsApp?",
+      "Call still useful until",
     ]);
   });
 
@@ -1472,8 +1614,9 @@ describe("book meeting", () => {
     const row = container.querySelector<HTMLElement>(".logistics-schools__row")!;
     expect(row.querySelector(".logistics-meeting__submitted input")).toBeNull();
     expect(row.querySelector(".logistics-meeting__submitted")?.textContent?.trim()).not.toBe("");
-    // The four columns a member fills in, and no fifth.
-    expect(row.querySelectorAll("input")).toHaveLength(4);
+    // The seven typed columns plus the WhatsApp select, and nothing for the stamp.
+    expect(row.querySelectorAll("input")).toHaveLength(7);
+    expect(row.querySelectorAll("select")).toHaveLength(1);
   });
 
   it("prefills the zone from the browser so a proposed time means a real instant", () => {

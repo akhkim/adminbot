@@ -21,6 +21,7 @@ import type {
 } from "../auth/session.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
+import { logisticsStatusLabel } from "./logistics-status.ts";
 
 export type AdminBotLogisticsRequestsProps = {
   requests: LogisticsRequest[];
@@ -47,14 +48,6 @@ const KIND_LABEL_KEY: Record<LogisticsRequest["kind"], string> = {
   document_signature: "logistics.templates.documentSignature",
   recommendation_letters: "logistics.templates.recommendationLetters",
   book_meeting: "logistics.templates.bookMeeting",
-};
-
-const STATUS_LABEL_KEY: Record<LogisticsRequestStatus, string> = {
-  submitted: "logistics.requests.status.submitted",
-  in_progress: "logistics.requests.status.inProgress",
-  completed: "logistics.requests.status.completed",
-  declined: "logistics.requests.status.declined",
-  withdrawn: "logistics.requests.status.withdrawn",
 };
 
 // The three answers an admin gives. Withdrawn is deliberately absent: it belongs to the requester,
@@ -86,9 +79,11 @@ function formatDay(instant: string): string {
       });
 }
 
-function renderStatusPill(status: LogisticsRequestStatus) {
+function renderStatusPill(kind: LogisticsRequest["kind"], status: LogisticsRequestStatus) {
   return html`
-    <span class="logistics-status logistics-status--${status}">${t(STATUS_LABEL_KEY[status])}</span>
+    <span class="logistics-status logistics-status--${status}">
+      ${logisticsStatusLabel(kind, status)}
+    </span>
   `;
 }
 
@@ -124,7 +119,7 @@ function renderRequestRow(props: AdminBotLogisticsRequestsProps, request: Logist
             `}
       </td>
       <td class="logistics-requests__cell">${renderDeadlineCell(request)}</td>
-      <td class="logistics-requests__cell">${renderStatusPill(request.status)}</td>
+      <td class="logistics-requests__cell">${renderStatusPill(request.kind, request.status)}</td>
     </tr>
   `;
 }
@@ -473,7 +468,7 @@ function renderAnswerControls(props: AdminBotLogisticsRequestsProps, request: Lo
               ?disabled=${props.openLoading || request.status === status}
               @click=${() => props.onSetStatus(request.id, status, props.statusNote)}
             >
-              ${t(STATUS_LABEL_KEY[status])}
+              ${logisticsStatusLabel(request.kind, status)}
             </button>
           `,
         )}
@@ -503,7 +498,7 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
       </div>
       <div class="logistics-detail__heading">
         <h3 class="card-title">${request.member_name}</h3>
-        ${renderStatusPill(request.status)}
+        ${renderStatusPill(request.kind, request.status)}
       </div>
       <p class="card-sub">
         ${t("logistics.requests.detailSub", {

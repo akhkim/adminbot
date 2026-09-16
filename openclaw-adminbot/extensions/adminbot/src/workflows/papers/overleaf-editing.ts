@@ -1,4 +1,5 @@
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
+import { adminBotOverleafHosts, adminBotOverleafProjectRef } from "../../contracts/overleaf.js";
 
 export type AdminBotOverleafEditMode = "manual" | "affiliation_check";
 
@@ -91,6 +92,16 @@ export function assertOverleafPayloadReady(payload: AdminBotOverleafEditPayload)
   }
   if (!payload.paper.overleafEditUrl.trim()) {
     throw new Error("Overleaf edit URL is required");
+  }
+  // Fail closed on the destination, not just on its presence. This is the last check before the
+  // connector posts the edit to the configured bridge, and a paper record carrying a link to
+  // somewhere that is not an Overleaf we know is the one way an approved edit could be aimed at a
+  // host nobody chose. Checked as a project reference rather than as a string so the same rule --
+  // an https project link on a known instance -- covers the action and the evidence slot.
+  if (!adminBotOverleafProjectRef(payload.paper.overleafEditUrl)) {
+    throw new Error(
+      `Overleaf edit URL must be an https project link on ${adminBotOverleafHosts().join(" or ")}`,
+    );
   }
   if (!payload.requestedEdits.trim()) {
     throw new Error("requested Overleaf edits are required");

@@ -127,6 +127,10 @@ function renderConsentRow(props: PaperCycleProps, consent: PaperSocialConsent) {
  * be shown to that author, and this is where "shown to" becomes a record rather than a memory.
  */
 function renderDraft(props: PaperCycleProps, platform: string) {
+  // Hoisted so the click handler closes over a value that is already known to exist. Testing
+  // `props.onGenerateLinkedInDraft` at the render site guards the button correctly, but the
+  // narrowing does not survive into the closure, so the call read as possibly-undefined.
+  const generate = props.onGenerateLinkedInDraft;
   const draft = liveDraft(props.drafts, platform);
   const consents = draft ? props.consents.filter((consent) => consent.draft_id === draft.id) : [];
   const waiting = consents.filter((consent) => consent.decision === "pending").length;
@@ -185,7 +189,7 @@ function renderDraft(props: PaperCycleProps, platform: string) {
           }
         }}
       ></textarea>
-      ${platform === "linkedin" && props.onGenerateLinkedInDraft
+      ${platform === "linkedin" && generate
         ? html`
             <div class="paper-cycle__draft-actions">
               <button
@@ -198,7 +202,7 @@ function renderDraft(props: PaperCycleProps, platform: string) {
                     root?.querySelector<HTMLInputElement>('[data-el="venue"]')?.value.trim() ?? "";
                   const note =
                     root?.querySelector<HTMLInputElement>('[data-el="note"]')?.value.trim() ?? "";
-                  props.onGenerateLinkedInDraft(venue, note);
+                  generate(venue, note);
                 }}
               >
                 Generate draft

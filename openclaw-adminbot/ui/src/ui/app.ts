@@ -31,14 +31,17 @@ import type {
   MeetingRecord,
   MemberNotification,
   CalendarEventDraft,
+  LabBroadcast,
   LabCalendar,
 } from "./adminbot/auth/session.ts";
 import type {
   EscalatedNudgeRow,
+  PiReviewRow,
   MemberProfileOverviewRow,
   PaperCycle,
   PaperNudgeBatch,
   PaperSlotOverviewRow,
+  TabVisitReport,
 } from "./adminbot/auth/session.ts";
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
@@ -83,11 +86,18 @@ import {
   saveMemberSheetEdits as saveMemberSheetEditsController,
 } from "./adminbot/controllers/member-sheet.ts";
 import {
+  loadAdminBotBroadcast,
   loadAdminBotNotifications,
+  publishAdminBotBroadcast,
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
+import {
+  recordAdminBotTabVisit,
+  type AdminBotTabVisitHost,
+} from "./adminbot/controllers/tab-visits.ts";
+import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import {
   createFactRow,
@@ -294,6 +304,15 @@ export class OpenClawApp extends LitElement {
   clientInstanceId = generateUUID();
   connectGeneration = 0;
   @state() settings: UiSettings = loadSettings();
+  // Which tab the usage log was last told about. A plain field, not @state: see tab-visits.ts.
+  adminBotLastVisitTab?: Tab;
+  @state() adminBotTabUsage: TabVisitReport | null = null;
+  // A month by default: long enough that a weekly page shows up, short enough to still be about now.
+  @state() adminBotTabUsageDays = 30;
+  @state() adminBotTabUsageLoading = false;
+  @state() adminBotTabUsageError: string | null = null;
+  @state() adminBotTabUsageExporting = false;
+  @state() adminBotTabUsageLoadedAt: number | null = null;
   constructor() {
     super();
     if (isSupportedLocale(this.settings.locale)) {
@@ -348,6 +367,16 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMeetingNudgeError: string | null = null;
   // What the lab has told this member. Undefined until the first read.
   @state() adminBotNotifications?: MemberNotification[];
+  @state() adminBotBroadcast?: LabBroadcast | null;
+  @state() adminBotBroadcastHistory?: LabBroadcast[];
+  @state() adminBotBroadcastDraft?: string;
+  @state() adminBotBroadcastExpiry?: string;
+  @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastBusy = false;
+  @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
+  // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
+  // setting, and a queue she opened on Monday is a different queue by Thursday.
+  @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   @state() adminBotMeetingsSaving = false;
@@ -398,6 +427,7 @@ export class OpenClawApp extends LitElement {
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
   @state() adminBotRecentEdits: Record<string, RecentEditsState> = {};
+  @state() adminBotTravel: TravelState = EMPTY_TRAVEL;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;
@@ -421,6 +451,9 @@ export class OpenClawApp extends LitElement {
   // mutate it alone, so a non-reaction property would let clicks fall through with no repaint.
   @state() adminBotOnboardingStepIndex: number | null = null;
   @state() tab: Tab = "chat";
+  // Not reactive: nothing renders from it. It records that the address this visit arrived on named
+  // no tab, so the viewer's own home may still replace the one standing in for it.
+  landedWithoutATab = false;
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";
@@ -648,6 +681,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSubmitting = false;
   @state() adminBotLogisticsSubmitError: string | null = null;
   @state() adminBotLogisticsSubmittedId: string | null = null;
+  @state() adminBotLogisticsCallSheetNote: string | null = null;
+  @state() adminBotSignatureForm: { driveUrl: string; deadline: string; context: string } = {
+    driveUrl: "",
+    deadline: "",
+    context: "",
+  };
+  @state() adminBotSignatureSubmitting = false;
+  @state() adminBotSignatureError: string | null = null;
+  @state() adminBotSignatureSubmitted = false;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
   @state() adminBotLogisticsDownloadingId: string | null = null;
@@ -658,6 +700,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
+  @state() adminBotPiReview: PiReviewRow[] = [];
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.
@@ -1156,6 +1199,9 @@ export class OpenClawApp extends LitElement {
 
   protected override firstUpdated() {
     handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
+    // The tab somebody arrived on is a visit too. Without this the landing tab -- the most opened
+    // screen in the app -- is counted only when somebody navigates away and comes back.
+    recordAdminBotTabVisit(this as unknown as AdminBotTabVisitHost, this.tab);
   }
 
   protected override willUpdate() {
@@ -1232,6 +1278,10 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   async endViewAs() {
@@ -1242,6 +1292,10 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   async signOutMember() {
@@ -1252,6 +1306,10 @@ export class OpenClawApp extends LitElement {
     dismissAllToasts();
     resetNotificationPopups();
     this.adminBotNotifications = undefined;
+    this.adminBotBroadcast = undefined;
+    this.adminBotBroadcastHistory = undefined;
+    this.adminBotBroadcastDraft = undefined;
+    this.adminBotBroadcastNotice = null;
   }
 
   openChangePassword() {
@@ -1340,6 +1398,9 @@ export class OpenClawApp extends LitElement {
   }
 
   setTab(next: Tab) {
+    // Before the switch, so the log records the navigation the member asked for even if rendering
+    // that tab then fails. A repeat of the tab already open is ignored by the recorder.
+    recordAdminBotTabVisit(this as unknown as AdminBotTabVisitHost, next);
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
     if (next !== "chat") {
       this.setChatMobileControlsOpen(false);
@@ -1734,6 +1795,19 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  loadBroadcast(): Promise<void> {
+    return loadAdminBotBroadcast(this as unknown as Parameters<typeof loadAdminBotBroadcast>[0]);
+  }
+
+  publishBroadcast(
+    draft: { message: string; availability: string; expiresOn: string } | null,
+  ): Promise<void> {
+    return publishAdminBotBroadcast(
+      this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],
+      draft,
+    );
+  }
+
   loadNotifications(): Promise<void> {
     return loadAdminBotNotifications(
       this as unknown as Parameters<typeof loadAdminBotNotifications>[0],
@@ -1790,12 +1864,18 @@ export class OpenClawApp extends LitElement {
   async sendCalendarInvites(): Promise<void> {
     const { calendarInviteSelection } = await import("./adminbot/views/calendar.ts");
     const selection = calendarInviteSelection(this as unknown as AppViewState);
-    if (!selection.event || !selection.emails.length) {
+    if (!selection.event || (!selection.emails.length && !selection.remove.length)) {
       return;
     }
     await inviteAdminBotCalendarAudience(
       this as unknown as Parameters<typeof inviteAdminBotCalendarAudience>[0],
-      { event: selection.event, emails: selection.emails, reason: selection.reason },
+      {
+        event: selection.event,
+        emails: selection.emails,
+        remove: selection.remove,
+        remaining: selection.remaining,
+        reason: selection.reason,
+      },
     );
   }
 

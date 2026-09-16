@@ -2,10 +2,12 @@ import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 
 type SharedStatus = {
+  id?: string;
   availability: string;
   message: string;
   updated_at: string;
   expires_at: string;
+  retracted_at?: string;
 };
 const availabilityLabels: Record<string, string> = {
   unknown: "Unknown",
@@ -14,14 +16,21 @@ const availabilityLabels: Record<string, string> = {
   away: "Away",
 };
 
+/**
+ * What the lab has been told, read-only.
+ *
+ * The composer that used to live here moved to My Desk (views/professor.ts) so there is exactly one
+ * surface that writes a broadcast. This page is the one members read, and an editor only an admin
+ * could see was three controls of dead weight for everybody else.
+ */
 export class LabSharingStatus extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
   @state() private status: SharedStatus | null = null;
+  /** Every broadcast, newest first. The archive the lab reads back; the service caps the length. */
+  @state() private history: SharedStatus[] = [];
   @state() private busy = false;
   @state() private error = "";
-  @state() private canManage = false;
-  @state() private draft = { availability: "unknown", message: "", expiry: "" };
   private generation = 0;
   private expiryTimer?: ReturnType<typeof setTimeout>;
   protected override createRenderRoot() {
@@ -41,8 +50,7 @@ export class LabSharingStatus extends LitElement {
     this.generation++;
     clearTimeout(this.expiryTimer);
     this.status = null;
-    this.canManage = false;
-    this.draft = { availability: "unknown", message: "", expiry: "" };
+    this.history = [];
     this.busy = false;
     this.error = "";
   }
@@ -56,33 +64,14 @@ export class LabSharingStatus extends LitElement {
     }
     this.expiryTimer = setTimeout(() => this.expire(), Math.min(remaining, 2_147_483_647));
   }
-  private async publish(clear = false) {
-    if (!this.canManage || this.busy) return;
-    let body: unknown;
-    if (!clear) {
-      const expiry = new Date(this.draft.expiry);
-      if (!Number.isFinite(expiry.getTime()) || expiry.getTime() <= Date.now()) {
-        this.error = "Choose an expiry in the future.";
-        return;
-      }
-      body = {
-        availability: this.draft.availability,
-        message: this.draft.message,
-        expires_at: expiry.toISOString(),
-      };
-    }
-    await this.refresh(clear ? "POST" : "PUT", body);
-  }
-  private async refresh(method = "GET", body?: unknown) {
+  private async refresh() {
     const generation = ++this.generation;
     this.busy = true;
     this.error = "";
     try {
       const response = await fetch(
-        `${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/status${method === "POST" ? "/clear" : ""}`,
+        `${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/status`,
         {
-          method,
-          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           headers: {
             Authorization: `Bearer ${this.sessionToken}`,
             "Content-Type": "application/json",
@@ -92,26 +81,15 @@ export class LabSharingStatus extends LitElement {
       const data = await response.json();
       if (generation !== this.generation) return;
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          this.canManage = false;
-          this.draft = { availability: "unknown", message: "", expiry: "" };
-        }
         throw new Error(data.error?.message ?? "Could not load status.");
       }
       this.status = data.status;
-      this.canManage = data.can_manage === true;
-      const date = data.status ? new Date(data.status.expires_at) : null;
-      this.draft = {
-        availability: data.status?.availability ?? "unknown",
-        message: data.status?.message ?? "",
-        expiry: date
-          ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-          : "",
-      };
+      this.history = Array.isArray(data.history) ? data.history : [];
       this.expire();
     } catch (error) {
       if (generation === this.generation) {
         this.status = null;
+        this.history = [];
         this.error = error instanceof Error ? error.message : "Could not load status.";
       }
     } finally {
@@ -122,9 +100,12 @@ export class LabSharingStatus extends LitElement {
     if (!this.sessionToken) return nothing;
     const current =
       this.status && Date.parse(this.status.expires_at) > Date.now() ? this.status : null;
-    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Zhijing’s availability">
-      <h2 class="lab-sharing-seek__title">Zhijing’s availability</h2>
-      <p class="lab-sharing-seek__sub">Check the latest shared update before reaching out. This is a manual update, not live calendar availability.</p>
+    // Everything but the live one. The current broadcast is rendered in full above, so repeating it
+    // in the archive would make the same message look like it was said twice.
+    const past = this.history.filter((entry) => entry !== current);
+    return html`<section class="lab-sharing lab-sharing-directory" aria-label="Zhijing’s updates">
+      <h2 class="lab-sharing-seek__title">Zhijing’s updates</h2>
+      <p class="lab-sharing-seek__sub">The latest broadcast to the lab, and everything said before it. This is a manual update, not live calendar availability.</p>
       <button class="btn" ?disabled=${this.busy} @click=${() => this.refresh()}>
         Refresh status
       </button>
@@ -144,76 +125,28 @@ export class LabSharingStatus extends LitElement {
             </p>
           </article>`
         : !this.busy && !this.error
-          ? html`<p>No current status shared.</p>`
+          ? html`<p>No current update shared.</p>`
           : nothing}
-      ${this.canManage
-        ? html`<form
-            class="lab-sharing-directory__form"
-            @submit=${(event: Event) => {
-              event.preventDefault();
-              void this.publish();
-            }}
-          >
-            <p>
-              This status is visible to all signed-in lab members. Times use your device's timezone.
-            </p>
-            <label class="lab-sharing-ask__field"
-              ><span>Availability</span
-              ><select
-                class="lab-sharing-ask__input"
-                .value=${this.draft.availability}
-                @change=${(event: Event) => {
-                  this.draft = {
-                    ...this.draft,
-                    availability: (event.target as HTMLSelectElement).value,
-                  };
-                }}
-              >
-                ${["unknown", "available", "busy", "away"].map(
-                  (value) => html`<option value=${value} ?selected=${value === this.draft.availability}>${availabilityLabels[value]}</option>`,
-                )}
-              </select></label
-            >
-            <label class="lab-sharing-ask__field"
-              ><span>Status message</span
-              ><textarea
-                class="lab-sharing-ask__input"
-                required
-                maxlength="500"
-                .value=${this.draft.message}
-                @input=${(event: Event) => {
-                  this.draft = {
-                    ...this.draft,
-                    message: (event.target as HTMLTextAreaElement).value,
-                  };
-                }}
-              ></textarea>
-            </label>
-            <label class="lab-sharing-ask__field"
-              ><span>Expires at (local time)</span
-              ><input
-                class="lab-sharing-ask__input"
-                type="datetime-local"
-                required
-                .value=${this.draft.expiry}
-                @input=${(event: Event) => {
-                  this.draft = { ...this.draft, expiry: (event.target as HTMLInputElement).value };
-                }}
-            /></label>
-            <div class="lab-sharing-directory__actions">
-              <button class="btn primary" type="submit" ?disabled=${this.busy}>
-                Publish status
-              </button>
-              <button
-                class="btn"
-                type="button"
-                ?disabled=${this.busy || !current}
-                @click=${() => this.publish(true)}
-              >
-                Clear status
-              </button>
-            </div>
-          </form>`
+      ${past.length
+        ? html`<div class="lab-sharing-status__history" data-testid="lab-sharing-status-history">
+            <h3 class="lab-sharing-seek__title">Earlier updates</h3>
+            <ol class="lab-sharing-status__history-list">
+              ${past.map(
+                (entry) => html`<li
+                  class="lab-sharing-status__history-item"
+                  data-testid="lab-sharing-status-history-item"
+                >
+                  <p class="lab-sharing-status__history-body">${entry.message}</p>
+                  <p class="lab-sharing-request__time">
+                    ${new Date(entry.updated_at).toLocaleDateString()}
+                    ${entry.retracted_at
+                      ? html`· <span class="lab-sharing-status__retracted">withdrawn</span>`
+                      : nothing}
+                  </p>
+                </li>`,
+              )}
+            </ol>
+          </div>`
         : nothing}
     </section>`;
   }

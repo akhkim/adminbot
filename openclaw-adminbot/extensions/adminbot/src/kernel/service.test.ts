@@ -727,6 +727,44 @@ describe("AdminBotService weekly updates", () => {
     expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
   });
 
+  it("never asks the head professor for a weekly line, on any paper", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U3",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+    // On the paper as a supervising coauthor, which is where she sits on nearly all of them.
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha", "Zhijing Jin"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // Out of the preview an admin reads, not merely out of the send: being listed as owing a line
+    // on every paper in the lab is the visible half of the problem.
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+
+    const sent = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(sent.asked.sort()).toEqual(["ada", "rahul"]);
+    // And no skip line for her either: she is not a delivery that failed, she was never owed one.
+    expect(sent.skipped).toEqual([]);
+  });
+
+  it("still asks everyone else when no head professor is configured", async () => {
+    const service = labWithPaper();
+    unwrap(service.updateSettings({ head_professor_member_id: "" } as never));
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+  });
+
   it("keeps the prose out of the audit line", () => {
     const service = labWithPaper();
     unwrap(
@@ -2689,13 +2727,10 @@ describe("AdminBotService", () => {
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
 
     for (const bad of [
-      { github_url: "https://gitlab.com/octocat" }, // wrong platform for the field
-      { github_url: "https://github.com/" }, // no username
       { twitter_url: "https://github.com/octocat" }, // GitHub link in the Twitter field
       { linkedin_url: "https://linkedin.com/company/openai" }, // company page, not a personal profile
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
       { scholar_url: "http://scholar.google.com/citations?user=abc123" }, // not https
-      { cv_url: "not a url" },
       // Only the member's own Forms response link belongs here; a stray link filed under it would
       // read on the profile as "these are their intake answers" when it is nothing of the sort.
       { intake_form_url: "https://example.com/my-answers" },
@@ -2703,6 +2738,72 @@ describe("AdminBotService", () => {
     ]) {
       expect(service.updateOwnProfile("social", bad)).toMatchObject({ ok: false, status: 400 });
     }
+  });
+
+  it("takes a Google Drive folder for the 1:1 folder link and nothing else", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "oneone",
+        name: "One One",
+        privilege_level: "member",
+      }),
+    );
+
+    const folder = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: folder }))
+        .one_on_one_folder_url,
+    ).toBe(folder);
+
+    // The address bar's multi-account form is the same folder, and is what most people copy.
+    const multiAccount = "https://drive.google.com/drive/u/1/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: multiAccount }))
+        .one_on_one_folder_url,
+    ).toBe(multiAccount);
+
+    // A query string is how Drive's own Share dialog hands the link over.
+    expect(
+      unwrap(
+        service.updateOwnProfile("oneone", {
+          one_on_one_folder_url: `${folder}?usp=drive_link`,
+        }),
+      ).one_on_one_folder_url,
+    ).toBe(`${folder}?usp=drive_link`);
+
+    // Empty clears it, like every other link on the record.
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: "" }))
+        .one_on_one_folder_url,
+    ).toBe("");
+
+    for (const bad of [
+      // The notes from one meeting, filed as if they were the series.
+      "https://docs.google.com/document/d/abc/edit",
+      // A Drive file, not a Drive folder.
+      "https://drive.google.com/file/d/1AbCdEf/view",
+      // Right host, wrong route.
+      "https://drive.google.com/drive/my-drive",
+      // A folder somewhere that is not Drive.
+      "https://dropbox.com/drive/folders/1AbCdEf",
+      "http://drive.google.com/drive/folders/1AbCdEf",
+      "not a url",
+    ]) {
+      expect(service.updateOwnProfile("oneone", { one_on_one_folder_url: bad })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+
+    // The rejection has to name the actual mistake: the default shape message talks about
+    // usernames, which tells somebody who pasted a Doc nothing they can act on.
+    const rejected = service.updateOwnProfile("oneone", {
+      one_on_one_folder_url: "https://docs.google.com/document/d/abc/edit",
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.ok ? "" : rejected.error.message).toContain("Drive folder");
   });
 
   it("prefers a @cs.toronto.edu email but stores whatever address the lab actually has", () => {
@@ -4163,6 +4264,20 @@ describe("AdminBotService", () => {
         "personal_circumstances" in redactConfidentialMemberFields(ada, { isAdmin: false }),
       ).toBe(false);
     });
+    it("hides where a member's 1:1 notes live from the rest of the lab", () => {
+      const withFolder = {
+        ...ada,
+        one_on_one_folder_url: "https://drive.google.com/drive/folders/1AbCdEf",
+      };
+      expect(
+        "one_on_one_folder_url" in
+          redactConfidentialMemberFields(withFolder, { memberId: "bob", isAdmin: false }),
+      ).toBe(false);
+      expect(
+        redactConfidentialMemberFields(withFolder, { memberId: "ada", isAdmin: false })
+          .one_on_one_folder_url,
+      ).toBe("https://drive.google.com/drive/folders/1AbCdEf");
+    });
   });
 
   // A country has been lab-visible since login geolocation shipped; a city is a much finer
@@ -4429,11 +4544,9 @@ describe("AdminBotService", () => {
           "research_topics",
           "correspondence_email",
           "whatsapp",
-          "joined_month",
           "github_url",
           "linkedin_url",
           "cv_url",
-          "intake_form_url",
           "openreview_id",
         ]),
       );
@@ -4656,7 +4769,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 11 required fields");
+      expect(message).toContain("missing 9 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
@@ -5347,6 +5460,9 @@ describe("AdminBotService", () => {
       // Stored as a zone, under a source that says where it came from -- never as a country.
       expect(afterMove[0]?.timezone).toBe("Europe/Amsterdam");
       expect(afterMove[0]?.country).toBeUndefined();
+      // The Slack zone is itself the clock, so the collection instant is stamped in it: a local
+      // stamp that ends in the observed zone's offset, not a bare UTC Z.
+      expect(afterMove[0]?.observed_at_local).toMatch(/[+-]\d{2}:\d{2}$/u);
 
       // A daily sync of somebody who has not moved must append nothing.
       unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));

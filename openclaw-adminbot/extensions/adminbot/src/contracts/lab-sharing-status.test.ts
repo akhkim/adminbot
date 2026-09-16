@@ -30,6 +30,7 @@ it("rejects missing, invalid, timezone-free and already expired publication", ()
 it("stops exposing the status exactly at expiry and fails closed for invalid time", () => {
   const status = {
     ...input,
+    id: "bcast_synthetic",
     availability: "busy" as const,
     updated_by: "synthetic",
     updated_at: new Date(now).toISOString(),

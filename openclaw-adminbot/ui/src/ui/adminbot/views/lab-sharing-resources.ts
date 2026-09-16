@@ -25,7 +25,7 @@ export function renderLabSharingResources(basePath: string, signedIn: boolean) {
     return nothing;
   }
   return html`<section
-    class="lab-sharing lab-sharing-directory"
+    class="lab-sharing-directory"
     aria-label="Collaboration resources"
   >
     <h2 class="lab-sharing-seek__title">Collaboration resources</h2>
