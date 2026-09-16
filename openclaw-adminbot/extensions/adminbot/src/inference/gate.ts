@@ -1,3 +1,6 @@
+import { randomUUID, createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import type { DatabaseSync } from "node:sqlite";
 /**
  * Shared admission control for local inference. Each permit covers one HTTP call through
  * response-body consumption; workflow stages acquire separate permits to avoid deadlocks.
@@ -7,11 +10,17 @@
  * queue. Owner-scoped submission keys deduplicate retries while their rows retain bodies.
  * Queue decisions must propagate through callers without triggering fallback or retry.
  */
-import { currentTaskContext, currentTaskScope, currentTaskStepAttempt, taskStep } from "../tasks/context.js";
-import { randomUUID, createHash } from "node:crypto";
-import { createRequire } from "node:module";
-import type { DatabaseSync } from "node:sqlite";
-import { DEFAULT_INFERENCE_GATE_CONFIG, validateInferenceGateConfig, type InferenceGateConfig } from "./config.js";
+import {
+  currentTaskContext,
+  currentTaskScope,
+  currentTaskStepAttempt,
+  taskStep,
+} from "../tasks/context.js";
+import {
+  DEFAULT_INFERENCE_GATE_CONFIG,
+  validateInferenceGateConfig,
+  type InferenceGateConfig,
+} from "./config.js";
 import {
   InferenceQueueStore,
   type InferenceFailureKind,
@@ -23,12 +32,7 @@ import {
   type MemberInferencePreferences,
 } from "./queue-store.js";
 
-export type {
-  InferenceRequestRecord,
-  InferenceResponseRecord,
-  InferenceRowStatus,
-  InferenceStage,
-};
+export type { InferenceRequestRecord, InferenceResponseRecord, InferenceRowStatus, InferenceStage };
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -327,15 +331,20 @@ export function createInferenceGate(options: InferenceGateOptions) {
     switch (row.status) {
       case "shed": {
         const ahead = depth();
-        const canWait = ahead < config.queue.maxDepth || (!paused && inFlight < config.capacity && ahead === 0);
+        const canWait =
+          ahead < config.queue.maxDepth || (!paused && inFlight < config.capacity && ahead === 0);
         return {
           ...base,
           ahead,
           estimated_wait_ms: estimate(ahead),
           can_wait: canWait,
-          message: paused ? (canWait ? "Inference paused by operator. Request saved; you may choose to wait." : "Inference paused and queue full. Request saved; try waiting later.") : canWait
-            ? `GPU busy, ${ahead} ahead of you. Wait or try later.`
-            : `GPU busy and the wait line is full (${ahead} waiting). Try later.`,
+          message: paused
+            ? canWait
+              ? "Inference paused by operator. Request saved; you may choose to wait."
+              : "Inference paused and queue full. Request saved; try waiting later."
+            : canWait
+              ? `GPU busy, ${ahead} ahead of you. Wait or try later.`
+              : `GPU busy and the wait line is full (${ahead} waiting). Try later.`,
         };
       }
       case "queued": {
@@ -345,7 +354,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
           ahead,
           estimated_wait_ms: estimate(ahead),
           can_wait: false,
-          message: paused ? "Queue paused by operator. Request saved." : `Waiting for the GPU, ${ahead} ahead of you.`,
+          message: paused
+            ? "Queue paused by operator. Request saved."
+            : `Waiting for the GPU, ${ahead} ahead of you.`,
         };
       }
       case "running":
@@ -387,7 +398,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function taskDone(row: InferenceQueueRow): boolean {
-    return row.stage ? store.taskCompleted(row.owner_id, row.stage.task) : row.status === "completed";
+    return row.stage
+      ? store.taskCompleted(row.owner_id, row.stage.task)
+      : row.status === "completed";
   }
 
   /**
@@ -448,34 +461,41 @@ export function createInferenceGate(options: InferenceGateOptions) {
       }
       // The timeout starts here, at admission -- see the file header.
       const timeout = AbortSignal.timeout(row.timeout_ms);
-      const signal = AbortSignal.any([timeout, shutdownAbort.signal, ...(callerSignal ? [callerSignal] : [])]);
+      const signal = AbortSignal.any([
+        timeout,
+        shutdownAbort.signal,
+        ...(callerSignal ? [callerSignal] : []),
+      ]);
       const base = assertLoopbackUrl(request.baseUrl, `${request.purpose} inference`);
       const apiKey =
         apiKeyInMemory || (request.apiKeyEnv ? env[request.apiKeyEnv]?.trim() : undefined);
       let response: Awaited<ReturnType<InferenceFetch>>;
       let text: string;
       try {
-        response = await abortable(fetchImpl(`${base}${request.route}`, {
-          method: "POST",
-          // A loopback origin must not redirect private content to another host.
-          redirect: "error",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: JSON.stringify(request.body),
+        response = await abortable(
+          fetchImpl(`${base}${request.route}`, {
+            method: "POST",
+            // A loopback origin must not redirect private content to another host.
+            redirect: "error",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            body: JSON.stringify(request.body),
+            signal,
+          }),
           signal,
-        }), signal);
+        );
         text = await abortable(response.text(), signal);
       } catch (error) {
         const kind: InferenceFailureKind = shutdownAbort.signal.aborted
           ? "interrupted"
           : callerSignal?.aborted
-          ? "cancelled"
-          : timeout.aborted
-            ? "timeout"
-            : "error";
+            ? "cancelled"
+            : timeout.aborted
+              ? "timeout"
+              : "error";
         const message = error instanceof Error ? error.message : String(error);
         outcome = { kind: "failed", id: row.id, failure: kind, error: message, cause: error };
         return settleFailed(row, outcome, undefined, Date.now() - startedAt);
@@ -583,8 +603,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
   ): boolean {
     const finishedAt = timestamp();
     const transitioned = store.transaction(() => {
-      const keep = response &&
-        store.retainedBytes() + Buffer.byteLength(JSON.stringify(response)) <= config.queue.maxRetainedBytes;
+      const keep =
+        response &&
+        store.retainedBytes() + Buffer.byteLength(JSON.stringify(response)) <=
+          config.queue.maxRetainedBytes;
       if (!store.finishFailed(row.id, finishedAt, kind, message, keep ? response : undefined)) {
         return false;
       }
@@ -603,7 +625,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
     } else if (kind !== "cancelled") {
       health.inference_failures += 1;
     }
-    if (!closed && (kind === "timeout" || kind === "error" || (response && response.status >= 500))) {
+    if (
+      !closed &&
+      (kind === "timeout" || kind === "error" || (response && response.status >= 500))
+    ) {
       // Generation can fail while /models still answers. Evaluate even when the queue is empty.
       health.consecutive_inference_failures += 1;
       health.state = health.state === "down" ? "down" : "degraded";
@@ -743,7 +768,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
     return { kind: "expired", id: row.id, status: statusOf(current) };
   }
 
-  function enqueue(row: InferenceQueueRow, request: InferenceGateRequest): Promise<InferenceOutcome> {
+  function enqueue(
+    row: InferenceQueueRow,
+    request: InferenceGateRequest,
+  ): Promise<InferenceOutcome> {
     return new Promise<InferenceOutcome>((resolve) => {
       const waiter: Waiter = {
         id: row.id,
@@ -763,7 +791,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
           const message = "cancelled while waiting for a slot";
           store.transaction(() => {
             store.finishFailed(row.id, timestamp(), "cancelled", message);
-            auditRow("inference.failed", row, { outcome: "cancelled", wait_ms: waitedMs(row, timestamp()) });
+            auditRow("inference.failed", row, {
+              outcome: "cancelled",
+              wait_ms: waitedMs(row, timestamp()),
+            });
           });
           for (const r of waiter.resolvers) {
             r({ kind: "failed", id: row.id, failure: "cancelled", error: message });
@@ -861,13 +892,23 @@ export function createInferenceGate(options: InferenceGateOptions) {
     };
 
     if (request.signal?.aborted) {
-      return { kind: "failed", id: row.id, failure: "cancelled", error: "cancelled before arrival" };
+      return {
+        kind: "failed",
+        id: row.id,
+        failure: "cancelled",
+        error: "cancelled before arrival",
+      };
     }
 
     // Slot free and nobody ahead: run. Somebody ahead means the slot is theirs the moment pump runs.
     if (!paused && inFlight < config.capacity && waiting.length === 0) {
       admitArrival(row);
-      const running = { ...row, status: "running" as const, admitted_at: arrivedAt, claimed_at: arrivedAt };
+      const running = {
+        ...row,
+        status: "running" as const,
+        admitted_at: arrivedAt,
+        claimed_at: arrivedAt,
+      };
       return track(
         row.id,
         dispatch(running, transportFor(request.fetchImpl), request.signal, request.apiKey),
@@ -896,7 +937,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   /** The outcome of a row that already exists, for a retry that found it. */
-  function attach(row: InferenceQueueRow, request: InferenceGateRequest): Promise<InferenceOutcome> {
+  function attach(
+    row: InferenceQueueRow,
+    request: InferenceGateRequest,
+  ): Promise<InferenceOutcome> {
     switch (row.status) {
       case "completed":
         return Promise.resolve(
@@ -916,7 +960,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
         });
       case "running": {
         const current = active.get(row.id);
-        return current ? current.promise : Promise.resolve({ kind: "queued", id: row.id, status: statusOf(row) });
+        return current
+          ? current.promise
+          : Promise.resolve({ kind: "queued", id: row.id, status: statusOf(row) });
       }
       case "queued": {
         const waiter = waiting.find((entry) => entry.id === row.id);
@@ -966,7 +1012,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
    * revived. A repeat click on a row that is no longer shed returns whatever it is now.
    */
   function wait(owner: string, id: string): InferenceStatus | undefined {
-    if (closed) return status(owner, id);
+    if (closed) {
+      return status(owner, id);
+    }
     const row = ownedRow(owner, id);
     if (!row) {
       return undefined;
@@ -988,12 +1036,19 @@ export function createInferenceGate(options: InferenceGateOptions) {
       if (!store.convertToQueued(id, at)) {
         return false;
       }
-      auditRow("inference.waited", fresh, { position: waiting.length, wait_ms: waitedMs(fresh, at) });
+      auditRow("inference.waited", fresh, {
+        position: waiting.length,
+        wait_ms: waitedMs(fresh, at),
+      });
       return true;
     });
     if (converted) {
       const queued = store.get(id) as InferenceQueueRow;
-      void enqueue(queued, { owner, caller: queued.caller, request: queued.request as InferenceRequestRecord });
+      void enqueue(queued, {
+        owner,
+        caller: queued.caller,
+        request: queued.request as InferenceRequestRecord,
+      });
     }
     const current = store.get(id);
     return current ? statusOf(current) : undefined;
@@ -1007,7 +1062,10 @@ export function createInferenceGate(options: InferenceGateOptions) {
     return store.getPreferences(owner);
   }
 
-  function setPreferences(owner: string, next: MemberInferencePreferences): MemberInferencePreferences {
+  function setPreferences(
+    owner: string,
+    next: MemberInferencePreferences,
+  ): MemberInferencePreferences {
     store.savePreferences(owner, next);
     return store.getPreferences(owner);
   }
@@ -1028,14 +1086,21 @@ export function createInferenceGate(options: InferenceGateOptions) {
    *    waiting for their member's choice.
    */
   function recover(): { interrupted: number; expired: number; readmitted: number } {
-    if (!config.persistAcrossRestarts) return { interrupted: 0, expired: 0, readmitted: 0 };
+    if (!config.persistAcrossRestarts) {
+      return { interrupted: 0, expired: 0, readmitted: 0 };
+    }
     const at = timestamp();
     let interrupted = 0;
     let expired = 0;
     let readmitted = 0;
     for (const row of store.listByStatus("running")) {
       store.transaction(() => {
-        store.finishFailed(row.id, at, "interrupted", "the service restarted while this request was running");
+        store.finishFailed(
+          row.id,
+          at,
+          "interrupted",
+          "the service restarted while this request was running",
+        );
         auditRow("inference.failed", row, {
           outcome: "interrupted",
           claimed_at: row.claimed_at,
@@ -1084,7 +1149,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   async function probeHealth(): Promise<InferenceHealth> {
-    if (closed) return { ...health };
+    if (closed) {
+      return { ...health };
+    }
     const base = assertLoopbackUrl(localBaseUrl, "inference health probe");
     try {
       const probeKey = env[localApiKeyEnv]?.trim();
@@ -1141,7 +1208,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   async function evaluateEscalations(): Promise<void> {
-    if (closed) return;
+    if (closed) {
+      return;
+    }
     const conditions: Array<[InferenceEscalationTrigger, boolean, InferenceEscalation]> = [
       [
         "queue_age",
@@ -1149,7 +1218,11 @@ export function createInferenceGate(options: InferenceGateOptions) {
         {
           trigger: "queue_age",
           summary: `Inference requests have been waiting more than ${Math.round(config.escalate.queueAgeMs / 1000)}s for the GPU`,
-          details: { oldest_queued_age_ms: oldestQueuedAgeMs(), queue_depth: depth(), in_flight: inFlight },
+          details: {
+            oldest_queued_age_ms: oldestQueuedAgeMs(),
+            queue_depth: depth(),
+            in_flight: inFlight,
+          },
         },
       ],
       [
@@ -1171,7 +1244,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
         {
           trigger: "health",
           summary:
-            health.consecutive_probe_failures >= config.escalate.healthFailures || health.state === "down"
+            health.consecutive_probe_failures >= config.escalate.healthFailures ||
+            health.state === "down"
               ? `The local model at ${localBaseUrl} has failed ${health.consecutive_probe_failures} health checks in a row`
               : `The local model at ${localBaseUrl} answers health checks but ${health.consecutive_inference_failures} inference calls in a row have timed out or failed`,
           details: { ...health, queue_depth: depth(), in_flight: inFlight },
@@ -1195,7 +1269,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
       } catch (error) {
         escalation.details.proposal_error = error instanceof Error ? error.message : String(error);
       }
-      if (closed) return;
+      if (closed) {
+        return;
+      }
       if (proposalId) {
         armed.set(trigger, { proposal_id: proposalId });
       }
@@ -1203,7 +1279,13 @@ export function createInferenceGate(options: InferenceGateOptions) {
         type: "inference.escalation_proposed",
         actor: "system:inference-gate",
         ...(proposalId ? { action_id: proposalId } : {}),
-        details: { trigger, summary: escalation.summary, ...escalation.details, queue_depth: depth(), in_flight: inFlight },
+        details: {
+          trigger,
+          summary: escalation.summary,
+          ...escalation.details,
+          queue_depth: depth(),
+          in_flight: inFlight,
+        },
       });
     }
   }
@@ -1213,9 +1295,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
       return { interrupted: 0, expired: 0, readmitted: 0 };
     }
     started = true;
-    const recovered = options.recoverExisting === false
-      ? { interrupted: 0, expired: 0, readmitted: 0 }
-      : recover();
+    const recovered =
+      options.recoverExisting === false ? { interrupted: 0, expired: 0, readmitted: 0 } : recover();
     if (config.queue.sweepIntervalMs > 0) {
       sweepTimer = setInterval(() => sweep(), config.queue.sweepIntervalMs);
       sweepTimer.unref();
@@ -1228,7 +1309,12 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function settings() {
-    return { paused, shutting_down: closed, shutdown_grace_ms: shutdownGraceMs, persist_across_restarts: config.persistAcrossRestarts };
+    return {
+      paused,
+      shutting_down: closed,
+      shutdown_grace_ms: shutdownGraceMs,
+      persist_across_restarts: config.persistAcrossRestarts,
+    };
   }
 
   function controlAudit(actor: string, operation: string, details = {}) {
@@ -1236,7 +1322,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function pause(actor = "system:inference-gate") {
-    if (closed) throw new Error("inference gate is shutting down");
+    if (closed) {
+      throw new Error("inference gate is shutting down");
+    }
     if (!paused) {
       controlAudit(actor, "pause");
       paused = true;
@@ -1245,7 +1333,9 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function resume(actor = "system:inference-gate") {
-    if (closed) throw new Error("inference gate is shutting down");
+    if (closed) {
+      throw new Error("inference gate is shutting down");
+    }
     if (paused) {
       controlAudit(actor, "resume");
       paused = false;
@@ -1259,16 +1349,22 @@ export function createInferenceGate(options: InferenceGateOptions) {
     store.transaction(() => {
       for (const id of new Set(ids)) {
         const row = store.get(id);
-        if (!row || !store.cancelPending(id, timestamp())) continue;
+        if (!row || !store.cancelPending(id, timestamp())) {
+          continue;
+        }
         auditRow("inference.failed", row, { outcome: "cancelled", cancelled_by: actor });
         cancelled.push(id);
       }
     });
     for (const id of cancelled) {
       const index = waiting.findIndex((w) => w.id === id);
-      if (index < 0) continue;
+      if (index < 0) {
+        continue;
+      }
       const waiter = waiting.splice(index, 1)[0];
-      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      if (waiter.onAbort) {
+        waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      }
       for (const resolve of waiter.resolvers) {
         resolve({ kind: "failed", id, failure: "cancelled", error: "Cancelled by operator" });
       }
@@ -1278,10 +1374,17 @@ export function createInferenceGate(options: InferenceGateOptions) {
 
   // The grace budget is measured from shutdown's start, including live edits during draining.
   function armShutdownDeadline() {
-    if (shutdownTimer) clearTimeout(shutdownTimer);
-    if (shutdownFinished || shutdownStartedAt === undefined || shutdownAbort.signal.aborted) return;
+    if (shutdownTimer) {
+      clearTimeout(shutdownTimer);
+    }
+    if (shutdownFinished || shutdownStartedAt === undefined || shutdownAbort.signal.aborted) {
+      return;
+    }
     const remaining = Math.max(0, shutdownStartedAt + shutdownGraceMs - Date.now());
-    shutdownTimer = setTimeout(() => shutdownAbort.abort(new Error("shutdown grace period elapsed")), remaining);
+    shutdownTimer = setTimeout(
+      () => shutdownAbort.abort(new Error("shutdown grace period elapsed")),
+      remaining,
+    );
   }
 
   function setShutdownGraceMs(value: number, actor = "system:inference-gate") {
@@ -1295,31 +1398,48 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function shutdown(): Promise<void> {
-    if (shutdownPromise) return shutdownPromise;
+    if (shutdownPromise) {
+      return shutdownPromise;
+    }
     close();
     shutdownStartedAt = Date.now();
     for (const waiter of waiting.splice(0)) {
-      if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      if (waiter.onAbort) {
+        waiter.signal?.removeEventListener("abort", waiter.onAbort);
+      }
       const row = store.get(waiter.id);
-      if (!row) continue;
+      if (!row) {
+        continue;
+      }
       let outcome: InferenceOutcome;
       if (config.persistAcrossRestarts) {
-        outcome = { kind: "queued", id: row.id, status: {
-          ...statusOf(row), message: "Service shutting down. Inference request saved for restart; its parent workflow will not resume automatically.",
-        } };
+        outcome = {
+          kind: "queued",
+          id: row.id,
+          status: {
+            ...statusOf(row),
+            message:
+              "Service shutting down. Inference request saved for restart; its parent workflow will not resume automatically.",
+          },
+        };
       } else {
         const error = "Service shutting down. Restart persistence is disabled; resubmit the task.";
         finishFailed(row, "interrupted", error, undefined, 0);
         outcome = { kind: "failed", id: row.id, failure: "interrupted", error };
       }
-      for (const resolve of waiter.resolvers) resolve(outcome);
+      for (const resolve of waiter.resolvers) {
+        resolve(outcome);
+      }
     }
     armShutdownDeadline();
-    shutdownPromise = Promise.allSettled([...active.values()].map((entry) => entry.promise))
-      .then(() => {
+    shutdownPromise = Promise.allSettled([...active.values()].map((entry) => entry.promise)).then(
+      () => {
         shutdownFinished = true;
-        if (shutdownTimer) clearTimeout(shutdownTimer);
-      });
+        if (shutdownTimer) {
+          clearTimeout(shutdownTimer);
+        }
+      },
+    );
     return shutdownPromise;
   }
 
@@ -1405,21 +1525,31 @@ export async function runGated(
   request: InferenceGateRequest,
 ): Promise<InferenceResponseRecord> {
   const task = currentTaskContext();
-  if (!task) return runGatedCall(gate, request);
+  if (!task) {
+    return runGatedCall(gate, request);
+  }
   const key = `${currentTaskScope()}:model:${request.caller}`;
   return taskStep(key, request.request, async () => {
     const gatedRequest: InferenceGateRequest = {
-      ...request, owner: task.owner, wait: true,
+      ...request,
+      owner: task.owner,
+      wait: true,
       submissionKey: `${task.id}:${currentTaskStepAttempt()}`,
       signal: request.signal ? AbortSignal.any([task.signal, request.signal]) : task.signal,
     };
     for (;;) {
       task.check();
-      try { return await runGatedCall(gate, gatedRequest); }
-      catch (error) {
+      try {
+        return await runGatedCall(gate, gatedRequest);
+      } catch (error) {
         // Internal backpressure is not an uncertain model attempt. Reuse the saved child row.
-        if (!isInferenceDeferred(error) || error.outcome.kind !== "shed") throw error;
-        await abortable(new Promise<void>(resolve => setTimeout(resolve, 50)), gatedRequest.signal!);
+        if (!isInferenceDeferred(error) || error.outcome.kind !== "shed") {
+          throw error;
+        }
+        await abortable(
+          new Promise<void>((resolve) => setTimeout(resolve, 50)),
+          gatedRequest.signal!,
+        );
       }
     }
   });
@@ -1482,6 +1612,8 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     const abort = () => reject(signal.reason);
     signal.addEventListener("abort", abort, { once: true });
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-    if (signal.aborted) abort();
+    if (signal.aborted) {
+      abort();
+    }
   });
 }

@@ -60,8 +60,9 @@ export async function askMemberGuidebook(
       currentTaskContext()?.signal.aborted ||
       (error instanceof Error &&
         ["TaskNeedsRetryError", "TaskInterruptedError", "AbortError"].includes(error.name))
-    )
+    ) {
       throw error;
+    }
     return unavailable();
   }
 }

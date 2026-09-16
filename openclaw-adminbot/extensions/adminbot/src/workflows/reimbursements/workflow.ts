@@ -277,7 +277,9 @@ async function extractPdfReceipts(
   formScriptPath: string,
   pythonCommand: string,
 ): Promise<ExtractedReceipt[]> {
-  if (receipts.length === 0) return [];
+  if (receipts.length === 0) {
+    return [];
+  }
   const temporary = await mkdtemp(path.join(os.tmpdir(), "adminbot-receipts-"));
   try {
     const files: string[] = [];
@@ -502,7 +504,9 @@ Return JSON only.`,
   const choices = Array.isArray(raw.choices) ? raw.choices : [];
   const message = readRecord(readRecord(choices[0]).message);
   const content = readString(message, "content");
-  if (!content) throw new Error("local reimbursement model returned an empty response");
+  if (!content) {
+    throw new Error("local reimbursement model returned an empty response");
+  }
   const parsed = JSON.parse(content) as unknown;
   return readRecord(parsed);
 }
@@ -518,14 +522,19 @@ async function fetchLocalModel(
   try {
     return await call();
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
     // A queue decision is not unreachability: the model was deliberately not called. Wrapping it
     // would tell the member to check a server that is fine, just busy.
-    if (isInferenceDeferred(error)) throw error;
+    if (isInferenceDeferred(error)) {
+      throw error;
+    }
     throw new Error(
       `the local reimbursement model at ${url.origin} is unreachable: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
 }
@@ -647,7 +656,7 @@ function applyDerivedTripDetails(draft: Record<string, unknown>): void {
         (totals.get(code) ?? 0) + (typeof expense.amount === "number" ? expense.amount : 0),
       );
     }
-    const dominant = [...totals].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const dominant = [...totals].toSorted((a, b) => b[1] - a[1])[0]?.[0];
     if (dominant) {
       draft.currency = dominant;
     }
@@ -657,7 +666,7 @@ function applyDerivedTripDetails(draft: Record<string, unknown>): void {
     const dates = expenses
       .map((expense) => readString(expense, "date")?.trim())
       .filter((date): date is string => Boolean(date && ISO_DATE.test(date)))
-      .sort();
+      .toSorted();
     const first = dates[0];
     const last = dates[dates.length - 1];
     if (first && last) {
@@ -718,8 +727,9 @@ async function generateForms(
     });
     const generated = readRecord(JSON.parse(result.stdout.trim()));
     const files = (Array.isArray(generated.files) ? generated.files : []).map(String);
-    if (files.length !== 2)
+    if (files.length !== 2) {
       throw new Error("form generator did not return both reimbursement forms");
+    }
     return {
       artifacts: await Promise.all(
         files.map(async (file) => {

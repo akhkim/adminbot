@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotAuditEvent } from "../contracts/actions.js";
@@ -218,7 +218,12 @@ describe("inference gate admission", () => {
     await settle();
     void gate.run({ owner: "x", caller: "test", request: request("c"), wait: true });
     await settle();
-    const overflow = await gate.run({ owner: "x", caller: "test", request: request("d"), wait: true });
+    const overflow = await gate.run({
+      owner: "x",
+      caller: "test",
+      request: request("d"),
+      wait: true,
+    });
     expect(overflow.kind).toBe("shed");
     if (overflow.kind === "shed") {
       expect(overflow.status.can_wait).toBe(false);
@@ -249,7 +254,10 @@ describe("inference gate admission", () => {
     await settle();
     model.release(); // first finishes; second must be admitted, not a newcomer.
     await settle();
-    const third = track("third", gate.run({ owner: "x", caller: "t", request: request("third"), wait: true }));
+    const third = track(
+      "third",
+      gate.run({ owner: "x", caller: "t", request: request("third"), wait: true }),
+    );
     await settle();
     model.release();
     await settle();
@@ -294,7 +302,12 @@ describe("inference gate timing", () => {
         init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
       });
     const gate = makeGate(db, hang);
-    const outcome = await gate.run({ owner: "x", caller: "t", request: request("a"), timeoutMs: 20 });
+    const outcome = await gate.run({
+      owner: "x",
+      caller: "t",
+      request: request("a"),
+      timeoutMs: 20,
+    });
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") {
       expect(outcome.failure).toBe("timeout");
@@ -335,10 +348,20 @@ describe("inference gate durability", () => {
     const db = openDb();
     const model = controllableFetch();
     const gate = makeGate(db, model.fetchImpl);
-    const first = gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k1" });
+    const first = gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k1",
+    });
     await settle();
     // The response was lost; the client sends the same thing again.
-    const retry = gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k1" });
+    const retry = gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k1",
+    });
     await settle();
     expect(model.pendingCount).toBe(1);
     model.releaseAll();
@@ -349,7 +372,12 @@ describe("inference gate durability", () => {
       expect(a.id).toBe(b.id);
     }
     // And after completion, the same key still finds the stored answer without a model call.
-    const again = await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k1" });
+    const again = await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k1",
+    });
     expect(again.kind).toBe("completed");
     expect(model.pendingCount).toBe(0);
     expect(auditEvents(db).filter((e) => e.type === "inference.completed")).toHaveLength(1);
@@ -359,9 +387,19 @@ describe("inference gate durability", () => {
     const db = openDb();
     const model = controllableFetch();
     const gate = makeGate(db, model.fetchImpl);
-    const first = gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k" });
+    const first = gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k",
+    });
     await settle();
-    const other = await gate.run({ owner: "ada", caller: "t", request: request("b"), submissionKey: "k" });
+    const other = await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("b"),
+      submissionKey: "k",
+    });
     expect(other.kind).toBe("conflict");
     // Keys are scoped to the owner: somebody else's identical key is their own request.
     const bob = gate.run({ owner: "bob", caller: "t", request: request("b"), submissionKey: "k" });
@@ -375,7 +413,12 @@ describe("inference gate durability", () => {
     const db = openDb();
     const model = controllableFetch();
     let clock = Date.parse("2026-09-12T10:00:00Z");
-    const gate = makeGate(db, model.fetchImpl, { queue: { maxAgeMs: 1000 } }, { now: () => new Date(clock) });
+    const gate = makeGate(
+      db,
+      model.fetchImpl,
+      { queue: { maxAgeMs: 1000 } },
+      { now: () => new Date(clock) },
+    );
     void gate.run({ owner: "x", caller: "t", request: request("a") });
     void gate.run({ owner: "x", caller: "t", request: request("b") });
     await settle();
@@ -397,7 +440,12 @@ describe("inference gate durability", () => {
     const db = openDb();
     const model = controllableFetch();
     let clock = Date.parse("2026-09-12T10:00:00Z");
-    const first = makeGate(db, model.fetchImpl, { persistAcrossRestarts: true, queue: { maxAgeMs: 60_000 } }, { now: () => new Date(clock) });
+    const first = makeGate(
+      db,
+      model.fetchImpl,
+      { persistAcrossRestarts: true, queue: { maxAgeMs: 60_000 } },
+      { now: () => new Date(clock) },
+    );
     void first.run({ owner: "x", caller: "t", request: request("a") });
     void first.run({ owner: "x", caller: "t", request: request("b") });
     await settle();
@@ -411,7 +459,12 @@ describe("inference gate durability", () => {
     clock += 40_000; // old is now 70s in line: past max age. fresh is 40s: within it.
 
     const model2 = controllableFetch();
-    const second = makeGate(db, model2.fetchImpl, { persistAcrossRestarts: true, queue: { maxAgeMs: 60_000 } }, { now: () => new Date(clock) });
+    const second = makeGate(
+      db,
+      model2.fetchImpl,
+      { persistAcrossRestarts: true, queue: { maxAgeMs: 60_000 } },
+      { now: () => new Date(clock) },
+    );
     const recovered = second.start();
     expect(recovered).toEqual({ interrupted: 2, expired: 1, readmitted: 1 });
     await settle();
@@ -439,7 +492,12 @@ describe("inference gate durability", () => {
     const db = openDb();
     const model = controllableFetch();
     let clock = Date.parse("2026-09-12T10:00:00Z");
-    const gate = makeGate(db, model.fetchImpl, { queue: { retentionMs: 1000 } }, { now: () => new Date(clock) });
+    const gate = makeGate(
+      db,
+      model.fetchImpl,
+      { queue: { retentionMs: 1000 } },
+      { now: () => new Date(clock) },
+    );
     const run = gate.run({ owner: "ada", caller: "t", request: request("a") });
     await settle();
     model.releaseAll();
@@ -524,9 +582,9 @@ describe("runGated", () => {
       throw new TypeError("fetch failed", { cause: new Error("ECONNREFUSED") });
     };
     const gate = makeGate(db, fetchImpl);
-    await expect(runGated(gate, { owner: "x", caller: "t", request: request("a") })).rejects.toThrow(
-      "fetch failed",
-    );
+    await expect(
+      runGated(gate, { owner: "x", caller: "t", request: request("a") }),
+    ).rejects.toThrow("fetch failed");
   });
 });
 
@@ -593,9 +651,21 @@ describe("inference gate review fixes", () => {
       });
     };
     const gate = makeGate(db, hang);
-    const first = await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k", timeoutMs: 20 });
+    const first = await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k",
+      timeoutMs: 20,
+    });
     expect(first.kind).toBe("failed");
-    const retry = await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k", timeoutMs: 20 });
+    const retry = await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k",
+      timeoutMs: 20,
+    });
     expect(retry.kind).toBe("failed");
     if (retry.kind === "failed" && first.kind === "failed") {
       expect(retry.id).toBe(first.id);
@@ -604,7 +674,13 @@ describe("inference gate review fixes", () => {
     expect(calls).toBe(1);
     expect(gate.stats().rows.failed).toBe(1);
     // A new key is a new attempt.
-    await gate.run({ owner: "ada", caller: "t", request: request("a"), submissionKey: "k2", timeoutMs: 20 });
+    await gate.run({
+      owner: "ada",
+      caller: "t",
+      request: request("a"),
+      submissionKey: "k2",
+      timeoutMs: 20,
+    });
     expect(calls).toBe(2);
   });
 
@@ -659,8 +735,17 @@ describe("inference gate review fixes", () => {
       statusText: "Bad Request",
       text: async () => JSON.stringify({ error: "prompt was: SECRET-PROMPT-TEXT" }),
     });
-    const gate = makeGate(db, fetchImpl, { queue: { retentionMs: 1000 } }, { now: () => new Date(clock) });
-    const outcome = await gate.run({ owner: "x", caller: "t", request: request("SECRET-PROMPT-TEXT") });
+    const gate = makeGate(
+      db,
+      fetchImpl,
+      { queue: { retentionMs: 1000 } },
+      { now: () => new Date(clock) },
+    );
+    const outcome = await gate.run({
+      owner: "x",
+      caller: "t",
+      request: request("SECRET-PROMPT-TEXT"),
+    });
     expect(outcome.kind).toBe("failed");
     const failed = auditEvents(db).filter((e) => e.type === "inference.failed");
     expect(failed).toHaveLength(1);
@@ -774,21 +859,37 @@ describe("inference gate review fixes", () => {
   });
   it("does not retain an HTTP error body beyond the storage ceiling", async () => {
     const db = openDb();
-    const gate = makeGate(db, async () => ({
-      ok: false, status: 503, statusText: "Unavailable", text: async () => "x".repeat(2000),
-    }), { queue: { maxRetainedBytes: 700 } });
+    const gate = makeGate(
+      db,
+      async () => ({
+        ok: false,
+        status: 503,
+        statusText: "Unavailable",
+        text: async () => "x".repeat(2000),
+      }),
+      { queue: { maxRetainedBytes: 700 } },
+    );
     const outcome = await gate.run({ owner: "ada", caller: "test", request: request("a") });
     expect(outcome.kind).toBe("failed");
-    if (outcome.kind === "failed") expect(outcome.response?.text).toHaveLength(2000);
+    if (outcome.kind === "failed") {
+      expect(outcome.response?.text).toHaveLength(2000);
+    }
     expect(gate.stats().retained_bytes).toBeLessThanOrEqual(700);
   });
 
   it("escalates repeated HTTP generation failures with a healthy models endpoint", async () => {
     const onEscalate = vi.fn(async () => ({ proposal_id: "act_http" }));
-    const gate = makeGate(openDb(), async (_url, init) => ({
-      ok: init.method === "GET", status: init.method === "GET" ? 200 : 503,
-      statusText: "Unavailable", text: async () => "{}",
-    }), { escalate: { healthFailures: 2 } }, { onEscalate });
+    const gate = makeGate(
+      openDb(),
+      async (_url, init) => ({
+        ok: init.method === "GET",
+        status: init.method === "GET" ? 200 : 503,
+        statusText: "Unavailable",
+        text: async () => "{}",
+      }),
+      { escalate: { healthFailures: 2 } },
+      { onEscalate },
+    );
     await gate.run({ owner: "ada", caller: "test", request: request("a") });
     await gate.run({ owner: "ada", caller: "test", request: request("b") });
     await gate.probeHealth();
@@ -800,7 +901,12 @@ describe("inference gate review fixes", () => {
     const model = controllableFetch();
     const gate = makeGate(openDb(), model.fetchImpl, { capacity: 1 });
     const first = gate.run({ owner: "ada", caller: "test", request: request("first") });
-    const retry = { owner: "ada", caller: "test", request: request("second"), submissionKey: "second" };
+    const retry = {
+      owner: "ada",
+      caller: "test",
+      request: request("second"),
+      submissionKey: "second",
+    };
     expect((await gate.run(retry)).kind).toBe("shed");
     model.release();
     await first;
@@ -824,9 +930,7 @@ describe("inference gate review fixes", () => {
     await gate.probeHealth();
     expect(gate.stats().health.state).toBe("ok");
   });
-
 });
-
 
 describe("operator lifecycle", () => {
   it("starts paused, preserves arrivals and recovered work, then resumes FIFO", async () => {
@@ -838,7 +942,9 @@ describe("operator lifecycle", () => {
     const shed = await gate.run({ owner: "a", caller: "test", request: request("second") });
     expect(shed.kind).toBe("shed");
     expect(model.pendingCount).toBe(0);
-    if (shed.kind !== "shed") throw new Error("expected shed");
+    if (shed.kind !== "shed") {
+      throw new Error("expected shed");
+    }
     gate.wait("a", shed.id);
     gate.resume("operator");
     expect(model.pendingCount).toBe(1);
@@ -848,8 +954,13 @@ describe("operator lifecycle", () => {
     model.release();
     await settle();
     expect(gate.status("a", shed.id)?.state).toBe("completed");
-    const row = await gate.run({ owner: "a", caller: "test", request: request("third"), wait: false,
-      signal: AbortSignal.abort() });
+    const row = await gate.run({
+      owner: "a",
+      caller: "test",
+      request: request("third"),
+      wait: false,
+      signal: AbortSignal.abort(),
+    });
     expect(row.kind).toBe("failed");
   });
 
@@ -861,13 +972,13 @@ describe("operator lifecycle", () => {
     const queued = gate.run({ owner: "a", caller: "t", request: request("queued"), wait: true });
     const shed = await gate.run({ owner: "a", caller: "t", request: request("shed") });
     const rows = gate.listForOwner("a");
-    const ids = rows.map(r => r.request_id);
+    const ids = rows.map((r) => r.request_id);
     const result = gate.cancelPending(ids, "operator");
     expect(result.cancelled).toHaveLength(2);
     expect(result.unchanged).toHaveLength(1);
     expect((await queued).kind).toBe("failed");
     expect(gate.cancelPending(ids, "operator").cancelled).toEqual([]);
-    expect(auditEvents(db).filter(e => e.type === "inference.failed")).toHaveLength(2);
+    expect(auditEvents(db).filter((e) => e.type === "inference.failed")).toHaveLength(2);
     model.release();
     expect((await running).kind).toBe("completed");
     expect(shed.kind).toBe("shed");
@@ -882,11 +993,16 @@ describe("operator lifecycle", () => {
     const stopping = gate.shutdown();
     expect(gate.shutdown()).toBe(stopping);
     expect((await queued).kind).toBe("queued");
-    expect((await gate.run({ owner: "a", caller: "t", request: request("new") })).kind).toBe("refused");
+    expect((await gate.run({ owner: "a", caller: "t", request: request("new") })).kind).toBe(
+      "refused",
+    );
     model.release();
     expect((await running).kind).toBe("completed");
     await stopping;
-    const recovered = makeGate(db, model.fetchImpl, { persistAcrossRestarts: true, startPaused: true });
+    const recovered = makeGate(db, model.fetchImpl, {
+      persistAcrossRestarts: true,
+      startPaused: true,
+    });
     expect(recovered.start().readmitted).toBe(1);
     expect(model.pendingCount).toBe(0);
     recovered.resume();
@@ -899,10 +1015,16 @@ describe("operator lifecycle", () => {
     const db = openDb();
     let finish: ((value: Awaited<ReturnType<InferenceFetch>>) => void) | undefined;
     let signal: AbortSignal | undefined;
-    const gate = makeGate(db, async (_url, init) => {
-      signal = init.signal;
-      return new Promise(resolve => { finish = resolve; });
-    }, { shutdownGraceMs: 360_000 });
+    const gate = makeGate(
+      db,
+      async (_url, init) => {
+        signal = init.signal;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+      { shutdownGraceMs: 360_000 },
+    );
     const running = gate.run({ owner: "a", caller: "t", request: request("hung") });
     const stopping = gate.shutdown();
     gate.setShutdownGraceMs(5, "operator");
@@ -910,14 +1032,15 @@ describe("operator lifecycle", () => {
     expect(signal?.aborted).toBe(true);
     const outcome = await running;
     expect(outcome.kind).toBe("failed");
-    if (outcome.kind === "failed") expect(outcome.failure).toBe("interrupted");
-    expect(auditEvents(db).filter(e => e.type === "inference.failed")).toHaveLength(1);
+    if (outcome.kind === "failed") {
+      expect(outcome.failure).toBe("interrupted");
+    }
+    expect(auditEvents(db).filter((e) => e.type === "inference.failed")).toHaveLength(1);
     db.close();
     finish?.({ ok: true, status: 200, statusText: "OK", text: async () => "late" });
     await settle(); // A late transport completion must not touch the closed database.
   });
 });
-
 
 it("extends the shutdown deadline while an active call is draining", async () => {
   const model = controllableFetch();
@@ -925,7 +1048,7 @@ it("extends the shutdown deadline while an active call is draining", async () =>
   const running = gate.run({ owner: "a", caller: "t", request: request("slow") });
   const stopping = gate.shutdown();
   gate.setShutdownGraceMs(1000);
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 20));
   expect(gate.stats().in_flight).toBe(1);
   model.release();
   expect((await running).kind).toBe("completed");
@@ -934,12 +1057,13 @@ it("extends the shutdown deadline while an active call is draining", async () =>
 
 it("uses configured startup pause and six-minute default shutdown grace", () => {
   expect(resolveInferenceGateConfig({}).shutdownGraceMs).toBe(360_000);
-  const configured = resolveInferenceGateConfig({ ADMINBOT_INFERENCE_START_PAUSED: "true",
-    ADMINBOT_INFERENCE_SHUTDOWN_GRACE_MS: "1500" });
+  const configured = resolveInferenceGateConfig({
+    ADMINBOT_INFERENCE_START_PAUSED: "true",
+    ADMINBOT_INFERENCE_SHUTDOWN_GRACE_MS: "1500",
+  });
   expect(configured.startPaused).toBe(true);
   expect(configured.shutdownGraceMs).toBe(1500);
 });
-
 
 it("defaults to a connection-local queue while retaining audit/preferences and leaving old durable rows untouched", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "inference-persistence-"));
@@ -947,8 +1071,16 @@ it("defaults to a connection-local queue while retaining audit/preferences and l
   let db = openDb(filename);
   try {
     const model = controllableFetch();
-    const durable = makeGate(db, model.fetchImpl, { persistAcrossRestarts: true, startPaused: true });
-    const pending = durable.run({ owner: "a", caller: "t", request: request("old durable"), wait: true });
+    const durable = makeGate(db, model.fetchImpl, {
+      persistAcrossRestarts: true,
+      startPaused: true,
+    });
+    const pending = durable.run({
+      owner: "a",
+      caller: "t",
+      request: request("old durable"),
+      wait: true,
+    });
     const oldId = durable.listForOwner("a")[0].request_id;
     await durable.shutdown();
     expect((await pending).kind).toBe("queued");
@@ -958,12 +1090,22 @@ it("defaults to a connection-local queue while retaining audit/preferences and l
     const transient = makeGate(db, model.fetchImpl, { startPaused: true });
     expect(transient.start().readmitted).toBe(0);
     expect(transient.status("a", oldId)).toBeUndefined();
-    const current = await transient.run({ owner: "a", caller: "t", request: request("new transient") });
+    const current = await transient.run({
+      owner: "a",
+      caller: "t",
+      request: request("new transient"),
+    });
     expect(current.kind).toBe("shed");
-    if (current.kind !== "shed") throw new Error("expected shed");
+    if (current.kind !== "shed") {
+      throw new Error("expected shed");
+    }
     transient.setPreferences("a", { inference_always_wait: true });
-    expect(db.prepare("SELECT status FROM main.adminbot_inference_queue WHERE id = ?").get(oldId)).toMatchObject({ status: "queued" });
-    expect(db.prepare("SELECT COUNT(*) AS n FROM main.adminbot_inference_queue").get()).toMatchObject({ n: 1 });
+    expect(
+      db.prepare("SELECT status FROM main.adminbot_inference_queue WHERE id = ?").get(oldId),
+    ).toMatchObject({ status: "queued" });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM main.adminbot_inference_queue").get(),
+    ).toMatchObject({ n: 1 });
     await transient.shutdown();
     db.close();
 
@@ -972,7 +1114,7 @@ it("defaults to a connection-local queue while retaining audit/preferences and l
     next.start();
     expect(next.listForOwner("a")).toEqual([]);
     expect(next.preferences("a").inference_always_wait).toBe(true);
-    expect(auditEvents(db).some(event => event.details?.request_id === current.id)).toBe(true);
+    expect(auditEvents(db).some((event) => event.details?.request_id === current.id)).toBe(true);
     expect(model.pendingCount).toBe(0);
     await next.shutdown();
   } finally {

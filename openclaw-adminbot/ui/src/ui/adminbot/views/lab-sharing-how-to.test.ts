@@ -12,7 +12,9 @@ customElements.define("test-guidebook-reconnect", ReconnectGuidebook);
 customElements.define("test-guidebook-task-status", ReconnectTaskStatus);
 afterEach(() => {
   document.body.replaceChildren();
-  for (const task of taskActivities.values()) task.detach();
+  for (const task of taskActivities.values()) {
+    task.detach();
+  }
   taskActivities.clear();
   sessionStorage.clear();
   vi.unstubAllGlobals();
@@ -41,8 +43,12 @@ it("renders answers as text, supports retry, and discards a late answer after lo
   const fetcher = vi.fn((input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = new URL(url, "http://localhost:8765").pathname;
-    if (path === "/tasks") return Promise.resolve(new Response(JSON.stringify({ tasks: [] })));
-    if (path === "/lab-sharing/ask") return answer();
+    if (path === "/tasks") {
+      return Promise.resolve(new Response(JSON.stringify({ tasks: [] })));
+    }
+    if (path === "/lab-sharing/ask") {
+      return answer();
+    }
     return Promise.reject(new Error(`Unexpected test route: ${path}`));
   });
   vi.stubGlobal("fetch", fetcher);

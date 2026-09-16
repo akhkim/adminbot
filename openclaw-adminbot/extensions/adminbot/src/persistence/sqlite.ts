@@ -2510,14 +2510,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ? this.db.prepare("SELECT * FROM adminbot_nudge_ledger WHERE domain = ?").all(domain)
         : this.db.prepare("SELECT * FROM adminbot_nudge_ledger").all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      domain: String(row.domain) as AdminBotNudgeLedgerRecord["domain"],
-      subject_id: String(row.subject_id),
-      member_id: String(row.member_id),
-      nudge_count: Number(row.nudge_count ?? 0),
-      ...optionalText(row, "last_nudged_at"),
-      ...optionalText(row, "snoozed_until"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          domain: String(row.domain) as AdminBotNudgeLedgerRecord["domain"],
+          subject_id: String(row.subject_id),
+          member_id: String(row.member_id),
+          nudge_count: Number(row.nudge_count ?? 0),
+        },
+        optionalText(row, "last_nudged_at"),
+        optionalText(row, "snoozed_until"),
+      ),
+    );
   }
 
   saveSocialDraft(record: AdminBotSocialDraftRecord): void {
@@ -2557,17 +2561,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
             .all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: String(row.id),
-      paper_id: String(row.paper_id),
-      platform: String(row.platform) as AdminBotSocialDraftRecord["platform"],
-      body: String(row.body),
-      generated_at: String(row.generated_at),
-      status: String(row.status) as AdminBotSocialDraftRecord["status"],
-      ...optionalText(row, "model"),
-      ...optionalText(row, "generated_by_member_id"),
-      ...optionalText(row, "superseded_by"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          id: String(row.id),
+          paper_id: String(row.paper_id),
+          platform: String(row.platform) as AdminBotSocialDraftRecord["platform"],
+          body: String(row.body),
+          generated_at: String(row.generated_at),
+          status: String(row.status) as AdminBotSocialDraftRecord["status"],
+        },
+        optionalText(row, "model"),
+        optionalText(row, "generated_by_member_id"),
+        optionalText(row, "superseded_by"),
+      ),
+    );
   }
 
   saveSocialConsent(record: AdminBotSocialConsentRecord): void {
@@ -2599,14 +2607,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .all(draftId)
         : this.db.prepare("SELECT * FROM adminbot_paper_social_draft_consents").all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      draft_id: String(row.draft_id),
-      member_id: String(row.member_id),
-      decision: String(row.decision) as AdminBotSocialConsentRecord["decision"],
-      asked_at: String(row.asked_at),
-      ...optionalText(row, "comment"),
-      ...optionalText(row, "decided_at"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          draft_id: String(row.draft_id),
+          member_id: String(row.member_id),
+          decision: String(row.decision) as AdminBotSocialConsentRecord["decision"],
+          asked_at: String(row.asked_at),
+        },
+        optionalText(row, "comment"),
+        optionalText(row, "decided_at"),
+      ),
+    );
   }
 
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {
@@ -2683,19 +2695,23 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .prepare("SELECT * FROM adminbot_conference_trips ORDER BY conference_key, member_id")
             .all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      conference_key: String(row.conference_key),
-      member_id: String(row.member_id),
-      intent: String(row.intent) as AdminBotConferenceTripRecord["intent"],
-      funding: String(row.funding) as AdminBotConferenceTripRecord["funding"],
-      needs_lodging: Boolean(row.needs_lodging),
-      needs_visa_letter: Boolean(row.needs_visa_letter),
-      updated_at: String(row.updated_at),
-      ...optionalText(row, "arrival_on"),
-      ...optionalText(row, "departure_on"),
-      ...optionalText(row, "paper_id"),
-      ...optionalText(row, "notes"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          conference_key: String(row.conference_key),
+          member_id: String(row.member_id),
+          intent: String(row.intent) as AdminBotConferenceTripRecord["intent"],
+          funding: String(row.funding) as AdminBotConferenceTripRecord["funding"],
+          needs_lodging: Boolean(row.needs_lodging),
+          needs_visa_letter: Boolean(row.needs_visa_letter),
+          updated_at: String(row.updated_at),
+        },
+        optionalText(row, "arrival_on"),
+        optionalText(row, "departure_on"),
+        optionalText(row, "paper_id"),
+        optionalText(row, "notes"),
+      ),
+    );
   }
 
   listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[] {
@@ -2710,14 +2726,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .prepare("SELECT * FROM adminbot_paper_conference_attendees ORDER BY paper_id, name")
             .all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      paper_id: String(row.paper_id),
-      attendee_key: String(row.attendee_key),
-      name: String(row.name),
-      attending: String(row.attending) as AdminBotConferenceAttendeeRecord["attending"],
-      ...optionalText(row, "member_id"),
-      ...optionalText(row, "confirmed_at"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          paper_id: String(row.paper_id),
+          attendee_key: String(row.attendee_key),
+          name: String(row.name),
+          attending: String(row.attending) as AdminBotConferenceAttendeeRecord["attending"],
+        },
+        optionalText(row, "member_id"),
+        optionalText(row, "confirmed_at"),
+      ),
+    );
   }
 
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void {
@@ -2748,13 +2768,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             .all(paperId)
         : this.db.prepare("SELECT * FROM adminbot_paper_reimbursements").all()
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      paper_id: String(row.paper_id),
-      member_id: String(row.member_id),
-      status: String(row.status) as AdminBotPaperReimbursementRecord["status"],
-      ...optionalText(row, "submitted_at"),
-      ...optionalText(row, "completed_at"),
-    }));
+    return rows.map((row) =>
+      Object.assign(
+        {
+          paper_id: String(row.paper_id),
+          member_id: String(row.member_id),
+          status: String(row.status) as AdminBotPaperReimbursementRecord["status"],
+        },
+        optionalText(row, "submitted_at"),
+        optionalText(row, "completed_at"),
+      ),
+    );
   }
 
   /** One paper's slots, or the whole lab's when no id is given -- the nudge pass wants the latter. */

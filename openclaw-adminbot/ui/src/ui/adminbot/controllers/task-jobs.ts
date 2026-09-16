@@ -9,7 +9,9 @@ export async function runAdminBotCvScan(host: {
   adminBotCvScanJob: AdminBotCvDigestJobState;
 }) {
   const session = loadStoredMemberSession();
-  if (!session || host.adminBotCvScanJob.status === "running") return;
+  if (!session || host.adminBotCvScanJob.status === "running") {
+    return;
+  }
   host.adminBotCvScanJob = { status: "running" };
   try {
     const response = await taskFetch(`${resolveAdminBotBaseUrl(host.settings)}/cv/scan`, {
@@ -21,7 +23,9 @@ export async function runAdminBotCvScan(host: {
       body: "{}",
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result?.error?.message ?? "CV scan failed.");
+    if (!response.ok) {
+      throw new Error(result?.error?.message ?? "CV scan failed.");
+    }
     const rows = (result?.result?.results ?? result?.results) as
       | Array<{ status: string; member_name?: string; reason?: string }>
       | undefined;
@@ -45,7 +49,9 @@ export async function runAdminBotCvScan(host: {
 export async function retryWorkshopTask(host: AdminBotHost) {
   const session = loadStoredMemberSession();
   const id = host.adminBotWorkshopNudges.run?.task_id;
-  if (!session || !id) return;
+  if (!session || !id) {
+    return;
+  }
   const action = host.adminBotWorkshopNudges.run?.task_status === "shed" ? "wait" : "retry";
   try {
     const response = await taskFetch(

@@ -1396,7 +1396,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
             resolve();
           });
         });
-        if (ownTaskDb) taskDb.close();
+        if (ownTaskDb) {
+          taskDb.close();
+        }
         closeDurable();
       })();
       return closing;
@@ -1523,17 +1525,24 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
       ctx.taskRuntime,
       owner,
       (task) => {
-        if (visitor) return task.kind === "reimbursement";
+        if (visitor) {
+          return task.kind === "reimbursement";
+        }
         if (task.kind === "member-guidebook" && task.status !== "expired") {
-          if (!task.input || typeof task.input !== "object") return false;
+          if (!task.input || typeof task.input !== "object") {
+            return false;
+          }
           const input = task.input as { approvedHash?: string; indexPath?: string };
           if (
             input.approvedHash !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_SHA256?.trim() ?? "") ||
             input.indexPath !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_INDEX?.trim() ?? "")
-          )
+          ) {
             return false;
+          }
         }
-        if (task.kind.startsWith("cv.") && principal && !isPrivileged(principal)) return false;
+        if (task.kind.startsWith("cv.") && principal && !isPrivileged(principal)) {
+          return false;
+        }
         return true;
       },
       (task) =>
@@ -1541,7 +1550,9 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
         task.owner === "system:workshop-match" &&
         task.kind === "workshop.match",
     );
-    if (!handled) sendJson(res, 404, { error: { message: "not found" } });
+    if (!handled) {
+      sendJson(res, 404, { error: { message: "not found" } });
+    }
     return;
   }
   if (!principal) {
@@ -1857,8 +1868,9 @@ async function handleRegistrationRoute(
  * had, and impersonation would be a far quieter version of it.
  */
 function taskOwner(principal: AdminBotPrincipal): string {
-  if (principal.kind === "member")
+  if (principal.kind === "member") {
     return `member:${principal.member.id}${principal.impersonator ? `:viewed-by:${principal.impersonator.id}` : ""}`;
+  }
   return principal.kind;
 }
 
@@ -5087,9 +5099,10 @@ async function handleAuthenticatedRoute(
       : undefined;
     sendServiceResult(
       res,
-      await service.sendPaperSlotNudges(principalActor(principal), {
-        ...(recipients?.length ? { recipientIds: recipients } : {}),
-      }),
+      await service.sendPaperSlotNudges(
+        principalActor(principal),
+        recipients?.length ? { recipientIds: recipients } : {},
+      ),
     );
     return;
   }

@@ -45,7 +45,10 @@ export function renderGuestReimbursements(state: AppViewState) {
           <div class="login-gate__title">${t("login.guest.reimbursements")}</div>
           <div class="login-gate__sub">${t("login.guest.reimbursementsHint")}</div>
         </div>
-        <adminbot-task-status .baseUrl=${resolveAdminBotBaseUrl(state.settings)} sessionContext="visitor"></adminbot-task-status>
+        <adminbot-task-status
+          .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+          sessionContext="visitor"
+        ></adminbot-task-status>
         ${renderAdminBotReimbursements({
           // The guest path posts directly to AdminBot over HTTP, so it never waits on a gateway
           // connection the way the signed-in tab does.

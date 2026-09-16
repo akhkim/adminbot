@@ -237,7 +237,7 @@ describe("Lab Sharing routes", () => {
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.members).toHaveLength(1);
-      expect(Object.keys(data.members[0]).sort()).toEqual([
+      expect(Object.keys(data.members[0]).toSorted()).toEqual([
         "id",
         "matched_fields",
         "name",

@@ -13,7 +13,9 @@ async function until(predicate: () => boolean) {
   await vi.waitFor(() => expect(predicate()).toBe(true));
 }
 afterEach(() => {
-  for (const item of taskActivities.values()) item.detach();
+  for (const item of taskActivities.values()) {
+    item.detach();
+  }
   vi.unstubAllGlobals();
   sessionStorage.clear();
 });

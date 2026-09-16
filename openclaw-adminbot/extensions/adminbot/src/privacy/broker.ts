@@ -186,8 +186,8 @@ function createPrivacyBrokerHandler(
         { replaySafe: true },
       );
       if (
-        JSON.stringify([...defaultSensitiveTerms].sort()) !==
-        JSON.stringify([...currentSensitiveTerms].sort())
+        JSON.stringify([...defaultSensitiveTerms].toSorted()) !==
+        JSON.stringify([...currentSensitiveTerms].toSorted())
       ) {
         throw new Error(
           "Privacy policy changed while this task was pending; submit a new task under the current policy.",
@@ -218,7 +218,9 @@ function createPrivacyBrokerHandler(
         classification.classification === "generic"
       ) {
         const output = await runRemote(config, fetchImpl, env, task, signal).catch((error) => {
-          if (isTaskInterruption(error)) throw error;
+          if (isTaskInterruption(error)) {
+            throw error;
+          }
           run.audit("remote", error, "local");
           return undefined;
         });
@@ -246,7 +248,9 @@ async function runPrivateTask(
       classification.sanitized_task,
       run.signal,
     ).catch((error) => {
-      if (isTaskInterruption(error)) throw error;
+      if (isTaskInterruption(error)) {
+        throw error;
+      }
       run.audit("remote", error, "local");
       return undefined;
     });
@@ -458,22 +462,20 @@ async function runRemote(
     async () => {
       try {
         return {
-          output: await runRemoteCall(
-            config,
-            fetchImpl,
-            env,
-            task,
-            remoteSignal,
-          ),
+          output: await runRemoteCall(config, fetchImpl, env, task, remoteSignal),
         };
       } catch (error) {
-        if (error instanceof CompletedRemoteFailure) return { error: error.message };
+        if (error instanceof CompletedRemoteFailure) {
+          return { error: error.message };
+        }
         throw error;
       }
     },
     owner ? { timeoutMs: 120_000 } : undefined,
   );
-  if (result.error) throw new Error(result.error);
+  if (result.error) {
+    throw new Error(result.error);
+  }
   return result.output!;
 }
 

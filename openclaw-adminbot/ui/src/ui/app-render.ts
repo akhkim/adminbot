@@ -4979,7 +4979,9 @@ export function renderApp(state: AppViewState) {
                   },
                 ],
                 onRunCommandJob: (id) => {
-                  if (id === "cv-scan") void runAdminBotCvScan(state);
+                  if (id === "cv-scan") {
+                    void runAdminBotCvScan(state);
+                  }
                   if (id === "cv-digest") {
                     void runAdminBotCvDigestJob(state);
                   }

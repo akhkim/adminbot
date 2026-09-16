@@ -443,7 +443,9 @@ describe("inference operator controls", () => {
         })
       ).status,
     ).toBe(400);
-    if (outcome.kind !== "shed") throw new Error("expected shed");
+    if (outcome.kind !== "shed") {
+      throw new Error("expected shed");
+    }
     const cancelled = await fetch(`${baseUrl}/inference/cancel-pending`, {
       method: "POST",
       headers: adminHeaders,

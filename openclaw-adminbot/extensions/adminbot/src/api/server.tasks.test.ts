@@ -11,18 +11,24 @@ import { handleTaskRoute, submitHttpTask } from "./server.tasks.js";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  for (const cleanup of cleanups.splice(0).toReversed()) {
+    await cleanup();
+  }
 });
 async function serve(server: ReturnType<typeof createServer>) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("no address");
+  if (!address || typeof address === "string") {
+    throw new Error("no address");
+  }
   return `http://127.0.0.1:${address.port}`;
 }
 async function until<T>(fn: () => T | undefined): Promise<T> {
   for (let i = 0; i < 100; i++) {
     const value = fn();
-    if (value) return value;
+    if (value) {
+      return value;
+    }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("task did not settle");
@@ -206,7 +212,7 @@ describe("application task HTTP API", () => {
       (await fetch(`${base}/tasks/${task.id}`, { headers: { "X-AdminBot-Visitor": otherVisitor } }))
         .status,
     ).toBe(404);
-    for (const action of ["wait", "retry", "cancel"])
+    for (const action of ["wait", "retry", "cancel"]) {
       expect(
         (
           await fetch(`${base}/tasks/${task.id}/${action}`, {
@@ -215,6 +221,7 @@ describe("application task HTTP API", () => {
           })
         ).status,
       ).toBe(404);
+    }
     expect(
       (
         await fetch(`${base}/tasks/${task.id}`, {
@@ -222,8 +229,9 @@ describe("application task HTTP API", () => {
         })
       ).status,
     ).toBe(404);
-    for (const route of ["/lab/members", "/inference/requests", "/settings"])
+    for (const route of ["/lab/members", "/inference/requests", "/settings"]) {
       expect((await fetch(`${base}${route}`, { headers })).status).toBe(401);
+    }
     expect(
       (await fetch(`${base}/privacy/tasks`, { method: "POST", headers, body: "{}" })).status,
     ).toBe(401);
@@ -350,18 +358,28 @@ it("serves expired guidebook status after private input has been erased", async 
   expect((await fetch(`${base}/tasks/expired-guide/result`, { headers })).status).toBe(410);
 });
 
-
 it("allows credentialed visitor bootstrap only from approved UI origins", async () => {
-  const app = createAdminBotMockService({ allowedOrigins: ["https://example.invalid"], calendarInviteRunner: async () => {}, accountApprovedEmailRunner: async () => {}, dcsFormRunner: async () => {} });
+  const app = createAdminBotMockService({
+    allowedOrigins: ["https://example.invalid"],
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsFormRunner: async () => {},
+  });
   cleanups.push(() => app.close());
   const base = await serve(app.server);
-  const allowed = await fetch(`${base}/tasks/visitor`, { method: "POST", headers: { Origin: "https://example.invalid" } });
+  const allowed = await fetch(`${base}/tasks/visitor`, {
+    method: "POST",
+    headers: { Origin: "https://example.invalid" },
+  });
   expect(allowed.status).toBe(200);
   expect(allowed.headers.get("access-control-allow-origin")).toBe("https://example.invalid");
   expect(allowed.headers.get("access-control-allow-credentials")).toBe("true");
   expect(allowed.headers.get("access-control-expose-headers")).toContain("X-AdminBot-Visitor");
   expect(allowed.headers.get("x-adminbot-visitor")).toBeTruthy();
-  const denied = await fetch(`${base}/tasks/visitor`, { method: "POST", headers: { Origin: "https://untrusted.invalid" } });
+  const denied = await fetch(`${base}/tasks/visitor`, {
+    method: "POST",
+    headers: { Origin: "https://untrusted.invalid" },
+  });
   expect(denied.status).toBe(403);
   expect(denied.headers.get("access-control-allow-credentials")).toBeNull();
   expect(denied.headers.get("x-adminbot-visitor")).toBeNull();

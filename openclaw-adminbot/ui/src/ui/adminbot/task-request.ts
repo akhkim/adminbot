@@ -22,7 +22,9 @@ const inFlight = new Map<string, Promise<Response>>();
 const visitorBootstraps = new Map<string, Promise<string>>();
 async function bootstrapVisitor(base: string): Promise<string> {
   const existing = visitorBootstraps.get(base);
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
   // Establish the owner before creating work. A lost bootstrap response can create another
   // empty visitor, whereas losing the first task response must never change its owner.
   const pending = (async () => {
@@ -33,7 +35,9 @@ async function bootstrapVisitor(base: string): Promise<string> {
       signal: AbortSignal.timeout(15_000),
     });
     const token = response.headers.get("X-AdminBot-Visitor");
-    if (!response.ok || !token) throw new Error("Visitor session could not be established.");
+    if (!response.ok || !token) {
+      throw new Error("Visitor session could not be established.");
+    }
     try {
       sessionStorage.setItem(`adminbot-visitor:${base}`, token);
     } catch {
@@ -65,7 +69,9 @@ export function isTaskPath(path: string): boolean {
 function stored(key: string): { submission: string; id?: string } {
   try {
     const value = sessionStorage.getItem(storagePrefix + key);
-    if (value) return JSON.parse(value);
+    if (value) {
+      return JSON.parse(value);
+    }
   } catch {
     /* Storage can be disabled; the live request still retains identity. */
   }
@@ -76,10 +82,13 @@ function save(key: string, value?: { submission: string; id?: string }) {
     if (value) {
       // Bound stale reconnect handles; accepted server tasks have their own retention policy.
       const keys = Object.keys(sessionStorage).filter((item) => item.startsWith(storagePrefix));
-      if (keys.length >= 32 && !keys.includes(storagePrefix + key))
+      if (keys.length >= 32 && !keys.includes(storagePrefix + key)) {
         sessionStorage.removeItem(keys[0]);
+      }
       sessionStorage.setItem(storagePrefix + key, JSON.stringify(value));
-    } else sessionStorage.removeItem(storagePrefix + key);
+    } else {
+      sessionStorage.removeItem(storagePrefix + key);
+    }
   } catch {
     /* No request content or credentials are persisted. */
   }
@@ -93,7 +102,9 @@ export async function taskFetch(url: string, init: RequestInit = {}): Promise<Re
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   const key = Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
   const existing = inFlight.get(key);
-  if (existing) return (await existing).clone();
+  if (existing) {
+    return (await existing).clone();
+  }
   const promise = runTask(url, init, headers, key);
   inFlight.set(key, promise);
   try {
@@ -114,7 +125,9 @@ async function runTask(
   const controller = new AbortController();
   const abort = () => controller.abort();
   init.signal?.addEventListener("abort", abort, { once: true });
-  if (init.signal?.aborted) abort();
+  if (init.signal?.aborted) {
+    abort();
+  }
   let wake: ((action: string) => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const activity: TaskActivity = {
@@ -151,7 +164,9 @@ async function runTask(
   if (anonymous) {
     try {
       const token = sessionStorage.getItem(visitorKey);
-      if (token) headers.set("X-AdminBot-Visitor", token);
+      if (token) {
+        headers.set("X-AdminBot-Visitor", token);
+      }
     } catch {
       /* Cookie remains available. */
     }
@@ -176,7 +191,9 @@ async function runTask(
       }
       controller.signal.addEventListener("abort", cancelled, { once: true });
       wake = done;
-      if (delay !== undefined) timer = setTimeout(() => done("status"), delay);
+      if (delay !== undefined) {
+        timer = setTimeout(() => done("status"), delay);
+      }
     });
   taskActivities.set(key, activity);
   notify();
@@ -198,7 +215,9 @@ async function runTask(
                 method: action === "status" || action === "result" ? "GET" : "POST",
               });
       } catch (error) {
-        if (controller.signal.aborted) throw error;
+        if (controller.signal.aborted) {
+          throw error;
+        }
         activity.message =
           "Connection lost. Reconnect to the same task; your request will not be submitted twice.";
         notify();
@@ -222,7 +241,9 @@ async function runTask(
       try {
         body = await response.clone().json();
       } catch (error) {
-        if (controller.signal.aborted) throw error;
+        if (controller.signal.aborted) {
+          throw error;
+        }
         if (response.ok) {
           // A partial response says nothing about whether the server accepted or finished work.
           // Keep both submission and owner identities until a complete response is retrieved.
@@ -239,7 +260,9 @@ async function runTask(
       const envelope = body as { task?: TaskHandle; error?: { message?: string } } | null;
       const task = envelope?.task;
       if (!task || typeof task.id !== "string") {
-        if (response.ok || response.status === 404 || response.status === 410) save(key);
+        if (response.ok || response.status === 404 || response.status === 410) {
+          save(key);
+        }
         return response;
       }
       identity.id = task.id;
@@ -258,7 +281,7 @@ async function runTask(
           { status: 409, headers: { "Content-Type": "application/json" } },
         );
       }
-      const expiry = task.expiresAt ? new Date(task.expiresAt).getTime() : NaN;
+      const expiry = task.expiresAt ? new Date(task.expiresAt).getTime() : Number.NaN;
       if (Number.isFinite(expiry) && expiry <= Date.now()) {
         save(key);
         return new Response(

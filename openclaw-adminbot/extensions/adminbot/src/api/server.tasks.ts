@@ -6,10 +6,18 @@ import { inferenceCallContext } from "./server.inference.js";
 
 export function taskView(task: TaskRecord) {
   const actions: string[] = [];
-  if (task.status === "shed") actions.push("wait");
-  if (["shed", "queued", "running"].includes(task.status)) actions.push("cancel");
-  if (task.status === "needs_retry" || task.status === "failed") actions.push("retry");
-  if (task.status === "completed") actions.push("result");
+  if (task.status === "shed") {
+    actions.push("wait");
+  }
+  if (["shed", "queued", "running"].includes(task.status)) {
+    actions.push("cancel");
+  }
+  if (task.status === "needs_retry" || task.status === "failed") {
+    actions.push("retry");
+  }
+  if (task.status === "completed") {
+    actions.push("result");
+  }
   return {
     id: task.id,
     kind: task.kind,
@@ -23,10 +31,18 @@ export function taskView(task: TaskRecord) {
 }
 
 function statusCode(task: TaskRecord): number {
-  if (task.status === "completed" || task.status === "cancelled") return 200;
-  if (task.status === "expired") return 410;
-  if (task.status === "failed") return 502;
-  if (task.status === "shed" || task.status === "needs_retry") return 409;
+  if (task.status === "completed" || task.status === "cancelled") {
+    return 200;
+  }
+  if (task.status === "expired") {
+    return 410;
+  }
+  if (task.status === "failed") {
+    return 502;
+  }
+  if (task.status === "shed" || task.status === "needs_retry") {
+    return 409;
+  }
   return 202;
 }
 
@@ -78,10 +94,15 @@ export async function submitHttpTask(
         timer = setTimeout(() => resolve(runtime.get(submission.id, owner) ?? task), 150);
       }),
     ]);
-    if (timer) clearTimeout(timer);
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
-  if (task.status === "completed") sendJson(res, 200, task.result);
-  else sendTask(res, task);
+  if (task.status === "completed") {
+    sendJson(res, 200, task.result);
+  } else {
+    sendTask(res, task);
+  }
 }
 
 export async function handleTaskRoute(
@@ -104,7 +125,9 @@ export async function handleTaskRoute(
     return true;
   }
   const match = /^\/tasks\/([^/]+)(?:\/(result|wait|cancel|retry))?$/u.exec(url.pathname);
-  if (!match?.[1]) return false;
+  if (!match?.[1]) {
+    return false;
+  }
   const task = runtime.get(decodeURIComponent(match[1]));
   if (!task || (task.owner !== owner && !mayManageShared(task)) || !mayRead(task)) {
     sendJson(res, 404, { error: { message: "no such task" } });
@@ -116,15 +139,22 @@ export async function handleTaskRoute(
     return true;
   }
   if (req.method === "GET" && action === "result") {
-    if (task.status === "completed") sendJson(res, 200, task.result);
-    else sendTask(res, task);
+    if (task.status === "completed") {
+      sendJson(res, 200, task.result);
+    } else {
+      sendTask(res, task);
+    }
     return true;
   }
   if (req.method === "POST" && (action === "wait" || action === "retry" || action === "cancel")) {
     try {
-      if (action === "cancel") runtime.cancel(task.id, task.owner);
-      else if (action === "wait") runtime.wait(task.id, task.owner);
-      else runtime.retry(task.id, task.owner);
+      if (action === "cancel") {
+        runtime.cancel(task.id, task.owner);
+      } else if (action === "wait") {
+        runtime.wait(task.id, task.owner);
+      } else {
+        runtime.retry(task.id, task.owner);
+      }
       sendTask(res, runtime.get(task.id, task.owner) ?? task);
     } catch (error) {
       sendJson(res, 409, {

@@ -105,7 +105,10 @@ export async function handleInferenceRoute(
       return true;
     }
     if (url.pathname === "/inference/settings" && req.method === "GET") {
-      sendJson(res, 200, { ...gate.settings(), ...(tasks ? { task_persistence: tasks.metrics().persist } : {}) });
+      sendJson(res, 200, {
+        ...gate.settings(),
+        ...(tasks ? { task_persistence: tasks.metrics().persist } : {}),
+      });
       return true;
     }
     if (url.pathname === "/inference/settings" && req.method === "PUT") {
@@ -125,7 +128,9 @@ export async function handleInferenceRoute(
       sendJson(res, 200, gate.setShutdownGraceMs(value, owner));
       return true;
     }
-    if (req.method !== "POST" || url.pathname === "/inference/settings") return false;
+    if (req.method !== "POST" || url.pathname === "/inference/settings") {
+      return false;
+    }
     if (url.pathname === "/inference/cancel-pending") {
       const body = readRecord(await readJsonOrEmpty(req));
       if (
@@ -146,8 +151,11 @@ export async function handleInferenceRoute(
       sendJson(res, 409, { error: { message: "inference gate is shutting down" } });
       return true;
     }
-    if (url.pathname === "/inference/pause") tasks?.pause();
-    else tasks?.resume();
+    if (url.pathname === "/inference/pause") {
+      tasks?.pause();
+    } else {
+      tasks?.resume();
+    }
     sendJson(
       res,
       200,

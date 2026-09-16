@@ -4,13 +4,24 @@ import { listRecentTasks, applicationResultSummary, type RecoveredTask } from ".
 import { taskActivities, taskChanges, taskFetch } from "../task-request.ts";
 
 function taskLabel(path: string): string {
-  if (path.includes("reimbursement")) return "Reimbursement";
-  if (path.includes("guidebook") || path.includes("lab-sharing/ask")) return "Guidebook answer";
-  if (path.includes("/cv/scan") || path === "cv.scan") return "CV scan";
-  if (path.includes("/cv/blurb") || path === "cv.blurb") return "CV blurb";
-  if (path.includes("/papers/import/columns") || path === "import-columns")
+  if (path.includes("reimbursement")) {
+    return "Reimbursement";
+  }
+  if (path.includes("guidebook") || path.includes("lab-sharing/ask")) {
+    return "Guidebook answer";
+  }
+  if (path.includes("/cv/scan") || path === "cv.scan") {
+    return "CV scan";
+  }
+  if (path.includes("/cv/blurb") || path === "cv.blurb") {
+    return "CV blurb";
+  }
+  if (path.includes("/papers/import/columns") || path === "import-columns") {
     return "Column suggestions";
-  if (path.includes("privacy")) return "Private task";
+  }
+  if (path.includes("privacy")) {
+    return "Private task";
+  }
   return "Task";
 }
 
@@ -28,25 +39,35 @@ export class AdminBotTaskStatus extends LitElement {
     this.historyRequest = new AbortController();
     this.recovered = [];
     this.historyError = "";
-    if (!this.baseUrl) return;
+    if (!this.baseUrl) {
+      return;
+    }
     try {
       const tasks = await listRecentTasks(
         this.baseUrl.replace(/\/$/u, ""),
         this.sessionContext,
         this.historyRequest.signal,
       );
-      if (generation !== this.generation) return;
+      if (generation !== this.generation) {
+        return;
+      }
       const active = new Set(Array.from(taskActivities.values(), (entry) => entry.task?.id));
       this.recovered = tasks.filter((task) => !active.has(task.id)).map((task) => ({ task }));
       for (const entry of this.recovered) {
-        if (["queued", "running"].includes(entry.task.status)) void this.resume(entry, "status");
+        if (["queued", "running"].includes(entry.task.status)) {
+          void this.resume(entry, "status");
+        }
       }
     } catch {
-      if (generation === this.generation) this.historyError = "Recent tasks could not be loaded.";
+      if (generation === this.generation) {
+        this.historyError = "Recent tasks could not be loaded.";
+      }
     }
   }
   private async resume(entry: RecoveredTask, action: string) {
-    if (entry.busy) return;
+    if (entry.busy) {
+      return;
+    }
     const generation = this.generation;
     entry.busy = true;
     entry.error = undefined;
@@ -65,7 +86,9 @@ export class AdminBotTaskStatus extends LitElement {
         },
       );
       const result = await response.json();
-      if (generation !== this.generation) return;
+      if (generation !== this.generation) {
+        return;
+      }
       if (!response.ok) {
         entry.error = result?.error?.message ?? "The task result is unavailable.";
         entry.task = {
@@ -83,8 +106,9 @@ export class AdminBotTaskStatus extends LitElement {
         entry.task = { ...entry.task, status: "completed", actions: ["result"] };
       }
     } catch {
-      if (generation === this.generation)
+      if (generation === this.generation) {
         entry.error = "The connection was interrupted. Reconnect to retrieve this task.";
+      }
     } finally {
       if (generation === this.generation) {
         entry.busy = false;
@@ -98,7 +122,9 @@ export class AdminBotTaskStatus extends LitElement {
         (changed.has("sessionContext") && changed.get("sessionContext") !== undefined) ||
         (changed.has("baseUrl") && changed.get("baseUrl") !== undefined)
       ) {
-        for (const activity of taskActivities.values()) activity.detach();
+        for (const activity of taskActivities.values()) {
+          activity.detach();
+        }
         taskActivities.clear();
       }
       void this.restore();
@@ -111,14 +137,18 @@ export class AdminBotTaskStatus extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     taskChanges.addEventListener("change", this.changed);
-    if (this.hasUpdated && this.baseUrl) void this.restore();
+    if (this.hasUpdated && this.baseUrl) {
+      void this.restore();
+    }
   }
   override disconnectedCallback() {
     taskChanges.removeEventListener("change", this.changed);
     this.generation++;
     this.historyRequest?.abort();
     this.recovered = [];
-    for (const activity of taskActivities.values()) activity.detach();
+    for (const activity of taskActivities.values()) {
+      activity.detach();
+    }
     super.disconnectedCallback();
   }
   override render() {
@@ -198,5 +228,6 @@ export class AdminBotTaskStatus extends LitElement {
       )} `;
   }
 }
-if (!customElements.get("adminbot-task-status"))
+if (!customElements.get("adminbot-task-status")) {
   customElements.define("adminbot-task-status", AdminBotTaskStatus);
+}

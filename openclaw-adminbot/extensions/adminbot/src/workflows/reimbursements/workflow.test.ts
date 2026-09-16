@@ -473,9 +473,8 @@ describe("reimbursement intake at a busy gate", () => {
     // fetchLocalModel wraps transport errors as "unreachable" so the dashboard names the endpoint.
     // A shed must not be wrapped that way: the model is fine, the GPU is busy, and the member needs
     // the handle to wait on -- not an instruction to check a server.
-    const { createSaturatedGate, settleMicrotasks } = await import(
-      "../../inference/gate.test-support.js"
-    );
+    const { createSaturatedGate, settleMicrotasks } =
+      await import("../../inference/gate.test-support.js");
     const { InferenceDeferredError } = await import("../../inference/gate.js");
     const saturated = createSaturatedGate();
     await settleMicrotasks();

@@ -104,24 +104,28 @@ export async function askGuidebook(
           `guidebook index unreadable at ${indexPath}: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
-      if (!index || index.chunks.length === 0)
+      if (!index || index.chunks.length === 0) {
         return unavailable(
           `no guidebook index at ${indexPath}; run scripts/adminbot-guidebook-sync.ts`,
         );
-      if (options.allowIndex && !options.allowIndex(index))
+      }
+      if (options.allowIndex && !options.allowIndex(index)) {
         return unavailable("Guidebook content is not approved for this audience.");
-      if (index.embeddingModel !== config.embeddingModel)
+      }
+      if (index.embeddingModel !== config.embeddingModel) {
         return unavailable(
           `guidebook index was built with ${index.embeddingModel} but this host embeds with ${config.embeddingModel}; re-sync it`,
         );
+      }
       const hash = createHash("sha256").update(JSON.stringify(index)).digest("hex");
       const originalHash = await taskStep("guidebook.index-version", { indexPath }, () => hash, {
         replaySafe: true,
       });
-      if (originalHash !== hash)
+      if (originalHash !== hash) {
         throw new Error(
           "Guidebook changed before context selection finished; submit a new question.",
         );
+      }
       const [queryVector] = await embedLocally({
         fetchImpl,
         baseUrl: config.embeddingBaseUrl,
@@ -135,14 +139,17 @@ export async function askGuidebook(
         inputs: [question],
         ...(options.signal ? { signal: options.signal } : {}),
       });
-      if (!queryVector) return unavailable("local embedding returned nothing");
+      if (!queryVector) {
+        return unavailable("local embedding returned nothing");
+      }
       const hits = rankGuidebookChunks({
         chunks: index.chunks,
         queryVector,
         ...(params.maxResults === undefined ? {} : { maxResults: params.maxResults }),
       });
-      if (hits.length === 0)
+      if (hits.length === 0) {
         return unavailable("the guidebook has nothing close enough to this question");
+      }
       // Retain the chosen excerpts, not another full copy of the embedding index for each question.
       return {
         excerpts: hits
@@ -153,7 +160,9 @@ export async function askGuidebook(
     },
     { replaySafe: true },
   );
-  if ("failure" in prepared) return prepared.failure;
+  if ("failure" in prepared) {
+    return prepared.failure;
+  }
   const { excerpts, sources } = prepared;
   const answer = await completeLocally({
     fetchImpl,

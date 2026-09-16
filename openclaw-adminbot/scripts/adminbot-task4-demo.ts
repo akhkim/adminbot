@@ -20,7 +20,9 @@ async function listen(server: Server): Promise<string> {
     });
   });
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("No loopback listener address");
+  if (!address || typeof address === "string") {
+    throw new Error("No loopback listener address");
+  }
   return `http://127.0.0.1:${address.port}`;
 }
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -67,7 +69,9 @@ const model = createServer(async (req, res) => {
   }
   if (req.method === "POST" && pathname === "/demo/release") {
     holding = false;
-    for (const release of [...held]) release();
+    for (const release of [...held]) {
+      release();
+    }
     reply({ holding, held: held.size });
     return;
   }
@@ -77,7 +81,9 @@ const model = createServer(async (req, res) => {
     return;
   }
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.from(chunk));
+  for await (const chunk of req) {
+    chunks.push(Buffer.from(chunk));
+  }
   const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
     messages: Array<{ role: string; content: string }>;
   };
@@ -89,7 +95,7 @@ const model = createServer(async (req, res) => {
   peak = Math.max(peak, active);
   const release = () => {
     held.delete(release);
-    if (!res.destroyed)
+    if (!res.destroyed) {
       reply({
         choices: [
           {
@@ -105,19 +111,24 @@ const model = createServer(async (req, res) => {
           },
         ],
       });
+    }
   };
   res.once("close", () => {
     active--;
     held.delete(release);
   });
-  if (holding) held.add(release);
-  else setTimeout(release, 10);
+  if (holding) {
+    held.add(release);
+  } else {
+    setTimeout(release, 10);
+  }
 });
 const modelUrl = await listen(model);
 const mockFetch = (input: string | URL, init?: RequestInit) => {
   const url = new URL(input);
-  if (url.origin !== modelUrl || url.pathname !== "/v1/chat/completions")
+  if (url.origin !== modelUrl || url.pathname !== "/v1/chat/completions") {
     throw new Error("Demo refuses a model destination outside its loopback mock");
+  }
   return fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -182,7 +193,9 @@ service.server.on("request", (req, res) => {
       .end(JSON.stringify({ error: "Route disabled in the isolated task demo" }));
     return;
   }
-  for (const handler of handlers) handler.call(service.server, req, res);
+  for (const handler of handlers) {
+    handler.call(service.server, req, res);
+  }
 });
 const baseUrl = await listen(service.server);
 let stopping: Promise<void> | undefined;
@@ -198,7 +211,7 @@ function stop() {
   })();
   return stopping;
 }
-for (const signal of ["SIGINT", "SIGTERM"] as const)
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     console.log(
       "Draining tasks and inference; mock release and API grace controls remain available.",
@@ -211,6 +224,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
       },
     );
   });
+}
 
 let shedAtBurst = 0;
 let sharePerOwner = 0;
@@ -258,7 +272,11 @@ async function runSmoke() {
   await request("/inference/pause", "POST");
   await request(`${modelUrl}/demo/release`, "POST");
   await until(() => gate.stats().in_flight === 0, "Active call did not settle while paused");
-  assert(["queued", "running"].includes((await request(`/tasks/${b.body.task.id}`)).body.task?.status ?? ""));
+  assert(
+    ["queued", "running"].includes(
+      (await request(`/tasks/${b.body.task.id}`)).body.task?.status ?? "",
+    ),
+  );
   assert.equal(calls.length, 1, "Pause must prevent the waiting task from sending its model call");
   await request("/inference/resume", "POST");
   assert.deepEqual(await final(a.body.task.id), {
@@ -308,18 +326,26 @@ async function runSmoke() {
   sharePerOwner = share;
   shedAtBurst = burst.filter((response) => response.body.task?.status === "shed").length;
   assert(shedAtBurst > 0, `A burst of ${burstSize} past a share of ${share} must shed`);
-  await until(async () => {
-    let outstanding = 0;
-    for (const id of ids) {
-      const status = (await request(`/tasks/${id}`)).body.task?.status;
-      if (status === "completed") continue;
-      outstanding += 1;
-      // Wait is idempotent on a row that is already queued or running, so a client that polls
-      // cannot turn one request into two.
-      if (status === "shed") await request(`/tasks/${id}/wait`, "POST");
-    }
-    return outstanding === 0;
-  }, "Burst tasks did not all finish", 60_000);
+  await until(
+    async () => {
+      let outstanding = 0;
+      for (const id of ids) {
+        const status = (await request(`/tasks/${id}`)).body.task?.status;
+        if (status === "completed") {
+          continue;
+        }
+        outstanding += 1;
+        // Wait is idempotent on a row that is already queued or running, so a client that polls
+        // cannot turn one request into two.
+        if (status === "shed") {
+          await request(`/tasks/${id}/wait`, "POST");
+        }
+      }
+      return outstanding === 0;
+    },
+    "Burst tasks did not all finish",
+    60_000,
+  );
   const outputs = await Promise.all(
     ids.map(async (id, i) => {
       const result = await final(id);
