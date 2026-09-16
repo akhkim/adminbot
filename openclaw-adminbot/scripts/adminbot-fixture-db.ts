@@ -1,27 +1,6 @@
-// Builds a throwaway adminbot.sqlite full of obviously-fake data, so load and concurrency work can
-// be run against production *scale* without production *content*.
-//
-//   node --import tsx scripts/adminbot-fixture-db.ts [db] [--write] [--members 160] [--seed 1]
-//
-// Dry run by default, like scripts/adminbot-seed-member-passwords.ts: it reports exactly what it
-// would write and creates nothing. `--write` is the only thing that touches the disk.
-//
-// Why generate instead of copying a real database: the thing Task 4 cares about is 100+ members
-// against one GPU, and that is a *shape* -- a roster size, a paper count, a distribution of
-// proposals -- not a set of facts. Copying a real roster to get the shape would put 159 named
-// people and their credentials into a test fixture that then gets passed around, committed by
-// accident, and left on disk. Nothing here is read from a real database, bundle, or export.
-//
-// The schema is not restated here. `new AdminBotSqliteStore(path)` runs the real CREATE TABLE
-// statements from extensions/adminbot/src/persistence/sqlite.ts, and the rows go in through the
-// real store methods, so a fixture cannot drift from the schema the service actually reads. A
-// hand-written copy of the DDL would have been wrong the first time a column was added.
-//
-// Every generated address is on a domain that cannot resolve (example.com / example.org /
-// .invalid, reserved by RFC 2606 and RFC 6761 precisely so that test data cannot reach anyone).
-// That is deliberate belt-and-braces: a fixture is exactly the kind of file someone eventually
-// points a real mailer at, and the failure mode of a plausible-looking domain is mail to a
-// stranger. The lab's own domain never appears in this file.
+// Generate synthetic records through AdminBotSqliteStore so fixtures follow the service schema.
+// Dry-run by default; --write creates the database.
+// node --import tsx scripts/adminbot-fixture-db.ts [db] [--write] [--members 160] [--seed 1]
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -37,18 +16,14 @@ import {
 } from "../extensions/adminbot/src/contracts/actions.ts";
 import { AdminBotSqliteStore } from "../extensions/adminbot/src/persistence/sqlite.ts";
 
-// The live roster is 159 people. Defaulting to 160 means a load run reproduces the queue depth the
-// real deployment sees rather than a tidy round number that happens to be smaller.
 const DEFAULT_MEMBERS = 160;
 const DEFAULT_PAPERS = 40;
 const DEFAULT_PROPOSALS = 24;
 
-// Under .artifacts/ because that path is already gitignored, so a fixture cannot be committed by
-// an absent-minded `git add -A`. Never defaults to ~/.openclaw/state/adminbot.sqlite -- see
-// assertSafeTarget.
+// Keep generated databases under the ignored artifacts directory.
 const DEFAULT_DB = ".artifacts/adminbot-task4/adminbot-fixture.sqlite";
 
-/** RFC 2606 / RFC 6761 reserved. None of these resolve, and none can be registered. */
+/** Reserved example domains for synthetic identities. */
 const SAFE_EMAIL_DOMAINS = ["example.com", "example.org", "example.invalid"] as const;
 
 const RESEARCH_BRANCHES = [
@@ -68,14 +43,7 @@ const RESEARCH_TOPICS = [
 
 const MEMBER_TYPES = ["full", "alumni", "coauthor-major", "coauthor-minor", "interviewee"] as const;
 
-/**
- * mulberry32: a small, fast, fully deterministic PRNG.
- *
- * Determinism is the point of the whole script. A load test that shows a regression has to be
- * re-runnable against the identical roster, and `Math.random` would give every run a different
- * distribution of privilege levels and paper steps -- so a queue that only misbehaves on a roster
- * with 30 admins would appear and disappear between runs with no way to pin it.
- */
+/** Seeded mulberry32 keeps fixture runs reproducible. */
 function makeRandom(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -150,14 +118,7 @@ function parseArgs(argv: string[]): Options {
   };
 }
 
-/**
- * Refuses to write anywhere a real database could plausibly live.
- *
- * The realistic accident is not malice, it is muscle memory: the path in every other AdminBot
- * script's docstring is `~/.openclaw/state/adminbot.sqlite`, and pasting it here would overwrite
- * the live roster with 160 fake people. The guard is a refusal rather than a prompt because this
- * runs unattended in a load rig, where a prompt is just a hang.
- */
+/** Reject known runtime-state paths to prevent accidental fixture overwrites. */
 function assertSafeTarget(databasePath: string): void {
   const resolved = path.resolve(databasePath);
   const home = process.env.HOME ?? "";
@@ -172,7 +133,7 @@ function assertSafeTarget(databasePath: string): void {
       );
     }
   }
-  // Anything shipped as a "runtime bundle" is someone else's real data by definition.
+  // Exclude runtime bundles from fixture destinations.
   if (/runtime-bundle/u.test(resolved)) {
     throw new Error(`refusing to write inside a runtime bundle path: ${resolved}`);
   }
@@ -189,20 +150,11 @@ function pick<T>(random: () => number, values: readonly T[]): T {
   return values[Math.floor(random() * values.length)];
 }
 
-/**
- * One roster member.
- *
- * The name is a counter, not a generated-plausible name, and that is on purpose: a faker-style
- * roster full of "Sarah Chen" and "Miguel Torres" is indistinguishable at a glance from a real
- * export, so nobody reviewing a screenshot or a log line can tell whether they are looking at test
- * data. "Test Member 001" can only be one thing.
- */
+/** Numbered names make synthetic identities recognizable in logs and screenshots. */
 function makeMember(index: number, random: () => number): AdminBotLabMember {
   const ordinal = String(index + 1).padStart(3, "0");
   const domain = SAFE_EMAIL_DOMAINS[index % SAFE_EMAIL_DOMAINS.length] as string;
-  // Weighted rather than uniform: the live roster is overwhelmingly plain members with a handful
-  // of admins, and a uniform draw would give a 160-person fixture 40 admins -- which changes how
-  // many rows a privilege-filtered sweep touches, and so changes the load being measured.
+  // Keep admins a small minority so privilege-filtered sweeps exercise a mixed roster.
   const roll = random();
   const privilege: (typeof adminBotPrivilegeLevels)[number] =
     roll < 0.05 ? "admin" : roll < 0.12 ? "external_collaborator" : roll < 0.2 ? "trial" : "member";
@@ -249,14 +201,7 @@ function makePaper(index: number, random: () => number, memberIds: string[]): Ad
   };
 }
 
-/**
- * One proposal, plus the execution row and audit trail that a real approved action leaves behind.
- *
- * Written as a set rather than as three unrelated tables because that is the invariant Task 4 has
- * to preserve under concurrency: `adminbot_executions.idempotency_key` is UNIQUE, and a queue that
- * retries a shed request must not produce a second execution row for the same key. A fixture with
- * proposals but no executions would let a broken implementation look correct.
- */
+/** Generate a linked proposal, dry-run execution, and audit trail. */
 function makeProposal(
   index: number,
   random: () => number,

@@ -1,28 +1,8 @@
 #!/usr/bin/env node
-// Load simulation for the inference gate (extensions/adminbot/src/inference/gate.ts).
-//
-//   node --import tsx scripts/adminbot-load-sim.ts [--scenario all|burst|refuse|hang|restart|retry|matcher]
-//                                                  [--requests 50] [--latency-ms 400] [--port 8100]
-//
-// The pass condition it exists to test, from the task sheet: "Burst traffic does not lose or
-// silently duplicate requests, and users receive a clear status." Each scenario stands the mock
-// vLLM (scripts/adminbot-mock-local-model.mjs) at --concurrency 2, fires traffic through a real
-// durable gate on a real fixture database, and then reconciles from three directions at once:
-//
-//   1. What the client submitted: every logical request, by submission key.
-//   2. What the database says happened: one row per key, exactly one terminal audit event per row,
-//      no id completed twice, and a retrievable user-visible outcome (status + result) for each.
-//   3. What the server saw: peak_arrivals <= capacity (the client's own in-flight count as observed
-//      from the other end of the socket -- see TASK4-SETUP.md for why peak_served proves nothing),
-//      and zero duplicate request fingerprints.
-//
-// A scenario passes only if all three agree. "One terminal event per id" alone would pass a run in
-// which the same logical request was sent twice under two ids; reconciling by submission key and
-// by server fingerprint is what closes that gap.
-//
-// The kill-and-restart scenario runs the gate in a child process and SIGKILLs it mid-queue, because
-// durability that has only been tested by dropping an object in the same process has not been
-// tested. No production data is touched: the fixture generator writes the database this reads.
+// Exercise admission, retries, outages, crash recovery, and real workflow callers.
+// Reconcile client submissions and outcomes against SQLite rows/audits and mock fingerprints.
+// The restart scenario kills a child process; interrupted requests must not be replayed.
+// node --import tsx scripts/adminbot-load-sim.ts --scenario all
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -182,23 +162,22 @@ function freshFixture(artifactsDir: string, name: string): string {
 function openGate(
   dbPath: string,
   baseUrl: string,
-  overrides: Parameters<typeof resolveInferenceGateConfig>[1] = {},
+  env: NodeJS.ProcessEnv = {},
 ): { store: AdminBotSqliteStore; gate: InferenceGate } {
   const store = new AdminBotSqliteStore(dbPath);
   const gate = createInferenceGate({
     db: store.inferenceDatabase(),
     env: { ADMINBOT_LOCAL_BASE_URL: baseUrl },
     localBaseUrl: baseUrl,
-    config: resolveInferenceGateConfig(
-      {},
-      {
-        capacity: 2,
-        queue: { maxDepth: 200, sweepIntervalMs: 0, ...overrides.queue },
-        health: { intervalMs: 0, ...overrides.health },
-        ...(overrides.escalate ? { escalate: overrides.escalate } : {}),
-        ...(overrides.defaultTimeoutMs ? { defaultTimeoutMs: overrides.defaultTimeoutMs } : {}),
-      },
-    ),
+    config: resolveInferenceGateConfig({
+      // This harness explicitly exercises the optional durable queue, including SIGKILL recovery.
+      ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS: "true",
+      ADMINBOT_INFERENCE_CAPACITY: "2",
+      ADMINBOT_INFERENCE_QUEUE_MAX_DEPTH: "200",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ...env,
+    }),
     alert: (line) => log(`  ${line}`),
   });
   return { store, gate };
@@ -250,11 +229,7 @@ const TERMINAL = new Set(["inference.completed", "inference.failed", "inference.
 
 type Check = { name: string; ok: boolean; detail: string };
 
-/**
- * The three-way reconciliation. `submitted` is the set of logical requests the client made, by
- * submission key; `expectRows` is whether every one of them should have a row (false for the
- * refused-connection scenario, where they do -- they fail -- but is left true everywhere).
- */
+/** Reconcile submission keys and client outcomes with queue rows, audit events, and mock counters. */
 function reconcile(params: {
   store: AdminBotSqliteStore;
   submitted: Map<string, InferenceOutcome[]>;
@@ -478,8 +453,6 @@ async function scenarioBurst(o: Options): Promise<ScenarioResult> {
       ],
     };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -557,8 +530,6 @@ async function scenarioRetry(o: Options): Promise<ScenarioResult> {
     });
     return { name: "retry: lost responses, concurrent duplicate submissions, payload conflict", checks, notes: [] };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -570,8 +541,8 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
   const mock = await startMock(o.port, ["--fail-mode", "refuse"]);
   const dbPath = freshFixture(o.artifactsDir, "refuse");
   const { store, gate } = openGate(dbPath, mock.baseUrl, {
-    health: { failureThreshold: 2 },
-    escalate: { healthFailures: 2 },
+    ADMINBOT_INFERENCE_HEALTH_FAILURE_THRESHOLD: "2",
+    ADMINBOT_INFERENCE_ESCALATE_HEALTH_FAILURES: "2",
   });
   gate.start();
   const submitted = new Map<string, InferenceOutcome[]>();
@@ -615,8 +586,6 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
     });
     return { name: "refuse: model server not running (ECONNREFUSED)", checks, notes: [] };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -627,7 +596,7 @@ async function scenarioRefuse(o: Options): Promise<ScenarioResult> {
 async function scenarioHang(o: Options): Promise<ScenarioResult> {
   const mock = await startMock(o.port, ["--fail-mode", "hang"]);
   const dbPath = freshFixture(o.artifactsDir, "hang");
-  const { store, gate } = openGate(dbPath, mock.baseUrl, { defaultTimeoutMs: 800 });
+  const { store, gate } = openGate(dbPath, mock.baseUrl, { ADMINBOT_INFERENCE_DEFAULT_TIMEOUT_MS: "800" });
   gate.start();
   const submitted = new Map<string, InferenceOutcome[]>();
   const t0 = Date.now();
@@ -661,8 +630,6 @@ async function scenarioHang(o: Options): Promise<ScenarioResult> {
     });
     return { name: "hang: model server accepts and never answers", checks, notes: [] };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -891,8 +858,6 @@ async function scenarioMatcher(o: Options): Promise<ScenarioResult> {
       notes: [`${workshops.length} workshops x ${inputs.papers.length} papers (batch 4) = ${total} calls`],
     };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -954,8 +919,6 @@ async function scenarioBroker(o: Options): Promise<ScenarioResult> {
     ];
     return { name: "broker: 20 private tasks, two local stages each, under a burst", checks, notes: [`broker fallback audits recorded: ${audits.length}`] };
   } finally {
-    // Never close the database under a call that is still running: a completion that cannot be
-    // recorded would look, in the report, exactly like a lost request.
     await untilIdle(gate, 30_000).catch(() => undefined);
     gate.close();
     store.close();
@@ -1039,6 +1002,7 @@ async function waitFor(condition: () => boolean, timeoutMs: number, message: str
   }
 }
 
+// Drain calls before closing SQLite so their terminal events can still be recorded.
 async function untilIdle(gate: InferenceGate, timeoutMs = 120_000) {
   await waitFor(() => gate.stats().in_flight === 0 && gate.stats().queued === 0, timeoutMs, "gate did not drain");
   // Let the last completion's transaction settle.

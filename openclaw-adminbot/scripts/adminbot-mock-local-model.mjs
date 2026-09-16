@@ -1,27 +1,7 @@
 #!/usr/bin/env node
-// Stands in for the Aurora vLLM server at http://127.0.0.1:8000/v1, so the concurrency behaviour
-// of everything that calls it can be exercised on a laptop with no GPU and no tunnel.
-//
-//   node scripts/adminbot-mock-local-model.mjs [--concurrency 2] [--latency-ms 800] [--fail-mode 503]
-//
-// Why a mock at all, when scripts/adminbot-model-tunnel.mjs already reaches the real one: the
-// question this is built to answer is "what does AdminBot do when the model server is saturated,
-// slow, or gone", and none of those three states can be *asked for* on the real server. Aurora
-// serves the lab. You cannot take it down to see what happens when it goes down, and you cannot
-// ask it to admit exactly two requests and hold the third for ninety seconds.
-//
-// Defaults deliberately mirror the production unit rather than being round numbers:
-// deploy/aurora/setup-qwen35-vllm.sh starts vLLM with `--max-num-seqs 2`, so two is what the lab's
-// single GPU actually admits, and a load test run against a mock that admits ten would prove
-// nothing about the deployment it is standing in for.
-//
-// Loopback by default and refuses to bind anywhere else without --allow-remote, because every
-// caller in this tree asserts the endpoint is loopback before it will send anything
-// (assertLoopbackModelUrl in extensions/adminbot/src/cv-scan.ts, assertLoopbackUrl in
-// extensions/adminbot/src/guidebook/local-client.ts). A mock on 0.0.0.0 would be refused by the
-// callers it exists to serve, and would meanwhile be an open model endpoint on the network.
-//
-// No production bundle, credential, or database is read by this script. The replies are generated.
+// Controllable mock vLLM for load, timeout, and recovery tests; no GPU required.
+// node scripts/adminbot-mock-local-model.mjs --concurrency 2 --latency-ms 800
+// See --help for failure modes and the control API.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -163,16 +143,7 @@ if (!options.allowRemote && !LOOPBACK_HOSTS.has(options.host)) {
   process.exit(1);
 }
 
-/**
- * Everything a running server tracks, in one place so /__control can rewrite the knobs and
- * /__stats can read the counters without either reaching into a closure.
- *
- * `peakArrivals` is the number that actually answers the question this mock was built for. A
- * client with a broken queue and a client with a working one look identical from `peakServed`,
- * because the mock caps that at `concurrency` either way. `peakArrivals` counts requests that have
- * been received and not yet answered -- queued ones included -- so it is the client's own
- * in-flight count as observed from the other end of the socket.
- */
+/** Shared control settings and counters. peakArrivals includes queued requests; peakServed is capped by the mock and cannot validate client admission. */
 const state = {
   concurrency: options.concurrency,
   queueLimit: options.queueLimit,
@@ -467,16 +438,7 @@ async function streamCompletion(response, model, fingerprint, content) {
  */
 const waiters = [];
 
-/**
- * One release per acquisition, and idempotent.
- *
- * A single shared release function would be correct only as long as every caller invokes it
- * exactly once, and the streaming path can end several ways (client abort, socket destroyed,
- * normal completion) that are easy to make double-release. One over-release permanently lowers
- * `inFlightServed`, and from then on the gate admits more than `--concurrency` -- which is the one
- * invariant this whole script exists to hold. Making it unmissable is cheaper than auditing every
- * exit path forever.
- */
+/** Release each permit once: abort, socket close, and completion can overlap. */
 function makeRelease() {
   let released = false;
   return () => {
@@ -675,18 +637,7 @@ const server = http.createServer((request, response) => {
   );
 });
 
-/**
- * The control plane gets a listener of its own, on --control-port (default: --port + 1).
- *
- * Because `refuse` is implemented by closing the model listener -- it has to be, since "the server
- * is not running" is not something you can express in a response -- serving /__control from that
- * same socket would make the mode a one-way door: the load test turns the server off and then has
- * no way to turn it back on, and has to kill the process and lose its counters. That is exactly
- * what happened the first time this was exercised.
- *
- * The routes stay mounted on the main port too, so a run that never uses `refuse` needs to know
- * about only one port.
- */
+/** Use a separate control listener so refuse mode can close and reopen the model listener without losing counters. */
 const controlServer = http.createServer((request, response) => {
   const route = new URL(request.url ?? "/", `http://${options.host}`).pathname;
   void handleControlPlane(request, response, route)
@@ -879,14 +830,7 @@ async function handle(request, response) {
   }
 }
 
-/**
- * The durable half of a log line, recorded before the outcome is known.
- *
- * `prompt_preview` and not the prompt: a load test is run against synthetic fixtures, but this
- * script will sooner or later be pointed at a real workflow by someone debugging, and a full
- * transcript of every CV and receipt prompt sitting in an NDJSON file is a liability nobody asked
- * for. The fingerprint is what duplicate assertions need, and it is not reversible.
- */
+/** Log a fingerprint for duplicate detection and a 120-character preview. Previews may contain prompt content; use synthetic inputs. */
 function baseEntry(request, route, body, receivedAt, fingerprint) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   const last = messages.at(-1);
