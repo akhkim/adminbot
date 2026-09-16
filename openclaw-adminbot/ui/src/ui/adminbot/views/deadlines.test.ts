@@ -24,6 +24,7 @@ import {
   workshopGroupLabel,
   priorDeadlineRevisions,
   renderDeadlines,
+  venueConferenceSites,
   venueLocationLabel,
   venueLocationSites,
   workshopSourceLinks,
@@ -1614,6 +1615,37 @@ describe("venue location", () => {
     ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
   });
 
+  it("prefers the workshop's own site over the conference's list of them", () => {
+    // The whole point of the field: a NeurIPS 2026 workshop meets in one of the three cities,
+    // and the row should name that one rather than making the reader guess between them.
+    const venue = {
+      conference_location: "Sydney, Australia; Atlanta, USA; Paris, France",
+      workshop_location: "Sydney, Australia",
+    } as DeadlineVenue;
+    expect(venueLocationSites(venue)).toEqual(["Sydney, Australia"]);
+    expect(venueLocationLabel(venue)).toBe("Sydney, Australia");
+    // The conference's own answer is still reachable, because the group heading needs it.
+    expect(venueConferenceSites(venue)).toEqual([
+      "Sydney, Australia",
+      "Atlanta, USA",
+      "Paris, France",
+    ]);
+  });
+
+  it("falls back to every site when the workshop never said which one", () => {
+    // Twenty of the hundred and twenty-five publish no city. Listing all three is the honest
+    // answer there, and is what the board showed before it could tell them apart.
+    const venue = {
+      conference_location: "Sydney, Australia; Atlanta, USA; Paris, France",
+      workshop_location: "",
+    } as DeadlineVenue;
+    expect(venueLocationSites(venue)).toEqual([
+      "Sydney, Australia",
+      "Atlanta, USA",
+      "Paris, France",
+    ]);
+  });
+
   it("keeps a single-site location whole, commas and all", () => {
     expect(
       venueLocationSites({ conference_location: "Budapest, Hungary" } as DeadlineVenue),
@@ -1710,17 +1742,18 @@ describe("venue location", () => {
         .querySelector(".deadline-group__heading .deadline-location__sites")
         ?.textContent?.trim(),
     ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    // Every workshop row carries it too. Deciding whether to submit is deciding whether to
-    // travel, and the heading scrolls out of view on a long group. The heading keeps its copy
+    // Every workshop row carries one too, and names its own city rather than repeating the
+    // heading. The heading keeps the full list because it stands for every row beneath it, and
     // because that is what a collapsed group shows.
     const rows = [...group.querySelectorAll<HTMLElement>(".deadline-group__row")];
     expect(rows.length).toBeGreaterThan(1);
-    for (const row of rows) {
-      expect(
-        row.querySelector(".deadline-location__sites")?.textContent?.trim(),
-        "a workshop row with no location",
-      ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    }
+    const sites = rows.map((row) =>
+      row.querySelector(".deadline-location__sites")?.textContent?.trim(),
+    );
+    expect(sites.every(Boolean), "a workshop row with no location").toBe(true);
+    // At least one row resolved to a single city -- otherwise this would pass against the old
+    // behaviour of printing the conference's whole list on every line.
+    expect(sites.some((site) => site === "Sydney, Australia")).toBe(true);
   });
 
   it("puts the location on a standalone group row, which has no heading above it", async () => {

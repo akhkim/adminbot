@@ -626,20 +626,34 @@ export function archivalLabelOf(venue: DeadlineVenue): string {
 }
 
 /**
- * Every site the venue meets at, in the order it published them.
+ * Every site the parent conference meets at, in the order it published them.
  *
- * A workshop has no location of its own: it inherits the conference it is attached to, which is
- * what the reader is deciding about when a workshop deadline comes up. A multi-site conference
- * publishes all of its sites and the board keeps all of them — NeurIPS 2026 runs in Sydney,
- * Atlanta and Paris at once, and naming only the first would tell most attendees the wrong
- * continent. Sites arrive semicolon-separated because each one carries its own "City, Country"
- * comma.
+ * A multi-site conference publishes all of its sites and the board keeps all of them — NeurIPS
+ * 2026 runs in Sydney, Atlanta and Paris at once, and naming only the first would tell most
+ * attendees the wrong continent. Sites arrive semicolon-separated because each one carries its
+ * own "City, Country" comma.
+ *
+ * This is the conference's answer, not a workshop's. A group heading wants it, because the
+ * heading stands for every row beneath it; a single row wants `venueLocationSites`.
  */
-export function venueLocationSites(venue: DeadlineVenue): string[] {
+export function venueConferenceSites(venue: DeadlineVenue): string[] {
   return (venue.conference_location ?? "")
     .split(";")
     .map((site) => site.trim())
     .filter(Boolean);
+}
+
+/**
+ * Where this particular venue meets.
+ *
+ * A workshop at a multi-site conference meets at one of its sites, not all of them, and the
+ * collector resolves which by asking the workshop's own page — so a row prefers that answer over
+ * the inherited list. It falls back to every site when the workshop did not say, which is both
+ * the honest answer and what the board showed before it could tell them apart.
+ */
+export function venueLocationSites(venue: DeadlineVenue): string[] {
+  const site = (venue.workshop_location ?? "").trim();
+  return site ? [site] : venueConferenceSites(venue);
 }
 
 /**
@@ -657,8 +671,8 @@ export function venueLocationLabel(venue: DeadlineVenue): string {
  * to know which surface it is on, and the full list stays in `title` for the case where CSS
  * truncates it.
  */
-function renderVenueLocation(venue: DeadlineVenue) {
-  const sites = venueLocationSites(venue);
+function renderVenueLocation(venue: DeadlineVenue, override?: readonly string[]) {
+  const sites = override ?? venueLocationSites(venue);
   if (!sites.length) {
     return nothing;
   }
@@ -2251,7 +2265,7 @@ class AdminbotDeadlinesView extends LitElement {
         // reading entries[0] keeps the heading populated when the earliest deadline happens to
         // be a row the collector found no location for.
         const groupLocation = group.entries.find(
-          (entry) => venueLocationSites(entry.venue).length,
+          (entry) => venueConferenceSites(entry.venue).length,
         )?.venue;
         // A conference counts its own calendar. Splitting one venue's rows by archival status
         // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
@@ -2304,7 +2318,9 @@ class AdminbotDeadlinesView extends LitElement {
                           >${capitalize(group.entries[0].venue.deadline_label)}</span
                         ><span aria-hidden="true"> · </span>`
                     : nothing}${renderAoeDateTime(group.entries[0].venue.deadline_aoe)}
-                  ${groupLocation ? renderVenueLocation(groupLocation) : nothing}
+                  ${groupLocation
+                    ? renderVenueLocation(groupLocation, venueConferenceSites(groupLocation))
+                    : nothing}
                 </small>
               </span>
               <span class="deadline-group__count">${counts.join(" · ")}</span>
