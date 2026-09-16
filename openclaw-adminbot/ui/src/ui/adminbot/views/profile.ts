@@ -60,6 +60,7 @@ import { timezoneForLocation } from "../data/timezone-for-location.ts";
 // Saving goes through the same self-edit path the Lab Members table uses, whose server-side
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { renderDateControl } from "../date-control.ts";
+import "./wait-preference.ts";
 import {
   isOptionalMemberField,
   PROFILE_FIELD_GROUPS,
@@ -2078,6 +2079,15 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
+      <!-- Not a member field, so it sits outside the field list: the lab's model queue holds it,
+           keyed by the signed-in principal. It is offered inline the first time a request is
+           saved, which is when it means something; this is where someone who said yes then can
+           find it again. -->
+      <adminbot-wait-preference
+        standalone
+        .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+        .sessionContext=${loadStoredMemberSession()?.sessionToken ?? ""}
+      ></adminbot-wait-preference>
       ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
       ${renderPhotoCompliance(state, member, props)}
       ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}

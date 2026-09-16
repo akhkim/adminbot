@@ -2,6 +2,7 @@ import { html, LitElement, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { listRecentTasks, applicationResultSummary, type RecoveredTask } from "../task-history.ts";
 import { taskActivities, taskChanges, taskFetch } from "../task-request.ts";
+import "./wait-preference.ts";
 
 function taskLabel(path: string): string {
   if (path.includes("reimbursement")) {
@@ -23,6 +24,68 @@ function taskLabel(path: string): string {
     return "Private task";
   }
   return "Task";
+}
+
+type TaskCopy = { state: string; detail?: string };
+
+/**
+ * What a member reads. Assembled from the status alone, never from the server's error text.
+ *
+ * The earlier version concatenated a label, a raw status word and whatever message the service
+ * happened to send, which produced lines like "Reimbursement: waiting for your choice / Task
+ * saved. Choose Wait to run it." That describes this panel's state, not the lab's, and leaves the
+ * member to work out that a GPU is busy. Every string here says what happened on the server and,
+ * where there is a decision, what each option does.
+ */
+function taskCopy(label: string, status: string): TaskCopy {
+  switch (status) {
+    case "shed":
+      return {
+        state: `${label} saved`,
+        detail: "The lab's model is busy right now. Wait in the queue, or cancel and come back.",
+      };
+    case "queued":
+      return {
+        state: `${label} waiting in queue`,
+        detail: "It runs as soon as the model frees up.",
+      };
+    case "running":
+      return { state: `${label} running now` };
+    case "needs_retry":
+      return {
+        state: `${label} interrupted`,
+        detail: "It stopped partway. Work already finished was kept; resuming picks up from there.",
+      };
+    case "cancelled":
+      return { state: `${label} cancelled`, detail: "Nothing was sent to the model." };
+    case "expired":
+      return {
+        state: `${label} expired`,
+        detail: "Saved requests are kept for a day. Submit it again to run it.",
+      };
+    case "failed":
+      return { state: `${label} could not finish`, detail: "Submit it again to try once more." };
+    case "completed":
+      return { state: `${label} finished` };
+    default:
+      return { state: `${label}: ${status.replaceAll("_", " ")}` };
+  }
+}
+
+/** Buttons say what pressing them does, not which route they call. */
+function actionLabel(action: string): string {
+  switch (action) {
+    case "wait":
+      return "Wait in queue";
+    case "retry":
+      return "Resume";
+    case "cancel":
+      return "Cancel";
+    case "result":
+      return "View result";
+    default:
+      return action;
+  }
 }
 
 /** Embedded in existing workflows; closing the view detaches polling, never cancels server work. */
@@ -96,7 +159,7 @@ export class AdminBotTaskStatus extends LitElement {
           status:
             response.status === 410
               ? "expired"
-              : result?.error?.message === "Task cancelled."
+              : result?.error?.message === "Cancelled by owner"
                 ? "cancelled"
                 : "failed",
           actions: [],
@@ -154,18 +217,18 @@ export class AdminBotTaskStatus extends LitElement {
   override render() {
     return html`${Array.from(taskActivities.values())
       .filter((activity) => activity.task || activity.message)
-      .map(
-        (activity) => html` <section class="callout" aria-label="Task progress">
-          <p role="status">
-            ${taskLabel(activity.label)}:
-            ${activity.task?.status === "shed"
-              ? "waiting for your choice"
-              : activity.task?.status === "needs_retry"
-                ? "retry required"
-                : (activity.task?.status.replaceAll("_", " ") ?? "disconnected")}
-          </p>
-          ${activity.message ? html`<p>${activity.message}</p>` : ""}
-          ${activity.message?.startsWith("Connection lost")
+      .map((activity) => {
+        const label = taskLabel(activity.label);
+        const copy = activity.task
+          ? taskCopy(label, activity.task.status)
+          : {
+              state: `${label} disconnected`,
+              detail: "The connection dropped. Reconnecting picks up the same request.",
+            };
+        return html` <section class="callout" aria-label="Task progress">
+          <p role="status">${copy.state}</p>
+          ${copy.detail ? html`<p>${copy.detail}</p>` : ""}
+          ${!activity.task || activity.message?.startsWith("Connection lost")
             ? html`<button class="btn" @click=${() => activity.act("status")}>Reconnect</button>`
             : ""}
           ${(activity.task?.actions ?? [])
@@ -173,16 +236,18 @@ export class AdminBotTaskStatus extends LitElement {
             .map(
               (action) => html`
                 <button class="btn" @click=${() => activity.act(action)}>
-                  ${action === "wait"
-                    ? "Wait"
-                    : action === "cancel"
-                      ? "Cancel"
-                      : "Retry uncertain step"}
+                  ${actionLabel(action)}
                 </button>
               `,
             )}
-        </section>`,
-      )}
+          ${activity.task?.status === "shed"
+            ? html`<adminbot-wait-preference
+                .baseUrl=${this.baseUrl}
+                .sessionContext=${this.sessionContext}
+              ></adminbot-wait-preference>`
+            : ""}
+        </section>`;
+      })}
     ${this.historyError
       ? html`<p role="status">
           ${this.historyError} <button class="btn" @click=${() => this.restore()}>Reconnect</button>
@@ -193,8 +258,12 @@ export class AdminBotTaskStatus extends LitElement {
       .map(
         (entry) => html`
           <section class="callout" aria-label="Recovered task">
-            <p>${taskLabel(entry.task.kind ?? "")}: ${entry.task.status.replaceAll("_", " ")}</p>
-            ${entry.error ? html`<p role="alert">${entry.error}</p>` : ""}
+            <p>${taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).state}</p>
+            ${(() => {
+              const detail =
+                entry.error ?? taskCopy(taskLabel(entry.task.kind ?? ""), entry.task.status).detail;
+              return detail ? html`<p role=${entry.error ? "alert" : "status"}>${detail}</p>` : "";
+            })()}
             ${entry.result !== undefined
               ? html`
                   <p
@@ -213,13 +282,7 @@ export class AdminBotTaskStatus extends LitElement {
                   .map(
                     (action) => html`
                       <button class="btn" @click=${() => this.resume(entry, action)}>
-                        ${action === "result"
-                          ? "View result"
-                          : action === "wait"
-                            ? "Wait"
-                            : action === "retry"
-                              ? "Retry uncertain step"
-                              : "Cancel"}
+                        ${actionLabel(action)}
                       </button>
                     `,
                   )}
