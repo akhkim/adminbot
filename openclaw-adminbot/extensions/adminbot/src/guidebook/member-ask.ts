@@ -46,7 +46,10 @@ export async function askMemberGuidebook(
         env,
         ...(options.gate ? { gate: options.gate } : {}),
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-        signal: AbortSignal.timeout(30_000),
+        // A budget, not a signal. local-client.ts states the rule: a caller must send this as
+        // a number, or the clock starts before the gate admits the call -- and a member's
+        // question queued behind two 120s calls would be cancelled while still in line.
+        timeoutMs: 30_000,
         allowIndex: (index) =>
           createHash("sha256").update(JSON.stringify(index)).digest("hex") === approvedHash,
       },

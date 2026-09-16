@@ -17,7 +17,7 @@ import {
   type InferenceGate,
   type InferenceResponseRecord,
 } from "../../inference/gate.js";
-import { taskStep } from "../../tasks/context.js";
+import { currentTaskContext, taskStep } from "../../tasks/context.js";
 import { checkReimbursementPackage, describeCheck } from "./check.js";
 
 const execFileAsync = promisify(execFile);
@@ -526,6 +526,11 @@ async function fetchLocalModel(
     }
     // A queue decision is not unreachability: the model was deliberately not called. Wrapping it
     // would tell the member to check a server that is fine, just busy.
+    if (currentTaskContext()) {
+      // ctx.step has already rewrapped this, so the identity test below cannot fire inside a
+      // task. The runtime owns the outcome; do not translate it into a model-server failure.
+      throw error;
+    }
     if (isInferenceDeferred(error)) {
       throw error;
     }

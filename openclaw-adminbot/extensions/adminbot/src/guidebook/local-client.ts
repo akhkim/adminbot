@@ -19,6 +19,7 @@ import {
   type InferenceFetch,
   type InferenceGate,
 } from "../inference/gate.js";
+import { currentTaskContext } from "../tasks/context.js";
 
 export { assertLoopbackUrl };
 
@@ -94,6 +95,13 @@ async function postJson(
       fetchImpl: fetchImpl as unknown as InferenceFetch,
     });
   } catch (error) {
+    if (currentTaskContext()) {
+      // Inside a task the gate's decision has already been through ctx.step, which rewraps
+      // anything that is not a TaskInterruptedError as a TaskNeedsRetryError -- so the identity
+      // test below never fires there, and a queued request was being reported as an unreachable
+      // model. The runtime owns these outcomes; pass them up untouched.
+      throw error;
+    }
     if (error instanceof Error && error.name === "InferenceDeferredError") {
       // A queue decision, not an outage. The wording below would send the operator to check the
       // model server for a request that was deliberately not sent to it.
