@@ -30,8 +30,10 @@ import type {
 } from "../contracts/actions.js";
 import {
   adminBotBadgeNominationStatuses,
+  adminBotBadgeSuggestionStatuses,
   type AdminBotBadgeDefinitionInput,
   type AdminBotBadgeNominationStatus,
+  type AdminBotBadgeSuggestionStatus,
 } from "../contracts/badges.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
@@ -2997,6 +2999,81 @@ async function handleAuthenticatedRoute(
       res,
       service.decideBadgeNomination(
         decodeURIComponent(rejectBadgeNomination[1]!),
+        "rejected",
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/badges/suggestions") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const rawStatus = url.searchParams.get("status");
+    const status =
+      rawStatus &&
+      adminBotBadgeSuggestionStatuses.includes(rawStatus as AdminBotBadgeSuggestionStatus)
+        ? (rawStatus as AdminBotBadgeSuggestionStatus)
+        : undefined;
+    const isAdmin = principal.member.privilege_level === "admin";
+    sendServiceResult(
+      res,
+      service.listBadgeSuggestions({
+        // A member reads their own suggestions and nobody else's. The queue is a list of things
+        // the lab has not decided on, which is an admin's working surface rather than a board --
+        // but somebody who filed one has to be able to see it is still there, or the form reads as
+        // having swallowed it.
+        ...(isAdmin ? {} : { suggestedBy: principal.member.id }),
+        ...(status ? { status } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/badges/suggestions") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      // The suggester is the session, never the body -- the same rule a nomination follows.
+      res,
+      service.submitBadgeSuggestion(principal.member.id, {
+        category: asString(body.category),
+        name: asString(body.name),
+        description: asString(body.description),
+        rationale: asString(body.rationale),
+        ...(typeof body.criteria_url === "string" ? { criteria_url: body.criteria_url } : {}),
+        ...(typeof body.tier === "string" ? { tier: body.tier } : {}),
+      }),
+    );
+    return;
+  }
+  const approveBadgeSuggestion = /^\/badges\/suggestions\/([^/]+)\/approve$/u.exec(url.pathname);
+  if (req.method === "POST" && approveBadgeSuggestion) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideBadgeSuggestion(
+        decodeURIComponent(approveBadgeSuggestion[1]!),
+        "approved",
+        principal.member.id,
+      ),
+    );
+    return;
+  }
+  const rejectBadgeSuggestion = /^\/badges\/suggestions\/([^/]+)\/reject$/u.exec(url.pathname);
+  if (req.method === "POST" && rejectBadgeSuggestion) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.decideBadgeSuggestion(
+        decodeURIComponent(rejectBadgeSuggestion[1]!),
         "rejected",
         principal.member.id,
       ),

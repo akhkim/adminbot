@@ -167,3 +167,88 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     sort_order: 80,
   },
 ] as const;
+
+// A badge the lab does not have yet.
+//
+// Nominating is already open to everybody (see AdminBotBadgeNomination), but only against the
+// catalogue an admin has already written. That is the wrong way round for the half of this board
+// that is meant to recognise work nobody anticipated: the person who notices that a kind of
+// contribution goes unrecognised is almost never the person who maintains the badge list, and
+// until now they had nowhere to say so. So a member may propose the badge itself, and an admin
+// decides whether it joins the catalogue.
+//
+// Deliberately not a shortcut to `createBadgeDefinition`. A badge definition is lab vocabulary --
+// every future nomination is phrased in it and every holder's profile renders it -- so it stays an
+// admin's call, and what a member contributes is the case for making it. Approving a suggestion
+// runs the same validation and duplicate checks as an admin creating the badge by hand, because it
+// is the same code path; the suggestion just supplies the fields.
+
+export const ADMINBOT_BADGE_RATIONALE_MAX = 2000;
+
+export const adminBotBadgeSuggestionStatuses = ["pending", "approved", "rejected"] as const;
+
+export type AdminBotBadgeSuggestionStatus = (typeof adminBotBadgeSuggestionStatuses)[number];
+
+/**
+ * What a member fills in. The badge's own fields, plus the argument for having it.
+ *
+ * The badge fields mirror AdminBotBadgeDefinitionInput exactly rather than being a looser
+ * free-text "what should the badge be" -- an admin who has to retype a suggestion into the real
+ * form will approve fewer of them, and a suggestion that cannot be approved as written is a
+ * suggestion whose validation happens after somebody has already said yes.
+ *
+ * `id`, `family_key` and `sort_order` are absent on purpose: they are the catalogue's business,
+ * settled when the badge is created, not something a member can meaningfully propose.
+ */
+export type AdminBotBadgeSuggestionInput = {
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  /** Why the lab should have this badge. Required -- see the note on the record below. */
+  rationale: string;
+};
+
+export type AdminBotBadgeSuggestion = {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  /**
+   * The case for the badge, in the suggester's words.
+   *
+   * Required, for the reason evidence is required on a nomination: the description says what the
+   * badge would mean and says nothing about whether the lab needs it. An admin reading a bare
+   * name-and-description has to reconstruct the argument or guess at it, and a queue of items
+   * nobody can decide is a queue nobody reads. It is also the part that survives rejection -- the
+   * record of what somebody thought was going unrecognised.
+   */
+  rationale: string;
+  /**
+   * Absent once the suggester has been purged from the roster.
+   *
+   * Same split as `submitted_by_member_id` on an opportunity, for the same reason: an approved
+   * suggestion produced a badge the whole lab can now hold, so the row outlives its author and
+   * loses the name. Anything still pending or rejected never became lab vocabulary and goes.
+   */
+  suggested_by?: string;
+  status: AdminBotBadgeSuggestionStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  /**
+   * The badge this suggestion turned into, set on approval.
+   *
+   * Carried so the queue can link a decided row to the thing it produced, and so the catalogue can
+   * say which of its entries the lab asked for rather than an admin. Absent on a rejection.
+   */
+  created_badge_id?: string;
+};
+
+/** What the queue renders: the record plus the suggester's name, for the attribution line. */
+export type AdminBotBadgeSuggestionView = AdminBotBadgeSuggestion & {
+  suggested_by_name?: string;
+};

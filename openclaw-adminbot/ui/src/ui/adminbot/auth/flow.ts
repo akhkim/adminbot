@@ -127,6 +127,9 @@ export type MemberAuthHost = {
   profileBadgeNominations?: import("./session.ts").BadgeNominationView[];
   profileBadgeNominationsLoadedAt?: number | null;
   profileBadgeNominationsError?: import("../data/badges.ts").BadgeLoadError | null;
+  adminBotBadgeSuggestions?: import("./session.ts").BadgeSuggestionView[];
+  adminBotBadgeSuggestionsLoadedAt?: number | null;
+  adminBotBadgeSuggestionsError?: import("../data/badges.ts").BadgeLoadError | null;
   adminBotOnboarding: MemberOnboarding | null;
   // Whether the signed-in member has explicitly clicked "I have read this" on the dashboard's
   // onboarding warning card, in this browser. False (and the card showing) is the default
@@ -690,6 +693,11 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.profileBadgeNominations = [];
   host.profileBadgeNominationsLoadedAt = null;
   host.profileBadgeNominationsError = null;
+  // A member's own suggestions are theirs, and an admin's copy of this list is the whole queue --
+  // either way it is the last session's data and must not survive into the next one's page.
+  host.adminBotBadgeSuggestions = [];
+  host.adminBotBadgeSuggestionsLoadedAt = null;
+  host.adminBotBadgeSuggestionsError = null;
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
   // Collaborate, which this function used to walk straight past. Its snapshot is one member's own

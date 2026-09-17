@@ -21,6 +21,10 @@ import {
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
+  ADMINBOT_BADGE_DESCRIPTION_MAX,
+  ADMINBOT_BADGE_RATIONALE_MAX,
+} from "../../../../../extensions/adminbot/src/contracts/badges.js";
+import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
@@ -34,6 +38,7 @@ import type {
   AssignedBadge,
   BadgeDefinition,
   BadgeNominationView,
+  BadgeSuggestionInput,
   LabMember,
   MemberProfileUpdate,
 } from "../auth/session.ts";
@@ -68,6 +73,9 @@ export type ProfileProps = {
   /** `memberId` is who the badge is for; omitted means the viewer themselves. */
   onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
   onPickBadgeNominee?: (memberId: string) => void;
+  /** Propose a badge the catalogue does not have. An admin decides whether it joins. */
+  onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
+  onToggleBadgeSuggestForm?: (open: boolean) => void;
   onNavigateToTab?: (tab: Tab) => void;
 };
 
@@ -1182,6 +1190,210 @@ function renderBadgesSection(state: AppViewState, member: LabMember) {
   `;
 }
 
+/**
+ * Propose a badge the catalogue does not have.
+ *
+ * Nominating and suggesting are deliberately two forms rather than one with a "something else"
+ * option. They ask different questions -- who should hold this, versus what should exist -- they
+ * are decided on different evidence, and only one of them changes lab vocabulary. Folding them
+ * together would put the rarer, heavier action in front of everybody filing the common one.
+ *
+ * Shut by default, behind one button, for the same reason: most visits to this page are not this.
+ * Open, it is the badge's own fields plus the argument for it, because an admin approving this
+ * creates the badge exactly as written -- see submitBadgeSuggestion, which validates the fields
+ * here rather than at approval so nothing reaches the queue that cannot be accepted.
+ */
+function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
+  const open = state.profileBadgeSuggestOpen === true;
+  const busy = state.badgeSuggestionBusy === true;
+  const mine = state.adminBotBadgeSuggestions ?? [];
+  return html`
+    <section class="profile__section" data-testid="profile-badge-suggestions">
+      <h2 class="profile__section-title">${t("profile.badges.suggestTitle")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.suggestHint")}</p>
+      <div class="profile__form-actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="profile-badge-suggest-toggle"
+          aria-expanded=${open ? "true" : "false"}
+          @click=${() => props.onToggleBadgeSuggestForm?.(!open)}
+        >
+          ${t(open ? "profile.badges.suggestClose" : "profile.badges.suggestOpen")}
+        </button>
+      </div>
+      ${state.badgeSuggestionNotice
+        ? html`<div
+            class="callout ${state.badgeSuggestionNotice.kind === "error" ? "danger" : "success"}"
+            role="status"
+            data-testid="profile-badge-suggest-notice"
+          >
+            ${state.badgeSuggestionNotice.text}
+          </div>`
+        : nothing}
+      ${open
+        ? html`<form
+            class="profile-badge-form"
+            data-testid="profile-badge-suggest-form"
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget as HTMLFormElement);
+              const text = (key: string) => String(data.get(key) ?? "").trim();
+              const criteriaUrl = text("criteria_url");
+              const tier = text("tier");
+              props.onSubmitBadgeSuggestion?.({
+                category: text("category"),
+                name: text("name"),
+                description: text("description"),
+                rationale: text("rationale"),
+                // Left off rather than sent empty: the service treats an absent optional field and
+                // a blank one the same way, and an absent one keeps the stored record clean.
+                ...(criteriaUrl ? { criteria_url: criteriaUrl } : {}),
+                ...(tier ? { tier } : {}),
+              });
+            }}
+          >
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestName")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="name"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestNamePlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestCategory")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="category"
+                type="text"
+                list="profile-badge-categories"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestCategoryPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <!-- The categories already in use, offered rather than enforced: a suggestion that
+                   needs a new category is exactly the kind this form exists for. -->
+              <datalist id="profile-badge-categories">
+                ${[
+                  ...new Set(
+                    (state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category),
+                  ),
+                ]
+                  .toSorted()
+                  .map((category) => html`<option value=${category}></option>`)}
+              </datalist>
+              <span class="profile__field-hint">${t("profile.badges.suggestCategoryHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestDescription")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="description"
+                type="text"
+                maxlength=${ADMINBOT_BADGE_DESCRIPTION_MAX}
+                placeholder=${t("profile.badges.suggestDescriptionPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestDescriptionHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestTier")}</span>
+              <input
+                class="input"
+                name="tier"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestTierPlaceholder")}
+                ?disabled=${busy}
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestTierHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestCriteria")}</span>
+              <input class="input" name="criteria_url" type="url" ?disabled=${busy} />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestRationale")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <textarea
+                class="input adminbot-badge-textarea--compact"
+                name="rationale"
+                rows="2"
+                maxlength=${ADMINBOT_BADGE_RATIONALE_MAX}
+                placeholder=${t("profile.badges.suggestRationalePlaceholder")}
+                ?disabled=${busy}
+                required
+              ></textarea>
+            </label>
+            <div class="profile__form-actions">
+              <button class="btn primary" type="submit" ?disabled=${busy}>
+                ${t("profile.badges.suggestButton")}
+              </button>
+            </div>
+          </form>`
+        : nothing}
+      <div class="profile-badge-nominations">
+        <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
+        ${mine.length
+          ? html`<ul class="profile-badge-nominations__list">
+              ${mine.map(
+                (suggestion) => html`<li
+                  class="profile-badge-nominations__item"
+                  data-testid="profile-badge-suggestion"
+                >
+                  <div class="profile-badge-nominations__head">
+                    <span class="profile-badge">
+                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+                      ${suggestion.tier
+                        ? `${suggestion.name} · ${suggestion.tier}`
+                        : suggestion.name}
+                    </span>
+                    <span class=${`ab-chip ab-chip--${suggestion.status}`}>
+                      ${t(`profile.badges.status.${suggestion.status}`)}
+                    </span>
+                  </div>
+                  <div>${suggestion.description}</div>
+                  <div class="profile-badge-nominations__meta">
+                    <span>${suggestion.category}</span>
+                    ${nominationMeta("submittedAt", suggestion.created_at)}
+                    ${nominationMeta("decidedAt", suggestion.decided_at)}
+                    <!-- Says what approval actually did. "Approved" alone leaves somebody
+                         wondering whether the badge exists yet. -->
+                    ${suggestion.created_badge_id
+                      ? html`<span>${t("profile.badges.suggestionAdded")}</span>`
+                      : nothing}
+                  </div>
+                </li>`,
+              )}
+            </ul>`
+          : html`<p class="profile__badges-empty">${t("profile.badges.suggestionsEmpty")}</p>`}
+      </div>
+    </section>
+  `;
+}
+
 function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | undefined) {
   if (!value) {
     return nothing;
@@ -1675,7 +1887,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       </header>
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
       ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
-      ${renderOnboardingPointer(state, props)}
+      ${renderBadgeSuggestion(state, props)} ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since
            "view as" landed, an admin editing this profile is a thing that happens, and this is

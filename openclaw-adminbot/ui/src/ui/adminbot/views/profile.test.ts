@@ -1442,3 +1442,167 @@ it("saves the missing-form checkbox and clears it when a link is supplied", () =
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
 });
+
+// Suggesting a badge the catalogue does not have. The other half of this page's badge block --
+// renderBadgeSelfNomination puts somebody forward for a badge that exists; this asks for one that
+// does not.
+describe("suggesting a new badge", () => {
+  function suggestState(overrides: Partial<AppViewState> = {}): AppViewState {
+    return createState(createMember(), {
+      adminBotBadgeDefinitions: [
+        {
+          id: "team_contributor__bug_hunter",
+          family_key: "team_contributor__bug_hunter",
+          category: "Team Contributor",
+          name: "Bug Hunter",
+          description: "Found a substantive error.",
+          sort_order: 10,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      profileBadgeNominations: [],
+      adminBotBadgeSuggestions: [],
+      ...overrides,
+    } as unknown as Partial<AppViewState>);
+  }
+
+  // Shut by default: most visits to this page are somebody editing a field, not proposing lab
+  // vocabulary, and an eight-input form standing open would be the largest thing on the page.
+  it("stays collapsed until asked for", () => {
+    const container = renderPage(suggestState(), vi.fn());
+
+    expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="profile-badge-suggest-form"]')).toBeNull();
+    const toggle = container.querySelector('[data-testid="profile-badge-suggest-toggle"]');
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens on request and submits the badge plus the case for it", () => {
+    const onSubmitBadgeSuggestion = vi.fn();
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+      { onSubmitBadgeSuggestion },
+    );
+
+    const form = container.querySelector<HTMLFormElement>(
+      '[data-testid="profile-badge-suggest-form"]',
+    )!;
+    form.querySelector<HTMLInputElement>('[name="name"]')!.value = "Reviewer Rescue";
+    form.querySelector<HTMLInputElement>('[name="category"]')!.value = "Team Contributor";
+    form.querySelector<HTMLInputElement>('[name="description"]')!.value =
+      "Turned around an emergency review in 48 hours.";
+    form.querySelector<HTMLTextAreaElement>('[name="rationale"]')!.value =
+      "Three people did this for ICML and none of it is recorded.";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(onSubmitBadgeSuggestion).toHaveBeenCalledWith({
+      name: "Reviewer Rescue",
+      category: "Team Contributor",
+      description: "Turned around an emergency review in 48 hours.",
+      rationale: "Three people did this for ICML and none of it is recorded.",
+    });
+  });
+
+  // Blank optionals are left off rather than sent empty, so a stored suggestion carries the fields
+  // somebody actually answered.
+  it("omits the optional fields when they are left blank, and sends them when they are not", () => {
+    const onSubmitBadgeSuggestion = vi.fn();
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+      { onSubmitBadgeSuggestion },
+    );
+
+    const form = container.querySelector<HTMLFormElement>(
+      '[data-testid="profile-badge-suggest-form"]',
+    )!;
+    const fill = () => {
+      form.querySelector<HTMLInputElement>('[name="name"]')!.value = "Causality";
+      form.querySelector<HTMLInputElement>('[name="category"]')!.value = "Causality";
+      form.querySelector<HTMLInputElement>('[name="description"]')!.value = "Passed level four.";
+      form.querySelector<HTMLTextAreaElement>('[name="rationale"]')!.value = "The tiers stop at 3.";
+    };
+    fill();
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).not.toHaveProperty("tier");
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).not.toHaveProperty("criteria_url");
+
+    fill();
+    form.querySelector<HTMLInputElement>('[name="tier"]')!.value = "Level 4";
+    form.querySelector<HTMLInputElement>('[name="criteria_url"]')!.value = "https://lab.test/c";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).toMatchObject({
+      tier: "Level 4",
+      criteria_url: "https://lab.test/c",
+    });
+  });
+
+  // The categories already in use are offered but not enforced -- a suggestion that needs a new
+  // category is exactly what this form is for, so the control is a datalist and not a select.
+  it("offers the existing categories without restricting the answer to them", () => {
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const input = container.querySelector<HTMLInputElement>('[name="category"]');
+    expect(input?.tagName).toBe("INPUT");
+    expect(input?.getAttribute("list")).toBe("profile-badge-categories");
+    expect(container.querySelector("#profile-badge-categories")?.textContent).toContain("");
+    expect(
+      [...container.querySelectorAll("#profile-badge-categories option")].map(
+        (option) => (option as HTMLOptionElement).value,
+      ),
+    ).toEqual(["Team Contributor"]);
+  });
+
+  it("lists the member's own suggestions with what became of them", () => {
+    const container = renderPage(
+      suggestState({
+        adminBotBadgeSuggestions: [
+          {
+            id: "sug_1",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Worth recording.",
+            status: "approved",
+            created_at: "2026-09-01T10:00:00.000Z",
+            decided_at: "2026-09-02T10:00:00.000Z",
+            created_badge_id: "badge_1",
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const row = container.querySelector('[data-testid="profile-badge-suggestion"]');
+    expect(row?.textContent).toContain("Reviewer Rescue");
+    expect(row?.textContent).toContain("Approved");
+    // "Approved" alone leaves somebody wondering whether the badge exists yet.
+    expect(row?.textContent).toContain("Added to the badge list.");
+  });
+
+  it("says so when there is nothing suggested yet", () => {
+    const container = renderPage(suggestState(), vi.fn());
+
+    expect(
+      container.querySelector('[data-testid="profile-badge-suggestions"]')?.textContent,
+    ).toContain("haven't suggested a badge yet");
+  });
+
+  it("surfaces the service's own refusal rather than a generic failure", () => {
+    const container = renderPage(
+      suggestState({
+        badgeSuggestionNotice: { kind: "error", text: "that badge already exists" },
+      } as unknown as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const notice = container.querySelector('[data-testid="profile-badge-suggest-notice"]');
+    expect(notice?.textContent).toContain("that badge already exists");
+    expect(notice?.className).toContain("danger");
+  });
+});

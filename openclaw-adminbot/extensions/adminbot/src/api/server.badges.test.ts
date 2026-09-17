@@ -237,4 +237,157 @@ describe("AdminBot badge routes", () => {
     });
     expect(noEvidence.status).toBe(400);
   });
+
+  // The suggestion routes, which are about what the catalogue contains rather than who holds what.
+  it("lets a member suggest a badge and an admin accept it into the catalogue", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "admin@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const suggest = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Three people did this for ICML and none of it is on anyone's record.",
+      }),
+    });
+    expect(suggest.status).toBe(200);
+    const suggestion = ((await suggest.json()) as { suggestion: { id: string; status: string } })
+      .suggestion;
+    expect(suggestion.status).toBe("pending");
+
+    const queue = await fetch(`${baseUrl}/badges/suggestions?status=pending`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    await expect(queue.json()).resolves.toMatchObject({
+      suggestions: [expect.objectContaining({ id: suggestion.id, suggested_by_name: "Pat" })],
+    });
+
+    const approve = await fetch(`${baseUrl}/badges/suggestions/${suggestion.id}/approve`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({}),
+    });
+    expect(approve.status).toBe(200);
+    const decided = (await approve.json()) as {
+      suggestion: { status: string; created_badge_id?: string };
+      badge: { id: string; name: string };
+    };
+    expect(decided.suggestion.status).toBe("approved");
+    expect(decided.badge.name).toBe("Reviewer Rescue");
+    expect(decided.suggestion.created_badge_id).toBe(decided.badge.id);
+
+    // The catalogue every member reads now carries it, which is what approval is for.
+    const catalogue = await fetch(`${baseUrl}/badges`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
+    await expect(catalogue.json()).resolves.toMatchObject({
+      badges: expect.arrayContaining([expect.objectContaining({ name: "Reviewer Rescue" })]),
+    });
+  });
+
+  it("shows a member their own suggestions and nobody else's", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    seedMember(mock, {
+      id: "sam",
+      name: "Sam",
+      email: "sam@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "sam", "sam@cs.toronto.edu");
+    const patToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+    const samToken = await loginToken(baseUrl, "sam@cs.toronto.edu");
+
+    await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${patToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Nobody gets credit for this.",
+      }),
+    });
+
+    const mine = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${patToken}` },
+    });
+    await expect(mine.json()).resolves.toMatchObject({
+      suggestions: [expect.objectContaining({ name: "Reviewer Rescue" })],
+    });
+
+    const theirs = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${samToken}` },
+    });
+    await expect(theirs.json()).resolves.toMatchObject({ suggestions: [] });
+  });
+
+  it("keeps deciding a suggestion to the privileged, and the routes to member sessions", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const suggest = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Nobody gets credit for this.",
+      }),
+    });
+    const { id } = ((await suggest.json()) as { suggestion: { id: string } }).suggestion;
+
+    // A plain member cannot decide their own suggestion, which is the whole point of the queue.
+    const selfApprove = await fetch(`${baseUrl}/badges/suggestions/${id}/approve`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({}),
+    });
+    expect(selfApprove.status).toBe(403);
+
+    // And the shared service principal is not a member, so it gets nowhere near either route.
+    const asService = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    expect(asService.status).toBe(401);
+
+    const anonymous = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ category: "x", name: "y", description: "z", rationale: "w" }),
+    });
+    expect(anonymous.status).toBe(401);
+  });
 });

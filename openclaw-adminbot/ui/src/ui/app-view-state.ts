@@ -729,6 +729,17 @@ export type AppViewState = {
   profileBadgeNominationsError: import("./adminbot/data/badges.ts").BadgeLoadError | null;
   profileBadgeBusy: boolean;
   profileBadgeNotice: { kind: "success" | "error"; text: string } | null;
+  // Suggested badges. One list for the profile form and the admin queue: the service returns the
+  // member's own to a member and the whole queue to an admin, so a second scoped copy would be the
+  // same request twice.
+  adminBotBadgeSuggestions: import("./adminbot/auth/session.ts").BadgeSuggestionView[];
+  adminBotBadgeSuggestionsLoading: boolean;
+  adminBotBadgeSuggestionsLoadedAt: number | null;
+  adminBotBadgeSuggestionsError: import("./adminbot/data/badges.ts").BadgeLoadError | null;
+  badgeSuggestionBusy: boolean;
+  badgeSuggestionNotice: { kind: "success" | "error"; text: string } | null;
+  /** Whether the profile page's "suggest a badge" form is open. Shut by default. */
+  profileBadgeSuggestOpen: boolean;
   /**
    * Who the profile page's nomination form is about. Empty means the viewer themselves.
    *

@@ -115,6 +115,31 @@ export type BadgeDefinition = BadgeDefinitionInput & {
 
 export type BadgeNominationStatus = "pending" | "approved" | "rejected";
 
+/** What a member fills in to propose a badge the catalogue does not have. */
+export type BadgeSuggestionInput = {
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  rationale: string;
+};
+
+export type BadgeSuggestionStatus = "pending" | "approved" | "rejected";
+
+export type BadgeSuggestionView = BadgeSuggestionInput & {
+  id: string;
+  /** Absent once the suggester has been purged from the roster. */
+  suggested_by?: string;
+  suggested_by_name?: string;
+  status: BadgeSuggestionStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  /** The badge it became, on an approval. */
+  created_badge_id?: string;
+};
+
 export type BadgeNominationView = {
   id: string;
   badge_id: string;
@@ -2644,6 +2669,100 @@ export function rejectBadgeNomination(
   baseUrl: string,
 ): Promise<AuthResult<BadgeNominationView>> {
   return decideBadgeNomination(nominationId, "reject", sessionToken, baseUrl);
+}
+
+/**
+ * Badge suggestions: what the catalogue should contain, as opposed to who holds what.
+ *
+ * The service decides the scope, not this call. A plain member gets their own suggestions back and
+ * an admin gets the whole queue, from the same URL -- passing a member id here would be the client
+ * asking for somebody else's, which the service would ignore anyway.
+ */
+export async function fetchBadgeSuggestions(
+  sessionToken: string,
+  baseUrl: string,
+  params: { status?: BadgeSuggestionStatus } = {},
+): Promise<AuthResult<BadgeSuggestionView[]>> {
+  const path = params.status
+    ? `/badges/suggestions?status=${encodeURIComponent(params.status)}`
+    : "/badges/suggestions";
+  const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestions = (result.body as { suggestions?: BadgeSuggestionView[] } | null)?.suggestions;
+  return { ok: true, value: suggestions ?? [] };
+}
+
+export async function submitBadgeSuggestion(
+  input: BadgeSuggestionInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  const result = await authedJson(baseUrl, "/badges/suggestions", "POST", sessionToken, {
+    category: input.category,
+    name: input.name,
+    description: input.description,
+    rationale: input.rationale,
+    ...(input.criteria_url ? { criteria_url: input.criteria_url } : {}),
+    ...(input.tier ? { tier: input.tier } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestion = (result.body as { suggestion?: BadgeSuggestionView } | null)?.suggestion;
+  return suggestion ? { ok: true, value: suggestion } : { ok: false, kind: "auth-failed" };
+}
+
+async function decideBadgeSuggestion(
+  suggestionId: string,
+  decision: "approve" | "reject",
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/suggestions/${encodeURIComponent(suggestionId)}/${decision}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestion = (result.body as { suggestion?: BadgeSuggestionView } | null)?.suggestion;
+  return suggestion ? { ok: true, value: suggestion } : { ok: false, kind: "auth-failed" };
+}
+
+export function approveBadgeSuggestion(
+  suggestionId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  return decideBadgeSuggestion(suggestionId, "approve", sessionToken, baseUrl);
+}
+
+export function rejectBadgeSuggestion(
+  suggestionId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  return decideBadgeSuggestion(suggestionId, "reject", sessionToken, baseUrl);
 }
 
 export async function loginMember(

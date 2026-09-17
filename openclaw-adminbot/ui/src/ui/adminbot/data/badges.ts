@@ -2,20 +2,26 @@ import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   approveBadgeNomination,
+  approveBadgeSuggestion,
   assignBadgeToMember,
   createBadge,
   fetchBadgeNominations,
   fetchBadges,
+  fetchBadgeSuggestions,
   loadStoredMemberSession,
   rejectBadgeNomination,
+  rejectBadgeSuggestion,
   removeBadgeFromMember,
   resolveAdminBotBaseUrl,
   submitBadgeNomination,
+  submitBadgeSuggestion,
   updateBadge,
   type AuthErrorKind,
   type BadgeDefinition,
   type BadgeDefinitionInput,
   type BadgeNominationView,
+  type BadgeSuggestionInput,
+  type BadgeSuggestionView,
 } from "../auth/session.ts";
 import {
   loadAdminBot,
@@ -56,6 +62,15 @@ export type AdminBotBadgesHost = {
   profileBadgeNominationsError: BadgeLoadError | null;
   profileBadgeBusy: boolean;
   profileBadgeNotice: BadgeNotice;
+  // Badge suggestions. One list for both surfaces, because the service already decides what is in
+  // it: a member's own for a member, the whole queue for an admin. A second host field scoped
+  // "profile" would be the same GET twice with the same answer.
+  adminBotBadgeSuggestions: BadgeSuggestionView[];
+  adminBotBadgeSuggestionsLoading: boolean;
+  adminBotBadgeSuggestionsLoadedAt: number | null;
+  adminBotBadgeSuggestionsError: BadgeLoadError | null;
+  badgeSuggestionBusy: boolean;
+  badgeSuggestionNotice: BadgeNotice;
 };
 
 function loadErrorFor(kind: AuthErrorKind): BadgeLoadError {
@@ -118,6 +133,135 @@ export function shouldLoadProfileBadgeNominations(host: AdminBotBadgesHost): boo
     !host.profileBadgeNominationsError &&
     host.profileBadgeNominationsLoadedAt === null
   );
+}
+
+export function shouldLoadBadgeSuggestions(host: AdminBotBadgesHost): boolean {
+  return (
+    !host.adminBotBadgeSuggestionsLoading &&
+    !host.adminBotBadgeSuggestionsError &&
+    host.adminBotBadgeSuggestionsLoadedAt === null
+  );
+}
+
+export async function loadBadgeSuggestions(host: AdminBotBadgesHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotBadgeSuggestions = [];
+    host.adminBotBadgeSuggestionsError = "no-session";
+    host.adminBotBadgeSuggestionsLoading = false;
+    host.adminBotBadgeSuggestionsLoadedAt = null;
+    return;
+  }
+  host.adminBotBadgeSuggestionsLoading = true;
+  host.adminBotBadgeSuggestionsError = null;
+  try {
+    const result = await fetchBadgeSuggestions(
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.adminBotBadgeSuggestions = [];
+      host.adminBotBadgeSuggestionsError = loadErrorFor(result.kind);
+      host.adminBotBadgeSuggestionsLoadedAt = null;
+      return;
+    }
+    host.adminBotBadgeSuggestions = result.value;
+    host.adminBotBadgeSuggestionsError = null;
+    host.adminBotBadgeSuggestionsLoadedAt = Date.now();
+  } finally {
+    host.adminBotBadgeSuggestionsLoading = false;
+  }
+}
+
+/**
+ * Propose a badge from the profile page.
+ *
+ * The service's 409s are worth surfacing verbatim rather than flattening into "that did not work":
+ * "that badge already exists" and "already suggested and awaiting a decision" are two different
+ * things for the member to do next, and only one of them is a dead end.
+ */
+export async function submitOwnBadgeSuggestion(
+  host: AdminBotBadgesHost,
+  input: BadgeSuggestionInput,
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotBadgeSuggestionsError = "no-session";
+    return;
+  }
+  host.badgeSuggestionBusy = true;
+  host.badgeSuggestionNotice = null;
+  try {
+    const result = await submitBadgeSuggestion(
+      input,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.badgeSuggestionNotice = {
+        kind: "error",
+        text: result.message ?? errorText(result.kind, "profile.badges.suggestFailed"),
+      };
+      return;
+    }
+    host.badgeSuggestionNotice = { kind: "success", text: t("profile.badges.suggestSubmitted") };
+    host.adminBotBadgeSuggestionsLoadedAt = null;
+    await loadBadgeSuggestions(host);
+  } finally {
+    host.badgeSuggestionBusy = false;
+  }
+}
+
+/**
+ * An admin's answer on a suggested badge.
+ *
+ * An approval changes the catalogue, so the definitions are reloaded too -- otherwise the badge
+ * the admin just created is missing from every picker on the page until something else refreshes
+ * it, which reads as the approval having failed.
+ */
+export async function decideBadgeSuggestion(
+  host: AdminBotBadgesHost,
+  suggestionId: string,
+  decision: "approve" | "reject",
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotBadgeSuggestionsError = "no-session";
+    return;
+  }
+  host.badgeSuggestionBusy = true;
+  host.badgeSuggestionNotice = null;
+  try {
+    const decide = decision === "approve" ? approveBadgeSuggestion : rejectBadgeSuggestion;
+    const result = await decide(
+      suggestionId,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.badgeSuggestionNotice = {
+        kind: "error",
+        text: result.message ?? errorText(result.kind, "adminbotBadges.suggestion.decideFailed"),
+      };
+      return;
+    }
+    host.badgeSuggestionNotice = {
+      kind: "success",
+      text: t(
+        decision === "approve"
+          ? "adminbotBadges.suggestion.approved"
+          : "adminbotBadges.suggestion.rejected",
+      ),
+    };
+    host.adminBotBadgeSuggestionsLoadedAt = null;
+    await loadBadgeSuggestions(host);
+    if (decision === "approve") {
+      host.adminBotBadgeDefinitionsLoadedAt = null;
+      await loadBadgeDefinitions(host);
+    }
+  } finally {
+    host.badgeSuggestionBusy = false;
+  }
 }
 
 export async function loadBadgeDefinitions(host: AdminBotBadgesHost): Promise<void> {

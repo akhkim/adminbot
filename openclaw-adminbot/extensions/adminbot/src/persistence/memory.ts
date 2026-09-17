@@ -38,6 +38,8 @@ import type {
   AdminBotBadgeDefinition,
   AdminBotBadgeNomination,
   AdminBotBadgeNominationStatus,
+  AdminBotBadgeSuggestion,
+  AdminBotBadgeSuggestionStatus,
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
@@ -144,6 +146,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly badgeDefinitions = new Map<string, AdminBotBadgeDefinition>();
   private readonly badgeAssignments = new Map<string, AdminBotBadgeAssignment>();
   private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
+  private readonly badgeSuggestions = new Map<string, AdminBotBadgeSuggestion>();
   private readonly opportunities = new Map<string, AdminBotOpportunity>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
@@ -357,6 +360,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         (nomination) =>
           (!params?.memberId || nomination.member_id === params.memberId) &&
           (!params?.status || nomination.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void {
+    this.badgeSuggestions.set(suggestion.id, suggestion);
+  }
+
+  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined {
+    return this.badgeSuggestions.get(suggestionId);
+  }
+
+  // Both filters are honoured here rather than only in the SQLite store. `suggestedBy` is what
+  // scopes a non-admin to their own suggestions, so a store that accepted the parameter and
+  // ignored it would serve the whole queue to every member -- and since the tests run on this
+  // store, nothing would catch it.
+  listBadgeSuggestions(params?: {
+    suggestedBy?: string;
+    status?: AdminBotBadgeSuggestionStatus;
+  }): AdminBotBadgeSuggestion[] {
+    return [...this.badgeSuggestions.values()]
+      .filter(
+        (suggestion) =>
+          (!params?.suggestedBy || suggestion.suggested_by === params.suggestedBy) &&
+          (!params?.status || suggestion.status === params.status),
       )
       .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
   }

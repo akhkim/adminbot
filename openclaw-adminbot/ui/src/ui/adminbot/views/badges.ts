@@ -2,11 +2,13 @@ import { html, nothing } from "lit";
 import { createRef, ref } from "lit/directives/ref.js";
 import { t } from "../../../i18n/index.ts";
 import "../../components/modal-dialog.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type {
   BadgeDefinition,
   BadgeDefinitionInput,
   BadgeNominationView,
+  BadgeSuggestionView,
   LabMember,
 } from "../auth/session.ts";
 import type { BadgeLoadError } from "../data/badges.ts";
@@ -43,6 +45,11 @@ export type AdminBotBadgesProps = {
   onAssign: (memberId: string, badgeId: string, evidence?: string) => void;
   onRemove: (memberId: string, badgeId: string) => void;
   onDecide: (nominationId: string, decision: "approve" | "reject") => void;
+  suggestions: BadgeSuggestionView[];
+  suggestionsLoading: boolean;
+  suggestionsError: BadgeLoadError | null;
+  suggestionBusy: boolean;
+  onDecideSuggestion: (suggestionId: string, decision: "approve" | "reject") => void;
 };
 
 function badgeLabel(badge: Pick<BadgeDefinition, "name" | "tier">): string {
@@ -527,6 +534,101 @@ function renderNominations(props: AdminBotBadgesProps) {
   `;
 }
 
+/**
+ * Badges the lab has been asked for, as opposed to people the lab has been asked to badge.
+ *
+ * Its own card next to the nominations one because the two decisions are not interchangeable:
+ * approving a nomination gives one person a badge, approving a suggestion changes what badges
+ * exist. The rationale is the part to read -- the name and description say what the badge would
+ * be, and only the rationale says why the lab needs one.
+ */
+function renderSuggestions(props: AdminBotBadgesProps) {
+  const pending = props.suggestions.filter((suggestion) => suggestion.status === "pending");
+  const decided = props.suggestions.filter((suggestion) => suggestion.status !== "pending");
+  return html`
+    <div class="card adminbot-card adminbot-card--wide" data-testid="adminbot-badge-suggestions">
+      <div class="card-title">${t("adminbotBadges.suggestion.title")}</div>
+      <div class="card-sub">${t("adminbotBadges.suggestion.sub")}</div>
+      ${props.suggestionsLoading && props.suggestions.length === 0
+        ? html`<div class="adminbot-form__meta">${t("adminbotBadges.loading")}</div>`
+        : pending.length === 0
+          ? html`<div class="adminbot-form__meta">
+              ${t("adminbotBadges.suggestion.emptyPending")}
+            </div>`
+          : html`<ul class="adminbot-badge-nominations">
+              ${pending.map(
+                (suggestion) => html`<li
+                  class="card adminbot-card adminbot-card--wide"
+                  data-testid="adminbot-badge-suggestion"
+                >
+                  <div class="adminbot-form__row">
+                    <div>
+                      <strong>${badgeLabel(suggestion)}</strong>
+                      <div class="adminbot-form__meta">${suggestion.category}</div>
+                      <div class="adminbot-form__meta">
+                        ${t("adminbotBadges.field.submittedAt")}:
+                        ${submittedAt(suggestion.created_at)}
+                      </div>
+                      <div class="adminbot-form__meta" data-testid="adminbot-badge-suggester">
+                        ${suggestion.suggested_by_name ??
+                        suggestion.suggested_by ??
+                        t("adminbotBadges.suggestion.unknownSuggester")}
+                      </div>
+                    </div>
+                    <div class="adminbot-form__actions">
+                      <button
+                        class="btn btn--sm primary"
+                        type="button"
+                        ?disabled=${props.suggestionBusy}
+                        data-testid=${`adminbot-badge-suggestion-approve-${suggestion.id}`}
+                        @click=${() => props.onDecideSuggestion(suggestion.id, "approve")}
+                      >
+                        ${t("adminbotBadges.suggestion.approve")}
+                      </button>
+                      <button
+                        class="btn btn--sm"
+                        type="button"
+                        ?disabled=${props.suggestionBusy}
+                        @click=${() => props.onDecideSuggestion(suggestion.id, "reject")}
+                      >
+                        ${t("adminbotBadges.suggestion.reject")}
+                      </button>
+                    </div>
+                  </div>
+                  <div>${suggestion.description}</div>
+                  <div class="adminbot-badge-nominations__evidence">
+                    <strong>${t("adminbotBadges.suggestion.rationale")}:</strong>
+                    ${suggestion.rationale}
+                  </div>
+                  ${suggestion.criteria_url
+                    ? html`<a
+                        class="adminbot-form__meta"
+                        href=${suggestion.criteria_url}
+                        target=${EXTERNAL_LINK_TARGET}
+                        rel=${buildExternalLinkRel()}
+                        >${t("adminbotBadges.field.criteriaUrl")}</a
+                      >`
+                    : nothing}
+                </li>`,
+              )}
+            </ul>`}
+      ${decided.length
+        ? html`<details class="adminbot-form__meta">
+            <summary>${t("adminbotBadges.suggestion.decidedTitle")}</summary>
+            <ul class="adminbot-badge-nominations">
+              ${decided.map(
+                (suggestion) => html`<li>
+                  ${badgeLabel(suggestion)} — ${t(`profile.badges.status.${suggestion.status}`)}
+                  ${suggestion.decided_at ? ` · ${submittedAt(suggestion.decided_at)}` : ""}
+                </li>`,
+              )}
+            </ul>
+          </details>`
+        : nothing}
+    </div>
+  `;
+}
+
 export function renderAdminBotBadges(props: AdminBotBadgesProps) {
   if (props.definitionsLoading && props.definitions.length === 0) {
     return html`<section class="adminbot-shell">
@@ -569,7 +671,7 @@ export function renderAdminBotBadges(props: AdminBotBadgesProps) {
       ${props.nominationsError
         ? renderErrorState(props, props.nominationsError)
         : renderNominations(props)}
-      ${renderEditBadgeModal(props)}
+      ${props.suggestionsError ? nothing : renderSuggestions(props)} ${renderEditBadgeModal(props)}
       ${renderAssignModal(props)}
     </section>
   `;
