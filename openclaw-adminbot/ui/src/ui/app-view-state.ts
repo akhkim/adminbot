@@ -600,7 +600,7 @@ export type AppViewState = {
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
   /** Per-paper draft for the external-coauthor boxes, so a re-render does not clear what was typed. */
-  myWorkCoauthorDraft: Record<string, { email: string; name: string }>;
+  myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }>;
   adminBotProfileOverviewFilter: import("./adminbot/views/profile-overview.ts").ProfileOverviewFilter;
   adminBotPaperFilter: import("./adminbot/views/paper-overview.ts").PaperOverviewFilter;
   adminBotPaperCardId: string | null;

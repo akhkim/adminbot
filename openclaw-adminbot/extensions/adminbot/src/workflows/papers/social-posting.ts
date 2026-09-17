@@ -1,4 +1,9 @@
-import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
+import {
+  adminBotNormalizeXHandle,
+  type AdminBotLabMember,
+  type AdminBotPaperAuthorLink,
+  type AdminBotPaperRecord,
+} from "../../contracts/actions.js";
 
 export type AdminBotSocialPlatform = "linkedin" | "x";
 
@@ -85,7 +90,12 @@ export function buildPaperSocialPayload(
       input.paper?.artifacts?.submission_url,
     );
   const authors = normalizeAuthors(input.authors ?? input.paper?.authors ?? []);
-  const tags = resolveAuthorTags(authors, input.members, platforms);
+  const tags = resolveAuthorTags(
+    authors,
+    input.members,
+    platforms,
+    input.paper?.author_links ?? [],
+  );
   const hashtagText = normalizeHashtags(input.hashtags).join(" ");
   const tonePrefix = input.tone ? `${input.tone.trim()} tone. ` : "";
   const tagLine = tags.resolved.length
@@ -94,13 +104,15 @@ export function buildPaperSocialPayload(
       ? `Authors: ${authors.join(", ")}`
       : "";
   const linkLine = paperUrl ? `Read more: ${paperUrl}` : "";
-  const linkedinText = input.linkedinText?.trim() || compactLines([
-    `${tonePrefix}New paper: ${paperTitle}`,
-    input.summary,
-    tagLine,
-    hashtagText,
-    linkLine,
-  ]);
+  const linkedinText =
+    input.linkedinText?.trim() ||
+    compactLines([
+      `${tonePrefix}New paper: ${paperTitle}`,
+      input.summary,
+      tagLine,
+      hashtagText,
+      linkLine,
+    ]);
   const xSeed = compactLines([
     `New paper: ${paperTitle}`,
     input.summary,
@@ -236,6 +248,7 @@ function resolveAuthorTags(
   authors: string[],
   members: AdminBotLabMember[],
   platforms: AdminBotSocialPlatform[],
+  links: readonly AdminBotPaperAuthorLink[] = [],
 ): AdminBotPaperSocialPayload["tags"] {
   const resolved: AdminBotSocialResolvedTag[] = [];
   const missing: AdminBotSocialMissingTag[] = [];
@@ -247,8 +260,11 @@ function resolveAuthorTags(
     // writes the field, not the note. Reading the note first would let a stale line outrank
     // what they just changed. Notes stay as the fallback for rows the promotion never backfilled.
     const notes = parseNotes(member?.notes);
+    // The author link is the last resort and the only one an external has: a coauthor who is not
+    // on the roster has no profile to read a handle off, so whoever added them to the paper is
+    // the only person who could have recorded one.
     const xHandle = normalizeXHandle(
-      firstPresent(member?.twitter_url, notes.x, notes.twitter),
+      firstPresent(member?.twitter_url, notes.x, notes.twitter, linkFor(author, links)?.twitter),
     );
     // A display tag and a profile URL are not interchangeable: `linkedin_tag` is substituted
     // into the post text, so a URL landing there renders the announcement as a wall of links.
@@ -271,7 +287,9 @@ function resolveAuthorTags(
         platform: "x",
         reason: member
           ? "add an X/Twitter URL to the member's profile"
-          : "author is not in the AdminBot member list",
+          : // Actionable now, where it used to be a dead end. An external coauthor will never be
+            // on the roster, so "not in the member list" told the reader nothing they could do.
+            "add an X handle to this author on the paper's author list",
       });
     }
     if (platforms.includes("linkedin") && !linkedinTag && !linkedinUrl && !linkedinUrn) {
@@ -286,6 +304,20 @@ function resolveAuthorTags(
     }
   }
   return { resolved, missing };
+}
+
+/**
+ * The recorded author row for one printed name.
+ *
+ * Matched on the name because that is all the payload carries by the time it gets here -- the
+ * printed list is regenerated from the links on every save, so the two agree by construction.
+ */
+function linkFor(
+  author: string,
+  links: readonly AdminBotPaperAuthorLink[],
+): AdminBotPaperAuthorLink | undefined {
+  const normalized = normalizeIdentity(author);
+  return links.find((link) => normalizeIdentity(link.name) === normalized);
 }
 
 function findMember(author: string, members: AdminBotLabMember[]): AdminBotLabMember | undefined {
@@ -319,25 +351,16 @@ function parseNotes(notes: string | undefined): Record<string, string> {
   return values;
 }
 
+/**
+ * The handle as it is rendered into a post, with the sigil on.
+ *
+ * The parsing itself is the contract's, so a handle typed on a paper's author list and a handle
+ * read off a member's profile cannot be read two different ways. This adds the "@" because that
+ * is a rendering decision: what is stored is the bare handle.
+ */
 function normalizeXHandle(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  // Both patterns are anchored. The previous one was not, so on a profile URL the optional
-  // host group simply did not participate and the handle group matched the first word it
-  // found -- turning "https://x.com/alice_ai" into "@https". That was invisible while the
-  // only inputs were bare handles from `notes`, and became reachable the moment member
-  // profile URLs were read here.
-  const fromUrl =
-    /^(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})\/?$/u.exec(
-      trimmed,
-    );
-  if (fromUrl) {
-    return `@${fromUrl[1]}`;
-  }
-  const bare = /^@?([A-Za-z0-9_]{1,15})$/u.exec(trimmed);
-  return bare ? `@${bare[1]}` : undefined;
+  const handle = adminBotNormalizeXHandle(value);
+  return handle ? `@${handle}` : undefined;
 }
 
 function splitLongToken(token: string): string[] {

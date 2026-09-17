@@ -355,6 +355,17 @@ describe("renderPaperSlots", () => {
     expect(overleaf?.className).not.toContain("paper-slot--blocked");
   });
 
+  it("opens the social drafts on a compiled PDF, with no arXiv link in sight", async () => {
+    // An announcement is written from the paper, so it is reachable here. Whether the lab is
+    // *asking* for it yet is a separate question, and the nudge sweep answers it.
+    const { container } = await draw([row({ slot: "pdf_ready", status: "provided" })]);
+    for (const slot of ["x_draft", "linkedin_draft"]) {
+      expect(
+        container.querySelector(`[data-testid="paper-slot-row-p1-${slot}"]`)?.className,
+      ).not.toContain("paper-slot--blocked");
+    }
+  });
+
   it("locks a waived slot and says who lifted it", async () => {
     const { container } = await draw([
       row({

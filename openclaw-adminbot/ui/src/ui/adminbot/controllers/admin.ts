@@ -483,7 +483,7 @@ export type AdminBotPaperSaveInput = {
   /** What each author does on the paper. Sent whole; "" clears it. */
   authorRoles?: string;
   /** The author list as people. Sent whole; the service regenerates `authors` from it. */
-  authorLinks?: Array<{ name: string; member_id?: string; email?: string }>;
+  authorLinks?: Array<{ name: string; member_id?: string; email?: string; twitter?: string }>;
   /** The project's short name, which becomes its Slack channel `proj-<alias>`. */
   alias?: string;
   /** When work started, YYYY-MM-DD. Asked at creation; a paper is often filed weeks later. */
@@ -620,7 +620,7 @@ export type AdminBotPaperRecord = {
    * email for somebody who is not on the roster. This is what decides whose My Projects page the
    * paper appears on; `authors` above is only how the paper spells the names.
    */
-  author_links?: Array<{ name: string; member_id?: string; email?: string }>;
+  author_links?: Array<{ name: string; member_id?: string; email?: string; twitter?: string }>;
   current_step: AdminBotPaperStep;
   // Governance fields the service owns. Mirrored here so a card can show the venue and its
   // deadline without a second read; nothing in the UI writes them.

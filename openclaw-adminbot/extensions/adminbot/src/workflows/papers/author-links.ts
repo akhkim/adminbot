@@ -10,7 +10,11 @@
 // So the link is recorded when somebody picks the author, and inferred only as a fallback for the
 // rows that predate the picker. Pure: this file turns names and a roster into links, and the
 // service decides what to store.
-import type { AdminBotLabMember, AdminBotPaperAuthorLink } from "../../contracts/actions.js";
+import {
+  adminBotNormalizeXHandle,
+  type AdminBotLabMember,
+  type AdminBotPaperAuthorLink,
+} from "../../contracts/actions.js";
 import { isSamePerson, normalizePersonName } from "../../contracts/person-names.js";
 
 /** The roster shape this file needs. Anything with an id, a name and maybe an address. */
@@ -58,6 +62,11 @@ export function resolveAuthorMember(
  * row, and a second copy here would be a second thing to keep in step. An email that turns out to
  * belong to a roster member is promoted to that member rather than kept as an external -- somebody
  * typing a colleague's address means the colleague, not a stranger who happens to share it.
+ *
+ * The X handle follows the address exactly: kept on an external, dropped on a member, because a
+ * member's is on their profile. Unparseable text is dropped rather than stored -- a handle is only
+ * worth keeping if it can be @-ed, and a stored one that cannot be is a tag that silently fails in
+ * a published post.
  */
 function normalizeLink(
   link: AdminBotPaperAuthorLink,
@@ -66,6 +75,8 @@ function normalizeLink(
   const name = link.name.trim();
   const email = link.email?.trim().toLocaleLowerCase();
   const memberId = link.member_id?.trim();
+  const handle = adminBotNormalizeXHandle(link.twitter);
+  const twitter = handle ? { twitter: handle } : {};
   const member =
     (memberId ? roster.find((entry) => entry.id === memberId) : undefined) ??
     (email ? roster.find((entry) => (entry.email ?? "").toLocaleLowerCase() === email) : undefined);
@@ -75,9 +86,9 @@ function normalizeLink(
   if (email && isEmailLike(email)) {
     // An external with no name of their own is listed by address: better a row that says
     // who to ask than a blank the card cannot render.
-    return { name: name || email, email };
+    return { name: name || email, email, ...twitter };
   }
-  return name ? { name } : undefined;
+  return name ? { name, ...twitter } : undefined;
 }
 
 /**
@@ -114,7 +125,9 @@ export function buildAuthorLinks(params: {
       // The fallback that repairs the old rows. An address typed straight into the name column is
       // read as an address, because that is plainly what somebody meant by it.
       if (isEmailLike(link.name)) {
-        link = normalizeLink({ name: link.name, email: link.name }, params.roster) ?? link;
+        // Spread rather than rebuilt: re-reading the name as an address must not cost the row
+        // anything else somebody recorded on it, such as the handle to tag them by.
+        link = normalizeLink({ ...link, email: link.name }, params.roster) ?? link;
       } else {
         const member = resolveAuthorMember(link.name, params.roster);
         if (member) {

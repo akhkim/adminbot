@@ -155,10 +155,23 @@ export type AdminBotPaperSlotDefinition = {
   /** Human string, used verbatim in the nudge. */
   label: string;
   /**
-   * Slots that must be provided-or-waived before this one is worth asking for. Without this the
-   * nudge would chase an author for an arXiv link on a paper that has not been submitted.
+   * Slots that must be provided-or-waived before this one can be filled in at all. Without this
+   * the card would offer an arXiv link on a paper that has not been submitted.
    */
   upstream: AdminBotPaperSlot[];
+  /**
+   * Slots that must be settled before the lab starts *asking* for this one. Defaults to
+   * `upstream`, which is the honest answer for almost every slot: a field becomes fillable and
+   * becomes chaseable at the same moment.
+   *
+   * The two come apart where work may legitimately start early but is nobody's next move. The
+   * social drafts are the case that forced the split: an announcement is written from the paper,
+   * so it can be drafted the moment the PDF compiles -- but until there is an arXiv link there is
+   * nothing to announce, and a nudge for it would outrank the submission work that has to happen
+   * first. Opening the field without opening the nudge is what "you may, but nobody is waiting"
+   * looks like.
+   */
+  chaseAfter?: AdminBotPaperSlot[];
   /**
    * Whether the lab chases this one.
    *
@@ -459,11 +472,15 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "social_posts",
     branch: "social",
     label: "X post drafted",
-    upstream: ["arxiv"],
+    // Written from the paper, not from the arXiv listing, so it opens with the rest of Branch 2
+    // when the PDF compiles -- the same edge the chart draws (PDF -> XD). The arXiv link is what
+    // makes it worth *chasing*, not what makes it possible.
+    upstream: ["pdf_ready"],
+    chaseAfter: ["arxiv"],
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved X draft exists. Write it with the drafting tool.",
+    hint: "Provided once an approved X draft exists. Write it with the drafting tool — you can start as soon as the PDF compiles, it does not wait for the arXiv link.",
   },
   linkedin_draft: {
     kind: "bool",
@@ -472,11 +489,15 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "social_posts",
     branch: "social",
     label: "LinkedIn post drafted",
-    upstream: ["x_draft"],
+    // Parallel to the X draft rather than behind it, which is what the chart says (PDF -> LI) and
+    // why: a 280-character thread is the wrong source text for a 900-character post, so making
+    // one wait on the other blocked it on work it does not need.
+    upstream: ["pdf_ready"],
+    chaseAfter: ["arxiv"],
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved LinkedIn draft exists. Write it with the drafting tool.",
+    hint: "Provided once an approved LinkedIn draft exists. Write it with the drafting tool — you can start as soon as the PDF compiles, it does not wait for the arXiv link.",
   },
   coauthor_feedback: {
     kind: "bool",

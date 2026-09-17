@@ -50,8 +50,8 @@ export type PaperDetailsProps = {
   /** The roster to search when adding an author. */
   members?: MemberOption[];
   /** Draft state for the external-author boxes, held by the caller across re-renders. */
-  coauthorDraft?: { email: string; name: string };
-  onCoauthorDraftChange?: (draft: { email?: string; name?: string }) => void;
+  coauthorDraft?: { email: string; name: string; twitter?: string };
+  onCoauthorDraftChange?: (draft: { email?: string; name?: string; twitter?: string }) => void;
   feedbackGivers: string[];
   venue: string;
   /** What each author does on this paper, in prose. See `author_roles` on the record. */
@@ -700,6 +700,7 @@ function renderDetails(props: PaperSlotsProps) {
               members: details.members,
               draftEmail: details.coauthorDraft?.email ?? "",
               draftName: details.coauthorDraft?.name ?? "",
+              draftTwitter: details.coauthorDraft?.twitter ?? "",
               onDraftChange: (draft) => details.onCoauthorDraftChange?.(draft),
               ...(save ? { onChange: (authorLinks) => commit({ authorLinks }) } : {}),
             })

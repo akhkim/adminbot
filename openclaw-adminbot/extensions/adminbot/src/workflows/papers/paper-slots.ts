@@ -341,6 +341,9 @@ export type NudgeItem = {
  *   - open means `missing` or `invalid`; provided and waived are done
  *   - a slot is only actionable once everything upstream of it is settled, so nobody is asked for
  *     an arXiv link on a paper that has not been submitted
+ *   - and once everything in its `chaseAfter` is settled, which is how a field can be open on the
+ *     card without being anybody's next move: the social drafts may be written off the PDF, but
+ *     nobody is chased for an announcement before there is a link to announce
  *   - advisory slots (`required: false`) never appear: they block nothing, so chasing them spends
  *     the lab's attention on bookkeeping
  *
@@ -382,7 +385,11 @@ export function actionablePaperSlots(
     if (isAdminBotPaperSlotSettled(record.status) && !reopened) {
       continue;
     }
-    if (!definition.upstream.every(settled)) {
+    // Both lists, not either: `chaseAfter` says when the lab starts asking, `upstream` says when
+    // the field is fillable at all, and asking for something that cannot yet be filled in is the
+    // one combination neither list should be able to produce. For almost every slot `chaseAfter`
+    // is absent and this is exactly the upstream check it has always been.
+    if (![...definition.upstream, ...(definition.chaseAfter ?? [])].every(settled)) {
       continue;
     }
     // Three sources for the line under the label, in the order they matter: a value the service

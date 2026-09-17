@@ -1301,11 +1301,16 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   // Optional-chained: this view is rendered against partial state doubles in
                   // tests and against a host that may predate the field, and an author list that
                   // throws is worse than one whose draft box starts empty.
-                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" },
+                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? {
+                    email: "",
+                    name: "",
+                    twitter: "",
+                  },
                   onCoauthorDraftChange: (draft) => {
                     const current = state.myWorkCoauthorDraft?.[paper.id] ?? {
                       email: "",
                       name: "",
+                      twitter: "",
                     };
                     state.myWorkCoauthorDraft = {
                       ...state.myWorkCoauthorDraft,

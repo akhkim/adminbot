@@ -15,10 +15,13 @@ const MEMBERS = [
 
 function draw(
   links: PaperAuthorLink[],
-  options: { readOnly?: boolean; draft?: { email: string; name: string } } = {},
+  options: {
+    readOnly?: boolean;
+    draft?: { email: string; name: string; twitter?: string };
+  } = {},
 ) {
   const changes: PaperAuthorLink[][] = [];
-  const drafts: Array<{ email?: string; name?: string }> = [];
+  const drafts: Array<{ email?: string; name?: string; twitter?: string }> = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -28,6 +31,7 @@ function draw(
       members: MEMBERS,
       draftEmail: options.draft?.email ?? "",
       draftName: options.draft?.name ?? "",
+      draftTwitter: options.draft?.twitter ?? "",
       onDraftChange: (draft) => drafts.push(draft),
       ...(options.readOnly ? {} : { onChange: (next) => changes.push(next) }),
     }),
@@ -90,7 +94,56 @@ describe("renderPaperCoauthors", () => {
       email: "bs@tue.mpg.de",
     });
     // The boxes are cleared for the next one.
-    expect(ready.drafts).toContainEqual({ email: "", name: "" });
+    expect(ready.drafts).toContainEqual({ email: "", name: "", twitter: "" });
+  });
+
+  it("takes an X handle alongside the address, and stores it bare", () => {
+    // Stored without the "@" so a renderer adds the sigil once, rather than every caller guessing
+    // whether the stored value already carries one.
+    const { container, changes } = draw([], {
+      draft: { email: "bs@tue.mpg.de", name: "Bernhard", twitter: "@bschoelkopf" },
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-coauthor-add-external-p1"]')
+      ?.click();
+    expect(changes[0]?.[0]).toEqual({
+      name: "Bernhard",
+      email: "bs@tue.mpg.de",
+      twitter: "bschoelkopf",
+    });
+  });
+
+  it("refuses text that is not a handle rather than storing an unusable tag", () => {
+    const { container } = draw([], {
+      draft: { email: "bs@tue.mpg.de", name: "Bernhard", twitter: "ask at the workshop" },
+    });
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="paper-coauthor-add-external-p1"]')
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      container.querySelector('[data-testid="paper-coauthor-external-twitter-error-p1"]'),
+    ).not.toBeNull();
+  });
+
+  it("leaves the handle optional -- a coauthor who is not on X still goes on the paper", () => {
+    const { container } = draw([], { draft: { email: "bs@tue.mpg.de", name: "Bernhard" } });
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="paper-coauthor-add-external-p1"]')
+        ?.disabled,
+    ).toBe(false);
+  });
+
+  it("shows the handle on the row it belongs to", () => {
+    const { container } = draw([
+      { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de", twitter: "bschoelkopf" },
+      { name: "Joeun Yook", member_id: "joeun-yook" },
+    ]);
+    expect(container.querySelector('[data-testid="paper-coauthor-x-p1-0"]')?.textContent).toContain(
+      "@bschoelkopf",
+    );
+    // Nothing on the member row: their handle is on their profile, not on this paper.
+    expect(container.querySelector('[data-testid="paper-coauthor-x-p1-1"]')).toBeNull();
   });
 
   it("falls back to the address when no name was typed", () => {
