@@ -435,6 +435,30 @@ describe("actionablePaperSlots", () => {
     expect(open).not.toContain("overleaf_view");
   });
 
+  // The social drafts are the one pair whose "you may fill this in" and "the lab is asking for
+  // this" are different moments. Both halves are asserted, because either one alone is a bug:
+  // chasing early buries the submission work, and never chasing at all abandons the announcement.
+  it("does not chase a social draft before there is a link to announce", () => {
+    const open = actionablePaperSlots(paper(), upTo("pdf_ready"), NOW).map((item) => item.slot);
+    expect(open).not.toContain("x_draft");
+    expect(open).not.toContain("linkedin_draft");
+  });
+
+  it("chases both social drafts once the arXiv page is on file", () => {
+    const open = actionablePaperSlots(paper(), upTo("arxiv"), NOW).map((item) => item.slot);
+    expect(open).toContain("x_draft");
+    expect(open).toContain("linkedin_draft");
+  });
+
+  it("opens the social drafts on the card as soon as the PDF compiles", () => {
+    // The card reads `upstream` and the nudge reads both lists, which is the whole point of the
+    // split: the field is reachable here, and still nobody's next move.
+    for (const slot of ["x_draft", "linkedin_draft"] as const) {
+      expect(adminBotPaperSlotRegistry[slot].upstream).toEqual(["pdf_ready"]);
+      expect(adminBotPaperSlotRegistry[slot].chaseAfter).toEqual(["arxiv"]);
+    }
+  });
+
   it("has no rebuttal slot: the venue ladder closes that one from a bcc now", () => {
     // It used to be a link somebody pasted, chased only while the venue had not decided. Keeping
     // both it and the `rebuttal` stage would give the card two accounts of the same fact.
