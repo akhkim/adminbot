@@ -1,0 +1,6 @@
+[
+  {
+    "from": "extensions/adminbot/content/deadlines/venues.json",
+    "to": "extensions/adminbot/content/deadlines/deadlines.json"
+  }
+]

@@ -42,7 +42,7 @@ describe("deadline read model", () => {
   ];
 
   it("serves the compiled dataset when the runtime dataset cannot be read", () => {
-    // `/deadlines/venues.json` is public and the board ships no bundled copy of its own, so an
+    // `/deadlines` is public and the board ships no bundled copy of its own, so an
     // exception from the file-backed dataset used to empty the board for every visitor at once.
     const service = new AdminBotService(new AdminBotMemoryStore(), {
       deadlineDataset: () => {

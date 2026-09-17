@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 /** Read on each request: collection must not require rebuilding or restarting the service. */
 export function readDeadlineDataset(
   file = process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
-    resolve("extensions/adminbot/content/deadlines/venues.json"),
+    resolve("extensions/adminbot/content/deadlines/deadlines.json"),
 ): readonly unknown[] {
   const document = JSON.parse(readFileSync(file, "utf8")) as { items?: unknown[] };
   if (!Array.isArray(document.items) || !document.items.length) {

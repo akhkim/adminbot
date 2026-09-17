@@ -41,7 +41,7 @@ function datasetDir(venues: Array<Record<string, unknown>>): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-deadlines-test-"));
   temporaryDirectories.push(directory);
   fs.writeFileSync(
-    path.join(directory, "venues.json"),
+    path.join(directory, "deadlines.json"),
     JSON.stringify({ timezone: "AoE (UTC-12)", count: venues.length, items: venues }),
   );
   return directory;
@@ -554,7 +554,7 @@ describe("deadline history", () => {
           'answers = iter([\'/repo\', \'{"history_version": 7, "count": 12, "items": []}\'])\n' +
           "m._git_output = lambda *args, **kwargs: next(answers)\n" +
           "m.HERE = '/repo/scripts'\n" +
-          "m.OUT = '/repo/data/venues.json'\n" +
+          "m.OUT = '/repo/data/deadlines.json'\n" +
           "baseline = m._load_previous_document('HEAD')\n" +
           "print(json.dumps([baseline['history_version'], baseline['count']]))",
       ),
@@ -1183,5 +1183,32 @@ for change in [{'stale':True}, {'deadline_aoe':'2035-09-26 00:00:00'}]:
     results.append(paper.get('abstract_deadline_id', ''))
 print(json.dumps(results))`),
     ).toEqual(["abstract", "", "", "abstract", "abstract", "", ""]);
+  });
+});
+
+describe("deadline output generation", () => {
+  it("writes the dataset and all projections without requiring an HTML template", () => {
+    expect(
+      runPython(`
+import tempfile
+from pathlib import Path
+m = load('adminbot-deadline-collect')
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    for folder in ['scripts', 'extensions/adminbot/src/workflows/deadlines/generated', 'ui/src/ui/adminbot/data', 'content']:
+        (root / folder).mkdir(parents=True)
+    m.HERE = str(root / 'scripts')
+    m.OUT = str(root / 'content/deadlines.json')
+    m.DEADLINES_DIR = str(root / 'content')
+    m.write_outputs([dict(id='example', name='Example Workshop', venue_type='workshop', deadline_aoe='', venue_group='Example')])
+    assert json.loads((root / 'content/deadlines.json').read_text())['items'][0]['id'] == 'example'
+    print(json.dumps(sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())))
+`),
+    ).toEqual([
+      "content/deadlines.json",
+      "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts",
+      "ui/src/ui/adminbot/data/deadlines-summary.ts",
+      "ui/src/ui/adminbot/data/deadlines.ts",
+    ]);
   });
 });

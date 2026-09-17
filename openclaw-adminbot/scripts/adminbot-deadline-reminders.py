@@ -4,7 +4,7 @@ AdminBot deadline reminders (Output 2, runner). Mirror of
 scripts/adminbot-paper-nudge-reminders.mjs, for submission deadlines.
 
 Each run (schedule it ~daily via OpenClaw cron):
-  1. Load venues.json, matches.json, dm-templates.json.
+  1. Load deadlines.json, matches.json, dm-templates.json.
   2. For every matched paper on live cadence, compute its 30/15/7/3/2/1-day
      reminder dates from the deadline and fire the one that is DUE today.
   3. Stop-condition: if the paper already shows in Zhijing's OpenReview

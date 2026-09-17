@@ -416,9 +416,19 @@ describe("renderAdminBotWebUi", () => {
     );
   });
 
-  it("embeds the deadline board rather than reimplementing it", () => {
-    expect(html).toContain('id="deadlines-frame"');
-    expect(html).toContain('src="/deadlines"');
+  it("links directly to the configured Control UI board", () => {
+    vi.stubEnv("ADMINBOT_CONTROL_UI_URL", "https://ui.example.test/lab/");
+    try {
+      const page = renderAdminBotWebUi();
+      expect(page).toContain(
+        '<a href="https://ui.example.test/lab/deadlines">Open deadline board</a>',
+      );
+      expect(
+        page.slice(page.indexOf('id="deadlines"'), page.indexOf('id="reimbursements"')),
+      ).not.toContain("<iframe");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("drives the visitor reimbursement flow over the two anonymous routes only", () => {

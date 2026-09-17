@@ -901,7 +901,7 @@ describe("renderDeadlines", () => {
     );
   });
 
-  it("renders the standalone board's native hierarchy without an embedded page", async () => {
+  it("renders the board hierarchy without an embedded page", async () => {
     const container = await renderView();
 
     expect(container.querySelector("iframe")).toBeNull();
@@ -1779,7 +1779,7 @@ describe("venue location", () => {
   });
 
   it("carries conference_location through the generated dataset", () => {
-    // Guards the collector's key projection: the field is on the canonical venues.json, and
+    // Guards the collector's key projection: the field is on the canonical deadlines.json, and
     // dropping it from the slim UI dataset would empty the board's locations silently.
     const located = DEADLINE_VENUES.filter((venue) => venueLocationSites(venue).length);
     expect(located.length).toBeGreaterThan(0);

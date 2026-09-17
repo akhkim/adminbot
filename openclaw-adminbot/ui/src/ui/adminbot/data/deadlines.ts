@@ -1,4 +1,4 @@
-// Generated from extensions/adminbot/content/deadlines/venues.json by
+// Generated from extensions/adminbot/content/deadlines by
 // scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.
 
 export type DeadlineRevision = {

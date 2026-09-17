@@ -201,7 +201,7 @@ describe("deadline proposal API", () => {
       expect(publishedResponse.status).toBe(200);
       await expect(publishedResponse.json()).resolves.toMatchObject({ status: "published" });
 
-      const publicDataset = await fetch(`${baseUrl}/deadlines/venues.json`);
+      const publicDataset = await fetch(`${baseUrl}/deadlines`);
       const publicBody = (await publicDataset.json()) as {
         items: Array<{
           name?: string;
@@ -325,7 +325,7 @@ describe("public deadline proposals", () => {
         submitter_email: "taylor@example.org",
       });
       expect(proposal.submitter_member_id).toMatch(/^visitor:deadline:/u);
-      const publicBefore = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      const publicBefore = await (await fetch(`${baseUrl}/deadlines`)).text();
       expect(publicBefore).not.toContain("API Workshop");
       const memberToken = await createSession(mock, "member-visitor-test", "member");
       const adminToken = await createSession(mock, "admin-visitor-test", "admin");
@@ -375,7 +375,7 @@ describe("public deadline proposals", () => {
         });
       expect((await publish(proposal.payload_hash)).status).toBe(409);
       expect((await publish(revision.payload_hash)).status).toBe(200);
-      const published = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      const published = await (await fetch(`${baseUrl}/deadlines`)).text();
       expect(published).toContain("Reviewed Visitor Workshop");
       expect(published).not.toContain("visitor:deadline:");
       expect(published).not.toContain(proposal.payload_hash);
@@ -511,7 +511,7 @@ it("persists a visitor submission and its retry key across restarts without crea
             body: "{}",
           });
           expect(rejection.status).toBe(200);
-          expect(await (await fetch(`${baseUrl}/deadlines/venues.json`)).text()).not.toContain(
+          expect(await (await fetch(`${baseUrl}/deadlines`)).text()).not.toContain(
             "Durable Visitor Workshop",
           );
         }

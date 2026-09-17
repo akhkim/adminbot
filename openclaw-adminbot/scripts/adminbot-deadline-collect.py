@@ -2,7 +2,7 @@
 """
 AdminBot deadline collector (Output 0 data source).
 
-Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's tracked
+Refreshes extensions/adminbot/content/deadlines with the lab's tracked
 Existing records are merged by stable id: expired or disappeared records remain,
 and changed dates append revisions while the top-level fields stay the current
 projection consumed by ordinary workflows.
@@ -12,7 +12,7 @@ projection consumed by ordinary workflows.
       IASEAI whose OpenReview venue can be checked directly.
 
 Times are AoE (UTC-12). Run:  python3 scripts/adminbot-deadline-collect.py
-Writes venues.json and its generated UI datasets; nothing is sent.
+Writes deadlines.json and its generated UI datasets; nothing is sent.
 """
 import concurrent.futures
 import datetime
@@ -67,7 +67,7 @@ from adminbot_workshop_deadlines import (  # noqa: E402
     split_workshop_milestones,
     _candidate_is_abstract,
 )
-OUT = os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH") or os.path.join(DEADLINES_DIR, "venues.json")
+OUT = os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH") or os.path.join(DEADLINES_DIR, "deadlines.json")
 
 # --- curated, source-verified conference milestones (AoE 23:59:59) ---
 #
@@ -1851,12 +1851,11 @@ def _load_previous_document(baseline_git_ref=""):
 
 
 def write_outputs(items):
-    """Write venues.json and the three artifacts generated from it.
+    """Write deadlines.json and its service and UI projections.
 
-    Split out of main() so the outputs can be rebuilt from an existing venues.json
+    Split out of main() so the outputs can be rebuilt from an existing deadlines.json
     without a sweep -- see --rewrite-outputs. Every writer runs from the one list,
-    which is what keeps the plugin dataset, the Control-UI dataset and the
-    standalone board from drifting apart (they did once, by 28 venues).
+    which keeps the service and Control UI datasets in sync.
     """
     attach_schedules(items)
     migrate_workshop_dates(items)
@@ -1883,27 +1882,10 @@ def write_outputs(items):
             os.unlink(temporary)
     print(f"wrote {OUT} with {len(items)} items")
 
-    # The checked-in HTML is also directly runnable, so keep its embedded data in
-    # lockstep with the canonical JSON. The generated TypeScript wrapper replaces
-    # this array at request time, but the standalone file has no such injection.
-    board_path = os.path.join(DEADLINES_DIR, "deadlines-board.html")
-    board = open(board_path).read()
-    board, replacements = re.subn(
-        r"const DATA = \[.*?\];\n",
-        "const DATA = " + json.dumps(items, ensure_ascii=False, indent=2) + ";\n",
-        board,
-        count=1,
-        flags=re.DOTALL,
-    )
-    if replacements != 1:
-        raise RuntimeError("standalone deadline board has no replaceable DATA array")
-    open(board_path, "w").write(board)
-    print(f"wrote {board_path}")
-
-    # keep the served-page dataset (Output 0 Control-UI surface) in sync
+    # Keep the service dataset projection in sync.
     ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
     with open(ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+        f.write("// Generated from extensions/adminbot/content/deadlines by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export const DEADLINE_VENUES = "
                 + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
@@ -1929,7 +1911,7 @@ def write_outputs(items):
              and (not k.startswith(("schedule_", "notification_")) or k == "notification_aoe" or k in it)} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+        f.write("// Generated from extensions/adminbot/content/deadlines by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export type DeadlineRevision = {\n"
                 "  observed_at: string;\n  deadline_aoe: string;\n"
@@ -2014,7 +1996,7 @@ def write_outputs(items):
                   for key in summary_keys if key not in TIME_FIELDS or key in item} for item in items]
     summary_path = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines-summary.ts")
     with open(summary_path, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+        f.write("// Generated from extensions/adminbot/content/deadlines/deadlines.json by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 'import type { DeadlineVenue } from "./deadlines.ts";\n\n'
                 "export type DeadlineSummaryVenue = Pick<DeadlineVenue,\n  "
@@ -2044,7 +2026,7 @@ def main():
     if len(baseline_args) > 1 or (baseline_args and not baseline_args[0]):
         raise SystemExit("--baseline-git-ref requires exactly one non-empty ref")
     force_refresh = "--force-refresh" in sys.argv[1:]
-    # Rebuild the generated artifacts from the venues.json already on disk, with no
+    # Rebuild the generated artifacts from the deadlines.json already on disk, with no
     # network and no revision bookkeeping. This is for a change to the *shape* of the
     # output -- a new field, a new consumer -- where a full sweep would bury it under a
     # hundred moved dates. It cannot change a deadline: only a real sweep does that, so

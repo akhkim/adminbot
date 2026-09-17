@@ -66,6 +66,25 @@ describe("deadline proposal validation", () => {
 });
 
 describe("AdminBot deadline proposal store", () => {
+  it("loads public deadline data without a session", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ items: [{ id: "example" }] }), {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl as typeof fetch,
+    );
+    await expect(store.listPublished()).resolves.toEqual([{ id: "example" }]);
+    expect(fetchImpl).toHaveBeenCalledWith("https://admin.example/deadlines", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+  });
+
   it("submits through the authenticated API with a stable idempotency key", async () => {
     const fetchImpl = vi.fn(
       async () =>

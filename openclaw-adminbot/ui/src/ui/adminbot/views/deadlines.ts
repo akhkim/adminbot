@@ -1,3 +1,6 @@
+// Shared rendering for public and signed-in deadline surfaces.
+// Stays in the app document flow so the page owns one vertical scroll.
+
 import { html, nothing, LitElement, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";

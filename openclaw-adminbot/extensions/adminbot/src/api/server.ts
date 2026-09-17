@@ -111,7 +111,6 @@ import {
 } from "../workflows/calendar/standing-meetings.js";
 import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
-import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -1257,16 +1256,6 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
   if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendHtml(
-      res,
-      200,
-      renderDeadlinesWebUi(ctx.service.deadlineReadModel(DEADLINE_VENUES), {
-        proposalUrl: `${resolveAdminBotControlUiUrl()}/deadlines`,
-      }),
-    );
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
     sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
     return;
   }

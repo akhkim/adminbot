@@ -144,9 +144,9 @@ factory surface.
   Overleaf edits, social posts.
 - **`reimbursements/`** — reimbursement intake and workflow.
 - **`calendar/`** — the calendar source and read model behind holds and invites.
-- **`deadlines/`** — the deadline board and venue read model. `board.ts` and
-  `generated/dataset.ts` are **generated from `content/deadlines/`** — do not
-  hand-edit them; regenerate with `scripts/adminbot-deadline-*.py`.
+- **`deadlines/`** — the venue read model and deadline workflows. `generated/dataset.ts`
+  is generated from `content/deadlines` by `scripts/adminbot-deadline-collect.py`.
+  The board lives in the Control UI.
 - **`onboarding/`** — guide/invite/workspace sends and the tier email copy
   (`emails.ts`).
 
@@ -159,5 +159,5 @@ between.
 
 | Directory                    | Role                                                                                                                                                                                                                                  | Pairs with                  |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `content/deadlines/`         | The canonical deadline dataset and board assets (`venues.json`, `dm-templates.json`, `deadlines-board.html`), refreshed by `scripts/adminbot-deadline-*.py`. Read by Python and shell as well as by TypeScript. | `src/workflows/deadlines/`  |
+| `content/deadlines/`         | The canonical deadline dataset and reminder templates (`deadlines.json`, `dm-templates.json`), refreshed by `scripts/adminbot-deadline-*.py`. Read by Python and shell as well as by TypeScript. | `src/workflows/deadlines/`  |
 | `content/onboarding-emails/` | Review notes only. The copy itself was folded into `src/workflows/onboarding/emails.ts` so a string ships with the service instead of being read off disk; the README keeps the decisions behind the copy.                            | `src/workflows/onboarding/` |
