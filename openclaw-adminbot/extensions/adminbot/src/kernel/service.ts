@@ -170,6 +170,7 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
+import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
@@ -10276,6 +10277,11 @@ export class AdminBotService {
         ...(request.important ? { important: true } : {}),
         created_at: nowIso,
       });
+      // The correspondence address when the member nominated one, their login address otherwise.
+      // `email` is the departmental identity the account is keyed by; it is not necessarily a
+      // mailbox anybody reads, and four members on the roster have no departmental address at all
+      // while having had a correspondence address on file the whole time.
+      const outreachEmail = adminBotOutreachEmail(member);
       const proposalInput =
         request.channel === "slack"
           ? member.slack_user_id
@@ -10297,18 +10303,18 @@ export class AdminBotService {
                 undo_plan: "Send a Slack follow-up correcting or retracting the message.",
               }
             : undefined
-          : member.email
+          : outreachEmail
             ? {
                 summary: `Nudge ${member.name} via email: ${truncateForSummary(message)}`,
                 target: {
                   service: "email",
                   channel: "email",
-                  target: member.email,
+                  target: outreachEmail,
                   recipientMemberId: member.id,
                 },
                 proposed_payload: {
                   channel: "email",
-                  to: member.email,
+                  to: outreachEmail,
                   subject: request.subject?.trim(),
                   body: outboundMessage,
                 },
@@ -10319,7 +10325,9 @@ export class AdminBotService {
         skipped.push({
           member_id: memberId,
           reason:
-            request.channel === "slack" ? "member has no slack_user_id" : "member has no email",
+            request.channel === "slack"
+              ? "member has no slack_user_id"
+              : "member has no correspondence or account email",
         });
         continue;
       }
