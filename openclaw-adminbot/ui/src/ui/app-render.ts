@@ -117,15 +117,19 @@ import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
   assignAdminBadge,
   decideAdminBadgeNomination,
+  decideBadgeSuggestion,
   loadAdminBadgeNominations,
   loadBadgeDefinitions,
+  loadBadgeSuggestions,
   loadProfileBadgeNominations,
   removeAdminBadge,
   saveAdminBadgeDefinition,
   shouldLoadAdminBadgeNominations,
   shouldLoadBadgeDefinitions,
+  shouldLoadBadgeSuggestions,
   shouldLoadProfileBadgeNominations,
   submitOwnBadgeNomination,
+  submitOwnBadgeSuggestion,
 } from "./adminbot/data/badges.ts";
 import {
   clearLogisticsDraft,
@@ -2813,6 +2817,16 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBadgeNominations(state).finally(() => requestHostUpdate?.());
   }
+  // Read on both tabs, unlike the nomination queue above: the same GET answers "my suggestions"
+  // for the profile page and "the whole queue" for an admin, so there is no admin-only variant to
+  // gate on. Same shouldLoad rule as the rest -- a failure settles instead of retrying per render.
+  if (
+    (state.tab === "profile" || state.tab === "adminbotBadges") &&
+    hasMemberSession &&
+    shouldLoadBadgeSuggestions(state)
+  ) {
+    void loadBadgeSuggestions(state).finally(() => requestHostUpdate?.());
+  }
   // Logistics drafts are per-member, and this is where that is enforced. The scope changes when
   // somebody signs in, signs out, or a second person uses the same browser -- and each time, the
   // forms on screen belong to the previous scope and have to be cleared and refilled from that
@@ -3438,6 +3452,17 @@ export function renderApp(state: AppViewState) {
                   void submitOwnBadgeNomination(state, badgeId, evidence, memberId),
                 onPickBadgeNominee: (memberId) => {
                   state.profileBadgeNomineeId = memberId;
+                  requestHostUpdate?.();
+                },
+                onSubmitBadgeSuggestion: (input) =>
+                  void submitOwnBadgeSuggestion(state, input).finally(() => requestHostUpdate?.()),
+                onToggleBadgeSuggestForm: (open) => {
+                  state.profileBadgeSuggestOpen = open;
+                  // Shutting the form drops the last result with it: a success banner left over a
+                  // collapsed form reads as applying to whatever is opened next.
+                  if (!open) {
+                    state.badgeSuggestionNotice = null;
+                  }
                   requestHostUpdate?.();
                 },
                 onNavigateToTab: (tab) => state.setTab(tab),
@@ -4164,9 +4189,11 @@ export function renderApp(state: AppViewState) {
                 onRefresh: () => {
                   state.adminBotBadgeDefinitionsLoadedAt = null;
                   state.adminBotBadgeNominationsLoadedAt = null;
+                  state.adminBotBadgeSuggestionsLoadedAt = null;
                   void Promise.all([
                     loadBadgeDefinitions(state),
                     loadAdminBadgeNominations(state),
+                    loadBadgeSuggestions(state),
                     loadAdminBot(state, "admin"),
                   ]);
                 },
@@ -4176,6 +4203,12 @@ export function renderApp(state: AppViewState) {
                 onRemove: (memberId, badgeId) => void removeAdminBadge(state, memberId, badgeId),
                 onDecide: (nominationId, decision) =>
                   void decideAdminBadgeNomination(state, nominationId, decision),
+                suggestions: state.adminBotBadgeSuggestions,
+                suggestionsLoading: state.adminBotBadgeSuggestionsLoading,
+                suggestionsError: state.adminBotBadgeSuggestionsError,
+                suggestionBusy: state.badgeSuggestionBusy,
+                onDecideSuggestion: (suggestionId, decision) =>
+                  void decideBadgeSuggestion(state, suggestionId, decision),
               }),
             )
           : nothing}

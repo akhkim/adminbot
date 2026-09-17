@@ -2492,6 +2492,12 @@ export type AdminBotAuditEvent = {
     | "badge.nomination_submitted"
     | "badge.nomination_approved"
     | "badge.nomination_rejected"
+    // A member proposing a badge the catalogue does not have, and the admin answer to it. Kept
+    // distinct from the nomination events above: those are about who holds an existing badge,
+    // these are about what the catalogue contains.
+    | "badge.suggestion_submitted"
+    | "badge.suggestion_approved"
+    | "badge.suggestion_rejected"
     | "opportunity.submitted"
     | "opportunity.updated"
     | "opportunity.approved"

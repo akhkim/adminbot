@@ -832,6 +832,14 @@ export class OpenClawApp extends LitElement {
   @state() profileBadgeBusy = false;
   @state() profileBadgeNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() profileBadgeNomineeId = "";
+  @state() adminBotBadgeSuggestions: import("./adminbot/auth/session.ts").BadgeSuggestionView[] =
+    [];
+  @state() adminBotBadgeSuggestionsLoading = false;
+  @state() adminBotBadgeSuggestionsLoadedAt: number | null = null;
+  @state() adminBotBadgeSuggestionsError: BadgeLoadError | null = null;
+  @state() badgeSuggestionBusy = false;
+  @state() badgeSuggestionNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() profileBadgeSuggestOpen = false;
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;

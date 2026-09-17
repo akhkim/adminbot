@@ -32,6 +32,8 @@ import type {
   AdminBotBadgeDefinition,
   AdminBotBadgeNomination,
   AdminBotBadgeNominationStatus,
+  AdminBotBadgeSuggestion,
+  AdminBotBadgeSuggestionStatus,
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
@@ -313,6 +315,22 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_badge_nominations(member_id, status, created_at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_status_idx
         ON adminbot_badge_nominations(status, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_suggestions (
+        id TEXT PRIMARY KEY,
+        suggested_by TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        created_badge_id TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_suggestions_status_idx
+        ON adminbot_badge_suggestions(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_badge_suggestions_member_idx
+        ON adminbot_badge_suggestions(suggested_by, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_opportunities (
         id TEXT PRIMARY KEY,
@@ -1411,6 +1429,73 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_suggestions (
+          id,
+          suggested_by,
+          status,
+          created_at,
+          decided_at,
+          decided_by,
+          created_badge_id,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          suggested_by = excluded.suggested_by,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          created_badge_id = excluded.created_badge_id,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        suggestion.id,
+        suggestion.suggested_by ?? null,
+        suggestion.status,
+        suggestion.created_at,
+        suggestion.decided_at ?? null,
+        suggestion.decided_by ?? null,
+        suggestion.created_badge_id ?? null,
+        JSON.stringify(suggestion),
+      );
+  }
+
+  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_suggestions WHERE id = ?")
+      .get(suggestionId) as { payload_json: string } | undefined;
+    return row ? parseJson<AdminBotBadgeSuggestion>(row.payload_json) : undefined;
+  }
+
+  listBadgeSuggestions(params?: {
+    suggestedBy?: string;
+    status?: AdminBotBadgeSuggestionStatus;
+  }): AdminBotBadgeSuggestion[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.suggestedBy) {
+      clauses.push("suggested_by = ?");
+      values.push(params.suggestedBy);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_suggestions
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeSuggestion>(row.payload_json));
+  }
+
   saveOpportunity(opportunity: AdminBotOpportunity): void {
     this.db
       .prepare(
@@ -1695,6 +1780,32 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             (cleared.changes ?? 0);
         }
       }
+      // Badge suggestions split on status for the same reason opportunities do: an approved one
+      // became a badge the whole lab can hold, so the row stays as the record of where that badge
+      // came from and loses the name. Pending and rejected ones never became lab vocabulary.
+      {
+        const deleted = this.db
+          .prepare(
+            `DELETE FROM adminbot_badge_suggestions
+              WHERE suggested_by = ? AND status <> 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((deleted.changes ?? 0) > 0) {
+          removed["adminbot_badge_suggestions.suggested_by"] = deleted.changes ?? 0;
+        }
+        const cleared = this.db
+          .prepare(
+            `UPDATE adminbot_badge_suggestions
+              SET suggested_by = NULL,
+                  payload_json = json_remove(payload_json, '$.suggested_by')
+              WHERE suggested_by = ? AND status = 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((cleared.changes ?? 0) > 0) {
+          removed["adminbot_badge_suggestions.suggested_by"] =
+            (removed["adminbot_badge_suggestions.suggested_by"] ?? 0) + (cleared.changes ?? 0);
+        }
+      }
       for (const [table, column] of AdminBotSqliteStore.MEMBER_ATTRIBUTION_COLUMNS) {
         const result = this.db
           .prepare(`UPDATE "${table}" SET ${column} = NULL WHERE ${column} = ?`)
@@ -1734,6 +1845,23 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         }
         // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
         this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
+      }
+      // Badge suggestions are repointed here rather than from MEMBER_REFERENCE_COLUMNS because
+      // that loop moves the column and leaves `payload_json` alone -- and payload_json is what is
+      // read back, so a merge done through the loop would move the row and change nothing anybody
+      // can see. Nothing keys on the suggester, so there is no collision case to drop.
+      {
+        const result = this.db
+          .prepare(
+            `UPDATE adminbot_badge_suggestions
+              SET suggested_by = ?,
+                  payload_json = json_set(payload_json, '$.suggested_by', ?)
+              WHERE suggested_by = ?`,
+          )
+          .run(toMemberId, toMemberId, fromMemberId) as { changes?: number };
+        if ((result.changes ?? 0) > 0) {
+          moved["adminbot_badge_suggestions.suggested_by"] = result.changes ?? 0;
+        }
       }
       this.db.exec("COMMIT");
     } catch (error) {

@@ -109,6 +109,7 @@ import {
   ADMINBOT_BADGE_CATEGORY_MAX,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
   ADMINBOT_BADGE_EVIDENCE_MAX,
+  ADMINBOT_BADGE_RATIONALE_MAX,
   adminBotDefaultBadgeDefinitions,
   normalizeBadgeFamilyKey,
   type AdminBotAssignedBadge,
@@ -118,6 +119,10 @@ import {
   type AdminBotBadgeNomination,
   type AdminBotBadgeNominationStatus,
   type AdminBotBadgeNominationView,
+  type AdminBotBadgeSuggestion,
+  type AdminBotBadgeSuggestionInput,
+  type AdminBotBadgeSuggestionStatus,
+  type AdminBotBadgeSuggestionView,
 } from "../contracts/badges.js";
 import {
   isAdminBotConferenceFundingNeed,
@@ -499,6 +504,12 @@ export type AdminBotServiceStore = {
     nominatedBy?: string;
     status?: AdminBotBadgeNominationStatus;
   }): AdminBotBadgeNomination[];
+  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void;
+  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined;
+  listBadgeSuggestions(params?: {
+    suggestedBy?: string;
+    status?: AdminBotBadgeSuggestionStatus;
+  }): AdminBotBadgeSuggestion[];
   /** Removes one roster row. False when there was nothing to remove. */
   deleteLabMember(memberId: string): boolean;
   /**
@@ -3797,6 +3808,249 @@ export class AdminBotService {
           left.name.localeCompare(right.name) ||
           (left.tier ?? "").localeCompare(right.tier ?? ""),
       );
+  }
+
+  listBadgeSuggestions(
+    params: { suggestedBy?: string; status?: AdminBotBadgeSuggestionStatus } = {},
+  ): AdminBotServiceResponse<{ suggestions: AdminBotBadgeSuggestionView[] }> {
+    const suggestions = this.store
+      .listBadgeSuggestions(params)
+      .map((suggestion) => this.badgeSuggestionView(suggestion));
+    return { ok: true, status: 200, payload: { suggestions } };
+  }
+
+  /**
+   * Propose a badge the catalogue does not have.
+   *
+   * This does not create anything. It files the case for a badge and leaves the decision with an
+   * admin, because a badge definition is lab vocabulary: every nomination is phrased in it and
+   * every holder's profile renders it, so it is not a thing one member should be able to mint. The
+   * member's contribution is noticing the gap, which is the part an admin cannot do from the
+   * catalogue alone.
+   *
+   * Validated at submission rather than at approval. The same shape rules the definition itself
+   * must satisfy are checked here, so a suggestion that reaches the queue is one that can actually
+   * be approved as written -- the alternative is an admin clicking approve and meeting a 400 about
+   * a field the suggester is no longer around to fix.
+   */
+  submitBadgeSuggestion(
+    actorId: string,
+    input: AdminBotBadgeSuggestionInput,
+  ): AdminBotServiceResponse<{ suggestion: AdminBotBadgeSuggestionView }> {
+    const actor = this.store.getLabMember(actorId);
+    if (!actor) {
+      return serviceError(404, "member not found");
+    }
+    const fields = this.validateBadgeSuggestionFields(input);
+    if (!fields.ok) {
+      return fields;
+    }
+    const { category, name, description, tier, criteriaUrl } = fields.payload;
+    const rationale = input.rationale?.trim() ?? "";
+    if (!rationale) {
+      return serviceError(400, "badge rationale is required");
+    }
+    if (rationale.length > ADMINBOT_BADGE_RATIONALE_MAX) {
+      return serviceError(
+        400,
+        `badge rationale cannot exceed ${ADMINBOT_BADGE_RATIONALE_MAX} characters`,
+      );
+    }
+    // Checked against the catalogue and against the queue, because they are different failures and
+    // a member can act on both: the first means the badge is already there to nominate for, the
+    // second means somebody got there first and the decision is pending.
+    const familyKey =
+      this.findExistingBadgeFamilyKey(category, name) ?? normalizeBadgeFamilyKey(category, name);
+    const tierKey = tier?.toLowerCase() ?? "";
+    const existingBadge = this.store
+      .listBadgeDefinitions()
+      .find(
+        (badge) =>
+          badge.family_key === familyKey && (badge.tier?.trim().toLowerCase() ?? "") === tierKey,
+      );
+    if (existingBadge) {
+      return serviceError(409, "that badge already exists");
+    }
+    const queued = this.store
+      .listBadgeSuggestions({ status: "pending" })
+      .find(
+        (suggestion) =>
+          (this.findExistingBadgeFamilyKey(suggestion.category, suggestion.name) ??
+            normalizeBadgeFamilyKey(suggestion.category, suggestion.name)) === familyKey &&
+          (suggestion.tier?.trim().toLowerCase() ?? "") === tierKey,
+      );
+    if (queued) {
+      return serviceError(409, "that badge has already been suggested and is awaiting a decision");
+    }
+    const suggestion: AdminBotBadgeSuggestion = {
+      id: `badge_sug_${randomUUID()}`,
+      category,
+      name,
+      description,
+      ...(criteriaUrl ? { criteria_url: criteriaUrl } : {}),
+      ...(tier ? { tier } : {}),
+      rationale,
+      suggested_by: actorId,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    };
+    this.store.saveBadgeSuggestion(suggestion);
+    this.recordAudit({
+      type: "badge.suggestion_submitted",
+      actor: actorId,
+      details: { suggestion_id: suggestion.id, category, name, ...(tier ? { tier } : {}) },
+    });
+    return { ok: true, status: 200, payload: { suggestion: this.badgeSuggestionView(suggestion) } };
+  }
+
+  /**
+   * Accept a suggested badge into the catalogue, or turn it down.
+   *
+   * Approval goes through `saveBadgeDefinition` rather than writing a definition here, so the
+   * badge that lands is subject to every rule an admin-created one is -- family key resolution,
+   * the duplicate-tier 409, the link check. That matters because the catalogue can move between
+   * submission and decision: a badge somebody else added in the meantime makes this suggestion a
+   * duplicate, and the right answer is to refuse the approval rather than to write a second badge
+   * in the same family. The suggestion stays pending when that happens, so it can still be
+   * rejected deliberately.
+   */
+  decideBadgeSuggestion(
+    suggestionId: string,
+    decision: Extract<AdminBotBadgeSuggestionStatus, "approved" | "rejected">,
+    actor: string,
+  ): AdminBotServiceResponse<{
+    suggestion: AdminBotBadgeSuggestionView;
+    badge?: AdminBotBadgeDefinition;
+  }> {
+    const suggestion = this.store.getBadgeSuggestion(suggestionId);
+    if (!suggestion || suggestion.status !== "pending") {
+      return serviceError(404, "badge suggestion not found");
+    }
+    let badge: AdminBotBadgeDefinition | undefined;
+    if (decision === "approved") {
+      const created = this.saveBadgeDefinition(
+        {
+          category: suggestion.category,
+          name: suggestion.name,
+          description: suggestion.description,
+          ...(suggestion.criteria_url ? { criteria_url: suggestion.criteria_url } : {}),
+          ...(suggestion.tier ? { tier: suggestion.tier } : {}),
+        },
+        actor,
+      );
+      if (!created.ok) {
+        return created;
+      }
+      badge = created.payload.badge;
+    }
+    const decided: AdminBotBadgeSuggestion = {
+      ...suggestion,
+      status: decision,
+      decided_at: new Date().toISOString(),
+      decided_by: actor,
+      ...(badge ? { created_badge_id: badge.id } : {}),
+    };
+    this.store.saveBadgeSuggestion(decided);
+    this.recordAudit({
+      type: decision === "approved" ? "badge.suggestion_approved" : "badge.suggestion_rejected",
+      actor,
+      details: {
+        suggestion_id: suggestion.id,
+        ...(suggestion.suggested_by ? { suggested_by: suggestion.suggested_by } : {}),
+        ...(badge ? { badge_id: badge.id, family_key: badge.family_key } : {}),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { suggestion: this.badgeSuggestionView(decided), ...(badge ? { badge } : {}) },
+    };
+  }
+
+  /**
+   * The badge-shaped half of a suggestion, checked the way a definition is.
+   *
+   * Split out rather than inlined because `saveBadgeDefinition` runs these same rules at approval
+   * time, and two hand-kept copies of "what makes a badge well-formed" is how a queue fills up
+   * with items that cannot be approved. This is the submission-time copy; it reads the same
+   * constants and returns the trimmed values the caller stores.
+   */
+  private validateBadgeSuggestionFields(
+    input: AdminBotBadgeSuggestionInput,
+  ): AdminBotServiceResponse<{
+    category: string;
+    name: string;
+    description: string;
+    tier?: string;
+    criteriaUrl?: string;
+  }> {
+    const category = input.category?.trim() ?? "";
+    const name = input.name?.trim() ?? "";
+    const description = input.description?.trim() ?? "";
+    const tier = input.tier?.trim() || undefined;
+    const criteriaUrl = input.criteria_url?.trim() || undefined;
+    if (!category) {
+      return serviceError(400, "badge category is required");
+    }
+    if (category.length > ADMINBOT_BADGE_CATEGORY_MAX) {
+      return serviceError(
+        400,
+        `badge category cannot exceed ${ADMINBOT_BADGE_CATEGORY_MAX} characters`,
+      );
+    }
+    if (!name) {
+      return serviceError(400, "badge name is required");
+    }
+    const nameError = validateLabel(name, "badge name");
+    if (nameError) {
+      return serviceError(400, nameError);
+    }
+    if (tier) {
+      const tierError = validateLabel(tier, "badge tier");
+      if (tierError) {
+        return serviceError(400, tierError);
+      }
+    }
+    if (!description) {
+      return serviceError(400, "badge description is required");
+    }
+    if (description.includes("\n") || description.includes("\r")) {
+      return serviceError(400, "badge description must be a single line");
+    }
+    if (description.length > ADMINBOT_BADGE_DESCRIPTION_MAX) {
+      return serviceError(
+        400,
+        `badge description cannot exceed ${ADMINBOT_BADGE_DESCRIPTION_MAX} characters`,
+      );
+    }
+    const criteriaError = validateExternalLink(criteriaUrl, "badge criteria");
+    if (criteriaError) {
+      return serviceError(400, criteriaError);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        category,
+        name,
+        description,
+        ...(tier ? { tier } : {}),
+        ...(criteriaUrl ? { criteriaUrl } : {}),
+      },
+    };
+  }
+
+  private badgeSuggestionView(suggestion: AdminBotBadgeSuggestion): AdminBotBadgeSuggestionView {
+    const suggesterName = suggestion.suggested_by
+      ? this.store.getLabMember(suggestion.suggested_by)?.name
+      : undefined;
+    // `created_badge_id` is carried as stored rather than re-checked against the catalogue: there
+    // is no path that deletes a badge definition, so an id that resolved once resolves forever.
+    // Add the check here if one is ever added there.
+    return {
+      ...suggestion,
+      ...(suggesterName ? { suggested_by_name: suggesterName } : {}),
+    };
   }
 
   private badgeNominationView(

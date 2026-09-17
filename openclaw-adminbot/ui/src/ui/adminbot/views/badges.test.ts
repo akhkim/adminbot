@@ -103,6 +103,11 @@ describe("renderAdminBotBadges", () => {
         onAssign: vi.fn(),
         onRemove: vi.fn(),
         onDecide: vi.fn(),
+        suggestions: [],
+        suggestionsLoading: false,
+        suggestionsError: null,
+        suggestionBusy: false,
+        onDecideSuggestion: vi.fn(),
       }),
       container,
     );
@@ -161,6 +166,11 @@ describe("renderAdminBotBadges", () => {
         onAssign: vi.fn(),
         onRemove: vi.fn(),
         onDecide: vi.fn(),
+        suggestions: [],
+        suggestionsLoading: false,
+        suggestionsError: null,
+        suggestionBusy: false,
+        onDecideSuggestion: vi.fn(),
       }),
       container,
     );
@@ -198,6 +208,99 @@ describe("renderAdminBotBadges", () => {
 
     expect(container.textContent).toContain("No badges defined yet.");
   });
+
+  // Suggested badges: what the catalogue should contain, next to the nomination queue that says
+  // who should hold what.
+  it("lists a suggested badge with the case for it, and offers both answers", () => {
+    const onDecideSuggestion = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        onDecideSuggestion,
+        suggestions: [
+          {
+            id: "sug_1",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Three people did this for ICML and none of it is recorded.",
+            suggested_by: "pat",
+            suggested_by_name: "Pat Doe",
+            status: "pending",
+            created_at: "2026-09-01T10:00:00.000Z",
+          },
+        ],
+      }),
+      container,
+    );
+
+    const card = container.querySelector('[data-testid="adminbot-badge-suggestion"]');
+    expect(card?.textContent).toContain("Reviewer Rescue");
+    // The rationale is the part the decision turns on, so it is on the card rather than behind a
+    // disclosure -- the description says what the badge is, not why the lab needs one.
+    expect(card?.textContent).toContain("Three people did this for ICML");
+    expect(card?.textContent).toContain("Pat Doe");
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="adminbot-badge-suggestion-approve-sug_1"]')
+      ?.click();
+    expect(onDecideSuggestion).toHaveBeenCalledWith("sug_1", "approve");
+  });
+
+  it("names the suggester as gone rather than blank once they have left", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        suggestions: [
+          {
+            id: "sug_2",
+            category: "Community Building",
+            name: "Reading Group Host",
+            description: "Ran the weekly reading group for a term.",
+            rationale: "Somebody does this every term and it is invisible.",
+            status: "pending",
+            created_at: "2026-09-01T10:00:00.000Z",
+          },
+        ],
+      }),
+      container,
+    );
+
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-suggester"]')?.textContent,
+    ).toContain("since left");
+  });
+
+  it("keeps decided suggestions out of the queue without discarding them", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        suggestions: [
+          {
+            id: "sug_3",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Worth recording.",
+            status: "approved",
+            created_at: "2026-09-01T10:00:00.000Z",
+            decided_at: "2026-09-02T10:00:00.000Z",
+            created_badge_id: "badge_1",
+          },
+        ],
+      }),
+      container,
+    );
+
+    const panel = container.querySelector('[data-testid="adminbot-badge-suggestions"]');
+    // Nothing waiting, but the decision is still readable under the disclosure.
+    expect(panel?.textContent).toContain("No suggested badges waiting.");
+    expect(panel?.querySelector("details")?.textContent).toContain("Reviewer Rescue");
+    expect(panel?.querySelector('[data-testid="adminbot-badge-suggestion"]')).toBeNull();
+  });
 });
 
 function baseProps(): Parameters<typeof renderAdminBotBadges>[0] {
@@ -222,6 +325,11 @@ function baseProps(): Parameters<typeof renderAdminBotBadges>[0] {
     onAssign: vi.fn(),
     onRemove: vi.fn(),
     onDecide: vi.fn(),
+    suggestions: [],
+    suggestionsLoading: false,
+    suggestionsError: null,
+    suggestionBusy: false,
+    onDecideSuggestion: vi.fn(),
   };
 }
 
