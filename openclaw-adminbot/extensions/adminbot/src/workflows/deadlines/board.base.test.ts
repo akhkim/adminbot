@@ -39,8 +39,10 @@ describe("standalone deadline board foundation", () => {
     });
     try {
       const document = dom.window.document;
-      expect(document.querySelectorAll(".stat")).toHaveLength(4);
-      expect(document.querySelector("#s-total")?.textContent).toBe("2");
+      // The board leads with the hero alone: the four summary tiles ("Matching deadlines",
+      // "Due today", "Due within 7/30 days") were removed, and the footer carries the count.
+      expect(document.querySelector(".stats")).toBeNull();
+      expect(document.querySelector("#foot")?.textContent).toContain("Showing 2 of 2");
       expect(document.querySelector<HTMLInputElement>("#search")?.placeholder).toBe(
         "Search conferences & workshops…",
       );
@@ -74,7 +76,6 @@ describe("standalone deadline board foundation", () => {
       const search = document.querySelector<HTMLInputElement>("#search")!;
       search.value = "First Workshop";
       search.dispatchEvent(new dom.window.Event("input"));
-      expect(document.querySelector("#s-total")?.textContent).toBe("1");
       expect(document.querySelector(".chip .ct")?.textContent).toBe("1");
       expect(document.querySelector("#foot")?.textContent).toContain("Showing 1 of 1");
 

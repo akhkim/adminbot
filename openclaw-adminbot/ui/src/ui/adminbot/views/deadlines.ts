@@ -265,6 +265,88 @@ export function milestoneDateLabel(entry: DeadlineMilestone): string {
     : plainDateLabel(entry.date ?? "");
 }
 
+/**
+ * When a stage stops being something still ahead.
+ *
+ * Schedule dates are calendar days, not AoE timestamps, so a day is spent only once it is over:
+ * read as 23:59:59 in the same AoE frame the submissions use. A period ends when its last day
+ * does -- a conference running through Friday is still happening on Friday.
+ */
+export function milestoneEndInstant(milestone: DeadlineMilestone): number {
+  const value =
+    milestone.kind === "period"
+      ? (milestone.ends ?? milestone.starts ?? "")
+      : (milestone.date ?? "");
+  const day = /(\d{4})-(\d{2})-(\d{2})/u.exec(value)?.[0];
+  if (!day) {
+    return Number.NaN;
+  }
+  return aoeInstantMs(/[ T]\d{2}:\d{2}/u.test(value) ? value : `${day} 23:59:59`);
+}
+
+/** One dated stage of a venue, as the board counts down to it. */
+export type DeadlineStage = {
+  instant: number;
+  /** What the venue calls it: its own submission label, or the milestone's. */
+  label: string;
+  /** The date as a card prints it, in the frame the stage is published in. */
+  dateLabel: string;
+  /** The day, for a `<time datetime>` attribute. */
+  day: string;
+  /** True for the submission itself, false for anything published behind it. */
+  submission: boolean;
+};
+
+/**
+ * Every dated stage of a venue in the order it happens: the submission, then the rest of its
+ * calendar.
+ *
+ * The board's period split reads this rather than the submission alone. A conference is not done
+ * with the lab the day its deadline passes -- decisions still land, camera-ready copy is still
+ * due, and the conference itself still has to be travelled to -- so a venue belongs under
+ * "Upcoming" until every stage it published is behind us.
+ */
+export function venueStages(venue: DeadlineVenue): DeadlineStage[] {
+  const stages: DeadlineStage[] = [];
+  const submission = aoeInstantMs(venue.deadline_aoe);
+  if (Number.isFinite(submission)) {
+    stages.push({
+      instant: submission,
+      label: capitaliseFirst(venue.deadline_label?.trim() || "Submission"),
+      dateLabel: aoeDateTimeLabel(venue.deadline_aoe),
+      day: venue.deadline_aoe,
+      submission: true,
+    });
+  }
+  for (const milestone of venueSchedule(venue)) {
+    const instant = milestoneEndInstant(milestone);
+    if (!Number.isFinite(instant)) {
+      continue;
+    }
+    stages.push({
+      instant,
+      label: milestone.label,
+      dateLabel: milestoneDateLabel(milestone),
+      day: milestoneStart(milestone),
+      submission: false,
+    });
+  }
+  return stages.toSorted((left, right) => left.instant - right.instant);
+}
+
+/**
+ * The soonest stage of a venue that has not happened yet, or undefined once the whole calendar is
+ * behind us.
+ *
+ * This is what every countdown on the board targets. For the common row -- a submission still
+ * open, with its decisions and conference dates after it -- the answer is the submission, so
+ * nothing changes. It differs only for a venue whose deadline has passed, where the next thing to
+ * wait for is the notification or the conference itself.
+ */
+export function nextVenueStage(venue: DeadlineVenue, now: number): DeadlineStage | undefined {
+  return venueStages(venue).find((stage) => stage.instant > now);
+}
+
 /** What a timeline row is called, for a stable tie-break between two same-day rows. */
 function timelineLabel(item: DeadlineTimelineItem): string {
   return item.kind === "entry" ? item.entry.venue.name : item.label;
@@ -369,18 +451,45 @@ export function headlineDeadlineEntry(
   );
 }
 
+/**
+ * Split the board into what is still ahead and what is wholly behind us.
+ *
+ * "Upcoming" is not "the deadline has not passed": a venue stays here while any stage of it is
+ * still to come, so EMNLP keeps a card through its notification, its camera-ready date and the
+ * week the conference actually meets, and only drops into "Past" once the last of those is over.
+ * The alternative filed a conference under "Past" the minute the lab submitted to it, which is
+ * exactly when it starts mattering most.
+ *
+ * Upcoming is ordered by the stage each row is waiting on rather than by its submission, so the
+ * list still reads top-to-bottom as "what happens next". Past keeps its own ordering: most
+ * recently finished first.
+ */
 export function entriesForDeadlinePeriod(
   entries: readonly DeadlineBoardEntry[],
   now: number,
   period: DeadlineBoardPeriod,
 ): DeadlineBoardEntry[] {
-  return entries
-    .filter((entry) => (period === "upcoming" ? entry.instant > now : entry.instant <= now))
-    .toSorted((left, right) =>
-      period === "upcoming"
-        ? left.instant - right.instant || left.venue.name.localeCompare(right.venue.name)
-        : right.instant - left.instant || left.venue.name.localeCompare(right.venue.name),
-    );
+  if (period === "past") {
+    return entries
+      .filter((entry) => !nextVenueStage(entry.venue, now))
+      .toSorted(
+        (left, right) =>
+          right.instant - left.instant || left.venue.name.localeCompare(right.venue.name),
+      );
+  }
+  const pending = new Map<DeadlineBoardEntry, number>();
+  for (const entry of entries) {
+    const stage = nextVenueStage(entry.venue, now);
+    if (stage) {
+      pending.set(entry, stage.instant);
+    }
+  }
+  return [...pending.keys()].toSorted(
+    (left, right) =>
+      (pending.get(left) ?? left.instant) - (pending.get(right) ?? right.instant) ||
+      left.instant - right.instant ||
+      left.venue.name.localeCompare(right.venue.name),
+  );
 }
 
 export function filterDeadlineBoardEntries(
@@ -509,16 +618,20 @@ export function groupDeadlineBoardEntries(
   return ordered;
 }
 
-function groupOptions(entries: readonly DeadlineBoardEntry[], period: DeadlineBoardPeriod) {
-  const groups = new Map<string, { id: string; label: string; count: number; instant: number }>();
-  for (const entry of entries) {
+/**
+ * The venue chips, in the order the board itself is in.
+ *
+ * Ranked by where each group's first row falls in `entries` rather than by re-deriving a date.
+ * The list arrives sorted for the period already -- soonest pending stage first for Upcoming,
+ * most recently finished first for Past -- so first appearance is that same order, and the chips
+ * cannot disagree with the rows underneath them.
+ */
+function groupOptions(entries: readonly DeadlineBoardEntry[]) {
+  const groups = new Map<string, { id: string; label: string; count: number; rank: number }>();
+  for (const [rank, entry] of entries.entries()) {
     const current = groups.get(entry.venue.venue_group);
     if (current) {
       current.count += 1;
-      current.instant =
-        period === "upcoming"
-          ? Math.min(current.instant, entry.instant)
-          : Math.max(current.instant, entry.instant);
     } else {
       groups.set(entry.venue.venue_group, {
         id: entry.venue.venue_group,
@@ -526,15 +639,13 @@ function groupOptions(entries: readonly DeadlineBoardEntry[], period: DeadlineBo
         // filtering matches on, so renaming the chip cannot break selection.
         label: workshopGroupLabel(entry.venue.venue_group),
         count: 1,
-        instant: entry.instant,
+        rank,
       });
     }
   }
-  return [...groups.values()].toSorted((left, right) => {
-    const chronology =
-      period === "upcoming" ? left.instant - right.instant : right.instant - left.instant;
-    return chronology || left.label.localeCompare(right.label);
-  });
+  return [...groups.values()].toSorted(
+    (left, right) => left.rank - right.rank || left.label.localeCompare(right.label),
+  );
 }
 
 export function workshopSourceLinks(venue: DeadlineVenue): {
@@ -737,8 +848,30 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
   { value: "unknown", label: "Archival status unknown" },
 ];
 
+/**
+ * The instant a row is counting down to: the soonest stage it is still waiting on.
+ *
+ * Identical to the submission for every row whose deadline is still open, because that is the
+ * first stage of its own calendar. It moves on only for a row whose deadline has passed and whose
+ * notification or conference has not.
+ */
+function countdownTarget(entry: DeadlineBoardEntry, now: number): number {
+  return nextVenueStage(entry.venue, now)?.instant ?? entry.instant;
+}
+
 function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
-  return entry.instant <= now ? "passed" : urgencyOf(entry.instant, now);
+  const target = countdownTarget(entry, now);
+  return target <= now ? "passed" : urgencyOf(target, now);
+}
+
+/**
+ * The words beside a countdown. Names the stage when it is not the submission, because "45 days
+ * left" printed next to a deadline that passed last month otherwise reads as a broken clock.
+ */
+function stageCountdownLabel(entry: DeadlineBoardEntry, now: number): string {
+  const stage = nextVenueStage(entry.venue, now);
+  const left = daysLeftLabel(stage?.instant ?? entry.instant, now);
+  return stage && !stage.submission ? `${stage.label} · ${left}` : left;
 }
 
 function capitalize(value: string): string {
@@ -794,10 +927,6 @@ function countdownParts(diff: number) {
 }
 
 const pad = (value: number): string => String(value).padStart(2, "0");
-
-function aoeDayKey(now: number): string {
-  return new Date(now - 12 * 3_600_000).toISOString().slice(0, 10);
-}
 
 class AdminbotDeadlinesView extends LitElement {
   static override properties = {
@@ -1517,7 +1646,7 @@ class AdminbotDeadlinesView extends LitElement {
         </section>
       `;
     }
-    const parts = countdownParts(entry.instant - this.now);
+    const parts = countdownParts(countdownTarget(entry, this.now) - this.now);
     return html`
       <section
         class="deadline-board__hero"
@@ -1538,7 +1667,7 @@ class AdminbotDeadlinesView extends LitElement {
             >
             ${this.renderHistory(entry.venue, "hero")} ·
             <span class="deadline-board__hero-urgency"
-              >${daysLeftLabel(entry.instant, this.now)}</span
+              >${stageCountdownLabel(entry, this.now)}</span
             >
             ${renderClassification(entry.venue)} ${renderVenueLocation(entry.venue)}
           </div>
@@ -1546,7 +1675,7 @@ class AdminbotDeadlinesView extends LitElement {
         ${this.period === "upcoming"
           ? html`<div
               class="deadline-board__hero-countdown"
-              aria-label=${countdownLabel(entry.instant - this.now)}
+              aria-label=${countdownLabel(countdownTarget(entry, this.now) - this.now)}
             >
               ${this.renderCountdownUnit(parts.days, "days")}
               <span aria-hidden="true">:</span>
@@ -1565,39 +1694,6 @@ class AdminbotDeadlinesView extends LitElement {
     return html`<span class="deadline-board__countdown-unit">
       <strong>${value}</strong><small>${label}</small>
     </span>`;
-  }
-
-  private renderStats(entries: readonly DeadlineBoardEntry[]) {
-    const within = (days: number) =>
-      entries.filter((entry) => {
-        const distance =
-          this.period === "upcoming" ? entry.instant - this.now : this.now - entry.instant;
-        return distance >= 0 && distance <= days * MS_DAY;
-      }).length;
-    const today = entries.filter(
-      (entry) => entry.venue.deadline_aoe.slice(0, 10) === aoeDayKey(this.now),
-    ).length;
-    const direction = this.period === "upcoming" ? "Due" : "Passed";
-    return html`
-      <dl class="deadline-board__stats">
-        <div>
-          <dt>Matching deadlines</dt>
-          <dd>${entries.length}</dd>
-        </div>
-        <div>
-          <dt>${direction} today</dt>
-          <dd data-urgency="critical">${today}</dd>
-        </div>
-        <div>
-          <dt>${direction} within 7 days</dt>
-          <dd data-urgency="soon">${within(7)}</dd>
-        </div>
-        <div>
-          <dt>${direction} within 30 days</dt>
-          <dd data-urgency="planned">${within(30)}</dd>
-        </div>
-      </dl>
-    `;
   }
 
   private renderModes() {
@@ -1709,7 +1805,7 @@ class AdminbotDeadlinesView extends LitElement {
           >
             All <span>${entries.length}</span>
           </button>
-          ${groupOptions(entries, this.period).map(
+          ${groupOptions(entries).map(
             (group) => html`
               <button
                 type="button"
@@ -1896,7 +1992,7 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private renderCard(entry: DeadlineBoardEntry) {
-    const { venue, instant } = entry;
+    const { venue } = entry;
     return html`
       <article
         class="deadline-card"
@@ -1908,7 +2004,7 @@ class AdminbotDeadlinesView extends LitElement {
       >
         <div class="deadline-card__topline">
           <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-          <span class="deadline-card__urgency">${daysLeftLabel(entry.instant, this.now)}</span>
+          <span class="deadline-card__urgency">${stageCountdownLabel(entry, this.now)}</span>
         </div>
         <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
         <p
@@ -1927,7 +2023,9 @@ class AdminbotDeadlinesView extends LitElement {
           ${this.renderHistory(venue, "card")}
         </span>
         <p class="deadline-card__countdown">
-          ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
+          ${this.period === "past"
+            ? "passed"
+            : countdownLabel(countdownTarget(entry, this.now) - this.now)}
         </p>
         ${this.renderSchedule(venue)} ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
@@ -2072,7 +2170,9 @@ class AdminbotDeadlinesView extends LitElement {
                     </span>
                   </td>
                   <td class="deadline-table__countdown">
-                    ${this.period === "past" ? "passed" : countdownLabel(entry.instant - this.now)}
+                    ${this.period === "past"
+                      ? "passed"
+                      : countdownLabel(countdownTarget(entry, this.now) - this.now)}
                   </td>
                   <td class="deadline-table__name">${renderDeadlineTitle(entry.venue)}</td>
                   <td>
@@ -2131,7 +2231,7 @@ class AdminbotDeadlinesView extends LitElement {
     groupKind: DeadlineBoardGroup["kind"] = "workshops",
     showLocation = false,
   ) {
-    const { venue, instant } = entry;
+    const { venue } = entry;
     const title = groupRowTitle(venue, conference, groupKind);
     const change = deadlineChangeSummary(venue);
     const details = [
@@ -2156,7 +2256,9 @@ class AdminbotDeadlinesView extends LitElement {
         data-period=${this.period}
       >
         <span class="deadline-group__row-countdown">
-          ${this.period === "past" ? "passed" : countdownLabel(instant - this.now)}
+          ${this.period === "past"
+            ? "passed"
+            : countdownLabel(countdownTarget(entry, this.now) - this.now)}
         </span>
         <span class="deadline-group__row-date-wrap">
           <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>
@@ -2271,6 +2373,12 @@ class AdminbotDeadlinesView extends LitElement {
         // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
         // reader what is behind the triangle before they open it.
         const laterDates = group.timeline.length - group.entries.length;
+        // The collapsed row summarises the soonest thing the group is waiting on. Entries arrive
+        // ordered by that stage, so the lead entry carries it -- and for a conference the lab has
+        // already submitted to, the stage is its notification or the conference itself rather
+        // than the deadline it closed weeks ago.
+        const leadStage = nextVenueStage(group.entries[0].venue, this.now);
+        const leadPending = leadStage && !leadStage.submission ? leadStage : undefined;
         const counts =
           group.kind === "conference"
             ? [
@@ -2308,16 +2416,22 @@ class AdminbotDeadlinesView extends LitElement {
               <span class="deadline-group__summary-countdown"
                 >${this.period === "past"
                   ? "passed"
-                  : countdownLabel(group.instant - this.now)}</span
+                  : countdownLabel(
+                      (leadStage?.instant ?? group.entries[0].instant) - this.now,
+                    )}</span
               >
               <span class="deadline-group__heading">
                 <strong>${group.label}</strong>
                 <small>
-                  ${group.kind === "conference"
+                  ${group.kind === "conference" || leadPending
                     ? html`<span class="deadline-group__next-stage"
-                          >${capitalize(group.entries[0].venue.deadline_label)}</span
+                          >${leadPending
+                            ? leadPending.label
+                            : capitalize(group.entries[0].venue.deadline_label)}</span
                         ><span aria-hidden="true"> · </span>`
-                    : nothing}${renderAoeDateTime(group.entries[0].venue.deadline_aoe)}
+                    : nothing}${leadPending
+                    ? leadPending.dateLabel
+                    : renderAoeDateTime(group.entries[0].venue.deadline_aoe)}
                   ${groupLocation
                     ? renderVenueLocation(groupLocation, venueConferenceSites(groupLocation))
                     : nothing}
@@ -2456,9 +2570,7 @@ class AdminbotDeadlinesView extends LitElement {
           : nothing}
         ${this.renderProposalDrawer()} ${this.renderModes()}
         ${this.renderControls(matching, periodEntries, filters)} ${this.renderArchivalGuide()}
-        <div class="deadline-board__overview">
-          ${this.renderHero(next)} ${this.renderStats(filtered)}
-        </div>
+        <div class="deadline-board__overview">${this.renderHero(next)}</div>
         ${filtered.length
           ? this.view === "cards"
             ? html`<div class="deadline-board__grid">
