@@ -37,6 +37,7 @@ from adminbot_conference_deadlines import (
     refresh_configured_conferences as refresh_conference_milestones,
 )
 from adminbot_deadlines import AoEClock, is_sweep_due
+from adminbot_deadline_time import TIME_FIELDS, timing_fields
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
@@ -1204,6 +1205,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                         "workshop_location"):
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
+            item.update({key: previous[key] for key in TIME_FIELDS if key in previous})
             item["link"] = (item["cfp_url"] or homepage
                             or normalize_url(item.get("openreview_url", "")))
             continue
@@ -1238,6 +1240,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             f"{item.get('id', '')} {item.get('name', '')} {item.get('_stage', '')}",
         )
         if deadline["deadline_aoe"]:
+            item.update({key: deadline[key] for key in TIME_FIELDS})
             for key in (
                 "deadline_aoe", "source_url", "deadline_source_kind",
                 "deadline_source_status", "deadline_source_precision",
@@ -1606,6 +1609,8 @@ def classify(item):
     set on each of them is a field that will be wrong. An entry may still declare
     `venue_family` itself when the name does not carry it (IASEAI, ARR).
     """
+    if item.get("deadline_time_precision") != "date_only" and item.get("deadline_aoe"):
+        item.update(timing_fields(item["deadline_aoe"]))
     item.pop("group_label", None)
     item.pop("_source_observed", None)
     for key in ("_openreview_deadline", "_full_submission_deadline", "_group_final_deadline", "_group_final_evidence"):
@@ -1708,8 +1713,8 @@ def classify(item):
     return item
 
 
-REVISION_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label", "link")
-REVISION_CHANGE_FIELDS = ("deadline_aoe",)
+REVISION_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label", "link") + TIME_FIELDS
+REVISION_CHANGE_FIELDS = ("deadline_aoe", "deadline_time_precision", "deadline_date")
 
 
 def canonical_venue_identity(item):
@@ -1732,6 +1737,10 @@ def canonical_venue_identity(item):
 
 def _revision_change_value(revision, key):
     value = revision.get(key, "")
+    if key == "deadline_time_precision":
+        return value or "exact"
+    if key == "deadline_date":
+        return value or revision.get("deadline_aoe", "")[:10]
     return value[:16] if key.endswith("_aoe") else value
 
 
@@ -1781,13 +1790,18 @@ def merge_history(item, previous=None, stale=False, reset_previous=False):
         revisions.append(dict(observed_at=checked_at(), **projection))
     else:
         revisions[matching]["link"] = projection["link"]
+        timing = (timing_fields(revisions[matching]["deadline_aoe"])
+                  if item.get("deadline_time_precision") != "date_only" else projection)
+        revisions[matching].update({key: timing[key] for key in TIME_FIELDS})
     if source_revisions_present and source_revisions:
         revisions.sort(key=lambda revision: revision.get("deadline_aoe", "")[:16])
 
     distinct_deadlines = list(dict.fromkeys(revision["deadline_aoe"][:16] for revision in revisions))
-    if len(distinct_deadlines) > 1 and all(
+    if (len(distinct_deadlines) > 1
+            and all(revision.get("deadline_time_precision") != "date_only" for revision in revisions)
+            and all(
         later > earlier for earlier, later in zip(distinct_deadlines, distinct_deadlines[1:])
-    ):
+    )):
         item["deadline_extended"] = True
         if item.get("deadline_history_status") == "not_extended":
             item["deadline_history_status"] = "observed_history"
@@ -1890,16 +1904,19 @@ def write_outputs(items):
             "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
             "deadline_official_url",
             "deadline_extended", "deadline_history_status",
-            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", *TIME_FIELDS]
     # "" is the right empty for every string field here; `schedule` is a list, and a
     # bare "" in it would typecheck as neither.
-    slim = [{k: it.get(k, [] if k == "schedule" else "") for k in keys} for it in items]
+    slim = [{k: it.get(k, [] if k == "schedule" else "") for k in keys
+             if k not in TIME_FIELDS or k in it} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
         f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export type DeadlineRevision = {\n"
                 "  observed_at: string;\n  deadline_aoe: string;\n"
+                "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
+                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
                 "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
                 "/** One dated stage of a venue's calendar, other than the submission itself. */\n"
                 "export type DeadlineMilestone = {\n"
@@ -1913,6 +1930,8 @@ def write_outputs(items):
                 "  starts?: string;\n  ends?: string;\n};\n\n"
                 "export type DeadlineVenue = {\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
+                "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
+                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
                 "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
                 "  deadline_id: string;\n"
                 "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
@@ -1967,9 +1986,9 @@ def write_outputs(items):
     summary_keys = ["id", "deadline_id", "venue_id", "venue_aliases", "name",
                     "venue_type", "venue_group", "entry_type", "archival_status", "archival",
                     "milestone", "schedule",
-                    "deadline_label", "deadline_aoe", "notification_aoe", "link"]
+                    "deadline_label", "deadline_aoe", "notification_aoe", "link", *TIME_FIELDS]
     summaries = [{key: item.get(key, [] if key in ("venue_aliases", "schedule") else "")
-                  for key in summary_keys} for item in items]
+                  for key in summary_keys if key not in TIME_FIELDS or key in item} for item in items]
     summary_path = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines-summary.ts")
     with open(summary_path, "w") as f:
         f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"

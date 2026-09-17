@@ -1965,3 +1965,67 @@ it("keeps location selection across views and allows returning to all locations"
   await settle(container);
   expect(container.querySelectorAll(".deadline-card")).toHaveLength(4);
 });
+
+it("shows the source date and a plain conservative countdown in cards", async () => {
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "date-only",
+      deadline_id: "date-only",
+      name: "Example date-only workshop",
+      deadline_aoe: "2026-08-28 22:00:00",
+      deadline_at: "",
+      deadline_date: "2026-08-30",
+      deadline_time_precision: "date_only",
+      deadline_timezone: "",
+      deadline_planning_at: "2026-08-29T10:00:00Z",
+      revisions: [],
+      schedule: [],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const card = container.querySelector(".deadline-card")!;
+  expect(card.textContent).toContain("Aug 30, 2026");
+  expect(card.textContent).toContain("time unknown");
+  expect(card.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe("4d 22:00:00");
+  expect(card.textContent).not.toContain("Plan within");
+  expect(card.textContent).toContain("4 days left");
+  expect(card.textContent).not.toContain("Time unknown");
+  expect(card.textContent).not.toContain("22:00 AoE");
+  container.querySelector<HTMLButtonElement>('button[aria-label^="Suggest correction:"]')!.click();
+  await settle(container);
+  expect(container.querySelector<HTMLInputElement>('input[name="deadlineDate"]')?.value).toBe(
+    "2026-08-30",
+  );
+  expect(container.querySelector<HTMLInputElement>('input[name="deadlineTime"]')?.value).toBe("");
+  expect(container.querySelector<HTMLSelectElement>('select[name="timezone"]')?.value).toBe("");
+});
+
+it("labels a learned closing time as updated instead of extended", () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    deadline_aoe: "2035-02-01 23:59:00",
+    deadline_time_precision: "exact",
+    revisions: [
+      {
+        observed_at: "2035-01-01T00:00:00Z",
+        deadline_aoe: "2035-02-01 00:00:00",
+        deadline_date: "2035-02-01",
+        deadline_timezone: "AoE",
+        deadline_time_precision: "date_only",
+      },
+    ],
+  };
+  expect(deadlineChangeSummary(venue)?.kind).toBe("updated");
+  expect(deadlineChangeLabel(venue)).toContain("time unknown");
+  expect(deadlineChangeLabel(venue)).not.toContain("00:00 AoE");
+});

@@ -15,6 +15,8 @@ import html as html_module
 import re
 from html.parser import HTMLParser
 
+from adminbot_deadline_time import timing_fields
+
 
 MONTHS = {
     "jan": 1,
@@ -274,9 +276,10 @@ def _candidate_stamp(text, start, end, date):
     if re.search(r"(?i)(?:AoE|Anywhere\s+on\s+Earth)", immediate) and not (
         LOCAL_TIME.search(immediate) or LOCAL_HOUR_TIME.search(immediate)
     ):
-        return datetime.datetime.combine(date, datetime.time(23, 59)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        ), "aoe-date"
+        default = _global_aoe_time(text)
+        if default:
+            return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global"
+        return date.isoformat(), "aoe-date"
     local_matches = list(LOCAL_TIME.finditer(nearby)) + list(LOCAL_HOUR_TIME.finditer(nearby))
     local = min(
         local_matches,
@@ -297,7 +300,9 @@ def _candidate_stamp(text, start, end, date):
     if default:
         return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global"
     if re.search(r"(?i)(?:AoE|Anywhere\s+on\s+Earth)", nearby):
-        return datetime.datetime.combine(date, datetime.time(23, 59)).strftime("%Y-%m-%d %H:%M:%S"), "aoe-date"
+        return date.isoformat(), "aoe-date"
+    if re.search(r"(?i)\b(?:UTC|GMT)(?:[+-]0)?\b", immediate):
+        return date.isoformat(), "utc-date"
     return date.isoformat(), "date-only"
 
 
@@ -424,6 +429,9 @@ def _candidate_is_abstract(candidate):
 def _deduplicate_candidates(candidates):
     best = {}
     for candidate in candidates:
+        if candidate.get("precision") == "aoe-date":
+            # Older cached extractions synthesized 23:59 for this date-only evidence.
+            candidate = dict(candidate, stamp=candidate["date"])
         key = (
             candidate["stamp"],
             candidate["source_url"],
@@ -647,6 +655,7 @@ def reconcile_deadline_candidates(
     if group_final_stamp and not openreview_stamp:
         result["deadline_source_status"] = "openreview_final_submission"
     if not selected:
+        result.update(timing_fields(fallback))
         return result
 
     result["deadline_official_url"] = selected["source_url"]
@@ -667,6 +676,14 @@ def reconcile_deadline_candidates(
             else "official_date_conflicts_with_openreview"
         )
         result["deadline_source_precision"] = "date_only"
+        if fallback:
+            result.update(timing_fields(fallback))
+        else:
+            result.update(timing_fields(selected["date"], date_only=True,
+                                        timezone={"aoe-date": "AoE", "utc-date": "UTC"}.get(selected["precision"], "")))
+            result.update(source_url=selected["source_url"], deadline_source_kind="official",
+                          deadline_source_status="portal_unverified",
+                          deadline_source_evidence=selected["evidence"])
         return result
 
     official = selected["stamp"]
@@ -679,6 +696,7 @@ def reconcile_deadline_candidates(
         )
         if official[:16] == fallback[:16]:
             result["source_revisions"] = extension_revision_stamps(selected, candidates, target_hint)
+        result.update(timing_fields(fallback))
         return result
 
     result.update(
@@ -697,6 +715,7 @@ def reconcile_deadline_candidates(
     result["deadline_extended"] = bool(
         result["deadline_extended"] or len(result["source_revisions"]) > 1
     )
+    result.update(timing_fields(official))
     return result
 
 
@@ -728,7 +747,7 @@ def split_workshop_milestones(item, candidates, year):
             pass
     if not abstract_stamp and abstracts:
         selected, _ = select_official_candidate(abstracts, "", year, "abstract")
-        if selected and len(selected["stamp"]) > 10:
+        if selected:
             abstract_stamp = selected["stamp"]
     full_portal = item.get("_full_submission_deadline", "")
     initial_portal = item.get("_openreview_deadline", "")
@@ -740,7 +759,7 @@ def split_workshop_milestones(item, candidates, year):
     if not final_stamp:
         finals = [c for c in candidates if not _candidate_is_abstract(c) and not c["old_hint"]]
         selected, _ = select_official_candidate(finals, "", year)
-        if selected and len(selected["stamp"]) > 10:
+        if selected:
             final_stamp = selected["stamp"]
     portal = item.get("_openreview_deadline", "")
     portal_abstract = portal and portal[:10] == abstract_stamp[:10]
@@ -753,7 +772,7 @@ def split_workshop_milestones(item, candidates, year):
                         _openreview_deadline=portal if portal_abstract else "", _stage="abstract")
     item.update(deadline_label="full paper", _stage="full_paper",
                 _openreview_deadline=full_portal or (portal if portal_final else ""),
-                _group_final_deadline=final_stamp, deadline_aoe=final_stamp)
+                _group_final_deadline=final_stamp if len(final_stamp) > 10 else "", deadline_aoe=final_stamp)
     if portal and not portal_abstract and not portal_final:
         item["deadline_portal_unmatched"] = portal
         registration["deadline_portal_unmatched"] = portal

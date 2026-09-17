@@ -24,6 +24,10 @@ workshop daily only within three days of its deadline; other workshop pages wait
 public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
 a second bounded pool.
 
+An exact deadline carries `deadline_at` as a UTC instant; the Control UI formats it in AoE. When a source gives only a date, `deadline_at` is empty and `deadline_time_precision` is `date_only`. `deadline_date` retains the published day and `deadline_timezone` records the known zone, or an empty string when the zone is unknown. Exact legacy AoE stamps retain AoE as their representation zone; this does not recover the original source timezone.
+
+`deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
+
 Generated JSON and TypeScript projections must not be edited by hand. If a broken collector run has
 contaminated append-only state, regenerate against a known-clean committed dataset:
 

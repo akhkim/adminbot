@@ -4,6 +4,11 @@
 export type DeadlineRevision = {
   observed_at: string;
   deadline_aoe: string;
+  deadline_at?: string;
+  deadline_date?: string;
+  deadline_timezone?: string;
+  deadline_time_precision?: string;
+  deadline_planning_at?: string;
   notification_aoe?: string;
   deadline_label?: string;
   link?: string;
@@ -28,6 +33,11 @@ export type DeadlineVenue = {
   name: string;
   venue_type: string;
   venue_group: string;
+  deadline_at?: string;
+  deadline_date?: string;
+  deadline_timezone?: string;
+  deadline_time_precision?: string;
+  deadline_planning_at?: string;
   /** Stable dated-deadline identity; equal to the legacy id. */
   deadline_id: string;
   /** Canonical venue identity, with every accepted legacy form listed below. */

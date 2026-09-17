@@ -8,6 +8,7 @@ type DeadlineRecord = {
   deadline_id: string;
   name: string;
   deadline_aoe: string;
+  deadline_time_precision?: string;
   link?: string;
   revisions?: readonly { deadline_aoe?: string }[];
 };
@@ -30,7 +31,10 @@ function deadlineMilestone(deadline: DeadlineRecord): AdminBotMemberMilestone {
   return {
     deadline_id: deadline.deadline_id,
     date: deadlineDate(deadline),
-    label: deadline.name,
+    label:
+      deadline.deadline_time_precision === "date_only"
+        ? `${deadline.name} — planning cutoff (time unknown)`
+        : deadline.name,
     ...(link ? { link } : {}),
     time: deadline.deadline_aoe.slice(11, 16),
     timezone: AOE_TIMEZONE,

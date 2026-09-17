@@ -1,8 +1,10 @@
 """Exact OpenReview invitation observations and configured conference milestone refresh."""
 import urllib.parse
+import re
 
 from adminbot_deadlines import is_sweep_due
-from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates, _candidate_is_abstract
+from adminbot_deadline_time import TIME_FIELDS, timing_fields
+from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates, _candidate_is_abstract, _global_aoe_time
 
 
 def fetch_invitation_observations(invitation_ids, fetch, to_aoe, batch_size=40):
@@ -68,7 +70,7 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
             continue
         for key in ("deadline_aoe", "source_url", "deadline_source_kind", "deadline_source_status",
                     "deadline_source_precision", "deadline_source_evidence", "deadline_official_url",
-                    "deadline_official_evidence"):
+                    "deadline_official_evidence", *TIME_FIELDS):
             item[key] = result[key]
         item["source_checked_at"] = checked_at()
         if observation:
@@ -150,7 +152,15 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
             item['deadline_source_status'] = 'source_unavailable'
             continue
         date, evidence = observed
-        item.update(deadline_aoe=date + ' 23:59:00', source_url=url,
+        page = re.sub(r"<[^>]*>", " ", pages[url])
+        global_time = _global_aoe_time(page)
+        if global_time:
+            hour, minute = global_time
+            item.update(timing_fields(f"{date} {hour:02d}:{minute:02d}:00"))
+        else:
+            zone = "AoE" if re.search(r"(?i)all\s+deadlines.{0,100}(?:AoE|Anywhere\s+on\s+Earth)", page) else ""
+            item.update(timing_fields(date, date_only=True, timezone=zone))
+        item.update(source_url=url,
                     deadline_source_kind='official_cfp', deadline_source_status='portal_unverified',
                     deadline_source_precision='date_only', deadline_source_evidence=evidence,
                     deadline_official_url=url, deadline_official_evidence=evidence,
