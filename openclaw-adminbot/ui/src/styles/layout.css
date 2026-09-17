@@ -3666,6 +3666,30 @@
   color: var(--muted);
 }
 
+/* The intake-form aside: a sentence and a checkbox about the field above, not a field of its own.
+   Deliberately not `.profile__form-row` -- that class means "a field", and every field row carries
+   a mandatory or optional marker (`.profile__link-row` was split out for the same reason). */
+.profile__intake-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The box beside its words rather than above them, like the other checkbox rows in the app: a
+   checkbox and its label read as one control. `align-items: start` and the nudge on the input keep
+   the box on the first line if the label ever wraps. */
+.profile__intake-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile__intake-check input {
+  margin-top: 2px;
+}
+
 .profile__account-check--checking {
   color: var(--muted);
 }

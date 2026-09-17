@@ -1430,6 +1430,24 @@ it("renders free-form CV and GitHub safely and leaves historical fields optional
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
 });
 
+// The intake aside used to be a `.profile__form-row` inside a `<label>`: the explanation rendered
+// at label weight, and the whole paragraph was inside the checkbox's hit area.
+it("renders the intake note as a quiet hint, outside the checkbox's label", () => {
+  const container = renderPage(createState(createMember()), vi.fn());
+
+  const note = container.querySelector('[data-testid="profile-intake-note"]')!;
+  expect(note).not.toBeNull();
+  // Quiet: the hint class, not a form label, and not a field row.
+  expect(note.className).toContain("profile__field-hint");
+  expect(note.closest(".profile__form-row")).toBeNull();
+  // Outside the label, so selecting the sentence cannot toggle the box.
+  expect(note.closest("label")).toBeNull();
+
+  const checkbox = container.querySelector<HTMLInputElement>('[name="intake_form_unavailable"]')!;
+  const label = checkbox.closest("label")!;
+  expect(label.textContent?.trim()).toBe("I can't find it");
+});
+
 it("saves the missing-form checkbox and clears it when a link is supplied", () => {
   const save = vi.fn();
   const container = renderPage(createState(createMember({ intake_form_unavailable: true })), save);
