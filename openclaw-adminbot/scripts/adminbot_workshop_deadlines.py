@@ -278,8 +278,8 @@ def _candidate_stamp(text, start, end, date):
     ):
         default = _global_aoe_time(text)
         if default:
-            return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global"
-        return date.isoformat(), "aoe-date"
+            return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global", "AoE"
+        return date.isoformat(), "aoe-date", "AoE"
     local_matches = list(LOCAL_TIME.finditer(nearby)) + list(LOCAL_HOUR_TIME.finditer(nearby))
     local = min(
         local_matches,
@@ -295,15 +295,15 @@ def _candidate_stamp(text, start, end, date):
         moment = datetime.datetime.combine(date, datetime.time(hour, minute))
         if local.group("zone").lower().startswith(("utc", "gmt")):
             moment -= datetime.timedelta(hours=12)
-        return moment.strftime("%Y-%m-%d %H:%M:%S"), "explicit"
+        return moment.strftime("%Y-%m-%d %H:%M:%S"), "explicit", ("UTC" if local.group("zone").lower().startswith(("utc", "gmt")) else "AoE")
     default = _global_aoe_time(text)
     if default:
-        return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global"
+        return datetime.datetime.combine(date, datetime.time(*default)).strftime("%Y-%m-%d %H:%M:%S"), "global", "AoE"
     if re.search(r"(?i)(?:AoE|Anywhere\s+on\s+Earth)", nearby):
-        return date.isoformat(), "aoe-date"
+        return date.isoformat(), "aoe-date", "AoE"
     if re.search(r"(?i)\b(?:UTC|GMT)(?:[+-]0)?\b", immediate):
-        return date.isoformat(), "utc-date"
-    return date.isoformat(), "date-only"
+        return date.isoformat(), "utc-date", "UTC"
+    return date.isoformat(), "date-only", ""
 
 
 def _nearest_signal(text, start, end, patterns):
@@ -372,7 +372,7 @@ def deadline_candidates_from_text(
         # Route/stage labels normally precede their value. Keep this deliberately
         # left-heavy so the next row's label cannot classify the current date.
         context = normalized[max(0, start - 100):min(len(normalized), end + 20)]
-        stamp, precision = _candidate_stamp(normalized, start, end, date)
+        stamp, precision, source_timezone = _candidate_stamp(normalized, start, end, date)
         extension_distance = _nearest_match_distance(
             normalized, start, end, EXTENSION_SIGNAL
         )
@@ -382,6 +382,7 @@ def deadline_candidates_from_text(
                 "date": date.isoformat(),
                 "effective_date": stamp[:10],
                 "precision": precision,
+                "timezone": source_timezone,
                 "score": score,
                 "label": label,
                 "positive_distance": positive_distance,
@@ -655,7 +656,7 @@ def reconcile_deadline_candidates(
     if group_final_stamp and not openreview_stamp:
         result["deadline_source_status"] = "openreview_final_submission"
     if not selected:
-        result.update(timing_fields(fallback))
+        result.update(timing_fields(fallback, timezone="UTC" if openreview_stamp else ""))
         return result
 
     result["deadline_official_url"] = selected["source_url"]
@@ -677,7 +678,7 @@ def reconcile_deadline_candidates(
         )
         result["deadline_source_precision"] = "date_only"
         if fallback:
-            result.update(timing_fields(fallback))
+            result.update(timing_fields(fallback, timezone="UTC" if openreview_stamp else ""))
         else:
             result.update(timing_fields(selected["date"], date_only=True,
                                         timezone={"aoe-date": "AoE", "utc-date": "UTC"}.get(selected["precision"], "")))
@@ -696,7 +697,7 @@ def reconcile_deadline_candidates(
         )
         if official[:16] == fallback[:16]:
             result["source_revisions"] = extension_revision_stamps(selected, candidates, target_hint)
-        result.update(timing_fields(fallback))
+        result.update(timing_fields(fallback, timezone="UTC" if openreview_stamp else ""))
         return result
 
     result.update(
@@ -715,7 +716,7 @@ def reconcile_deadline_candidates(
     result["deadline_extended"] = bool(
         result["deadline_extended"] or len(result["source_revisions"]) > 1
     )
-    result.update(timing_fields(official))
+    result.update(timing_fields(official, timezone=selected.get("timezone", "")))
     return result
 
 

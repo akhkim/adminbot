@@ -156,7 +156,7 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
         global_time = _global_aoe_time(page)
         if global_time:
             hour, minute = global_time
-            item.update(timing_fields(f"{date} {hour:02d}:{minute:02d}:00"))
+            item.update(timing_fields(f"{date} {hour:02d}:{minute:02d}:00", timezone="AoE"))
         else:
             zone = "AoE" if re.search(r"(?i)all\s+deadlines.{0,100}(?:AoE|Anywhere\s+on\s+Earth)", page) else ""
             item.update(timing_fields(date, date_only=True, timezone=zone))

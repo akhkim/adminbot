@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type {
   DeadlineProposal,
   DeadlineProposalInput,
@@ -32,6 +33,9 @@ import {
 } from "./deadlines.ts";
 
 beforeEach(() => {
+  vi.stubGlobal("localStorage", createStorageMock());
+  // Existing layout assertions use a fixed display zone, independent of the test machine.
+  window.localStorage.setItem("adminbot.deadlines.display-timezone", "Etc/GMT+12");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
 });
@@ -39,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 async function settle(container: HTMLElement): Promise<void> {
@@ -1343,7 +1348,7 @@ describe("renderDeadlines", () => {
     ).toEqual([
       // The submission leads its own timeline, so the list reads as a whole sequence rather than
       // starting mid-story. It is the same date the card counts down to above, not a second one.
-      ["Full paper", "Sep 25, 2026 AoE"],
+      ["Full paper", "Sep 25, 2026 · 23:59 AoE"],
       ["Reviews released", "Nov 5, 2026"],
       ["Author-reviewer discussion", "Nov 5 – Nov 18, 2026"],
       ["Final decisions", "Dec 16, 2026"],
@@ -2000,7 +2005,7 @@ it("shows the source date and a plain conservative countdown in cards", async ()
   expect(card.textContent).not.toContain("Plan within");
   expect(card.textContent).toContain("4 days left");
   expect(card.textContent).not.toContain("Time unknown");
-  expect(card.textContent).not.toContain("22:00 AoE");
+  expect(card.querySelector(".deadline-card__date")?.textContent).not.toContain("22:00 AoE");
   container.querySelector<HTMLButtonElement>('button[aria-label^="Suggest correction:"]')!.click();
   await settle(container);
   expect(container.querySelector<HTMLInputElement>('input[name="deadlineDate"]')?.value).toBe(
@@ -2028,4 +2033,78 @@ it("labels a learned closing time as updated instead of extended", () => {
   expect(deadlineChangeSummary(venue)?.kind).toBe("updated");
   expect(deadlineChangeLabel(venue)).toContain("time unknown");
   expect(deadlineChangeLabel(venue)).not.toContain("00:00 AoE");
+});
+
+it("persists display zones across login state and updates cards, groups, table and history without changing countdowns", async () => {
+  window.localStorage.clear();
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "zone-example",
+      deadline_id: "zone-example",
+      name: "Timezone example",
+      deadline_aoe: "2026-09-25 23:59:00",
+      deadline_at: "2026-09-26T11:59:00Z",
+      deadline_timezone: "AoE",
+      deadline_time_precision: "exact",
+      schedule: [],
+      notification_aoe: "",
+      revisions: [
+        {
+          observed_at: "2026-08-01T00:00:00Z",
+          deadline_aoe: "2026-09-24 23:59:00",
+          deadline_at: "2026-09-25T11:59:00Z",
+          deadline_timezone: "AoE",
+        },
+      ],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const countdown = container.querySelector(".deadline-card__countdown")!.textContent;
+  const select = async (zone: string) => {
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Display timezone"]',
+    )!;
+    input.value = zone;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(container);
+  };
+  await select("Europe/Zurich");
+  expect(container.querySelector(".deadline-card__date")!.textContent).toContain("13:59 UTC+2");
+  expect(container.querySelector(".deadline-details__history")!.textContent).toContain(
+    "Sep 25, 2026",
+  );
+  expect(container.querySelector(".deadline-details__header")!.textContent).toContain("Original:");
+  expect(container.querySelector(".deadline-card__countdown")!.textContent).toBe(countdown);
+  await select("Original");
+  expect(container.querySelector(".deadline-card__date")!.textContent).toContain("23:59 AoE");
+  await select("America/Toronto");
+  buttonNamed(container, "Groups").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-group__row-date")!.textContent).toContain(
+    "07:59 UTC-4",
+  );
+  buttonNamed(container, "Table").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__date")!.textContent).toContain("07:59 UTC-4");
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Display timezone"]')!;
+  await select("invalid zone");
+  expect(input.value).toBe("Toronto (ET)");
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "example-member" }),
+    container,
+  );
+  await settle(container);
+  expect(input.value).toBe("Toronto (ET)");
+  container.remove();
+  const reopened = await renderView();
+  expect(
+    reopened.querySelector<HTMLInputElement>('input[aria-label="Display timezone"]')!.value,
+  ).toBe("Toronto (ET)");
 });

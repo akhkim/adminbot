@@ -5042,7 +5042,8 @@ adminbot-deadlines-view {
 }
 
 .deadline-board__search input,
-.deadline-board__facet select {
+.deadline-board__facet select,
+.deadline-board__timezone input {
   width: 100%;
   min-height: var(--control-h-md);
   padding: 0 var(--space-3);
@@ -5058,13 +5059,32 @@ adminbot-deadlines-view {
 }
 
 .deadline-board__search input:focus-visible,
-.deadline-board__facet select:focus-visible {
+.deadline-board__facet select:focus-visible,
+.deadline-board__timezone input:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.deadline-board__facet {
+.deadline-board__facet,
+adminbot-deadline-timezone {
   min-width: 0;
+}
+
+.deadline-board__facet select,
+.deadline-board__timezone input {
+  padding-right: 26px;
+}
+
+.deadline-board__facet {
+  position: relative;
+}
+
+.deadline-board__facet select {
+  appearance: none;
+}
+
+.deadline-board__timezone .country-select__option {
+  overflow-wrap: anywhere;
 }
 
 .deadline-board__groups {

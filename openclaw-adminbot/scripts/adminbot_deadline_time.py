@@ -26,8 +26,9 @@ def timing_fields(stamp, *, date_only=False, timezone=""):
         instant = datetime.datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=AOE).astimezone(UTC)
         exact = instant.isoformat().replace("+00:00", "Z")
     planning = instant.isoformat().replace("+00:00", "Z")
-    return dict(deadline_at=exact, deadline_date=stamp[:10],
-                deadline_timezone=timezone if date_only else "AoE",
+    source_date = instant.date().isoformat() if not date_only and timezone == "UTC" else stamp[:10]
+    return dict(deadline_at=exact, deadline_date=source_date,
+                deadline_timezone=timezone,
                 deadline_time_precision="date_only" if date_only else "exact",
                 deadline_planning_at=planning,
                 deadline_aoe=instant.astimezone(AOE).strftime("%Y-%m-%d %H:%M:%S"))

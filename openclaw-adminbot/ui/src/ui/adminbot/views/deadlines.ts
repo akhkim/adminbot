@@ -18,6 +18,13 @@ import {
   type MilestoneRow,
 } from "../data/availability.ts";
 import {
+  loadDeadlineTimezone,
+  saveDeadlineTimezone,
+  displayTimezone,
+  zonedDeadlineLabel,
+  deadlineDisplayLabel,
+} from "../data/deadline-display-time.ts";
+import {
   AdminBotDeadlineProposalStore,
   deadlineProposalStoreFor,
   type DeadlineProposal,
@@ -49,6 +56,7 @@ import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderDeadlineDate } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
+import { renderDeadlineTimezone } from "./deadlines.timezone.ts";
 
 const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
 
@@ -266,9 +274,12 @@ function capitaliseFirst(value: string): string {
 }
 
 /** One schedule entry's date, read the way its `kind` says to read it. */
-export function milestoneDateLabel(entry: DeadlineMilestone): string {
+export function milestoneDateLabel(entry: DeadlineMilestone, displayZone?: string): string {
   if (entry.kind === "period") {
     return dateRangeLabel(entry.starts ?? "", entry.ends ?? "");
+  }
+  if (displayZone && entry.kind === "deadline" && /[ T]\d{2}:\d{2}/u.test(entry.date || "")) {
+    return zonedDeadlineLabel(aoeInstantMs(entry.date || ""), displayTimezone(displayZone, "AoE"));
   }
   // Only an AoE cutoff gets the AoE suffix. A day the venue acts on is a plain calendar date, and
   // "conference opens Apr 26 AoE" would claim a precision nobody published.
@@ -318,7 +329,7 @@ export type DeadlineStage = {
  * due, and the conference itself still has to be travelled to -- so a venue belongs under
  * "Upcoming" until every stage it published is behind us.
  */
-export function venueStages(venue: DeadlineVenue): DeadlineStage[] {
+export function venueStages(venue: DeadlineVenue, displayZone?: string): DeadlineStage[] {
   const stages: DeadlineStage[] = [];
   const submission = deadlineInstantMs(venue);
   if (Number.isFinite(submission)) {
@@ -338,7 +349,7 @@ export function venueStages(venue: DeadlineVenue): DeadlineStage[] {
     stages.push({
       instant,
       label: milestone.label,
-      dateLabel: milestoneDateLabel(milestone),
+      dateLabel: milestoneDateLabel(milestone, displayZone),
       day: milestoneStart(milestone),
       submission: false,
     });
@@ -355,8 +366,12 @@ export function venueStages(venue: DeadlineVenue): DeadlineStage[] {
  * nothing changes. It differs only for a venue whose deadline has passed, where the next thing to
  * wait for is the notification or the conference itself.
  */
-export function nextVenueStage(venue: DeadlineVenue, now: number): DeadlineStage | undefined {
-  return venueStages(venue).find((stage) => stage.instant > now);
+export function nextVenueStage(
+  venue: DeadlineVenue,
+  now: number,
+  displayZone?: string,
+): DeadlineStage | undefined {
+  return venueStages(venue, displayZone).find((stage) => stage.instant > now);
 }
 
 /** What a timeline row is called, for a stable tie-break between two same-day rows. */
@@ -1039,6 +1054,7 @@ class AdminbotDeadlinesView extends LitElement {
   private location = "";
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
+  private displayZone = loadDeadlineTimezone();
   private venues: DeadlineVenue[] = [];
   private proposals: DeadlineProposal[] = [];
   private proposalFormOpen = false;
@@ -1772,7 +1788,7 @@ class AdminbotDeadlinesView extends LitElement {
             <time
               class="deadline-board__hero-date"
               datetime=${pendingStage?.day ?? entry.venue.deadline_aoe}
-              >${pendingStage?.dateLabel ?? renderDeadlineDate(entry.venue)}</time
+              >${pendingStage?.dateLabel ?? renderDeadlineDate(entry.venue, this.displayZone)}</time
             >
             ${this.renderHistory(entry.venue, "hero")} ·
             <span class="deadline-board__hero-urgency"
@@ -1892,6 +1908,7 @@ class AdminbotDeadlinesView extends LitElement {
               </option>`,
             )}
           </select>
+          <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
         </label>
         <label class="deadline-board__facet">
           <span class="sr-only">Filter by archival status</span>
@@ -1906,6 +1923,7 @@ class AdminbotDeadlinesView extends LitElement {
               </option>`,
             )}
           </select>
+          <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
         </label>
         <label class="deadline-board__facet">
           <span class="sr-only">Filter by location</span>
@@ -1928,6 +1946,12 @@ class AdminbotDeadlinesView extends LitElement {
           </select>
           <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
         </label>
+
+        ${renderDeadlineTimezone(this.displayZone, (zone) => {
+          this.displayZone = zone;
+          saveDeadlineTimezone(zone);
+          this.requestUpdate();
+        })}
         <div class="deadline-board__groups" role="group" aria-label="Filter by venue">
           <button
             type="button"
@@ -2016,21 +2040,24 @@ class AdminbotDeadlinesView extends LitElement {
         <header class="deadline-details__header">
           <strong>${venue.name}</strong>
           <p>${capitalize(venue.deadline_label)}</p>
-          <div>${renderDeadlineDate(venue)}</div>
+          <div>${renderDeadlineDate(venue, this.displayZone, true)}</div>
           ${venue.deadline_time_precision === "date_only"
             ? html`<p>
                 Plan before
-                ${new Date(deadlineInstantMs(venue))
-                  .toISOString()
-                  .replace("T", " ")
-                  .replace(".000Z", " UTC")}.
+                ${zonedDeadlineLabel(
+                  deadlineInstantMs(venue),
+                  displayTimezone(
+                    this.displayZone,
+                    venue.deadline_timezone || "Pacific/Kiritimati",
+                  ),
+                )}.
                 This is the start of the published
                 day${venue.deadline_timezone
                   ? ` in ${venue.deadline_timezone}`
                   : " in UTC+14, the earliest possible timezone"};
                 the source does not specify a closing time.
               </p>`
-            : nothing}
+            : html`<p>Original: ${deadlineDisplayLabel(venue, "original", true)}</p>`}
         </header>
 
         <section class="deadline-details__history">
@@ -2039,7 +2066,7 @@ class AdminbotDeadlinesView extends LitElement {
             ? html`<ul>
                 ${previous.map(
                   (revision) => html`<li>
-                    ${renderDeadlineDate(revision)} ·
+                    ${renderDeadlineDate(revision, this.displayZone)} ·
                     ${capitalize(revision.deadline_label || "deadline")} · recorded
                     ${revision.observed_at.slice(0, 10)}
                     ${revision.link
@@ -2106,7 +2133,9 @@ class AdminbotDeadlinesView extends LitElement {
     const rows = entries.map(
       (entry) => html`<li class="deadline-card__milestone" data-milestone=${entry.milestone}>
         <span class="deadline-card__milestone-label">${capitalize(entry.label)}</span>
-        <span class="deadline-card__milestone-date">${milestoneDateLabel(entry)}</span>
+        <span class="deadline-card__milestone-date"
+          >${milestoneDateLabel(entry, this.displayZone)}</span
+        >
       </li>`,
     );
     if (entries.length <= 3) {
@@ -2164,7 +2193,7 @@ class AdminbotDeadlinesView extends LitElement {
         ${renderVenueLocation(venue)} ${renderClassification(venue)}
         <span class="deadline-card__date-row">
           <time class="deadline-card__date" datetime=${venue.deadline_aoe}>
-            ${renderDeadlineDate(venue)}
+            ${renderDeadlineDate(venue, this.displayZone)}
           </time>
           ${this.renderHistory(venue, "card")}
         </span>
@@ -2311,7 +2340,7 @@ class AdminbotDeadlinesView extends LitElement {
         <table class="deadline-table">
           <thead>
             <tr>
-              <th>Deadline (AoE)</th>
+              <th>Deadline</th>
               <th>Countdown</th>
               <th>Item</th>
               <th>Type</th>
@@ -2334,7 +2363,8 @@ class AdminbotDeadlinesView extends LitElement {
                 >
                   <td class="deadline-table__date">
                     <span class="deadline-table__date-row">
-                      ${renderDeadlineDate(entry.venue)} ${this.renderHistory(entry.venue, "table")}
+                      ${renderDeadlineDate(entry.venue, this.displayZone)}
+                      ${this.renderHistory(entry.venue, "table")}
                     </span>
                   </td>
                   <td class="deadline-table__countdown">
@@ -2434,7 +2464,7 @@ class AdminbotDeadlinesView extends LitElement {
         </span>
         <span class="deadline-group__row-date-wrap">
           <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>
-            ${renderDeadlineDate(venue)}
+            ${renderDeadlineDate(venue, this.displayZone)}
           </time>
           ${this.renderHistory(venue, "group")}
         </span>
@@ -2490,7 +2520,9 @@ class AdminbotDeadlinesView extends LitElement {
       >
         <span class="deadline-group__row-countdown" aria-hidden="true"></span>
         <span class="deadline-group__row-date-wrap">
-          <span class="deadline-group__row-date">${milestoneDateLabel(item.milestone)}</span>
+          <span class="deadline-group__row-date"
+            >${milestoneDateLabel(item.milestone, this.displayZone)}</span
+          >
         </span>
         <div class="deadline-group__row-main">
           <p class="deadline-group__row-name">${item.label}</p>
@@ -2549,7 +2581,7 @@ class AdminbotDeadlinesView extends LitElement {
         // ordered by that stage, so the lead entry carries it -- and for a conference the lab has
         // already submitted to, the stage is its notification or the conference itself rather
         // than the deadline it closed weeks ago.
-        const leadStage = nextVenueStage(group.entries[0].venue, this.now);
+        const leadStage = nextVenueStage(group.entries[0].venue, this.now, this.displayZone);
         const leadPending = leadStage && !leadStage.submission ? leadStage : undefined;
         const counts =
           group.kind === "conference"
@@ -2605,7 +2637,7 @@ class AdminbotDeadlinesView extends LitElement {
                         ><span aria-hidden="true"> · </span>`
                     : nothing}${leadPending
                     ? leadPending.dateLabel
-                    : renderDeadlineDate(group.entries[0].venue)}
+                    : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
                   ${groupLocation
                     ? renderVenueLocation(groupLocation, venueConferenceSites(groupLocation))
                     : nothing}

@@ -4,6 +4,7 @@
 // of these is looking for the day, and "11:59 AoE" is the same on nearly every row. Kept out of
 // data/deadline-time.ts because that module is deliberately lit-free.
 import { html } from "lit";
+import { deadlineDisplayLabel } from "../data/deadline-display-time.ts";
 import { deadlineDateTimeLabel, aoeDateTimeLabel } from "../data/deadline-time.ts";
 import type { DeadlineVenue } from "../data/deadlines.ts";
 
@@ -25,8 +26,12 @@ export function renderDeadlineDate(
     | "deadline_timezone"
     | "deadline_time_precision"
   >,
+  displayZone?: string,
+  includeOffset = false,
 ) {
-  const label = deadlineDateTimeLabel(venue);
+  const label = displayZone
+    ? deadlineDisplayLabel(venue, displayZone, includeOffset)
+    : deadlineDateTimeLabel(venue);
   const separator = label.indexOf(" · ");
   return separator < 0
     ? html`<span class="deadline-date">${label}</span>`

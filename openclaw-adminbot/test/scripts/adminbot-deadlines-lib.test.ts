@@ -1091,3 +1091,38 @@ current = m.merge_history(dict(id='example', name='Example', **timing_fields('20
 print(json.dumps([len(current['revisions']), current['deadline_extended']]))`),
   ).toEqual([2, false]);
 });
+
+it("retains original UTC and AoE source zones through candidate normalization", () => {
+  expect(
+    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+results = []
+for zone in ['UTC', 'AoE']:
+    candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 23:59 ' + zone, 'https://example.org/cfp', 2035)
+    result = reconcile_deadline_candidates(candidates, '', '', 2035)
+    results.append([result['deadline_timezone'], result['deadline_at']])
+print(json.dumps(results))`),
+  ).toEqual([
+    ["UTC", "2035-09-25T23:59:00Z"],
+    ["AoE", "2035-09-26T11:59:00Z"],
+  ]);
+});
+
+it("does not invent an original timezone for normalized legacy timestamps", () => {
+  expect(
+    runPython(`from adminbot_deadline_time import timing_fields
+print(json.dumps(timing_fields('2035-09-25 23:59:00')['deadline_timezone']))`),
+  ).toBe("");
+});
+
+it("keeps the source calendar day when normalizing an early UTC deadline", () => {
+  expect(
+    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 01:00 UTC', 'https://example.org/cfp', 2035)
+result = reconcile_deadline_candidates(candidates, '', '', 2035)
+m = load('adminbot-deadline-collect')
+result.update(id='example', name='Example', venue_type='workshop', venue_group='Example 2035', deadline_label='submission')
+m.classify(result)
+merged = m.merge_history(result)
+print(json.dumps([result['deadline_date'], result['deadline_timezone'], result['deadline_at'], merged['revisions'][-1]['deadline_timezone']]))`),
+  ).toEqual(["2035-09-25", "UTC", "2035-09-25T01:00:00Z", "UTC"]);
+});

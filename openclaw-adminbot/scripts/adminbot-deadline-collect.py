@@ -1556,6 +1556,7 @@ def fetch_openreview_conferences(previous_by_id=None, clock=None):
         entries.append(dict(
             **{key: value for key, value in source.items() if key != "group_id"},
             deadline_aoe=deadline,
+            deadline_timezone="UTC",
             homepage_url=homepage,
             cfp_url="",
             openreview_url=review_url,
@@ -1610,7 +1611,7 @@ def classify(item):
     `venue_family` itself when the name does not carry it (IASEAI, ARR).
     """
     if item.get("deadline_time_precision") != "date_only" and item.get("deadline_aoe"):
-        item.update(timing_fields(item["deadline_aoe"]))
+        item.update(timing_fields(item["deadline_aoe"], timezone=item.get("deadline_timezone", "")))
     item.pop("group_label", None)
     item.pop("_source_observed", None)
     for key in ("_openreview_deadline", "_full_submission_deadline", "_group_final_deadline", "_group_final_evidence"):
@@ -1790,7 +1791,7 @@ def merge_history(item, previous=None, stale=False, reset_previous=False):
         revisions.append(dict(observed_at=checked_at(), **projection))
     else:
         revisions[matching]["link"] = projection["link"]
-        timing = (timing_fields(revisions[matching]["deadline_aoe"])
+        timing = (timing_fields(revisions[matching]["deadline_aoe"], timezone=item.get("deadline_timezone", ""))
                   if item.get("deadline_time_precision") != "date_only" else projection)
         revisions[matching].update({key: timing[key] for key in TIME_FIELDS})
     if source_revisions_present and source_revisions:
