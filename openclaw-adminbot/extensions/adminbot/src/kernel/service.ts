@@ -12919,7 +12919,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "intake_form_unavailable",
   // The member's own one-on-one folder. Self-editable because in practice either side creates it
   // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
-  // looking at a blank row they cannot fill from the link already in their Drive.
+  // looking at a blank row they cannot fill from the link already in their Drive. Mandatory too
+  // (adminBotMandatoryProfileFields), which only works because it is on this list: a required field
+  // the member cannot write is a nudge nobody can act on.
   "one_on_one_folder_url",
   "linkedin_url",
   // LinkedIn publishes no vanity-URL-to-URN mapping, so this is a value somebody has to look up --
@@ -12928,9 +12930,10 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // was disabled and self updates carrying a URN were dropped here, so that instruction could not
   // be followed. Both halves are fixed: the member may now paste one in.
   //
-  // Still absent from the reminder's set (adminBotAdminOwnedProfileFields), which is a separate
-  // question from who may write it: one member of 199 has a URN, and chasing the rest for it would
-  // be fifty nudges about a field nobody has heard of.
+  // And is asked for one. It is off adminBotAdminOwnedProfileFields now, so it carries a mandatory
+  // mark, counts in the completion ledger and is named by the reminder like every other required
+  // field -- a deliberate step up in what the lab chases, since almost nobody on the roster has
+  // supplied a URN yet.
   "linkedin_urn",
   "twitter_url",
   "github_url",

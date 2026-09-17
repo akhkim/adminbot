@@ -492,6 +492,10 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(missing).toEqual([]);
   });
 
+  // adminBotAdminOwnedProfileFields is empty at present -- `linkedin_urn` was its last entry and is
+  // now an ordinary required field -- so the first half of this asserts a rule over nothing today.
+  // It stays anyway: the rule is what makes the list safe to repopulate, and a test that only ran
+  // while a particular field happened to be on it would be gone by the time it mattered.
   it("keeps admin-only fields out of a member's own edit form", () => {
     const container = renderToDiv(
       // `mode` is admin-or-general; the self-edit popover is what a non-admin gets on their own
@@ -499,16 +503,16 @@ describe("renderAdminBot members panel — edit affordance", () => {
       baseProps({ mode: "general", signedInMemberId: "pat" }),
     );
     const popover = container.querySelector<HTMLElement>("#adminbot-self-edit-member-0");
-    const adminOnly = PROFILE_FIELDS.filter((field) => field.adminOnly);
-    expect(adminOnly.length).toBeGreaterThan(0);
-    for (const field of adminOnly) {
-      expect(popover?.querySelector(`[name="${field.key}"]`)).toBeNull();
+    for (const owned of PROFILE_FIELDS.filter((field) => field.adminOnly)) {
+      expect(popover?.querySelector(`[name="${owned.key}"]`)).toBeNull();
     }
-    // Everything else is still there -- the restriction is the flag, not a shorter list.
+    // Everything else is still there -- the restriction is the flag, not a shorter list. With the
+    // list empty that is every field in the registry, the URN among them.
     const missing = PROFILE_FIELDS.filter(
       (field) => !field.adminOnly && !popover?.querySelector(`[name="${field.key}"]`),
     ).map((field) => field.key);
     expect(missing).toEqual([]);
+    expect(popover?.querySelector('[name="linkedin_urn"]')).not.toBeNull();
   });
 
   // The nudge allowlist. Its whole value is that somebody chose each name, so the editor has to be

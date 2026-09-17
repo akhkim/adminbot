@@ -485,6 +485,11 @@ export const adminBotMandatoryProfileFields = [
   "linkedin_url",
   "linkedin_urn",
   "cv_url",
+  // Where the member's one-on-one notes live. Required of the record because the folder is what
+  // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
+  // a meeting whose notes went somewhere nobody else can find. Either side may create it, so it is
+  // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
+  "one_on_one_folder_url",
   "openreview_id",
 ] as const;
 
@@ -493,17 +498,24 @@ export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFiel
 /**
  * Mandatory fields whose answer only the lab can give.
  *
- * Required *of the record* and asked for on the admin editor, but never of the member: the profile
- * page renders these disabled, so a member who has filled in every box they can see still has one
- * of them blank. Chasing somebody for a field their own page will not let them type is a reminder
- * they cannot act on, and this list is what keeps every reader agreeing on that.
+ * Required *of the record* but never of the member: the profile page leaves these out of its
+ * required marks and its completion denominator, so nobody is chased for a box their own page will
+ * not let them fill. Chasing somebody for an answer they cannot give is a reminder they cannot act
+ * on, and this list is what keeps every reader agreeing on which fields those are.
  *
  * It is a list rather than a flag on the UI's field table because the reminder runs in the service,
- * which cannot see that table. They disagreed: the page dropped `linkedin_urn` from its completion
- * ledger and the reminder did not, so 173 of 174 active members read as complete on their own page
- * and were chased every three days anyway -- nine of them for that field alone.
+ * which cannot see that table. They disagreed once: the page dropped `linkedin_urn` from its
+ * completion ledger and the reminder did not, so 173 of 174 active members read as complete on
+ * their own page and were chased every three days anyway.
+ *
+ * Empty at present. `linkedin_urn` was the only entry, and it is no longer exempt: the field is on
+ * SELF_PROFILE_EDITABLE_FIELDS, its control is an ordinary input, and its help text points at the
+ * collector tool that reads the value off the member's own account -- so it is an answer the member
+ * can give, and the lab now asks for it like any other. Expect the completion ledger to fall for
+ * everyone who has not supplied one, which is most of the roster; that is the ask, not a
+ * regression. The list stays as the hook for the next field only an admin can answer.
  */
-export const adminBotAdminOwnedProfileFields = ["linkedin_urn"] as const;
+export const adminBotAdminOwnedProfileFields: readonly string[] = [];
 
 /**
  * Whether AdminBot may send this person a nudge.
@@ -649,7 +661,7 @@ export function adminBotHasMemberType(
  */
 export const adminBotMemberAnswerableProfileFields = adminBotMandatoryProfileFields.filter(
   (key): key is AdminBotMandatoryProfileField =>
-    key !== "name" && !(adminBotAdminOwnedProfileFields as readonly string[]).includes(key),
+    key !== "name" && !adminBotAdminOwnedProfileFields.includes(key),
 );
 
 /** How many entries a member has on their Time Availability page, by list. */
@@ -748,6 +760,7 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
   cv_url: "CV",
+  one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
 };
 

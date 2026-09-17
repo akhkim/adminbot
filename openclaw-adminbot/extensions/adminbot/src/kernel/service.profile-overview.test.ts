@@ -27,6 +27,7 @@ const COMPLETE = {
   linkedin_url: "https://linkedin.com/in/ada",
   linkedin_urn: "urn:li:person:ada",
   cv_url: "https://overleaf.com/read/ada",
+  one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
   intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
   openreview_id: "~Ada_Lovelace1",
 };
@@ -66,10 +67,11 @@ describe("listMemberProfileOverview", () => {
     const overview = unwrap(service.listMemberProfileOverview());
     // Deliberately not `adminBotMandatoryProfileFields.length`: the service checks neither `name`,
     // because a member cannot be created without one, nor the admin-owned fields, because the
-    // member's own page will not let them type those -- so the honest denominator is two smaller.
+    // member's own page will not let them type those -- so the honest denominator is smaller than
+    // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(9);
+    expect(overview.mandatory_field_count).toBe(11);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
