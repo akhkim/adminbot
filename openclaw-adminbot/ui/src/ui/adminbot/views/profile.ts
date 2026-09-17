@@ -957,17 +957,34 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
-                    ${field.key === "intake_form_url" ? html`
-                      <label class="profile__form-row">
-                        <span>${t("profile.hints.intakeFormSearch")}</span>
-                        <span><input type="checkbox" name="intake_form_unavailable"
-                          .checked=${member.intake_form_unavailable === true}
-                          @change=${(event: Event) => {
-                            const input = event.currentTarget as HTMLInputElement;
-                            const link = input.form?.querySelector<HTMLInputElement>('[name="intake_form_url"]');
-                            if (input.checked && link) link.value = "";
-                          }} /> ${t("profile.hints.intakeFormUnavailable")}</span>
-                      </label>` : nothing}
+                    <!-- A note and a checkbox about the field above, not a field of its own. It
+                         used to be a profile__form-row wrapped in a label, which rendered the
+                         explanation at label weight -- as loud as the questions around it -- and
+                         put a two-line paragraph inside the checkbox's hit area, so trying to
+                         select that text toggled the box. Now the sentence is an ordinary hint and
+                         only the checkbox's own words sit inside the label. -->
+                    ${field.key === "intake_form_url"
+                      ? html`<div class="profile__intake-note">
+                          <span class="profile__field-hint" data-testid="profile-intake-note"
+                            >${t("profile.hints.intakeFormSearch")}</span
+                          >
+                          <label class="profile__intake-check">
+                            <input
+                              type="checkbox"
+                              name="intake_form_unavailable"
+                              .checked=${member.intake_form_unavailable === true}
+                              @change=${(event: Event) => {
+                                const input = event.currentTarget as HTMLInputElement;
+                                const link = input.form?.querySelector<HTMLInputElement>(
+                                  '[name="intake_form_url"]',
+                                );
+                                if (input.checked && link) link.value = "";
+                              }}
+                            />
+                            <span>${t("profile.hints.intakeFormUnavailable")}</span>
+                          </label>
+                        </div>`
+                      : nothing}
                   `,
                 )}
               </div>

@@ -2322,9 +2322,11 @@ export const en: TranslationMap = {
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl:
         "Paste the response link if you have it, or mark that you cannot find it below.",
+      // One line instead of two sentences, and it leans on the label above rather than repeating
+      // "application form response" a third time on the same row.
       intakeFormSearch:
-        "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
-      intakeFormUnavailable: "I cannot find my form response",
+        "Search your email for your form response — it helps us understand your goals and support you in achieving them.",
+      intakeFormUnavailable: "I can't find it",
       oneOnOneFolderUrl:
         "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
