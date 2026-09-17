@@ -710,17 +710,13 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
 }
 
 function renderFieldInput(field: EditableField, currentValue: string) {
-  // An admin-owned answer the member may still supply. It was `disabled`, which is why this is
-  // worth explaining: a disabled input cannot be focused, selected, or pasted into, so a member
-  // who had looked their URN up in the collector tool the field's own help text points them at had
-  // nowhere to put it -- and could not copy the stored one out either. Read-only would fix the
-  // copy half and not the paste half, so it is an ordinary input.
-  //
-  // What has *not* changed is who is chased for it. The field stays on
-  // adminBotAdminOwnedProfileFields, so it is still outside the reminder's set and outside the
-  // completion denominator. One member of 199 has a URN; counting it would drop fifty profiles off
-  // 100% overnight and chase every one of them for a value they have never heard of, which is the
-  // incident that list exists to prevent.
+  // An admin-owned answer the member may still supply: shown, typable and pasteable, but outside
+  // the required marks and the completion denominator (see adminBotAdminOwnedProfileFields, which
+  // is empty at present -- `linkedin_urn` was its last entry and is now asked of the member like
+  // any other field). An ordinary input rather than `disabled` or `readonly`, because a disabled
+  // input cannot be focused, selected or pasted into: a member who had looked a value up somewhere
+  // the help text sent them would have nowhere to put it, and could not copy the stored one out
+  // either. Read-only fixes the copy half and not the paste half.
   if (field.adminOnly) {
     return html`
       <input

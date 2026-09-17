@@ -1,12 +1,13 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
-import { renderProfile, type ProfileProps } from "./profile.ts";
+import { blankFields, renderProfile, type ProfileProps } from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {
@@ -606,13 +607,11 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
   });
 
-  // The member cannot type a URN in; all they need is whether the lab has one yet, and the
-  // collector link while it does not.
-  // Editable now: it was disabled, which cannot be focused, selected or pasted into, so the member
-  // could neither follow the field's own "look it up and paste it here" instruction nor copy the
-  // stored one out. The status line beside it stays, because "on file or not" is still the thing
-  // the member is checking when they look.
-  it("shows the URN as an editable value with its on-file state beside it", () => {
+  // Editable, and asked for: it was disabled, which cannot be focused, selected or pasted into, so
+  // the member could neither follow the field's own "look it up and paste it here" instruction nor
+  // copy the stored one out. The status line beside it stays, because "on file or not" is still the
+  // thing the member is checking when they look.
+  it("shows the URN as an editable, required value with its on-file state beside it", () => {
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
@@ -628,9 +627,11 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(blank.querySelector('[data-testid="profile-urn-status"]')?.textContent?.trim()).toBe(
       "Not on file yet — use the collector",
     );
-    // No required dot: the form does not let them answer it, so it must not chase them for one.
+    // And a required dot. The field is on adminBotMandatoryProfileFields and no longer exempted by
+    // adminBotAdminOwnedProfileFields, so the page asks for it like any other answer the member
+    // can give -- which, with the collector link right beside the input, it is.
     const row = blank.querySelector('[name="linkedin_urn"]')?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 
   // Three states, not two. "Unknown" renders nothing, because labelling someone Inactive from a
@@ -749,8 +750,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // The page's required marks and the service's daily reminder read one list, so neither can chase
   // a field the other calls skippable. They used to be two hand-kept lists that never agreed.
   //
-  // The one documented exception is linkedin_urn: still mandatory for the record, but filled by an
-  // admin, so the member's own page does not dot it. The service reminder still names it.
+  // No exceptions left: adminBotAdminOwnedProfileFields is empty, so the marks are the whole list.
+  // The filter below keeps the rule rather than the roster of the moment -- an admin-owned field
+  // added later is required of the record and still not dotted here.
   it("marks exactly the shared mandatory list required, minus the admin-filled ones", () => {
     // Every mandatory field blank, so the marks stand for the whole list rather than the subset
     // this fixture happens to leave unanswered.
@@ -769,8 +771,14 @@ describe("renderProfile LinkedIn URN and intake form", () => {
       .map((control) => control?.getAttribute("name"))
       .filter((name): name is string => Boolean(name));
     expect(marked.toSorted()).toEqual(
-      [...adminBotMandatoryProfileFields].filter((key) => key !== "linkedin_urn").toSorted(),
+      [...adminBotMandatoryProfileFields]
+        .filter((key) => !adminBotAdminOwnedProfileFields.includes(key))
+        .toSorted(),
     );
+    // The two fields the lab most recently started asking for, named outright so a silent removal
+    // from the shared list cannot pass as "the marks still match the list".
+    expect(marked).toContain("linkedin_urn");
+    expect(marked).toContain("one_on_one_folder_url");
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control
@@ -1397,23 +1405,20 @@ describe("the LinkedIn URN", () => {
       createState(createMember({ linkedin_urn: "ACoAAB1234567" })),
       () => {},
     );
-    const input = container.querySelector<HTMLInputElement>(
-      "[data-testid='profile-admin-only-linkedin_urn']",
-    );
+    const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
     expect(input?.disabled).toBe(false);
     expect(input?.readOnly).toBe(false);
     expect(input?.value).toBe("ACoAAB1234567");
   });
 
-  // Editable is a separate question from chased. One member of 199 has a URN, so counting it would
-  // drop fifty profiles off 100% and nudge every one of them for a field nobody has heard of.
-  it("stays out of the completion ledger and carries no mandatory dot", () => {
+  // Chased as well as editable. It is off adminBotAdminOwnedProfileFields, so a blank URN is a
+  // blank field like any other: dotted on the page, counted in the ledger, named by the reminder.
+  it("carries a mandatory dot and counts as a blank while it is empty", () => {
     const container = renderPage(createState(createMember()), () => {});
-    const field = container
-      .querySelector("[data-testid='profile-admin-only-linkedin_urn']")
-      ?.closest("label");
-    expect(field?.querySelector(".profile__mandatory")).toBeNull();
+    const field = container.querySelector('input[name="linkedin_urn"]')?.closest("label");
+    expect(field?.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(blankFields(createMember()).map((entry) => entry.key)).toContain("linkedin_urn");
   });
 });
 

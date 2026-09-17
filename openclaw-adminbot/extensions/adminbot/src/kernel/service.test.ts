@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  adminBotAdminOwnedProfileFields,
   adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
@@ -38,6 +39,7 @@ function completeMember(
     linkedin_url: "https://www.linkedin.com/in/complete",
     linkedin_urn: "ACoAAB1234567",
     cv_url: "https://example.com/cv.pdf",
+    one_on_one_folder_url: "https://drive.google.com/drive/folders/complete",
     intake_form_url: "https://docs.google.com/forms/d/e/complete/viewform",
     openreview_id: "~Complete_Member1",
     ...fields,
@@ -3418,7 +3420,9 @@ describe("AdminBotService", () => {
           joined_month: "2026-01",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
           intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQL/viewform",
           openreview_id: "~Ayush_Nangia1",
           trips: [{ city: "Toronto", start: "2026-09-01", end: "2026-09-05" }],
@@ -3470,7 +3474,9 @@ describe("AdminBotService", () => {
           joined_month: "2026-01",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
           intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQL/viewform",
           openreview_id: "~Ayush_Nangia1",
           trips: [{ city: "Toronto", start: "2026-09-01", end: "2026-09-05" }],
@@ -4522,6 +4528,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
@@ -4571,31 +4578,39 @@ describe("AdminBotService", () => {
       expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
     });
 
-    // The bug this pins shut: `linkedin_urn` is required of the record but only the lab can look it
-    // up, so a member whose own page read 100% complete was chased for it every three days with a
-    // message they could do nothing about. Nine people on the live roster were in that state.
+    // The rule that used to exempt `linkedin_urn`: a field the member's own page will not let them
+    // answer must not be chased, or they get a message every three days they can do nothing about.
+    // adminBotAdminOwnedProfileFields is empty now, so this asserts the rule over an empty set --
+    // kept because the rule is what makes that list safe to repopulate.
     it("leaves alone a member whose only blank is one the lab owes", () => {
       const service = new AdminBotService();
-      unwrap(
-        service.upsertLabMember({
-          receives_nudges: true,
-          id: "done",
-          name: "Done",
-          privilege_level: "member",
-          calendar_email: "done@cs.toronto.edu",
-          location: "Toronto",
-          research_topics: ["nlp"],
-          correspondence_email: "done@cs.toronto.edu",
-          whatsapp: "(+1) 555 0100",
-          joined_month: "2026-03",
-          github_url: "https://github.com/done",
-          linkedin_url: "https://www.linkedin.com/in/done",
-          cv_url: "https://example.com/cv.pdf",
-          intake_form_url: "https://docs.google.com/forms/d/e/done/viewform",
-          openreview_id: "~Done_Member1",
-        }),
-      );
+      unwrap(service.upsertLabMember(completeMember({ id: "done", privilege_level: "member" })));
+      for (const field of adminBotAdminOwnedProfileFields) {
+        unwrap(service.upsertLabMember({ id: "done", [field]: "" } as never));
+      }
       expect(unwrap(service.listMembersWithIncompleteMandatoryFields()).members).toEqual([]);
+    });
+
+    // The other half of the same change: the URN is no longer one of those fields. The member can
+    // look it up from the collector link beside the input, so a blank one is chased like any other.
+    it("chases a member whose only blank is the LinkedIn URN", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember(completeMember({ id: "urnless", privilege_level: "member" })));
+      unwrap(service.upsertLabMember({ id: "urnless", linkedin_urn: "" } as never));
+      const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
+      expect(result.members.map((member) => member.id)).toEqual(["urnless"]);
+      expect(result.members[0]?.missing_fields).toEqual(["linkedin_urn"]);
+    });
+
+    // And the field this change added: a member with no 1:1 folder on file is incomplete.
+    it("chases a member whose only blank is the 1:1 folder link", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember(completeMember({ id: "nofolder", privilege_level: "member" })),
+      );
+      unwrap(service.upsertLabMember({ id: "nofolder", one_on_one_folder_url: "" } as never));
+      const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
+      expect(result.members[0]?.missing_fields).toEqual(["one_on_one_folder_url"]);
     });
 
     it("removes an earlier incomplete-profile notification when the last field is filled", async () => {
@@ -4625,7 +4640,9 @@ describe("AdminBotService", () => {
           joined_month: "2026-03",
           github_url: "https://github.com/resolved",
           linkedin_url: "https://www.linkedin.com/in/resolved",
+          linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/resolved",
           intake_form_url: "https://docs.google.com/forms/d/e/resolved/viewform",
           openreview_id: "~Resolved_Member1",
         }),
@@ -4690,6 +4707,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
@@ -4769,7 +4787,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 9 required fields");
+      expect(message).toContain("missing 11 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
@@ -4895,6 +4913,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),

@@ -351,9 +351,9 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     // Where this member's one-on-one notes live. A Drive folder and only a Drive folder: the
     // service checks the /drive/folders/ shape (SOCIAL_URL_FIELDS in kernel/service.ts), so the
-    // hint says so before anyone pastes the Doc from last week's meeting instead. Optional --
-    // not everybody has one-on-ones, and a folder that has not been made yet is a blank that is
-    // simply true.
+    // hint says so before anyone pastes the Doc from last week's meeting instead. Required (see
+    // adminBotMandatoryProfileFields): a folder that does not exist yet is a set of meeting notes
+    // with nowhere to go, so "not made yet" is the blank the mark is there to close.
     key: "one_on_one_folder_url",
     labelKey: "profile.fields.oneOnOneFolderUrl",
     example: "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz",
@@ -379,16 +379,14 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     // LinkedIn publishes no mapping from a vanity URL to a URN, so this value cannot be derived
-    // from anything else on the page. The lab looks it up and fills it in; a member reading a
-    // string of digits off a collector site was a step nobody could be expected to get right.
+    // from anything else on the page. It has to be looked up -- but the member can look it up as
+    // easily as an admin can, and the field's help text points at the collector tool that reads it
+    // off their own account, so it is an ordinary required answer rather than an admin-owned one.
+    // See adminBotAdminOwnedProfileFields, which it used to be the sole entry on.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
-    // Read-only for the member: they see whether it is on file and, if not, follow the collector
-    // link that produces it. Typing a 13-digit id off another site was the step that never worked.
-    // The flag itself is stamped on below from adminBotAdminOwnedProfileFields, so this page and
-    // the service's reminder cannot disagree about who owes the answer.
     group: "links",
   },
   {
@@ -439,7 +437,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
 // list the service's reminder reads. Kept as a flag on the row rather than a lookup at each call
 // site because every consumer of this table already has the row in hand.
 export const PROFILE_FIELDS: ProfileField[] = PROFILE_FIELD_DEFINITIONS.map((field) =>
-  (adminBotAdminOwnedProfileFields as readonly string[]).includes(field.key)
+  adminBotAdminOwnedProfileFields.includes(field.key)
     ? { ...field, adminOnly: true as const }
     : field,
 );

@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
+import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
@@ -314,8 +315,9 @@ describe("renderDashboard", () => {
     );
   });
 
-  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
-  // the profile page is disabled.
+  // Chasing a member for a field their own profile page will not let them answer names a blank they
+  // cannot close. adminBotAdminOwnedProfileFields is empty at present -- `linkedin_urn` came off it
+  // and is now an ordinary blank like the rest -- so this asserts the rule rather than a roster.
   it("never lists an admin-filled field among the blanks", () => {
     const container = renderPage(
       createState({
@@ -328,7 +330,9 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
+    for (const key of adminBotAdminOwnedProfileFields) {
+      expect(container.querySelector(`[data-testid="dashboard-blank-${key}"]`)).toBeNull();
+    }
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {
@@ -352,6 +356,7 @@ describe("renderDashboard", () => {
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
               cv_url: "https://ada.dev/cv.pdf",
+              one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
               linkedin_urn: "ACoAAB1234567",
             },
