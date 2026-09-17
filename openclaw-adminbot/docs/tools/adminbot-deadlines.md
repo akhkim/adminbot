@@ -274,3 +274,10 @@ Workshop reconciliation retains `deadline_observations` in the canonical dataset
 A page whose title or main heading explicitly identifies a different edition cannot supply the current deadline. Crossed-out dates can support extension history but cannot be selected as the current deadline. Explicit abstract and full-paper targets reject evidence for the other milestone. These guards do not prove that every unlabeled page or script belongs to the requested track; those cases still need source review.
 
 Script assets remain a bounded fallback when the page supplies no deadline candidates. Their observations identify the actual asset separately from the workshop URL. Historical recovery remains limited to forced refreshes with extension evidence and insufficient date history. These observations describe submission deadlines; conference-wide notification policy and notification-date precedence are unchanged.
+
+
+## Workshops without a submission date
+
+Discovered workshops remain in the dataset with an empty `deadline_aoe` until a source supplies a usable date. Their stable IDs let later collection update the existing entry. Previously observed deadlines are retained when a source temporarily stops reporting them.
+
+The board includes undated workshops in their usual venue groups, after dated entries in Upcoming, with “Deadline unknown” and neutral styling. It does not show a countdown or an Add to timeline action. Known notification or conference dates remain available as milestones, without substituting for the missing submission deadline. Undated workshops are excluded from deadline-driven matching, reminders, escalation, and channel digests.

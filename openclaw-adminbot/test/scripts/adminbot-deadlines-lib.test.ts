@@ -360,16 +360,16 @@ describe("workshop source URLs", () => {
     ).toEqual([false, "2034-12-01T00:00:00Z"]);
   });
 
-  it("does not publish an expired official-only group outside the audited NeurIPS roster", () => {
+  it("retains discovered groups with an explicit final-paper date", () => {
     expect(
       runPython(
         "m = load('adminbot-deadline-collect')\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}, 'date': {'value': 'Abstract Registration: Jan 01 2035 11:00PM UTC-0, Submission Deadline: Jan 02 2035 11:00PM UTC-0'}}}]}\n" +
           "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {}\n" +
           "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'year': 2035, 'group': 'TEST 2035 Workshops'}\n" +
-          "print(json.dumps(m.fetch_workshop_source(source, [])))",
+          "print(json.dumps([x['deadline_aoe'] for x in m.fetch_workshop_source(source, [])]))",
       ),
-    ).toEqual([]);
+    ).toEqual(["2035-01-02 11:00:00"]);
   });
 
   it("does not substitute an ARR paper-cycle date for a commitment deadline", () => {
@@ -1262,4 +1262,58 @@ rows = [dict(id='example', name='Example', venue_type='workshop', deadline_aoe=o
 m.enrich_workshop_sources(rows, {'example': old}, AoEClock.resolve('2035-09-11T00:00:00Z'))
 print(json.dumps([rows[0]['deadline_observations'], rows[0]['source_checked_at']]))`),
   ).toEqual([[{ decision: "conflicts_with_portal" }], "2035-09-10T00:00:00Z"]);
+});
+
+it("keeps undated workshop discovery and uses the same id when the date appears", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-collect')
+m._openreview_get = lambda *a, **kw: {'groups':[{'id':'TEST/2035/Workshop/Example','content':{'title':{'value':'Example'}}}]}
+m._openreview_submission_deadlines = lambda *a, **kw: {}
+m.fetch_invitation_observations = lambda ids: {}
+source = dict(parent='TEST/2035/Workshop', id_prefix='test2035_ws_', deadline_aoe='', notification_aoe='', family='TEST', year=2035, group='TEST 2035 Workshops')
+first = m.fetch_workshop_source(source)[0]
+assert first['_source_observed'] and first['source_checked_at']
+m._openreview_submission_deadlines = lambda *a, **kw: {'TEST/2035/Workshop/Example':'2035-09-25 23:59:00'}
+second = m.fetch_workshop_source(source, {first['id']:first})[0]
+print(json.dumps([first['id'], first['deadline_aoe'], second['id'], second['deadline_aoe']]))`),
+  ).toEqual(["test2035_ws_Example", "", "test2035_ws_Example", "2035-09-25 23:59:00"]);
+});
+
+it("excludes undated venues from date-driven digests", () => {
+  expect(
+    runPython(`d = DeadlineDataset()
+d.venues = lambda: [dict(id='unknown', name='Example', deadline_aoe='')]
+c = AoEClock.resolve('2035-09-01')
+print(json.dumps([d.upcoming(c,45), d.past(c)]))`),
+  ).toEqual([[], []]);
+});
+
+it("does not remind or escalate an undated workshop match", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-reminders')
+class Dataset:
+ def venues(self): return [dict(id='example', deadline_aoe='')]
+ def matches(self): return {'ongoing':[{'confirmed':True,'title':'Example','deadline_id':'example'}]}
+ def templates(self): return {}
+class Notifier:
+ mode='test'
+ def __init__(self, **kw): pass
+ def send_to_user(self,*a,**kw): raise AssertionError('Unexpected reminder')
+m.DeadlineDataset=Dataset
+m.SlackNotifier=Notifier
+m.load_roster=lambda: {}
+m.openreview_submitted_titles=lambda: set()
+sys.argv=['reminders','--now','2035-09-01']
+m.main()
+print(json.dumps(True))`),
+  ).toBe(true);
+});
+
+it("does not call the first published date an extension of an unknown deadline", () => {
+  expect(
+    runPython(`m=load('adminbot-deadline-collect')
+old=m.merge_history(m.classify(dict(id='example',name='Example',venue_type='workshop',venue_group='Example 2035 Workshops',track='workshop',deadline_aoe='',notification_aoe='',deadline_label='submission',link='https://example.org')))
+new=m.merge_history(dict(old,deadline_aoe='2035-09-25 23:59:00'), old)
+print(json.dumps([old['deadline_aoe'],old['deadline_id']==new['deadline_id'],new['deadline_extended']]))`),
+  ).toEqual(["", true, false]);
 });

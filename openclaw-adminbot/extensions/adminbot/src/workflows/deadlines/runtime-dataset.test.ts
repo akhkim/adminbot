@@ -16,7 +16,11 @@ describe("runtime deadline dataset", () => {
       writeFileSync(file + ".next", JSON.stringify({ items: [row] }));
       renameSync(file + ".next", file);
       expect(readDeadlineDataset(file)).toEqual([row]);
+      const unknown = { ...row, venue_type: "workshop", deadline_aoe: "" };
+      writeFileSync(file, JSON.stringify({ items: [unknown] }));
+      expect(readDeadlineDataset(file)).toEqual([unknown]);
       for (const invalid of [
+        JSON.stringify({ items: [{ ...row, deadline_aoe: "" }] }),
         "{",
         JSON.stringify({ items: [] }),
         JSON.stringify({ items: [row, row] }),

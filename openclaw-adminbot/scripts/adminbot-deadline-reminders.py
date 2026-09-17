@@ -171,6 +171,8 @@ def main():
         if current is None:
             print("WARN: confirmed match has no current deadline id; rerun matching before reminders", file=sys.stderr)
             continue
+        if not current.get("deadline_aoe"):
+            continue
         paper = dict(paper, deadline_aoe=current["deadline_aoe"], **{key: current.get(key, "") for key in TIME_FIELDS})
         if submitted is not None and norm(paper["title"]) in submitted:
             continue                           # already submitted -> silent

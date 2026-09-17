@@ -23,9 +23,14 @@ export function readDeadlineDataset(
       typeof row.name !== "string" ||
       !row.name.trim() ||
       typeof row.deadline_aoe !== "string" ||
-      !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(row.deadline_aoe)
+      (!(row.deadline_aoe === "" && row.venue_type === "workshop") &&
+        !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(row.deadline_aoe))
     ) {
       throw new Error("Invalid or duplicate deadline record");
+    }
+    if (row.deadline_aoe === "") {
+      ids.add(row.id);
+      continue;
     }
     const instant = new Date(row.deadline_aoe.replace(" ", "T") + "Z");
     if (

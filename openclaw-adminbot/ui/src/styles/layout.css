@@ -4583,6 +4583,7 @@
   --deadline-urgency-subtle: transparent;
 }
 
+[data-urgency="unknown"],
 [data-urgency="passed"] {
   --deadline-urgency: var(--muted);
   --deadline-urgency-subtle: transparent;

@@ -85,7 +85,7 @@ export function reconcileDeadlineMilestones(
     const deadline = row.deadline_id
       ? deadlinesById.get(row.deadline_id)
       : legacyDeadline(row, currentDeadlines);
-    if (!deadline) {
+    if (!deadline || !deadline.deadline_aoe) {
       reconciled.push(row);
       continue;
     }

@@ -53,6 +53,9 @@ export function deadlineDateTimeLabel(
     | "deadline_time_precision"
   >,
 ): string {
+  if (!venue.deadline_aoe && !venue.deadline_at && !venue.deadline_date) {
+    return "Deadline unknown";
+  }
   if (venue.deadline_time_precision === "date_only") {
     return `${plainDateLabel(venue.deadline_date || "")} · time unknown${venue.deadline_timezone ? ` (${venue.deadline_timezone})` : ""}`;
   }
@@ -151,6 +154,9 @@ export function daysLeftLabel(instant: number, now: number): string {
 }
 
 export function countdownLabel(ms: number): string {
+  if (!Number.isFinite(ms)) {
+    return "";
+  }
   const left = Math.max(ms, 0);
   const d = Math.floor(left / MS_DAY);
   const h = Math.floor(left / 3_600_000) % 24;

@@ -89,3 +89,17 @@ it("labels a copied date-only boundary as a planning cutoff", () => {
     label: "Example — planning cutoff (time unknown)",
   });
 });
+
+it("preserves an existing personal date when a linked workshop has no current deadline", () => {
+  const row: AdminBotMemberMilestone = {
+    deadline_id: "unknown",
+    date: "2035-09-20",
+    label: "My plan",
+  };
+  expect(
+    reconcileDeadlineMilestones(
+      [row],
+      [{ id: "unknown", deadline_id: "unknown", deadline_aoe: "", name: "Workshop" }],
+    ),
+  ).toEqual([row]);
+});

@@ -2441,3 +2441,42 @@ it("opens a correction from a specific stage ellipsis and submits only that stag
     "stage-venue",
   );
 });
+
+it("keeps undated workshops in their usual upcoming groups without countdowns", async () => {
+  const unknown: DeadlineVenue = {
+    ...DEADLINE_VENUES[0],
+    id: "undated",
+    deadline_id: "undated",
+    name: "Undated Workshop",
+    venue_type: "workshop",
+    entry_type: "workshop",
+    venue_group: "Example 2035 Workshops",
+    deadline_aoe: "",
+    deadline_at: "",
+    deadline_planning_at: "",
+    deadline_date: "",
+    deadline_time_precision: "",
+    notification_aoe: "",
+    schedule: [],
+  };
+  const entries = buildDeadlineBoardEntries([unknown]);
+  expect(entries).toHaveLength(1);
+  expect(entriesForDeadlinePeriod(entries, Date.now(), "upcoming")).toHaveLength(1);
+  expect(entriesForDeadlinePeriod(entries, Date.now(), "past")).toHaveLength(0);
+  expect(headlineDeadlineEntry(entries)).toBeUndefined();
+  expect(groupDeadlineBoardEntries(entries)[0].entries[0].venue.id).toBe("undated");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue([unknown]);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const card = container.querySelector(".deadline-card")!;
+  expect(card.textContent).toContain("Deadline unknown");
+  expect(card.getAttribute("data-urgency")).toBe("unknown");
+  expect(card.querySelector(".deadline-card__countdown")).toBeNull();
+  expect(card.querySelector(".deadline-card__urgency")).toBeNull();
+  expect(card.textContent).not.toMatch(/NaN|Infinity|passed/);
+});

@@ -170,7 +170,7 @@ def main():
     venue_items = DeadlineDataset(DDIR).venues()
     venues = {}
     for venue in venue_items:
-        if clock.has_passed(venue["deadline_aoe"]):
+        if not venue.get("deadline_aoe") or clock.has_passed(venue["deadline_aoe"]):
             continue
         group = venue["venue_group"]
         if group not in venues or venue["deadline_aoe"] < venues[group]["deadline_aoe"]:

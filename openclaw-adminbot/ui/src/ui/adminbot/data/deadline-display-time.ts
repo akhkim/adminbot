@@ -94,6 +94,9 @@ export function deadlineDisplayLabel(
   selection: string,
   includeOffset = false,
 ): string {
+  if (!venue.deadline_aoe && !venue.deadline_at && !venue.deadline_date) {
+    return "Deadline unknown";
+  }
   // A calendar date is not an instant: converting it would invent an official closing time.
   if (venue.deadline_time_precision === "date_only") {
     return deadlineDateTimeLabel(venue);
