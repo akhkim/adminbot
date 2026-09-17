@@ -240,3 +240,6 @@ Preview creates a proposal without sending. Only its author can approve and send
 
 The board requests recommendation indicators only for visible deadlines. The directory endpoint offers separate bounded member and recipient-paper queries. Paper authorship is filtered before pagination. Requests and rendered selections are cleared on account changes; late responses are ignored. Anonymous views neither load nor display recommendations, and public deadline JSON excludes them.
 
+### Location filtering
+
+The location selector applies to cards, groups, tables, and the next-deadline summary alongside the existing search and classification filters. A workshop uses its own published site when available; otherwise it inherits the parent conference’s sites. A workshop with an unresolved site at a multi-site conference therefore appears under each possible parent site. “Location unknown” selects entries without any published site.

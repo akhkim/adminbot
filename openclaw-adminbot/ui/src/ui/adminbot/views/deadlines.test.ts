@@ -913,7 +913,7 @@ describe("renderDeadlines", () => {
     ).toBe("Search conferences & workshops…");
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(
       [...container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select")].every(
         (select) =>
@@ -1195,11 +1195,11 @@ describe("renderDeadlines", () => {
       `Showing ${cards.length} of ${cards.length} matching upcoming deadlines`,
     );
 
-    // The priority facet is gone; the two that remain are the whole filter bar.
+    // Entry type, archival status, and location are independent facets.
     expect(container.querySelector('[data-testid="deadline-filter-priority"]')).toBeNull();
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("drops a conference open onto its camera-ready and conference dates", async () => {
@@ -1887,4 +1887,81 @@ describe("venue location", () => {
         ?.textContent?.trim(),
     ).toBe("Budapest, Hungary");
   });
+});
+
+function locationFixtures(): DeadlineVenue[] {
+  return [
+    ["paris", "Paris, France", "Paris, France; Atlanta, USA"],
+    ["atlanta", "Atlanta, USA", "Paris, France; Atlanta, USA"],
+    ["inherited", "", "Paris, France; Atlanta, USA"],
+    ["unknown", "", ""],
+  ].map(([id, workshop_location, conference_location]) => ({
+    ...DEADLINE_VENUES[0],
+    id,
+    deadline_id: id,
+    venue_id: id,
+    venue_aliases: [],
+    name: `Location ${id}`,
+    venue_group: "Example Workshops",
+    venue_type: "workshop",
+    entry_type: "workshop",
+    deadline_aoe: "2035-09-25 23:59:00",
+    notification_aoe: "",
+    schedule: [],
+    workshop_location,
+    conference_location,
+  }));
+}
+
+it("filters on workshop sites, inherited possibilities, and unknown locations", () => {
+  const entries = buildDeadlineBoardEntries(locationFixtures());
+  const matching = (location: string, query = "") =>
+    filterDeadlineBoardEntries(entries, "", query, {
+      entryType: "all",
+      archivalStatus: "all",
+      location,
+    }).map((entry) => entry.venue.id);
+  expect(matching("Paris, France")).toEqual(["inherited", "paris"]);
+  expect(matching("Atlanta, USA")).toEqual(["atlanta", "inherited"]);
+  expect(matching("unknown")).toEqual(["unknown"]);
+  expect(matching("Paris, France", "paris")).toEqual(["paris"]);
+  expect(matching("")).toHaveLength(4);
+});
+
+it("keeps location selection across views and allows returning to all locations", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue(locationFixtures());
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  const select = container.querySelector<HTMLSelectElement>(
+    '[data-testid="deadline-filter-location"]',
+  )!;
+  select.value = "Paris, France";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  for (const view of ["Cards", "Table", "Groups"]) {
+    buttonNamed(container, view).click();
+    await settle(container);
+    expect(container.textContent).toContain("Location paris");
+    expect(container.textContent).toContain("Location inherited");
+    expect(container.textContent).not.toContain("Location atlanta");
+    expect(
+      [...container.querySelectorAll("a")].some(
+        (link) => link.textContent?.trim() === "Location unknown",
+      ),
+    ).toBe(false);
+    expect(select.value).toBe("Paris, France");
+  }
+  select.value = "unknown";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelectorAll(".deadline-card")).toHaveLength(1);
+  select.value = "";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  expect(container.querySelectorAll(".deadline-card")).toHaveLength(4);
 });

@@ -89,6 +89,7 @@ export type DeadlineBoardArchivalStatus = "all" | DeadlineVenue["archival_status
 export type DeadlineBoardFilters = Readonly<{
   entryType: DeadlineBoardEntryType;
   archivalStatus: DeadlineBoardArchivalStatus;
+  location?: string;
 }>;
 type DeadlineUrgency = Urgency | "passed";
 
@@ -515,6 +516,12 @@ export function filterDeadlineBoardEntries(
     }
     if (filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus) {
       return false;
+    }
+    if (filters.location) {
+      const sites = venueLocationSites(venue);
+      if (filters.location === "unknown" ? sites.length > 0 : !sites.includes(filters.location)) {
+        return false;
+      }
     }
     if (!needle) {
       return true;
@@ -1006,6 +1013,7 @@ class AdminbotDeadlinesView extends LitElement {
   private query = "";
   private entryType: DeadlineBoardEntryType = "all";
   private archivalStatus: DeadlineBoardArchivalStatus = "all";
+  private location = "";
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
   private venues: DeadlineVenue[] = [];
@@ -1860,6 +1868,27 @@ class AdminbotDeadlinesView extends LitElement {
             )}
           </select>
         </label>
+        <label class="deadline-board__facet">
+          <span class="sr-only">Filter by location</span>
+          <select
+            aria-label="Filter by location"
+            data-testid="deadline-filter-location"
+            .value=${this.location}
+            @change=${(event: Event) => {
+              this.location = (event.target as HTMLSelectElement).value;
+              this.requestUpdate();
+            }}
+          >
+            <option value="">All locations (${count("location", "")})</option>
+            ${[...new Set(this.venues.flatMap(venueLocationSites))]
+              .toSorted((a, b) => a.localeCompare(b))
+              .map(
+                (site) => html`<option value=${site}>${site} (${count("location", site)})</option>`,
+              )}
+            <option value="unknown">Location unknown (${count("location", "unknown")})</option>
+          </select>
+          <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
+        </label>
         <div class="deadline-board__groups" role="group" aria-label="Filter by venue">
           <button
             type="button"
@@ -2572,6 +2601,7 @@ class AdminbotDeadlinesView extends LitElement {
     const filters: DeadlineBoardFilters = {
       entryType: this.entryType,
       archivalStatus: this.archivalStatus,
+      location: this.location,
     };
     const matching = filterDeadlineBoardEntries(periodEntries, "", this.query, filters);
     if (

@@ -5031,12 +5031,13 @@ adminbot-deadlines-view {
 
 .deadline-board__controls {
   display: grid;
-  grid-template-columns: minmax(17rem, 1fr) minmax(0, 9.25rem) minmax(0, 14rem) minmax(0, 10.5rem);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
 
 .deadline-board__search {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
