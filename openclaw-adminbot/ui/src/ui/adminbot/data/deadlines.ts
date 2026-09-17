@@ -35,6 +35,7 @@ export type DeadlineVenue = {
   notification_status?: string;
   notification_previous_aoe?: string;
   notification_issues?: string[];
+  deadline_observations?: { date: string; precision: string; source_url: string; document_id: string; extraction_kind: string; milestone: string; evidence: string; decision: string }[];
   abstract_requirement?: "required" | "not_required" | "unknown";
   abstract_requirement_evidence?: string;
   abstract_requirement_source_url?: string;

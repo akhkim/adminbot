@@ -809,9 +809,10 @@ def _profile_with_deadline_assets(html, source_url, year):
             final_asset, text = _fetch_text_asset(asset_url)
         except Exception:
             continue
-        profile["_deadline_candidates"].extend(
-            deadline_candidates_from_text(text, source_url, year, final_asset)
-        )
+        asset_candidates = deadline_candidates_from_text(text, source_url, year, final_asset)
+        for candidate in asset_candidates:
+            candidate["extraction_kind"] = "script_asset"
+        profile["_deadline_candidates"].extend(asset_candidates)
     return profile
 
 
@@ -1245,7 +1246,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                         "workshop_location"):
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
-            item.update({key: previous[key] for key in (*TIME_FIELDS, *ABSTRACT_FIELDS) if key in previous})
+            item.update({key: previous[key] for key in (*TIME_FIELDS, *ABSTRACT_FIELDS, "deadline_observations") if key in previous})
             if "website_deadline_candidates" in previous:
                 item["website_deadline_candidates"] = previous["website_deadline_candidates"]
             item["link"] = (item["cfp_url"] or homepage
@@ -1273,8 +1274,6 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             "workshop_location", ""
         )
         candidates = profile.get("_deadline_candidates", [])
-        if item.get("_stage"):
-            candidates = [c for c in candidates if _candidate_is_abstract(c) == (item["_stage"] == "abstract")]
         deadline = reconcile_deadline_candidates(
             candidates,
             item.get("_openreview_deadline", ""),
@@ -1284,6 +1283,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             item.get("_group_final_evidence", ""),
             f"{item.get('id', '')} {item.get('name', '')} {item.get('_stage', '')}",
         )
+        item["deadline_observations"] = deadline["deadline_observations"]
         if deadline["deadline_aoe"]:
             item.update({key: deadline[key] for key in TIME_FIELDS})
             for key in (
@@ -1936,7 +1936,7 @@ def write_outputs(items):
             "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
             "deadline_official_url",
             "deadline_extended", "deadline_history_status",
-            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", *TIME_FIELDS, *ABSTRACT_FIELDS]
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", "deadline_observations", *TIME_FIELDS, *ABSTRACT_FIELDS]
     # "" is the right empty for every string field here; `schedule` is a list, and a
     # bare "" in it would typecheck as neither.
     slim = [{k: it.get(k, [] if k in {"schedule", "schedule_issues"} else "") for k in keys
@@ -1964,6 +1964,8 @@ def write_outputs(items):
                 "export type DeadlineVenue = {\n"
                 "  notification_policy?: DeadlineMilestone & { status: string; checked_at?: string; evidence?: string };\n"
                 "  notification_status?: string;\n  notification_previous_aoe?: string;\n  notification_issues?: string[];\n"
+
+                "  deadline_observations?: { date: string; precision: string; source_url: string; document_id: string; extraction_kind: string; milestone: string; evidence: string; decision: string }[];\n"
                 "  abstract_requirement?: \"required\" | \"not_required\" | \"unknown\";\n"
                 "  abstract_requirement_evidence?: string;\n  abstract_requirement_source_url?: string;\n"
                 "  abstract_requirement_conflict?: boolean;\n  abstract_deadline_id?: string;\n"

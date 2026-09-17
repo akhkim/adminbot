@@ -396,6 +396,7 @@ def deadline_candidates_from_text(
                 "source_url": source_url,
                 "document_id": document_id or source_url,
                 "position": start,
+                "extraction_kind": "text",
             }
         )
     return output
@@ -410,6 +411,13 @@ def deadline_candidates_from_html(html, source_url, year, positive_signals=POSIT
                 text, source_url, year, f"{source_url}#{kind}", positive_signals
             )
         )
+    identity = " ".join(re.findall(r"(?is)<(?:title|h1)\b[^>]*>(.*?)</(?:title|h1)>", html))
+    editions = sorted(set(re.findall(r"\b20\d{2}\b", re.sub(r"<[^>]+>", " ", identity))))
+    for candidate in candidates:
+        candidate["extraction_kind"] = "inline_script" if candidate["document_id"].endswith("#inline-script") else "visible_html"
+        candidate["source_editions"] = editions
+        if editions and str(year) not in editions:
+            candidate["rejection_reason"] = "different_edition"
     return candidates, script_urls
 
 
@@ -436,6 +444,8 @@ def _deduplicate_candidates(candidates):
         key = (
             candidate["stamp"],
             candidate["source_url"],
+            candidate.get("document_id", ""),
+            candidate.get("context", ""),
             _candidate_is_abstract(candidate),
             candidate["extended"],
         )
@@ -468,8 +478,29 @@ def _track_relevance(candidate, target_hint):
     return 4 * sum(token in label for token in tokens) + sum(token in evidence for token in tokens)
 
 
+def _candidate_rejection(candidate, target_hint=""):
+    if candidate.get("rejection_reason"):
+        return candidate["rejection_reason"]
+    if candidate.get("old_hint"):
+        return "historical_date"
+    if "full_paper" in target_hint:
+        return "different_milestone" if _candidate_is_abstract(candidate) else ""
+    if re.search(r"(?:^|[\s_])abstract$", target_hint.lower()) and not _candidate_is_abstract(candidate):
+        return "different_milestone"
+    return ""
+
+
 def select_official_candidate(candidates, fallback_stamp, year, target_hint=""):
     candidates = _deduplicate_candidates(candidates)
+    rejected = []
+    eligible = []
+    for candidate in candidates:
+        reason = _candidate_rejection(candidate, target_hint)
+        if reason:
+            rejected.append(dict(candidate, rejection_reason=reason))
+        else:
+            eligible.append(candidate)
+    candidates = eligible
     for candidate in candidates:
         candidate["track_relevance"] = _track_relevance(candidate, target_hint)
     fallback_date = (
@@ -494,7 +525,7 @@ def select_official_candidate(candidates, fallback_stamp, year, target_hint=""):
         reverse=True,
     )
     if not ranked:
-        return None, ranked
+        return None, rejected
     target_track_tokens = _target_track_tokens(target_hint)
     max_track_relevance = max(candidate["track_relevance"] for candidate in ranked)
     if target_track_tokens and not max_track_relevance:
@@ -630,7 +661,9 @@ def reconcile_deadline_candidates(
         equivalent_extensions = [
             candidate
             for candidate in candidates
-            if candidate["stamp"][:16] == selected["stamp"][:16]
+            if not candidate.get("rejection_reason")
+            and not candidate.get("old_hint")
+            and candidate["stamp"][:16] == selected["stamp"][:16]
             and candidate["source_url"] == selected["source_url"]
             and candidate["extended"]
             and (
@@ -640,6 +673,32 @@ def reconcile_deadline_candidates(
         ]
         if equivalent_extensions:
             selected = max(equivalent_extensions, key=lambda candidate: candidate["score"])
+    observations = []
+    for candidate in candidates:
+        reason = _candidate_rejection(candidate, target_hint)
+        if not reason and _target_track_tokens(target_hint) and not _track_relevance(candidate, target_hint):
+            reason = "different_or_unmatched_track"
+        chosen = selected is not None and all(candidate.get(key) == selected.get(key) for key in ("stamp", "document_id", "position"))
+        decision = reason or ("matched" if chosen else "not_selected")
+        if chosen and fallback:
+            agrees = candidate["stamp"][:10] == fallback[:10] if len(candidate["stamp"]) == 10 else candidate["stamp"][:16] == fallback[:16]
+            decision = "agrees_with_portal" if agrees else "conflicts_with_portal"
+        observations.append({
+            "date": candidate["stamp"], "precision": candidate["precision"],
+            "source_url": candidate["source_url"], "document_id": candidate["document_id"],
+            "extraction_kind": candidate.get("extraction_kind", "cached_unknown"),
+            "milestone": "abstract" if _candidate_is_abstract(candidate) else "submission",
+            "evidence": candidate["evidence"],
+            "decision": decision,
+        })
+    if fallback:
+        observations.insert(0, {
+            "date": fallback, "precision": "exact", "source_url": openreview_url,
+            "document_id": openreview_url, "extraction_kind": fallback_kind,
+            "milestone": "abstract" if "abstract" in target_hint.lower() else "submission",
+            "evidence": group_final_evidence if not openreview_stamp else "Matched OpenReview invitation cutoff.",
+            "decision": "authoritative",
+        })
     result = {
         "deadline_aoe": fallback,
         "source_url": openreview_url,
@@ -652,6 +711,7 @@ def reconcile_deadline_candidates(
         "deadline_extended": False,
         "source_revisions": [],
         "alternatives": ranked,
+        "deadline_observations": observations,
     }
     if group_final_stamp and not openreview_stamp:
         result["deadline_source_status"] = "openreview_final_submission"
