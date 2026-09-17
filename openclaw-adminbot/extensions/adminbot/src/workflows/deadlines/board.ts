@@ -94,14 +94,9 @@ const TEMPLATE = `<meta charset="utf-8" />
   /* hero + stats grid */
   .top {
     display: grid;
-    grid-template-columns: 1.3fr 0.9fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--gap);
     margin: 26px 0;
-  }
-  @media (max-width: 760px) {
-    .top {
-      grid-template-columns: 1fr;
-    }
   }
   .hero {
     background: linear-gradient(160deg, var(--surface-2), var(--surface));
@@ -176,33 +171,6 @@ const TEMPLATE = `<meta charset="utf-8" />
     padding-bottom: 14px;
   }
 
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(2, 1fr);
-    gap: var(--gap);
-  }
-  .stat {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 18px;
-    display: flex;
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .stat .k {
-    color: var(--ink-2);
-    font-size: 14px;
-  }
-  .stat .v {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    font-size: 24px;
-    font-weight: 600;
-  }
 
   /* controls */
   .controls {
@@ -973,23 +941,6 @@ const TEMPLATE = `<meta charset="utf-8" />
 
     <div class="top">
       <div class="hero" id="hero"></div>
-      <div class="stats">
-        <div class="stat">
-          <span class="k">Matching deadlines</span><span class="v" id="s-total">–</span>
-        </div>
-        <div class="stat">
-          <span class="k" id="s-today-label">Due today</span
-          ><span class="v" id="s-today" style="color: var(--crit)">–</span>
-        </div>
-        <div class="stat">
-          <span class="k" id="s-7-label">Due within 7 days</span
-          ><span class="v" id="s-7" style="color: var(--serious)">–</span>
-        </div>
-        <div class="stat">
-          <span class="k" id="s-30-label">Due within 30 days</span
-          ><span class="v" id="s-30" style="color: var(--warn)">–</span>
-        </div>
-      </div>
     </div>
 
     <div class="grid" id="grid"></div>
@@ -1024,10 +975,70 @@ const TEMPLATE = `<meta charset="utf-8" />
     const [_, y, mo, d, h, mi, se] = m.map(Number);
     return Date.UTC(y, mo - 1, d, h, mi, se) + 12 * 3600 * 1000;
   }
+  // When a schedule row stops being something still ahead. Those dates are calendar days, not
+  // AoE timestamps, so a day is spent only once it is over; a period ends when its last day does.
+  function stageInstant(entry) {
+    const value = entry.kind === "period" ? entry.ends || entry.starts || "" : entry.date || "";
+    const day = String(value).match(/\d{4}-\d{2}-\d{2}/);
+    if (!day) return null;
+    return /[ T]\d{2}:\d{2}/.test(value) ? aoeToUTC(value) : aoeToUTC(day[0] + " 23:59:59");
+  }
   DATA.forEach((x) => {
     x._sub = aoeToUTC(x.deadline_aoe);
     x._notif = x.notification_aoe ? aoeToUTC(x.notification_aoe) : null;
   });
+  /**
+   * Every dated stage of the venue, soonest first: the submission, then everything it published
+   * behind it.
+   *
+   * The period split and every countdown read this rather than the submission alone, because a
+   * conference is not done with the lab the day its deadline passes -- decisions still land,
+   * camera-ready copy is still due, and the conference itself still has to be attended.
+   *
+   * Built on first use and cached on the row. Eagerly, up beside the _sub assignment, it would
+   * run before the month names and date formatters this reads are initialised.
+   */
+  function venueStages(x) {
+    if (!x._stages) {
+      x._stages = [
+        {
+          t: x._sub,
+          label: cap(x.deadline_label || "Submission"),
+          date: fmtAoeDateTime(x.deadline_aoe),
+          sub: true,
+        },
+      ]
+        .concat(
+          venueSchedule(x).map((entry) => ({
+            t: stageInstant(entry),
+            label: entry.label,
+            date: milestoneDate(entry),
+            sub: false,
+          })),
+        )
+        .filter((stage) => Number.isFinite(stage.t))
+        .sort((a, b) => a.t - b.t);
+    }
+    return x._stages;
+  }
+  // The soonest stage still ahead, or undefined once the whole calendar is behind us.
+  function nextStage(x, now) {
+    return venueStages(x).find((stage) => stage.t > now);
+  }
+  // What a row counts down to. Identical to the submission while that is still open, because it is
+  // the first stage of the venue's own calendar.
+  function countdownTarget(x, now) {
+    const stage = nextStage(x, now);
+    return stage ? stage.t : x._sub;
+  }
+  // The words beside a countdown, naming the stage when it is not the submission: "45 days left"
+  // printed next to a deadline that passed last month otherwise reads as a broken clock.
+  function stageUrgency(x, now) {
+    const stage = nextStage(x, now);
+    if (!stage) return { txt: "passed", cvar: "var(--muted)" };
+    const u = urgencyLabel(stage.t, now);
+    return stage.sub ? u : { txt: stage.label + " \u00b7 " + u.txt, cvar: u.cvar };
+  }
   DATA.sort((a, b) => a._sub - b._sub);
 
   const MONTHS = [
@@ -1236,7 +1247,7 @@ const TEMPLATE = `<meta charset="utf-8" />
     const selectedArchivalStatus = overrides.archivalStatus ?? archivalStatus;
     return DATA.filter(
       (x) =>
-        (period === "upcoming" ? x._sub > now : x._sub <= now) &&
+        (period === "upcoming" ? Boolean(nextStage(x, now)) : !nextStage(x, now)) &&
         (selectedEntryType === "all" || x.entry_type === selectedEntryType) &&
         (selectedArchivalStatus === "all" || x.archival_status === selectedArchivalStatus) &&
         (!query ||
@@ -1255,7 +1266,11 @@ const TEMPLATE = `<meta charset="utf-8" />
           )
             .toLowerCase()
             .includes(query)),
-    ).toSorted((a, b) => (period === "upcoming" ? a._sub - b._sub : b._sub - a._sub));
+    ).toSorted((a, b) =>
+      period === "upcoming"
+        ? countdownTarget(a, now) - countdownTarget(b, now) || a._sub - b._sub
+        : b._sub - a._sub,
+    );
   }
   function updateFacetCounts(now) {
     [
@@ -1283,40 +1298,29 @@ const TEMPLATE = `<meta charset="utf-8" />
     rebuildChips(matches);
     const list = matches.filter((x) => activeGroup === "All" || x.venue_group === activeGroup);
     empty.classList.toggle("hidden", list.length > 0);
-    document.getElementById("s-total").textContent = list.length;
-    document.getElementById("s-today").textContent = list.filter(
-      (x) => x.deadline_aoe.slice(0, 10) === aoeDayKey(now),
-    ).length;
-    const distance = (x) => (period === "upcoming" ? x._sub - now : now - x._sub);
-    document.getElementById("s-7").textContent = list.filter(
-      (x) => distance(x) >= 0 && distance(x) <= 7 * 86400000,
-    ).length;
-    document.getElementById("s-30").textContent = list.filter(
-      (x) => distance(x) >= 0 && distance(x) <= 30 * 86400000,
-    ).length;
-    const direction = period === "upcoming" ? "Due" : "Passed";
-    document.getElementById("s-today-label").textContent = \`\${direction} today\`;
-    document.getElementById("s-7-label").textContent = \`\${direction} within 7 days\`;
-    document.getElementById("s-30-label").textContent = \`\${direction} within 30 days\`;
-
     const next = list[0];
     if (next) {
-      const u = urgencyLabel(next._sub, now);
+      const u = stageUrgency(next, now);
       hero.dataset.entryType = next.entry_type;
       hero.dataset.archivalStatus = next.archival_status;
       hero.dataset.venuePriority = next.venue_priority;
       hero.style.setProperty("--h-color", u.cvar);
-      const p = parts(next._sub - now);
+      const p = parts(countdownTarget(next, now) - now);
       const call = titleUrl(next);
+      const stage = nextStage(next, now);
+      // The meta line names the date the countdown is actually running to, so a conference the lab
+      // has already submitted to reads "Accept/reject · Nov 20, 2026" rather than repeating a
+      // deadline that closed weeks ago.
+      const heroStage = stage && !stage.sub ? stage : null;
       const title = call
         ? \`<a href="\${esc(call)}" target="_blank" rel="noopener noreferrer">\${esc(next.name)}</a>\`
         : esc(next.name);
       hero.innerHTML = \`<div class="lbl">\${period === "upcoming" ? "Next" : "Most recent"} deadline · \${esc(next.venue_group)}</div>
       <div class="hname">\${title}</div>
-      <div class="hmeta">\${cap(next.deadline_label)} · \${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:\${u.cvar}">\${u.txt}</span> \${classificationLabels(next)}</div>
+      <div class="hmeta">\${heroStage ? esc(heroStage.label) : cap(next.deadline_label)} · \${heroStage ? esc(heroStage.date) : fmtAoeDateTime(next.deadline_aoe)} · <span style="color:\${u.cvar}">\${esc(u.txt)}</span> \${classificationLabels(next)}</div>
       \${
         period === "upcoming"
-          ? \`<div class="cd" data-t="\${next._sub}">
+          ? \`<div class="cd" data-t="\${countdownTarget(next, now)}">
         \${unit(p.d, "days")}<span class="sep">:</span>\${unit(pad(p.h), "hrs")}<span class="sep">:</span>\${unit(pad(p.m), "min")}<span class="sep">:</span>\${unit(pad(p.s), "sec")}
       </div>\`
           : ""
@@ -1449,8 +1453,8 @@ const TEMPLATE = `<meta charset="utf-8" />
     grid.innerHTML = list
       .map((x) => {
         const u =
-          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
-        const p = parts(x._sub - now);
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
+        const p = parts(countdownTarget(x, now) - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
         const title = call
@@ -1463,7 +1467,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       \${classificationLabels(x)}\${confidenceBadge(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
-      <div class="ccd"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
+      <div class="ccd"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
       \${notif}\${staleNote(x)}\${historyNote(x)}\${sourceLinks(x)}
     </div>\`;
       })
@@ -1473,8 +1477,8 @@ const TEMPLATE = `<meta charset="utf-8" />
     tbody.innerHTML = list
       .map((x) => {
         const u =
-          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
-        const p = parts(x._sub - now);
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
+        const p = parts(countdownTarget(x, now) - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
         const title = call
@@ -1482,7 +1486,7 @@ const TEMPLATE = `<meta charset="utf-8" />
           : esc(x.name);
         const actions = sourceLinks(x);
         return \`<tr data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
-      <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
+      <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
       <td class="meta"><span class="labels"><span class="badge">\${type}</span>\${classificationLabels(x)}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${sourceConfidenceNote(x) ? \`<span class="cnote" title="\${esc(sourceConfidenceNote(x))}">\${x.stale ? "stale" : "unconfirmed"}</span>\` : ""}\${historyNote(x)}\${actions}</td></tr>\`;
       })
@@ -1611,8 +1615,8 @@ const TEMPLATE = `<meta charset="utf-8" />
   }
   function renderGroupRow(x, group, now, groupKind) {
     const rowUrgency =
-      period === "past" ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
-    const p = parts(x._sub - now);
+      period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
+    const p = parts(countdownTarget(x, now) - now);
     const title = groupRowTitle(x, group.label, groupKind);
     const call = titleUrl(x);
     const linkedTitle = call
@@ -1630,7 +1634,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       .join(" · ");
     const note = [title.stage, detail].filter(Boolean).join(" · ");
     return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
-          <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${x._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
+          <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
           <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}\${confidenceBadge(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
@@ -1665,10 +1669,13 @@ const TEMPLATE = `<meta charset="utf-8" />
       .map((group, index) => {
         const first = group.entries[0];
         const firstUrgency =
-          period === "past"
-            ? { txt: "passed", cvar: "var(--muted)" }
-            : urgencyLabel(first._sub, now);
-        const firstParts = parts(first._sub - now);
+          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(first, now);
+        const firstParts = parts(countdownTarget(first, now) - now);
+        // The collapsed row summarises the soonest thing the group is waiting on, which for a
+        // conference the lab has already submitted to is its notification or the conference
+        // itself rather than the deadline it closed weeks ago.
+        const firstStage = nextStage(first, now);
+        const firstPending = firstStage && !firstStage.sub ? firstStage : null;
         const open = expandedGroups.has(group.id);
         const panelId = \`deadline-group-panel-\${index}\`;
         const conference = group.kind === "conference";
@@ -1715,8 +1722,8 @@ const TEMPLATE = `<meta charset="utf-8" />
         }
         return \`<section class="deadline-group" data-group-kind="\${esc(group.kind)}" data-count="\${group.entries.length}" style="--u:\${firstUrgency.cvar}"\${open ? " data-open" : ""}>
           <button class="deadline-group__summary" data-group="\${esc(group.id)}" aria-expanded="\${open}" aria-controls="\${panelId}">
-            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"\${period === "upcoming" ? \` data-t="\${first._sub}"\` : ""}>\${period === "past" ? "passed" : \`\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}\`}</span>
-            <span class="deadline-group__heading"><strong>\${esc(group.label)}</strong><small>\${conference ? \`<span class="deadline-group__next-stage">\${esc(cap(first.deadline_label))}</span> · \` : ""}\${fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">\${counts}</span>
+            <span class="deadline-group__chevron" aria-hidden="true">›</span><span class="deadline-group__summary-countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(first, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${firstParts.d}d \${pad(firstParts.h)}:\${pad(firstParts.m)}:\${pad(firstParts.s)}\`}</span>
+            <span class="deadline-group__heading"><strong>\${esc(group.label)}</strong><small>\${conference || firstPending ? \`<span class="deadline-group__next-stage">\${esc(firstPending ? firstPending.label : cap(first.deadline_label))}</span> · \` : ""}\${firstPending ? esc(firstPending.date) : fmtAoeDateTime(first.deadline_aoe)}</small></span><span class="deadline-group__count">\${counts}</span>
           </button><div class="deadline-group__panel\${open ? "" : " hidden"}" id="\${panelId}">\${panel}</div>
         </section>\`;
       })
@@ -1768,8 +1775,8 @@ export function renderDeadlinesWebUi(
   items: readonly unknown[],
   options: { proposalUrl?: string } = {},
 ): string {
-  const proposalUrl = options.proposalUrl ??
-    `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/adminbot/deadlines`;
+  const proposalUrl =
+    options.proposalUrl ?? `${DEFAULT_ADMINBOT_CONTROL_UI_URL}/adminbot/deadlines`;
   return TEMPLATE.replace("__ITEMS_JSON__", JSON.stringify(items)).replace(
     "__DEADLINE_PROPOSAL_URL__",
     escapeAttribute(proposalUrl),

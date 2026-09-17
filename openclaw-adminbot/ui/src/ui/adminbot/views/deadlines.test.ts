@@ -20,6 +20,7 @@ import {
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
   milestoneDateLabel,
+  nextVenueStage,
   venueSchedule,
   workshopGroupLabel,
   priorDeadlineRevisions,
@@ -189,6 +190,50 @@ describe("deadline board model", () => {
     expect(past.map((entry) => entry.instant)).toEqual(
       past.map((entry) => entry.instant).toSorted((left, right) => right - left),
     );
+  });
+
+  it("keeps a conference upcoming until its whole calendar is behind us", () => {
+    const entries = buildDeadlineBoardEntries();
+    // Months after ICLR 2027 closed both of its submissions and released decisions, and months
+    // before it meets in Yokohama on 26 April.
+    const now = Date.parse("2027-01-15T12:00:00Z");
+    const upcoming = entriesForDeadlinePeriod(entries, now, "upcoming");
+    const past = entriesForDeadlinePeriod(entries, now, "past");
+
+    const iclr = upcoming.filter((entry) => entry.venue.venue_group === "ICLR 2027");
+    expect(iclr).toHaveLength(2);
+    expect(iclr.every((entry) => entry.instant < now)).toBe(true);
+    expect(past.some((entry) => entry.venue.venue_group === "ICLR 2027")).toBe(false);
+    expect(nextVenueStage(iclr[0]!.venue, now)?.label).toBe("Conference");
+
+    // Ordered by the stage each row is waiting on, not by the deadline it already closed.
+    const targets = upcoming.map((entry) => nextVenueStage(entry.venue, now)!.instant);
+    expect(targets).toEqual(targets.toSorted((left, right) => left - right));
+
+    // Nothing published behind the deadline means nothing left to wait for: the row drops into
+    // Past the moment it closes, exactly as it always did.
+    const bare = {
+      deadline_aoe: "2026-09-14 23:59:59",
+      deadline_label: "full paper",
+      schedule: [],
+    } as unknown as DeadlineVenue;
+    expect(nextVenueStage(bare, now)).toBeUndefined();
+
+    // A conference is still happening on its last day, so a span is read to its end.
+    const meeting = {
+      ...bare,
+      schedule: [
+        {
+          milestone: "conference",
+          label: "Conference",
+          kind: "period",
+          starts: "2027-04-26",
+          ends: "2027-04-30",
+        },
+      ],
+    } as unknown as DeadlineVenue;
+    expect(nextVenueStage(meeting, Date.parse("2027-04-28T00:00:00Z"))?.label).toBe("Conference");
+    expect(nextVenueStage(meeting, Date.parse("2027-05-02T00:00:00Z"))).toBeUndefined();
   });
 
   it("applies type and archival-status filters independently", () => {
@@ -847,8 +892,9 @@ describe("renderDeadlines", () => {
       "Past and upcoming conference & workshop deadlines.",
     );
     expect(container.querySelector(".deadline-board__hero")).not.toBeNull();
-    expect(container.querySelectorAll(".deadline-board__stats > div")).toHaveLength(4);
-    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain("Due today");
+    // The hero stands alone above the board: the four summary tiles ("Matching deadlines",
+    // "Due today", "Due within 7/30 days") were removed, and the footer carries the count.
+    expect(container.querySelector(".deadline-board__stats")).toBeNull();
     expect(
       container.querySelector<HTMLInputElement>('.deadline-board__search input[type="search"]')
         ?.placeholder,
@@ -991,10 +1037,6 @@ describe("renderDeadlines", () => {
     expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toMatch(
       /\d{2}:\d{2} AoE/u,
     );
-    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain(
-      "Passed today",
-    );
-
     buttonNamed(container, "Groups").click();
     await settle(container);
     const groups = [...container.querySelectorAll<HTMLElement>(".deadline-group")];
@@ -1020,12 +1062,14 @@ describe("renderDeadlines", () => {
     const entryType = container.querySelector<HTMLSelectElement>(
       '[data-testid="deadline-filter-entry-type"]',
     )!;
-    entryType.value = "arr_commitment";
+    // Workshops rather than ARR commitments: Past holds only venues whose whole calendar is over,
+    // and an ARR commitment made by this date is still waiting on its conference.
+    entryType.value = "workshop";
     entryType.dispatchEvent(new Event("change", { bubbles: true }));
     await settle(container);
     const filteredCards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
     expect(filteredCards.length).toBeGreaterThan(0);
-    expect(filteredCards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
+    expect(filteredCards.every((card) => card.dataset.entryType === "workshop")).toBe(true);
     expect(buttonNamed(container, "Past").getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -1111,11 +1155,9 @@ describe("renderDeadlines", () => {
     expect(groupRow?.querySelector(".deadline-group__row-date .deadline-time")).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-change__badge")).toBeNull();
     expect(buttonNamed(container, "All 1")).toBeDefined();
-    const stats = [...container.querySelectorAll(".deadline-board__stats > div")];
-    expect(stats[0]?.querySelector("dt")?.textContent).toBe("Matching deadlines");
-    expect(stats[0]?.querySelector("dd")?.textContent).toBe("1");
-    expect(stats[1]?.querySelector("dt")?.textContent).toBe("Due today");
-    expect(stats[1]?.querySelector("dd")?.textContent).toBe("0");
+    expect(container.querySelector(".deadline-board__foot")?.textContent).toContain(
+      "Showing 1 of 1 matching upcoming deadlines",
+    );
   });
 
   it("updates groups, summary, and the active group for combined filters", async () => {
@@ -1137,9 +1179,6 @@ describe("renderDeadlines", () => {
     expect(cards.length).toBeGreaterThan(0);
     expect(cards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
     expect(buttonNamed(container, `All ${cards.length}`).getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(".deadline-board__stats dd")?.textContent).toBe(
-      String(cards.length),
-    );
     expect(container.querySelector(".deadline-board__foot")?.textContent).toContain(
       `Showing ${cards.length} of ${cards.length} matching upcoming deadlines`,
     );
@@ -1203,7 +1242,11 @@ describe("renderDeadlines", () => {
 
   it("switches among cards, grouped disclosures, and a complete table", async () => {
     const container = await renderView("default");
-    const count = Number(container.querySelector(".deadline-board__stats dd")?.textContent);
+    const count = Number(
+      /Showing (\d+) of/u.exec(
+        container.querySelector(".deadline-board__foot")?.textContent ?? "",
+      )?.[1],
+    );
     expect(count).toBeGreaterThan(100);
     expect(
       [...container.querySelectorAll(".deadline-board__view button")].map((button) =>

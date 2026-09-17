@@ -161,7 +161,6 @@ describe("standalone deadline board", () => {
         "Showing 1 of 1 matching past deadlines",
       );
       expect(document.querySelector(".hero .hmeta")?.textContent).toContain("23:59 AoE");
-      expect(document.querySelector("#s-today-label")?.textContent).toBe("Passed today");
 
       document.querySelector<HTMLButtonElement>("#v-groups")!.click();
       expect(document.querySelectorAll(".deadline-group")).toHaveLength(1);
@@ -221,7 +220,6 @@ describe("standalone deadline board", () => {
       entryType.dispatchEvent(new dom.window.Event("change"));
 
       expect(document.querySelectorAll(".card")).toHaveLength(2);
-      expect(document.querySelector("#s-total")?.textContent).toBe("2");
       expect(document.querySelector(".chip .ct")?.textContent).toBe("2");
       expect(document.querySelectorAll(".chip")).toHaveLength(2);
 
