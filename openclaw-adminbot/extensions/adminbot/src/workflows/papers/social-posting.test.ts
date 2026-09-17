@@ -173,6 +173,44 @@ describe("author tags from first-class profile fields", () => {
   });
 });
 
+describe("author tags for coauthors who are not on the roster", () => {
+  const paper = {
+    id: "paper-1",
+    title: "Causal Garden Planning",
+    authors: ["Bernhard Schölkopf"],
+    author_links: [{ name: "Bernhard Schölkopf", email: "bs@tue.mpg.de", twitter: "bschoelkopf" }],
+    current_step: "social_posts" as const,
+    created_at: "2026-06-01T00:00:00.000Z",
+    updated_at: "2026-06-01T00:00:00.000Z",
+  };
+
+  it("tags an external coauthor from the handle recorded on the paper", () => {
+    // An external will never be on the roster, so the author list is the only place a handle for
+    // them can come from. Before this they were untaggable however well the lab knew them.
+    const payload = buildPaperSocialPayload({
+      paper,
+      summary: "Summary",
+      platforms: ["x"],
+      members: [],
+    });
+
+    expect(payload.tags.resolved[0]).toMatchObject({ x_handle: "@bschoelkopf" });
+    expect(payload.tags.missing).toEqual([]);
+    expect(payload.x?.posts.join(" ")).toContain("@bschoelkopf");
+  });
+
+  it("says what to do about a coauthor with no handle on file", () => {
+    const payload = buildPaperSocialPayload({
+      paper: { ...paper, author_links: [{ name: "Bernhard Schölkopf", email: "bs@tue.mpg.de" }] },
+      summary: "Summary",
+      platforms: ["x"],
+      members: [],
+    });
+
+    expect(payload.tags.missing[0]?.reason).toContain("author list");
+  });
+});
+
 describe("LinkedIn commentary: escaping and mentions", () => {
   it("escapes Little Text reserved characters but leaves hashtags live", () => {
     // Unescaped, these silently truncate or corrupt the post rather than erroring.

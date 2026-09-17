@@ -1023,6 +1023,12 @@
   color: var(--warn);
 }
 
+/* The handle the announcement will tag them by. Accented rather than muted: it is the one badge
+   on the row that says something will happen with this person, not just who they are. */
+.coauthor__badge--x {
+  color: var(--accent);
+}
+
 .coauthor__actions {
   display: flex;
   gap: 2px;
@@ -1041,13 +1047,22 @@
   border-top: 1px dashed var(--border);
 }
 
-/* The external boxes sit on one line where there is room: a name, an address, and the button that
-   commits them, read left to right in the order they are filled. */
+/* The external boxes sit on one line where there is room: a name, an address, a handle, and the
+   button that commits them, read left to right in the order they are filled. */
 .coauthors__add-external {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 1.4fr) auto;
+  grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.3fr) minmax(7rem, 0.8fr) auto;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* Spans the row so a rejected handle is read under the box it was typed in, rather than squeezing
+   the controls out of alignment on the line above it. */
+.coauthors__error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--warn);
 }
 
 .coauthors__empty {

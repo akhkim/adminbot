@@ -711,7 +711,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewReminding = false;
   @state() adminBotProfileOverviewNotice: string | null = null;
   // Defaults to the people with something outstanding, which is what a sweep is looking for.
-  @state() myWorkCoauthorDraft: Record<string, { email: string; name: string }> = {};
+  @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
+    {};
   @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
     ...EMPTY_PROFILE_OVERVIEW_FILTER,
   };

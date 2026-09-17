@@ -103,6 +103,49 @@ describe("buildAuthorLinks", () => {
     expect(links).toEqual([{ name: "Joeun", member_id: "joeun-yook" }]);
   });
 
+  it("keeps an external's X handle, however they typed it", () => {
+    // The announcement has to tag this person by something, and they have no profile to read.
+    const links = buildAuthorLinks({
+      links: [
+        { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de", twitter: "@bschoelkopf" },
+        { name: "Yoshua Bengio", email: "yb@mila.test", twitter: "https://x.com/Yoshua_Bengio" },
+      ],
+      roster,
+    });
+    expect(links[0]?.twitter).toBe("bschoelkopf");
+    expect(links[1]?.twitter).toBe("Yoshua_Bengio");
+  });
+
+  it("drops a handle on a member, whose profile is the one place it lives", () => {
+    const links = buildAuthorLinks({
+      links: [{ name: "Joeun Yook", member_id: "joeun-yook", twitter: "@somebody" }],
+      roster,
+    });
+    expect(links).toEqual([{ name: "Joeun Yook", member_id: "joeun-yook" }]);
+  });
+
+  it("drops text that is not a handle rather than storing a tag that cannot be @-ed", () => {
+    const links = buildAuthorLinks({
+      links: [
+        { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de", twitter: "ask him at the workshop" },
+      ],
+      roster,
+    });
+    expect(links[0]?.twitter).toBeUndefined();
+  });
+
+  it("keeps the handle when the name column turns out to be the address", () => {
+    // The repair path for rows filed before the picker rebuilds the link; it must not cost the
+    // row anything else somebody recorded on it.
+    const links = buildAuthorLinks({
+      links: [{ name: "bs@tue.mpg.de", twitter: "@bschoelkopf" }],
+      roster,
+    });
+    expect(links).toEqual([
+      { name: "bs@tue.mpg.de", email: "bs@tue.mpg.de", twitter: "bschoelkopf" },
+    ]);
+  });
+
   it("reads a bare address in the name column as an address", () => {
     const links = buildAuthorLinks({ names: ["bs@tue.mpg.de"], roster });
     expect(links).toEqual([{ name: "bs@tue.mpg.de", email: "bs@tue.mpg.de" }]);

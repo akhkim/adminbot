@@ -1970,7 +1970,45 @@ export type AdminBotPaperAuthorLink = {
   name: string;
   member_id?: string;
   email?: string;
+  /**
+   * The X handle to tag this author with, stored bare and lowercase-insensitive ("alice_ai").
+   *
+   * Only ever set on an author who is not on the roster, for the same reason `email` is: a lab
+   * member's handle is `twitter_url` on their profile, and a second copy here would be a second
+   * thing to keep in step. It exists because the announcement wants to tag everyone on the paper,
+   * and before this an external coauthor could only ever land in the payload's `missing` list --
+   * the lab knew their address and their name and still had nothing to @ them by.
+   */
+  twitter?: string;
 };
+
+/**
+ * An X handle as it will be stored, or null when the text cannot be one.
+ *
+ * Accepts what people actually paste: a bare handle, an @-prefixed one, or the profile URL off
+ * their address bar. Returns the handle without the "@", so a renderer adds the sigil once rather
+ * than every caller guessing whether the stored value already carries it.
+ *
+ * Both patterns are anchored. An unanchored profile pattern lets the optional host group simply
+ * not participate, and the handle group then matches the first word it finds -- turning
+ * "https://x.com/alice_ai" into "https". X's own rule is the length and character class: 1-15 of
+ * letters, digits and underscore.
+ */
+export function adminBotNormalizeXHandle(raw: string | undefined): string | null {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+  const fromUrl =
+    /^(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})\/?$/u.exec(
+      trimmed,
+    );
+  if (fromUrl?.[1]) {
+    return fromUrl[1];
+  }
+  const bare = /^@?([A-Za-z0-9_]{1,15})$/u.exec(trimmed);
+  return bare?.[1] ?? null;
+}
 
 /** Slack's own rule, which is why the alias is stored in this shape rather than converted later. */
 export const adminBotPaperAliasMaxLength = 24;
