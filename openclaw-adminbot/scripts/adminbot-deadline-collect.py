@@ -1099,17 +1099,29 @@ def discover_cfp_url(homepage, existing=""):
     return discover_workshop_metadata(homepage, existing)[0]
 
 
+def cached_workshop_metadata(previous):
+    """Reuse parsed website evidence without claiming another website observation."""
+    profile = {key: previous[key] for key in (
+        "topic_profile", "topic_evidence", "cross_submission_status",
+        "cross_submission_evidence", "cross_submission_source_url", "profile_extracted_at", *ABSTRACT_FIELDS,
+    ) if key in previous}
+    profile["_deadline_candidates"] = previous["website_deadline_candidates"]
+    profile["_site"] = previous.get("workshop_location", "")
+    return previous.get("cfp_url", ""), previous.get("archival_status", "unknown"), profile
+
+
 def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=False):
     """Re-read workshop CFP sites, on the cadence rather than all of them every run.
 
     This is the expensive half of the sweep -- one HTTP request per workshop site, 140 of them --
     and the half that earns a 429. Near-deadline and recently expired milestones are checked
-    daily; other workshops wait a week. A skipped workshop keeps every value the last sweep established, `profile_extracted_at`
-    included, so its clock measures from the last real read.
+    daily; other workshops wait a week. Cached website candidates are reconciled with fresh
+    OpenReview observations without advancing the website extraction clock.
     """
     skipped = 0
     due_ids = set()
     jobs = {}
+    cached_profiles = {}
     for item in items:
         if item.get("venue_type") != "workshop":
             continue
@@ -1119,8 +1131,17 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
             stage and is_sweep_due(clock, "workshop", stage.get("deadline_aoe", ""),
                                    previous.get("profile_extracted_at")) for stage in stages
         ):
-            skipped += 1
-            continue
+            if not item.get("_source_observed"):
+                skipped += 1
+                continue
+            if "website_deadline_candidates" in previous:
+                # Keep the website evidence and its age, but reconcile the new portal read.
+                cached_profiles[item["id"]] = cached_workshop_metadata(previous)
+                due_ids.add(item["id"])
+                skipped += 1
+                continue
+            # Older datasets have no reusable candidate evidence. Read the page once rather
+            # than assigning a possibly abstract-only portal cutoff to the full-paper row.
         due_ids.add(item.get("id"))
         homepage = normalize_url(item.get("homepage_url", ""))
         if not homepage:
@@ -1170,8 +1191,18 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         homepage = normalize_url(item.get("homepage_url", ""))
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = int(year_match.group(1)) if year_match else datetime.date.today().year
-        profile = found.get((homepage, year), ("", "", {}))[2]
+        metadata = cached_profiles.get(item["id"], found.get((homepage, year), ("", "", {})))
+        previous = previous_by_id.get(item["id"], {})
+        if not metadata[2].get("profile_extracted_at") and "website_deadline_candidates" in previous:
+            # A failed website request must not discard the evidence needed to match stages.
+            metadata = cached_workshop_metadata(previous)
+            cached_profiles[item["id"]] = metadata
+        profile = metadata[2]
+        if profile.get("profile_extracted_at"):
+            item["website_deadline_candidates"] = profile.get("_deadline_candidates", [])
         rows = split_workshop_milestones(item, profile.get("_deadline_candidates", []), year)
+        if item["id"] in cached_profiles:
+            cached_profiles.update((row["id"], metadata) for row in rows)
         expanded.extend(rows)
         due_ids.update(row["id"] for row in rows)
     items[:] = expanded
@@ -1215,14 +1246,16 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
             item.update({key: previous[key] for key in (*TIME_FIELDS, *ABSTRACT_FIELDS) if key in previous})
+            if "website_deadline_candidates" in previous:
+                item["website_deadline_candidates"] = previous["website_deadline_candidates"]
             item["link"] = (item["cfp_url"] or homepage
                             or normalize_url(item.get("openreview_url", "")))
             continue
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = int(year_match.group(1)) if year_match else datetime.date.today().year
-        cfp_url, archival_status, profile = found.get(
+        cfp_url, archival_status, profile = cached_profiles.get(item["id"], found.get(
             (homepage, year), ("", item.get("archival_status", "unknown"), {})
-        )
+        ))
         for key in ABSTRACT_FIELDS:
             item.pop(key, None)
         item.update({key: profile[key] for key in ABSTRACT_FIELDS if key in profile})

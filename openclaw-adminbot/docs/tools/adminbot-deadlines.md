@@ -38,6 +38,15 @@ An exact deadline carries `deadline_at` as a UTC instant; the Control UI default
 
 `deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
 
+Workshop website extraction and OpenReview observation have separate clocks. A successful website
+read saves its parsed `website_deadline_candidates` alongside `profile_extracted_at`. Between
+website checks, fresh OpenReview observations are reconciled against those cached candidates,
+including abstract/full-paper matching and source disagreements. `source_checked_at` can advance
+while `profile_extracted_at` stays unchanged. A skipped website check cannot restore an older
+OpenReview cutoff. Existing datasets without cached candidates need one website read on the next
+successful OpenReview observation. If neither source supplies a new observation, the previous
+result and its check time are retained.
+
 Generated JSON and TypeScript projections must not be edited by hand. If a broken collector run has
 contaminated append-only state, regenerate against a known-clean committed dataset:
 
