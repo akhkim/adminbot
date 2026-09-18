@@ -4,7 +4,24 @@
 // disagree about what "relevant" means.
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { normalizePersonName } from "../../contracts/person-names.js";
 import { fullyAwayOn } from "../members/availability.js";
+
+function isZhijing(member: AdminBotLabMember): boolean {
+  return (
+    ["zhijing", "zhijing-jin"].includes(member.id.trim().toLowerCase()) ||
+    member.openreview_id === "~Zhijing_Jin1" ||
+    normalizePersonName(member.name) === "zhijing jin"
+  );
+}
+
+function isBernhard(member: AdminBotLabMember): boolean {
+  return (
+    ["bernhard", "bernhard-scholkopf"].includes(member.id.trim().toLowerCase()) ||
+    member.openreview_id === "~Bernhard_Schölkopf1" ||
+    normalizePersonName(member.name) === "bernhard scholkopf"
+  );
+}
 
 // A member's research focus, flattened to lowercase substrings. The member's own name
 // is included deliberately: it makes them match papers they are already an author on,
@@ -71,6 +88,13 @@ export function reviewerExemptionReason(
   member: AdminBotLabMember,
   operatorOpenReviewId?: string,
 ): string | undefined {
+  // Standing lab policy must survive edits to the optional roster exemption flag.
+  if (isZhijing(member)) {
+    return "Zhijing must never be assigned as a reviewer";
+  }
+  if (isBernhard(member)) {
+    return "Bernhard is permanently unavailable for reviewer assignment";
+  }
   if (member.reviewer_exempt) {
     return "exempt from reviewer assignment";
   }
@@ -108,6 +132,10 @@ export function suggestReviewersForSubmission(
   const suggestions: AdminBotReviewerSuggestion[] = [];
 
   for (const member of members) {
+    // Zhijing must not appear even as a disabled candidate.
+    if (isZhijing(member)) {
+      continue;
+    }
     const needles = memberRelevanceNeedles(member);
     const matched = needles.filter((needle) => countNeedleHits(text, [needle]) > 0);
     if (matched.length === 0) {
