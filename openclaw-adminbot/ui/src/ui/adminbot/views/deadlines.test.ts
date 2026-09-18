@@ -618,6 +618,20 @@ describe("venue schedule", () => {
 });
 
 describe("renderDeadlines", () => {
+  it("keeps the proposal button at the bottom and opens its dialog", async () => {
+    const container = await renderView("default");
+    const trigger = buttonNamed(container, "Propose a new deadline");
+    expect(container.querySelector(".deadline-board")?.lastElementChild).toBe(
+      trigger.parentElement,
+    );
+    expect(trigger.parentElement?.previousElementSibling?.className).toBe(
+      "deadline-board__foot",
+    );
+    trigger.click();
+    await settle(container);
+    expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).not.toBeNull();
+  });
+
   it("lets a visitor submit without exposing proposal history", async () => {
     const container = document.createElement("div");
     document.body.append(container);
