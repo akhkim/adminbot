@@ -646,6 +646,10 @@ export type AppViewState = {
   adminBotActiveCommitmentType: string | null;
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
+  // Pending-action rows ticked for a bulk clear, and whether that clear is in flight. Separate
+  // from `adminBotBusyActionId` because a bulk run has no single row to blame it on.
+  adminBotSelectedActionIds: string[];
+  adminBotBulkActionBusy: boolean;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotPhotoPolishBusy: boolean;
   adminBotPhotoApplyBusy: boolean;

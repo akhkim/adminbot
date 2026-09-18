@@ -44,6 +44,9 @@ import {
   loadAdminBot,
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+  setAdminBotSelectedActions,
+  toggleAdminBotSelectedAction,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
   submitAdminBotReimbursement,
@@ -4120,6 +4123,22 @@ export function renderApp(state: AppViewState) {
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
+              selectedActionIds: state.adminBotSelectedActionIds,
+              bulkActionBusy: state.adminBotBulkActionBusy,
+              onToggleActionSelected: (proposalId) => {
+                toggleAdminBotSelectedAction(state, proposalId);
+                requestHostUpdate?.();
+              },
+              onSetSelectedActions: (proposalIds) => {
+                setAdminBotSelectedActions(state, proposalIds);
+                requestHostUpdate?.();
+              },
+              onRemoveSelectedActions: () => {
+                void removeSelectedPendingAdminBotActions(state).finally(() =>
+                  requestHostUpdate?.(),
+                );
+                requestHostUpdate?.();
+              },
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onResolveEmailReview: (messageId, resolution) =>
                 void resolveAdminBotEmailReview(state, messageId, resolution),

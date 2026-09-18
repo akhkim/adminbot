@@ -766,6 +766,8 @@ export type AdminBotHost = {
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
   adminBotBusyActionId: string | null;
+  adminBotSelectedActionIds: string[];
+  adminBotBulkActionBusy: boolean;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotPhotoPolishBusy: boolean;
   adminBotPhotoApplyBusy: boolean;
@@ -1878,6 +1880,87 @@ export async function removePendingAdminBotAction(
     await loadAdminBot(host);
   } finally {
     host.adminBotBusyActionId = null;
+  }
+}
+
+export function toggleAdminBotSelectedAction(host: AdminBotHost, proposalId: string): void {
+  const selected = host.adminBotSelectedActionIds;
+  host.adminBotSelectedActionIds = selected.includes(proposalId)
+    ? selected.filter((id) => id !== proposalId)
+    : [...selected, proposalId];
+}
+
+// Bulk-set the ticked rows -- used by the header checkbox, which both selects every listed
+// proposal and (ticked again) clears the selection. Mirrors setAdminBotNudgeRecipients.
+export function setAdminBotSelectedActions(host: AdminBotHost, proposalIds: string[]): void {
+  host.adminBotSelectedActionIds = proposalIds;
+}
+
+/**
+ * Clears every ticked proposal.
+ *
+ * Removing is the only thing this screen offers in bulk, and the asymmetry is deliberate:
+ * removing a proposal discards AdminBot's *suggestion* and reaches nothing outside the broker --
+ * the same proposal can be raised again on the next sweep -- whereas executing one sends the mail
+ * or writes the sheet. A "clear these twelve" button is a tidy-up; a "run these twelve" button is
+ * twelve irreversible external effects behind one click, so executing stays one row at a time.
+ *
+ * One call per proposal, in sequence rather than with Promise.all: the broker rejects each
+ * removal on its own terms (a proposal somebody else already executed, a session that lost its
+ * privilege mid-run), and a sequential loop is what lets a single refusal be reported against the
+ * row that earned it instead of failing the whole batch. The list is only reloaded once, at the
+ * end, so a twelve-row clear does not repaint twelve times.
+ */
+export async function removeSelectedPendingAdminBotActions(host: AdminBotHost): Promise<void> {
+  if (host.adminBotBulkActionBusy || host.adminBotSelectedActionIds.length === 0) {
+    return;
+  }
+  host.adminBotBulkActionBusy = true;
+  host.adminBotNotice = null;
+  try {
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
+    // Only ids still on the board. A selection can outlive the row it points at -- somebody else
+    // executed or removed it between the tick and the press -- and asking the service to remove a
+    // proposal that is already gone reports a failure for work that is, in fact, done.
+    const live = new Set(host.adminBotData.proposals.map((proposal) => proposal.id));
+    const targets = host.adminBotSelectedActionIds.filter((id) => live.has(id));
+    if (targets.length === 0) {
+      host.adminBotSelectedActionIds = [];
+      host.adminBotNotice = {
+        kind: "success",
+        text: "Those pending actions were already gone; the list has been refreshed.",
+      };
+      await loadAdminBot(host);
+      return;
+    }
+    const failed: string[] = [];
+    let firstFailure: string | undefined;
+    let removed = 0;
+    for (const id of targets) {
+      const result = await removePendingAction(id, session.sessionToken, session.baseUrl);
+      if (result.ok) {
+        removed += 1;
+      } else {
+        failed.push(id);
+        firstFailure ??= approvalFailureMessage(result.kind);
+      }
+    }
+    // The ones that did not go stay ticked, so the retry is the same button rather than a hunt
+    // through the reloaded list for which rows are still there.
+    host.adminBotSelectedActionIds = failed;
+    const plural = removed === 1 ? "" : "s";
+    host.adminBotNotice = failed.length
+      ? {
+          kind: "error",
+          text: `Removed ${removed} of ${targets.length} pending actions; ${failed.length} left in place. ${firstFailure ?? ""}`.trim(),
+        }
+      : { kind: "success", text: `Removed ${removed} pending action${plural}.` };
+    await loadAdminBot(host);
+  } finally {
+    host.adminBotBulkActionBusy = false;
   }
 }
 

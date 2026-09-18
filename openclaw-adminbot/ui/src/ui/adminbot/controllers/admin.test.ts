@@ -10,6 +10,7 @@ import {
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
   removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
   saveAdminBotMember,
   saveAdminBotPaper,
   saveAdminBotOwnProfile,
@@ -31,6 +32,8 @@ function createHost(outputs: Record<string, unknown>) {
     adminBotError: null,
     adminBotData: createEmptyAdminBotDashboardData(),
     adminBotBusyActionId: null,
+    adminBotSelectedActionIds: [],
+    adminBotBulkActionBusy: false,
     adminBotNotice: null,
     adminBotPhotoPolishBusy: false,
     adminBotPhotoApplyBusy: false,
@@ -70,6 +73,8 @@ describe("loadAdminBot", () => {
       adminBotError: null,
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
+      adminBotSelectedActionIds: [],
+      adminBotBulkActionBusy: false,
       adminBotNotice: null,
       adminBotPhotoPolishBusy: false,
       adminBotPhotoApplyBusy: false,
@@ -777,5 +782,120 @@ describe("approveAdminBotAction", () => {
       kind: "success",
       text: expect.stringContaining("1 of 2 approvals"),
     });
+  });
+});
+
+describe("removeSelectedPendingAdminBotActions", () => {
+  function proposal(id: string) {
+    return {
+      id,
+      type: "slack.send_message",
+      risk_tier: "T3" as const,
+      summary: `Proposal ${id}`,
+      status: "pending" as const,
+      payload_hash: `hash_${id}`,
+      approval_requirement: { requires_approval: true, approver_roles: ["pi"], min_approvals: 1 },
+      approvals: [],
+      created_at: "2026-07-14T19:00:00.000Z",
+      updated_at: "2026-07-14T19:00:00.000Z",
+    };
+  }
+
+  function seed(ids: string[], selected: string[]) {
+    const { host } = createHost({});
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      proposals: ids.map(proposal),
+    };
+    host.adminBotSelectedActionIds = selected;
+    return host;
+  }
+
+  const ok = () =>
+    new Response(JSON.stringify({ status: "removed" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("removes every ticked proposal and clears the selection", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("/proposals/act_one/remove"))).toBe(true);
+    expect(urls.some((url) => url.includes("/proposals/act_two/remove"))).toBe(true);
+    expect(host.adminBotNotice).toMatchObject({
+      kind: "success",
+      text: "Removed 2 pending actions.",
+    });
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotBulkActionBusy).toBe(false);
+  });
+
+  // A bulk clear must never reach the execute route: removing discards a suggestion, executing
+  // sends the mail.
+  it("never executes anything", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/execute");
+      expect(String(call[0])).not.toContain("/approve");
+    }
+  });
+
+  it("keeps the ones that refused ticked, and says how many went", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "nope" } }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(host.adminBotSelectedActionIds).toEqual(["act_two"]);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Removed 1 of 2");
+  });
+
+  // A tick can outlive its row -- somebody else cleared it first. Asking the service to remove a
+  // proposal that is already gone would report a failure for work that is in fact done.
+  it("does not call the service for a selection whose rows are already gone", async () => {
+    const host = seed(["act_live"], ["act_stale"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const removeCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes("/remove"));
+    expect(removeCalls).toHaveLength(0);
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("does nothing at all when nothing is ticked", async () => {
+    const host = seed(["act_one"], []);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
