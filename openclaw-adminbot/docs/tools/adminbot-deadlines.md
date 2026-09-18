@@ -281,3 +281,13 @@ Script assets remain a bounded fallback when the page supplies no deadline candi
 Discovered workshops remain in the dataset with an empty `deadline_aoe` until a source supplies a usable date. Their stable IDs let later collection update the existing entry. Previously observed deadlines are retained when a source temporarily stops reporting them.
 
 The board includes undated workshops in their usual venue groups, after dated entries in Upcoming, with “Deadline unknown” and neutral styling. It does not show a countdown or an Add to timeline action. Known notification or conference dates remain available as milestones, without substituting for the missing submission deadline. Undated workshops are excluded from deadline-driven matching, reminders, escalation, and channel digests.
+
+### Deadline board layout
+
+Group headers and expanded rows use compact padding; narrower layouts share space between countdowns and source links without breaking the countdown text. Urgency pills use the regular UI font and retain their urgency colors. Cards use compact spacing and place location and publication policy together. Conference/workshop colors distinguish entry types. Urgency pills and thin 2px left stripes across cards, group summaries, deadline rows, and the featured deadline reinforce the countdown colors. Outer cards and groups have a faint urgency tint that fades to the right; the top and bottom border colors fade into the neutral border. Interior rows retain straight urgency stripes. Card badges and stage labels can yield space without overflowing. Milestone dates break between the calendar date and time when needed, preserving room for their labels. Cards in each grid row share the same height, and a conference name already used as the title is not repeated in its subtitle.
+
+Cards, grouped rows, and the table share the same date formatting and countdown calculation. The next-deadline summary uses the same clock as its entry. Entry type, archival status, location, and timezone controls remain visible on phones and desktop.
+
+Publication-policy labels open a short explanation by click, tap, or keyboard. The header shows the latest source check across the dataset; each deadline’s details show its own source-check date. Correction and personal-timeline actions occupy a separate row above the source links. Official-site links remain at the right end of the source row for visitors and signed-in members.
+
+On phones, filters use two columns when space permits and one column on narrow screens. Search remains full-width, venue chips scroll horizontally, and search and filters use 32px heights, while venue chips and view switches use 28px heights with spacing between separate controls. These compact sizes also apply on desktop.

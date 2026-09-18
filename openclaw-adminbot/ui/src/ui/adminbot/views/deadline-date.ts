@@ -7,14 +7,17 @@ import { html } from "lit";
 import { deadlineDisplayLabel } from "../data/deadline-display-time.ts";
 import { deadlineDateTimeLabel, aoeDateTimeLabel } from "../data/deadline-time.ts";
 import type { DeadlineVenue } from "../data/deadlines.ts";
+import { wrapSeparator } from "./deadline-separator.ts";
 
 export function renderAoeDateTime(aoe: string) {
   const label = aoeDateTimeLabel(aoe);
   const separator = label.indexOf(" \u00b7 ");
   return separator < 0
     ? html`<span class="deadline-date">${label}</span>`
-    : html`<span class="deadline-date">${label.slice(0, separator)}</span>
-        <span class="deadline-time">${label.slice(separator)}</span>`;
+    : html`<span class="deadline-date">${label.slice(0, separator)}</span> ${wrapSeparator()}<span
+          class="deadline-time"
+          >${label.slice(separator + 3)}</span
+        >`;
 }
 
 export function renderDeadlineDate(
@@ -32,9 +35,15 @@ export function renderDeadlineDate(
   const label = displayZone
     ? deadlineDisplayLabel(venue, displayZone, includeOffset)
     : deadlineDateTimeLabel(venue);
+  return renderDeadlineDateLabel(label);
+}
+
+export function renderDeadlineDateLabel(label: string) {
   const separator = label.indexOf(" · ");
   return separator < 0
     ? html`<span class="deadline-date">${label}</span>`
-    : html`<span class="deadline-date">${label.slice(0, separator)}</span>
-        <span class="deadline-time">${label.slice(separator)}</span>`;
+    : html`<span class="deadline-date">${label.slice(0, separator)}</span>${wrapSeparator()}<span
+          class="deadline-time"
+          >${label.slice(separator + 3)}</span
+        >`;
 }
