@@ -156,6 +156,12 @@ export type AdminBotProps = {
   onRefresh: () => void;
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
+  /** Pending-action ids ticked for a bulk clear, and the handlers that maintain that set. */
+  selectedActionIds: string[];
+  bulkActionBusy: boolean;
+  onToggleActionSelected: (proposalId: string) => void;
+  onSetSelectedActions: (proposalIds: string[]) => void;
+  onRemoveSelectedActions: () => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
@@ -813,7 +819,39 @@ function renderPendingActions(props: AdminBotProps) {
       </div>
     `;
   }
+  // Clearing is the only thing offered in bulk, and the asymmetry is the point: removing a
+  // proposal discards a suggestion and touches nothing outside AdminBot, while executing one
+  // sends the mail or writes the sheet. So there is a "Remove selected" and deliberately no
+  // "Execute selected" -- see removeSelectedPendingAdminBotActions.
+  const selected = new Set(props.selectedActionIds);
+  const selectedCount = proposals.filter((proposal) => selected.has(proposal.id)).length;
+  const allSelected = selectedCount === proposals.length;
+  const bulkBusy = props.bulkActionBusy;
   return html`
+    <div class="adminbot-action-bulk">
+      <label class="adminbot-action-bulk__all">
+        <input
+          type="checkbox"
+          .checked=${allSelected}
+          .indeterminate=${selectedCount > 0 && !allSelected}
+          ?disabled=${bulkBusy || !props.connected}
+          @change=${() =>
+            props.onSetSelectedActions(allSelected ? [] : proposals.map((proposal) => proposal.id))}
+        />
+        <span
+          >${selectedCount > 0
+            ? `${selectedCount} of ${proposals.length} selected`
+            : `Select all ${proposals.length}`}</span
+        >
+      </label>
+      <button
+        class="btn btn--sm"
+        ?disabled=${bulkBusy || !props.connected || selectedCount === 0}
+        @click=${() => props.onRemoveSelectedActions()}
+      >
+        ${bulkBusy ? "Removing..." : `Remove selected${selectedCount ? ` (${selectedCount})` : ""}`}
+      </button>
+    </div>
     <div class="adminbot-action-list">
       ${proposals.map((proposal) => {
         const busy = props.busyActionId === proposal.id;
@@ -821,6 +859,15 @@ function renderPendingActions(props: AdminBotProps) {
         const required = proposal.approval_requirement.min_approvals;
         return html`
           <article class="adminbot-action">
+            <label class="adminbot-action__select">
+              <input
+                type="checkbox"
+                aria-label=${`Select ${proposal.summary}`}
+                .checked=${selected.has(proposal.id)}
+                ?disabled=${bulkBusy || busy || !props.connected}
+                @change=${() => props.onToggleActionSelected(proposal.id)}
+              />
+            </label>
             <div class="adminbot-action__main">
               <div class="adminbot-action__title-row">
                 <span class="pill adminbot-risk adminbot-risk--${proposal.risk_tier}"
@@ -847,14 +894,14 @@ function renderPendingActions(props: AdminBotProps) {
             <div class="adminbot-action__actions">
               <button
                 class="btn btn--sm primary"
-                ?disabled=${busy || !props.connected}
+                ?disabled=${busy || bulkBusy || !props.connected}
                 @click=${() => props.onApprove(proposal)}
               >
                 ${busy ? "Executing..." : "Execute"}
               </button>
               <button
                 class="btn btn--sm"
-                ?disabled=${busy || !props.connected}
+                ?disabled=${busy || bulkBusy || !props.connected}
                 @click=${() => props.onRemove(proposal)}
               >
                 ${busy ? "Working..." : "Remove"}
