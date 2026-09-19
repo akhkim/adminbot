@@ -64,6 +64,38 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
+  it("shows candidate evidence without presenting similarity as confirmed resubmission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning",
+        identity_review: {
+          status: "limited",
+          examined: 12,
+          abstract_excerpt: "We study causal resource allocation.",
+          candidates: [
+            {
+              id: "Earlier123",
+              title: "Planning under uncertainty",
+              abstract_excerpt: "We study allocation under interventions.",
+              shared_authors: ["~Ada_Example1"],
+              abstract_overlap: 78,
+              created_at: "2025-09-01T00:00:00Z",
+            },
+          ],
+        },
+      }),
+    ]);
+    const panel = container.querySelector('[data-testid="openreview-identity"]');
+    expect(panel?.textContent).toContain("Possible earlier version");
+    expect(panel?.textContent).toContain("Search coverage is incomplete");
+    expect(panel?.textContent?.replace(/\s+/gu, " ")).toContain("not a confidence score");
+    expect(panel?.textContent).toContain("We study allocation under interventions.");
+    expect(panel?.textContent).not.toContain("Resubmission reported by OpenReview");
+  });
   it("shows title differences and explicit resubmission evidence above the checklist", async () => {
     const { container } = await draw([
       row({

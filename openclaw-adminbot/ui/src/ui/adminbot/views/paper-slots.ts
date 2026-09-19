@@ -971,6 +971,56 @@ export function renderOpenReviewIdentity(props: Pick<PaperSlotsProps, "slots" | 
                   >`
               : "Resubmission history is unknown: no previous-submission link was exposed."}
           </p>
+          ${submission.identity_review
+            ? html`
+                <p class="paper-slot__note">
+                  ${submission.identity_review.status === "insufficient"
+                    ? "Content comparison needs a public abstract, author IDs, and submission date."
+                    : submission.identity_review.status === "unavailable"
+                      ? "Could not search earlier submissions. OpenReview may be unavailable or restrict access."
+                      : `Compared abstracts for ${submission.identity_review.examined} earlier public submissions by shared authors.`}
+                  ${submission.identity_review.status === "limited"
+                    ? " Search coverage is incomplete."
+                    : ""}
+                  ${submission.identity_review.status === "checked" &&
+                  !submission.identity_review.candidates.length
+                    ? " No close matches in this search; this does not rule out a resubmission."
+                    : ""}
+                </p>
+                ${submission.identity_review.candidates.map(
+                  (candidate) => html`
+                    <details class="paper-slot__note">
+                      <summary>Possible earlier version — ${candidate.title}</summary>
+                      <p>
+                        <a
+                          href=${`https://openreview.net/forum?id=${encodeURIComponent(candidate.id)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          >Review earlier submission</a
+                        >
+                        · ${candidate.created_at.slice(0, 10)}
+                      </p>
+                      <p>
+                        Shared authors: ${candidate.shared_authors.join(", ")}. Abstract phrase
+                        overlap: ${candidate.abstract_overlap}% (a text comparison, not a confidence
+                        score).
+                      </p>
+                      <p>
+                        <strong>Current abstract excerpt:</strong> ${submission.identity_review
+                          ?.abstract_excerpt}
+                      </p>
+                      <p>
+                        <strong>Earlier abstract excerpt:</strong> ${candidate.abstract_excerpt}
+                      </p>
+                      <p>
+                        Please compare the papers before confirming a resubmission. Related work can
+                        reuse abstract text.
+                      </p>
+                    </details>
+                  `,
+                )}
+              `
+            : nothing}
           ${submission.verified_at
             ? html`<p class="paper-slot__meta">
                 Last confirmed ${submission.verified_at.slice(0, 10)}

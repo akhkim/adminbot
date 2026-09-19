@@ -215,6 +215,7 @@ export function applyPaperSlotWrite(params: {
               verified_at: undefined,
               verified_title: undefined,
               previous_submission_id: undefined,
+              identity_review: undefined,
             };
       if (!value) {
         return { ok: true, record: clearedSlot(existing) };

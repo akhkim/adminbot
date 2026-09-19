@@ -922,6 +922,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       "verified_at",
       "verified_title",
       "previous_submission_id",
+      "identity_review",
     ]) {
       if (!columns.has(column)) {
         this.db.exec(`ALTER TABLE adminbot_paper_slots ADD COLUMN ${column} TEXT`);
@@ -2118,10 +2119,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           verified_at,
           verified_title,
           previous_submission_id,
+          identity_review,
           invalid_reason,
           waived_by_member_id,
           waived_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(paper_id, slot) DO UPDATE SET
           status = excluded.status,
           url = excluded.url,
@@ -2134,6 +2136,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           verified_at = excluded.verified_at,
           verified_title = excluded.verified_title,
           previous_submission_id = excluded.previous_submission_id,
+          identity_review = excluded.identity_review,
           invalid_reason = excluded.invalid_reason,
           waived_by_member_id = excluded.waived_by_member_id,
           waived_reason = excluded.waived_reason`,
@@ -2152,6 +2155,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.verified_at ?? null,
         record.verified_title ?? null,
         record.previous_submission_id ?? null,
+        record.identity_review ? JSON.stringify(record.identity_review) : null,
         record.invalid_reason ?? null,
         record.waived_by_member_id ?? null,
         record.waived_reason ?? null,
@@ -3589,6 +3593,13 @@ function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord
     ...optional("verified_at"),
     ...optional("verified_title"),
     ...optional("previous_submission_id"),
+    ...(text("identity_review")
+      ? {
+          identity_review: parseJson<NonNullable<AdminBotPaperSlotRecord["identity_review"]>>(
+            text("identity_review")!,
+          ),
+        }
+      : {}),
     ...optional("invalid_reason"),
     ...optional("waived_by_member_id"),
     ...optional("waived_reason"),

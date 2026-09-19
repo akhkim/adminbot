@@ -337,6 +337,12 @@ describe("the public record", () => {
           status: "found",
           title: "Garden Planning Revised",
           previous_submission_id: "Older123",
+          identity_review: {
+            status: "checked",
+            examined: 1,
+            abstract_excerpt: "Source abstract",
+            candidates: [],
+          },
         };
       },
     });
@@ -361,6 +367,7 @@ describe("the public record", () => {
     expect(slotOf(service, "submission")?.verified_title).toBeUndefined();
     expect(slotOf(service, "submission")?.previous_submission_id).toBeUndefined();
     expect(slotOf(service, "submission")?.verified_at).toBeUndefined();
+    expect(slotOf(service, "submission")?.identity_review).toBeUndefined();
   });
 
   it("does not attach a slow response to a replacement link", async () => {

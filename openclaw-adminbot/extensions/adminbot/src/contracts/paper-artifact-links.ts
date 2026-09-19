@@ -75,8 +75,27 @@ export function adminBotOpenReviewForumId(raw: string): string | undefined {
  * withheld: a submission under blind review is invisible to an anonymous reader, and reading that
  * as "no such paper" would invalidate the evidence of every paper still in review.
  */
+export type OpenReviewIdentityReview = {
+  status: "checked" | "limited" | "unavailable" | "insufficient";
+  examined: number;
+  abstract_excerpt: string;
+  candidates: Array<{
+    id: string;
+    title: string;
+    abstract_excerpt: string;
+    shared_authors: string[];
+    abstract_overlap: number;
+    created_at: string;
+  }>;
+};
+
 export type AdminBotArtifactProbeResult =
-  | { status: "found"; title?: string; previous_submission_id?: string }
+  | {
+      status: "found";
+      title?: string;
+      previous_submission_id?: string;
+      identity_review?: OpenReviewIdentityReview;
+    }
   | { status: "missing" }
   | { status: "unreadable"; reason: string };
 

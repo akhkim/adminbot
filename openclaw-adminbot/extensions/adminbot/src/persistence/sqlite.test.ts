@@ -42,15 +42,23 @@ describe("AdminBotSqliteStore", () => {
       verified_at: "2026-09-19T00:00:00Z",
       verified_title: "A revised title",
       previous_submission_id: "Older123",
+      identity_review: {
+        status: "limited",
+        examined: 2,
+        abstract_excerpt: "Current abstract",
+        candidates: [],
+      },
     });
     first.close();
     const second = createAdminBotSqliteService({ databasePath });
     expect(second.store.listPaperSlots("p1")[0]).toMatchObject({
       verified_title: "A revised title",
       previous_submission_id: "Older123",
+      identity_review: { status: "limited", examined: 2 },
     });
     second.store.savePaperSlot({ paper_id: "p1", slot: "submission", status: "missing" });
     expect(second.store.listPaperSlots("p1")[0].verified_title).toBeUndefined();
+    expect(second.store.listPaperSlots("p1")[0].identity_review).toBeUndefined();
     second.close();
   });
   it("keeps a paper's evidence slots across service instances, and drops them with the paper", () => {

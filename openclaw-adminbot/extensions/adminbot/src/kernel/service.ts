@@ -5873,6 +5873,7 @@ export class AdminBotService {
         const refreshOpenReview =
           row.verified_by === "openreview" &&
           (!row.verified_title ||
+            !row.identity_review ||
             Date.parse(nowIso) - Date.parse(row.verified_at ?? "") >= 86_400_000);
         if (row.status !== "provided" || (row.verified_at && !refreshOpenReview) || !row.url) {
           continue;
@@ -5910,6 +5911,7 @@ export class AdminBotService {
             verified_at: nowIso,
             verified_title: result.title,
             previous_submission_id: result.previous_submission_id,
+            identity_review: result.identity_review,
           });
           verified.push({ paper_id: paper.id, slot: row.slot });
           // A title the public record disagrees with is the mistake worth catching -- a link to

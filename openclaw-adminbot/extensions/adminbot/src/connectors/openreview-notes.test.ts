@@ -25,6 +25,12 @@ describe("OpenReview submission identity", () => {
       status: "found",
       title: "Renamed paper",
       previous_submission_id: "Older123",
+      identity_review: {
+        status: "insufficient",
+        examined: 0,
+        abstract_excerpt: "",
+        candidates: [],
+      },
     });
     expect(fetchImpl.mock.calls[0][0]).toBe(
       "https://api2.openreview.net/notes?id=Paper123&limit=1",
@@ -67,7 +73,11 @@ describe("OpenReview submission identity", () => {
           }),
         ),
     });
-    await expect(probe("Paper123")).resolves.toEqual({ status: "found", title: "Paper title" });
+    await expect(probe("Paper123")).resolves.toMatchObject({
+      status: "found",
+      title: "Paper title",
+    });
+    expect(await probe("Paper123")).not.toHaveProperty("previous_submission_id");
   });
 
   it("keeps private/rate-limited records unreadable and rejects malformed ids without fetching", async () => {

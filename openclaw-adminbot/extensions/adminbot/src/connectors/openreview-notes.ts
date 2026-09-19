@@ -16,6 +16,7 @@ import {
   adminBotOpenReviewForumId,
   type AdminBotArtifactProbe,
 } from "../contracts/paper-artifact-links.js";
+import { reviewOpenReviewIdentity } from "./openreview-identity.js";
 
 const BASE_URL = "https://api2.openreview.net";
 const LOGIN_TIMEOUT_MS = 20_000;
@@ -231,6 +232,7 @@ export function createOpenReviewForumProbe(
       return {
         status: "found",
         title: title.trim().slice(0, 2000),
+        identity_review: await reviewOpenReviewIdentity(note, fetchImpl, baseUrl),
         ...(previousId && previousId !== forumId ? { previous_submission_id: previousId } : {}),
       };
     } catch (error) {
