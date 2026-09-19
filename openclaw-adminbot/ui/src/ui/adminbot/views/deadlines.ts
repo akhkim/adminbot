@@ -2550,16 +2550,6 @@ class AdminbotDeadlinesView extends LitElement {
                   >
                 </button>`
               : nothing}
-            <span class="deadline-proposal-trigger">
-              <button
-                class="btn btn--sm primary"
-                type="button"
-                data-testid="deadline-propose"
-                @click=${this.openProposalForm}
-              >
-                Propose a new deadline
-              </button>
-            </span>
           </div>
         </header>
         ${this.proposalNotice
@@ -2585,6 +2575,16 @@ class AdminbotDeadlinesView extends LitElement {
           official venue sites + OpenReview
           ${latestSourceCheck ? ` · latest source check ${latestSourceCheck}` : ""}
         </p>
+        <span class="deadline-proposal-trigger">
+          <button
+            class="btn btn--sm primary"
+            type="button"
+            data-testid="deadline-propose"
+            @click=${this.openProposalForm}
+          >
+            Propose a new deadline
+          </button>
+        </span>
       </section>
     `;
   }

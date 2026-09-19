@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
+import * as deadlineTime from "../data/deadline-time.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -199,26 +201,40 @@ describe("renderDashboard", () => {
   // The member's own dated milestones are the ones they plan around, so a glance that showed only
   // the public board could say "nothing for weeks" to somebody with a submission on Friday.
   it("merges the member's own milestones into the glance, soonest first", () => {
-    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const state = createState({
-      memberId: "ada",
-      adminBotData: {
-        proposals: [],
-        members: [
-          {
-            id: "ada",
-            name: "Ada Lovelace",
-            milestones: [{ date: soon, label: "Thesis draft" }],
-          },
-        ],
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-24T12:00:00Z"));
+    // Control both inputs to the merge: real dates and refreshed venue data must not change
+    // which row leads. The public row also proves the merge keeps conference deadlines.
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: { ...DEADLINE_VENUES[0]!, name: "Example conference" },
+        instant: Date.parse("2026-08-26T12:00:00Z"),
       },
-    } as unknown as Partial<AppViewState>);
-    expect(findOwnMember(state)?.milestones).toHaveLength(1);
-    const container = renderPage(state, "member");
-    const rows = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")];
-    // Tomorrow beats every conference in the bundled snapshot, so it leads.
-    expect(rows[0]?.textContent).toContain("Thesis draft");
-    expect(rows[0]?.textContent).toContain("yours");
+    ]);
+    try {
+      const state = createState({
+        memberId: "ada",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "ada",
+              name: "Ada Lovelace",
+              milestones: [{ date: "2026-08-25", label: "Thesis draft" }],
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>);
+      expect(findOwnMember(state)?.milestones).toHaveLength(1);
+      const container = renderPage(state, "member");
+      const rows = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain("Thesis draft");
+      expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[1]?.textContent).toContain("Example conference");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // The glance borrows the board's row vocabulary rather than inventing a second one: the urgency
