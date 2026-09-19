@@ -2252,13 +2252,11 @@ class AdminbotDeadlinesView extends LitElement {
         data-archival-status=${venue.archival_status}
         data-venue-priority=${venue.venue_priority}
         data-change=${change?.kind ?? nothing}
-        data-urgency=${urgency(entry, this.now)}
+        data-urgency=${entry.instant <= this.now ? "passed" : urgencyOf(entry.instant, this.now)}
         data-period=${this.period}
       >
         <span class="deadline-group__row-countdown">
-          ${this.period === "past"
-            ? "passed"
-            : countdownLabel(countdownTarget(entry, this.now) - this.now)}
+          ${entry.instant <= this.now ? "passed" : countdownLabel(entry.instant - this.now)}
         </span>
         <span class="deadline-group__row-date-wrap">
           <time class="deadline-group__row-date" datetime=${venue.deadline_aoe}>

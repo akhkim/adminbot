@@ -979,9 +979,9 @@ const TEMPLATE = `<meta charset="utf-8" />
   // AoE timestamps, so a day is spent only once it is over; a period ends when its last day does.
   function stageInstant(entry) {
     const value = entry.kind === "period" ? entry.ends || entry.starts || "" : entry.date || "";
-    const day = String(value).match(/\d{4}-\d{2}-\d{2}/);
+    const day = String(value).match(/\\d{4}-\\d{2}-\\d{2}/);
     if (!day) return null;
-    return /[ T]\d{2}:\d{2}/.test(value) ? aoeToUTC(value) : aoeToUTC(day[0] + " 23:59:59");
+    return /[ T]\\d{2}:\\d{2}/.test(value) ? aoeToUTC(value) : aoeToUTC(day[0] + " 23:59:59");
   }
   DATA.forEach((x) => {
     x._sub = aoeToUTC(x.deadline_aoe);
@@ -1614,9 +1614,10 @@ const TEMPLATE = `<meta charset="utf-8" />
     return { name: name || entry.name, stage };
   }
   function renderGroupRow(x, group, now, groupKind) {
+    const passed = x._sub <= now;
     const rowUrgency =
-      period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
-    const p = parts(countdownTarget(x, now) - now);
+      passed ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
+    const p = parts(x._sub - now);
     const title = groupRowTitle(x, group.label, groupKind);
     const call = titleUrl(x);
     const linkedTitle = call
@@ -1634,7 +1635,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       .join(" · ");
     const note = [title.stage, detail].filter(Boolean).join(" · ");
     return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
-          <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
+          <span class="deadline-group__row-countdown"\${!passed ? \` data-t="\${x._sub}"\` : ""}>\${passed ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
           <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}\${confidenceBadge(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;

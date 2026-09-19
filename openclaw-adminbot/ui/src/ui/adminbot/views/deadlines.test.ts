@@ -1425,6 +1425,30 @@ describe("renderDeadlines", () => {
     expect(read()).not.toBe(before);
   });
 
+  it("passes the abstract row and advances the conference to full paper at the cutoff", async () => {
+    const abstract = DEADLINE_VENUES.find((venue) => venue.id === "iclr2027_abstract")!;
+    const cutoff = Date.parse(abstract.deadline_aoe.replace(" ", "T") + "-12:00");
+    vi.setSystemTime(cutoff - 1_000);
+    const container = await renderView("default");
+    const group = () =>
+      [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+        (entry) =>
+          entry.querySelector(".deadline-group__heading strong")?.textContent?.trim() ===
+          "ICLR 2027",
+      )!;
+    group().querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    await settle(container);
+    const rows = () => [...group().querySelectorAll(".deadline-group__row-countdown")];
+    expect(rows()[0].textContent?.trim()).toBe("0d 00:00:01");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle(container);
+    expect(rows()[0].textContent?.trim()).toBe("passed");
+    expect(rows()[1].textContent?.trim()).toMatch(/^7d /u);
+    expect(group().querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
+      "Full paper",
+    );
+  });
+
   it("stops its timer when removed", async () => {
     const container = await renderView();
     const element = container.querySelector("adminbot-deadlines-view")!;
