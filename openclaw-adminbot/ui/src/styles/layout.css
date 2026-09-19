@@ -6792,13 +6792,15 @@ adminbot-deadlines-view {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .lab-sharing-director__name-row {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .lab-sharing-director__dot {
@@ -6821,6 +6823,9 @@ adminbot-deadlines-view {
 }
 
 .lab-sharing-director__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-size: var(--control-ui-text-md);
   font-weight: 600;
   color: var(--text-strong);
