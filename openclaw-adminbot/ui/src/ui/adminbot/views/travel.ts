@@ -288,7 +288,7 @@ class AdminbotTravelView extends LitElement {
         .tv-range {
           border: 1px solid var(--border, #d6deeb);
           background: transparent;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           border-radius: 999px;
           padding: 5px 13px;
           font-size: 13px;
@@ -297,7 +297,7 @@ class AdminbotTravelView extends LitElement {
         .tv-range.is-active {
           background: var(--accent, #4f8cff);
           border-color: var(--accent, #4f8cff);
-          color: #fff;
+          color: var(--accent-foreground);
         }
         .tv-summary {
           display: grid;
@@ -319,7 +319,7 @@ class AdminbotTravelView extends LitElement {
         }
         .tv-stat-label {
           font-size: 12px;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
         }
         .tv-block {
           display: flex;
@@ -358,7 +358,7 @@ class AdminbotTravelView extends LitElement {
         }
         .tv-table th {
           font-weight: 600;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 12px;
         }
         .tv-num {
@@ -395,7 +395,7 @@ class AdminbotTravelView extends LitElement {
           border-radius: 50%;
           margin-top: 4px;
           flex: none;
-          background: var(--text-muted, #66799a);
+          background: var(--muted, #66799a);
         }
         .tv-stay.is-away .tv-stay-dot {
           background: var(--accent, #4f8cff);
@@ -413,21 +413,21 @@ class AdminbotTravelView extends LitElement {
           margin-left: 6px;
           font-size: 11px;
           font-weight: 500;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           border: 1px solid var(--border, #d6deeb);
           border-radius: 999px;
           padding: 1px 7px;
         }
         .tv-stay-meta {
           font-size: 12px;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
         }
         .tv-note,
         .tv-prov,
         .tv-empty {
           margin: 0;
           font-size: 12px;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           line-height: 1.55;
         }
         .tv-error {
