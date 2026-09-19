@@ -1646,6 +1646,8 @@ class AdminbotDeadlinesView extends LitElement {
         </section>
       `;
     }
+    const stage = nextVenueStage(entry.venue, this.now);
+    const pendingStage = stage && !stage.submission ? stage : undefined;
     const parts = countdownParts(countdownTarget(entry, this.now) - this.now);
     return html`
       <section
@@ -1661,9 +1663,11 @@ class AdminbotDeadlinesView extends LitElement {
         <h2 class="deadline-board__hero-name">${renderDeadlineTitle(entry.venue)}</h2>
         <div class="deadline-board__hero-meta-row">
           <div class="deadline-board__hero-meta">
-            ${capitalize(entry.venue.deadline_label)} ·
-            <time class="deadline-board__hero-date" datetime=${entry.venue.deadline_aoe}
-              >${renderAoeDateTime(entry.venue.deadline_aoe)}</time
+            ${pendingStage?.label ?? capitalize(entry.venue.deadline_label)} ·
+            <time
+              class="deadline-board__hero-date"
+              datetime=${pendingStage?.day ?? entry.venue.deadline_aoe}
+              >${pendingStage?.dateLabel ?? renderAoeDateTime(entry.venue.deadline_aoe)}</time
             >
             ${this.renderHistory(entry.venue, "hero")} ·
             <span class="deadline-board__hero-urgency"
@@ -1999,12 +2003,12 @@ class AdminbotDeadlinesView extends LitElement {
         data-entry-type=${venue.entry_type}
         data-archival-status=${venue.archival_status}
         data-venue-priority=${venue.venue_priority}
-        data-urgency=${urgency(entry, this.now)}
+        data-urgency=${entry.instant <= this.now ? "passed" : urgencyOf(entry.instant, this.now)}
         data-period=${this.period}
       >
         <div class="deadline-card__topline">
           <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-          <span class="deadline-card__urgency">${stageCountdownLabel(entry, this.now)}</span>
+          <span class="deadline-card__urgency">${daysLeftLabel(entry.instant, this.now)}</span>
         </div>
         <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
         <p
@@ -2023,9 +2027,7 @@ class AdminbotDeadlinesView extends LitElement {
           ${this.renderHistory(venue, "card")}
         </span>
         <p class="deadline-card__countdown">
-          ${this.period === "past"
-            ? "passed"
-            : countdownLabel(countdownTarget(entry, this.now) - this.now)}
+          ${entry.instant <= this.now ? "passed" : countdownLabel(entry.instant - this.now)}
         </p>
         ${this.renderSchedule(venue)} ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
@@ -2160,7 +2162,9 @@ class AdminbotDeadlinesView extends LitElement {
                   data-entry-type=${entry.venue.entry_type}
                   data-archival-status=${entry.venue.archival_status}
                   data-venue-priority=${entry.venue.venue_priority}
-                  data-urgency=${urgency(entry, this.now)}
+                  data-urgency=${entry.instant <= this.now
+                    ? "passed"
+                    : urgencyOf(entry.instant, this.now)}
                   data-period=${this.period}
                 >
                   <td class="deadline-table__date">
@@ -2170,9 +2174,9 @@ class AdminbotDeadlinesView extends LitElement {
                     </span>
                   </td>
                   <td class="deadline-table__countdown">
-                    ${this.period === "past"
+                    ${entry.instant <= this.now
                       ? "passed"
-                      : countdownLabel(countdownTarget(entry, this.now) - this.now)}
+                      : countdownLabel(entry.instant - this.now)}
                   </td>
                   <td class="deadline-table__name">${renderDeadlineTitle(entry.venue)}</td>
                   <td>

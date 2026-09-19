@@ -56,6 +56,18 @@ describe("standalone deadline board foundation", () => {
       expect(group().querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
         "Full paper",
       );
+      for (const [button, selector, countdown] of [
+        ["#v-cards", ".card", ".ccd"],
+        ["#v-table", "tbody tr", ".countdown"],
+      ]) {
+        document.querySelector<HTMLButtonElement>(button)!.click();
+        const row = [...document.querySelectorAll(selector)].find(
+          (node) =>
+            node.textContent?.includes("ICLR 2027") && node.textContent?.includes("Sep 18, 2026"),
+        )!;
+        expect(row.querySelector(countdown)?.textContent?.trim()).toBe("passed");
+        expect(row.querySelector(countdown)?.hasAttribute("data-t")).toBe(false);
+      }
     } finally {
       dom.window.close();
     }

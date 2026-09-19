@@ -624,9 +624,7 @@ describe("renderDeadlines", () => {
     expect(container.querySelector(".deadline-board")?.lastElementChild).toBe(
       trigger.parentElement,
     );
-    expect(trigger.parentElement?.previousElementSibling?.className).toBe(
-      "deadline-board__foot",
-    );
+    expect(trigger.parentElement?.previousElementSibling?.className).toBe("deadline-board__foot");
     trigger.click();
     await settle(container);
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).not.toBeNull();
@@ -1446,6 +1444,35 @@ describe("renderDeadlines", () => {
     expect(rows()[1].textContent?.trim()).toMatch(/^7d /u);
     expect(group().querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
       "Full paper",
+    );
+    for (const [view, selector, countdown] of [
+      ["Cards", ".deadline-card", ".deadline-card__countdown"],
+      ["Table", ".deadline-table tbody tr", ".deadline-table__countdown"],
+    ]) {
+      buttonNamed(container, view).click();
+      await settle(container);
+      const row = [...container.querySelectorAll(selector)].find(
+        (node) =>
+          node.textContent?.includes("ICLR 2027") && node.textContent?.includes("Sep 18, 2026"),
+      )!;
+      expect(row.querySelector(countdown)?.textContent?.trim()).toBe("passed");
+      expect(row.getAttribute("data-urgency")).toBe("passed");
+    }
+  });
+
+  it("names the next stage and its date after all ICLR submissions close", async () => {
+    vi.setSystemTime(new Date("2026-09-27T12:00:00Z"));
+    const container = await renderView("default");
+    const chip = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.replace(/\s+/gu, " ").trim() === "ICLR 2027 2",
+    )!;
+    chip.click();
+    await settle(container);
+    expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toContain(
+      "Reviews released",
+    );
+    expect(container.querySelector(".deadline-board__hero-date")?.textContent?.trim()).toBe(
+      "Nov 5, 2026",
     );
   });
 
