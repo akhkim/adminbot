@@ -1286,6 +1286,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
               ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
+                paperTitle: paper.title,
                 slots: props.slots[paper.id]?.slots ?? [],
                 stages: props.slots[paper.id]?.stages ?? [],
                 details: {

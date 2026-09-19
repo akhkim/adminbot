@@ -35,6 +35,7 @@ async function draw(
   render(
     renderPaperSlots({
       paperId: "p1",
+      paperTitle: "Causal Garden Planning",
       slots,
       loading,
       showAllSlots: extra.showAll ?? true,
@@ -63,6 +64,85 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
+  it("shows candidate evidence without presenting similarity as confirmed resubmission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning",
+        identity_review: {
+          status: "limited",
+          examined: 12,
+          abstract_excerpt: "We study causal resource allocation.",
+          candidates: [
+            {
+              id: "Earlier123",
+              title: "Planning under uncertainty",
+              abstract_excerpt: "We study allocation under interventions.",
+              shared_authors: ["~Ada_Example1"],
+              abstract_overlap: 78,
+              created_at: "2025-09-01T00:00:00Z",
+            },
+          ],
+        },
+      }),
+    ]);
+    const panel = container.querySelector('[data-testid="openreview-identity"]');
+    expect(panel?.textContent).toContain("Possible earlier version");
+    expect(panel?.textContent).toContain("Search coverage is incomplete");
+    expect(panel?.textContent?.replace(/\s+/gu, " ")).toContain("not a confidence score");
+    expect(panel?.textContent).toContain("We study allocation under interventions.");
+    expect(panel?.textContent).not.toContain("Resubmission reported by OpenReview");
+  });
+  it("shows title differences and explicit resubmission evidence above the checklist", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning: Revised",
+        previous_submission_id: "Older123",
+        verified_at: "2026-09-19T00:00:00Z",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).toContain("Title differs from AdminBot");
+    expect(identity?.textContent).toContain("Resubmission reported by OpenReview");
+    expect(identity?.querySelectorAll("a")[1].href).toBe(
+      "https://openreview.net/forum?id=Older123",
+    );
+  });
+
+  it("ignores punctuation/case differences and never equates absent history with a first submission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "CAUSAL: Garden Planning!",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).not.toContain("Title differs");
+    expect(identity?.textContent).toContain("Resubmission history is unknown");
+  });
+
+  it("explains unconfirmed metadata without declaring a private submission invalid", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+      }),
+    ]);
+    expect(container.querySelector('[data-testid="openreview-identity"]')?.textContent).toContain(
+      "Private submissions may not be visible",
+    );
+  });
   it("shows every slot when the card is expanded -- the checklist is still all there", async () => {
     const { container } = await draw([]);
     // The deck rework made a merged node a header row plus one child per half, so the four
