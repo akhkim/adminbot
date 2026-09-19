@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
-const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+// Keep filesystem resolution out of Vite's browser asset URL transform in UI tests.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 export function adminBotDevAccountPicker(env = process.env): Plugin {
   // An unguessable, per-process URL keeps other local browser origins from loading credentials.
