@@ -5870,7 +5870,11 @@ export class AdminBotService {
         continue;
       }
       for (const row of this.store.listPaperSlots(paper.id)) {
-        if (row.status !== "provided" || row.verified_at || !row.url) {
+        const refreshOpenReview =
+          row.verified_by === "openreview" &&
+          (!row.verified_title ||
+            Date.parse(nowIso) - Date.parse(row.verified_at ?? "") >= 86_400_000);
+        if (row.status !== "provided" || (row.verified_at && !refreshOpenReview) || !row.url) {
           continue;
         }
         const check = this.paperEvidenceCheck(row.slot, row.url);
@@ -5887,8 +5891,26 @@ export class AdminBotService {
         }
         checked += 1;
         const result = await check.probe(check.id);
+        // A member can replace the link while the network request is outstanding.
+        const current = this.store
+          .listPaperSlots(paper.id)
+          .find((entry) => entry.slot === row.slot);
+        if (
+          !current ||
+          current.url !== row.url ||
+          current.provided_at !== row.provided_at ||
+          current.status !== row.status
+        ) {
+          continue;
+        }
         if (result.status === "found") {
-          this.store.savePaperSlot({ ...row, verified_by: check.verifier, verified_at: nowIso });
+          this.store.savePaperSlot({
+            ...row,
+            verified_by: check.verifier,
+            verified_at: nowIso,
+            verified_title: result.title,
+            previous_submission_id: result.previous_submission_id,
+          });
           verified.push({ paper_id: paper.id, slot: row.slot });
           // A title the public record disagrees with is the mistake worth catching -- a link to
           // somebody else's paper -- but it is not proof of one: papers get retitled between

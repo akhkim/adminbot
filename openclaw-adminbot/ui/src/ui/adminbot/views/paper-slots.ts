@@ -21,6 +21,7 @@
 // one list that the server validates against and this form renders from -- so a field can never
 // offer a shape the service will refuse.
 import { html, nothing, type TemplateResult } from "lit";
+import { adminBotOpenReviewForumId } from "../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js";
 import {
   adminBotPaperFlowBranchNumber,
   adminBotPaperSlotChartOrder,
@@ -68,6 +69,7 @@ export type PaperDetailsProps = {
 
 export type PaperSlotsProps = {
   paperId: string;
+  paperTitle?: string;
   slots: PaperSlotRow[];
   /** The venue ladder. Empty for a card whose paper has not been fetched with stages. */
   stages?: PaperflowStageRow[];
@@ -918,6 +920,70 @@ export function visibleSlots(
 // `visibleSlots` stays: the filter line above the deck still counts what is ready, coming up and
 // further off, which is the one place that summary is still wanted.
 
+export function renderOpenReviewIdentity(props: Pick<PaperSlotsProps, "slots" | "paperTitle">) {
+  const submission = props.slots.find(
+    (row) => row.slot === "submission" && row.status === "provided",
+  );
+  const forumId = submission?.url && adminBotOpenReviewForumId(submission.url);
+  if (!forumId || !submission) {
+    return nothing;
+  }
+  const title = submission.verified_by === "openreview" ? submission.verified_title : undefined;
+  // Compare display titles, not paper identity. Even a small rename can matter to an author.
+  const normalize = (value: string) =>
+    value
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const differs = title && props.paperTitle && normalize(title) !== normalize(props.paperTitle);
+  const previous = submission.previous_submission_id;
+  return html`<aside
+    class="paper-slot"
+    style="overflow-wrap: anywhere"
+    data-testid="openreview-identity"
+  >
+    <div class="paper-slot__head"><strong>OpenReview record</strong></div>
+    ${title
+      ? html`
+          <p class="paper-slot__note">
+            ${differs ? "Title differs from AdminBot:" : "Submission title:"}
+            <a
+              href=${`https://openreview.net/forum?id=${encodeURIComponent(forumId)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              >${title}</a
+            >
+          </p>
+          ${differs
+            ? html`<p class="paper-slot__note">
+                Check whether this paper was renamed or the submission link needs correcting.
+              </p>`
+            : nothing}
+          <p class="paper-slot__note">
+            ${previous && /^[A-Za-z0-9_-]{4,64}$/u.test(previous) && previous !== forumId
+              ? html`Resubmission reported by OpenReview ·
+                  <a
+                    href=${`https://openreview.net/forum?id=${encodeURIComponent(previous)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >Previous submission</a
+                  >`
+              : "Resubmission history is unknown: no previous-submission link was exposed."}
+          </p>
+          ${submission.verified_at
+            ? html`<p class="paper-slot__meta">
+                Last confirmed ${submission.verified_at.slice(0, 10)}
+              </p>`
+            : nothing}
+        `
+      : html`<p class="paper-slot__note">
+          Public metadata has not been confirmed yet. Private submissions may not be visible to
+          AdminBot.
+        </p>`}
+  </aside>`;
+}
+
 export function renderPaperSlots(props: PaperSlotsProps) {
   if (props.loading && props.slots.length === 0) {
     return html`<p class="paper-slots__loading">Loading this paper's checklist…</p>`;
@@ -932,7 +998,7 @@ export function renderPaperSlots(props: PaperSlotsProps) {
 
   return html`
     <div class="paper-slots" data-testid=${`paper-slots-${props.paperId}`}>
-      ${renderDetails(props)}
+      ${renderOpenReviewIdentity(props)} ${renderDetails(props)}
       <div class="paper-slots__filter">
         <span class="paper-slots__filter-text">
           ${showAll

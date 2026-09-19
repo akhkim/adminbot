@@ -30,6 +30,29 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("keeps verified submission metadata across restarts and removes stale metadata", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    first.store.savePaperSlot({
+      paper_id: "p1",
+      slot: "submission",
+      status: "provided",
+      url: "https://openreview.net/forum?id=Paper123",
+      verified_by: "openreview",
+      verified_at: "2026-09-19T00:00:00Z",
+      verified_title: "A revised title",
+      previous_submission_id: "Older123",
+    });
+    first.close();
+    const second = createAdminBotSqliteService({ databasePath });
+    expect(second.store.listPaperSlots("p1")[0]).toMatchObject({
+      verified_title: "A revised title",
+      previous_submission_id: "Older123",
+    });
+    second.store.savePaperSlot({ paper_id: "p1", slot: "submission", status: "missing" });
+    expect(second.store.listPaperSlots("p1")[0].verified_title).toBeUndefined();
+    second.close();
+  });
   it("keeps a paper's evidence slots across service instances, and drops them with the paper", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });

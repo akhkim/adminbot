@@ -4523,6 +4523,10 @@ export type PaperSlotRow = {
   /** The free-text half of an enum slot. */
   value_note?: string;
   provided_at?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verified_title?: string;
+  previous_submission_id?: string;
   invalid_reason?: string;
   waived_reason?: string;
 };

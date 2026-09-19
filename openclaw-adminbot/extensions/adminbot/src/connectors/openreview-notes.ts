@@ -12,7 +12,10 @@
 // the accept list. A venue that has not released decisions simply answers with nothing, which is
 // the honest answer rather than a list of papers that are not in yet.
 
-import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
+import {
+  adminBotOpenReviewForumId,
+  type AdminBotArtifactProbe,
+} from "../contracts/paper-artifact-links.js";
 
 const BASE_URL = "https://api2.openreview.net";
 const LOGIN_TIMEOUT_MS = 20_000;
@@ -194,15 +197,15 @@ export function createOpenReviewForumProbe(
     }
     try {
       const response = await fetchImpl(
-        `${baseUrl}/notes?forum=${encodeURIComponent(forumId)}&limit=1`,
+        `${baseUrl}/notes?id=${encodeURIComponent(forumId)}&limit=1`,
         { signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) },
       );
       if (!response.ok) {
         return { status: "unreadable", reason: `OpenReview answered ${response.status}` };
       }
       const body = (await response.json()) as { notes?: Array<Record<string, unknown>> };
-      const note = body.notes?.[0];
-      if (!note) {
+      const note = body.notes?.find((entry) => entry.id === forumId);
+      if (!note || note.replyto || (note.forum && note.forum !== forumId)) {
         return {
           status: "unreadable",
           reason: "OpenReview showed no note — a blind submission looks the same as none",
@@ -216,7 +219,20 @@ export function createOpenReviewForumProbe(
           : typeof titleField?.value === "string"
             ? titleField.value
             : undefined;
-      return { status: "found", ...(title ? { title: title.trim() } : {}) };
+      if (!title?.trim()) {
+        return { status: "unreadable", reason: "OpenReview did not expose the submission title" };
+      }
+      // ARR publishes this explicit link when readers may see it. A renamed title alone
+      // says nothing about submission history; absent metadata remains unknown.
+      const previousField = content.previous_url as { value?: unknown } | string | undefined;
+      const previousUrl = typeof previousField === "string" ? previousField : previousField?.value;
+      const previousId =
+        typeof previousUrl === "string" ? adminBotOpenReviewForumId(previousUrl) : undefined;
+      return {
+        status: "found",
+        title: title.trim().slice(0, 2000),
+        ...(previousId && previousId !== forumId ? { previous_submission_id: previousId } : {}),
+      };
     } catch (error) {
       return { status: "unreadable", reason: (error as Error).message.slice(0, 200) };
     }

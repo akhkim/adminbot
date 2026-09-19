@@ -76,7 +76,7 @@ export function adminBotOpenReviewForumId(raw: string): string | undefined {
  * as "no such paper" would invalidate the evidence of every paper still in review.
  */
 export type AdminBotArtifactProbeResult =
-  | { status: "found"; title?: string }
+  | { status: "found"; title?: string; previous_submission_id?: string }
   | { status: "missing" }
   | { status: "unreadable"; reason: string };
 

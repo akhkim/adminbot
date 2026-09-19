@@ -917,7 +917,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     // Nullable with no default, like every other column added here: every row that already exists
     // reads back as unconfirmed, which is exactly what it is. Nothing is re-checked on upgrade --
     // the verification pass finds them in its own time.
-    for (const column of ["verified_by", "verified_at"]) {
+    for (const column of [
+      "verified_by",
+      "verified_at",
+      "verified_title",
+      "previous_submission_id",
+    ]) {
       if (!columns.has(column)) {
         this.db.exec(`ALTER TABLE adminbot_paper_slots ADD COLUMN ${column} TEXT`);
       }
@@ -2111,10 +2116,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           validated_at,
           verified_by,
           verified_at,
+          verified_title,
+          previous_submission_id,
           invalid_reason,
           waived_by_member_id,
           waived_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(paper_id, slot) DO UPDATE SET
           status = excluded.status,
           url = excluded.url,
@@ -2125,6 +2132,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           validated_at = excluded.validated_at,
           verified_by = excluded.verified_by,
           verified_at = excluded.verified_at,
+          verified_title = excluded.verified_title,
+          previous_submission_id = excluded.previous_submission_id,
           invalid_reason = excluded.invalid_reason,
           waived_by_member_id = excluded.waived_by_member_id,
           waived_reason = excluded.waived_reason`,
@@ -2141,6 +2150,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.validated_at ?? null,
         record.verified_by ?? null,
         record.verified_at ?? null,
+        record.verified_title ?? null,
+        record.previous_submission_id ?? null,
         record.invalid_reason ?? null,
         record.waived_by_member_id ?? null,
         record.waived_reason ?? null,
@@ -3576,6 +3587,8 @@ function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord
     ...optional("validated_at"),
     ...optional("verified_by"),
     ...optional("verified_at"),
+    ...optional("verified_title"),
+    ...optional("previous_submission_id"),
     ...optional("invalid_reason"),
     ...optional("waived_by_member_id"),
     ...optional("waived_reason"),

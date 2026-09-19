@@ -717,6 +717,9 @@ export type AdminBotPaperSlotRecord = {
    */
   verified_by?: AdminBotPaperSlotVerifier;
   verified_at?: string;
+  /** Public metadata observed by the verifier, never supplied by a member. */
+  verified_title?: string;
+  previous_submission_id?: string;
   invalid_reason?: string;
   waived_by_member_id?: string;
   waived_reason?: string;

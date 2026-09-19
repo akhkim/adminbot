@@ -35,6 +35,7 @@ async function draw(
   render(
     renderPaperSlots({
       paperId: "p1",
+      paperTitle: "Causal Garden Planning",
       slots,
       loading,
       showAllSlots: extra.showAll ?? true,
@@ -63,6 +64,53 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
+  it("shows title differences and explicit resubmission evidence above the checklist", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning: Revised",
+        previous_submission_id: "Older123",
+        verified_at: "2026-09-19T00:00:00Z",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).toContain("Title differs from AdminBot");
+    expect(identity?.textContent).toContain("Resubmission reported by OpenReview");
+    expect(identity?.querySelectorAll("a")[1].href).toBe(
+      "https://openreview.net/forum?id=Older123",
+    );
+  });
+
+  it("ignores punctuation/case differences and never equates absent history with a first submission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "CAUSAL: Garden Planning!",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).not.toContain("Title differs");
+    expect(identity?.textContent).toContain("Resubmission history is unknown");
+  });
+
+  it("explains unconfirmed metadata without declaring a private submission invalid", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+      }),
+    ]);
+    expect(container.querySelector('[data-testid="openreview-identity"]')?.textContent).toContain(
+      "Private submissions may not be visible",
+    );
+  });
   it("shows every slot when the card is expanded -- the checklist is still all there", async () => {
     const { container } = await draw([]);
     // The deck rework made a merged node a header row plus one child per half, so the four

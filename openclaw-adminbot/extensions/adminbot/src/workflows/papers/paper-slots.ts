@@ -206,6 +206,16 @@ export function applyPaperSlotWrite(params: {
     }
     case "link": {
       const value = (input.url ?? "").trim();
+      // Verification belongs to the URL, not to the field that happens to hold it.
+      const verification =
+        value === existing.url
+          ? {}
+          : {
+              verified_by: undefined,
+              verified_at: undefined,
+              verified_title: undefined,
+              previous_submission_id: undefined,
+            };
       if (!value) {
         return { ok: true, record: clearedSlot(existing) };
       }
@@ -215,6 +225,7 @@ export function applyPaperSlotWrite(params: {
           ok: true,
           record: {
             ...existing,
+            ...verification,
             status: "invalid",
             url: value,
             provided_by_member_id: memberId,
@@ -224,7 +235,7 @@ export function applyPaperSlotWrite(params: {
           },
         };
       }
-      return { ok: true, record: provided({ url: value, validated_at: nowIso }) };
+      return { ok: true, record: provided({ ...verification, url: value, validated_at: nowIso }) };
     }
   }
 }
