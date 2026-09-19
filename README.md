@@ -57,6 +57,15 @@ Never commit real secrets, device pairing state, or the gateway token.
 
 ## Develop
 
+For local development with fictional accounts, run from this repository directory:
+
+```bash
+./dev.sh
+```
+
+This seeds a separate development database and starts the backend and frontend with file watching.
+See [local development instructions](openclaw-adminbot/dev/README.md) for credentials and overrides.
+
 Runtime: **Node 22.19+**. Use `pnpm` (the repo is a pnpm workspace; bundled plugins load from
 `extensions/*` during development).
 
