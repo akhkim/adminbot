@@ -700,7 +700,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 4px 2px 24px;
         }
         .opportunities-view .intro {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 13.5px;
           margin: 0 0 14px;
         }
@@ -717,7 +717,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 6px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 999px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           cursor: pointer;
@@ -727,7 +727,7 @@ class AdminbotOpportunitiesView extends LitElement {
           color: var(--accent, #4f8cff);
         }
         .opp-tab-count {
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           font-size: 11.5px;
           font-variant-numeric: tabular-nums;
         }
@@ -747,7 +747,7 @@ class AdminbotOpportunitiesView extends LitElement {
           border: 1px solid var(--border, #26324a);
           border-left: 4px solid var(--u);
           border-radius: 10px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           align-items: start;
         }
         .opp-when {
@@ -765,7 +765,7 @@ class AdminbotOpportunitiesView extends LitElement {
           font-weight: 600;
         }
         .opp-window {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 11px;
           margin-top: 2px;
         }
@@ -776,17 +776,17 @@ class AdminbotOpportunitiesView extends LitElement {
           gap: 6px;
         }
         .opp-org {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 12px;
           margin-top: 2px;
         }
         .opp-elig {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 12px;
           margin-top: 4px;
         }
         .opp-note {
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           font-size: 11.5px;
           margin-top: 4px;
         }
@@ -799,21 +799,21 @@ class AdminbotOpportunitiesView extends LitElement {
         }
         .opp-notice--success {
           border-color: rgba(52, 199, 123, 0.4);
-          color: #34c77b;
-          background: rgba(52, 199, 123, 0.1);
+          color: var(--ok);
+          background: var(--ok-subtle);
         }
         .opp-notice--error {
           border-color: rgba(248, 113, 113, 0.4);
-          color: #f87171;
-          background: rgba(248, 113, 113, 0.1);
+          color: var(--danger);
+          background: var(--danger-subtle);
         }
         .opp-pending-tag {
           font-size: 10px;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.5px;
-          color: #f5a524;
-          background: rgba(245, 165, 36, 0.14);
+          color: var(--warn);
+          background: var(--warn-subtle);
           padding: 1px 6px;
           border-radius: 4px;
           flex-shrink: 0;
@@ -830,7 +830,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 8px 10px;
           border: 1px solid rgba(96, 165, 250, 0.35);
           border-radius: 6px;
-          background: rgba(96, 165, 250, 0.08);
+          background: var(--accent-subtle);
           display: grid;
           gap: 6px;
         }
@@ -866,7 +866,7 @@ class AdminbotOpportunitiesView extends LitElement {
           text-transform: uppercase;
           letter-spacing: 0.5px;
           color: var(--accent, #4f8cff);
-          background: rgba(79, 140, 255, 0.12);
+          background: var(--accent-subtle);
           padding: 1px 6px;
           border-radius: 4px;
           flex-shrink: 0;
@@ -875,7 +875,7 @@ class AdminbotOpportunitiesView extends LitElement {
           background: none;
           border: none;
           border-radius: 6px;
-          color: #f87171;
+          color: var(--danger);
           font-size: 18px;
           line-height: 1;
           cursor: pointer;
@@ -884,7 +884,7 @@ class AdminbotOpportunitiesView extends LitElement {
           transition: color 0.12s;
         }
         .opp-delete:hover {
-          color: #ef4444;
+          color: var(--danger);
         }
         .opp-actions {
           display: flex;
@@ -895,7 +895,7 @@ class AdminbotOpportunitiesView extends LitElement {
           background: none;
           border: none;
           border-radius: 6px;
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           cursor: pointer;
           padding: 2px 6px;
           display: flex;
@@ -914,7 +914,7 @@ class AdminbotOpportunitiesView extends LitElement {
           height: 48px;
           border-radius: 50%;
           border: 1px solid var(--border, #26324a);
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           cursor: pointer;
           display: flex;
           align-items: center;
@@ -935,7 +935,7 @@ class AdminbotOpportunitiesView extends LitElement {
           transition: stroke 0.12s;
         }
         .opp-fab:hover {
-          background: rgba(79, 140, 255, 0.12);
+          background: var(--accent-subtle);
           border-color: var(--accent, #4f8cff);
         }
         .opp-fab:hover svg {
@@ -960,7 +960,7 @@ class AdminbotOpportunitiesView extends LitElement {
           z-index: 100;
         }
         .opp-confirm {
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           border: 1px solid var(--border, #26324a);
           border-radius: 12px;
           padding: 20px 24px;
@@ -978,7 +978,7 @@ class AdminbotOpportunitiesView extends LitElement {
           gap: 8px;
         }
         .opp-form {
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           border: 1px solid var(--border, #26324a);
           border-radius: 12px;
           padding: 24px;
@@ -1004,20 +1004,20 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-form-label {
           font-size: 12px;
           font-weight: 500;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
         }
         .opp-form-input {
           padding: 8px 10px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
+          background: var(--bg);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           font-family: inherit;
           transition: border-color 0.12s;
         }
         .opp-form-input::placeholder {
-          color: #5a6d84;
+          color: var(--muted);
         }
         .opp-form-input:focus {
           outline: none;
@@ -1041,7 +1041,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 7px 16px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
+          background: var(--bg);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           cursor: pointer;
@@ -1049,15 +1049,15 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-form-btn--primary {
           background: var(--accent, #4f8cff);
           border-color: var(--accent, #4f8cff);
-          color: #fff;
+          color: var(--accent-foreground);
         }
         .opp-form-btn--primary:hover {
           opacity: 0.9;
         }
         .opp-form-btn--danger {
-          background: #ef4444;
-          border-color: #ef4444;
-          color: #fff;
+          background: var(--danger);
+          border-color: var(--danger);
+          color: var(--destructive-foreground);
         }
         .opp-form-btn--danger:hover {
           opacity: 0.9;
@@ -1071,8 +1071,8 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 8px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
-          color: var(--text-muted, #9fb0cc);
+          background: var(--bg);
+          color: var(--muted);
           font-size: 13px;
           font-style: italic;
         }
@@ -1080,8 +1080,8 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 7px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
-          color: var(--text-muted, #9fb0cc);
+          background: var(--bg);
+          color: var(--muted);
           font-size: 12px;
           font-weight: 600;
           cursor: pointer;
@@ -1091,7 +1091,7 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-tba-toggle--active {
           border-color: var(--accent, #4f8cff);
           color: var(--accent, #4f8cff);
-          background: #e8f0fe;
+          background: var(--accent-subtle);
         }
         .opp-tba-toggle:hover {
           border-color: var(--accent, #4f8cff);
