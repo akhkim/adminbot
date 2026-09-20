@@ -422,13 +422,13 @@ The **Membership** tab's Onboarding section reads the lab's own Google spreadshe
 
 Point it somewhere else with any of:
 
-| Variable                       | What it names                                                 |
-| ------------------------------ | ------------------------------------------------------------- |
-| `ADMINBOT_MEMBER_SHEET_URL`    | A whole Sheets URL; the spreadsheet id and `gid` are read out of it |
-| `ADMINBOT_MEMBER_SHEET_ID`     | The spreadsheet id alone                                       |
-| `ADMINBOT_MEMBER_SHEET_GID`    | The tab, by gid                                                |
-| `ADMINBOT_MEMBER_SHEET_TAB`    | The tab, by title                                              |
-| `ADMINBOT_MEMBER_SHEET_RANGE`  | The poller's `Tab!A:Z` range; its tab name is used as a fallback |
+| Variable                      | What it names                                                       |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `ADMINBOT_MEMBER_SHEET_URL`   | A whole Sheets URL; the spreadsheet id and `gid` are read out of it |
+| `ADMINBOT_MEMBER_SHEET_ID`    | The spreadsheet id alone                                            |
+| `ADMINBOT_MEMBER_SHEET_GID`   | The tab, by gid                                                     |
+| `ADMINBOT_MEMBER_SHEET_TAB`   | The tab, by title                                                   |
+| `ADMINBOT_MEMBER_SHEET_RANGE` | The poller's `Tab!A:Z` range; its tab name is used as a fallback    |
 
 Prefer a gid. A gid survives a rename and a tab title does not, so the grid resolves the gid to
 whatever the tab is called at the moment of each read, and falls back to the configured title if
@@ -452,7 +452,7 @@ member typed about themselves on their own profile page.
 What it does with what it finds is the whole design:
 
 - **Member Type is written** onto members it can match. That column is governance-owned and the
-  spreadsheet *is* the governance record, so copying it across is transcription. Writes are stamped
+  spreadsheet _is_ the governance record, so copying it across is transcription. Writes are stamped
   `import`, so the adoption rate does not credit them to the member, and they are a patch -- a sync
   that knows one column cannot blank the twenty-nine it does not.
 - **Access consequences are proposed, never executed.** A type change can revoke a row of the
@@ -581,13 +581,13 @@ and was read by nothing: `gates`, "the pipeline step this slot releases".
 A step is released when every **required** slot gating it is settled, and a paper is at the
 furthest released step. The trunk of the PaperFlow chart, in the registry's own words:
 
-| Step | Released by |
-| ---- | ----------- |
-| `overleaf_writing` | `project_folder` |
-| `submission` | `overleaf_edit`, `papermentor_review`, `fixes_merged`, `pdf_ready` |
-| `google_drive_pdf` | `submission`, `submission_id` |
-| `arxiv_polish` | `drive_pdf_arxiv`, `authors_ack`, `arxiv_paper_password`, `pi_approval` |
-| `social_posts` | `arxiv`, `x_draft`, `linkedin_draft`, `coauthor_feedback`, `social_final` |
+| Step               | Released by                                                               |
+| ------------------ | ------------------------------------------------------------------------- |
+| `overleaf_writing` | `project_folder`                                                          |
+| `submission`       | `overleaf_edit`, `papermentor_review`, `fixes_merged`, `pdf_ready`        |
+| `google_drive_pdf` | `submission`, `submission_id`                                             |
+| `arxiv_polish`     | `drive_pdf_arxiv`, `authors_ack`, `arxiv_paper_password`, `pi_approval`   |
+| `social_posts`     | `arxiv`, `x_draft`, `linkedin_draft`, `coauthor_feedback`, `social_final` |
 
 Advisory slots are out of it: `overleaf_view` gates `submission` too, and a paper whose authors only
 ever circulated the edit link is not stuck before submission because of it. A **waived** slot counts
@@ -622,14 +622,14 @@ the same as one advanced on three ticks and a file Google confirmed.
 Two verifiers are wired (`adminBotPaperSlotVerifier` names them, and a slot appears there only when
 its check exists):
 
-| Slot | Confirmed by |
-| ---- | ------------ |
-| `project_folder`, `drive_pdf_arxiv`, `slides`, `poster` | `gog drive get` — the file is really in Drive |
-| `papermentor_review` | the review being ingested at all |
-| `fixes_merged` | a **later** review that comes back with nothing critical and nothing to warn about |
-| `arxiv` | the arXiv export API — the paper is listed, under a title that matches |
-| `submission` | OpenReview's public API, **positively only** — see below |
-| `x_post`, `linkedin_post` | AdminBot posted them: the connector reports the URL it created |
+| Slot                                                    | Confirmed by                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `project_folder`, `drive_pdf_arxiv`, `slides`, `poster` | `gog drive get` — the file is really in Drive                                      |
+| `papermentor_review`                                    | the review being ingested at all                                                   |
+| `fixes_merged`                                          | a **later** review that comes back with nothing critical and nothing to warn about |
+| `arxiv`                                                 | the arXiv export API — the paper is listed, under a title that matches             |
+| `submission`                                            | OpenReview's public API, **positively only** — see below                           |
+| `x_post`, `linkedin_post`                               | AdminBot posted them: the connector reports the URL it created                     |
 
 Most slots have no verifier and never will: "the author list is final" is a judgement, not a fact a
 machine can check.
@@ -643,7 +643,7 @@ own site has no id to ask about at all, and the run says so rather than staying 
 
 **arXiv answers about titles as well as existence.** An unknown id does not 404 there — the feed
 comes back with one entry titled `Error`, which is the one case that counts as the outside world
-saying the paper is not there. When a paper *is* listed, its title is compared with the paper on
+saying the paper is not there. When a paper _is_ listed, its title is compared with the paper on
 file word-wise, loosely enough to survive a rename and a LaTeX-mangled colon. A mismatch is
 **reported, not acted on**: papers get retitled between submission and posting, and the row keeps
 its confirmation while the pass names it for a person to look at.
@@ -678,7 +678,7 @@ an author's tick, chased like any other.
 
 ### The PI's gate
 
-`pi_approval` is PaperFlow's `GT` — *prepared is not permission* — and it is the only slot owned by
+`pi_approval` is PaperFlow's `GT` — _prepared is not permission_ — and it is the only slot owned by
 the head professor. **Nothing in AdminBot ticks it.** What is automated is the asking, which until
 now happened nowhere: the nudge sweep computed the item, resolved its owner to the head professor,
 and `sendMemberNudge` refused to message her — correctly, since the lab does not chase its PI — so a
@@ -754,11 +754,11 @@ nudge sweep rather than a sweep of its own -- one message per person per cadence
 papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
 added to the line:
 
-| The paper | The line says |
-| --------- | ------------- |
-| Draft is on `overleaf.com` | it has to move to the lab's Overleaf before PaperMentor can read it at all |
-| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project |
-| Reviewed, fixes still open | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)" |
+| The paper                             | The line says                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all                  |
+| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project                                        |
+| Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)" |
 
 The first is the one worth having. Every paper is reviewed before submission and PaperMentor only
 reads its own instance, so a draft on `overleaf.com` cannot clear the step at all -- and the worst
@@ -780,7 +780,7 @@ is the next piece of UI work, not something the sweep should fake by clearing a 
 ## Recommendation letter deadlines
 
 The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
-purpose -- the lab does not chase its PI, and the escalation path runs *towards* her -- so this is a
+purpose -- the lab does not chase its PI, and the escalation path runs _towards_ her -- so this is a
 typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
 relaxed. The direction is what makes it different: it is her own queue, about work only she can do,
 on dates her members chose.
@@ -841,6 +841,65 @@ announces it is also the one that has to make undoing it obvious.
 AdminBot **does not create channels**. A missing `#group-<city>` fails the invite and is reported;
 opening a channel is a decision about the workspace's shape, and a sweep that quietly makes rooms is
 how a directory fills with them.
+
+## The DCS roster sheet
+
+Sending the full-member onboarding guide (template `member`) files one row on the sheet the
+department's sysadmin acts on, and mails that member the credentials the row carries. It replaces
+the Microsoft-Forms automation that used to drive a headless browser through
+`https://forms.office.com/r/TgGWBGWLZa`: the form carried only First/Last/Email, its selectors
+could be relaid out by Microsoft without notice, and it handed back no receipt, so "submitted" only
+ever meant "the click did not throw".
+
+Point it at a spreadsheet with:
+
+| Variable                       | What it names                                    |
+| ------------------------------ | ------------------------------------------------ |
+| `ADMINBOT_DCS_ROSTER_SHEET_ID` | The spreadsheet id alone. Unset disables filing. |
+
+Unset is not an error and not a silent skip: the send reports `dcs_roster_row.added: false` with
+"the DCS roster sheet is not configured", the same shape the retired form used for "not wired up".
+
+The sheet's columns, which `DCS_ROSTER_SHEET_COLUMNS` in
+`extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts` declares and checks against the
+live header before every write:
+
+`full_name`, `adminbot_internal_id`, `dcs_username`, `dcs_password`, `non_dcs_email`,
+`career_stage`, `at_uoft_or_not`, `permission`, `date_of_this_row_change`
+
+A row is one account. `dcs_username` is chosen from three candidates, in the lab's order of
+preference -- `firstname@`, `lastname@`, then `{first initial}{lastname}@`, all at
+`cs.toronto.edu` -- taking the first that is held by nobody on the sheet and nobody on the roster.
+A name with no family name in it is refused rather than guessed at, and so is a name with all three
+candidates taken; both report a failure for a human to file by hand. The guide itself still goes
+out either way -- the row is a side errand, and the member is waiting on the mail.
+
+`permission` defaults to `UofT-slack-only`, the least-privileged provisioned value in
+`contracts/compute-access.ts`, unless the roster already grants this person something. An
+escalation is a deliberate later row, never a side effect of onboarding.
+
+`at_uoft_or_not` is left blank when the roster does not know. It is never written as "no": that
+would report an absence of information to DCS as a claim about somebody's eligibility.
+
+### The temporary password
+
+`dcs_password` is generated per member, 20 characters from an alphabet with no `0`/`O` or
+`1`/`l`/`I` in it, and it is the initial credential for the account the sysadmin creates. It
+replaces nothing on the portal side -- `ADMINBOT_SEEDED_PORTAL_PASSWORD` is a separate thing and is
+unchanged.
+
+It is written to two places and only two: the sheet cell, and the credentials mail to the member.
+It is deliberately **not** in the audit log (`auth.dcs_roster_row_added` records the username
+only), not in the `POST /onboarding/guide` response payload, and not in the dry-run transcript,
+which prints `DRY-RUN-NOT-A-PASSWORD` instead. The mail is sent as its own message rather than
+folded into the guide, because the guide is cc'd to project leads on most sends.
+
+A row that landed with an unsent credentials mail is reported as `added: true` with an error that
+says to send the credentials by hand and **not** to re-run the filing -- re-filing asks for a
+second account under a second password.
+
+Because the password lives in a spreadsheet cell, treat the sheet's sharing as the blast radius and
+have the sysadmin force a change on first sign-in.
 
 ## Onboarding cycles
 
@@ -990,7 +1049,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
 | `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after   |
-| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate        |
+| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate       |
 | `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers    |
 | `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                    |
 | `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                   |

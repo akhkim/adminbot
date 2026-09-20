@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
+import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
 import {
   createOpenReviewForumProbe,
@@ -98,11 +99,12 @@ import {
   adminBotLabCalendarId,
   createCalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
-import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
+import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster-sheet.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
   type AdminBotOnboardingSender,
+  type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
 import {
@@ -316,15 +318,14 @@ export type AdminBotMockServiceOptions = {
    * and neither belongs in a test about who the wire lets in.
    */
   autoQueueMeetingRequests?: boolean;
-  // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
-  // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
+  // Overrides the DCS roster-sheet recorder outright (tests use this to assert on the call
+  // without touching a real spreadsheet). If unset, dcsRosterSheetId decides whether one gets
   // built at all.
-  dcsFormRunner?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
-  // Path to scripts/adminbot-dcs-form-submit.ts. Injected from the repo-root composition layer
-  // for the same reason openReviewScriptPath is: this factory has no access to the repo root.
-  // Absent in unit/mock setups, which leaves DCS form submission silently unwired (no attempt,
-  // no audit event) rather than half-working.
-  dcsFormScriptPath?: string;
+  dcsRosterRecorder?: AdminBotOnboardingSenderOptions["addDcsRosterRow"];
+  // The spreadsheet new full members are filed on. Absent in unit/mock setups, which leaves the
+  // filing unwired (no attempt, no audit event) rather than half-working -- the same shape the
+  // retired DCS form script had, for the same reason.
+  dcsRosterSheetId?: string;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
@@ -605,7 +606,7 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
  *
  * Wraps whatever connector the launcher injected and answers this one type in-process, because the
  * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
- * invites the project channels and files the DCS request before the mail goes out. Everything else
+ * invites the project channels and files the DCS roster row before the mail goes out. Everything else
  * falls through untouched.
  *
  * `handled: false` when no sender is configured, which is what the service turns into an audited
@@ -639,8 +640,8 @@ function executorWithOnboardingGuide(
         ...(payload.values && typeof payload.values === "object"
           ? { values: payload.values as Record<string, string | undefined> }
           : {}),
-        ...(typeof payload.submit_dcs_form === "boolean"
-          ? { submit_dcs_form: payload.submit_dcs_form }
+        ...(typeof payload.add_dcs_roster_row === "boolean"
+          ? { add_dcs_roster_row: payload.add_dcs_roster_row }
           : {}),
       });
       if (!result.ok) {
@@ -724,11 +725,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
-    ...(() => {
-      const submitDcsForm =
-        options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
-      return submitDcsForm ? { submitDcsForm } : {};
-    })(),
     ...(gatewayUrl ? { gatewayUrl } : {}),
     // An explicitly injected geolocator wins (tests and the host inject their own);
     // otherwise build the IPinfo Lite one when a token is configured. With neither, the
@@ -753,16 +749,47 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // and a deployment (or a route test) has to be able to say no to that.
   const autoQueueMeetingRequests =
     options.autoQueueMeetingRequests ?? process.env.ADMINBOT_CALL_SHEET_AUTO_QUEUE !== "0";
-  // The same runner the approval path gets, so an onboarding send and an approval file the DCS
-  // request identically. Undefined when no script path is configured, which the sender reports
-  // rather than silently skipping.
-  const dcsFormRunner =
-    options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
+  // Files a new full member's row on the sheet the department's sysadmin acts on, and hands back
+  // the credentials it wrote so the sender can mail them. Undefined when no spreadsheet is
+  // configured, which the sender reports rather than silently skipping.
+  //
+  // The roster lookup is wired here rather than inside the workflow for the same reason
+  // portalLoginEmail is: the extension owns no store, and the row needs the member's id, career
+  // stage, UofT affiliation and granted compute access, none of which the send request carries.
+  const dcsRosterRecorder =
+    options.dcsRosterRecorder ??
+    createDcsRosterSheetRecorder({
+      spreadsheetId: options.dcsRosterSheetId ?? process.env.ADMINBOT_DCS_ROSTER_SHEET_ID ?? "",
+      readRows: (spreadsheetId) => readGogSheetRows(spreadsheetId),
+      appendRows: (spreadsheetId, rows) => appendGogSheetRows(spreadsheetId, rows),
+      lookupMember: (email) => {
+        const wanted = email.trim().toLowerCase();
+        const roster = service.listLabMembers();
+        if (!wanted || !roster.ok) {
+          return undefined;
+        }
+        return roster.payload.members.find((entry) =>
+          [entry.email, entry.correspondence_email, entry.calendar_email]
+            .filter((address): address is string => Boolean(address))
+            .some((address) => address.trim().toLowerCase() === wanted),
+        );
+      },
+      // Usernames the roster knows about but the sheet may not carry yet: everyone minted before
+      // this sheet existed. Without them the first few rows would propose names already in use.
+      rosterUsernames: () => {
+        const roster = service.listLabMembers();
+        return roster.ok
+          ? roster.payload.members
+              .map((entry) => entry.dcs_username?.trim())
+              .filter((entry): entry is string => Boolean(entry))
+          : [];
+      },
+    });
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
       provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
-      ...(dcsFormRunner ? { submitDcsForm: dcsFormRunner } : {}),
+      ...(dcsRosterRecorder ? { addDcsRosterRow: dcsRosterRecorder } : {}),
       // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
       headProfessorWhatsapp: () => {
         const settings = service.getSettings();
@@ -4728,15 +4755,19 @@ async function handleAuthenticatedRoute(
       sent: result.payload.sent,
     });
     // The DCS request moved here from registration approval, and its audit trail moves with it:
-    // the request is filed on someone else's system with no receipt, so the only record that it
-    // happened at all is this one.
-    if (result.payload.dcs_form) {
-      service.recordDcsFormAttempt({
+    // the row is acted on by someone else's sysadmin, so the only record on this side that it was
+    // ever asked for is this one. The username is recorded because it is what a later question
+    // ("which account did we ask for?") is about; the password it was filed with is not, here or
+    // anywhere else AdminBot writes.
+    if (result.payload.dcs_roster_row) {
+      const row = result.payload.dcs_roster_row;
+      service.recordDcsRosterRowAttempt({
         actor: principalActor(principal),
         template_id: result.payload.template_id,
         email: body.email,
-        submitted: result.payload.dcs_form.submitted,
-        ...(result.payload.dcs_form.error ? { error: result.payload.dcs_form.error } : {}),
+        added: row.added,
+        ...(row.username ? { username: row.username } : {}),
+        ...(row.error ? { error: row.error } : {}),
       });
     }
     sendJson(res, 200, result.payload);

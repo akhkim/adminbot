@@ -111,8 +111,9 @@ Pass `--strict` to fail the run when someone on the roster has no email.
 - Choose full workspace membership only when the person should join the whole
   workspace.
   For the UofT/DCS workspace, full membership requires a DCS email first. If the
-  person only has an external email, send the DCS-email setup instructions before
-  proposing the workspace member invite.
+  person only has an external email, the lab requests the account for them -- see
+  the prerequisite template below -- before proposing the workspace member invite.
+  Nobody is sent to fill the request in themselves.
 
 ## Email Templates
 
@@ -160,11 +161,11 @@ Hi {first_name},
 
 As our workspace is under UofT's Slack, joining the full workspace requires a few more steps.
 
-1. Create a DCS email through https://forms.office.com/r/TgGWBGWLZa
+1. We'll request a University of Toronto CS account for you. There is nothing for you to fill in.
 
-2. After you complete the steps provided after submitting the form, send me your created @cs.toronto.edu email address.
+2. You'll get a separate email from us with the account name and a temporary password once the request is filed. The department creates the account from it, which usually takes a few working days.
 
-3. I'll invite that address directly to the Slack workspace.
+3. Once it's live, reply here and I'll invite that address directly to the Slack workspace.
 
 Best,
 {sender_name}
@@ -233,7 +234,7 @@ Only draft a follow-up email if the user explicitly asks for one.
 - Slack Connect / external collaborator proposal summary:
   `Send Slack Connect invite to {name} at {email} for {project_or_context}`.
 - Full member prerequisite email proposal summary:
-  `Send DCS email setup instructions to {name} before full Slack workspace invite`.
+  `Tell {name} their DCS account is being requested, before full Slack workspace invite`.
 - Full member invite proposal summary:
   `Invite {name} to the full Slack workspace using {dcs_email}`.
 - Include `target` fields for `name`, `email`, `accessLevel`, `workspace`,

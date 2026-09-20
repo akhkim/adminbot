@@ -123,6 +123,57 @@ export async function readGogSheetRows(
   return parseGogSheetRows(await capture(args));
 }
 
+export type GogSheetAppendOptions = {
+  env?: NodeJS.ProcessEnv;
+  range?: string;
+  run?: GogRun;
+};
+
+/**
+ * Appends rows after the last populated row of a range.
+ *
+ * `--input RAW` rather than the CLI's `USER_ENTERED` default: these cells are data, not things a
+ * person typed. Under USER_ENTERED, Sheets parses each string the way it would parse typing -- a
+ * leading `=`/`+`/`-` becomes a formula, and a value that looks like a date or a number is
+ * silently coerced. A generated credential that Sheets decided was arithmetic is not the
+ * credential any more, and nobody finds out until the sign-in fails.
+ *
+ * `--insert INSERT_ROWS` rather than the default OVERWRITE: OVERWRITE writes into whatever already
+ * sits below the range's last populated row, so anything a human parked further down the sheet is
+ * silently clobbered. INSERT_ROWS makes room instead.
+ *
+ * Refuses an empty row set rather than issuing a no-op API call, so "nothing was appended" can
+ * never be reported to a caller as a successful append.
+ */
+export async function appendGogSheetRows(
+  spreadsheetId: string,
+  rows: string[][],
+  options: GogSheetAppendOptions = {},
+): Promise<void> {
+  const id = spreadsheetId.trim();
+  if (!id) {
+    throw new Error("gog sheets append requires a spreadsheet id");
+  }
+  if (rows.length === 0) {
+    throw new Error("gog sheets append refuses an empty row set");
+  }
+  const run = options.run ?? createGogRunner(options.env);
+  const args = rootArgs("sheets.append", optionalAccount(options.env));
+  args.push(
+    "sheets",
+    "append",
+    id,
+    options.range?.trim() || DEFAULT_SHEET_RANGE,
+    "--input",
+    "RAW",
+    "--insert",
+    "INSERT_ROWS",
+    "--values-json",
+    JSON.stringify(rows),
+  );
+  await run(args);
+}
+
 export type GogSheetTab = { title: string; gid: number };
 
 /**
