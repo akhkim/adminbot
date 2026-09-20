@@ -212,6 +212,7 @@ import {
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
+  isAdminBotPaperSlotSettled,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotVerifier,
