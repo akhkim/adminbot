@@ -77,6 +77,7 @@ import type {
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotMeetingCatalogEntry } from "../workflows/calendar/meeting-catalog.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -165,6 +166,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
   private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
+  // An array rather than a map keyed by event id: the catalog is replaced whole, read whole, and
+  // its order is the calendar's, so there is nothing for a key to do.
+  private meetingCatalog: AdminBotMeetingCatalogEntry[] = [];
   private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
@@ -1035,6 +1039,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.meetings.delete(meetingId);
+  }
+
+  replaceMeetingCatalog(entries: readonly AdminBotMeetingCatalogEntry[]): void {
+    this.meetingCatalog = [...entries];
+  }
+
+  listMeetingCatalog(): AdminBotMeetingCatalogEntry[] {
+    return [...this.meetingCatalog];
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {

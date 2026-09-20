@@ -2105,6 +2105,7 @@ export const en: TranslationMap = {
       mandatory: "required",
       countryCode: "Country code",
       countryCodeNone: "Code",
+      noMeetings: "No standing meetings on the lab calendar yet.",
       example: "ex. {example}",
       autosaveHint: "Changes save automatically.",
       noProjects: "No projects on file yet.",
@@ -2269,6 +2270,7 @@ export const en: TranslationMap = {
       researchTopics: "Research topics",
       elevatorPitch: "Elevator pitch",
       projects: "Projects",
+      meetings: "Meetings I'm in",
       notes: "Notes",
     },
     accountCheck: {
@@ -2341,6 +2343,8 @@ export const en: TranslationMap = {
         "One paragraph, in your own words — what you work on and why it is worth doing.",
       merchRequests:
         "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
+      meetings:
+        "The lab's standing meetings, from the shared calendar. Ticking one asks an admin to add you to that invite, so it needs your calendar email above.",
     },
   },
   // My Projects & Papers' evidence checklist, and the global nudge that chases it.

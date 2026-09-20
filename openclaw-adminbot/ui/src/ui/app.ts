@@ -813,6 +813,9 @@ export class OpenClawApp extends LitElement {
   @state() registrationsError: RegistrationsLoadError | null = null;
   @state() registrationsBusyId: string | null = null;
   @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() adminBotMeetingCatalog: import("./adminbot/auth/session.ts").MeetingCatalogEntry[] = [];
+  @state() adminBotMeetingCatalogLoading = false;
+  @state() adminBotMeetingCatalogCheckedAt: number | null = null;
   @state() adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[] = [];
   @state() adminBotBadgeDefinitionsLoading = false;
   @state() adminBotBadgeDefinitionsLoadedAt: number | null = null;

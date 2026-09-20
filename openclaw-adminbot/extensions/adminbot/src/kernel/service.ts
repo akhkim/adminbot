@@ -247,6 +247,13 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import {
+  type AdminBotMeetingCatalogEntry,
+  type AdminBotMeetingCatalogSource,
+  meetingCatalogFromEvents,
+  memberMeetingTopics,
+  resolveMeetingChoice,
+} from "../workflows/calendar/meeting-catalog.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
@@ -621,6 +628,15 @@ export type AdminBotServiceStore = {
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  /**
+   * The standing-meeting catalog, replaced wholesale rather than upserted.
+   *
+   * The calendar is the source of truth for which meetings exist, so a meeting that is no longer
+   * on it has to leave the catalog -- an upsert-only store would keep offering members a room that
+   * closed last term, and proposing invites to an event that no longer exists.
+   */
+  replaceMeetingCatalog(entries: readonly AdminBotMeetingCatalogEntry[]): void;
+  listMeetingCatalog(): AdminBotMeetingCatalogEntry[];
   /**
    * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
    * replaces its own row rather than stacking a second copy of the same sentence.
@@ -1849,6 +1865,130 @@ export class AdminBotService {
     return { joined, skipped };
   }
 
+  /** The standing meetings the profile field offers, and what each one resolves to. */
+  listMeetingCatalog(): AdminBotServiceResponse<{ meetings: AdminBotMeetingCatalogEntry[] }> {
+    return { ok: true, status: 200, payload: { meetings: this.store.listMeetingCatalog() } };
+  }
+
+  /**
+   * Rebuild the catalog from a window of calendar events.
+   *
+   * Wholesale, because the calendar decides which meetings exist: a series that ended has to stop
+   * being offered, and an upsert leaves it on the list forever. The one thing that is not allowed
+   * to empty it is a read that came back with nothing -- that is what a broken `gog`, an expired
+   * token or a mistyped calendar id looks like, and it is indistinguishable from a lab that
+   * cancelled every meeting. A caller that means it can pass `allowEmpty`.
+   */
+  refreshMeetingCatalog(
+    params: {
+      events: readonly AdminBotMeetingCatalogSource[];
+      calendarId?: string;
+      allowEmpty?: boolean;
+    },
+    actor: string,
+  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingCatalogEntry[]; removed: number }> {
+    const before = this.store.listMeetingCatalog();
+    const entries = meetingCatalogFromEvents(
+      params.events,
+      params.calendarId ? { calendarId: params.calendarId } : {},
+    );
+    if (entries.length === 0 && before.length > 0 && !params.allowEmpty) {
+      return serviceError(
+        409,
+        "refusing to empty the meeting catalog from a read that found no meetings -- pass allow_empty if the lab really has none",
+      );
+    }
+    this.store.replaceMeetingCatalog(entries);
+    const kept = new Set(entries.map((entry) => entry.event_id));
+    const removed = before.filter((entry) => !kept.has(entry.event_id)).length;
+    this.recordAudit({
+      type: "meeting_catalog.refreshed",
+      actor,
+      details: { meetings: entries.length, removed, read: params.events.length },
+    });
+    return { ok: true, status: 200, payload: { meetings: entries, removed } };
+  }
+
+  /**
+   * Propose one member onto the meetings they have just said they are in.
+   *
+   * The profile field is the lab's only direct answer to "which meetings is this person in" --
+   * everything else infers it from research interests or from a Slack channel's membership -- so
+   * the invite follows the answer rather than waiting for the next sweep to guess the same thing.
+   *
+   * Proposals, never invites. Putting somebody on a recurring event mails everyone already on it,
+   * which is the sort of external effect this service does not do unattended, so each one is a
+   * `calendar.add_attendees` card an admin approves like any other.
+   *
+   * The payload names the member and nobody else. The research-theme sweep sends the whole
+   * resulting guest list because it has just read one; this has not read the event, and inventing
+   * the list from an old read is how an approval card promises to keep people it is about to drop.
+   * `calendar.add_attendees` adds rather than replaces (see buildCalendarAddAttendeesArgs), so one
+   * address is the honest payload.
+   */
+  private proposeMeetingInvites(
+    member: AdminBotLabMember,
+    topics: readonly string[],
+  ): {
+    invited: Array<{ event_id: string; topic: string }>;
+    skipped: AdminBotMemberNudgeSkip[];
+  } {
+    const invited: Array<{ event_id: string; topic: string }> = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    if (topics.length === 0) {
+      return { invited, skipped };
+    }
+    const email = member.calendar_email?.trim();
+    if (!email) {
+      // Fail closed and say so: the record keeps what the member answered, and the admin sees why
+      // no invite followed rather than assuming one did.
+      skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+      return { invited, skipped };
+    }
+    const catalog = this.store.listMeetingCatalog();
+    const fallbackCalendarId = resolveLabCalendar().id;
+    for (const topic of topics) {
+      const choice = resolveMeetingChoice(topic, catalog);
+      if (!choice.ok) {
+        skipped.push({
+          member_id: member.id,
+          reason:
+            choice.reason === "ambiguous"
+              ? `meeting "${topic}" matches more than one event on the calendar`
+              : `meeting "${topic}" is not on the calendar`,
+        });
+        continue;
+      }
+      const meeting = choice.entry;
+      const proposed = this.createProposal({
+        type: "calendar.add_attendees",
+        summary: `Add ${member.name} to ${meeting.summary}`,
+        target: {
+          service: "calendar",
+          channel: "calendar",
+          target: meeting.event_id,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: {
+          calendar_id: meeting.calendar_id ?? fallbackCalendarId,
+          event_id: meeting.event_id,
+          attendees: [email],
+        },
+        rationale: "The member said on their profile that they are in this meeting.",
+        undo_plan: "Remove the attendee with calendar.remove_attendees.",
+        // Keyed on the pairing, so re-saving the profile before an admin has worked through the
+        // queue collapses onto the one card rather than stacking copies of the same invite.
+        idempotency_key: `member-meeting:${member.id}:${meeting.event_id}`,
+      });
+      if (!proposed.ok) {
+        skipped.push({ member_id: member.id, reason: proposed.error.message });
+        continue;
+      }
+      invited.push({ event_id: meeting.event_id, topic: meeting.topic });
+    }
+    return { invited, skipped };
+  }
+
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
     const now = new Date().toISOString();
     const policy = resolvePolicy(proposal);
@@ -2967,6 +3107,33 @@ export class AdminBotService {
       const before = new Set(existing ? memberThemeIds(existing) : []);
       if (memberThemeIds(stored).some((theme) => !before.has(theme))) {
         this.proposeThemeChannelInvites(stored);
+      }
+    }
+    // And once more for the meetings the member named themselves, which is the same hook doing the
+    // same job from better evidence: the theme matcher guesses a meeting from someone's research
+    // interests, this one acts on their own answer to "which meetings are you in".
+    //
+    // Gains only, for the reason above it: re-saving a profile proposes nothing, and unticking a
+    // meeting proposes no removal -- somebody who stops ticking a box has not necessarily stopped
+    // going, and an uninvite is not a conclusion to draw from an edited form.
+    {
+      const before = new Set(
+        memberMeetingTopics(existing ?? {}).map((topic) => topic.toLowerCase()),
+      );
+      const gained = memberMeetingTopics(stored).filter(
+        (topic) => !before.has(topic.toLowerCase()),
+      );
+      if (gained.length > 0) {
+        const outcome = this.proposeMeetingInvites(stored, gained);
+        this.recordAudit({
+          type: "member_meetings.invites_proposed",
+          actor: origin.actor ?? stored.id,
+          details: {
+            member_id: stored.id,
+            meetings: outcome.invited.map((entry) => entry.topic),
+            skipped: outcome.skipped.map((entry) => entry.reason),
+          },
+        });
       }
     }
     this.recordAudit({
@@ -13167,6 +13334,10 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // for somebody is not the thing the field is for.
   "elevator_pitch",
   "projects",
+  // Which standing meetings they are in. Self-editable by definition -- it is the member's own
+  // answer -- and what a *new* answer sets off is a proposal, not an invite: see
+  // proposeMeetingInvites.
+  "meetings",
   "hours_per_week",
   "availability",
   "location",
@@ -13709,6 +13880,18 @@ function validateLabMember(
     );
     if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
+  }
+  // Shape only, never membership. The vocabulary is the calendar, and the calendar changes: a
+  // member whose Wednesday meeting was renamed last week must still be able to save their phone
+  // number. An answer the catalog no longer offers is kept and simply proposes nothing (see
+  // proposeMeetingInvites).
+  if (member.meetings !== undefined) {
+    if (
+      !Array.isArray(member.meetings) ||
+      member.meetings.some((entry) => typeof entry !== "string" || !entry.trim())
+    ) {
+      return "member meetings must be a list of meeting names";
     }
   }
   if (

@@ -5005,6 +5005,81 @@ async function handleAuthenticatedRoute(
     sendJson(res, 200, { sent, skipped });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/meetings/catalog") {
+    // Readable by any signed-in member, unlike the calendar routes above. This is the list of the
+    // lab's standing meetings by name -- what the Profile page's "meetings I am in" field offers --
+    // and it needs no calendar client: it is served from the catalog the refresh below stored, so a
+    // member loading their profile never reaches Google.
+    //
+    // Names, not events. The picker stores the topic somebody ticked and the service resolves that
+    // to an event when it proposes the invite, so the event id and calendar id have no reader out
+    // here -- and an id that is never served is one that cannot be used to address a write.
+    const catalog = service.listMeetingCatalog();
+    if (!catalog.ok) {
+      sendServiceResult(res, catalog);
+      return;
+    }
+    sendJson(res, 200, {
+      // `starts_at` may be absent, and JSON.stringify drops an undefined value -- so a meeting with
+      // no next occurrence serialises without the key, exactly as the stored entry does.
+      meetings: catalog.payload.meetings.map((entry) => ({
+        topic: entry.topic,
+        summary: entry.summary,
+        family: entry.family,
+        starts_at: entry.starts_at,
+      })),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/meetings/catalog/run") {
+    // The refresh, which does need the calendar. Privileged like every other sweep, and the same
+    // division of labour: the caller supplies events it can see or lets the host read them, and
+    // the service decides which of them are standing meetings and what each one is called.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
+    let events = Array.isArray(body.events)
+      ? body.events.flatMap((entry) => {
+          const row = readRecord(entry);
+          const id = asString(row.id) || asString(row.event_id);
+          return id ? [{ id, summary: asString(row.summary), start: asString(row.start) }] : [];
+        })
+      : [];
+    if (events.length === 0) {
+      if (!ctx.readCalendarEvents) {
+        sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+        return;
+      }
+      try {
+        events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+      } catch (error) {
+        // Same reasoning as the sweeps: a failed read must not reach the service, where an empty
+        // list would read as "the lab has no meetings" and try to empty the catalog.
+        sendJson(res, 502, {
+          error: {
+            message: `could not read the calendar: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        });
+        return;
+      }
+    }
+    sendServiceResult(
+      res,
+      service.refreshMeetingCatalog(
+        {
+          events,
+          calendarId,
+          ...(body.allow_empty === true ? { allowEmpty: true } : {}),
+        },
+        principalActor(principal),
+      ),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/calendar/themed-meeting-invites/run") {
     // Same shape as the topic-channel sweep: the caller supplies facts it can see and the service
     // has no client for -- which Wednesday events exist, and who is in each meeting channel -- and
@@ -5065,6 +5140,21 @@ async function handleAuthenticatedRoute(
         return;
       }
     }
+    // The nightly pass has just established which standing meetings exist, which is exactly what
+    // the profile field's picker needs -- so the catalog is refreshed from the same list rather
+    // than waiting for somebody to call /meetings/catalog/run by hand. A refusal here (an empty
+    // read) is left alone deliberately: the invite sweep below is the caller's actual request, and
+    // a stale catalog is a better outcome than failing it over a list it did not ask about.
+    service.refreshMeetingCatalog(
+      {
+        events: resolvedMeetings.map((meeting) => ({
+          id: meeting.event_id,
+          summary: meeting.summary,
+        })),
+        calendarId: asString(body.calendar_id) || ctx.labCalendar.id,
+      },
+      principalActor(principal),
+    );
     sendServiceResult(
       res,
       await service.syncThemedMeetingInvites(principalActor(principal), {

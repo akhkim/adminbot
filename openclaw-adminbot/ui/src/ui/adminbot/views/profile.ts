@@ -44,6 +44,7 @@ import type {
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
+import { meetingCatalogOptions } from "../data/meeting-catalog.ts";
 import {
   joinPhoneNumber,
   resolvePhoneDial,
@@ -52,6 +53,7 @@ import {
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import {
   isOptionalMemberField,
+  profileFieldOptions,
   PROFILE_FIELD_GROUPS,
   PROFILE_FIELDS,
   type ProfileField,
@@ -225,10 +227,26 @@ export function findOwnMember(state: AppViewState): LabMember | null {
 
 function valueOf(member: LabMember, field: EditableField): string {
   const raw = member[field.key];
-  if (field.type === "list") {
+  if (field.type === "list" || field.type === "multi_list") {
     return Array.isArray(raw) ? raw.filter(Boolean).join(", ") : "";
   }
   return raw === null || raw === undefined ? "" : String(raw);
+}
+
+/**
+ * A multi-answer field's answers as a list, read from the record rather than from the joined line
+ * the row displays.
+ *
+ * `multi_list` values are stored as an array precisely because a meeting's name may contain a
+ * comma, so re-splitting the display string would be the one thing the array shape exists to
+ * avoid. `multi_dropdown` keeps the joined-string column it has always had.
+ */
+function heldMultiValues(member: LabMember, field: EditableField): string[] {
+  if (field.type === "multi_list") {
+    const raw = member[field.key];
+    return Array.isArray(raw) ? raw.map((entry) => String(entry)).filter(Boolean) : [];
+  }
+  return parseAdminBotMemberRoles(valueOf(member, field));
 }
 
 // What the control shows, which is the stored value except when there is a prefill to offer.
@@ -568,6 +586,20 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
           value,
         ),
       );
+    } else if (field.type === "multi_list") {
+      // getAll like the roles field below, but stored as the list the service validates -- and
+      // always sent, empty included: unticking every box is a real answer, and an omitted key
+      // would read as "leave it alone".
+      setField(
+        fields,
+        field.key,
+        data
+          .getAll(field.key)
+          // A checkbox posts a string; the File arm of FormDataEntryValue cannot reach this field.
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      );
     } else if (field.type === "multi_dropdown") {
       // getAll, not get: every checked box shares the field's name, and `get` would keep only the
       // first -- which is the single-answer limit this field exists to undo.
@@ -707,17 +739,31 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
           ? html`<span class="profile__optional">${t("profile.basics.optional")}</span>`
           : nothing}
     </span>
-    ${renderFieldInput(field, displayValue(member, field))} ${renderUrnStatus(member, field)}
-    ${renderFieldAction(field)} ${renderFieldHint(field)} ${renderFieldVisibility(field)}
-    ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
-    ${renderAccountCheckStatus(state, field)}
+    ${renderFieldInput(field, displayValue(member, field), {
+      held: heldMultiValues(member, field),
+      options: profileFieldOptions(field, {
+        meetingCatalog: meetingCatalogOptions(state.adminBotMeetingCatalog ?? []),
+      }),
+    })}
+    ${renderUrnStatus(member, field)} ${renderFieldAction(field)} ${renderFieldHint(field)}
+    ${renderFieldVisibility(field)} ${renderPrefillHint(member, field)}
+    ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
   `;
-  return field.type === "multi_dropdown"
+  return isMultiAnswerField(field)
     ? html`<div class="profile__form-row">${body}</div>`
     : html`<label class="profile__form-row">${body}</label>`;
 }
 
-function renderFieldInput(field: EditableField, currentValue: string) {
+/** The rows whose control is a menu of checkboxes. See the note on renderProfileFormRow. */
+function isMultiAnswerField(field: EditableField): boolean {
+  return field.type === "multi_dropdown" || field.type === "multi_list";
+}
+
+function renderFieldInput(
+  field: EditableField,
+  currentValue: string,
+  multi: { held: string[]; options: readonly string[] } = { held: [], options: [] },
+) {
   // An admin-owned answer the member may still supply: shown, typable and pasteable, but outside
   // the required marks and the completion denominator (see adminBotAdminOwnedProfileFields, which
   // is empty at present -- `linkedin_urn` was its last entry and is now asked of the member like
@@ -769,6 +815,34 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
         </select>
       `;
+    case "multi_list": {
+      // An empty vocabulary is a real state: the catalog has never been refreshed, or this
+      // session's read failed. A menu with no boxes in it is a dead end somebody would read as a
+      // broken page, so the row says what happened instead -- and keeps an input under the field's
+      // own name, so the form still posts the same shape whether or not the lab has meetings.
+      if (multi.options.length === 0 && multi.held.length === 0) {
+        return html`
+          <span class="profile__multi-empty" data-testid=${`profile-multi-${field.key}`}>
+            <input type="hidden" name=${field.key} value="" />
+            ${t("profile.basics.noMeetings")}
+          </span>
+        `;
+      }
+      // Otherwise the same control as the roles menu below, over the calendar's own list. Anything
+      // this member has already answered that the list no longer offers keeps its box and is
+      // marked, which is what multiSelectOptionsFor is for.
+      return renderMultiSelectField({
+        name: field.key,
+        label: t(field.labelKey),
+        placeholder: t("profile.basics.empty"),
+        options: multiSelectOptionsFor(multi.options, multi.held),
+        selected: new Set(multi.held.map((entry) => entry.toLowerCase())),
+        rootClass: "profile__multi",
+        optionClass: "profile__multi-option",
+        legacyOptionClass: "profile__multi-option--legacy",
+        testId: `profile-multi-${field.key}`,
+      });
+    }
     case "multi_dropdown": {
       // A dropdown that opens checkboxes, rather than a `<select multiple>`: the list box hides how
       // many options there are behind a scroll and needs ctrl-click to pick a second one, which is

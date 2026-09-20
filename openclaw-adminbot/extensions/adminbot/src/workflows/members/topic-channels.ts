@@ -192,6 +192,9 @@ export function projectOfEvent(summary: string): string | null {
   return project || null;
 }
 
+/** The two families a lab meeting can belong to. */
+export type AdminBotMeetingFamilyId = "theme" | "project";
+
 /**
  * A channel family and the event titles its meetings carry.
  *
@@ -200,6 +203,14 @@ export function projectOfEvent(summary: string): string | null {
  * mechanism has to be unable to make.
  */
 export type AdminBotMeetingFamily = {
+  /**
+   * What this family is called away from Slack.
+   *
+   * The channel prefix is not that name: `#meeting-xxx` belongs to the *theme* family, and calling
+   * it "meeting" anywhere a person reads -- the profile field that lists the meetings somebody is
+   * in, say -- turns "which meetings" into "which meeting-meetings".
+   */
+  id: AdminBotMeetingFamilyId;
   /** The channel-name prefix, without the trailing hyphen. */
   channelPrefix: string;
   /** Reads the event title and returns the part to match on, or null when it is another family. */
@@ -207,11 +218,13 @@ export type AdminBotMeetingFamily = {
 };
 
 export const THEMED_MEETING_FAMILY: AdminBotMeetingFamily = {
+  id: "theme",
   channelPrefix: "meeting",
   titleTopic: themeOfEvent,
 };
 
 export const PROJECT_MEETING_FAMILY: AdminBotMeetingFamily = {
+  id: "project",
   channelPrefix: "proj",
   titleTopic: projectOfEvent,
 };

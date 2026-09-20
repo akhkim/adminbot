@@ -1427,6 +1427,20 @@ export type AdminBotLabMemberInput = {
    */
   elevator_pitch?: string;
   projects?: string[];
+  /**
+   * The lab's standing meetings this person is in, by topic -- the "Causal Inference" of
+   * "Theme: Causal Inference".
+   *
+   * Their own answer, not an inference. `research_topics` is what somebody works on and the theme
+   * matcher guesses a meeting from it; this is the member saying which rooms they are actually in,
+   * which is the fact an invite should follow. Saving a *new* one proposes them onto that event
+   * (see proposeMeetingInvites) -- proposes, like every other external effect here.
+   *
+   * A list rather than the comma-joined string `role` uses: a meeting's topic may contain a comma
+   * ("Theme: Causal Inference, Agents"), and a join that cannot be split back is a field that
+   * quietly loses answers.
+   */
+  meetings?: string[];
   hours_per_week?: number;
   // Where the member lives. The member map and the timezone suggestion are keyed on this one.
   location?: string;
@@ -2457,6 +2471,14 @@ export type AdminBotAuditEvent = {
     // row because "why was I invited to this" has two different answers and the audit trail should
     // say which.
     | "research_theme_invites.swept"
+    // The catalog of standing meetings the profile field picks from, replaced wholesale from a
+    // calendar read. Audited because it decides what the lab is *offered*: a refresh that dropped
+    // half the meetings is why nobody could find theirs.
+    | "meeting_catalog.refreshed"
+    // A member said which meetings they are in, and was proposed onto them. One row per save
+    // rather than per meeting -- it answers "why is there an invite proposal for this person",
+    // and the proposals themselves carry the per-meeting detail.
+    | "member_meetings.invites_proposed"
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"

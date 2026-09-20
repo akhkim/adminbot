@@ -179,6 +179,8 @@ export type LabMember = {
   research_branch?: string | null;
   research_topics?: string[] | null;
   projects?: string[] | null;
+  /** The lab's standing meetings this member says they are in, by topic. */
+  meetings?: string[] | null;
   hours_per_week?: number | null;
   // Owned by the member and edited in the AdminBot console; the Control UI only renders it.
   availability?: AvailabilityRow[] | null;
@@ -215,6 +217,7 @@ export type MemberProfileUpdate = {
   role?: string;
   research_topics?: string[];
   projects?: string[];
+  meetings?: string[];
   hours_per_week?: number;
   // The schedule is not a profile field: it is the row lists MemberScheduleUpdate carries, and the
   // service validates it as such. A free-text `availability` string used to live here, and the Lab
@@ -264,6 +267,7 @@ export type AdminLabMemberUpdate = {
   role?: string;
   research_topics?: string[];
   projects?: string[];
+  meetings?: string[];
   hours_per_week?: number;
   location?: string;
   affiliation?: string;
@@ -3073,6 +3077,39 @@ export async function fetchMeetings(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as { meetings?: MeetingRecord[] } | null;
+  return { ok: true, value: body?.meetings ?? [] };
+}
+
+/**
+ * One of the lab's standing meetings, as the Profile page's picker offers it.
+ *
+ * Names only: the catalog route serves the list to every signed-in member, so it deliberately
+ * carries no guest list and no times beyond the next start. The event id stays server-side -- the
+ * profile stores the topic a member ticked, and the service resolves that to an event when it
+ * proposes the invite.
+ */
+export type MeetingCatalogEntry = {
+  topic: string;
+  summary: string;
+  family: "theme" | "project";
+  starts_at?: string;
+};
+
+export async function fetchMeetingCatalog(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingCatalogEntry[]>> {
+  const result = await authedJson(baseUrl, "/meetings/catalog", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { meetings?: MeetingCatalogEntry[] } | null;
   return { ok: true, value: body?.meetings ?? [] };
 }
 

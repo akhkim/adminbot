@@ -3658,6 +3658,15 @@
   color: var(--muted);
 }
 
+/* What a multi-answer row shows when the lab has supplied no answers to offer -- today, a meeting
+   catalog that has never been refreshed. Styled as the hint below rather than as a control,
+   because that is what it is: a sentence explaining why there is nothing to tick. */
+.profile__multi-empty {
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 /* Sits at the same level as the placeholder example it explains -- quieter than the label above,
    loud enough to read before typing rather than after a save comes back refused. */
 .profile__field-hint {

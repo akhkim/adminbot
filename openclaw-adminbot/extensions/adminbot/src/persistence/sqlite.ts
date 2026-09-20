@@ -75,6 +75,7 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotMeetingCatalogEntry } from "../workflows/calendar/meeting-catalog.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
 import {
   adminBotEmailReviewFromRow,
@@ -547,6 +548,22 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+
+      -- The standing meetings a member can say they are in. One row per meeting series, replaced
+      -- wholesale from a calendar read -- see replaceMeetingCatalog for why an upsert is not enough.
+      CREATE TABLE IF NOT EXISTS adminbot_meeting_catalog (
+        event_id TEXT PRIMARY KEY,
+        topic TEXT NOT NULL,
+        family TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      -- Both reads are the whole table in topic order: the picker's option list, and the lookup
+      -- that turns a saved answer back into an event.
+      CREATE INDEX IF NOT EXISTS adminbot_meeting_catalog_topic_idx
+        ON adminbot_meeting_catalog(topic);
 
       CREATE TABLE IF NOT EXISTS adminbot_member_notifications (
         id TEXT PRIMARY KEY,
@@ -2940,6 +2957,47 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
+  }
+
+  replaceMeetingCatalog(entries: readonly AdminBotMeetingCatalogEntry[]): void {
+    // One transaction: between the delete and the inserts the catalog is empty, and a member
+    // loading their profile in that window would be offered no meetings at all and shown their own
+    // saved answers as ones the lab no longer holds.
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM adminbot_meeting_catalog").run();
+      const insert = this.db.prepare(
+        `INSERT INTO adminbot_meeting_catalog (
+          event_id,
+          topic,
+          family,
+          summary,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const entry of entries) {
+        insert.run(
+          entry.event_id,
+          entry.topic,
+          entry.family,
+          entry.summary,
+          entry.updated_at,
+          JSON.stringify(entry),
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listMeetingCatalog(): AdminBotMeetingCatalogEntry[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_meeting_catalog ORDER BY topic, event_id")
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMeetingCatalogEntry>(row.payload_json));
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {

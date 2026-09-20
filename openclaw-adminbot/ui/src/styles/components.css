@@ -1035,6 +1035,14 @@
   letter-spacing: var(--tracking-tight);
 }
 
+/* The roster editor's half of `.profile__multi-empty`: a field with nothing to offer says so where
+   its control would be, and reads as a sentence rather than as a label. */
+.adminbot-form__empty {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
 /* The multi-answer control (role), same shape as the member's own page so an admin and the member
    are looking at one kind of answer: a summary line naming what is held, with the chips behind it.
 

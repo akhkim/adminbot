@@ -714,6 +714,9 @@ export type AppViewState = {
   registrationsError: import("./adminbot/data/registrations.ts").RegistrationsLoadError | null;
   registrationsBusyId: string | null;
   registrationsNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotMeetingCatalog: import("./adminbot/auth/session.ts").MeetingCatalogEntry[];
+  adminBotMeetingCatalogLoading: boolean;
+  adminBotMeetingCatalogCheckedAt: number | null;
   adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[];
   adminBotBadgeDefinitionsLoading: boolean;
   adminBotBadgeDefinitionsLoadedAt: number | null;

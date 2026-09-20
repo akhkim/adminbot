@@ -59,7 +59,7 @@ import {
 } from "../controllers/recent-edits.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
-import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { profileFieldOptions, PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
@@ -93,6 +93,15 @@ import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
+  /**
+   * The standing meetings the "Meetings I'm in" field offers, in the same order the member's own
+   * Profile page offers them.
+   *
+   * Passed in rather than read here because this view has no state object: the host fetched the
+   * catalog once for the session (see data/meeting-catalog.ts) and hands it to both surfaces, so
+   * an admin and a member are never looking at different lists of the lab's meetings.
+   */
+  meetingOptions?: readonly string[];
   /**
    * What each paper still owes, computed by the service from `paper_slots`.
    *
@@ -337,6 +346,21 @@ function getFormValue(formData: FormData, key: string): string {
 export function collectRegistryFields(data: FormData): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const field of PROFILE_FIELDS) {
+    if (field.type === "multi_list") {
+      // Skipped when empty, like every other field here: an admin who did not open the menu must
+      // not clear the meetings the member ticked for themselves. Clearing one is the member's own
+      // edit to make, on their profile page.
+      const picked = data
+        .getAll(field.key)
+        // A checkbox posts a string; the File arm of FormDataEntryValue cannot reach this field.
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (picked.length) {
+        patch[field.key] = picked;
+      }
+      continue;
+    }
     if (field.type === "multi_dropdown") {
       // Read before the blank check below, and with getAll rather than get: several boxes share
       // one name, so `get` would keep only the first answer. An empty result is still skipped --
@@ -1075,6 +1099,9 @@ function renderRegistryField(
   field: ProfileField,
   member: AdminBotLabMember | undefined,
   fallback: string,
+  // Only a `multi_list` field needs this: its boxes are the lab's own data rather than a
+  // vocabulary the registry carries. See profileFieldOptions.
+  meetingOptions: readonly string[] = [],
 ) {
   const raw = member ? (member as unknown as Record<string, unknown>)[field.key] : undefined;
   const value = Array.isArray(raw)
@@ -1104,6 +1131,30 @@ function renderRegistryField(
               html`<option value=${option} ?selected=${option === value}>${option}</option>`,
           )}
         </select>`;
+      case "multi_list": {
+        // Read from the record rather than re-split out of `value`: the column is a list because a
+        // meeting's name may contain a comma.
+        const picked = Array.isArray(raw) ? raw.map((entry) => String(entry)).filter(Boolean) : [];
+        const offered = profileFieldOptions(field, { meetingCatalog: meetingOptions });
+        // Nothing to offer and nothing held: say so rather than opening an empty menu. The hidden
+        // input keeps the form's shape constant -- see the same branch on the Profile page.
+        if (offered.length === 0 && picked.length === 0) {
+          return html`<span class="adminbot-form__empty"
+            ><input type="hidden" name=${field.key} value="" />No meetings on the lab calendar
+            yet.</span
+          >`;
+        }
+        return renderMultiSelectField({
+          name: field.key,
+          label: t(field.labelKey),
+          placeholder: "Not set",
+          options: multiSelectOptionsFor(offered, picked),
+          selected: new Set(picked.map((entry) => entry.toLowerCase())),
+          rootClass: "adminbot-form__multi",
+          optionClass: "adminbot-form__multi-option",
+          testId: `member-form-multi-${field.key}`,
+        });
+      }
       case "multi_dropdown": {
         // Same control as the member's own page, so an admin and the member see one answer shape.
         const held = parseAdminBotMemberRoles(value);
@@ -1158,7 +1209,7 @@ function renderRegistryField(
   // A `<label>` wrapping the multi-answer control would forward a click on the word "Role" to the
   // first checkbox inside it, so that one gets a plain container and the group carries its own
   // accessible name instead.
-  return field.type === "multi_dropdown"
+  return field.type === "multi_dropdown" || field.type === "multi_list"
     ? html`<div class="adminbot-form__field">${label}${control}</div>`
     : html`<label class="adminbot-form__field">${label}${control}</label>`;
 }
@@ -1173,7 +1224,10 @@ function renderRegistryField(
 // the roster editor stopped at twenty fields and reassembled five of them into `notes` lines, so
 // an admin could not fill in a preferred name, a correspondence email, a CV link or any social
 // but GitHub -- on a record where the member themselves could.
-function renderMemberFormFields(member?: AdminBotLabMember) {
+function renderMemberFormFields(
+  member?: AdminBotLabMember,
+  meetingOptions: readonly string[] = [],
+) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
   // Old records still carry these as "Label: value" lines in `notes`. The columns are the truth
@@ -1276,7 +1330,7 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         </select></label
       >
       ${PROFILE_FIELDS.map((field) =>
-        renderRegistryField(field, member, legacyFallback[field.key] ?? ""),
+        renderRegistryField(field, member, legacyFallback[field.key] ?? "", meetingOptions),
       )}
     </div>
     <label class="adminbot-form__field"
@@ -1328,6 +1382,7 @@ function renderMemberEditsPopover(member: AdminBotLabMember, index: number, prop
 }
 
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
+  const meetingOptions = props.meetingOptions ?? [];
   const editId = `adminbot-edit-member-${index}`;
   // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
   // the document to have anything to open. Only the form inside waits for the first click --
@@ -1351,7 +1406,7 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
               @input=${(event: Event) => queueMemberAutosave(event, props)}
               @change=${(event: Event) => queueMemberAutosave(event, props)}
             >
-              ${renderMemberFormFields(member)}
+              ${renderMemberFormFields(member, meetingOptions)}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>
@@ -1444,7 +1499,12 @@ function renderMemberSelfEditPopover(
             >
               <div class="form-grid adminbot-form__grid">
                 ${PROFILE_FIELDS.filter((field) => !field.adminOnly).map((field) =>
-                  renderRegistryField(field, member, selfLegacyFallback[field.key] ?? ""),
+                  renderRegistryField(
+                    field,
+                    member,
+                    selfLegacyFallback[field.key] ?? "",
+                    props.meetingOptions ?? [],
+                  ),
                 )}
                 <label class="adminbot-form__field"
                   ><span>Slack user id</span
@@ -1953,7 +2013,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
         <div class="card-title">Add member</div>
         <div class="card-sub">Create a roster entry and seed its privilege-derived access.</div>
         <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
-          ${renderMemberFormFields()}
+          ${renderMemberFormFields(undefined, props.meetingOptions ?? [])}
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>

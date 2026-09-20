@@ -165,6 +165,11 @@ import {
   type SignatureFormState,
 } from "./adminbot/data/logistics-requests.ts";
 import {
+  loadMeetingCatalog,
+  meetingCatalogOptions,
+  shouldLoadMeetingCatalog,
+} from "./adminbot/data/meeting-catalog.ts";
+import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
@@ -2809,6 +2814,16 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadBadgeDefinitions(state).finally(() => requestHostUpdate?.());
   }
+  // The Profile page's meeting picker, and the roster editor's copy of the same field. One attempt
+  // per session either way -- the catalog is a list of meeting names that changes when the lab's
+  // calendar does, which is not on the timescale of a tab being open.
+  if (
+    (state.tab === "profile" || state.tab === "adminbotMembers") &&
+    hasMemberSession &&
+    shouldLoadMeetingCatalog(state)
+  ) {
+    void loadMeetingCatalog(state).finally(() => requestHostUpdate?.());
+  }
   if (state.tab === "profile" && hasMemberSession && shouldLoadProfileBadgeNominations(state)) {
     void loadProfileBadgeNominations(state).finally(() => requestHostUpdate?.());
   }
@@ -4054,6 +4069,9 @@ export function renderApp(state: AppViewState) {
           ? renderAdminBot({
               panel: adminBotPanel,
               onRerender: () => requestHostUpdate?.(),
+              // The same picker the member's own Profile page renders, so an admin editing a record
+              // is offered the meetings the lab actually holds rather than an empty menu.
+              meetingOptions: meetingCatalogOptions(state.adminBotMeetingCatalog),
               paperSlotOverview: state.adminBotPaperSlotOverview,
               // Active Papers' bulk sheet writes evidence the same way the card does.
               paperCycles: state.adminBotPaperSlots,

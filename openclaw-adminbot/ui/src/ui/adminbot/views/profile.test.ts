@@ -940,6 +940,117 @@ describe("renderProfile field types", () => {
     }
   });
 
+  const meetingBoxes = (container: HTMLElement) => [
+    ...container.querySelectorAll<HTMLInputElement>(
+      '[data-testid="profile-multi-meetings"] input[type="checkbox"]',
+    ),
+  ];
+
+  // The catalog the service serves every signed-in member: the lab's standing meetings by name.
+  const CATALOG = [
+    { topic: "Causal Inference", summary: "Theme: Causal Inference", family: "theme" as const },
+    { topic: "Law to Benchmark", summary: "Proj: Law to Benchmark", family: "project" as const },
+  ];
+
+  const withCatalog = (member: LabMember) =>
+    createState(member, { adminBotMeetingCatalog: CATALOG } as Partial<AppViewState>);
+
+  it("offers the lab's meetings as checkboxes, from the calendar rather than a fixed list", () => {
+    const container = renderPage(withCatalog(createMember()), vi.fn());
+
+    expect(meetingBoxes(container).map((box) => box.value)).toEqual([
+      "Causal Inference",
+      "Law to Benchmark",
+    ]);
+  });
+
+  it("ticks the meetings the record already holds", () => {
+    const container = renderPage(
+      withCatalog(createMember({ meetings: ["Law to Benchmark"] } as Partial<LabMember>)),
+      vi.fn(),
+    );
+    const checked = meetingBoxes(container)
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+
+    expect(checked).toEqual(["Law to Benchmark"]);
+  });
+
+  it("keeps a box for a meeting the calendar no longer carries", () => {
+    // A renamed or finished meeting is not evidence that somebody stopped attending it, so their
+    // own answer survives the vocabulary losing it -- and is marked, as an imported role is.
+    const container = renderPage(
+      withCatalog(createMember({ meetings: ["Retired Theme"] } as Partial<LabMember>)),
+      vi.fn(),
+    );
+    const legacy = container.querySelector<HTMLInputElement>(
+      '[data-testid="profile-multi-meetings"] .profile__multi-option--legacy input',
+    );
+
+    expect(legacy?.value).toBe("Retired Theme");
+    expect(legacy?.checked).toBe(true);
+  });
+
+  it("saves the ticked meetings as a list, so a name with a comma survives", () => {
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn();
+      const container = renderPage(
+        createState(createMember(), {
+          adminBotMeetingCatalog: [
+            {
+              topic: "Causal Inference, Agents",
+              summary: "Theme: Causal Inference, Agents",
+              family: "theme" as const,
+            },
+          ],
+        } as Partial<AppViewState>),
+        onSave,
+      );
+      const box = meetingBoxes(container)[0];
+
+      box.checked = true;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      const saved = onSave.mock.calls.at(-1)?.[1] as { meetings?: string[] };
+      expect(saved.meetings).toEqual(["Causal Inference, Agents"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends an empty list when every meeting is unticked", () => {
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn();
+      const container = renderPage(
+        withCatalog(createMember({ meetings: ["Causal Inference"] } as Partial<LabMember>)),
+        onSave,
+      );
+      const box = meetingBoxes(container).find((entry) => entry.value === "Causal Inference")!;
+
+      box.checked = false;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      // An omitted key would read as "leave it alone", which is not what unticking means.
+      const saved = onSave.mock.calls.at(-1)?.[1] as { meetings?: string[] };
+      expect(saved.meetings).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so rather than opening an empty menu when the lab has no meetings on file", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const row = container.querySelector<HTMLElement>('[data-testid="profile-multi-meetings"]');
+
+    expect(row?.textContent).toContain("No standing meetings");
+    // The field still posts, so a save from this page carries the same shape either way.
+    expect(row?.querySelector('input[name="meetings"]')).not.toBeNull();
+  });
+
   it("clears the role when every box is unticked", () => {
     vi.useFakeTimers();
     try {
@@ -975,7 +1086,9 @@ describe("renderProfile field types", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("text");
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe(
+      "text",
+    );
     // Weekly capacity is the denominator the Time Availability chart reads every commitment
     // against, so the page has to ask for it. Bounded to the range the service accepts, so an
     // impossible week is refused by the control rather than by a rejected save.
@@ -1461,7 +1574,8 @@ it("saves the missing-form checkbox and clears it when a link is supplied", () =
   const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
-  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value =
+    "https://docs.google.com/forms/d/e/test/viewform";
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
 });

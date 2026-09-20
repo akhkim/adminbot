@@ -35,6 +35,11 @@ export type ProfileFieldType =
   // ADMINBOT_MEMBER_ROLE_SEPARATOR), not as an array, so nothing that reads the field for display
   // has to learn a second shape.
   | "multi_dropdown"
+  // Several answers from a vocabulary the *lab* supplies rather than the code: today the standing
+  // meetings, read from the calendar (see data/meeting-catalog.ts). Same control as
+  // `multi_dropdown` and a different store -- a list, because a meeting's name may contain a comma
+  // and the joined string the role column uses could not be split back.
+  | "multi_list"
   | "date"
   | "link"
   | "numeric"
@@ -73,6 +78,10 @@ export type ProfileField = {
   type: ProfileFieldType;
   // Dropdown-only: the closed set of values the control (and the server) accept.
   options?: readonly string[];
+  // Where a `multi_list` field's vocabulary comes from. Not `options`, because the answers are not
+  // known here: they are the lab's own calendar, fetched per session and passed in by whichever
+  // surface is rendering (see profileFieldOptions).
+  optionsSource?: "meeting_catalog";
   // An answer only the lab can give. The control renders disabled and says who fills it, and the
   // service leaves the key off the self-edit whitelist -- this flag is the label, never the
   // enforcement.
@@ -107,6 +116,24 @@ export const MANDATORY_FIELD_KEYS = new Set<string>(adminBotMandatoryProfileFiel
 /** Every field not on the mandatory list, which is what keeps the blanks count honest. */
 export function isOptionalMemberField(field: { key: string }): boolean {
   return !MANDATORY_FIELD_KEYS.has(field.key);
+}
+
+/**
+ * The answers a field's control offers.
+ *
+ * Most fields carry their own vocabulary; a `multi_list` one is filled from data the surface
+ * fetched (the meeting catalog today). One resolver rather than a branch at each call site, so the
+ * member's Profile page and the admin roster editor cannot end up offering different boxes for the
+ * same question -- which is the drift this whole registry exists to prevent.
+ */
+export function profileFieldOptions(
+  field: ProfileField,
+  vocabulary: { meetingCatalog?: readonly string[] } = {},
+): readonly string[] {
+  if (field.optionsSource === "meeting_catalog") {
+    return vocabulary.meetingCatalog ?? [];
+  }
+  return field.options ?? [];
 }
 
 export function timezoneOptions(): readonly string[] {
@@ -216,6 +243,24 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     labelKey: "profile.fields.projects",
     example: "AdminBot",
     type: "list",
+    group: "research",
+  },
+  {
+    // Which of the lab's standing meetings this person is in -- the "xxx" of a "Theme: xxx" or
+    // "Proj: xxx" event. The boxes are the calendar's own list rather than a vocabulary written
+    // here, because the lab decides what its meetings are by holding them.
+    //
+    // Ticking a new one proposes the member onto that event's invite, which is the one thing about
+    // this field nobody would guess from its label -- so it carries a standing hint saying so,
+    // rather than a bubble somebody has to hover to find. Optional: plenty of people are in no
+    // standing meeting, and a required box whose honest answer is "none" teaches people to ignore
+    // the marks.
+    key: "meetings",
+    labelKey: "profile.fields.meetings",
+    example: "",
+    type: "multi_list",
+    optionsSource: "meeting_catalog",
+    hintKey: "profile.hints.meetings",
     group: "research",
   },
   {
