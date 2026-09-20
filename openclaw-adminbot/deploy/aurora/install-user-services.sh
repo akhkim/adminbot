@@ -3,6 +3,11 @@ set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 
 ROOT=""
+# Where the databases live. The release reaches them through its own `state` symlink, which the
+# deploy script points here; this is only what gets created when it does not exist yet. Defaulted
+# to the historical home-directory location so running this by hand on a host that was never
+# migrated still does what it always did.
+STATE_DIR=""
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
 START_MODE="no"
@@ -12,6 +17,7 @@ usage() {
 Usage: install-user-services.sh --root <release-current-path> [options]
 
 Options:
+  --state <dir>          Database directory (default: ~/.openclaw/state)
   --gateway-port <port>  Default: 18789
   --adminbot-port <port> Default: 8765
   --start                Validate environment and enable/start services
@@ -29,6 +35,11 @@ while (($# > 0)); do
     --root)
       (($# >= 2)) || die "--root requires a value"
       ROOT="$2"
+      shift 2
+      ;;
+    --state)
+      (($# >= 2)) || die "--state requires a value"
+      STATE_DIR="$2"
       shift 2
       ;;
     --gateway-port)
@@ -68,6 +79,8 @@ done
 # with "missing generated module". That failure is silent downstream: the channel's secret contract
 # never registers, so its SecretRefs stay unresolved.
 ROOT="$(readlink -f "$ROOT")"
+STATE_DIR="${STATE_DIR:-$HOME/.openclaw/state}"
+[[ "$STATE_DIR" == /* ]] || die "--state must be an absolute path: $STATE_DIR"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 
@@ -124,7 +137,7 @@ ENV_FILE="$CONFIG_DIR/adminbot.env"
 UNIT_DIR="$HOME/.config/systemd/user"
 CACHE_ROOT="/mfs1/u/$USER/.cache/jinesis-adminbot"
 
-mkdir -p "$CONFIG_DIR" "$UNIT_DIR" "$HOME/.openclaw/state"
+mkdir -p "$CONFIG_DIR" "$UNIT_DIR" "$STATE_DIR"
 if [[ -d "/mfs1/u/$USER" ]]; then
   mkdir -p "$CACHE_ROOT"
 else

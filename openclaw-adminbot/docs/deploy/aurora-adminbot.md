@@ -71,11 +71,57 @@ and never copies the dirty working tree, `.git`, local secrets, `node_modules`,
 or local state. Aurora builds the release, then atomically updates:
 
 ```text
-/h/405/<user>/services/openclaw-adminbot/current
+/mfs1/u/<cs-user>/jinesis-adminbot/current
 ```
 
-Releases are versioned under `releases/`. The AdminBot `state/` path is linked
-to `~/.openclaw/state`, keeping SQLite state outside a replaceable release.
+Releases are versioned under `releases/`, and the AdminBot `state/` path is
+linked to `/mfs1/u/<cs-user>/jinesis-adminbot/state`, keeping SQLite state
+outside a replaceable release. The pnpm store is pinned beside them rather than
+left to pnpm's default, which picks a location by mount point.
+
+The deployment lives on `/mfs1`, the cluster store, because it is the only
+volume on Aurora with room: three releases each carry their own `node_modules`,
+the pnpm store is most of a gigabyte, and the AdminBot database is a quarter of
+one. `/h` (home) is routinely at 100%, and `/w/406` — where this deployment
+lived briefly — is a **2.1 GB, 80k-inode** volume that it does not fit on.
+`--root <path>` (or `$AURORA_DEPLOY_ROOT`) moves it, which is also how you
+deploy a second copy without disturbing the live one.
+
+`deploy` refuses to start if the target volume has less than 4 GB or 200,000
+inodes free (`$AURORA_MIN_DEPLOY_FREE_MB`, `$AURORA_MIN_DEPLOY_FREE_INODES`).
+This is not hypothetical caution: when `/w/406` filled, SQLite answered every
+write with `disk I/O error`, including the audit row each login attempt makes,
+so the service returned 500 and the Control UI rendered that as *"That email and
+password did not match a lab member account"* — to a roster of people whose
+passwords were correct.
+
+What deliberately stays in the home directory is everything that either has to
+be there or should not be on a shared volume: the systemd user units in
+`~/.config/systemd/user`, the toolchain in `~/.local`, and the two 0600 secret
+files, `~/.config/jinesis-adminbot/adminbot.env` and `~/.openclaw/openclaw.json`.
+
+On the first deploy to a new root, if its `state/` does not exist, the databases
+are copied across once from the directory the previously live release in that
+same root was using. Moving to a *different* root has nothing to inherit from, so
+name the source:
+
+```bash
+scripts/aurora-adminbot-host.sh --user <cs-user> \
+  --root /mfs1/u/<cs-user>/jinesis-adminbot \
+  --seed-state /w/406/adminbot/state \
+  deploy
+```
+
+Without `--seed-state`, a deploy into an empty new root on a host that already
+holds databases is **refused**, and prints the ones it found. There is no
+automatic fallback to `~/.openclaw/state`: that was safe exactly once, before
+state had ever moved, and seeding from it today would roll the lab back to a
+months-old snapshot while looking like a clean deploy.
+
+The source is left in place as a fallback, and the historical snapshots beside
+the live databases (`*.backup-*`, `*.bak-*`, `*.before-*`, `*.empty-*`) are
+deliberately not copied: they were half a gigabyte last time and are what filled
+`/w/406`. Nothing is copied over a state directory that already exists.
 
 The deploy command installs service definitions but does not start them.
 
