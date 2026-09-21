@@ -37,7 +37,9 @@ export function sharedWorkshopNotificationPolicy(
     return undefined;
   }
   return (
-    policies.find((policy) => policy.status === "source_unavailable") ??
+    policies.find((policy) =>
+      ["source_unavailable", "extraction_unavailable"].includes(policy.status ?? ""),
+    ) ??
     policies.find((policy) => policy.status === "unverified" || !policy.evidence) ??
     policies[0]
   );

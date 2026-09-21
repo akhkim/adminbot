@@ -20,6 +20,8 @@ VERSION = 3
 MAX_TEXT = 80000
 MAX_ENTRIES = 60
 SOURCE_URLS = {
+    'emnlp2026_ws_nlp4pi': ['https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026'],
+    'NeurIPS 2026 workshop contributions': ['https://neurips.cc/Conferences/2026/CallForWorkshops'],
     'ARR May 2026': ['https://aclrollingreview.org/dates'],
     'ARR August 2026': ['https://aclrollingreview.org/dates', 'https://2027.eacl.org/calls/papers/'],
     'ARR October 2026': ['https://aclrollingreview.org/dates'],
@@ -82,6 +84,8 @@ def source_text(html):
 
 
 def scope_of(item):
+    if item.get('id') in SOURCE_URLS:
+        return item['id']
     group = item.get('venue_group', '')
     specific = group + ':' + item.get('track', '')
     return specific if specific in SOURCE_URLS else group
@@ -240,6 +244,8 @@ def refresh_schedules(items, previous_by_id, clock, force_refresh=False, *, fetc
             continue
         context = {'scope': scope, 'year': int(re.search(r'20\d{2}', scope)[0]),
                    'targets': [{'id': row['id'], 'label': row['deadline_label']} for row in rows]}
+        if rows[0].get('_schedule_purpose'):
+            context['purpose'] = rows[0]['_schedule_purpose']
         try:
             documents = {}
             for url in SOURCE_URLS[scope]:

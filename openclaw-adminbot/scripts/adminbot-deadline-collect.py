@@ -36,9 +36,8 @@ from adminbot_conference_deadlines import (
     fetch_invitation_observations as read_invitation_observations,
     refresh_configured_conferences as refresh_conference_milestones,
 )
-from adminbot_workshop_notifications import migrate_workshop_dates
-
 from adminbot_schedule_sources import refresh_schedules
+from adminbot_workshop_notifications import migrate_workshop_dates, refresh_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
 from adminbot_abstract_requirements import ABSTRACT_FIELDS, requirement_from_text, merge_requirements, attach_abstract_requirements
@@ -184,13 +183,12 @@ EMNLP_WORKSHOPS = [
          name="NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
          venue_type="workshop", venue_group="EMNLP 2026 Workshops", track="workshop",
          submission_type="commitment",
-         deadline_label="ARR commitment",   # direct channel (Jul 14) already closed
-         deadline_aoe="2026-08-03 23:59:59", notification_aoe="2026-08-15 23:59:59",
+         deadline_label="ARR commitment",
+         deadline_aoe="", notification_aoe="",
          homepage_url="https://sites.google.com/view/nlp4positiveimpact",
          cfp_url="https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026",
          openreview_url="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
          source_url="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
-         source_checked_at="2026-08-24T00:00:00Z",
          link="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"),
 ]
 
@@ -215,8 +213,6 @@ WORKSHOP_POLICY_OVERRIDES = {
         cfp_url="https://realm-workshop.github.io/call_for_papers/"),
 }
 
-NEURIPS_WS_NOTIF      = "2026-09-29 23:59:59"   # official hard accept/reject (AoE)
-
 # OpenReview group prefix per family, with {year} filled from a rolling window
 # rather than pinned. This runs weekly and unattended: a hardcoded year would keep
 # working right up until the round it names closes, then return nothing for the
@@ -237,13 +233,6 @@ WORKSHOP_PARENTS = {
     "EACL": "eacl.org/EACL/{year}/Workshop",
 }
 
-# Conference-wide notification cutoffs remain shared, but contribution deadlines
-# come from each workshop's live Submission invitation. NeurIPS publishes only a
-# suggested contribution date; workshops may choose and extend their own date.
-ROUND_NOTIFICATION_DEADLINES = {
-    ("NeurIPS", 2026): NEURIPS_WS_NOTIF,
-}
-
 # Sweep this year and next. Recent past rows remain in the generated dataset when
 # their source still publishes them, so the history view can render them.
 WORKSHOP_YEAR_SPAN = 2
@@ -259,7 +248,7 @@ def workshop_sources(today=None):
         for offset in range(WORKSHOP_YEAR_SPAN):
             year = today.year + offset
             submission = ""
-            notification = ROUND_NOTIFICATION_DEADLINES.get((family, year), "")
+            notification = ""
             out.append(dict(
                 family=family, year=year,
                 group=f"{family} {year} Workshops",
@@ -1864,7 +1853,9 @@ def main():
     # One clock for the whole run, so every cadence decision agrees about "now" and a sweep that
     # straddles midnight cannot re-read half the board on one interval and half on another.
     clock = AoEClock.resolve()
-    items = refresh_configured_conferences([dict(item) for item in CONFERENCES], previous_by_id, clock, force_refresh) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
+    items = refresh_configured_conferences([dict(item) for item in CONFERENCES], previous_by_id, clock, force_refresh) + [dict(seed, **{key: value for key, value in previous_by_id.get(seed["id"], {}).items()
+                      if key not in {"name", "homepage_url", "cfp_url", "openreview_url"}})
+            for seed in EMNLP_WORKSHOPS] + fetch_openreview_conferences(
         previous_by_id, clock
     )
     fetched, failures = fetch_workshops(previous_by_id)
@@ -1888,6 +1879,7 @@ def main():
             pass
 
     enrich_workshop_sources(items, previous_by_id, clock, force_refresh)
+    refresh_workshop_dates(items, previous_by_id, clock, force_refresh, fetch_html=_fetch_html)
     observed_ids = {
         item["id"] for item in items
         if item.get("_source_observed", True)
