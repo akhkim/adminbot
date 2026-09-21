@@ -141,6 +141,7 @@ import {
   type DeadlinePublicationPayload,
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
+import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
@@ -433,13 +434,16 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import {
+  recommendationDirectory,
+  previewRecommendation,
+  sendRecommendation,
+} from "./service.deadline-recommendations.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 
-// Approver roles are privilege levels from the member roster, not a separate vocabulary: the
-// service can only ever verify the level on the authenticated session, so anything else here
-// would be unenforceable decoration.
-type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin">;
+// Ordinary approvals require an administrator; a recommendation is approved by its verified author.
+type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
 
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
@@ -600,7 +604,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
-  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[];
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
   countPapers(q?: string): number;
   deletePaper(paperId: string): boolean;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
@@ -1196,6 +1200,7 @@ const DEFAULT_ACTION_POLICIES = {
   // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
   // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
   "email_review.resolve": approvalPolicy("T3", ["admin"]),
+  "deadline.recommend": approvalPolicy("T1", ["recommender"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
   // reason: resolvePolicy only honors auto_allowed below T2. The recipients and the entire text are
@@ -2022,6 +2027,32 @@ export class AdminBotService {
       status: 200,
       payload: { proposals: this.store.listPending(limit) },
     };
+  }
+
+  deadlineRecommendationDirectory(
+    actor: string,
+    query: import("../contracts/deadline-recommendations.js").DeadlineRecommendationQuery = {},
+  ) {
+    return recommendationDirectory({ service: this, store: this.store }, actor, query);
+  }
+
+  previewDeadlineRecommendation(actor: string, input: DeadlineRecommendationInput) {
+    return previewRecommendation(
+      { service: this, store: this.store },
+      actor,
+      input,
+      this.deadlineReadModel(DEADLINE_VENUES),
+    );
+  }
+
+  sendDeadlineRecommendation(actor: string, id: string, hash: string) {
+    return sendRecommendation(
+      { service: this, store: this.store },
+      actor,
+      id,
+      hash,
+      this.deadlineReadModel(DEADLINE_VENUES),
+    );
   }
 
   submitDeadlineProposal(
@@ -9592,7 +9623,7 @@ export class AdminBotService {
     });
   }
 
-  listPapers(page?: AdminBotListPage): AdminBotServiceResponse<{
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotServiceResponse<{
     papers: AdminBotPaperRecord[];
     total?: number;
     limit?: number;

@@ -188,6 +188,7 @@ import {
   proposeCallSheetPush,
   queueCallSheetRow,
 } from "./server.call-sheet.js";
+import { handleDeadlineRecommendationRoute } from "./server.deadline-recommendations.js";
 import {
   PayloadTooLargeError,
   asString,
@@ -2025,6 +2026,20 @@ async function handleAuthenticatedRoute(
     }
     return;
   }
+  if (
+    url.pathname === "/deadline-recommendations" ||
+    url.pathname.startsWith("/deadline-recommendations/")
+  ) {
+    if (principal.kind !== "member" || principal.impersonator) {
+      sendJson(res, 403, {
+        error: { message: "Use your own member session to recommend a deadline." },
+      });
+      return;
+    }
+    await handleDeadlineRecommendationRoute(req, res, url, service, principal.member.id);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
     // Triggers outbound email on behalf of the lab; not a per-member action.
     if (!requirePrivileged(res, principal)) {

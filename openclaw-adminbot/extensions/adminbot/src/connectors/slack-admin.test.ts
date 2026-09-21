@@ -317,3 +317,48 @@ describe("the ICLR digest as one channel message", () => {
     ).rejects.toThrow(/channel_id must be a Slack channel id/u);
   });
 });
+
+describe("deadline recommendation delivery", () => {
+  it("opens one three-person conversation and posts the reviewed text once", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true,"channel":{"id":"GEXAMPLE"}}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true}',
+      });
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    await executor.execute({
+      ...proposal("deadline.recommend", { user_ids: ["UADA", "UBEA"], message: "Reviewed text" }),
+      id: "act_12345678-1234-1234-1234-123456789012",
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ users: "UADA,UBEA" });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
+      channel: "GEXAMPLE",
+      text: "Reviewed text",
+      client_msg_id: "12345678-1234-1234-1234-123456789012",
+      unfurl_links: false,
+    });
+  });
+  it("refuses a recommendation missing either participant", async () => {
+    const fetchImpl = vi.fn();
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    await expect(
+      executor.execute(proposal("deadline.recommend", { user_ids: ["UADA"], message: "text" })),
+    ).rejects.toThrow("two distinct");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

@@ -230,3 +230,13 @@ and title-only papers. It requires the configured local model
   command does not replace that automation.
 - The scripts are validated in **dry-run**; live sending needs the AdminBot
   service + Slack/`gog`/OpenReview credentials on the host.
+
+
+## Member deadline recommendations
+
+Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form.
+
+Preview creates a proposal without sending. Only its author can approve and send that exact preview to the Slack conversation containing AdminBot, the recommender, and the recipient. Changed deadlines or linked Slack identities require a new preview. Duplicate sends share an execution key across restarts. A failed send retains the preview for retry.
+
+The board requests recommendation indicators only for visible deadlines. The directory endpoint offers separate bounded member and recipient-paper queries. Paper authorship is filtered before pagination. Requests and rendered selections are cleared on account changes; late responses are ignored. Anonymous views neither load nor display recommendations, and public deadline JSON excludes them.
+

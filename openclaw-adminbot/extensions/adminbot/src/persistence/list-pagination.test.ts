@@ -31,6 +31,7 @@ describe.each(["memory", "sqlite"] as const)("list ordering and Unicode search (
           id,
           title: name,
           authors: [name],
+          author_links: [{ name, member_id: id.startsWith("e") ? "recipient" : "other" }],
           current_step: "overleaf_writing",
           created_at: "2026-09-01T00:00:00.000Z",
           updated_at: "2026-09-01T00:00:00.000Z",
@@ -55,6 +56,16 @@ describe.each(["memory", "sqlite"] as const)("list ordering and Unicode search (
         "e1",
       ]);
       expect(store.countPapers("ÉMILE")).toBe(2);
+      expect(
+        store
+          .listPapers({ limit: 1, offset: 0, authorMemberId: "recipient" })
+          .map((paper) => paper.id),
+      ).toEqual(["e1"]);
+      expect(
+        store
+          .listPapers({ limit: 1, offset: 1, authorMemberId: "recipient", q: "ÉMILE" })
+          .map((paper) => paper.id),
+      ).toEqual(["e2"]);
       expect(
         store.listPapers({ limit: 5, offset: 0, q: "ÉMILE" }).map((paper) => paper.id),
       ).toEqual(["e1", "e2"]);

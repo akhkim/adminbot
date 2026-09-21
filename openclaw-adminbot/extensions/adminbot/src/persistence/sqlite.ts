@@ -2314,16 +2314,30 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotPaperRecord>(row.payload_json) : undefined;
   }
 
-  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[] {
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
     const q = page?.q?.toLowerCase();
-    const where = q ? `WHERE ${PAPER_SEARCH}` : "";
+    const clauses = [
+      ...(q ? [PAPER_SEARCH] : []),
+      ...(page?.authorMemberId
+        ? [
+            "EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a WHERE json_extract(a.value, '$.member_id') = ?)",
+          ]
+        : []),
+    ];
+    const where = clauses.length
+      ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}`
+      : "";
     const rows = this.db
       .prepare(
         `SELECT p.payload_json FROM adminbot_papers p ${where}
           ORDER BY ${page ? "json_extract(p.payload_json, '$.title') COLLATE NOCASE, p.id" : "json_extract(p.payload_json, '$.title')"}
           ${page ? "LIMIT ? OFFSET ?" : ""}`,
       )
-      .all(...(q ? [q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      .all(
+        ...(q ? [q, q, q] : []),
+        ...(page?.authorMemberId ? [page.authorMemberId] : []),
+        ...(page ? [page.limit, page.offset] : []),
+      ) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));

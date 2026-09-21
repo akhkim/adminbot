@@ -7,9 +7,11 @@
 
 import { html, nothing, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
+import "./deadlines.recommendation.ts";
 import { icons } from "../../icons.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
+import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   deadlineMilestoneRow,
   hasDeadlineMilestone,
@@ -23,6 +25,11 @@ import {
   type DeadlineProposalStore,
   validateDeadlineProposal,
 } from "../data/deadline-proposals.ts";
+import {
+  AdminBotDeadlineRecommendationStore,
+  type DeadlineRecommendationDirectory,
+  type DeadlineRecommendationStore,
+} from "../data/deadline-recommendations.ts";
 import {
   aoeDateLabel,
   aoeDateTimeLabel,
@@ -933,12 +940,57 @@ class AdminbotDeadlinesView extends LitElement {
     accessRole: { type: String, attribute: "access-role" },
     memberId: { type: String, attribute: "member-id" },
     proposalStore: { attribute: false },
+    recommendationStore: { attribute: false },
     timelineMilestones: { attribute: false },
     onSaveTimeline: { attribute: false },
   };
 
   accessRole: AccessRole = "anonymous";
   memberId = "";
+  recommendationStore: DeadlineRecommendationStore = new AdminBotDeadlineRecommendationStore();
+  private recommendationDirectory?: DeadlineRecommendationDirectory;
+  private recommendationError = "";
+  private recommendationLoad = 0;
+  private recommendationIds: string[] = [];
+  private recommendationScope = "";
+  private loadedRecommendationScope = "";
+  private async loadRecommendations() {
+    const generation = ++this.recommendationLoad;
+    this.recommendationDirectory = undefined;
+    this.recommendationError = "";
+    if (!this.memberId || this.accessRole === "anonymous") {
+      this.requestUpdate();
+      return;
+    }
+    try {
+      const ids = this.recommendationIds;
+      const batches = Array.from({ length: Math.max(1, Math.ceil(ids.length / 250)) }, (_, index) =>
+        ids.slice(index * 250, (index + 1) * 250),
+      );
+      const results = await Promise.all(
+        batches.map((deadlineIds) =>
+          this.recommendationStore.list({ mode: "summary", deadlineIds }),
+        ),
+      );
+      const directory = {
+        members: [
+          ...new Map(
+            results.flatMap((result) => result.members).map((member) => [member.id, member]),
+          ).values(),
+        ],
+        papers: [],
+        recommendations: results.flatMap((result) => result.recommendations),
+      };
+      if (generation === this.recommendationLoad) {
+        this.recommendationDirectory = directory;
+      }
+    } catch (error) {
+      if (generation === this.recommendationLoad) {
+        this.recommendationError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    this.requestUpdate();
+  }
   proposalStore: DeadlineProposalStore = DEFAULT_DEADLINE_PROPOSAL_STORE;
   /** The signed-in member's own milestones; null until their record has loaded. */
   timelineMilestones: MilestoneRow[] | null = null;
@@ -991,6 +1043,7 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    ++this.recommendationLoad;
     if (this.datasetRefreshTimer !== undefined) {
       window.clearInterval(this.datasetRefreshTimer);
       this.datasetRefreshTimer = undefined;
@@ -1003,6 +1056,15 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   protected override updated(changed: Map<PropertyKey, unknown>): void {
+    if (
+      changed.has("recommendationStore") ||
+      changed.has("memberId") ||
+      changed.has("accessRole") ||
+      this.recommendationScope !== this.loadedRecommendationScope
+    ) {
+      this.loadedRecommendationScope = this.recommendationScope;
+      void this.loadRecommendations();
+    }
     if (changed.has("proposalStore")) {
       void this.loadPublishedDeadlines();
       if (this.accessRole !== "anonymous" && this.memberId) {
@@ -2094,6 +2156,25 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private renderSourceActions(venue: DeadlineVenue, options: { timeline?: boolean } = {}) {
+    if (!this.memberId || this.accessRole === "anonymous") {
+      return this.renderSourceLinks(venue, options);
+    }
+    const recommendation = html`<deadline-recommendation
+      .deadlineId=${venue.deadline_id}
+      .venueName=${venue.name}
+      .memberId=${this.memberId}
+      .directory=${this.recommendationDirectory}
+      .store=${this.recommendationStore}
+      .loadError=${this.recommendationError}
+      @recommendation-sent=${() => this.loadRecommendations()}
+    ></deadline-recommendation>`;
+    const sources = this.renderSourceLinks(venue, options);
+    return options.timeline === false
+      ? html`<span class="deadline-recommendation-details">${recommendation}</span>${sources}`
+      : html`<span class="deadline-recommendation-actions">${recommendation}${sources}</span>`;
+  }
+
+  private renderSourceLinks(venue: DeadlineVenue, options: { timeline?: boolean } = {}) {
     const timeline = options.timeline === false ? nothing : this.renderTimelineAction(venue);
     const workshop = workshopSourceLinks(venue);
     if (!workshop) {
@@ -2500,6 +2581,10 @@ class AdminbotDeadlinesView extends LitElement {
       this.activeGroup = "";
     }
     const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "", filters);
+    this.recommendationIds = [
+      ...new Set(filtered.map((entry) => entry.venue.deadline_id || entry.venue.id)),
+    ];
+    this.recommendationScope = JSON.stringify(this.recommendationIds);
     const next = headlineDeadlineEntry(filtered);
     const latestSourceCheck = this.venues
       .map((venue) => venue.source_checked_at || "")
@@ -2598,6 +2683,7 @@ export type RenderDeadlinesOptions = {
   role?: AccessRole;
   memberId?: string | null;
   proposalStore?: DeadlineProposalStore;
+  recommendationStore?: DeadlineRecommendationStore;
   settings?: Pick<UiSettings, "adminBotUrl"> | null;
   timelineMilestones?: MilestoneRow[] | null;
   onSaveTimeline?: (milestones: MilestoneRow[]) => Promise<boolean>;
@@ -2608,7 +2694,19 @@ export function renderDeadlines(options: RenderDeadlinesOptions = {}) {
     access-role=${options.role ?? "anonymous"}
     member-id=${options.memberId ?? ""}
     .proposalStore=${options.proposalStore ?? deadlineProposalStoreFor(options.settings)}
+    .recommendationStore=${options.recommendationStore ?? recommendationStoreFor(options.settings)}
     .timelineMilestones=${options.timelineMilestones ?? null}
     .onSaveTimeline=${options.onSaveTimeline}
   ></adminbot-deadlines-view>`;
+}
+
+const recommendationStores = new Map<string, DeadlineRecommendationStore>();
+function recommendationStoreFor(settings?: Pick<UiSettings, "adminBotUrl"> | null) {
+  const url = resolveAdminBotBaseUrl(settings);
+  let store = recommendationStores.get(url);
+  if (!store) {
+    store = new AdminBotDeadlineRecommendationStore(url);
+    recommendationStores.set(url, store);
+  }
+  return store;
 }
