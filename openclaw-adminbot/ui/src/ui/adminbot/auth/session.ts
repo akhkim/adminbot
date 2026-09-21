@@ -1779,6 +1779,54 @@ export async function fetchVenueSources(
   return { ok: true, value: result.body };
 }
 
+export type VenuePaperCategory = { id: string; label: string; paper_count: number };
+
+export async function fetchVenueCategories(
+  venueId: string,
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<{ venue_id: string; categories: VenuePaperCategory[] }>> {
+  const query = new URLSearchParams({ venue_id: venueId });
+  const result = await authedJson(
+    baseUrl,
+    `/venue-papers/categories?${query.toString()}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { venue_id?: unknown; categories?: unknown } | null;
+  if (typeof body?.venue_id !== "string" || !Array.isArray(body.categories)) {
+    return { ok: false, kind: "draft-failed", message: "The category list was malformed." };
+  }
+  const categories = body.categories.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const category = entry as Record<string, unknown>;
+    return typeof category.id === "string" &&
+      category.id.trim().length > 0 &&
+      typeof category.label === "string" &&
+      category.label.trim().length > 0 &&
+      typeof category.paper_count === "number" &&
+      Number.isInteger(category.paper_count) &&
+      category.paper_count >= 0
+      ? [
+          {
+            id: category.id.trim(),
+            label: category.label.trim(),
+            paper_count: category.paper_count,
+          },
+        ]
+      : [];
+  });
+  return { ok: true, value: { venue_id: body.venue_id, categories } };
+}
+
 /**
  * Ranks one conference's accepted papers against what the member says they work on.
  *
@@ -1787,13 +1835,14 @@ export async function fetchVenueSources(
  * reader can act on, and the generic copy would throw them away.
  */
 export async function searchVenuePapers(
-  params: { venueId: string; interests: string },
+  params: { venueId: string; interests: string; categoryId?: string },
   sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
     venue_id: params.venueId,
     interests: params.interests,
+    ...(params.categoryId ? { category_id: params.categoryId } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

@@ -4281,6 +4281,10 @@
   flex: 0 0 16rem;
 }
 
+.conference-papers__controls .adminbot-form__field.conference-papers__category {
+  flex: 0 0 14rem;
+}
+
 .conference-papers__controls .adminbot-form__field.conference-papers__interests {
   flex: 1 1 20rem;
   max-width: 28rem;

@@ -42,9 +42,11 @@ import {
   rebuildVenueIndexes,
   runChannelNamingSweep,
   publishCvDigest,
+  fetchVenueCategories,
   searchVenuePapers,
   sendMemberNudge,
   sendWorkshopNudges,
+  type VenuePaperCategory,
   deleteOwnPaper,
   updateOwnProfile,
   updateSettingsAsAdmin,
@@ -204,6 +206,7 @@ export type AdminBotVenuePaperHit = {
 export type AdminBotVenueSearchResult = {
   venue_id: string;
   label: string;
+  category?: string;
   /** How many accepted papers were ranked, so "12 of 3,704" is answerable. */
   searched: number;
   results: AdminBotVenuePaperHit[];
@@ -215,6 +218,10 @@ export type AdminBotVenuePapersState = {
   sources: AdminBotVenueSourceView[];
   loadingSources: boolean;
   venueId: string;
+  categories: VenuePaperCategory[];
+  loadingCategories: boolean;
+  /** Empty means every category in the selected conference. */
+  categoryId: string;
   /** Free text, prefilled from the member's own research_topics and editable per search. */
   interests: string;
   /** False until the member edits the box, so a prefill can be refreshed and an edit cannot. */
@@ -231,6 +238,9 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     sources: [],
     loadingSources: false,
     venueId: "",
+    categories: [],
+    loadingCategories: false,
+    categoryId: "",
     interests: "",
     interestsTouched: false,
     searching: false,
@@ -1478,6 +1488,9 @@ export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void
         ? state.interests
         : interestsFromTopics(self?.research_topics),
     };
+    if (host.adminBotVenuePapers.venueId) {
+      await loadAdminBotVenueCategories(host);
+    }
   } catch (error) {
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
@@ -1493,6 +1506,55 @@ export function setAdminBotVenue(host: AdminBotHost, venueId: string): void {
   host.adminBotVenuePapers = {
     ...host.adminBotVenuePapers,
     venueId,
+    categories: [],
+    loadingCategories: Boolean(venueId),
+    categoryId: "",
+    searching: false,
+    result: null,
+    error: null,
+    expanded: [],
+  };
+  if (venueId) {
+    void loadAdminBotVenueCategories(host);
+  }
+}
+
+export async function loadAdminBotVenueCategories(host: AdminBotHost): Promise<void> {
+  const venueId = host.adminBotVenuePapers.venueId;
+  const requestedCategoryId = host.adminBotVenuePapers.categoryId;
+  if (!venueId) {
+    return;
+  }
+  const session = optionalSession(host);
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: true,
+    categories: [],
+  };
+  const result = await fetchVenueCategories(venueId, session.sessionToken, session.baseUrl);
+  // A quick second selection must not let the first conference's slower response win the race.
+  if (host.adminBotVenuePapers.venueId !== venueId) {
+    return;
+  }
+  const categories = result.ok ? result.value.categories : [];
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: false,
+    categories,
+    categoryId: categories.some((category) => category.id === requestedCategoryId)
+      ? requestedCategoryId
+      : "",
+    error: result.ok
+      ? null
+      : failureText(result, "Could not load conference categories.", session.baseUrl),
+  };
+}
+
+export function setAdminBotVenueCategory(host: AdminBotHost, categoryId: string): void {
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    categoryId,
+    searching: false,
     result: null,
     error: null,
     expanded: [],
@@ -1518,7 +1580,7 @@ export function toggleAdminBotVenueAbstract(host: AdminBotHost, paperId: string)
 /** Ranks the chosen conference against the interests currently in the box. */
 export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<void> {
   const session = optionalSession(host);
-  const { venueId, interests } = host.adminBotVenuePapers;
+  const { venueId, interests, categoryId } = host.adminBotVenuePapers;
   if (!venueId || !interests.trim()) {
     return;
   }
@@ -1530,10 +1592,18 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
   };
   try {
     const result = await searchVenuePapers(
-      { venueId, interests },
+      { venueId, interests, categoryId },
       session.sessionToken,
       session.baseUrl,
     );
+    // A result belongs to the exact conference and category that produced it. If the member
+    // changed either control while the request was running, leave the newer selection untouched.
+    if (
+      host.adminBotVenuePapers.venueId !== venueId ||
+      host.adminBotVenuePapers.categoryId !== categoryId
+    ) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotVenuePapers = {
         ...host.adminBotVenuePapers,
@@ -1549,6 +1619,12 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
       result: result.value as AdminBotVenueSearchResult,
     };
   } catch (error) {
+    if (
+      host.adminBotVenuePapers.venueId !== venueId ||
+      host.adminBotVenuePapers.categoryId !== categoryId
+    ) {
+      return;
+    }
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
       searching: false,

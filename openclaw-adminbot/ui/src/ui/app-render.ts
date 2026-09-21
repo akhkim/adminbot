@@ -33,6 +33,7 @@ import {
   setWorkshopConference,
   setWorkshopNudgeRecipients,
   setAdminBotVenue,
+  setAdminBotVenueCategory,
   setAdminBotVenueInterests,
   toggleAdminBotVenueAbstract,
   sendWorkshopNudgeSelection,
@@ -4287,6 +4288,7 @@ export function renderApp(state: AppViewState) {
               m.renderConferencePapers({
                 state: state.adminBotVenuePapers,
                 onVenueChange: (venueId) => setAdminBotVenue(state, venueId),
+                onCategoryChange: (categoryId) => setAdminBotVenueCategory(state, categoryId),
                 onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
                 onSearch: () => void searchAdminBotVenuePapers(state),
                 onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),

@@ -36,6 +36,50 @@ export type VenueIndexDeps = {
   now: () => Date;
 };
 
+export type VenuePaperCategory = {
+  id: string;
+  label: string;
+  paper_count: number;
+};
+
+function categoryName(venue: string, conferenceLabel: string): string {
+  const normalizedVenue = venue.trim().replace(/\s+/g, " ");
+  const normalizedConference = conferenceLabel.trim().replace(/\s+/g, " ");
+  const lowerVenue = normalizedVenue.toLowerCase();
+  const lowerConference = normalizedConference.toLowerCase();
+  if (lowerVenue === lowerConference || lowerVenue.startsWith(`${lowerConference} `)) {
+    return normalizedVenue.slice(normalizedConference.length).trim() || "Uncategorized";
+  }
+  return normalizedVenue.replace(/^[^\d]*\d{4}\s*/u, "").trim() || "Uncategorized";
+}
+
+function categoryLabel(value: string): string {
+  return value.toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (match) => match.toUpperCase());
+}
+
+export function venuePaperCategoryId(venue: string, conferenceLabel: string): string {
+  return categoryName(venue, conferenceLabel).toLowerCase();
+}
+
+/** Categories are data, not configuration: each conference names its own tracks in OpenReview. */
+export function venuePaperCategories(
+  rows: readonly AdminBotVenuePaper[],
+  conferenceLabel: string,
+): VenuePaperCategory[] {
+  const counts = new Map<string, VenuePaperCategory>();
+  for (const row of rows) {
+    const name = categoryName(row.venue, conferenceLabel);
+    const id = name.toLowerCase();
+    const category = counts.get(id);
+    if (category) {
+      category.paper_count += 1;
+    } else {
+      counts.set(id, { id, label: categoryLabel(name), paper_count: 1 });
+    }
+  }
+  return [...counts.values()].toSorted((left, right) => left.label.localeCompare(right.label));
+}
+
 /**
  * Fetches a venue's accepted papers, embeds them, and hands back rows ready to store.
  *
