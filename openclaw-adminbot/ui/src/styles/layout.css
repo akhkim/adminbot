@@ -5279,6 +5279,22 @@ adminbot-deadline-timezone {
   display: none;
 }
 
+.deadline-group__shared-policy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) var(--space-4) var(--space-1) 36px;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.deadline-group__shared-policy span::before {
+  content: "\00b7";
+  margin-right: var(--space-1);
+}
+
 .deadline-group__section + .deadline-group__section {
   border-top: 1px solid var(--border-strong);
 }
@@ -6106,13 +6122,14 @@ adminbot-deadline-timezone {
   }
 
   .deadline-card__schedule {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: baseline;
   }
 
   .deadline-card__milestone-label,
   .deadline-card__milestone-date {
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
 
   .deadline-board__hero-countdown,
@@ -10988,4 +11005,59 @@ adminbot-paper-visibility {
 
 .lab-sharing-status__retracted {
   font-style: italic;
+}
+
+.deadline-schedule-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+.deadline-schedule-toggle span {
+  display: inline-flex;
+}
+.deadline-schedule-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.deadline-schedule-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.deadline-schedule-toggle:hover {
+  color: var(--text-strong);
+  background: var(--bg-muted);
+}
+.deadline-table__stage-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.deadline-card__milestone[data-next="true"],
+.deadline-table__schedule-row[data-next="true"],
+.deadline-group__row--milestone[data-stage-state="next"] {
+  font-weight: 500;
+}
+
+/* Keep the date and its details control together; separate the following stage. */
+.deadline-group__date-line,
+.deadline-group__date-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.deadline-group__date-line {
+  white-space: nowrap;
+}
+.deadline-group__date-stage {
+  margin-inline-start: var(--space-2);
 }

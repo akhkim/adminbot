@@ -24,6 +24,16 @@ workshop daily only within three days of its deadline; other workshop pages wait
 public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
 a second bounded pool.
 
+Workshop notification requirements are separate from individual decision dates. The shared
+NeurIPS requirement is represented as a “Notify authors by” milestone, never as each workshop's
+actual decision date. The UI keeps both milestones distinct and displays conflicting observations.
+
+Both ordinary collection and offline output regeneration migrate legacy workshop notification
+values. Shared NeurIPS values become unverified policy dates; other legacy values remain as
+`notification_previous_aoe` with unverified status. Revision history is retained. The existing
+NLP4PI submission date remains available but is marked unverified if it lacks extraction evidence.
+The UI labels unverified values explicitly.
+
 An exact deadline carries `deadline_at` as a UTC instant; the Control UI defaults to the browser timezone. When a source gives only a date, `deadline_at` is empty and `deadline_time_precision` is `date_only`. `deadline_date` retains the published day and `deadline_timezone` records the known zone, or an empty string when the zone is unknown. The original timezone is preserved when the source supplies it; normalized legacy AoE stamps alone do not establish the source timezone.
 
 `deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
@@ -249,3 +259,14 @@ The board requests recommendation indicators only for visible deadlines. The dir
 The location selector applies to cards, groups, tables, and the next-deadline summary alongside the existing search and classification filters. A workshop uses its own published site when available; otherwise it inherits the parent conference’s sites. A workshop with an unresolved site at a multi-site conference therefore appears under each possible parent site. “Location unknown” selects entries without any published site.
 
 Deadline board display timezone: the browser timezone is the default for visitors and members. The searchable timezone control offers Local, Original, and named IANA zones (including UTC and AoE), and remembers the choice in browser storage independently of the member profile. Exact deadlines and their history show the UTC offset calculated for that deadline date, including daylight saving. The selector identifies named zones with their IANA identifiers, such as America/Toronto. Original uses each record's source timezone; older records without it explicitly say the source timezone is unknown and show UTC. Date-only source dates remain unchanged, while their early planning boundary is converted in details. Display choices do not affect countdowns, ordering, reminders, or saved timeline instants.
+
+## Abstract registration prerequisites
+
+Paper rows distinguish `abstract_requirement` values `required`, `not_required`, and `unknown` (including missing metadata). A matching abstract deadline links to its dated abstract row through `abstract_deadline_id`; without a usable linked row, its deadline remains explicitly unknown. The existing milestone timeline shows the abstract date even when it is in the past or excluded by the current filters, without a duplicate sentence beside the countdown. Milestones show their label and date without a separate passed status. Undated abstract states use the same compact milestone row: “Date unknown” for a confirmed requirement without a date, “Requirement unknown” when unverified, “Not required” when explicitly optional, and “Sources disagree” for conflicting evidence. Confirmed requirements and evidence remain in deadline details.
+
+The collector recognizes explicit registration requirements, explicit absence or optional registration, and matched abstract/paper stages. A matching abstract date is displayed without inferring that registration is mandatory. Silence is unknown. Separate tracks and conference editions are not linked; stale rows and later abstract dates cannot supply a prerequisite. An optional abstract can have a published date without becoming mandatory. Conflicting website statements remain unknown and retain a conflict marker. Website requirements travel with cached website evidence, so a skipped or failed page read does not silently erase them.
+
+
+### Workshop schedule display
+
+In Upcoming, each workshop's displayed date, stage label, countdown, and urgency refer to its next published stage. A workshop with a passed submission can remain Upcoming while decisions or camera-ready dates are ahead. Once all stages have passed, Past shows the submission date. Cards, Groups, and Table share an expandable schedule, and switching views preserves which workshop schedules are open. A shared organizer notification cutoff is not a workshop decision date.

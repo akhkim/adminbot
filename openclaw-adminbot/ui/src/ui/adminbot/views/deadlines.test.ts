@@ -1162,11 +1162,11 @@ describe("renderDeadlines", () => {
     await settle(container);
     const groupRow = container.querySelector(".deadline-group__row");
     expect(groupRow?.getAttribute("data-change")).toBe("extended");
-    expect(groupRow?.querySelector(".deadline-group__row-detail")?.textContent).toBe(
+    expect(groupRow?.querySelector(".deadline-group__date-stage > span")?.textContent).toBe(
       "ARR commitment",
     );
     expect(
-      groupRow?.querySelector(".deadline-group__row-date-wrap > .deadline-card__history"),
+      groupRow?.querySelector(".deadline-group__row-date-wrap .deadline-card__history"),
     ).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-group__row-date .deadline-date")).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-group__row-date .deadline-time")).not.toBeNull();
@@ -1285,6 +1285,11 @@ describe("renderDeadlines", () => {
       (group) => group.hasAttribute("data-open"),
     )!;
     expect(openGroup.querySelector(".deadline-group__panel")?.hasAttribute("hidden")).toBe(false);
+    expect(openGroup.querySelectorAll(".deadline-group__shared-policy")).toHaveLength(1);
+    expect(openGroup.querySelector(".deadline-group__shared-policy")?.textContent).toMatch(
+      /Organizers must notify authors by[\s\S]*Source not verified/u,
+    );
+    expect(openGroup.textContent).not.toContain("Shared notification cutoff unverified.");
     expect(openGroup.querySelector(".deadline-group__row-date")?.textContent).toMatch(
       /\d{2}:\d{2} AoE/u,
     );
@@ -1301,7 +1306,7 @@ describe("renderDeadlines", () => {
       [...openGroup.querySelector(".deadline-group__row-note")!.children].map(
         (element) => element.className,
       ),
-    ).toEqual(["deadline-group__row-detail", "deadline-card__labels"]);
+    ).toEqual(["deadline-card__labels"]);
     expect(openGroup.querySelector(".deadline-group__row-name a")).not.toBeNull();
     expect(openGroup.querySelector(".deadline-card__source--button")).not.toBeNull();
     expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
@@ -1336,18 +1341,20 @@ describe("renderDeadlines", () => {
     expect(iclr.querySelector(".deadline-card__date")?.textContent).toContain("Sep 25, 2026");
     expect(iclr.querySelector(".deadline-card__countdown")?.textContent?.trim()).toMatch(/^\d+d /u);
 
-    // Five entries, so the list is behind a disclosure rather than doubling the card's height.
+    // Six entries, so the list is behind a disclosure rather than doubling the card's height.
     const schedule = iclr.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
-    expect(schedule.tagName).toBe("DETAILS");
-    expect(schedule.querySelector("summary")?.textContent).toContain("Full timeline (5)");
+    const toggle = schedule.querySelector<HTMLButtonElement>(".deadline-schedule-toggle")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    toggle.click();
+    await settle(container);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(
       [...schedule.querySelectorAll(".deadline-card__milestone")].map((row) => [
         row.querySelector(".deadline-card__milestone-label")?.textContent?.trim(),
         row.querySelector(".deadline-card__milestone-date")?.textContent?.trim(),
       ]),
     ).toEqual([
-      // The submission leads its own timeline, so the list reads as a whole sequence rather than
-      // starting mid-story. It is the same date the card counts down to above, not a second one.
+      ["Abstract", "Sep 18, 2026 · 23:59 AoE"],
       ["Full paper", "Sep 25, 2026 · 23:59 AoE"],
       ["Reviews released", "Nov 5, 2026"],
       ["Author-reviewer discussion", "Nov 5 – Nov 18, 2026"],
@@ -1357,17 +1364,13 @@ describe("renderDeadlines", () => {
     expect(schedule.querySelector(".deadline-card__countdown")).toBeNull();
   });
 
-  it("leaves a lone notification date inline, where the old note was", async () => {
+  it("does not present a shared organizer cutoff as a workshop schedule stage", async () => {
     const container = await renderView();
-    const workshop = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
-      (card) =>
-        card.dataset.entryType === "workshop" &&
-        card.querySelector('[data-testid="deadline-schedule"]'),
-    )!;
-    const schedule = workshop.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
-    // One or two lines cost nothing open, and that is what nearly every workshop has.
-    expect(schedule.tagName).toBe("UL");
-    expect(schedule.textContent).toContain("Accept/reject");
+    for (const card of container.querySelectorAll<HTMLElement>('[data-entry-type="workshop"]')) {
+      card.querySelector<HTMLButtonElement>(".deadline-schedule-toggle")?.click();
+    }
+    await settle(container);
+    expect(container.querySelector('[data-milestone="notification_by"]')).toBeNull();
   });
 
   it("links a workshop name to its homepage and keeps source actions separate", async () => {
@@ -2107,4 +2110,69 @@ it("persists display zones across login state and updates cards, groups, table a
   expect(
     reopened.querySelector<HTMLInputElement>('input[aria-label="Display timezone"]')!.value,
   ).toBe("Toronto (ET)");
+});
+
+it("keeps workshop stage, date, countdown and expansion consistent across views", async () => {
+  const venue = {
+    ...DEADLINE_VENUES.find((v) => v.venue_type === "workshop")!,
+    abstract_requirement: "not_required",
+    abstract_deadline_id: "",
+    notification_policy: undefined,
+    notification_previous_aoe: "",
+    id: "stage-fixture",
+    name: "Stage workshop",
+    venue_group: "Stage workshops",
+    deadline_at: "2026-08-20T12:00:00Z",
+    deadline_aoe: "2026-08-20 00:00:00",
+    deadline_time_precision: "exact",
+    deadline_label: "Submission",
+    notification_aoe: "",
+    schedule: [{ milestone: "notification", label: "Decisions", kind: "date", date: "2026-08-25" }],
+  } as DeadlineVenue;
+  const store = new TestProposalStore();
+  store.listPublished = async () => [venue];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card__stage")?.textContent).toBe("Decisions");
+  expect(container.querySelector(".deadline-card__date")?.textContent).toContain("Aug 25, 2026");
+  expect(container.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe(
+    "1d 23:59:59",
+  );
+  const toggle = container.querySelector<HTMLButtonElement>(
+    ".deadline-card .deadline-schedule-toggle",
+  )!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  toggle.click();
+  await settle(container);
+  expect(
+    container.querySelector('.deadline-card__milestone[data-next="true"]')?.textContent,
+  ).toContain("Decisions");
+  buttonNamed(container, "Table").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__countdown")?.textContent?.trim()).toBe(
+    "1d 23:59:59",
+  );
+  expect(container.querySelector(".deadline-table__stage")?.textContent).toContain("Decisions");
+  expect(container.querySelectorAll(".deadline-table__schedule-row")).toHaveLength(2);
+  buttonNamed(container, "Groups").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-group__row-date")?.textContent).toContain(
+    "Aug 25, 2026",
+  );
+  expect(
+    container.querySelector('.deadline-workshop-schedule [data-stage-state="next"]')?.textContent,
+  ).toContain("Decisions");
+  vi.setSystemTime(new Date("2026-09-01T12:00:00Z"));
+  await vi.advanceTimersByTimeAsync(1000);
+  buttonNamed(container, "Past").click();
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card__stage")?.textContent).toBe("Submission");
+  expect(container.querySelector(".deadline-card__date")?.textContent).toContain("Aug 20, 2026");
+  expect(container.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe("passed");
 });

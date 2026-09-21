@@ -36,8 +36,10 @@ from adminbot_conference_deadlines import (
     fetch_invitation_observations as read_invitation_observations,
     refresh_configured_conferences as refresh_conference_milestones,
 )
+from adminbot_workshop_notifications import migrate_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
+from adminbot_abstract_requirements import ABSTRACT_FIELDS, requirement_from_text, merge_requirements, attach_abstract_requirements
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
@@ -57,6 +59,7 @@ from adminbot_deadlines import (  # noqa: E402
 )
 from adminbot_workshop_deadlines import (  # noqa: E402
     deadline_candidates_from_html,
+    deadline_texts_from_html,
     deadline_candidates_from_text,
     group_final_submission_deadline,
     reconcile_deadline_candidates,
@@ -748,7 +751,10 @@ def workshop_profile_from_html(html, source_url, year=None):
     status, policy_evidence = cross_submission_from_html(html)
     year = year or datetime.date.today().year
     deadline_candidates, script_urls = deadline_candidates_from_html(html, source_url, year)
+    visible = deadline_texts_from_html(html)[0][0][1]
+    requirement = requirement_from_text(visible, normalize_url(source_url), year)
     return dict(
+        **requirement,
         topic_profile=topics,
         topic_evidence=topic_evidence,
         cross_submission_status=status,
@@ -815,6 +821,9 @@ def _merge_workshop_profiles(homepage_profile, cfp_profile):
     for key, value in cfp_profile.items():
         if key not in {"_deadline_candidates", "_deadline_script_urls"} and value not in ("", []):
             merged[key] = value
+    for key in ABSTRACT_FIELDS:
+        merged.pop(key, None)
+    merged.update(merge_requirements(homepage_profile, cfp_profile))
     merged["_deadline_candidates"] = (
         homepage_profile.get("_deadline_candidates", [])
         + cfp_profile.get("_deadline_candidates", [])
@@ -1205,7 +1214,7 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
                         "workshop_location"):
                 default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
-            item.update({key: previous[key] for key in TIME_FIELDS if key in previous})
+            item.update({key: previous[key] for key in (*TIME_FIELDS, *ABSTRACT_FIELDS) if key in previous})
             item["link"] = (item["cfp_url"] or homepage
                             or normalize_url(item.get("openreview_url", "")))
             continue
@@ -1214,6 +1223,9 @@ def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=Fal
         cfp_url, archival_status, profile = found.get(
             (homepage, year), ("", item.get("archival_status", "unknown"), {})
         )
+        for key in ABSTRACT_FIELDS:
+            item.pop(key, None)
+        item.update({key: profile[key] for key in ABSTRACT_FIELDS if key in profile})
         item["cfp_url"] = cfp_url
         item["archival_status"] = archival_status
         for key in ("topic_profile", "topic_evidence", "cross_submission_status",
@@ -1847,13 +1859,15 @@ def write_outputs(items):
     standalone board from drifting apart (they did once, by 28 venues).
     """
     attach_schedules(items)
+    migrate_workshop_dates(items)
+    attach_abstract_requirements(items)
     items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
     doc = dict(history_version=4, timezone="AoE (UTC-12)",
                note=("Current projections with append-only deadline revisions. "
                      "Workshop contribution deadlines are reconciled deterministically from "
                      "official CFP pages, explicit OpenReview final-paper summaries, and live "
                      "OpenReview cutoffs; source conflicts remain in each record's provenance. "
-                     "Conference-wide notification cutoffs remain shared."),
+                     "Workshop notification policies are separate from individual decision dates."),
                count=len(items), items=items)
     # Readers must see a complete old or new snapshot, never a partially written file.
     descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(OUT), prefix=".venues-", suffix=".json")
@@ -1899,17 +1913,20 @@ def write_outputs(items):
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
             "conference_location", "workshop_location",
             "entry_type", "archival_status", "venue_priority", "archival",
-            "submission_type", "milestone", "schedule",
+            "submission_type", "milestone", "schedule", "schedule_status", "schedule_issues",
+            "schedule_checked_at", "schedule_extracted_at",
+            "notification_policy", "notification_status", "notification_previous_aoe", "notification_issues",
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
             "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
             "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
             "deadline_official_url",
             "deadline_extended", "deadline_history_status",
-            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", *TIME_FIELDS]
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", *TIME_FIELDS, *ABSTRACT_FIELDS]
     # "" is the right empty for every string field here; `schedule` is a list, and a
     # bare "" in it would typecheck as neither.
-    slim = [{k: it.get(k, [] if k == "schedule" else "") for k in keys
-             if k not in TIME_FIELDS or k in it} for it in items]
+    slim = [{k: it.get(k, [] if k in {"schedule", "schedule_issues"} else "") for k in keys
+             if (k not in (*TIME_FIELDS, *ABSTRACT_FIELDS, "deadline_observations") or k in it)
+             and (not k.startswith(("schedule_", "notification_")) or k == "notification_aoe" or k in it)} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
         f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
@@ -1930,6 +1947,11 @@ def write_outputs(items):
                 "  /** Both set for kind \"period\". */\n"
                 "  starts?: string;\n  ends?: string;\n};\n\n"
                 "export type DeadlineVenue = {\n"
+                "  notification_policy?: DeadlineMilestone & { status: string; checked_at?: string; evidence?: string };\n"
+                "  notification_status?: string;\n  notification_previous_aoe?: string;\n  notification_issues?: string[];\n"
+                "  abstract_requirement?: \"required\" | \"not_required\" | \"unknown\";\n"
+                "  abstract_requirement_evidence?: string;\n  abstract_requirement_source_url?: string;\n"
+                "  abstract_requirement_conflict?: boolean;\n  abstract_deadline_id?: string;\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
                 "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
                 "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
@@ -2033,6 +2055,7 @@ def main():
         return
     previous_doc = _load_previous_document(baseline_args[0] if baseline_args else "")
     previous_items = previous_doc.get("items", [])
+    migrate_workshop_dates(previous_items)
     previous_history_version = previous_doc.get("history_version")
     previous_has_history = previous_history_version == 4
     previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}

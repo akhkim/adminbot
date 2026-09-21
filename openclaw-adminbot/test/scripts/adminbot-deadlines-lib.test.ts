@@ -1126,3 +1126,62 @@ merged = m.merge_history(result)
 print(json.dumps([result['deadline_date'], result['deadline_timezone'], result['deadline_at'], merged['revisions'][-1]['deadline_timezone']]))`),
   ).toEqual(["2035-09-25", "UTC", "2035-09-25T01:00:00Z", "UTC"]);
 });
+
+describe("abstract registration evidence", () => {
+  it.each([
+    ["Abstract registration is mandatory. Date TBA.", "required"],
+    ["Abstract registration deadline: to be announced.", "required"],
+    ["No separate abstract registration is required.", "not_required"],
+    ["Abstract registration is optional.", "not_required"],
+    ["Submit a paper by September 25, 2035.", "unknown"],
+    ["If you join the demo track, abstract registration is required.", "unknown"],
+    ["2034: Abstract registration is required.", "unknown"],
+    [
+      "[OLD]Abstract registration is required.[/OLD] No abstract registration is required.",
+      "not_required",
+    ],
+    ["Abstract registration is required. Abstract registration is optional.", "unknown"],
+  ])("classifies only explicit unambiguous requirements: %s", (text, expected) => {
+    expect(
+      runPython(`from adminbot_abstract_requirements import requirement_from_text
+print(json.dumps(requirement_from_text(${JSON.stringify(text)}, 'https://example.org/cfp', 2035).get('abstract_requirement', 'unknown')))`),
+    ).toBe(expected);
+  });
+
+  it("preserves requirement conflicts across homepage/CFP merging", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+a = m.workshop_profile_from_html('<p>Abstract registration is required.</p>', 'https://example.org', 2035)
+b = m.workshop_profile_from_html('<p>No abstract registration is required.</p>', 'https://example.org/cfp', 2035)
+merged = m._merge_workshop_profiles(a, b)
+print(json.dumps([merged['abstract_requirement'], merged['abstract_requirement_conflict']]))`),
+    ).toEqual(["unknown", true]);
+  });
+
+  it("does not treat script content as an explicit registration policy", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+p = m.workshop_profile_from_html('<script>Abstract registration is required.</script><p>Call for papers</p>', 'https://example.org', 2035)
+print(json.dumps(p.get('abstract_requirement', 'unknown')))`),
+    ).toBe("unknown");
+  });
+
+  it("links only one current abstract in the same track and edition, and respects optional registration", () => {
+    expect(
+      runPython(`from adminbot_abstract_requirements import attach_abstract_requirements
+abstract = dict(id='abstract', venue_id='example', venue_group='Example 2035', track='main', milestone='abstract', deadline_aoe='2035-09-20 00:00:00')
+base = dict(id='paper', venue_id='example', venue_group='Example 2035', track='main', milestone='full_paper', deadline_aoe='2035-09-25 00:00:00')
+results = []
+for patch in [{}, {'track':'demo'}, {'venue_group':'Example 2036'}, {'abstract_requirement':'not_required'}, {'abstract_requirement_conflict':True}]:
+    paper = dict(base, **patch)
+    attach_abstract_requirements([paper, dict(abstract)])
+    results.append(paper.get('abstract_deadline_id', ''))
+    if not patch: assert 'abstract_requirement' not in paper
+for change in [{'stale':True}, {'deadline_aoe':'2035-09-26 00:00:00'}]:
+    paper = dict(base)
+    attach_abstract_requirements([paper, dict(abstract, **change)])
+    results.append(paper.get('abstract_deadline_id', ''))
+print(json.dumps(results))`),
+    ).toEqual(["abstract", "", "", "abstract", "abstract", "", ""]);
+  });
+});
