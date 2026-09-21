@@ -257,7 +257,7 @@ describe("the DCS roster row", () => {
     expect(recorded.dcsRows).toHaveLength(1);
     const row = recorded.dcsRows[0] as string[];
     expect(column(row, "full_name")).toBe("Eric Zhang");
-    expect(column(row, "dcs_username")).toBe("eric@cs.toronto.edu");
+    expect(column(row, "dcs_username")).toBe("eric");
     expect(column(row, "dcs_password")).toBe("TEST-TEMP-PASSWORD");
     expect(column(row, "date_of_this_row_change")).toBe("2026-09-20");
   });

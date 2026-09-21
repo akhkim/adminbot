@@ -43,8 +43,30 @@ export const DCS_ROSTER_SHEET_COLUMNS = [
   "date_of_this_row_change",
 ] as const;
 
-/** The domain every sponsored DCS account is minted under. */
+/**
+ * The domain every sponsored DCS account is minted under.
+ *
+ * Used to render the address a member signs in with. It is deliberately not part of the value
+ * stored in `dcs_username`: see `dcsUsernameCandidates`.
+ */
 export const DCS_USERNAME_DOMAIN = "cs.toronto.edu";
+
+/** The full address a bare account name corresponds to. */
+export function dcsAddressOf(username: string): string {
+  return `${username}@${DCS_USERNAME_DOMAIN}`;
+}
+
+/**
+ * An account name as it can be compared against another.
+ *
+ * Strips a domain if the value carries one, then lowercases. The column is meant to hold a bare
+ * name, but it is typed into by hand and one row may well arrive as a full address; comparing the
+ * two spellings literally would report a taken name as free and propose a collision to the
+ * sysadmin. Normalizing both sides is what makes the "is this taken?" check mean anything.
+ */
+export function normalizeDcsUsername(value: string): string {
+  return value.trim().toLowerCase().split("@")[0] ?? "";
+}
 
 /**
  * The roster's one free-text `name`, as the separate first/last parts the username rules need.
@@ -90,11 +112,18 @@ export function usernamePart(value: string): string {
 }
 
 /**
- * The three candidate addresses the lab asks for, in the order it prefers them.
+ * The three candidate account names the lab asks for, in the order it prefers them.
  *
- * The rules, as the lab states them: `firstname@`, else `lastname@`, else
- * `{first initial}{lastname}@`. Deduped, because "Li Li" would otherwise offer the same string
+ * The rules, as the lab states them: `firstname`, else `lastname`, else
+ * `{first initial}{lastname}`. Deduped, because "Li Li" would otherwise offer the same string
  * twice and hand the sysadmin a choice that is not one.
+ *
+ * Bare names, not addresses. The rules were handed over written out as `firstname@cs.toronto.edu`,
+ * which describes the address the member ends up signing in with -- but `dcs_username` is the unix
+ * account DCS sponsors, the roster contract spells it bare ("e.g. akim"), the sysadmin's own roster
+ * is keyed on that string, and the rows already on the sheet are bare. Writing an address into that
+ * column would key her roster on a value that does not exist on her side. The address is rendered
+ * where it belongs, in the mail to the member; see `dcsAddressOf`.
  *
  * Empty when the name has no last name in it, or when what survives normalization is nothing at
  * all (a name written entirely in a non-Latin script). Both are "a person has to pick this by
@@ -110,8 +139,7 @@ export function dcsUsernameCandidates(name: string): string[] {
   if (!first || !last) {
     return [];
   }
-  const locals = [first, last, `${first.slice(0, 1)}${last}`];
-  return [...new Set(locals)].map((local) => `${local}@${DCS_USERNAME_DOMAIN}`);
+  return [...new Set([first, last, `${first.slice(0, 1)}${last}`])];
 }
 
 /**
@@ -123,14 +151,15 @@ export function dcsUsernameCandidates(name: string): string[] {
  * so a chosen name is a proposal, and the two candidates it beat travel with the row so she can
  * take the next one without coming back to ask.
  *
- * Comparison is case-insensitive and whitespace-trimmed: the sheet is typed into by hand.
+ * Comparison runs through `normalizeDcsUsername` on both sides, so case, padding and a stray
+ * full-address spelling all still match.
  */
 export function chooseDcsUsername(
   candidates: readonly string[],
   taken: Iterable<string>,
 ): string | undefined {
-  const used = new Set([...taken].map((entry) => entry.trim().toLowerCase()).filter(Boolean));
-  return candidates.find((candidate) => !used.has(candidate.toLowerCase()));
+  const used = new Set([...taken].map(normalizeDcsUsername).filter(Boolean));
+  return candidates.find((candidate) => !used.has(normalizeDcsUsername(candidate)));
 }
 
 /**
@@ -280,7 +309,7 @@ export function dcsCredentialsEmail(params: { name: string; username: string; pa
       "",
       "We have asked the Department of Computer Science to create a CS account for you. Here is what it will be, and the temporary password it will start with:",
       "",
-      `  Username: ${params.username}`,
+      `  Username: ${dcsAddressOf(params.username)}`,
       `  Temporary password: ${params.password}`,
       "",
       "The account does not exist yet — the department creates it from our request, which usually takes a few working days. You will not be able to sign in until then, so please keep this message until you can.",

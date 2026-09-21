@@ -4,11 +4,13 @@ import {
   buildDcsRosterRow,
   chooseDcsUsername,
   createDcsRosterSheetRecorder,
+  dcsAddressOf,
   dcsCredentialsEmail,
   dcsUsernameCandidates,
   DCS_DEFAULT_PERMISSION,
   DCS_ROSTER_SHEET_COLUMNS,
   generateDcsTemporaryPassword,
+  normalizeDcsUsername,
   splitDisplayName,
   usernamePart,
 } from "./dcs-roster-sheet.js";
@@ -69,17 +71,22 @@ describe("usernamePart", () => {
 describe("dcsUsernameCandidates", () => {
   // The lab's rules, in the order it prefers them.
   it("offers firstname, lastname, then initial+lastname", () => {
-    expect(dcsUsernameCandidates("Andrew Kim")).toEqual([
-      "andrew@cs.toronto.edu",
-      "kim@cs.toronto.edu",
-      "akim@cs.toronto.edu",
-    ]);
+    expect(dcsUsernameCandidates("Andrew Kim")).toEqual(["andrew", "kim", "akim"]);
+  });
+
+  // Bare account names, not addresses: dcs_username is the unix account the sysadmin's roster is
+  // keyed on, and the rows already on the sheet are bare. The address is the mail's business.
+  it("gives bare account names, never addresses", () => {
+    for (const candidate of dcsUsernameCandidates("Andrew Kim")) {
+      expect(candidate).not.toContain("@");
+    }
+    expect(dcsAddressOf("andrew")).toBe("andrew@cs.toronto.edu");
   });
 
   // "Li Li" would otherwise offer the same string twice and hand the sysadmin a choice that is
   // not one.
   it("dedupes when the rules collide", () => {
-    expect(dcsUsernameCandidates("Li Li")).toEqual(["li@cs.toronto.edu", "lli@cs.toronto.edu"]);
+    expect(dcsUsernameCandidates("Li Li")).toEqual(["li", "lli"]);
   });
 
   it("gives nothing for a mononym, rather than guessing", () => {
@@ -92,22 +99,30 @@ describe("dcsUsernameCandidates", () => {
   });
 });
 
+describe("normalizeDcsUsername", () => {
+  // The column is meant to hold a bare name, but it is typed into by hand and one row may well
+  // arrive as a full address. Comparing the spellings literally reports a taken name as free.
+  it("reduces every spelling of one account to the same key", () => {
+    expect(normalizeDcsUsername("andrew")).toBe("andrew");
+    expect(normalizeDcsUsername("  ANDREW@CS.Toronto.edu ")).toBe("andrew");
+    expect(normalizeDcsUsername("Andrew@cs.toronto.edu")).toBe("andrew");
+  });
+});
+
 describe("chooseDcsUsername", () => {
   it("takes the first candidate nobody holds", () => {
-    expect(
-      chooseDcsUsername(["andrew@cs.toronto.edu", "kim@cs.toronto.edu"], ["andrew@cs.toronto.edu"]),
-    ).toBe("kim@cs.toronto.edu");
+    expect(chooseDcsUsername(["andrew", "kim"], ["andrew"])).toBe("kim");
   });
 
-  // The sheet is typed into by hand.
-  it("matches a taken name regardless of case or padding", () => {
-    expect(chooseDcsUsername(["andrew@cs.toronto.edu"], ["  ANDREW@CS.Toronto.edu "])).toBe(
-      undefined,
-    );
+  // The regression this exists for: the sheet stores bare names, so a full-address comparison
+  // never matched and the taken-check was inert.
+  it("matches a taken name whether it is stored bare or as an address", () => {
+    expect(chooseDcsUsername(["andrew"], ["andrew"])).toBeUndefined();
+    expect(chooseDcsUsername(["andrew"], ["  ANDREW@CS.Toronto.edu "])).toBeUndefined();
   });
 
   it("gives nothing when every candidate is taken", () => {
-    expect(chooseDcsUsername(["a@cs.toronto.edu"], ["a@cs.toronto.edu"])).toBeUndefined();
+    expect(chooseDcsUsername(["a"], ["a"])).toBeUndefined();
   });
 });
 
@@ -130,7 +145,7 @@ describe("buildDcsRosterRow", () => {
   const base = {
     name: "Ada Lovelace",
     email: "ada@example.com",
-    username: "ada@cs.toronto.edu",
+    username: "ada",
     password: "TEMPpw",
     now: new Date("2026-09-20T12:00:00Z"),
   };
@@ -149,7 +164,7 @@ describe("buildDcsRosterRow", () => {
     expect(row).toHaveLength(DCS_ROSTER_SHEET_COLUMNS.length);
     expect(column(row, "full_name")).toBe("Ada Lovelace");
     expect(column(row, "adminbot_internal_id")).toBe("member-1");
-    expect(column(row, "dcs_username")).toBe("ada@cs.toronto.edu");
+    expect(column(row, "dcs_username")).toBe("ada");
     expect(column(row, "dcs_password")).toBe("TEMPpw");
     expect(column(row, "non_dcs_email")).toBe("ada@ethz.ch");
     expect(column(row, "career_stage")).toBe("PhD student");
@@ -225,11 +240,11 @@ describe("createDcsRosterSheetRecorder", () => {
       name: "Andrew Kim",
       email: "andrew@example.com",
     });
-    expect(record.username).toBe("andrew@cs.toronto.edu");
+    expect(record.username).toBe("andrew");
     expect(record.password).toBe("TEMPpw");
     expect(record.candidates).toHaveLength(3);
     expect(appended).toHaveLength(1);
-    expect(column(appended[0] as string[], "dcs_username")).toBe("andrew@cs.toronto.edu");
+    expect(column(appended[0] as string[], "dcs_username")).toBe("andrew");
   });
 
   // One row is one account: the sheet carries a single username and a single password per row.
@@ -243,7 +258,7 @@ describe("createDcsRosterSheetRecorder", () => {
     const existing = buildDcsRosterRow({
       name: "Andrew Other",
       email: "other@example.com",
-      username: "andrew@cs.toronto.edu",
+      username: "andrew",
       password: "x",
     });
     const { recorder } = harness([HEADER, existing]);
@@ -251,7 +266,7 @@ describe("createDcsRosterSheetRecorder", () => {
       name: "Andrew Kim",
       email: "andrew@example.com",
     });
-    expect(record.username).toBe("kim@cs.toronto.edu");
+    expect(record.username).toBe("kim");
   });
 
   // Everyone minted before this sheet existed. Without them the first few rows would propose
@@ -264,7 +279,7 @@ describe("createDcsRosterSheetRecorder", () => {
       name: "Andrew Kim",
       email: "andrew@example.com",
     });
-    expect(record.username).toBe("akim@cs.toronto.edu");
+    expect(record.username).toBe("akim");
   });
 
   it("refuses rather than filing when every candidate is taken", async () => {
@@ -309,7 +324,7 @@ describe("createDcsRosterSheetRecorder", () => {
 describe("dcsCredentialsEmail", () => {
   const mail = dcsCredentialsEmail({
     name: "Ada Lovelace",
-    username: "ada@cs.toronto.edu",
+    username: "ada",
     password: "TEMPpw",
   });
 
@@ -330,7 +345,7 @@ describe("dcsCredentialsEmail", () => {
     expect(
       dcsCredentialsEmail({
         name: "Cher",
-        username: "c@cs.toronto.edu",
+        username: "c",
         password: "x",
       }).body,
     ).toContain("Hi Cher,");

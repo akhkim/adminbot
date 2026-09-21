@@ -868,11 +868,19 @@ live header before every write:
 `career_stage`, `at_uoft_or_not`, `permission`, `date_of_this_row_change`
 
 A row is one account. `dcs_username` is chosen from three candidates, in the lab's order of
-preference -- `firstname@`, `lastname@`, then `{first initial}{lastname}@`, all at
-`cs.toronto.edu` -- taking the first that is held by nobody on the sheet and nobody on the roster.
-A name with no family name in it is refused rather than guessed at, and so is a name with all three
-candidates taken; both report a failure for a human to file by hand. The guide itself still goes
-out either way -- the row is a side errand, and the member is waiting on the mail.
+preference -- `firstname`, `lastname`, then `{first initial}{lastname}` -- taking the first that is
+held by nobody on the sheet and nobody on the roster. A name with no family name in it is refused
+rather than guessed at, and so is a name with all three candidates taken; both report a failure for
+a human to file by hand. The guide itself still goes out either way -- the row is a side errand,
+and the member is waiting on the mail.
+
+The cell holds a **bare account name**, not an address. `dcs_username` is the unix account DCS
+sponsors, the roster contract spells it bare ("e.g. `akim`"), the sysadmin's roster is keyed on
+that string, and the rows already on the sheet are bare. The `@cs.toronto.edu` address is rendered
+where it belongs, in the credentials mail to the member. Comparison runs both sides through
+`normalizeDcsUsername`, which strips a domain if a hand-typed row carries one -- without that, a
+bare `andrew` on the sheet and a generated `andrew@cs.toronto.edu` never match and the taken-check
+silently passes every collision through.
 
 `permission` defaults to `UofT-slack-only`, the least-privileged provisioned value in
 `contracts/compute-access.ts`, unless the roster already grants this person something. An

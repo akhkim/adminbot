@@ -413,12 +413,12 @@ describe("onboarding sender", () => {
   // registration approval, which is too late: by then they have the address the request produces.
   it("files the DCS roster row when the full-member guide is sent", async () => {
     const candidates = [
-      "ada@cs.toronto.edu",
-      "lovelace@cs.toronto.edu",
-      "alovelace@cs.toronto.edu",
+      "ada",
+      "lovelace",
+      "alovelace",
     ];
     const addDcsRosterRow = vi.fn().mockResolvedValue({
-      username: "ada@cs.toronto.edu",
+      username: "ada",
       password: "pw-not-in-the-payload",
       candidates,
     });
@@ -438,7 +438,7 @@ describe("onboarding sender", () => {
     if (result.ok) {
       expect(result.payload.dcs_roster_row).toEqual({
         added: true,
-        username: "ada@cs.toronto.edu",
+        username: "ada",
         candidates,
       });
     }
@@ -452,9 +452,9 @@ describe("onboarding sender", () => {
       env: ENV,
       sendEmail,
       addDcsRosterRow: vi.fn().mockResolvedValue({
-        username: "ada@cs.toronto.edu",
+        username: "ada",
         password: "sup3rSecretTempPw",
-        candidates: ["ada@cs.toronto.edu"],
+        candidates: ["ada"],
       }),
     });
     const result = await send({
@@ -551,9 +551,9 @@ describe("onboarding sender", () => {
       env: ENV,
       sendEmail,
       addDcsRosterRow: vi.fn().mockResolvedValue({
-        username: "ada@cs.toronto.edu",
+        username: "ada",
         password: "pw",
-        candidates: ["ada@cs.toronto.edu"],
+        candidates: ["ada"],
       }),
     });
     const result = await send({
@@ -565,7 +565,7 @@ describe("onboarding sender", () => {
     if (result.ok) {
       const row = result.payload.dcs_roster_row;
       expect(row?.added).toBe(true);
-      expect(row?.username).toBe("ada@cs.toronto.edu");
+      expect(row?.username).toBe("ada");
       expect(row?.error).toContain("mailbox full");
       expect(row?.error).toContain("do not re-run the filing");
     }
