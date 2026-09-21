@@ -3,6 +3,7 @@ export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
+  "reference.scan",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",

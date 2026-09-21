@@ -2,6 +2,12 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import type { ReferenceScan } from "../contracts/reference-scans.js";
+import {
+  ensureReferenceScanSchema,
+  getReferenceScan,
+  saveReferenceScan,
+} from "./reference-scans.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -769,6 +775,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     `);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
+    ensureReferenceScanSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
@@ -2535,6 +2542,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       }
       return record;
     });
+  }
+
+  getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
+    return getReferenceScan(this.db, submissionId, pdfHash);
+  }
+
+  saveReferenceScan(scan: ReferenceScan): void {
+    saveReferenceScan(this.db, scan);
   }
 
   saveHelpInterest(interest: LabHelpInterest): void {

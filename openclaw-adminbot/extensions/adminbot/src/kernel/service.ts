@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -440,7 +441,7 @@ export type AdminBotServiceResponse<T> =
   | { ok: true; status: number; payload: T }
   | { ok: false; status: number; error: { message: string } };
 
-export type AdminBotServiceStore = {
+export type AdminBotServiceStore = ReferenceScanStore & {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
@@ -1043,6 +1044,7 @@ const DEFAULT_ACTION_POLICIES = {
   // at a joiner the spreadsheet produced and agrees they are real -- the sweep that files these
   // reads a sheet a typo can reach, and the mail it triggers also provisions a Slack invite and a
   // CS account request. Those are not things to undo.
+  "reference.scan": approvalPolicy("T3", ["admin"]),
   "onboarding.send_guide": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the

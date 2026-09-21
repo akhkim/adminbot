@@ -5,6 +5,7 @@
  * SQLite path. The persistent implementation lives in store/sqlite.ts; both satisfy the same
  * interface, so the service never knows which one it has.
  */
+import type { ReferenceScan } from "../contracts/reference-scans.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -85,6 +86,14 @@ function slackConnectInviteKey(email: string, channelId: string): string {
 }
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
+  private readonly referenceScans = new Map<string, ReferenceScan>();
+  getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
+    return this.referenceScans.get(JSON.stringify([submissionId, pdfHash]));
+  }
+  saveReferenceScan(scan: ReferenceScan): void {
+    this.referenceScans.set(JSON.stringify([scan.submission_id, scan.pdf_sha256]), structuredClone(scan));
+  }
+
   private readonly helpInterests = new Map<string, LabHelpInterest>();
   saveHelpInterest(interest: LabHelpInterest): void {
     this.helpInterests.set(

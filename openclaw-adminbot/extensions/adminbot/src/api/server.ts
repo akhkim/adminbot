@@ -1,5 +1,11 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createGptZeroBibliographyScanner,
+  createPublicOpenReviewPdfReader,
+} from "../connectors/reference-scan.js";
+import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
+import { ReferenceScans } from "../kernel/reference-scans.js";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
@@ -238,6 +244,7 @@ export type AdminBotMockServiceOptions = {
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
   trustProxyHeaders?: boolean;
+  referenceScanDependencies?: ReferenceScanDependencies;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -566,6 +573,7 @@ type AdminBotRouteContext = {
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
+  referenceScans: ReferenceScans;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -666,6 +674,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // off `service`, and the executor has to be handed to `service` before that. A holder resolved
   // at execute time is what lets one arm of the executor reach forward to it without either
   // construction having to move.
+  let referenceScans: ReferenceScans;
   let onboardingSenderRef: AdminBotOnboardingSender | undefined;
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
     executorWithOnboardingGuide(executor, () => onboardingSenderRef);
@@ -675,7 +684,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
     // executed in-process by the sender, not by the CLI connector, so a deployment with no
     // executor at all still executes this one.
-    executor: withOnboarding(baseOptions.executor),
+    executor: {
+      execute: (proposal) =>
+        referenceScans.executor(withOnboarding(baseOptions.executor)).execute(proposal),
+    },
   };
   if (options.databasePath) {
     const durable = createAdminBotSqliteService({
@@ -689,6 +701,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
+  referenceScans = new ReferenceScans(store, service, options.referenceScanDependencies ?? {
+    readPdf: createPublicOpenReviewPdfReader(),
+    scanPdf: createGptZeroBibliographyScanner(),
+  });
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -838,6 +854,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     auth,
     privacyBroker,
     sensitiveInfo,
+    referenceScans,
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -1519,6 +1536,33 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (url.pathname === "/reference-scans" && (req.method === "GET" || req.method === "POST")) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (req.method === "GET") {
+      const scan = ctx.referenceScans.get(
+        url.searchParams.get("submission_id") ?? "",
+        url.searchParams.get("pdf_sha256") ?? "",
+      );
+      sendJson(res, scan ? 200 : 404, scan ?? { error: { message: "scan not found" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    if (typeof body.submission_id !== "string" || typeof body.notify_email !== "string") {
+      sendJson(res, 400, { error: { message: "submission_id and notify_email are required" } });
+      return;
+    }
+    try {
+      const result = await ctx.referenceScans.propose(body.submission_id, body.notify_email);
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 422, {
+        error: { message: error instanceof Error ? error.message : "scan proposal failed" },
+      });
+    }
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
     // Triggers outbound email on behalf of the lab; not a per-member action.
     if (!requirePrivileged(res, principal)) {
