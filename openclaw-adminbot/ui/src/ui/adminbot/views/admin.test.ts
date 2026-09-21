@@ -837,6 +837,93 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(email?.readOnly).toBe(false);
   });
 
+  // Onboarding routes on the Member Type -- `templateForMemberType` picks the guide from it -- so
+  // the form that creates a member has to be able to say what they are.
+  it("offers the member type on the add-member form", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const select = container.querySelector<HTMLSelectElement>(
+      '#adminbot-add-member select[name="memberType"]',
+    );
+    expect(select?.value).toBe("");
+    const options = [...(select?.options ?? [])].map((option) => option.value);
+    expect(options[0]).toBe("");
+    expect(options).toContain("full");
+    expect(options).toContain("alumni");
+  });
+
+  // The column is a comma-separated list and the lab uses tokens before anybody adds them to the
+  // shared vocabulary. A select built from that list alone would rewrite the value on the next save.
+  it("keeps a stored member type the vocabulary does not list", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [member({ member_type: "alumni, coauthor-major" })],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    const select = container.querySelector<HTMLSelectElement>(
+      '#adminbot-edit-member-0 select[name="memberType"]',
+    );
+    expect(select?.value).toBe("alumni, coauthor-major");
+  });
+
+  // Adding somebody to the roster and onboarding them used to be two separate errands.
+  it("asks to start onboarding when a member is added, and says so by default", () => {
+    const saved: Array<{ id: string; onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (input, options) => saved.push({ id: input.id, onboard: options?.onboard }),
+      }),
+    );
+    const tick = container.querySelector<HTMLInputElement>(
+      '#adminbot-add-member [data-testid="member-form-onboard"]',
+    );
+    expect(tick?.checked).toBe(true);
+
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
+    form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ id: "grace", onboard: true }]);
+  });
+
+  it("does not onboard when the tick is cleared", () => {
+    const saved: Array<{ onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (_input, options) => saved.push({ onboard: options?.onboard }),
+      }),
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
+    form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.querySelector<HTMLInputElement>('[data-testid="member-form-onboard"]')!.checked = false;
+    form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ onboard: false }]);
+  });
+
+  // Editing a row is not adding a member, and re-mailing somebody the lab onboarded months ago is
+  // the failure this guards: the edit form carries no such box, so it can never ask for one.
+  it("never onboards from the edit-member form", () => {
+    const saved: Array<{ onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (_input, options) => saved.push({ onboard: options?.onboard }),
+      }),
+    );
+    expect(
+      container.querySelector('#adminbot-edit-member-0 [data-testid="member-form-onboard"]'),
+    ).toBeNull();
+    container
+      .querySelector<HTMLFormElement>("#adminbot-edit-member-0 form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ onboard: false }]);
+  });
+
   it("keeps the full admin edit path on every row, including other members", () => {
     const roster = [member({ id: "pat", name: "Pat Doe" }), member({ id: "sam", name: "Sam Roe" })];
     const container = renderToDiv(

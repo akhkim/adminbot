@@ -5,6 +5,7 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import {
   adminBotExternalCollaboratorSubgroups,
   adminBotIsAlumniMember,
+  adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
 import {
@@ -164,7 +165,9 @@ export type AdminBotProps = {
   onRemoveSelectedActions: () => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
-  onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
+  // `options.onboard` is the Add-member form's tick: save the record, then put them through
+  // onboarding. Absent on every other caller, which is what keeps an edit from re-mailing anyone.
+  onSaveMember: (member: AdminBotLabMemberSaveInput, options?: { onboard?: boolean }) => void;
   /**
    * Folds one roster record into another. Absent for a caller that cannot merge (anything but a
    * signed-in admin), which is what takes the panel off the page rather than a disabled button.
@@ -469,41 +472,49 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
   // question rather than an established fact.
   const emailInput = form.elements.namedItem("email");
   const emailEditable = emailInput instanceof HTMLInputElement && !emailInput.readOnly;
-  props.onSaveMember({
-    id,
-    ...(name ? { name } : {}),
-    ...(emailEditable && getFormValue(data, "email") ? { email: getFormValue(data, "email") } : {}),
-    ...(getFormValue(data, "slackUserId")
-      ? { slackUserId: getFormValue(data, "slackUserId") }
-      : {}),
-    ...(getFormValue(data, "privilegeLevel")
-      ? {
-          privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel,
-        }
-      : {}),
-    // The hidden field still submits, so the privilege check is what keeps a subgroup out of the
-    // payload for a non-collaborator — the service rejects the pair outright.
-    ...(getFormValue(data, "privilegeLevel") === "external_collaborator" &&
-    getFormValue(data, "collaboratorSubgroup")
-      ? {
-          collaboratorSubgroup: getFormValue(
-            data,
-            "collaboratorSubgroup",
-          ) as AdminBotExternalCollaboratorSubgroup,
-        }
-      : {}),
-    ...(getFormValue(data, "status")
-      ? {
-          status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"],
-        }
-      : {}),
-    // A checkbox submits nothing when it is clear, so its absence is the "off" answer rather than
-    // a field the form did not ask about -- which is what lets this editor take somebody off the
-    // list, not just put them on it.
-    receivesNudges: data.has("receivesNudges"),
-    profile: collectRegistryFields(data),
-    ...(notes ? { notes } : {}),
-  });
+  props.onSaveMember(
+    {
+      id,
+      ...(name ? { name } : {}),
+      ...(emailEditable && getFormValue(data, "email")
+        ? { email: getFormValue(data, "email") }
+        : {}),
+      ...(getFormValue(data, "slackUserId")
+        ? { slackUserId: getFormValue(data, "slackUserId") }
+        : {}),
+      ...(getFormValue(data, "privilegeLevel")
+        ? {
+            privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel,
+          }
+        : {}),
+      // The hidden field still submits, so the privilege check is what keeps a subgroup out of the
+      // payload for a non-collaborator — the service rejects the pair outright.
+      ...(getFormValue(data, "privilegeLevel") === "external_collaborator" &&
+      getFormValue(data, "collaboratorSubgroup")
+        ? {
+            collaboratorSubgroup: getFormValue(
+              data,
+              "collaboratorSubgroup",
+            ) as AdminBotExternalCollaboratorSubgroup,
+          }
+        : {}),
+      ...(getFormValue(data, "status")
+        ? {
+            status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"],
+          }
+        : {}),
+      ...(getFormValue(data, "memberType") ? { memberType: getFormValue(data, "memberType") } : {}),
+      // A checkbox submits nothing when it is clear, so its absence is the "off" answer rather than
+      // a field the form did not ask about -- which is what lets this editor take somebody off the
+      // list, not just put them on it.
+      receivesNudges: data.has("receivesNudges"),
+      profile: collectRegistryFields(data),
+      ...(notes ? { notes } : {}),
+    },
+    // Only the Add-member form carries this box, so an edit never re-onboards anybody: a checkbox
+    // that is not in the form submits nothing, which is the "no" answer here.
+    { onboard: data.has("startOnboarding") },
+  );
   return true;
 }
 
@@ -1163,6 +1174,21 @@ function renderRegistryField(
     : html`<label class="adminbot-form__field">${label}${control}</label>`;
 }
 
+/**
+ * What the Member type select offers: the shared vocabulary, plus this record's own value.
+ *
+ * A floor, not a ceiling -- the same rule the Onboarding grid's dropdown follows. The column is a
+ * comma-separated list ("alumni, coauthor-major") and the lab adds tokens to it before anybody
+ * adds them to `adminBotMemberTypes`, so a select built from the vocabulary alone would quietly
+ * rewrite a value it had no option for the moment an admin saved anything else on the row.
+ */
+function memberTypeOptions(current: string | undefined): string[] {
+  const held = current?.trim();
+  return held && !(adminBotMemberTypes as readonly string[]).includes(held)
+    ? [held, ...adminBotMemberTypes]
+    : [...adminBotMemberTypes];
+}
+
 // Shared roster fields for the admin add/edit-member popovers. When a member is
 // supplied the fields are prefilled and the id is locked, so the same
 // submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
@@ -1253,6 +1279,18 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
           )}
         </select>
       </label>
+      <label class="adminbot-form__field"
+        ><span>Member type</span
+        ><select name="memberType" data-testid="member-form-member-type">
+          <option value="" ?selected=${!member?.member_type}>Not set</option>
+          ${memberTypeOptions(member?.member_type).map(
+            (option) =>
+              html`<option value=${option} ?selected=${option === member?.member_type}>
+                ${option}
+              </option>`,
+          )}
+        </select></label
+      >
       <label class="adminbot-form__field adminbot-form__field--check">
         <input type="checkbox" name="receivesNudges" ?checked=${member?.receives_nudges === true} />
         <span>AdminBot may contact them</span>
@@ -1954,6 +1992,21 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
         <div class="card-sub">Create a roster entry and seed its privilege-derived access.</div>
         <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
           ${renderMemberFormFields()}
+          <label class="adminbot-form__field adminbot-form__field--check">
+            <input
+              type="checkbox"
+              name="startOnboarding"
+              checked
+              data-testid="member-form-onboard"
+            />
+            <span>Start their onboarding</span>
+            <small
+              >Composes the onboarding guide for their member type and queues it for approval — the
+              same mail the Onboarding tab sends from the roster. Nothing is sent until an admin
+              approves it. Untick when the record is a backfill for somebody the lab has already
+              onboarded.</small
+            >
+          </label>
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>

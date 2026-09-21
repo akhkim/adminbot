@@ -4429,6 +4429,29 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
     return;
   }
+  // Onboarding for one member of the roster, which is what the Members tab's Add-member button
+  // runs after it has created the record. Matched before `onboardingStep` below, whose pattern
+  // would otherwise read "guide" as the id of a checklist step (there is no such step, so it would
+  // 404 rather than do this).
+  //
+  // Admin member session only, for the same reason /onboarding/guide is: approving what this
+  // queues mints a Slack Connect invite and mails a stranger. The shared service principal
+  // authenticates every agent tool call regardless of who is chatting, so accepting it here
+  // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
+  const memberOnboardingGuide = /^\/lab\/members\/([^/]+)\/onboarding\/guide$/u.exec(url.pathname);
+  if (req.method === "POST" && memberOnboardingGuide?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.queueOnboardingGuideForMember({
+        memberId: decodeURIComponent(memberOnboardingGuide[1]),
+        actor: principalActor(principal),
+      }),
+    );
+    return;
+  }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "POST" && onboardingStep?.[1] && onboardingStep[2]) {
     const memberId = decodeURIComponent(onboardingStep[1]);
