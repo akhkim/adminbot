@@ -21,6 +21,7 @@ import {
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
   milestoneDateLabel,
+  milestoneEndInstant,
   nextVenueStage,
   venueSchedule,
   workshopGroupLabel,
@@ -2598,4 +2599,43 @@ it("keeps source links after member-only correction actions", async () => {
   expect(
     container.querySelector(`[id="${policy.getAttribute("popovertarget")}"]`)?.getAttribute("role"),
   ).toBe("note");
+});
+
+it("uses the supported cutoff for a response period instead of assuming end-of-day AoE", () => {
+  expect(
+    milestoneEndInstant({
+      milestone: "author_response",
+      label: "Initial response",
+      kind: "period",
+      starts: "2035-09-14",
+      ends: "2035-09-19",
+      planning_at: "2035-09-18T10:00:00Z",
+    }),
+  ).toBe(Date.parse("2035-09-18T10:00:00Z"));
+});
+
+it("shows unresolved schedule details without claiming the schedule is complete", async () => {
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "schedule-example",
+      deadline_id: "schedule-example",
+      name: "Example conference",
+      deadline_at: "2026-09-26T11:59:00Z",
+      deadline_aoe: "2026-09-25 23:59:00",
+      schedule: [],
+      schedule_status: "needs_review",
+      schedule_issues: ["Third-phase dates are not published."],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const note = container.querySelector('[data-testid="deadline-schedule-status"]');
+  expect(note?.textContent).toContain("Schedule has unresolved details.");
+  expect(note?.textContent).toContain("Third-phase dates are not published.");
 });
