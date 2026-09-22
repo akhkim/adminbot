@@ -4104,10 +4104,6 @@ export function renderApp(state: AppViewState) {
               onPreregSort: (key) => {
                 state.adminBotPreregSort = key;
               },
-              preregSortReversed: state.adminBotPreregSortReversed,
-              onPreregSortReversed: (value) => {
-                state.adminBotPreregSortReversed = value;
-              },
               preregMinConfidence: state.adminBotPreregMinConfidence,
               onPreregMinConfidence: (value) => {
                 state.adminBotPreregMinConfidence = value;

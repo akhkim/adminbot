@@ -319,3 +319,35 @@ describe("which venues the pre-registration board still offers", () => {
     );
   });
 });
+
+describe("a venue only borrows dates from its own year", () => {
+  const beforeIclr = new Date("2026-09-22T12:00:00Z");
+
+  function declaring(id: string, conference: string): AdminBotPaperRecord {
+    return {
+      id,
+      title: `Paper ${id}`,
+      authors: [],
+      current_step: "overleaf_writing",
+      artifacts: { conference },
+    } as never;
+  }
+
+  it("does not let a past cycle inherit the live one's deadline", () => {
+    // The dataset carries no ICLR 2026 rows at all -- only iclr2027_abstract and iclr2027_paper.
+    // A paper declaring "ICLR 2026" resolves to the catalog id `ICLR-main`, which carries no year,
+    // so matching it against the board rows skipped the year check and took ICLR 2027's dates: the
+    // board grew an "ICLR 2026" chip counting down 5 days to a deadline that is not its own.
+    const labels = openPreRegistrationVenues([declaring("a", "ICLR 2026")], beforeIclr).map(
+      (venue) => venue.label,
+    );
+    expect(labels).not.toContain("ICLR 2026");
+    expect(labels).toContain("ICLR 2027");
+  });
+
+  it("still resolves the cycle a paper really is aimed at", () => {
+    // The same lookup by label has to keep working, or the fix above would empty the board.
+    expect(venueOpenUntilMs("ICLR-main", "ICLR 2027")).toBe(venueOpenUntilMs("iclr2027_paper"));
+    expect(venueOpenUntilMs("ICLR-main", "ICLR 2026")).toBeUndefined();
+  });
+});

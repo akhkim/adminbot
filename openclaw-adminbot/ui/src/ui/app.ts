@@ -797,7 +797,6 @@ export class OpenClawApp extends LitElement {
    * view somebody chose has to survive that.
    */
   @state() adminBotPreregSort: PreregSort = "readiness";
-  @state() adminBotPreregSortReversed = false;
   @state() adminBotPreregMinConfidence = 0;
   @state() adminBotPreregMissingEdit = false;
   @state() nudgeBellOpen = false;

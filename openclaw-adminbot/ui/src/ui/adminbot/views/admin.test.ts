@@ -1622,15 +1622,12 @@ describe("pre-registration venue table", () => {
     expect(titlesOf(drawWith({}))[0]).toBe("Aimed at both");
   });
 
-  it("puts the rows with no edit link first when sorted by edit link", () => {
+  it("puts the rows that have an edit link first when sorted by edit link", () => {
     const titles = titlesOf(drawWith({ preregSort: "editLink" }));
-    // The one paper that has an edit link goes last, even though it is the readiest.
-    expect(titles.at(-1)).toBe("Aimed at both");
-    // A field stored as whitespace is a missing link, not a link.
-    expect(titles.slice(0, 3)).toContain("Read-only link only");
-    // Within the missing group the original readiness order survives, so the sort is a regrouping
-    // rather than a reshuffle.
-    expect(titles.slice(0, 3)).toEqual([
+    // The one paper with an edit link leads; sorting by a column brings what is in it to the top.
+    expect(titles[0]).toBe("Aimed at both");
+    // A field stored as whitespace is a missing link, not a link, so it stays in the tail.
+    expect(titles.slice(1)).toEqual([
       "ICLR only",
       "Registered from its own card",
       "Read-only link only",
@@ -1646,26 +1643,13 @@ describe("pre-registration venue table", () => {
     ]);
   });
 
-  it("puts the rows with no view link first when sorted by view link", () => {
-    // A different gap from the edit link: "Aimed at both" and "Read-only link only" both have a
-    // read-only URL, and only the first has an edit URL, so the two orderings are not the same
-    // list reshuffled.
+  it("puts the rows that have a view link first when sorted by view link", () => {
+    // A different column from the edit link: "Aimed at both" and "Read-only link only" both carry
+    // a read-only URL and only the first carries an edit URL, so the two orderings are not the
+    // same list reshuffled.
     const titles = titlesOf(drawWith({ preregSort: "viewLink" }));
-    expect(titles.slice(0, 2)).toEqual(["ICLR only", "Registered from its own card"]);
-    expect(titles.slice(2)).toEqual(["Aimed at both", "Read-only link only"]);
-  });
-
-  it("reverses whichever ordering is on screen, tie-breaks included", () => {
-    const forward = titlesOf(drawWith({}));
-    const reversed = titlesOf(drawWith({ preregSortReversed: true }));
-    expect(reversed).toEqual([...forward].reverse());
-    // And it reverses the chosen key rather than snapping back to readiness.
-    expect(titlesOf(drawWith({ preregSort: "title", preregSortReversed: true }))).toEqual([
-      "Registered from its own card",
-      "Read-only link only",
-      "ICLR only",
-      "Aimed at both",
-    ]);
+    expect(titles.slice(0, 2)).toEqual(["Aimed at both", "Read-only link only"]);
+    expect(titles.slice(2)).toEqual(["ICLR only", "Registered from its own card"]);
   });
 
   it("keeps a venue on the board after submission closes, until its decisions land", () => {

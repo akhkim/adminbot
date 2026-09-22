@@ -658,7 +658,6 @@ export type AppViewState = {
   adminBotBlockerSort: BlockerSort;
   adminBotVenueFilter: string;
   adminBotPreregSort: PreregSort;
-  adminBotPreregSortReversed: boolean;
   adminBotPreregMinConfidence: number;
   adminBotPreregMissingEdit: boolean;
   nudgeBellOpen: boolean;

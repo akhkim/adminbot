@@ -140,9 +140,6 @@ export type AdminBotProps = {
   /** Which column the pre-registration board is sorted by. Defaults to `readiness`. */
   preregSort?: PreregSort;
   onPreregSort?: (key: PreregSort) => void;
-  /** Flips whichever ordering `preregSort` names. See preregOrdering. */
-  preregSortReversed?: boolean;
-  onPreregSortReversed?: (value: boolean) => void;
   /**
    * Lowest confidence a paper's best target may carry and still appear, as a percentage.
    *
@@ -2604,31 +2601,16 @@ function preregComparator(
       preregDeadlineDays(left, venues) - preregDeadlineDays(right, venues) ||
       byReadiness(left, right);
   }
-  // Missing first, for both link columns. The useful question they answer is not "who has one"
-  // but "who still does not", and a row with no edit link is one the admins cannot use.
+  // Rows that have the link first. Sorting by a column should bring what is *in* it to the top;
+  // an earlier version put the blanks first on the theory that the gap is the actionable thing,
+  // which made both link sorts open on a screen of "—" and read as broken. Finding the gaps is
+  // what the "Missing edit link" filter is for, and it does it without hiding the links.
   if (sort === "editLink" || sort === "viewLink") {
     const link = sort === "editLink" ? preregEditUrl : preregViewUrl;
     return (left, right) =>
-      (link(left.paper) ? 1 : 0) - (link(right.paper) ? 1 : 0) || byReadiness(left, right);
+      (link(right.paper) ? 1 : 0) - (link(left.paper) ? 1 : 0) || byReadiness(left, right);
   }
   return byReadiness;
-}
-
-/**
- * The chosen ordering, reversed on request.
- *
- * Negating the comparator rather than giving each key its own descending variant: every ordering
- * here already has a natural direction (readiest first, soonest first, missing links first), and
- * "reverse" means the opposite of whatever is on screen. Flipping the tie-breaks with it is
- * deliberate -- a reversed list whose ties stayed put reads as sorted wrong rather than reversed.
- */
-function preregOrdering(
-  sort: PreregSort,
-  reversed: boolean,
-  venues: readonly PreRegistrationVenue[],
-): (left: PreregRow, right: PreregRow) => number {
-  const compare = preregComparator(sort, venues);
-  return reversed ? (left, right) => -compare(left, right) : compare;
 }
 
 const PREREG_SORT_LABELS: ReadonlyArray<readonly [PreregSort, string]> = [
@@ -2661,7 +2643,6 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   // question an admin has three weeks out -- "what is going to ICLR" -- not "rank everything".
   const filter = props.venueFilter ?? "";
   const sort = props.preregSort ?? "readiness";
-  const reversed = props.preregSortReversed ?? false;
   const minConfidence = props.preregMinConfidence ?? 0;
   const missingEditOnly = props.preregMissingEdit ?? false;
   const open = new Set(filter ? [filter] : venues.map((venue) => venue.venue_id));
@@ -2682,7 +2663,7 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
     // this paper's best shot and is what the threshold asks about.
     .filter((row) => (row.targets[0]?.confidence ?? 0) >= minConfidence)
     .filter((row) => !missingEditOnly || !preregEditUrl(row.paper))
-    .toSorted(preregOrdering(sort, reversed, venues));
+    .toSorted(preregComparator(sort, venues));
 
   return html`
     <article class="adminbot-editor-card venue-table-card" data-testid="prereg-board">
@@ -2728,15 +2709,6 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                   ${label}
                 </button>`,
             )}
-            <button
-              type="button"
-              class=${`btn btn--sm ${reversed ? "primary" : ""}`}
-              data-testid="prereg-sort-reverse"
-              aria-pressed=${reversed}
-              @click=${() => props.onPreregSortReversed?.(!reversed)}
-            >
-              Reverse
-            </button>
           </div>
           <div class="blockers__sort" data-testid="prereg-confidence">
             <span>Confidence</span>

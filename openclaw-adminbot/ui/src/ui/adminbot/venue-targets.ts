@@ -193,11 +193,19 @@ export type PreRegistrationVenue = {
   awaiting_results: boolean;
 };
 
-/** The deadline-board rows that describe one venue. An id can name several (abstract, paper). */
-function deadlineRowsFor(venueId: string) {
-  return DEADLINE_VENUES.filter((venue) =>
-    venueTargetMatches({ venue_id: venue.id, label: venue.name, confidence: 0 }, venueId),
-  );
+/**
+ * The deadline-board rows that describe one venue. An id can name several (abstract, paper).
+ *
+ * The venue is matched as the *target* and the board row as the wanted id, not the other way
+ * round, because only one of those two reliably carries a year. A venue derived from a paper's
+ * declaration has a catalog id -- `ICLR-main` -- with the year in its label instead, so asking
+ * "does row `iclr2027_paper` match `ICLR-main`" skipped the year check and matched every ICLR row
+ * ever. A paper declaring "ICLR 2026" then produced a chip reading `ICLR 2026` that counted down
+ * to ICLR *2027*'s deadline. Asking it in this direction gives the year on both sides.
+ */
+function deadlineRowsFor(venueId: string, label: string) {
+  const asTarget = { venue_id: venueId, label, confidence: 0 };
+  return DEADLINE_VENUES.filter((venue) => venueTargetMatches(asTarget, venue.id));
 }
 
 /**
@@ -212,9 +220,9 @@ function deadlineRowsFor(venueId: string) {
  * The latest across the venue's rows, because an abstract deadline and its full-paper deadline are
  * two rows describing one cycle and the cycle ends when the last of them resolves.
  */
-export function venueOpenUntilMs(venueId: string): number | undefined {
+export function venueOpenUntilMs(venueId: string, label = venueId): number | undefined {
   let latest: number | undefined;
-  for (const venue of deadlineRowsFor(venueId)) {
+  for (const venue of deadlineRowsFor(venueId, label)) {
     const instant = decisionInstantMs(venue) ?? aoeInstantMs(venue.deadline_aoe);
     if (Number.isFinite(instant)) {
       latest = latest === undefined ? instant : Math.max(latest, instant);
@@ -252,8 +260,8 @@ function decisionInstantMs(venue: DeadlineVenue): number | undefined {
 }
 
 /** The soonest submission deadline this venue still has ahead of it, else its last one. */
-function submissionDeadlineOf(venueId: string, now: number): string | undefined {
-  const dated = deadlineRowsFor(venueId)
+function submissionDeadlineOf(venueId: string, label: string, now: number): string | undefined {
+  const dated = deadlineRowsFor(venueId, label)
     .map((venue) => ({ date: venue.deadline_aoe, at: aoeInstantMs(venue.deadline_aoe) }))
     .filter((entry) => Number.isFinite(entry.at))
     .toSorted((left, right) => left.at - right.at);
@@ -295,11 +303,11 @@ export function openPreRegistrationVenues(
   return (
     candidates
       .flatMap((venue) => {
-        const until = venueOpenUntilMs(venue.venue_id);
+        const until = venueOpenUntilMs(venue.venue_id, venue.label);
         if (until === undefined || until < at) {
           return [];
         }
-        const deadline = submissionDeadlineOf(venue.venue_id, at);
+        const deadline = submissionDeadlineOf(venue.venue_id, venue.label, at);
         const due = deadline ? aoeInstantMs(`${deadline} 23:59:59`) : Number.NaN;
         return [
           {
