@@ -1,11 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import {
-  createGptZeroBibliographyScanner,
-  createPublicOpenReviewPdfReader,
-} from "../connectors/reference-scan.js";
-import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
-import { ReferenceScans } from "../kernel/reference-scans.js";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
@@ -14,6 +8,10 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import {
+  createGptZeroBibliographyScanner,
+  createPublicOpenReviewPdfReader,
+} from "../connectors/reference-scan.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -55,6 +53,7 @@ import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
+import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
 import {
   buildNewsletterDraft,
   draftMemberBlurb,
@@ -62,6 +61,7 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -146,6 +146,7 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
 import {
   previewCallSheetPush,
   proposeCallSheetPush,
@@ -576,6 +577,7 @@ type AdminBotRouteContext = {
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
   referenceScans: ReferenceScans;
+  checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -703,10 +705,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
-  referenceScans = new ReferenceScans(store, service, options.referenceScanDependencies ?? {
+  const referenceDependencies = options.referenceScanDependencies ?? {
     readPdf: createPublicOpenReviewPdfReader(),
     scanPdf: createGptZeroBibliographyScanner(),
-  });
+  };
+  referenceScans = new ReferenceScans(store, service, referenceDependencies);
+  const checkUploadedPdf = createPdfReferenceCheckHandler(referenceDependencies.scanPdf);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -883,6 +887,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     privacyBroker,
     sensitiveInfo,
     referenceScans,
+    checkUploadedPdf,
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -1564,6 +1569,13 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.checkUploadedPdf(req, res, principalActor(principal));
+    return;
+  }
   if (url.pathname === "/reference-scans" && (req.method === "GET" || req.method === "POST")) {
     if (!requirePrivileged(res, principal)) {
       return;

@@ -578,6 +578,7 @@ export const en: TranslationMap = {
     adminbotWorkshopNudges: "Workshop Matches",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
+    adminbotReferenceChecker: "PDF Reference Checker",
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
     adminbotMailingList: "Mailing List",
@@ -633,6 +634,7 @@ export const en: TranslationMap = {
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
+    adminbotReferenceChecker: "Check PDF references with GPTZero.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",

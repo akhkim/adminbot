@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { GptZeroScanError } from "../connectors/reference-scan.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -23,7 +24,7 @@ afterEach(async () => {
   }
 });
 
-async function setup(databasePath?: string) {
+async function setup(databasePath?: string, configured = true) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "adminbot-reference-scans-"));
   dirs.push(dir);
   const readPdf = vi.fn(async (submissionId: string) => ({
@@ -31,7 +32,7 @@ async function setup(databasePath?: string) {
     title: "Synthetic paper",
     bytes: Buffer.from("%PDF-synthetic-v1"),
   }));
-  const scanPdf = vi.fn(async () => ({
+  const scanPdf = vi.fn(async (_bytes: Uint8Array) => ({
     provider_scan_id: "synthetic-result",
     response_version: 1,
     citation_count: 1,
@@ -45,7 +46,7 @@ async function setup(databasePath?: string) {
     databasePath: db,
     serviceToken: token,
     sensitiveInfoPath: path.join(dir, "sensitive.md"),
-    referenceScanDependencies: { readPdf, scanPdf },
+    referenceScanDependencies: { readPdf, scanPdf: configured ? scanPdf : undefined },
     calendarInviteRunner: async () => {},
   });
   instances.push(app);
@@ -74,6 +75,163 @@ async function setup(databasePath?: string) {
   };
   return { app, url, db, readPdf, scanPdf, propose, approve };
 }
+
+function session(app: Awaited<ReturnType<typeof setup>>["app"], admin = true) {
+  const memberId = admin ? "upload-admin" : "upload-member";
+  const sessionToken = `${memberId}-session`;
+  app.service.upsertLabMember({
+    id: memberId,
+    name: "Synthetic User",
+    privilege_level: admin ? "admin" : "member",
+  });
+  app.store.saveSession({
+    member_id: memberId,
+    token_hash: createHash("sha256").update(sessionToken).digest("hex"),
+    created_at: new Date().toISOString(),
+    last_seen_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+  });
+  return { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/pdf" };
+}
+
+describe("ad hoc PDF checks", () => {
+  const endpoint = "/reference-check/pdf?consent=send-to-gptzero";
+  const pdf = "%PDF-synthetic-upload";
+
+  it("checks the same PDF twice without persisting scans, proposals, or scan audits", async () => {
+    const { app, url, scanPdf, readPdf } = await setup();
+    const headers = session(app);
+    const saveScan = vi.spyOn(app.store, "saveReferenceScan");
+    const saveProposal = vi.spyOn(app.store, "saveProposal");
+    const audit = vi.spyOn(app.store, "recordAudit");
+    for (let i = 0; i < 2; i++) {
+      const response = await fetch(url + endpoint, { method: "POST", headers, body: pdf });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect((await response.json()).findings).toHaveLength(1);
+    }
+    expect(scanPdf).toHaveBeenCalledTimes(2);
+    expect(Buffer.from(scanPdf.mock.calls[0]?.[0] ?? []).toString()).toBe(pdf);
+    expect(readPdf).not.toHaveBeenCalled();
+    expect(saveScan).not.toHaveBeenCalled();
+    expect(saveProposal).not.toHaveBeenCalled();
+    expect(
+      audit.mock.calls.filter(([event]) => /proposal|execution|reference/u.test(event.type)),
+    ).toHaveLength(0);
+  });
+
+  it("rejects anonymous, ordinary member, service-token and unapproved uploads", async () => {
+    const { app, url, scanPdf } = await setup();
+    for (const [headers, status] of [
+      [{ "Content-Type": "application/pdf" }, 401],
+      [session(app, false), 403],
+      [{ Authorization: `Bearer ${token}`, "Content-Type": "application/pdf" }, 403],
+    ] as const) {
+      expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(
+        status,
+      );
+    }
+    expect(
+      (
+        await fetch(url + "/reference-check/pdf", {
+          method: "POST",
+          headers: session(app),
+          body: pdf,
+        })
+      ).status,
+    ).toBe(400);
+    expect(scanPdf).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid, oversized and cross-origin uploads before scanning", async () => {
+    const { app, url, scanPdf } = await setup();
+    const headers = session(app);
+    for (const body of ["", "not a pdf"]) {
+      expect((await fetch(url + endpoint, { method: "POST", headers, body })).status).toBe(415);
+    }
+    expect(
+      (
+        await fetch(url + endpoint, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "text/plain" },
+          body: pdf,
+        })
+      ).status,
+    ).toBe(415);
+    expect(
+      (
+        await fetch(url + endpoint, {
+          method: "POST",
+          headers,
+          body: new Uint8Array(20 * 1024 * 1024 + 1),
+        })
+      ).status,
+    ).toBe(413);
+    expect(
+      (
+        await fetch(url + endpoint, {
+          method: "POST",
+          headers: { ...headers, Origin: "https://untrusted.example" },
+          body: pdf,
+        })
+      ).status,
+    ).toBe(403);
+    expect(scanPdf).not.toHaveBeenCalled();
+  });
+
+  it("reports missing configuration and provider failures without leaking provider details", async () => {
+    const missing = await setup(undefined, false);
+    expect(
+      (
+        await fetch(missing.url + endpoint, {
+          method: "POST",
+          headers: session(missing.app),
+          body: pdf,
+        })
+      ).status,
+    ).toBe(503);
+    const { app, url, scanPdf } = await setup();
+    const headers = session(app);
+    scanPdf.mockRejectedValueOnce(new Error("private provider payload"));
+    const failed = await fetch(url + endpoint, { method: "POST", headers, body: pdf });
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain("private provider payload");
+    for (const reason of [403, 429, "timeout", "connection", "response"] as const) {
+      const error = new GptZeroScanError(reason);
+      scanPdf.mockRejectedValueOnce(error);
+      const response = await fetch(url + endpoint, { method: "POST", headers, body: pdf });
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ error: { message: error.message } });
+    }
+    expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(200);
+  });
+
+  it("rejects concurrent checks and releases the guard when the scan finishes", async () => {
+    const { app, url, scanPdf } = await setup();
+    const headers = session(app);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const value = await scanPdf(Buffer.from(pdf));
+    scanPdf.mockClear();
+    scanPdf.mockImplementationOnce(async () => {
+      await gate;
+      return value;
+    });
+    const first = fetch(url + endpoint, { method: "POST", headers, body: pdf });
+    await vi.waitFor(() => expect(scanPdf).toHaveBeenCalledOnce());
+    try {
+      expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(
+        429,
+      );
+    } finally {
+      release();
+    }
+    expect((await first).status).toBe(200);
+    expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(200);
+  });
+});
 
 describe("reference scan MVP", () => {
   it("persists results in the service database and avoids rescans and duplicate notifications", async () => {

@@ -3,6 +3,22 @@ import type { PublicOpenReviewPdf, ReferenceScanResult } from "../contracts/refe
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 
+/** Only fixed messages and HTTP status codes may cross the API boundary. */
+export class GptZeroScanError extends Error {
+  constructor(reason: number | "timeout" | "connection" | "response") {
+    const message =
+      typeof reason === "number"
+        ? `GPTZero rejected the check (HTTP ${reason}).`
+        : reason === "timeout"
+          ? "GPTZero did not finish within 3 minutes."
+          : reason === "connection"
+            ? "AdminBot could not connect to GPTZero or the connection was interrupted."
+            : "GPTZero responded, but AdminBot could not read its scan result.";
+    super(`${message} Retrying may incur another charge.`);
+    this.name = "GptZeroScanError";
+  }
+}
+
 async function boundedBody(response: Response, limit: number): Promise<Uint8Array> {
   if (!response.ok || !response.body) {
     throw new Error(`Reference provider returned HTTP ${response.status}`);
@@ -143,15 +159,29 @@ export function createGptZeroBibliographyScanner(
       new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),
       "paper.pdf",
     );
-    const response = await fetchImpl("https://api.gptzero.me/v2/bibliography-scan/files", {
-      method: "POST",
-      headers: { "x-api-key": apiKey, Accept: "application/json" },
-      body: form,
-      redirect: "error",
-      signal: AbortSignal.timeout(180_000),
-    });
-    return parseGptZeroBibliography(
-      JSON.parse(Buffer.from(await boundedBody(response, MAX_JSON_BYTES)).toString()),
-    );
+    const signal = AbortSignal.timeout(180_000);
+    let response: Response;
+    try {
+      response = await fetchImpl("https://api.gptzero.me/v2/bibliography-scan/files", {
+        method: "POST",
+        headers: { "x-api-key": apiKey, Accept: "application/json" },
+        body: form,
+        redirect: "error",
+        signal,
+      });
+    } catch {
+      throw new GptZeroScanError(signal.aborted ? "timeout" : "connection");
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new GptZeroScanError(response.status);
+    }
+    try {
+      return parseGptZeroBibliography(
+        JSON.parse(Buffer.from(await boundedBody(response, MAX_JSON_BYTES)).toString()),
+      );
+    } catch {
+      throw new GptZeroScanError(signal.aborted ? "timeout" : "response");
+    }
   };
 }

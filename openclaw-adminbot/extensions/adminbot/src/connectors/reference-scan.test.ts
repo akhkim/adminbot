@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
+  GptZeroScanError,
   parseGptZeroBibliography,
 } from "./reference-scan.js";
 
@@ -57,6 +58,43 @@ describe("GPTZero bibliography connector", () => {
     await expect(
       createGptZeroBibliographyScanner({ GPTZERO_API_KEY: "test" }, fetchImpl)!(new Uint8Array()),
     ).rejects.toThrow("HTTP 429");
+  });
+  it.each([401, 403, 422, 429, 500])(
+    "exposes only HTTP %s, never the provider body",
+    async (status) => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("private manuscript and key", { status }));
+      const scan = createGptZeroBibliographyScanner({ GPTZERO_API_KEY: "test" }, fetchImpl)!;
+      await expect(scan(new Uint8Array())).rejects.toEqual(new GptZeroScanError(status));
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("distinguishes connection failures from incompatible results without leaking details", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("private network details"))
+      .mockResolvedValueOnce(new Response("private invalid JSON"))
+      .mockResolvedValueOnce(Response.json({ private: "unexpected response" }));
+    const scan = createGptZeroBibliographyScanner({ GPTZERO_API_KEY: "test" }, fetchImpl)!;
+    await expect(scan(new Uint8Array())).rejects.toEqual(new GptZeroScanError("connection"));
+    await expect(scan(new Uint8Array())).rejects.toEqual(new GptZeroScanError("response"));
+    await expect(scan(new Uint8Array())).rejects.toEqual(new GptZeroScanError("response"));
+  });
+  it("identifies a timeout without retrying the scan", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => {
+      controller.abort();
+      throw new Error("private timeout details");
+    });
+    try {
+      const scan = createGptZeroBibliographyScanner({ GPTZERO_API_KEY: "test" }, fetchImpl)!;
+      await expect(scan(new Uint8Array())).rejects.toEqual(new GptZeroScanError("timeout"));
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 });
 

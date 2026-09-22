@@ -8,6 +8,7 @@ import {
   createEmptyAdminBotDashboardData,
   type AdminBotDashboardData,
 } from "../controllers/admin.ts";
+import { isLocalServiceOnlyMode } from "./local-service-mode.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -306,6 +307,17 @@ async function connectAsMember(
   session: { session_token?: string; gateway?: { url?: string } },
   sessionToken: string,
 ) {
+  if (isLocalServiceOnlyMode(host.settings)) {
+    // Login has already authenticated the member. Keep gateway state disconnected: only HTTP
+    // service pages can work in this mode, and their endpoints still enforce the member's role.
+    host.client?.stop();
+    host.client = null;
+    host.connected = false;
+    host.hello = null;
+    host.applySettings({ ...host.settings, token: "" });
+    host.authGateVisible = false;
+    return;
+  }
   const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
   if (!hasDeviceToken) {
     host.memberFormError =

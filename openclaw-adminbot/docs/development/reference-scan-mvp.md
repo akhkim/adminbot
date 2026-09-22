@@ -7,6 +7,43 @@ is required. The existing Pending Actions UI handles approval and execution.
 
 ## Setup and first run
 
+### Ad hoc PDF uploads
+
+For a local test without an OpenClaw gateway, run these in separate terminals from the repo root:
+
+```bash
+ADMINBOT_DEV_EMAIL=admin@example.test ADMINBOT_DEV_PASSWORD=local-dev-password \
+  node --env-file=.env.gptzero --import tsx scripts/start-adminbot-dev.ts
+```
+
+```bash
+VITE_ADMINBOT_SERVICE_ONLY=1 pnpm ui:dev
+```
+
+Open `http://127.0.0.1:5173` and sign in with those local credentials. The service-only flag works
+only in Vite development with both UI and backend on HTTP loopback addresses. It does not issue
+gateway credentials or enable gateway features; normal service authentication and roles still
+apply. Production builds ignore it. `.env.gptzero` must contain `GPTZERO_API_KEY` and remain ignored
+by Git. Submitting a PDF uses the real provider even with this development launcher.
+
+Admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF (up to
+20 MB), and click **Submit**. This explicitly approves sending that file to GPTZero. The page
+shows citation counts, uncertain citations, and flagged references with explanations. It checks
+bibliographic references, not all factual claims in the paper.
+
+The upload endpoint, `POST /reference-check/pdf?consent=send-to-gptzero`, accepts a raw
+`application/pdf` body and requires an admin member session. The service keeps the key server-side,
+validates the upload, and uses a request-scoped in-memory proposal/approval/execution flow. It
+writes no PDF, scan result, scan proposal, or scan audit to SQLite, and sends no email. Results live
+only in the current page; switching away discards them. Every submission, including the same PDF,
+is a fresh provider call and may incur a charge. GPTZero's own data handling still applies.
+
+Only one upload check runs at a time per service process. Failed requests are not automatically
+retried. A disconnected browser does not guarantee cancellation of an upload already sent to
+GPTZero. The persistent OpenReview workflow below remains separate.
+
+### OpenReview submissions
+
 Set `GPTZERO_API_KEY` in the **service's** environment and restart the service. On Aurora, the
 deployment loads `~/.config/jinesis-adminbot/adminbot.env`. The GPTZero account must have access
 to the Bibliography Scan API; an AI-detection-only entitlement may not be sufficient.

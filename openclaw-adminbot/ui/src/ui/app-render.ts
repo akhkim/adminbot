@@ -1,6 +1,7 @@
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
+import "./adminbot/views/reference-checker.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
@@ -14,6 +15,7 @@ import {
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
+import { isLocalServiceOnlyMode } from "./adminbot/auth/local-service-mode.ts";
 import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
@@ -2017,7 +2019,7 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  if (!state.connected) {
+  if (!state.connected && !(state.memberId && isLocalServiceOnlyMode(state.settings))) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a
@@ -4318,6 +4320,12 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyGrantReport, (m) =>
               m.renderGrantReport({ papers: state.adminBotData.papers }),
             )
+          : nothing}
+        ${state.tab === "adminbotReferenceChecker"
+          ? html`<adminbot-reference-checker
+              .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+              .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+            ></adminbot-reference-checker>`
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

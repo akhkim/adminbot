@@ -28,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   clearStoredMemberSession();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -402,6 +403,30 @@ describe("device-bound gateway token", () => {
     gateway: { url: "ws://127.0.0.1:18789" },
   };
 
+  it("allows an authenticated local dev session without claiming gateway access", async () => {
+    vi.stubEnv("DEV", true);
+    vi.stubEnv("VITE_ADMINBOT_SERVICE_ONLY", "1");
+    vi.stubGlobal("location", new URL("http://127.0.0.1:5173"));
+    const stop = vi.fn();
+    const host = makeHost({
+      memberEmail: "a@b.co",
+      memberPassword: "pw",
+      client: { stop },
+      authGateVisible: true,
+    });
+    const fetcher = routedFetch({ "/auth/login": () => jsonResponse(200, loginBody) });
+    await submitMemberAuth(host);
+    expect(host.memberId).toBe("pat");
+    expect(host.memberFormError).toBeNull();
+    expect(host.connected).toBe(false);
+    expect(host.client).toBeNull();
+    expect(host.authGateVisible).toBe(false);
+    expect(host.connect).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("openclaw.device.auth.v1")).toBeNull();
+  });
+
   it("stores the minted token and keeps the shared gateway token out of settings", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     const fetchSpy = routedFetch({
@@ -750,13 +775,19 @@ describe("viewing the lab as another member", () => {
 
 describe("refresh preserves sessions during temporary failures", () => {
   it.each([404, 429, 500, 502, 503])("keeps a stored login after HTTP %s", async (status) => {
-    saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2030-01-01T00:00:00Z" });
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
     expect(await resumeMemberSession(makeHost())).toBe("unreachable");
     expect(loadStoredMemberSession()?.sessionToken).toBe("synthetic-session");
   });
   it.each([401, 403])("clears rejected sessions after HTTP %s", async (status) => {
-    saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2030-01-01T00:00:00Z" });
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
     expect(await resumeMemberSession(makeHost())).toBe("cleared");
     expect(loadStoredMemberSession()).toBeNull();
