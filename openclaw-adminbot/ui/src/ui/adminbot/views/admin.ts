@@ -64,10 +64,11 @@ import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
-  PRE_REGISTRATION_VENUES,
   daysUntil,
   effectiveVenueTargets,
+  openPreRegistrationVenues,
   venueTargetMatches,
+  type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
 import { renderRecentEditsBody } from "./recent-edits.ts";
@@ -86,7 +87,7 @@ export type BlockerSort = "stage" | "age" | "paper";
  * unusable to the admins reading it, and the one thing on this board that is nobody's job until
  * somebody looks.
  */
-export type PreregSort = "readiness" | "deadline" | "title" | "editLink";
+export type PreregSort = "readiness" | "deadline" | "title" | "editLink" | "viewLink";
 import {
   PAPER_GRID_THRESHOLD,
   clearSavedEdits,
@@ -139,6 +140,9 @@ export type AdminBotProps = {
   /** Which column the pre-registration board is sorted by. Defaults to `readiness`. */
   preregSort?: PreregSort;
   onPreregSort?: (key: PreregSort) => void;
+  /** Flips whichever ordering `preregSort` names. See preregOrdering. */
+  preregSortReversed?: boolean;
+  onPreregSortReversed?: (value: boolean) => void;
   /**
    * Lowest confidence a paper's best target may carry and still appear, as a percentage.
    *
@@ -2543,6 +2547,18 @@ function preregEditUrl(paper: AdminBotPaperRecord): string {
   return paper.artifacts?.overleaf_edit_url?.trim() ?? "";
 }
 
+/**
+ * The read-only Overleaf link, or empty.
+ *
+ * Its own column and its own ordering rather than "has any Overleaf link at all", because the two
+ * are different gaps with different fixes: an author who never pasted the edit link has to be
+ * chased, while a missing view link is what stops an admin sending the draft to somebody outside
+ * the project.
+ */
+function preregViewUrl(paper: AdminBotPaperRecord): string {
+  return paper.artifacts?.overleaf_view_url?.trim() ?? "";
+}
+
 type PreregRow = { paper: AdminBotPaperRecord; targets: VenueTarget[] };
 
 /** How ready this paper's best target says it is. The board's original ordering. */
@@ -2558,13 +2574,9 @@ function preregReadiness(row: PreregRow): number {
  * board halfway down it. A target matching no card on the board has no deadline here and sorts
  * last, which is right: "Other" is the one venue with no one date.
  */
-function preregDeadlineDays(row: PreregRow): number {
+function preregDeadlineDays(row: PreregRow, venues: readonly PreRegistrationVenue[]): number {
   const days = row.targets
-    .map(
-      (target) =>
-        PRE_REGISTRATION_VENUES.find((venue) => venueTargetMatches(target, venue.venue_id))
-          ?.deadline,
-    )
+    .map((target) => venues.find((venue) => venueTargetMatches(target, venue.venue_id))?.deadline)
     .map((deadline) => (deadline ? daysUntil(deadline) : undefined))
     .filter((value): value is number => value !== undefined);
   return days.length ? Math.min(...days) : Number.POSITIVE_INFINITY;
@@ -2577,7 +2589,10 @@ function preregDeadlineDays(row: PreregRow): number {
  * order to the input means it changes as papers are edited -- a table that reshuffles rows nobody
  * touched is one people stop trusting.
  */
-function preregComparator(sort: PreregSort): (left: PreregRow, right: PreregRow) => number {
+function preregComparator(
+  sort: PreregSort,
+  venues: readonly PreRegistrationVenue[],
+): (left: PreregRow, right: PreregRow) => number {
   const byReadiness = (left: PreregRow, right: PreregRow) =>
     preregReadiness(right) - preregReadiness(left) ||
     left.paper.title.localeCompare(right.paper.title);
@@ -2586,16 +2601,34 @@ function preregComparator(sort: PreregSort): (left: PreregRow, right: PreregRow)
   }
   if (sort === "deadline") {
     return (left, right) =>
-      preregDeadlineDays(left) - preregDeadlineDays(right) || byReadiness(left, right);
-  }
-  if (sort === "editLink") {
-    // Missing first. The useful question this column answers is not "who has one" but "who still
-    // does not", and a row with no edit link is one the admins cannot use.
-    return (left, right) =>
-      (preregEditUrl(left.paper) ? 1 : 0) - (preregEditUrl(right.paper) ? 1 : 0) ||
+      preregDeadlineDays(left, venues) - preregDeadlineDays(right, venues) ||
       byReadiness(left, right);
   }
+  // Missing first, for both link columns. The useful question they answer is not "who has one"
+  // but "who still does not", and a row with no edit link is one the admins cannot use.
+  if (sort === "editLink" || sort === "viewLink") {
+    const link = sort === "editLink" ? preregEditUrl : preregViewUrl;
+    return (left, right) =>
+      (link(left.paper) ? 1 : 0) - (link(right.paper) ? 1 : 0) || byReadiness(left, right);
+  }
   return byReadiness;
+}
+
+/**
+ * The chosen ordering, reversed on request.
+ *
+ * Negating the comparator rather than giving each key its own descending variant: every ordering
+ * here already has a natural direction (readiest first, soonest first, missing links first), and
+ * "reverse" means the opposite of whatever is on screen. Flipping the tie-breaks with it is
+ * deliberate -- a reversed list whose ties stayed put reads as sorted wrong rather than reversed.
+ */
+function preregOrdering(
+  sort: PreregSort,
+  reversed: boolean,
+  venues: readonly PreRegistrationVenue[],
+): (left: PreregRow, right: PreregRow) => number {
+  const compare = preregComparator(sort, venues);
+  return reversed ? (left, right) => -compare(left, right) : compare;
 }
 
 const PREREG_SORT_LABELS: ReadonlyArray<readonly [PreregSort, string]> = [
@@ -2603,6 +2636,7 @@ const PREREG_SORT_LABELS: ReadonlyArray<readonly [PreregSort, string]> = [
   ["deadline", "Deadline"],
   ["title", "Title"],
   ["editLink", "Edit link"],
+  ["viewLink", "View link"],
 ];
 
 /** The thresholds worth offering: everything, the even-odds half, and what is nearly certain. */
@@ -2613,10 +2647,10 @@ const PREREG_CONFIDENCE_CHOICES: ReadonlyArray<readonly [number, string]> = [
 ];
 
 function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminBotProps) {
-  const venues = PRE_REGISTRATION_VENUES.filter((venue) => {
-    const days = daysUntil(venue.deadline);
-    return days !== undefined && days >= 0;
-  }).sort((left, right) => (daysUntil(left.deadline) ?? 0) - (daysUntil(right.deadline) ?? 0));
+  // Every venue still live, which means "results are not out yet" rather than "submission is not
+  // closed yet" -- and includes venues papers are aimed at beyond the three the picker offers.
+  // See openPreRegistrationVenues.
+  const venues = openPreRegistrationVenues(papers);
 
   if (venues.length === 0) {
     return nothing;
@@ -2627,6 +2661,7 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   // question an admin has three weeks out -- "what is going to ICLR" -- not "rank everything".
   const filter = props.venueFilter ?? "";
   const sort = props.preregSort ?? "readiness";
+  const reversed = props.preregSortReversed ?? false;
   const minConfidence = props.preregMinConfidence ?? 0;
   const missingEditOnly = props.preregMissingEdit ?? false;
   const open = new Set(filter ? [filter] : venues.map((venue) => venue.venue_id));
@@ -2647,7 +2682,7 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
     // this paper's best shot and is what the threshold asks about.
     .filter((row) => (row.targets[0]?.confidence ?? 0) >= minConfidence)
     .filter((row) => !missingEditOnly || !preregEditUrl(row.paper))
-    .toSorted(preregComparator(sort));
+    .toSorted(preregOrdering(sort, reversed, venues));
 
   return html`
     <article class="adminbot-editor-card venue-table-card" data-testid="prereg-board">
@@ -2670,7 +2705,11 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                 @click=${() => props.onVenueFilter?.(venue.venue_id)}
               >
                 ${venue.label}
-                <span class="venue-table__days">${daysUntil(venue.deadline)}d</span>
+                <span class="venue-table__days"
+                  >${venue.awaiting_results
+                    ? "awaiting results"
+                    : `${daysUntil(venue.deadline)}d`}</span
+                >
               </button>`,
           )}
         </div>
@@ -2689,6 +2728,15 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
                   ${label}
                 </button>`,
             )}
+            <button
+              type="button"
+              class=${`btn btn--sm ${reversed ? "primary" : ""}`}
+              data-testid="prereg-sort-reverse"
+              aria-pressed=${reversed}
+              @click=${() => props.onPreregSortReversed?.(!reversed)}
+            >
+              Reverse
+            </button>
           </div>
           <div class="blockers__sort" data-testid="prereg-confidence">
             <span>Confidence</span>

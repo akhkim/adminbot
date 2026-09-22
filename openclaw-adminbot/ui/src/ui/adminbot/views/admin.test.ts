@@ -1646,6 +1646,44 @@ describe("pre-registration venue table", () => {
     ]);
   });
 
+  it("puts the rows with no view link first when sorted by view link", () => {
+    // A different gap from the edit link: "Aimed at both" and "Read-only link only" both have a
+    // read-only URL, and only the first has an edit URL, so the two orderings are not the same
+    // list reshuffled.
+    const titles = titlesOf(drawWith({ preregSort: "viewLink" }));
+    expect(titles.slice(0, 2)).toEqual(["ICLR only", "Registered from its own card"]);
+    expect(titles.slice(2)).toEqual(["Aimed at both", "Read-only link only"]);
+  });
+
+  it("reverses whichever ordering is on screen, tie-breaks included", () => {
+    const forward = titlesOf(drawWith({}));
+    const reversed = titlesOf(drawWith({ preregSortReversed: true }));
+    expect(reversed).toEqual([...forward].reverse());
+    // And it reverses the chosen key rather than snapping back to readiness.
+    expect(titlesOf(drawWith({ preregSort: "title", preregSortReversed: true }))).toEqual([
+      "Registered from its own card",
+      "Read-only link only",
+      "ICLR only",
+      "Aimed at both",
+    ]);
+  });
+
+  it("keeps a venue on the board after submission closes, until its decisions land", () => {
+    // ICLR 2027's paper deadline is 25 Sep 2026 and its decisions are 16 Dec. On the 26th the
+    // venue is past submission and unresolved, which is when the board matters most.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-26T12:00:00Z"));
+    try {
+      const chip = drawWith({}).querySelector('[data-testid="venue-filter-iclr2027_paper"]');
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toContain("awaiting results");
+      // Its papers are still listed rather than dropped with it.
+      expect(titlesOf(drawWith({}))).toContain("ICLR only");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drops papers under the confidence threshold", () => {
     expect(titlesOf(drawWith({ preregMinConfidence: 50 }))).not.toContain("Read-only link only");
     expect(titlesOf(drawWith({ preregMinConfidence: 75 }))).toEqual(["Aimed at both", "ICLR only"]);
