@@ -29,6 +29,7 @@ import {
   adminBotOverleafHosts,
   OVERLEAF_COM_HOST,
 } from "./overleaf.js";
+import type { OpenReviewIdentityReview } from "./paper-artifact-links.js";
 
 /** Every artifact a paper can be asked for. Ordered roughly as the work happens. */
 export const adminBotPaperSlots = [
@@ -717,6 +718,10 @@ export type AdminBotPaperSlotRecord = {
    */
   verified_by?: AdminBotPaperSlotVerifier;
   verified_at?: string;
+  /** Public metadata observed by the verifier, never supplied by a member. */
+  verified_title?: string;
+  previous_submission_id?: string;
+  identity_review?: OpenReviewIdentityReview;
   invalid_reason?: string;
   waived_by_member_id?: string;
   waived_reason?: string;
