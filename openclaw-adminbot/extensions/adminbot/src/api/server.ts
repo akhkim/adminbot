@@ -111,6 +111,7 @@ import {
   createImportColumnMapper,
   type ImportColumnMapper,
 } from "../workflows/papers/import-columns.js";
+import { findRelevantLabPapers } from "../workflows/papers/lab-relevance-search.js";
 import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
@@ -1729,6 +1730,43 @@ async function handleAuthenticatedRoute(
         ...ranking,
       });
     } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    return;
+  }
+
+  // The lab's own papers, ranked against a topic or a whole proposal. See
+  // workflows/papers/lab-relevance.ts.
+  //
+  // Deliberately *not* on ANONYMOUS_ROUTES, unlike the conference search directly above it. That
+  // one ranks a published conference programme against text the caller typed, so it carries no lab
+  // data; this one returns our paper titles, the sections they answer and how thin the record
+  // behind each placement is. Same data as `GET /papers`, so it takes the same gate: the global
+  // one, which admits only an authenticated caller.
+  if (req.method === "POST" && url.pathname === "/lab-papers/relevance") {
+    const body = readRecord(await readJson(req));
+    const query = asString(body.query)?.trim() ?? "";
+    if (!query) {
+      sendJson(res, 400, { error: { message: "say what to look for first" } });
+      return;
+    }
+    const papers = service.listPapers();
+    if (!papers.ok) {
+      sendServiceResult(res, papers);
+      return;
+    }
+    try {
+      const report = await findRelevantLabPapers({
+        papers: papers.payload.papers,
+        query,
+        embed: ctx.embedder,
+      });
+      sendJson(res, 200, report);
+    } catch (error) {
+      // The embedding model being unreachable is the common failure and it is not the caller's
+      // fault, so it reads as a gateway error rather than a bad request.
       sendJson(res, 502, {
         error: { message: error instanceof Error ? error.message : String(error) },
       });

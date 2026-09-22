@@ -42,6 +42,7 @@ import {
   rebuildVenueIndexes,
   runChannelNamingSweep,
   publishCvDigest,
+  searchLabPaperRelevance,
   searchVenuePapers,
   sendMemberNudge,
   sendWorkshopNudges,
@@ -239,6 +240,50 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     result: null,
     expanded: [],
   };
+}
+
+/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+export type AdminBotLabPaperHit = {
+  paper_id: string;
+  title: string;
+  score: number;
+  margin: number;
+  band: "core" | "related" | "peripheral" | "off_topic";
+  segments: Array<{
+    segment_id: string;
+    label: string;
+    score: number;
+    margin: number;
+    band: string;
+  }>;
+  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  matched_terms: string[];
+  /** How much text the placement was made from. Most records are `title_only`. */
+  evidence: "rich" | "thin" | "title_only";
+};
+
+export type AdminBotLabPaperReport = {
+  query_kind: "keywords" | "proposal";
+  segment_count: number;
+  scored: number;
+  matches: AdminBotLabPaperHit[];
+  off_topic: AdminBotLabPaperHit[];
+  nothing_relevant: boolean;
+  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+};
+
+export type AdminBotLabPapersState = {
+  /** Free text: a keyword, a topic list, or a whole proposal pasted in. */
+  query: string;
+  searching: boolean;
+  error: string | null;
+  result: AdminBotLabPaperReport | null;
+  /** Which rows have their matched sections open. */
+  expanded: string[];
+};
+
+export function createEmptyLabPapersState(): AdminBotLabPapersState {
+  return { query: "", searching: false, error: null, result: null, expanded: [] };
 }
 
 export type WorkshopNudgeRecommendation = {
@@ -786,6 +831,7 @@ export type AdminBotHost = {
   // row and the document it wrote, so this only has to survive long enough to report the outcome.
   adminBotCvDigestJob: AdminBotCvDigestJobState;
   adminBotVenuePapers: AdminBotVenuePapersState;
+  adminBotLabPapers: AdminBotLabPapersState;
   adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
   adminBotChannelNamingJob: AdminBotCvDigestJobState;
@@ -1562,6 +1608,49 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
   } catch (error) {
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
+      searching: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Rank the lab's own papers against whatever is in the box.
+ *
+ * One request per press, like the conference search. Nothing is cached: the corpus changes
+ * whenever anybody edits a paper, and a stale answer about our own work is worse than a slow one.
+ */
+export async function searchAdminBotLabPapers(host: AdminBotHost): Promise<void> {
+  const session = optionalSession(host);
+  const query = host.adminBotLabPapers.query.trim();
+  if (!query) {
+    return;
+  }
+  host.adminBotLabPapers = {
+    ...host.adminBotLabPapers,
+    searching: true,
+    error: null,
+    expanded: [],
+  };
+  try {
+    const result = await searchLabPaperRelevance({ query }, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotLabPapers = {
+        ...host.adminBotLabPapers,
+        searching: false,
+        result: null,
+        error: result.message?.trim() || cvErrorText(result.kind, "rank the lab's papers"),
+      };
+      return;
+    }
+    host.adminBotLabPapers = {
+      ...host.adminBotLabPapers,
+      searching: false,
+      result: result.value as AdminBotLabPaperReport,
+    };
+  } catch (error) {
+    host.adminBotLabPapers = {
+      ...host.adminBotLabPapers,
       searching: false,
       error: error instanceof Error ? error.message : String(error),
     };

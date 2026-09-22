@@ -4338,6 +4338,30 @@
   font-size: var(--control-ui-text-md);
 }
 
+/*
+ * The two halves of Find Interesting Papers. Sits above both panels rather than inside either, so
+ * switching tabs does not move the control that switched them.
+ */
+.conference-papers__tabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+/* The uncovered sections, and one paper's other matched sections. Both are read, not scanned. */
+.lab-papers__gaps,
+.lab-papers__sections {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.lab-papers__sections {
+  font-size: 0.9em;
+}
+
 .conference-papers__actions {
   display: flex;
   justify-content: space-between;

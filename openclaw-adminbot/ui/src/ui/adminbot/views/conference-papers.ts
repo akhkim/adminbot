@@ -14,6 +14,10 @@
 import { html, nothing } from "lit";
 import { formatRelativeTimestamp } from "../../format.ts";
 import type { AdminBotVenuePaperHit, AdminBotVenuePapersState } from "../controllers/admin.ts";
+import { renderLabPapers, type LabPapersProps } from "./lab-papers.ts";
+
+/** Which half of the page is showing: other people's papers, or ours. */
+export type ConferencePapersTab = "conference" | "lab";
 
 export type ConferencePapersProps = {
   state: AdminBotVenuePapersState;
@@ -21,32 +25,83 @@ export type ConferencePapersProps = {
   onInterestsChange: (interests: string) => void;
   onSearch: () => void;
   onToggleAbstract: (paperId: string) => void;
+  /**
+   * The lab half, present only for a signed-in member.
+   *
+   * Absent for a visitor, and the tab bar disappears with it. The conference search is on
+   * ANONYMOUS_ROUTES because it ranks a published programme; ours returns the lab's own paper
+   * titles and is gated server-side, so offering a visitor a tab that can only 401 would be a
+   * worse answer than not offering it.
+   */
+  lab?: LabPapersProps;
+  tab?: ConferencePapersTab;
+  onTabChange?: (tab: ConferencePapersTab) => void;
 };
 
 export function renderConferencePapers(props: ConferencePapersProps) {
   const { state } = props;
   const canSearch = Boolean(state.venueId) && state.interests.trim().length > 0;
+  const tab = props.lab ? (props.tab ?? "conference") : "conference";
   return html`
     <section class="adminbot-shell conference-papers" data-testid="adminbot-conference-papers">
-      <div class="card adminbot-card adminbot-card--wide">
-        <div class="card-title">Papers worth your time</div>
-        <div class="card-sub">
-          Ranks everything accepted at a conference against what you work on, and shows the closest
-          matches. Nothing here is filtered by keyword — a paper can match because it is about the
-          same thing in different words.
-        </div>
-        ${renderControls(props, canSearch)}
-      </div>
-      ${state.error
-        ? html`<div
-            class="card adminbot-card adminbot-card--wide adminbot-notice adminbot-notice--error"
-            data-testid="conference-papers-error"
-          >
-            ${state.error}
-          </div>`
-        : nothing}
-      ${renderResults(props)}
+      ${renderTabs(props, tab)}
+      ${tab === "lab" && props.lab
+        ? renderLabPapers(props.lab)
+        : renderConferenceTab(props, canSearch)}
     </section>
+  `;
+}
+
+/** The two halves, named for whose papers they are. Absent when there is only one of them. */
+function renderTabs(props: ConferencePapersProps, tab: ConferencePapersTab) {
+  if (!props.lab) {
+    return nothing;
+  }
+  const entries: ReadonlyArray<readonly [ConferencePapersTab, string]> = [
+    ["conference", "At a conference"],
+    ["lab", "Ours"],
+  ];
+  return html`
+    <div class="conference-papers__tabs" role="tablist" data-testid="conference-papers-tabs">
+      ${entries.map(
+        ([key, label]) => html`
+          <button
+            type="button"
+            role="tab"
+            class=${`btn btn--sm ${tab === key ? "primary" : ""}`}
+            aria-selected=${tab === key}
+            data-testid=${`conference-papers-tab-${key}`}
+            @click=${() => props.onTabChange?.(key)}
+          >
+            ${label}
+          </button>
+        `,
+      )}
+    </div>
+  `;
+}
+
+function renderConferenceTab(props: ConferencePapersProps, canSearch: boolean) {
+  const { state } = props;
+  return html`
+    <div class="card adminbot-card adminbot-card--wide">
+      <div class="card-title">Papers worth your time</div>
+      <div class="card-sub">
+        Ranks everything accepted at a conference against what you work on, and shows the closest
+        matches. Nothing here is filtered by keyword — a paper can match because it is about the
+        same thing in different words.
+      </div>
+      ${renderControls(props, canSearch)}
+    </div>
+    ${state.error
+      ? html`<div
+          class="card adminbot-card adminbot-card--wide adminbot-notice adminbot-notice--error"
+          data-testid="conference-papers-error"
+        >
+          ${state.error}
+        </div>`
+      : nothing}
+    ${renderResults(props)}
   `;
 }
 
