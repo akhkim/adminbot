@@ -105,11 +105,20 @@ function normalizeLink(
 export function buildAuthorLinks(params: {
   links?: readonly AdminBotPaperAuthorLink[];
   names?: readonly string[];
+  /** Retain identities for names that survive a text-only edit. */
+  priorLinks?: readonly AdminBotPaperAuthorLink[];
   roster: readonly RosterMember[];
 }): AdminBotPaperAuthorLink[] {
-  const source: AdminBotPaperAuthorLink[] = params.links?.length
-    ? params.links.map((link) => ({ ...link }))
-    : (params.names ?? []).map((name) => ({ name }));
+  const priorByName = new Map(
+    (params.priorLinks ?? []).map((link) => [link.name.trim().toLowerCase(), link]),
+  );
+  const source: AdminBotPaperAuthorLink[] =
+    params.links?.length
+      ? params.links.map((link) => ({ ...link }))
+      : (params.names ?? []).map((name) => ({
+          ...priorByName.get(name.trim().toLowerCase()),
+          name,
+        }));
 
   const out: AdminBotPaperAuthorLink[] = [];
   const seenMembers = new Set<string>();
