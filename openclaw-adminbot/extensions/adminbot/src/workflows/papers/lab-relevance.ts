@@ -391,11 +391,19 @@ export type LabRelevanceBand = "core" | "related" | "peripheral" | "off_topic";
  * roughly 0.05 to 0.25 wide above whatever an unrelated document scores. `core` is set inside the
  * top of that, `peripheral` just clear of its bottom.
  *
- * These are the one part of this module that is a calibration rather than a derivation, and they
- * were fixed against a different corpus than the one they run on. Until they are re-measured
- * against the lab's own papers, treat a `core` placement as a strong suggestion rather than a
- * fact -- which is what `evidence` here, and the curated/inferred tiers the grant report already
- * uses, are both for.
+ * Checked against this lab's own corpus (94 papers from the grant report's sheet snapshot, titles
+ * only, embeddinggemma:latest, 2026-09-21). Raw cosines ran 0.109 to 0.425 with a median of 0.245;
+ * the query "causality" returned 12 papers, every genuinely causal project in `core` or `related`,
+ * with the two arguable ones (chain-of-thought graph recovery, MCP root-cause analysis) landing in
+ * `peripheral` -- which is the band they deserve. The thresholds were left where they were because
+ * that run did not argue for moving them, not because nobody has looked.
+ *
+ * What that run did establish is the ceiling. Placing the same papers on the proposal's 16
+ * sections and scoring against the hand-curated placements, the top section was right 46% of the
+ * time and one of the top three was right 64% of the time, against 28% for always guessing the
+ * most common section. That is a good suggestion and a bad fact -- which is exactly the tier
+ * `resolve.ts` already calls `inferred`. Nothing here should be written into a grant application
+ * without a person confirming it, and `evidence` is on every row to say how thin the input was.
  */
 export const CORE_MARGIN = 0.18;
 export const RELATED_MARGIN = 0.1;
@@ -445,6 +453,11 @@ export type LabSegmentScore = {
   score: number;
   /** Score less what an unrelated document scores on this segment. This is what bands. */
   margin: number;
+  /**
+   * Score less what this segment scores on the corpus as a whole -- see `segmentBias`. This is
+   * what orders one paper's segments against each other, and it is deliberately not what bands.
+   */
+  centered: number;
   band: LabRelevanceBand;
 };
 
@@ -457,11 +470,22 @@ export type LabPaperRelevance = {
   margin: number;
   band: LabRelevanceBand;
   /**
-   * Every segment this paper is at least peripheral to, best first. For a proposal this is the
-   * paper's section assignment, and it is a list because one paper routinely serves several.
+   * Every segment this paper is at least peripheral to, best label first. For a proposal this is
+   * the paper's section assignment, and it is a list because one paper routinely serves several.
+   *
+   * Ordered by `centered`, not by `margin`. See `segmentBias`: ordering these by raw strength lets
+   * whichever section is written in the most general terms claim almost every paper.
    */
   segments: LabSegmentScore[];
-  /** The strongest of `segments`, absent when the paper matched nothing. */
+  /**
+   * The segment that best *describes* this paper, absent when it matched nothing.
+   *
+   * A different question from `band`, and answered by a different number on purpose. `band` says
+   * how strongly this paper belongs to the query at all and comes from `margin`; this says which
+   * part of the query it belongs to, and comes from `centered`. Measured against the lab's own
+   * corpus the two disagree often enough to matter -- collapsing them into one maximum is what
+   * made a single broadly-worded domain absorb most of the papers.
+   */
   best_segment?: LabSegmentScore;
   /** Query terms that literally appear in the paper's text. Says why, never decides. */
   matched_terms: string[];
@@ -556,8 +580,9 @@ export function classifyLabPapers(params: {
     return worst;
   });
 
+  const bias = segmentBias(papers, segmentVectors);
   const placed = papers.map((entry) =>
-    placePaper(entry, query.segments, segmentVectors, noise, query.terms),
+    placePaper(entry, query.segments, segmentVectors, noise, bias, query.terms),
   );
   const byStrength = (left: LabPaperRelevance, right: LabPaperRelevance): number =>
     right.margin - left.margin || left.title.localeCompare(right.title);
@@ -583,11 +608,50 @@ export function classifyLabPapers(params: {
   };
 }
 
+/**
+ * What each segment scores on the corpus as a whole.
+ *
+ * The correction for the one failure the foreign controls cannot see. Those measure a segment
+ * against parrotfish and sourdough, which says whether a subject is in the lab's world at all --
+ * but when several segments compete to label the same paper, the question is which of *them* fits
+ * best, and a segment written in broader terms than its siblings beats them on nearly every paper
+ * regardless of subject.
+ *
+ * Measured: placing this lab's 94 papers on the six-area safety taxonomy, "Alignment" -- whose
+ * gloss is the most general of the six ("make it want the right thing", then eleven techniques
+ * spanning RLHF to unlearning) -- was the top area for roughly five papers in six, and top-1
+ * agreement with the hand-curated placements sat at 40%. The foreign controls cannot catch that,
+ * because alignment really is closer to every ML paper than a sourdough recipe is.
+ *
+ * Subtracting each segment's own corpus mean removes exactly that per-segment offset and leaves
+ * what is specific to a paper. It needs a corpus big enough for the mean to mean anything: under
+ * `MIN_CORPUS_FOR_CENTERING` the bias is a single paper's own score, and subtracting it would
+ * flatten every segment to zero, so it is skipped and ordering falls back to raw strength.
+ */
+function segmentBias(
+  papers: readonly ScoredLabPaper[],
+  segmentVectors: readonly (readonly number[])[],
+): number[] {
+  if (papers.length < MIN_CORPUS_FOR_CENTERING) {
+    return segmentVectors.map(() => 0);
+  }
+  return segmentVectors.map((vector) => {
+    let total = 0;
+    for (const entry of papers) {
+      total += cosineSimilarity(entry.vector, vector);
+    }
+    return total / papers.length;
+  });
+}
+
+const MIN_CORPUS_FOR_CENTERING = 10;
+
 function placePaper(
   entry: ScoredLabPaper,
   segments: readonly RelevanceQuerySegment[],
   segmentVectors: readonly (readonly number[])[],
   noise: readonly number[],
+  bias: readonly number[],
   terms: readonly string[],
 ): LabPaperRelevance {
   const scored: LabSegmentScore[] = segments.map((segment, index) => {
@@ -598,22 +662,26 @@ function placePaper(
       label: segment.label,
       score,
       margin,
+      centered: score - (bias[index] ?? 0),
       band: bandForMargin(margin, score),
     };
   });
-  // One ordering, used for both the reported placement and the segment list, so a row's
-  // "0.44 on Part 1.1.1" is a single measurement rather than two maxima taken independently.
-  const ranked = scored.toSorted((left, right) => right.margin - left.margin);
-  const strongest = ranked[0];
-  const matched = ranked.filter((segment) => segment.band !== "off_topic");
+  // Two orderings, because they answer two questions. `strongest` is how much of this query the
+  // paper belongs to at all and decides the band; `byLabel` is which part of it describes the
+  // paper and decides what gets printed next to it. On a single-segment query they are the same
+  // row, so a keyword search is unaffected by any of this.
+  const strongest = scored.toSorted((left, right) => right.margin - left.margin)[0];
+  const byLabel = scored
+    .filter((segment) => segment.band !== "off_topic")
+    .toSorted((left, right) => right.centered - left.centered || right.margin - left.margin);
   return {
     paper_id: entry.paper.id,
     title: entry.paper.title,
     score: strongest?.score ?? 0,
     margin: strongest?.margin ?? 0,
     band: strongest?.band ?? "off_topic",
-    segments: matched,
-    best_segment: matched[0],
+    segments: byLabel,
+    best_segment: byLabel[0],
     matched_terms: matchedTerms(entry.paper, terms),
     evidence: labPaperEvidence(entry.paper),
   };

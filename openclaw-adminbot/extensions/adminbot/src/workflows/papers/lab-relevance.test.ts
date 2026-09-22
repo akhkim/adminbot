@@ -260,6 +260,66 @@ describe("classifyLabPapers", () => {
     expect(match?.segments.map((segment) => segment.segment_id)).toEqual(["s8"]);
   });
 
+  it("does not let a broadly-worded segment claim every paper", () => {
+    // The failure this exists for, reproduced from the live measurement: placing the lab's papers
+    // on the six-area safety taxonomy, "Alignment" -- the most generally worded of the six --
+    // averaged 0.241 against every paper while the other five sat at 0.158-0.184, and so won
+    // outright for five papers in six. Here "broad" scores 0.30 on all twelve papers and
+    // "specific" scores 0.25 on one of them and 0.10 on the rest; the specific segment is the one
+    // that actually says something about that paper, and it has to win.
+    const broad = [1, 0, 0];
+    const specific = [0, 1, 0];
+    const at = (onSpecific: number) => [0.3, onSpecific, Math.sqrt(1 - 0.09 - onSpecific ** 2)];
+    const papers = Array.from({ length: 12 }, (_, index) => ({
+      paper: paper({ id: index === 0 ? "specialist" : `generic-${index}` }),
+      vector: at(index === 0 ? 0.25 : 0.1),
+    }));
+    const report = classifyLabPapers({
+      papers,
+      query: {
+        kind: "proposal",
+        segments: [
+          { id: "broad", label: "Broad", text: "Broad" },
+          { id: "specific", label: "Specific", text: "Specific" },
+        ],
+        terms: [],
+        source: "taxonomy",
+      },
+      segmentVectors: [broad, specific],
+    });
+    const specialist = report.matches.find((match) => match.paper_id === "specialist");
+    expect(specialist?.best_segment?.segment_id).toBe("specific");
+    // The band still comes from raw strength, so the paper is not demoted by the correction.
+    expect(specialist?.band).toBe("core");
+    expect(specialist?.score).toBeCloseTo(0.3, 5);
+    // Every other paper is equally unremarkable on both, so the broad segment keeps them.
+    expect(report.matches.find((m) => m.paper_id === "generic-5")?.best_segment?.segment_id).toBe(
+      "broad",
+    );
+  });
+
+  it("falls back to raw strength when the corpus is too small to estimate a bias", () => {
+    // Under ten papers a segment's "corpus mean" is essentially that paper's own score, and
+    // subtracting it would flatten every segment to zero.
+    const report = classifyLabPapers({
+      papers: [{ paper: paper({ id: "a" }), vector: [0.3, 0.25, Math.sqrt(1 - 0.09 - 0.0625)] }],
+      query: {
+        kind: "proposal",
+        segments: [
+          { id: "broad", label: "Broad", text: "Broad" },
+          { id: "specific", label: "Specific", text: "Specific" },
+        ],
+        terms: [],
+        source: "taxonomy",
+      },
+      segmentVectors: [
+        [1, 0, 0],
+        [0, 1, 0],
+      ],
+    });
+    expect(report.matches[0]?.best_segment?.segment_id).toBe("broad");
+  });
+
   it("lists the sections nothing covers, and does not count a peripheral hit as coverage", () => {
     const segments = [
       { id: "s1", label: "Evaluation hacking", text: "Evaluation hacking" },
