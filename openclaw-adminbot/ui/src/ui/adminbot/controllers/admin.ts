@@ -55,6 +55,7 @@ import {
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
   submitReimbursementPackage,
+  queueMemberOnboardingGuide,
   upsertLabMemberAsAdmin,
   type ConferenceRoster,
 } from "../auth/session.ts";
@@ -443,6 +444,14 @@ export type AdminBotLabMemberSaveInput = {
   collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   notes?: string;
   status?: AdminBotMemberStatus;
+  /**
+   * What the roster spreadsheet says this person is ("full", "alumni, coauthor-major").
+   *
+   * Governance, like privilege and status -- only an admin session may write it -- and the field
+   * onboarding routes on: `templateForMemberType` picks the guide from the most-committed token
+   * here, so a record saved without one has no onboarding mail to send.
+   */
+  memberType?: string;
   /**
    * Whether AdminBot may send this person anything at all.
    *
@@ -2004,6 +2013,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
     ...(member.notes ? { notes: member.notes } : {}),
     ...(member.status ? { status: member.status } : {}),
+    ...(member.memberType ? { member_type: member.memberType } : {}),
     // `!== undefined`, not truthiness: `false` is how somebody is taken *off* the list, and a
     // truthiness check would silently turn every removal into a no-op.
     ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
@@ -2056,9 +2066,23 @@ function toolProfileParams(profile: Record<string, unknown> | undefined): Record
 // entirely. Falls back to the gateway tool only when there's no stored member session at
 // all (legacy break-glass access via the bare gateway token, predating member auth) —
 // that path keeps today's already-restricted behavior rather than losing the save entirely.
+/**
+ * Saves a roster record, and -- when the form asked for it -- puts the member through onboarding.
+ *
+ * Onboarding runs after the save rather than with it, and only on the Add-member form, because it
+ * is a different question: the record is a fact about the roster, the guide is a mail to a person.
+ * The service files it as an approval-gated `onboarding.send_guide` proposal, so what happens here
+ * is queueing, not sending.
+ *
+ * A refused guide never fails the save -- the member is on the roster either way -- but it is
+ * reported as an error notice, because the admin ticked a box for something that did not happen
+ * and the reason (no address, a Member Type that sends no mail, a guide already queued) is usually
+ * a thing they can fix.
+ */
 export async function saveAdminBotMember(
   host: AdminBotHost,
   member: AdminBotLabMemberSaveInput,
+  options: { onboard?: boolean } = {},
 ): Promise<void> {
   host.adminBotNotice = null;
   const stored = loadStoredMemberSession();
@@ -2085,7 +2109,9 @@ export async function saveAdminBotMember(
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
+    host.adminBotNotice = options.onboard
+      ? await onboardSavedMember(host, member.id, stored.sessionToken)
+      : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
     return;
   }
@@ -2101,7 +2127,15 @@ export async function saveAdminBotMember(
       ...(member.status ? { status: member.status } : {}),
       ...toolProfileParams(member.profile),
     });
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
+    // The break-glass path cannot onboard: queueing a guide needs an admin member session, and
+    // this one is the shared service principal, which the route refuses. Said out loud rather
+    // than dropped, so a tick nobody acted on is not mistaken for one that worked.
+    host.adminBotNotice = options.onboard
+      ? {
+          kind: "error",
+          text: `Saved member ${member.id}, but onboarding needs an admin sign-in — sign in with your admin account and start it from their row.`,
+        }
+      : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
   } catch (err) {
     host.adminBotNotice = {
@@ -2109,6 +2143,37 @@ export async function saveAdminBotMember(
       text: formatAdminBotToolError(err),
     };
   }
+}
+
+/** Queues the onboarding guide for a member just saved, and says what became of it. */
+async function onboardSavedMember(
+  host: AdminBotHost,
+  memberId: string,
+  sessionToken: string,
+): Promise<{ kind: "success" | "error"; text: string }> {
+  const result = await queueMemberOnboardingGuide(
+    memberId,
+    sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    const reason =
+      result.kind === "unreachable"
+        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+        : result.kind === "forbidden"
+          ? "your session no longer has admin access"
+          : // The service names what it refused -- no address, a Member Type that sends no mail, a
+            // guide already sent or queued -- and that sentence is the whole value of this notice.
+            (result.message ?? "the onboarding guide could not be queued");
+    return {
+      kind: "error",
+      text: `Saved member ${memberId}, but their onboarding guide was not queued: ${reason}`,
+    };
+  }
+  return {
+    kind: "success",
+    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding guide is waiting for approval.`,
+  };
 }
 
 /**

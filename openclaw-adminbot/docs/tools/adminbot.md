@@ -441,6 +441,28 @@ has expired. A `404` from the route itself is reported as what it is: the Contro
 Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
 talking to a service that predates it and needs a deploy, not a broken spreadsheet.
 
+### Adding a member from the Members tab
+
+**Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
+their onboarding**, puts the new member through onboarding in the same press. The record is written
+over `PUT /lab/members/{id}`; the onboarding leg is `POST /lab/members/{id}/onboarding/guide`, which
+composes nothing and sends nothing -- it files an `onboarding.send_guide` proposal for approval,
+exactly as the Onboarding section's sheet selection and the weekly sweep do. Approving it is what
+mints the Slack Connect invite, provisions the Drive folder, files the DCS account request and
+sends the mail.
+
+Which guide somebody gets is decided by **Member type** on the form, through the same
+most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Three
+types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer` and `external-prof`
+-- because their onboarding is the backend access grant.
+
+The save and the guide are reported together, and a refused guide never undoes the save. The
+reasons an admin will see are all fixable: the record has no email address, its Member Type sends no
+mail (or is blank), or that guide has already been sent to the address or is already waiting for an
+approver -- which is what pressing **Add member** twice on one id produces. Onboarding needs a real
+admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
+was not queued.
+
 ### Roster sync
 
 `scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
@@ -894,7 +916,9 @@ whether somebody was ever told.
 
 ### The onboarding follow-up ladder
 
-The onboarding email itself is sent by hand. What follows it is not:
+The onboarding email itself is queued by a person -- from **Add member**, from the Onboarding
+section's sheet selection, or by the weekly sweep -- and approved by one. What follows it is
+not:
 
 1. **Five business days** after the welcome, if the member has neither signed in nor edited
    anything, a Slack reminder. Business days, so somebody welcomed on a Thursday is not chased over

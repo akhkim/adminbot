@@ -4142,7 +4142,7 @@ export function renderApp(state: AppViewState) {
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onResolveEmailReview: (messageId, resolution) =>
                 void resolveAdminBotEmailReview(state, messageId, resolution),
-              onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onSaveMember: (member, options) => void saveAdminBotMember(state, member, options),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),
               onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
