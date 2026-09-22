@@ -175,6 +175,7 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
+import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
@@ -341,6 +342,7 @@ import {
   buildTravelHistory,
   type AdminBotTravelHistory,
 } from "../workflows/members/travel-history.js";
+import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   planOnboardingSweep,
   type OnboardingSweepPlan,
@@ -5870,7 +5872,12 @@ export class AdminBotService {
         continue;
       }
       for (const row of this.store.listPaperSlots(paper.id)) {
-        if (row.status !== "provided" || row.verified_at || !row.url) {
+        const refreshOpenReview =
+          row.verified_by === "openreview" &&
+          (!row.verified_title ||
+            !row.identity_review ||
+            Date.parse(nowIso) - Date.parse(row.verified_at ?? "") >= 86_400_000);
+        if (row.status !== "provided" || (row.verified_at && !refreshOpenReview) || !row.url) {
           continue;
         }
         const check = this.paperEvidenceCheck(row.slot, row.url);
@@ -5887,8 +5894,27 @@ export class AdminBotService {
         }
         checked += 1;
         const result = await check.probe(check.id);
+        // A member can replace the link while the network request is outstanding.
+        const current = this.store
+          .listPaperSlots(paper.id)
+          .find((entry) => entry.slot === row.slot);
+        if (
+          !current ||
+          current.url !== row.url ||
+          current.provided_at !== row.provided_at ||
+          current.status !== row.status
+        ) {
+          continue;
+        }
         if (result.status === "found") {
-          this.store.savePaperSlot({ ...row, verified_by: check.verifier, verified_at: nowIso });
+          this.store.savePaperSlot({
+            ...row,
+            verified_by: check.verifier,
+            verified_at: nowIso,
+            verified_title: result.title,
+            previous_submission_id: result.previous_submission_id,
+            identity_review: result.identity_review,
+          });
           verified.push({ paper_id: paper.id, slot: row.slot });
           // A title the public record disagrees with is the mistake worth catching -- a link to
           // somebody else's paper -- but it is not proof of one: papers get retitled between
@@ -10539,6 +10565,11 @@ export class AdminBotService {
         ...(request.important ? { important: true } : {}),
         created_at: nowIso,
       });
+      // The correspondence address when the member nominated one, their login address otherwise.
+      // `email` is the departmental identity the account is keyed by; it is not necessarily a
+      // mailbox anybody reads, and four members on the roster have no departmental address at all
+      // while having had a correspondence address on file the whole time.
+      const outreachEmail = adminBotOutreachEmail(member);
       const proposalInput =
         request.channel === "slack"
           ? member.slack_user_id
@@ -10560,18 +10591,18 @@ export class AdminBotService {
                 undo_plan: "Send a Slack follow-up correcting or retracting the message.",
               }
             : undefined
-          : member.email
+          : outreachEmail
             ? {
                 summary: `Nudge ${member.name} via email: ${truncateForSummary(message)}`,
                 target: {
                   service: "email",
                   channel: "email",
-                  target: member.email,
+                  target: outreachEmail,
                   recipientMemberId: member.id,
                 },
                 proposed_payload: {
                   channel: "email",
-                  to: member.email,
+                  to: outreachEmail,
                   subject: request.subject?.trim(),
                   body: outboundMessage,
                 },
@@ -10582,7 +10613,9 @@ export class AdminBotService {
         skipped.push({
           member_id: memberId,
           reason:
-            request.channel === "slack" ? "member has no slack_user_id" : "member has no email",
+            request.channel === "slack"
+              ? "member has no slack_user_id"
+              : "member has no correspondence or account email",
         });
         continue;
       }
@@ -11235,6 +11268,110 @@ export class AdminBotService {
       });
     }
     return { ok: true, status: 200, payload: { ...swept, created, proposals, since } };
+  }
+
+  /**
+   * Puts one member through onboarding, the same way a row appearing in the sheet does.
+   *
+   * Written for the Add-member button on the Members tab. Adding somebody to the roster by hand
+   * and onboarding them used to be two unrelated errands -- the button created the record, and the
+   * mail that tells a new person where their Drive folder is, what Slack they are being invited to
+   * and that their CS account has been requested only ever went out from the Onboarding tab's
+   * sheet selection or from the weekly sweep. A member added here was onboarded when somebody
+   * remembered to go and do it.
+   *
+   * `onboarding.send_guide` rather than a composed `email.send`, for the reason that action type
+   * exists: the send provisions the things the copy promises. It is T3/admin, so an approver still
+   * reads the card before the lab writes to a stranger -- adding a roster row is not consent to
+   * mail them.
+   *
+   * Refuses rather than half-onboards, and names why: no address to write to, a Member Type whose
+   * onboarding is the backend access grant rather than a mail, or a guide this person has already
+   * been sent or is already queued for. The caller reports that reason next to the member it has
+   * just saved.
+   */
+  queueOnboardingGuideForMember(params: {
+    memberId: string;
+    actor: string;
+  }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, `no member ${params.memberId}`);
+    }
+    const email = member.email?.trim() ?? "";
+    if (!email) {
+      return serviceError(
+        422,
+        `${member.name || member.id} has no email address, so there is nowhere to send an onboarding guide`,
+      );
+    }
+    const template = templateForMemberType(member.member_type);
+    if (!template.ok) {
+      return serviceError(422, template.reason);
+    }
+    const recipient = email.toLowerCase();
+    // The same two ledgers `sweepOnboardingMail` keys on -- a guide already sent, and one already
+    // waiting for an approver. Pressing Add member twice on one id, or adding somebody the weekly
+    // sweep has already picked up, must not put a second copy of the same mail in front of them.
+    const alreadySent = this.store.listAuditEvents().some((event) => {
+      if (event.type !== "onboarding.guide_sent") {
+        return false;
+      }
+      const details = event.details as
+        | { template_id?: unknown; recipient?: unknown; sent?: unknown }
+        | undefined;
+      // `sent: false` is a recorded attempt that never went out, so it must not block a retry.
+      return (
+        details?.sent === true &&
+        details.template_id === template.templateId &&
+        typeof details.recipient === "string" &&
+        details.recipient.trim().toLowerCase() === recipient
+      );
+    });
+    if (alreadySent) {
+      return serviceError(
+        409,
+        `the ${template.templateId} onboarding guide has already been sent to ${email}`,
+      );
+    }
+    const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
+      if (stored.status !== "pending" && stored.status !== "approved") {
+        return false;
+      }
+      const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
+      return (
+        payload.template_id === template.templateId &&
+        typeof payload.email === "string" &&
+        payload.email.trim().toLowerCase() === recipient
+      );
+    });
+    if (alreadyQueued) {
+      return serviceError(
+        409,
+        `the ${template.templateId} onboarding guide for ${email} is already waiting for approval`,
+      );
+    }
+    const proposal = this.createProposal({
+      type: "onboarding.send_guide",
+      summary: `Onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- added to the roster by ${params.actor}`,
+      target: { service: "google", channel: "email", target: email },
+      proposed_payload: {
+        template_id: template.templateId,
+        name: member.name,
+        email,
+        member_id: member.id,
+      },
+      undo_plan:
+        "None: the mail is sent and the Slack invite minted. Follow up with the recipient directly.",
+    });
+    if (!proposal.ok) {
+      return serviceError(proposal.status, proposal.error.message);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { proposal_id: proposal.payload.id, template_id: template.templateId, email },
+    };
   }
 
   syncMemberRoster(params: {

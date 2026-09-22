@@ -10,6 +10,7 @@ import {
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
   removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
   saveAdminBotMember,
   saveAdminBotPaper,
   saveAdminBotOwnProfile,
@@ -31,6 +32,8 @@ function createHost(outputs: Record<string, unknown>) {
     adminBotError: null,
     adminBotData: createEmptyAdminBotDashboardData(),
     adminBotBusyActionId: null,
+    adminBotSelectedActionIds: [],
+    adminBotBulkActionBusy: false,
     adminBotNotice: null,
     adminBotPhotoPolishBusy: false,
     adminBotPhotoApplyBusy: false,
@@ -70,6 +73,8 @@ describe("loadAdminBot", () => {
       adminBotError: null,
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
+      adminBotSelectedActionIds: [],
+      adminBotBulkActionBusy: false,
       adminBotNotice: null,
       adminBotPhotoPolishBusy: false,
       adminBotPhotoApplyBusy: false,
@@ -445,6 +450,127 @@ describe("saveAdminBotMember", () => {
   });
 });
 
+describe("saveAdminBotMember — onboarding the person just added", () => {
+  const baseInput = {
+    id: "grace",
+    name: "Grace Hopper",
+    email: "grace@lab.co",
+    memberType: "full",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  /** Answers the guide route with `guide` and everything else (the save, the reload) with {}. */
+  function routes(guide: Response) {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) =>
+        String(input).includes("/onboarding/guide")
+          ? guide.clone()
+          : new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+  }
+
+  const guideCalls = (fetchMock: ReturnType<typeof routes>) =>
+    fetchMock.mock.calls.filter((call) => String(call[0]).includes("/onboarding/guide"));
+
+  it("queues the guide over the admin session once the record exists", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(
+      new Response(
+        JSON.stringify({ proposal_id: "act_7", template_id: "member", email: "grace@lab.co" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const queued = guideCalls(fetchMock);
+    expect(queued).toHaveLength(1);
+    expect(String(queued[0]![0])).toContain("/lab/members/grace/onboarding/guide");
+    expect(queued[0]![1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer admin-sess-tok" }),
+    });
+    // The save goes first: onboarding is about a member who is on the roster by then.
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/lab/members/grace");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+    expect(host.adminBotNotice?.kind).toBe("success");
+    expect(host.adminBotNotice?.text).toMatch(/waiting for approval/i);
+  });
+
+  it("carries the member type, which is what decides the template", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ member_type: "full" });
+  });
+
+  // The member is on the roster either way, so the save is not undone -- but the admin ticked a
+  // box for something that did not happen, and the service's sentence is what they can act on.
+  it("keeps the save and reports why the guide was refused", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          error: { message: "acquaintance sends no onboarding mail" },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Saved member grace");
+    expect(host.adminBotNotice?.text).toContain("acquaintance sends no onboarding mail");
+  });
+
+  it("leaves onboarding alone when the form did not ask for it", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput);
+
+    expect(guideCalls(fetchMock)).toHaveLength(0);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  // Break-glass access authenticates as the shared service principal, which the guide route
+  // refuses. Saying so beats a tick that silently did nothing.
+  it("says onboarding needs an admin sign-in on the break-glass path", async () => {
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => ({
+        ok: true,
+        toolName: params.name,
+        output: {},
+      }),
+    } as never;
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(guideCalls(fetchMock as never)).toHaveLength(0);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(/admin sign-in/i);
+  });
+});
+
 describe("saveAdminBotOwnProfile", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());
@@ -777,5 +903,120 @@ describe("approveAdminBotAction", () => {
       kind: "success",
       text: expect.stringContaining("1 of 2 approvals"),
     });
+  });
+});
+
+describe("removeSelectedPendingAdminBotActions", () => {
+  function proposal(id: string) {
+    return {
+      id,
+      type: "slack.send_message",
+      risk_tier: "T3" as const,
+      summary: `Proposal ${id}`,
+      status: "pending" as const,
+      payload_hash: `hash_${id}`,
+      approval_requirement: { requires_approval: true, approver_roles: ["pi"], min_approvals: 1 },
+      approvals: [],
+      created_at: "2026-07-14T19:00:00.000Z",
+      updated_at: "2026-07-14T19:00:00.000Z",
+    };
+  }
+
+  function seed(ids: string[], selected: string[]) {
+    const { host } = createHost({});
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      proposals: ids.map(proposal),
+    };
+    host.adminBotSelectedActionIds = selected;
+    return host;
+  }
+
+  const ok = () =>
+    new Response(JSON.stringify({ status: "removed" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("removes every ticked proposal and clears the selection", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("/proposals/act_one/remove"))).toBe(true);
+    expect(urls.some((url) => url.includes("/proposals/act_two/remove"))).toBe(true);
+    expect(host.adminBotNotice).toMatchObject({
+      kind: "success",
+      text: "Removed 2 pending actions.",
+    });
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotBulkActionBusy).toBe(false);
+  });
+
+  // A bulk clear must never reach the execute route: removing discards a suggestion, executing
+  // sends the mail.
+  it("never executes anything", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/execute");
+      expect(String(call[0])).not.toContain("/approve");
+    }
+  });
+
+  it("keeps the ones that refused ticked, and says how many went", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "nope" } }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(host.adminBotSelectedActionIds).toEqual(["act_two"]);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Removed 1 of 2");
+  });
+
+  // A tick can outlive its row -- somebody else cleared it first. Asking the service to remove a
+  // proposal that is already gone would report a failure for work that is in fact done.
+  it("does not call the service for a selection whose rows are already gone", async () => {
+    const host = seed(["act_live"], ["act_stale"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const removeCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes("/remove"));
+    expect(removeCalls).toHaveLength(0);
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("does nothing at all when nothing is ticked", async () => {
+    const host = seed(["act_one"], []);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

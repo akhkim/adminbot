@@ -490,7 +490,7 @@
   padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--warn);
   border-radius: var(--radius-1, 6px);
-  background: var(--panel-alt);
+  background: var(--panel-strong);
   font-size: 0.875rem;
 }
 
@@ -748,7 +748,7 @@
    row already in the queue -- not a second verdict on the submit. */
 .logistics-request__status--note {
   display: block;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* Why Submit would refuse, sitting between the status and the buttons. Not an error color: nothing

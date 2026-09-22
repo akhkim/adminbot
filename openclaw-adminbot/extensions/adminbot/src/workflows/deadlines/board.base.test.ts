@@ -29,6 +29,50 @@ const items = [
 ];
 
 describe("standalone deadline board foundation", () => {
+  it("keeps an expired abstract passed while the conference counts down to full paper", () => {
+    const abstract = DEADLINE_VENUES.find((venue) => venue.id === "iclr2027_abstract")!;
+    const cutoff = Date.parse(abstract.deadline_aoe.replace(" ", "T") + "-12:00");
+    const dom = new JSDOM(renderDeadlinesWebUi(DEADLINE_VENUES), {
+      runScripts: "dangerously",
+      url: "http://localhost/deadlines",
+      beforeParse(window) {
+        window.Date.now = () => cutoff;
+      },
+    });
+    try {
+      const document = dom.window.document;
+      document.querySelector<HTMLButtonElement>("#v-groups")!.click();
+      const group = () =>
+        [...document.querySelectorAll(".deadline-group")].find(
+          (entry) =>
+            entry.querySelector(".deadline-group__heading strong")?.textContent?.trim() ===
+            "ICLR 2027",
+        )!;
+      group().querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+      const rows = group().querySelectorAll(".deadline-group__row-countdown");
+      expect(rows[0].textContent?.trim()).toBe("passed");
+      expect(rows[0].hasAttribute("data-t")).toBe(false);
+      expect(rows[1].textContent?.trim()).toMatch(/^7d /u);
+      expect(group().querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
+        "Full paper",
+      );
+      for (const [button, selector, countdown] of [
+        ["#v-cards", ".card", ".ccd"],
+        ["#v-table", "tbody tr", ".countdown"],
+      ]) {
+        document.querySelector<HTMLButtonElement>(button)!.click();
+        const row = [...document.querySelectorAll(selector)].find(
+          (node) =>
+            node.textContent?.includes("ICLR 2027") && node.textContent?.includes("Sep 18, 2026"),
+        )!;
+        expect(row.querySelector(countdown)?.textContent?.trim()).toBe("passed");
+        expect(row.querySelector(countdown)?.hasAttribute("data-t")).toBe(false);
+      }
+    } finally {
+      dom.window.close();
+    }
+  });
+
   it("keeps derived counts, exact times, and compact metadata aligned with its filters", () => {
     const dom = new JSDOM(renderDeadlinesWebUi(items), {
       runScripts: "dangerously",

@@ -43,6 +43,7 @@ import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderOpenReviewIdentity } from "./paper-slots.ts";
 
 /** What one control writes back, and to which of the two stores. */
 type LegacyField =
@@ -698,6 +699,10 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
       <div class="profile__section-head">
         <h2 class="profile__section-title">${paper.title}</h2>
       </div>
+      ${renderOpenReviewIdentity({
+        paperTitle: paper.title,
+        slots: props.slots?.[paper.id]?.slots ?? [],
+      })}
       <form
         class="profile__form"
         @submit=${(event: SubmitEvent) => event.preventDefault()}

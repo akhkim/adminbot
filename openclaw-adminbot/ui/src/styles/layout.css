@@ -1363,7 +1363,7 @@
 .dashboard__broadcast {
   border-inline-start: 3px solid var(--accent, currentColor);
   border-radius: var(--radius-2, 6px);
-  background: var(--surface-2, transparent);
+  background: var(--bg-muted, transparent);
   padding: var(--space-3) var(--space-4);
 }
 
@@ -1764,8 +1764,8 @@
 }
 
 .onboarding-step-card__badge--status[data-status="complete"] {
-  background: color-mix(in srgb, var(--success, #34d3a6) 18%, transparent);
-  color: var(--success, #34d3a6);
+  background: color-mix(in srgb, var(--ok, #34d3a6) 18%, transparent);
+  color: var(--ok, #34d3a6);
 }
 
 .onboarding-step-card__body {
@@ -3962,7 +3962,7 @@
   margin: var(--space-2) 0 0;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--surface-raised, rgb(255 255 255 / 4%));
+  background: var(--bg-elevated, rgb(255 255 255 / 4%));
   border-left: 2px solid var(--accent);
   font-size: var(--control-ui-text-sm);
   line-height: 1.45;
@@ -4669,6 +4669,7 @@ adminbot-deadlines-view {
 
 .deadline-proposal-trigger {
   display: inline-flex;
+  margin-top: var(--space-3);
 }
 
 .deadline-proposal-trigger > button:disabled {
@@ -6410,7 +6411,7 @@ adminbot-deadlines-view {
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
-  border: 1px solid var(--line, rgb(255 255 255 / 10%));
+  border: 1px solid var(--border, rgb(255 255 255 / 10%));
   border-left: 2px solid var(--accent);
   border-radius: var(--radius-sm);
 }
@@ -6472,7 +6473,7 @@ adminbot-deadlines-view {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-raised, var(--bg));
+  background: var(--bg-elevated, var(--bg));
   color: var(--text);
   overflow: hidden;
 }
@@ -6792,13 +6793,15 @@ adminbot-deadlines-view {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .lab-sharing-director__name-row {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .lab-sharing-director__dot {
@@ -6809,7 +6812,7 @@ adminbot-deadlines-view {
 }
 
 .lab-sharing-director__dot[data-availability="available"] {
-  background: var(--success, #32d45b);
+  background: var(--ok, #32d45b);
 }
 
 .lab-sharing-director__dot[data-availability="busy"] {
@@ -6821,6 +6824,9 @@ adminbot-deadlines-view {
 }
 
 .lab-sharing-director__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-size: var(--control-ui-text-md);
   font-weight: 600;
   color: var(--text-strong);
@@ -7896,7 +7902,7 @@ adminbot-deadlines-view {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--danger-muted, var(--border));
   border-radius: var(--radius-sm, 4px);
-  background: var(--danger-surface, transparent);
+  background: var(--danger-subtle, transparent);
   color: var(--danger-muted, var(--text));
   font-size: var(--control-ui-text-sm);
   line-height: 1.45;
@@ -8329,22 +8335,21 @@ adminbot-deadlines-view {
   background-size: 14px 14px;
 }
 
-/* The view's primary actions use the same muted dark button as the Time Availability editors:
-   the accent-blue default reads as the loudest thing on the page when it is just "add a row". */
+/* Use the same themed neutral actions as the Time Availability editors. */
 .my-work .btn.primary {
-  border: 1px solid #45454d;
-  background: #2e2e34;
-  color: #e4e4e7;
+  border: 1px solid var(--border-strong);
+  background: var(--secondary);
+  color: var(--text);
 }
 
 .my-work .btn.primary:hover {
-  background: #3a3a42;
-  border-color: #505059;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .my-work .btn.primary:active {
-  background: #26262b;
-  border-color: #45454d;
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
 }
 
 /* History on the left, sort controls on the right: the thing you rarely open stays out of the
@@ -8545,7 +8550,7 @@ adminbot-deadlines-view {
 
 .bell__button:hover {
   border-color: var(--border);
-  background: var(--panel-alt, var(--panel));
+  background: var(--panel-strong, var(--panel));
 }
 
 .bell__icon svg {
@@ -8684,7 +8689,7 @@ adminbot-deadlines-view {
 }
 
 .bell__item:hover {
-  background: var(--panel-alt, rgb(127 127 127 / 12%));
+  background: var(--panel-strong, rgb(127 127 127 / 12%));
 }
 
 .bell__item-top {
@@ -9113,7 +9118,7 @@ adminbot-deadlines-view {
   display: block;
   margin: -0.3rem 0 var(--space-2);
   font-size: 0.8em;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .paper-slot__optional {
@@ -9147,8 +9152,8 @@ adminbot-deadlines-view {
 }
 
 .paper-slot__pill--done {
-  background: color-mix(in srgb, var(--success, #2f9e5b) 18%, var(--bg));
-  border-color: var(--success, #2f9e5b);
+  background: color-mix(in srgb, var(--ok, #2f9e5b) 18%, var(--bg));
+  border-color: var(--ok, #2f9e5b);
   color: #6fd196;
 }
 
@@ -9161,7 +9166,7 @@ adminbot-deadlines-view {
 .paper-slot__pill--waived {
   background: var(--bg-accent);
   border-color: var(--border-strong);
-  color: var(--text-muted);
+  color: var(--muted);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
@@ -9193,7 +9198,7 @@ adminbot-deadlines-view {
 .paper-slot__meta {
   margin: var(--space-2) 0 0;
   font-size: 0.8em;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .paper-slot__owner {
@@ -9207,7 +9212,7 @@ adminbot-deadlines-view {
 .paper-slot__note {
   margin: var(--space-2) 0 0;
   font-size: 0.8em;
-  color: var(--muted-strong, var(--text-muted));
+  color: var(--muted-strong, var(--muted));
   line-height: 1.4;
 }
 
@@ -9287,12 +9292,12 @@ adminbot-deadlines-view {
   font-size: 0.7em;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--muted-strong, var(--text-muted));
+  color: var(--muted-strong, var(--muted));
 }
 
 .paper-detail__hint {
   font-size: var(--control-ui-text-sm);
-  color: var(--text-muted);
+  color: var(--muted);
   line-height: 1.45;
 }
 
@@ -9411,11 +9416,11 @@ adminbot-deadlines-view {
 
 .paper-stage__detail {
   font-size: 0.8em;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .paper-stage--closed::before {
-  background: var(--success, #2f9e5b);
+  background: var(--ok, #2f9e5b);
 }
 .paper-stage--closed .paper-stage__detail {
   color: #6fd196;
@@ -9443,7 +9448,7 @@ adminbot-deadlines-view {
 }
 
 .paper-slot .input::placeholder {
-  color: var(--text-muted);
+  color: var(--muted);
   opacity: 0.7;
 }
 
@@ -9461,7 +9466,7 @@ adminbot-deadlines-view {
 
 .paper-slot .input:disabled {
   background: var(--bg-accent);
-  color: var(--text-muted);
+  color: var(--muted);
   cursor: not-allowed;
   opacity: 0.7;
 }
@@ -9523,7 +9528,7 @@ adminbot-deadlines-view {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-raised, var(--bg));
+  background: var(--bg-elevated, var(--bg));
   color: var(--text);
   overflow: hidden;
 }
@@ -9551,7 +9556,7 @@ adminbot-deadlines-view {
 .prereg__sub,
 .prereg__foot-note {
   margin-left: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
@@ -9570,7 +9575,7 @@ adminbot-deadlines-view {
 }
 
 .prereg__step em {
-  color: var(--text-muted);
+  color: var(--muted);
   font-weight: 400;
 }
 
@@ -9609,7 +9614,7 @@ adminbot-deadlines-view {
 }
 
 .prereg__already {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
   white-space: nowrap;
 }
@@ -9646,7 +9651,7 @@ adminbot-deadlines-view {
 }
 
 .prereg__due {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.8em;
   font-weight: 400;
 }
@@ -9667,7 +9672,7 @@ adminbot-deadlines-view {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
-  color: var(--text-muted);
+  color: var(--muted);
   font: inherit;
   font-size: 0.85em;
   cursor: pointer;
@@ -9683,7 +9688,7 @@ adminbot-deadlines-view {
 .prereg__nothere,
 .prereg__missing-note {
   margin: var(--space-2) 0 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
   line-height: 1.5;
 }
@@ -9821,7 +9826,7 @@ adminbot-deadlines-view {
 }
 
 .venue-table thead th {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -9846,7 +9851,7 @@ adminbot-deadlines-view {
 }
 
 .venue-table__authors {
-  color: var(--text-muted);
+  color: var(--muted);
   min-width: 18ch;
 }
 
@@ -9855,12 +9860,12 @@ adminbot-deadlines-view {
 }
 
 .venue-table__missing {
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .venue-table__empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
@@ -9885,7 +9890,7 @@ adminbot-deadlines-view {
 /* Not red. The chart routes a rejection straight back to revising, so colouring it as a failure
    would make the app feel worse than the news does. */
 .decision-banner--reject {
-  border-left-color: var(--text-muted);
+  border-left-color: var(--muted);
   background: color-mix(in srgb, var(--text) 4%, var(--bg));
 }
 
@@ -9905,7 +9910,7 @@ adminbot-deadlines-view {
 }
 
 .decision-banner__eyebrow {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.72em;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -9918,7 +9923,7 @@ adminbot-deadlines-view {
 }
 
 .decision-banner__paper {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
@@ -9932,12 +9937,12 @@ adminbot-deadlines-view {
 
 .decision-banner__label {
   min-width: 9rem;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
 .decision-banner__note {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.8em;
 }
 
@@ -9994,12 +9999,12 @@ adminbot-deadlines-view {
 }
 
 .travel-board__count {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
 .travel-board__open {
-  color: var(--warning, #a67c00);
+  color: var(--warn, #a67c00);
 }
 
 /* A column rather than the row of pills this used to be: the list now carries everybody on the
@@ -10032,8 +10037,8 @@ adminbot-deadlines-view {
 }
 
 .travel-board__person--no {
-  background: color-mix(in srgb, var(--text-muted) 10%, var(--bg));
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--muted) 10%, var(--bg));
+  color: var(--muted);
 }
 
 .travel-board__name {
@@ -10047,19 +10052,19 @@ adminbot-deadlines-view {
 }
 
 .travel-board__papers {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
 .travel-board__awaiting {
   margin: var(--space-2) 0 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
 .travel-board__empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
@@ -10125,7 +10130,7 @@ adminbot-deadlines-view {
 
 .decision-todo__missing {
   margin: 0 0 var(--space-2);
-  color: var(--warning, #a67c00);
+  color: var(--warn, #a67c00);
   font-size: 0.85em;
 }
 
@@ -10134,7 +10139,7 @@ adminbot-deadlines-view {
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-raised, var(--bg));
+  background: var(--bg-elevated, var(--bg));
   color: var(--text);
   font: inherit;
   line-height: 1.5;
@@ -10142,7 +10147,7 @@ adminbot-deadlines-view {
 }
 
 .decision-todo__warn {
-  color: var(--warning, #a67c00);
+  color: var(--warn, #a67c00);
   font-size: 0.85em;
 }
 
@@ -10163,12 +10168,12 @@ adminbot-deadlines-view {
 
 .decision-banner--collapsed .decision-banner__paper {
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* Who was asked, shown to everyone who was not. Quiet: it is context, not a task. */
 .decision-todo__owner {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
   align-self: center;
 }
@@ -10571,18 +10576,16 @@ adminbot-deadlines-view {
   color: var(--muted);
 }
 
-/* â”€â”€ Native dropdown options: keep them dark â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   The popup list paints its own background; without this the inherited white option text lands
-   on a light surface and vanishes. */
+/* Native option popups need an explicit, themed foreground and background. */
 select.target__select option,
 select.target__select optgroup,
 .my-work-item select.input option {
-  background: #141417;
-  color: #e4e4e7;
+  background: var(--bg-elevated);
+  color: var(--text);
 }
 
 select.target__select optgroup {
-  color: #a1a1aa;
+  color: var(--muted);
   font-weight: 600;
 }
 

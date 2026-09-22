@@ -30,7 +30,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--card) 72%, transparent);
-  color: var(--text-muted);
+  color: var(--muted);
   cursor: pointer;
   transition:
     color 140ms ease,
@@ -73,7 +73,7 @@
   display: grid;
   place-items: center;
   height: 100%;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-sm);
 }
 .adminbot-time-chart__summary {
@@ -277,7 +277,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 var(--space-4) var(--space-3);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
 }
 

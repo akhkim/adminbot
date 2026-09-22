@@ -714,6 +714,47 @@ describe("AdminBot mock service", () => {
     await expect(rateLimitAndGetAuditedIp(true)).resolves.toBe(spoofed);
   });
 
+  // A session cookie handed to a browser that reached us over HTTPS has to carry Secure, or it
+  // goes out in the clear the first time anything addresses that host over http://. The same
+  // service is also reached over loopback plain HTTP by the cron wrappers, where a Secure cookie
+  // would never be sent back -- so the attribute is decided per request rather than at startup.
+  it("marks the session cookie Secure only when the request arrived over TLS", async () => {
+    let seq = 0;
+
+    async function loginCookie(
+      trustProxyHeaders: boolean,
+      forwardedProto?: string,
+    ): Promise<string> {
+      // A fresh service per case: startService is per-test state, and the member only has to exist
+      // long enough to log in once.
+      seq += 1;
+      const id = `sec${seq}`;
+      const email = `${id}@cs.toronto.edu`;
+      const { baseUrl } = await startService({ trustProxyHeaders });
+      seedMember(baseUrl, id, { name: "Sec", email });
+      await approveClaim(baseUrl, id, email);
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: "POST",
+        headers: jsonHeaders(forwardedProto ? { "X-Forwarded-Proto": forwardedProto } : {}),
+        body: JSON.stringify({ email, password: "correcthorse" }),
+      });
+      return res.headers.get("set-cookie") ?? "";
+    }
+
+    // Plain loopback, which is how the cron wrappers and the verify commands reach the service.
+    await expect(loginCookie(false)).resolves.not.toContain("Secure");
+    // Behind the configured public proxy: our hop is plain, the browser's hop was HTTPS.
+    await expect(loginCookie(true, "https")).resolves.toContain("Secure");
+    // Trusted proxy that reports a plain hop stays plain.
+    await expect(loginCookie(true, "http")).resolves.not.toContain("Secure");
+    // Untrusted proxy: a caller-supplied header must not get to decide the attribute, the same
+    // rule X-Forwarded-For already follows above.
+    await expect(loginCookie(false, "https")).resolves.not.toContain("Secure");
+    // Secure is additive -- the protections that never depended on the transport still hold.
+    await expect(loginCookie(true, "https")).resolves.toContain("HttpOnly");
+    await expect(loginCookie(true, "https")).resolves.toContain("SameSite=Lax");
+  });
+
   it("guards member self-profile edits", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "self", {

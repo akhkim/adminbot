@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin, UserConfig } from "vite";
+import { adminBotDevAccountPicker } from "./config/adminbot-dev-account-picker.ts";
 import { controlUiManualChunk } from "./config/control-ui-chunking.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -279,6 +280,7 @@ export default function controlUiViteConfig(): UserConfig {
       strictPort: true,
     },
     plugins: [
+      adminBotDevAccountPicker(),
       controlUiBrowserOnlySharedModuleAliases(),
       controlUiServiceWorkerBuildIdPlugin(controlUiBuildId),
       {

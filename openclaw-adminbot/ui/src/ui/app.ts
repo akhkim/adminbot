@@ -778,6 +778,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotActiveCommitmentType: string | null = null;
   @state() adminBotTimeAvailabilitySaving = false;
   @state() adminBotBusyActionId: string | null = null;
+  @state() adminBotSelectedActionIds: string[] = [];
+  @state() adminBotBulkActionBusy = false;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotPhotoPolishBusy = false;
   @state() adminBotPhotoApplyBusy = false;
