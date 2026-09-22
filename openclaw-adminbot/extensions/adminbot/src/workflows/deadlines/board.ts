@@ -979,9 +979,9 @@ const TEMPLATE = `<meta charset="utf-8" />
   // AoE timestamps, so a day is spent only once it is over; a period ends when its last day does.
   function stageInstant(entry) {
     const value = entry.kind === "period" ? entry.ends || entry.starts || "" : entry.date || "";
-    const day = String(value).match(/\d{4}-\d{2}-\d{2}/);
+    const day = String(value).match(/\\d{4}-\\d{2}-\\d{2}/);
     if (!day) return null;
-    return /[ T]\d{2}:\d{2}/.test(value) ? aoeToUTC(value) : aoeToUTC(day[0] + " 23:59:59");
+    return /[ T]\\d{2}:\\d{2}/.test(value) ? aoeToUTC(value) : aoeToUTC(day[0] + " 23:59:59");
   }
   DATA.forEach((x) => {
     x._sub = aoeToUTC(x.deadline_aoe);
@@ -1453,8 +1453,8 @@ const TEMPLATE = `<meta charset="utf-8" />
     grid.innerHTML = list
       .map((x) => {
         const u =
-          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
-        const p = parts(countdownTarget(x, now) - now);
+          x._sub <= now ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
+        const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
         const title = call
@@ -1467,7 +1467,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(workshopGroupLabel(x.venue_group))}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       \${classificationLabels(x)}\${confidenceBadge(x)}
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
-      <div class="ccd"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
+      <div class="ccd"\${x._sub > now ? \` data-t="\${x._sub}"\` : ""}>\${x._sub <= now ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</div>
       \${notif}\${staleNote(x)}\${historyNote(x)}\${sourceLinks(x)}
     </div>\`;
       })
@@ -1477,8 +1477,8 @@ const TEMPLATE = `<meta charset="utf-8" />
     tbody.innerHTML = list
       .map((x) => {
         const u =
-          period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
-        const p = parts(countdownTarget(x, now) - now);
+          x._sub <= now ? { txt: "passed", cvar: "var(--muted)" } : urgencyLabel(x._sub, now);
+        const p = parts(x._sub - now);
         const type = entryTypeLabel(x);
         const call = titleUrl(x);
         const title = call
@@ -1486,7 +1486,7 @@ const TEMPLATE = `<meta charset="utf-8" />
           : esc(x.name);
         const actions = sourceLinks(x);
         return \`<tr data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
-      <td class="tcd countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
+      <td class="tcd countdown"\${x._sub > now ? \` data-t="\${x._sub}"\` : ""}>\${x._sub <= now ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${title}</td>
       <td class="meta"><span class="labels"><span class="badge">\${type}</span>\${classificationLabels(x)}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${sourceConfidenceNote(x) ? \`<span class="cnote" title="\${esc(sourceConfidenceNote(x))}">\${x.stale ? "stale" : "unconfirmed"}</span>\` : ""}\${historyNote(x)}\${actions}</td></tr>\`;
       })
@@ -1614,9 +1614,10 @@ const TEMPLATE = `<meta charset="utf-8" />
     return { name: name || entry.name, stage };
   }
   function renderGroupRow(x, group, now, groupKind) {
+    const passed = x._sub <= now;
     const rowUrgency =
-      period === "past" ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
-    const p = parts(countdownTarget(x, now) - now);
+      passed ? { txt: "passed", cvar: "var(--muted)" } : stageUrgency(x, now);
+    const p = parts(x._sub - now);
     const title = groupRowTitle(x, group.label, groupKind);
     const call = titleUrl(x);
     const linkedTitle = call
@@ -1634,7 +1635,7 @@ const TEMPLATE = `<meta charset="utf-8" />
       .join(" · ");
     const note = [title.stage, detail].filter(Boolean).join(" · ");
     return \`<div class="deadline-group__row" data-entry-type="\${esc(x.entry_type)}" data-archival-status="\${esc(x.archival_status)}" data-venue-priority="\${esc(x.venue_priority)}" style="--u:\${rowUrgency.cvar}">
-          <span class="deadline-group__row-countdown"\${period === "upcoming" ? \` data-t="\${countdownTarget(x, now)}"\` : ""}>\${period === "past" ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
+          <span class="deadline-group__row-countdown"\${!passed ? \` data-t="\${x._sub}"\` : ""}>\${passed ? "passed" : \`\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}\`}</span>
           <time class="deadline-group__row-date">\${fmtAoeDateTime(x.deadline_aoe)}</time>
           <div class="deadline-group__row-main"><h3 class="deadline-group__row-name" title="\${esc(x.name)}">\${linkedTitle}</h3><p class="deadline-group__row-note">\${note ? \`<span class="deadline-group__row-detail">\${esc(note)}</span>\` : ""}<span class="labels"><span class="badge">\${entryTypeLabel(x)}</span>\${classificationLabels(x)}\${confidenceBadge(x)}</span></p></div>\${actions ? \`<span class="deadline-group__row-actions">\${actions}</span>\` : ""}
         </div>\`;
