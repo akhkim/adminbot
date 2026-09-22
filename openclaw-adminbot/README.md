@@ -120,6 +120,9 @@ without each.
 
 ### Other entry points
 
+For a separate development database with five fictional people and usable logins, see
+[Local development fixtures](dev/README.md). The seed script preserves existing passwords on reruns.
+
 ```bash
 pnpm adminbot              # same as `node start-adminbot.mjs`
 pnpm adminbot:dev          # from source, no build step (no Slack Connect invite in this mode)
