@@ -1026,6 +1026,51 @@ export async function mergeLabMembersAsAdmin(
   };
 }
 
+export type MemberOnboardingGuideQueued = {
+  proposal_id: string;
+  template_id: string;
+  email: string;
+};
+
+// Puts one roster member through onboarding: the service composes nothing here, it files an
+// `onboarding.send_guide` proposal for approval. Admin Bearer session only, like every other write
+// on this page that reaches a person -- the shared service principal is refused (403) by the route
+// itself.
+//
+// A refusal is expected traffic rather than a fault: no address (422), a Member Type whose
+// onboarding is the backend access grant (422), or a guide already sent or already queued (409).
+// Each one names what it refused, and that sentence is the whole value of the notice -- so the
+// message is carried up from any status here, not only from the 400 `mapErrorResponse` keeps it
+// for.
+export async function queueMemberOnboardingGuide(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberOnboardingGuideQueued>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/onboarding/guide`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(typeof refusal === "string" && refusal.trim() ? { message: refusal.trim() } : {}),
+    };
+  }
+  return { ok: true, value: result.body as MemberOnboardingGuideQueued };
+}
+
 // Approvals go over the member session rather than the gateway tool: the service records the
 // approver from the authenticated principal, and the shared service principal every agent tool
 // call uses cannot name a person (extensions/adminbot/src/api/server.ts).
@@ -1794,6 +1839,35 @@ export async function searchVenuePapers(
   const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
     venue_id: params.venueId,
     interests: params.interests,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Ranks the lab's own papers against a topic, a keyword, or a whole research proposal.
+ *
+ * Needs a session where the conference search does not: that one ranks a published programme, this
+ * one returns our own paper titles and where they sit. Carries the service's sentence up for the
+ * same reason -- "the embedding model is not reachable" (502) is the common failure here and it is
+ * something the reader can act on.
+ */
+export async function searchLabPaperRelevance(
+  params: { query: string },
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/lab-papers/relevance", "POST", sessionToken, {
+    query: params.query,
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -4523,6 +4597,11 @@ export type PaperSlotRow = {
   /** The free-text half of an enum slot. */
   value_note?: string;
   provided_at?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verified_title?: string;
+  previous_submission_id?: string;
+  identity_review?: import("../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js").OpenReviewIdentityReview;
   invalid_reason?: string;
   waived_reason?: string;
 };

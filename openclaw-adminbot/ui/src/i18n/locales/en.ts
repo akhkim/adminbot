@@ -1387,7 +1387,7 @@ export const en: TranslationMap = {
     capacity: "{hours} hours/week capacity",
     // The chart's own footnote, restored with the recharts chart it explains.
     capacityNote:
-      "Dashed line marks 100% average allocation. Hover a period for daily capacity details.",
+      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Hover for active days and daily capacity details.",
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",

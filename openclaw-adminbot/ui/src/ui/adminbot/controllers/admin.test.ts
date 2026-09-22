@@ -450,6 +450,127 @@ describe("saveAdminBotMember", () => {
   });
 });
 
+describe("saveAdminBotMember — onboarding the person just added", () => {
+  const baseInput = {
+    id: "grace",
+    name: "Grace Hopper",
+    email: "grace@lab.co",
+    memberType: "full",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  /** Answers the guide route with `guide` and everything else (the save, the reload) with {}. */
+  function routes(guide: Response) {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) =>
+        String(input).includes("/onboarding/guide")
+          ? guide.clone()
+          : new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+  }
+
+  const guideCalls = (fetchMock: ReturnType<typeof routes>) =>
+    fetchMock.mock.calls.filter((call) => String(call[0]).includes("/onboarding/guide"));
+
+  it("queues the guide over the admin session once the record exists", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(
+      new Response(
+        JSON.stringify({ proposal_id: "act_7", template_id: "member", email: "grace@lab.co" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const queued = guideCalls(fetchMock);
+    expect(queued).toHaveLength(1);
+    expect(String(queued[0]![0])).toContain("/lab/members/grace/onboarding/guide");
+    expect(queued[0]![1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer admin-sess-tok" }),
+    });
+    // The save goes first: onboarding is about a member who is on the roster by then.
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/lab/members/grace");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+    expect(host.adminBotNotice?.kind).toBe("success");
+    expect(host.adminBotNotice?.text).toMatch(/waiting for approval/i);
+  });
+
+  it("carries the member type, which is what decides the template", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ member_type: "full" });
+  });
+
+  // The member is on the roster either way, so the save is not undone -- but the admin ticked a
+  // box for something that did not happen, and the service's sentence is what they can act on.
+  it("keeps the save and reports why the guide was refused", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          error: { message: "acquaintance sends no onboarding mail" },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Saved member grace");
+    expect(host.adminBotNotice?.text).toContain("acquaintance sends no onboarding mail");
+  });
+
+  it("leaves onboarding alone when the form did not ask for it", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput);
+
+    expect(guideCalls(fetchMock)).toHaveLength(0);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  // Break-glass access authenticates as the shared service principal, which the guide route
+  // refuses. Saying so beats a tick that silently did nothing.
+  it("says onboarding needs an admin sign-in on the break-glass path", async () => {
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => ({
+        ok: true,
+        toolName: params.name,
+        output: {},
+      }),
+    } as never;
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(guideCalls(fetchMock as never)).toHaveLength(0);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(/admin sign-in/i);
+  });
+});
+
 describe("saveAdminBotOwnProfile", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());

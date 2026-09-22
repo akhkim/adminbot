@@ -42,6 +42,7 @@ import {
   rebuildVenueIndexes,
   runChannelNamingSweep,
   publishCvDigest,
+  searchLabPaperRelevance,
   searchVenuePapers,
   sendMemberNudge,
   sendWorkshopNudges,
@@ -55,6 +56,7 @@ import {
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
   submitReimbursementPackage,
+  queueMemberOnboardingGuide,
   upsertLabMemberAsAdmin,
   type ConferenceRoster,
 } from "../auth/session.ts";
@@ -238,6 +240,50 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     result: null,
     expanded: [],
   };
+}
+
+/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+export type AdminBotLabPaperHit = {
+  paper_id: string;
+  title: string;
+  score: number;
+  margin: number;
+  band: "core" | "related" | "peripheral" | "off_topic";
+  segments: Array<{
+    segment_id: string;
+    label: string;
+    score: number;
+    margin: number;
+    band: string;
+  }>;
+  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  matched_terms: string[];
+  /** How much text the placement was made from. Most records are `title_only`. */
+  evidence: "rich" | "thin" | "title_only";
+};
+
+export type AdminBotLabPaperReport = {
+  query_kind: "keywords" | "proposal";
+  segment_count: number;
+  scored: number;
+  matches: AdminBotLabPaperHit[];
+  off_topic: AdminBotLabPaperHit[];
+  nothing_relevant: boolean;
+  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+};
+
+export type AdminBotLabPapersState = {
+  /** Free text: a keyword, a topic list, or a whole proposal pasted in. */
+  query: string;
+  searching: boolean;
+  error: string | null;
+  result: AdminBotLabPaperReport | null;
+  /** Which rows have their matched sections open. */
+  expanded: string[];
+};
+
+export function createEmptyLabPapersState(): AdminBotLabPapersState {
+  return { query: "", searching: false, error: null, result: null, expanded: [] };
 }
 
 export type WorkshopNudgeRecommendation = {
@@ -443,6 +489,14 @@ export type AdminBotLabMemberSaveInput = {
   collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   notes?: string;
   status?: AdminBotMemberStatus;
+  /**
+   * What the roster spreadsheet says this person is ("full", "alumni, coauthor-major").
+   *
+   * Governance, like privilege and status -- only an admin session may write it -- and the field
+   * onboarding routes on: `templateForMemberType` picks the guide from the most-committed token
+   * here, so a record saved without one has no onboarding mail to send.
+   */
+  memberType?: string;
   /**
    * Whether AdminBot may send this person anything at all.
    *
@@ -777,6 +831,7 @@ export type AdminBotHost = {
   // row and the document it wrote, so this only has to survive long enough to report the outcome.
   adminBotCvDigestJob: AdminBotCvDigestJobState;
   adminBotVenuePapers: AdminBotVenuePapersState;
+  adminBotLabPapers: AdminBotLabPapersState;
   adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
   adminBotChannelNamingJob: AdminBotCvDigestJobState;
@@ -1559,6 +1614,49 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
   }
 }
 
+/**
+ * Rank the lab's own papers against whatever is in the box.
+ *
+ * One request per press, like the conference search. Nothing is cached: the corpus changes
+ * whenever anybody edits a paper, and a stale answer about our own work is worse than a slow one.
+ */
+export async function searchAdminBotLabPapers(host: AdminBotHost): Promise<void> {
+  const session = optionalSession(host);
+  const query = host.adminBotLabPapers.query.trim();
+  if (!query) {
+    return;
+  }
+  host.adminBotLabPapers = {
+    ...host.adminBotLabPapers,
+    searching: true,
+    error: null,
+    expanded: [],
+  };
+  try {
+    const result = await searchLabPaperRelevance({ query }, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotLabPapers = {
+        ...host.adminBotLabPapers,
+        searching: false,
+        result: null,
+        error: result.message?.trim() || cvErrorText(result.kind, "rank the lab's papers"),
+      };
+      return;
+    }
+    host.adminBotLabPapers = {
+      ...host.adminBotLabPapers,
+      searching: false,
+      result: result.value as AdminBotLabPaperReport,
+    };
+  } catch (error) {
+    host.adminBotLabPapers = {
+      ...host.adminBotLabPapers,
+      searching: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 /** How often the page checks back on a pass that is still running. */
 const WORKSHOP_RUN_POLL_MS = 5_000;
 
@@ -2004,6 +2102,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
     ...(member.notes ? { notes: member.notes } : {}),
     ...(member.status ? { status: member.status } : {}),
+    ...(member.memberType ? { member_type: member.memberType } : {}),
     // `!== undefined`, not truthiness: `false` is how somebody is taken *off* the list, and a
     // truthiness check would silently turn every removal into a no-op.
     ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
@@ -2056,9 +2155,23 @@ function toolProfileParams(profile: Record<string, unknown> | undefined): Record
 // entirely. Falls back to the gateway tool only when there's no stored member session at
 // all (legacy break-glass access via the bare gateway token, predating member auth) —
 // that path keeps today's already-restricted behavior rather than losing the save entirely.
+/**
+ * Saves a roster record, and -- when the form asked for it -- puts the member through onboarding.
+ *
+ * Onboarding runs after the save rather than with it, and only on the Add-member form, because it
+ * is a different question: the record is a fact about the roster, the guide is a mail to a person.
+ * The service files it as an approval-gated `onboarding.send_guide` proposal, so what happens here
+ * is queueing, not sending.
+ *
+ * A refused guide never fails the save -- the member is on the roster either way -- but it is
+ * reported as an error notice, because the admin ticked a box for something that did not happen
+ * and the reason (no address, a Member Type that sends no mail, a guide already queued) is usually
+ * a thing they can fix.
+ */
 export async function saveAdminBotMember(
   host: AdminBotHost,
   member: AdminBotLabMemberSaveInput,
+  options: { onboard?: boolean } = {},
 ): Promise<void> {
   host.adminBotNotice = null;
   const stored = loadStoredMemberSession();
@@ -2085,7 +2198,9 @@ export async function saveAdminBotMember(
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
+    host.adminBotNotice = options.onboard
+      ? await onboardSavedMember(host, member.id, stored.sessionToken)
+      : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
     return;
   }
@@ -2101,7 +2216,15 @@ export async function saveAdminBotMember(
       ...(member.status ? { status: member.status } : {}),
       ...toolProfileParams(member.profile),
     });
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
+    // The break-glass path cannot onboard: queueing a guide needs an admin member session, and
+    // this one is the shared service principal, which the route refuses. Said out loud rather
+    // than dropped, so a tick nobody acted on is not mistaken for one that worked.
+    host.adminBotNotice = options.onboard
+      ? {
+          kind: "error",
+          text: `Saved member ${member.id}, but onboarding needs an admin sign-in — sign in with your admin account and start it from their row.`,
+        }
+      : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
   } catch (err) {
     host.adminBotNotice = {
@@ -2109,6 +2232,37 @@ export async function saveAdminBotMember(
       text: formatAdminBotToolError(err),
     };
   }
+}
+
+/** Queues the onboarding guide for a member just saved, and says what became of it. */
+async function onboardSavedMember(
+  host: AdminBotHost,
+  memberId: string,
+  sessionToken: string,
+): Promise<{ kind: "success" | "error"; text: string }> {
+  const result = await queueMemberOnboardingGuide(
+    memberId,
+    sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    const reason =
+      result.kind === "unreachable"
+        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+        : result.kind === "forbidden"
+          ? "your session no longer has admin access"
+          : // The service names what it refused -- no address, a Member Type that sends no mail, a
+            // guide already sent or queued -- and that sentence is the whole value of this notice.
+            (result.message ?? "the onboarding guide could not be queued");
+    return {
+      kind: "error",
+      text: `Saved member ${memberId}, but their onboarding guide was not queued: ${reason}`,
+    };
+  }
+  return {
+    kind: "success",
+    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding guide is waiting for approval.`,
+  };
 }
 
 /**

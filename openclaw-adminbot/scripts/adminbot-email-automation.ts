@@ -75,7 +75,6 @@ const privilegedSenders = () =>
   new Set([...onboardingSenders(), ...addressList("ADMINBOT_CONTACT_EMAILS")]);
 const APPLICATION_FORM =
   "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
-const DCS_FORM = "https://forms.office.com/r/TgGWBGWLZa";
 // Onboarding emails cite the launch URL, but `requiredVerbatim` matches the origin: the model writes
 // the link with or without the trailing slash, and the origin is a prefix of both renderings.
 const CONTROL_UI_URL = "https://jinesis-admin.vercel.app/";
@@ -1389,20 +1388,21 @@ async function processMessage(
           recipientName: classification.candidateName ?? undefined,
           guidance:
             "Welcome the candidate and clearly sequence the department-email, reply, Slack, calendar, and member-account onboarding steps.",
+          // The lab files the CS account request itself (the DCS roster sheet, see
+          // extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts), so this copy must
+          // not send anybody to a form. It used to name the Microsoft form and pin its URL in
+          // requiredVerbatim, which would now be an instruction to duplicate a request the lab has
+          // already made -- under a username the lab did not choose.
           requiredFacts: [
             `The recipient is ${email}.`,
-            `Create a @cs.toronto.edu account through ${DCS_FORM}.`,
-            `Send the new @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${botEmail()} — before the full Slack invitation is sent.`,
+            "The lab requests their @cs.toronto.edu account for them. There is no form for them to fill in and nothing for them to do yet.",
+            `The account name and a temporary password arrive in a separate email from ${botEmail()} once the request is filed; the department creates the account from it, which usually takes a few working days.`,
+            `Once the account works, send the @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${botEmail()} — before the full Slack invitation is sent.`,
             "The Slack invitation is issued automatically on that reply; no lab admin has to be emailed.",
             `Create a member account at ${CONTROL_UI_URL} and work through the onboarding guide there.`,
             "Calendar access is part of onboarding.",
           ],
-          requiredVerbatim: [
-            DCS_FORM,
-            "@cs.toronto.edu",
-            botEmail(),
-            CONTROL_UI_ORIGIN,
-          ],
+          requiredVerbatim: ["@cs.toronto.edu", botEmail(), CONTROL_UI_ORIGIN],
         });
         const sent = await state.effect(message.id, "direct_instructions", () =>
           google.send(email, draft.subject, draft.body),

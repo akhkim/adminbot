@@ -328,6 +328,89 @@ describe("the public record", () => {
     expect(slotOf(service, "submission")).toMatchObject({ verified_by: "openreview" });
   });
 
+  it("persists public identity, refreshes daily, and clears it when the link changes", async () => {
+    let calls = 0;
+    const service = published({
+      openReviewProbe: async () => {
+        calls++;
+        return {
+          status: "found",
+          title: "Garden Planning Revised",
+          previous_submission_id: "Older123",
+          identity_review: {
+            status: "checked",
+            examined: 1,
+            abstract_excerpt: "Source abstract",
+            candidates: [],
+          },
+        };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T00:00:00Z" }));
+    expect(slotOf(service, "submission")).toMatchObject({
+      verified_title: "Garden Planning Revised",
+      previous_submission_id: "Older123",
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T01:00:00Z" }));
+    expect(calls).toBe(1);
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-20T00:00:00Z" }));
+    expect(calls).toBe(2);
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "submission",
+        memberId: "ada",
+        privileged: true,
+        input: { url: "https://openreview.net/forum?id=Changed123" },
+      }),
+    );
+    expect(slotOf(service, "submission")?.verified_title).toBeUndefined();
+    expect(slotOf(service, "submission")?.previous_submission_id).toBeUndefined();
+    expect(slotOf(service, "submission")?.verified_at).toBeUndefined();
+    expect(slotOf(service, "submission")?.identity_review).toBeUndefined();
+  });
+
+  it("does not attach a slow response to a replacement link", async () => {
+    const service = published({
+      openReviewProbe: async () => {
+        unwrap(
+          service.setPaperSlot({
+            paperId: "p1",
+            slot: "submission",
+            memberId: "ada",
+            privileged: true,
+            input: { url: "https://openreview.net/forum?id=Changed123" },
+          }),
+        );
+        return { status: "found", title: "Old title" };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(slotOf(service, "submission")?.url).toContain("Changed123");
+    expect(slotOf(service, "submission")?.verified_title).toBeUndefined();
+  });
+
+  it("backfills older verification stamps without titles, then removes withdrawn history on refresh", async () => {
+    let calls = 0;
+    const service = published({
+      openReviewProbe: async () => {
+        calls++;
+        return calls === 1
+          ? { status: "found" }
+          : {
+              status: "found",
+              title: "Causal Garden Planning",
+              ...(calls === 2 ? { previous_submission_id: "Older123" } : {}),
+            };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T00:00:00Z" }));
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T01:00:00Z" }));
+    expect(slotOf(service, "submission")?.previous_submission_id).toBe("Older123");
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-20T01:00:00Z" }));
+    expect(slotOf(service, "submission")?.previous_submission_id).toBeUndefined();
+  });
+
   // The trap this whole design is built to avoid: a paper under blind review looks exactly like a
   // paper that does not exist, and reading that as absence would invalidate every submission the
   // lab currently has in review.

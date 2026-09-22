@@ -944,7 +944,7 @@ function EffortStackChart({
                     }),
                     createElement("path", {
                       d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
-                      stroke: "var(--text-muted)",
+                      stroke: "var(--muted)",
                       strokeWidth: 1.5,
                     }),
                   ),
@@ -982,11 +982,11 @@ function EffortStackChart({
                 }),
                 createElement(XAxis, {
                   dataKey: "label",
-                  tick: { fontSize: 11, fill: "var(--text-muted)" },
+                  tick: { fontSize: 11, fill: "var(--muted)" },
                   interval: 0,
                 }),
                 createElement(YAxis, {
-                  tick: { fontSize: 12, fill: "var(--text-muted)" },
+                  tick: { fontSize: 12, fill: "var(--muted)" },
                   domain: [0, () => yAxisMaximum(segments)],
                   tickFormatter: (value: number) => formatPercentage(value),
                 }),
@@ -995,7 +995,7 @@ function EffortStackChart({
                   cursor: { fill: "var(--bg-hover)", fillOpacity: 0.5 },
                 }),
                 createElement(Legend, {
-                  wrapperStyle: { fontSize: 12, color: "var(--text-muted)" },
+                  wrapperStyle: { fontSize: 12, color: "var(--muted)" },
                   content: createElement(TimeAllocationLegend, {
                     categories,
                     colors,

@@ -41,7 +41,11 @@ async function startService() {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);

@@ -1286,6 +1286,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
               ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
+                paperTitle: paper.title,
                 slots: props.slots[paper.id]?.slots ?? [],
                 stages: props.slots[paper.id]?.stages ?? [],
                 details: {
@@ -2214,6 +2215,24 @@ let gridState: PaperGridState | null = null;
 let legacyState: PaperLegacyState | null = null;
 
 /**
+ * Whether this reader has left the flat view.
+ *
+ * The flat view is what the page opens on -- every field of every paper on one page, which is
+ * what somebody arriving at My Projects & Papers to read or fill in their work is after -- so the
+ * only thing worth remembering is that they asked for something else. Without it "Back to cards"
+ * would be a button that does nothing: the next render would look at the same papers and fold the
+ * cards away again under somebody who just left.
+ *
+ * Two states rather than `gridChoice`'s three below, because unlike the sheet there is nothing
+ * underneath this one to defer to: asking for the flat view and never having said anything are
+ * the same page.
+ *
+ * Per session and not persisted, like `gridChoice`: a preference typed by pressing a button in one
+ * sitting, not a setting.
+ */
+let legacyDismissed = false;
+
+/**
  * Which surface this reader has asked for, when they have asked at all.
  *
  * `auto` means they have not, and the paper count and their role decide (`opensOnSheet`). The
@@ -2242,6 +2261,10 @@ function exitGrid(rerender: () => void): void {
 
 function exitLegacy(rerender: () => void): void {
   legacyState = null;
+  // Remembered, not just closed: see `legacyDismissed`. Now that the flat view opens by itself,
+  // dropping `legacyState` alone would re-open it on the next render and make this button look
+  // broken.
+  legacyDismissed = true;
   rerender();
 }
 
@@ -2252,6 +2275,20 @@ function exitLegacy(rerender: () => void): void {
 export function resetMyWorkViewModeForTest(): void {
   gridState = null;
   legacyState = null;
+  legacyDismissed = false;
+}
+
+/**
+ * Puts the page on the card list, the way pressing "Back to cards" does.
+ *
+ * For the tests, and named as such. The flat view is what the page opens on, so a spec about the
+ * cards, the sheet, or any of the banners above them has to say which surface it means -- and
+ * saying it here, rather than by clicking through the flat view first, keeps those specs about
+ * what they were always about.
+ */
+export function showMyWorkCardsForTest(): void {
+  legacyState = null;
+  legacyDismissed = true;
 }
 
 /**
@@ -2268,7 +2305,11 @@ export function resetPaperSheetChoice(): void {
 }
 
 /**
- * Whether the page opens on the sheet rather than offering it.
+ * Whether leaving the flat view lands on the sheet rather than merely offering it.
+ *
+ * This used to decide what the whole page opened on. The flat view now sits in front of it, so the
+ * question it answers is narrower and asked later: once somebody has pressed "Back to cards", is
+ * the cards or the sheet what "cards" means for them. Both audiences keep the answer they had.
  *
  * Two audiences, one rule: an administrator once the sheet is offered at all -- the caller has
  * already checked that -- and anybody carrying enough papers that the visit is a sweep rather than
@@ -2680,8 +2721,25 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
       (gridChoice === "auto" &&
         opensOnSheet({ count: items.length, admin: props.viewerIsAdmin ?? false })));
   const rerender = () => props.onRerender?.();
+  /**
+   * Whether the page is on the flat view.
+   *
+   * Offered on one paper, unlike the sheet -- it is the same paper drawn flat rather than a bulk
+   * tool -- but not on none: an empty flat form says "Nothing here yet" where the card list says
+   * it and offers the form that fixes it.
+   *
+   * Nothing else needs saying about the sheet here. Its own button lives on the card list, which
+   * is only reachable past this gate, so anybody who has asked for the sheet has already left the
+   * flat view -- and `showsGrid` above then decides cards against sheet exactly as it did before
+   * the flat view moved in front of them both.
+   */
+  const showsLegacy = items.length > 0 && !legacyDismissed;
 
-  if (legacyState) {
+  if (showsLegacy) {
+    // Made on the way in rather than by the button, for the same reason the sheet's state is:
+    // there are now two ways onto this surface and only one of them is a press. Kept across
+    // renders so a half-typed field survives a repaint.
+    legacyState ??= emptyPaperLegacyState();
     return html`
       <!-- Takes the page like the sheet does, and for the opposite reason: this is one long
            column of label-and-control rows, which wants the same readable measure the profile
@@ -2850,6 +2908,9 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   data-testid="my-work-open-legacy"
                   @click=${() => {
                     legacyState = emptyPaperLegacyState();
+                    // A press outranks the default in both directions: this is how somebody who
+                    // pressed Back to cards earlier gets the flat view again.
+                    legacyDismissed = false;
                     // The two full-page views are mutually exclusive: leaving the sheet open
                     // underneath would restore it on Back to cards.
                     gridState = null;

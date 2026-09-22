@@ -54,7 +54,11 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
     autoQueueMeetingRequests: Boolean(callSheet),
     ...(callSheet ? { callSheet } : {}),
   });

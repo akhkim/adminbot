@@ -9,6 +9,28 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 # different machine.
 HOST="${AURORA_HOST:-aurora.ais.sandbox}"
 CS_USER="${CS_USER:-}"
+# Where the deployment lives on Aurora. Empty here and defaulted after --user is parsed, since
+# the default names the account.
+#
+# /mfs1 is the cluster store: 47 TB and ~1e9 inodes free at the time of writing. /h holds the
+# quota'd home directories and is routinely at 100%; /w/406 is a *2.1 GB, 80k-inode* work volume,
+# which is where this used to point and is not big enough to hold this deployment. A release tree
+# carries its own node_modules, `deploy` keeps three of them, the pnpm store is most of a gigabyte
+# and the AdminBot database is a quarter of one -- that does not fit in 2.1 GB, and when it stopped
+# fitting SQLite began answering every write with "disk I/O error", which the Control UI rendered
+# as "that email and password did not match a lab member account". Nobody could sign in and the
+# message blamed their password. Hence both the volume below and the preflight check in `deploy`.
+#
+# What stays in the home directory is what has to: the systemd user units, ~/.local tooling, and
+# the two 0600 secret files, which are not going on a shared volume.
+DEPLOY_ROOT="${AURORA_DEPLOY_ROOT:-}"
+# Refuse to deploy onto a volume that cannot hold a release plus the database. Both are checked
+# because /w/406 ran out of each independently.
+MIN_DEPLOY_FREE_MB="${AURORA_MIN_DEPLOY_FREE_MB:-4096}"
+MIN_DEPLOY_FREE_INODES="${AURORA_MIN_DEPLOY_FREE_INODES:-200000}"
+# Where a *new* deployment root gets its databases from, named explicitly. Only consulted when the
+# root has no state directory yet; see the seeding block in `deploy`.
+SEED_STATE="${AURORA_SEED_STATE:-}"
 REF="HEAD"
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
@@ -29,6 +51,12 @@ Usage:
 Options:
   --user <cs-user>       CS Unix account (required; may also set CS_USER)
   --host <hostname>      Default: aurora.ais.sandbox (or $AURORA_HOST if set)
+  --root <path>          Deployment root on Aurora: releases, current and state
+                          (default: /mfs1/u/<cs-user>/jinesis-adminbot, or
+                          $AURORA_DEPLOY_ROOT if set)
+  --seed-state <dir>     Remote directory to copy the databases from when the root has no
+                          state/ yet. Required when moving to a new root over a host that
+                          already holds databases.
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
@@ -82,6 +110,16 @@ while (($# > 0)); do
       HOST="$2"
       shift 2
       ;;
+    --root)
+      (($# >= 2)) || die "--root requires a value"
+      DEPLOY_ROOT="$2"
+      shift 2
+      ;;
+    --seed-state)
+      (($# >= 2)) || die "--seed-state requires a value"
+      SEED_STATE="$2"
+      shift 2
+      ;;
     --ref)
       (($# >= 2)) || die "--ref requires a value"
       REF="$2"
@@ -131,12 +169,27 @@ shift
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 [[ "$KEEP_RELEASES" =~ ^[0-9]+$ && "$KEEP_RELEASES" -ge 1 ]] || die "--keep-releases must be a positive integer"
+DEPLOY_ROOT="${DEPLOY_ROOT:-/mfs1/u/${CS_USER}/jinesis-adminbot}"
+DEPLOY_ROOT="${DEPLOY_ROOT%/}"
+# `deploy` prunes with rm -rf under this path, so a root that cannot be reasoned about is refused
+# here rather than on the far side of an SSH connection. The remote half checks it again on its
+# own, because it is what actually runs the removals.
+[[ "$DEPLOY_ROOT" == /* ]] || die "--root must be an absolute path: $DEPLOY_ROOT"
+[[ "$DEPLOY_ROOT" != *".."* ]] || die "--root must not contain '..': $DEPLOY_ROOT"
+SEED_STATE="${SEED_STATE%/}"
+[[ -z "$SEED_STATE" || "$SEED_STATE" == /* ]] || die "--seed-state must be an absolute remote path: $SEED_STATE"
 
 TARGET="${CS_USER}@${HOST}"
-REMOTE_BASE="/h/405/${CS_USER}/services/openclaw-adminbot"
+REMOTE_BASE="$DEPLOY_ROOT"
 REMOTE_CURRENT="${REMOTE_BASE}/current"
-REMOTE_ENV="/h/405/${CS_USER}/.config/jinesis-adminbot/adminbot.env"
-REMOTE_CONFIG="/h/405/${CS_USER}/.openclaw/openclaw.json"
+# The databases, symlinked into each release as `state` so the units -- which run with the
+# release as their working directory -- reach them without naming a path.
+REMOTE_STATE="${REMOTE_BASE}/state"
+# What is left in the home directory, named once. Both are 0600 credential files: they stay on
+# /h deliberately, and are the reason this is not simply "$DEPLOY_ROOT for everything".
+REMOTE_HOME="/h/405/${CS_USER}"
+REMOTE_ENV="${REMOTE_HOME}/.config/jinesis-adminbot/adminbot.env"
+REMOTE_CONFIG="${REMOTE_HOME}/.openclaw/openclaw.json"
 # SSHPASS_PREFIX stays empty (today's interactive-prompt behavior) unless AURORA_SSH_PASSWORD
 # is set; every ssh/scp invocation below is prefixed with it so one password entry covers the
 # whole flow.
@@ -162,16 +215,31 @@ remote_install_script() {
 case "$COMMAND" in
   check)
     check_local_tools
-    "${SSH[@]}" bash -s -- "$CS_USER" <<'REMOTE'
+    "${SSH[@]}" bash -s -- "$CS_USER" "$REMOTE_BASE" <<'REMOTE'
 set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 expected_user="$1"
+deploy_root="$2"
 printf 'host=%s\n' "$(hostname -f 2>/dev/null || hostname)"
 printf 'user=%s\n' "$USER"
 [[ "$USER" == "$expected_user" ]] || {
   printf 'warning: expected user %s but SSH reports %s\n' "$expected_user" "$USER" >&2
 }
 printf 'home=%s\n' "$HOME"
+# The deployment root is on another volume now, so "I can log in" no longer implies "I can
+# deploy". Checked against the nearest existing ancestor: the root itself does not exist before
+# the first deploy, and a missing directory the account can create is not a problem.
+printf 'deploy_root=%s\n' "$deploy_root"
+probe="$deploy_root"
+while [[ ! -e "$probe" && "$probe" == */* && "$probe" != "/" ]]; do
+  probe="${probe%/*}"
+  [[ -n "$probe" ]] || probe="/"
+done
+if [[ -w "$probe" ]]; then
+  printf 'deploy_root_writable=yes (%s)\n' "$probe"
+else
+  printf 'deploy_root_writable=no (%s is not writable by %s)\n' "$probe" "$USER" >&2
+fi
 [[ -d "/mfs1/u/$USER" ]] && printf 'mfs1=yes\n' || printf 'mfs1=no\n'
 command -v node >/dev/null && printf 'node=%s\n' "$(node --version)" || printf 'node=missing\n'
 command -v systemctl >/dev/null && printf 'systemd=yes\n' || printf 'systemd=no\n'
@@ -262,9 +330,30 @@ set -euo pipefail
 base="$1"
 current="$2"
 keep="$3"
-expected="/h/405/$USER/services/openclaw-adminbot"
-[[ "$base" == "$expected" ]] || {
-  printf 'Refusing cleanup outside expected deployment root: %s\n' "$base" >&2
+# This block removes directories, so the root it was handed is checked before anything goes.
+#
+# It used to compare against one hardcoded literal, which stopped working the moment the root
+# became configurable (--root / $AURORA_DEPLOY_ROOT) -- and a guard that has to be passed the
+# thing it is guarding against is no guard at all. What makes a cleanup safe is the shape of the
+# path, so that is what is checked: absolute, no traversal, at least two levels deep, and not the
+# home directory itself. /w/406/adminbot passes; /w, /w/406 and $HOME do not. Everything removed
+# below is under "$base/releases", which is re-derived here rather than taken on trust.
+[[ "$base" == /* ]] || {
+  printf 'Refusing cleanup: deployment root is not an absolute path: %s\n' "$base" >&2
+  exit 1
+}
+[[ "$base" != *".."* ]] || {
+  printf 'Refusing cleanup: deployment root contains a traversal: %s\n' "$base" >&2
+  exit 1
+}
+[[ "$base" != "/" && "$base" != "$HOME" ]] || {
+  printf 'Refusing cleanup: deployment root is a filesystem or home root: %s\n' "$base" >&2
+  exit 1
+}
+depth="${base#/}"
+depth="${depth//[!\/]/}"
+((${#depth} >= 2)) || {
+  printf 'Refusing cleanup: deployment root is too shallow to prune safely: %s\n' "$base" >&2
   exit 1
 }
 {
@@ -285,10 +374,15 @@ elif [[ -e "$current" ]]; then
   exit 1
 fi
 releases="$base/releases"
-[[ "$releases" == "$expected/releases" ]] || exit 1
 mkdir -p "$releases"
 {
   cd "$releases"
+  # Belt and braces after the shape checks above: prune only from the directory this actually
+  # landed in, so a symlinked or substituted `releases` cannot redirect the removals.
+  [[ "$PWD" == "$releases" ]] || {
+    printf 'Refusing cleanup: %s resolved to %s\n' "$releases" "$PWD" >&2
+    exit 1
+  }
   # Newest-mtime-first; each release directory is created once by `deploy` and never
   # touched again by anything else, so mtime order matches deploy order.
   ls -1t 2>/dev/null | tail -n "+$((keep + 1))" | while IFS= read -r old; do
@@ -298,20 +392,97 @@ mkdir -p "$releases"
 printf '%s\n' "$prior"
 REMOTE_CLEAN
     )"
+    # Before anything is uploaded: does the target volume actually have room? /w/406 filled up
+    # silently once, and the first anyone knew of it was the Control UI telling a roster of people
+    # with correct passwords that their password was wrong -- SQLite answers "disk I/O error" for
+    # the audit row every login attempt writes. A deploy that cannot fit is refused here, where the
+    # message can say so, rather than half-landing and taking sign-in down with it.
+    "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$MIN_DEPLOY_FREE_MB" "$MIN_DEPLOY_FREE_INODES" <<'REMOTE_SPACE'
+set -euo pipefail
+base="$1"
+min_mb="$2"
+min_inodes="$3"
+# The root does not exist before the first deploy, so measure the nearest existing ancestor --
+# it is the same filesystem either way.
+probe="$base"
+while [[ ! -e "$probe" && "$probe" == */* && "$probe" != "/" ]]; do
+  probe="${probe%/*}"
+  [[ -n "$probe" ]] || probe="/"
+done
+free_mb="$(df -Pm -- "$probe" | awk 'NR==2 {print $4}')"
+free_inodes="$(df -Pi -- "$probe" | awk 'NR==2 {print $4}')"
+printf 'deploy_root=%s free_mb=%s free_inodes=%s\n' "$base" "$free_mb" "$free_inodes"
+# Some filesystems report no inode accounting at all (df prints "-"); that is not a failure.
+if [[ "$free_mb" =~ ^[0-9]+$ ]] && ((free_mb < min_mb)); then
+  printf 'Refusing to deploy: %s has %s MB free, below the %s MB a release plus the database needs.\n' \
+    "$probe" "$free_mb" "$min_mb" >&2
+  printf 'Point --root / $AURORA_DEPLOY_ROOT at a volume with room, or free space and retry.\n' >&2
+  exit 1
+fi
+if [[ "$free_inodes" =~ ^[0-9]+$ ]] && ((free_inodes < min_inodes)); then
+  printf 'Refusing to deploy: %s has %s inodes free, below the %s a node_modules tree needs.\n' \
+    "$probe" "$free_inodes" "$min_inodes" >&2
+  exit 1
+fi
+REMOTE_SPACE
+
     "${SSH[@]}" mkdir -p "$remote_release"
     "${SCP[@]}" "$archive" "${TARGET}:${remote_release}/source.tar"
 
-    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$prior_release" <<'REMOTE'
+    # The two optional values are prefixed rather than passed bare, and it matters: ssh flattens its
+    # argument list into a single string for the remote shell to re-split, so an EMPTY argument does
+    # not survive the trip -- it vanishes and every argument after it shifts down one. `prior_release`
+    # is empty on the first deploy into a root and `--seed-state` is empty on most deploys, so with
+    # bare arguments a first deploy would silently bind state_dir to the deployment root and symlink
+    # the release's state at it. An earlier revision dodged this by keeping the single optional value
+    # last; two of them cannot both be last, so they carry a prefix that is stripped on arrival and
+    # keeps them non-empty on the wire.
+    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$REMOTE_STATE" "$REMOTE_BASE" "prior=$prior_release" "seed=$SEED_STATE" <<'REMOTE'
 set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 release="$1"
 current="$2"
 gateway_port="$3"
 adminbot_port="$4"
-prior_release="${5:-}"
+state_dir="$5"
+base="$6"
+# Prefixed at the call site so neither can be empty on the wire; see the note there.
+prior_release="${7#prior=}"
+seed_state="${8#seed=}"
 cd "$release"
 tar -xf source.tar
 rm -f source.tar
+
+# Where a new state directory gets its databases from: what the operator named, else what the
+# previously live release in this same root was using. There is deliberately no automatic fallback
+# to ~/.openclaw/state. That fallback was safe exactly once, before state had ever moved; it is a
+# months-old copy now, and seeding from it would roll the lab back to that snapshot while looking
+# like a clean deploy -- a failure that surfaces days later as missing members and lost approvals.
+seed_from=""
+if [[ -n "$seed_state" ]]; then
+  # Named by the operator, so it is taken as given -- but it has to exist, or the deploy would
+  # come up on an empty database having been told exactly where the real one was.
+  [[ -d "$seed_state" ]] || {
+    printf 'Refusing to deploy: --seed-state %s is not a directory on this host.\n' "$seed_state" >&2
+    exit 1
+  }
+  seed_from="$seed_state"
+elif [[ -n "$prior_release" ]]; then
+  prior_state="$(dirname -- "$release")/$prior_release/state"
+  if [[ -e "$prior_state" ]]; then
+    seed_from="$(readlink -f -- "$prior_state")"
+  fi
+fi
+# A new root, nothing to inherit from, and databases already on the host: refuse rather than guess,
+# and name what is actually here so the right --seed-state is one copy-paste away.
+if [[ ! -e "$state_dir" && -z "$seed_from" && -f "$HOME/.openclaw/state/adminbot.sqlite" ]]; then
+  printf 'Refusing to deploy: %s has no state/ and there is no prior release to seed it from,\n' "$base" >&2
+  printf 'but this host already holds databases. Name the source explicitly:\n' >&2
+  printf '  --seed-state <dir>   (e.g. the state/ of the root you are moving away from)\n' >&2
+  printf 'Databases on this host:\n' >&2
+  find "$HOME" /w /mfs1 -maxdepth 6 -name adminbot.sqlite -not -path '*/node_modules/*' 2>/dev/null | sed 's/^/  /' >&2
+  exit 1
+fi
 
 command -v node >/dev/null || {
   echo "Node.js is missing. Install Node 22.19+ in your CS account or load a CSLab /w/pkgs toolchain." >&2
@@ -344,6 +515,10 @@ if [[ -n "$prior_release" ]]; then
   fi
 fi
 
+# Keep the store on the deployment volume rather than wherever pnpm decides to put it. pnpm's
+# default lands it beside the project's mount point, which is how most of a gigabyte of store
+# ended up on a 2.1 GB volume next to the database it then starved.
+export npm_config_store_dir="$base/.pnpm-store"
 if command -v corepack >/dev/null; then
   corepack pnpm install --frozen-lockfile
   corepack pnpm build
@@ -355,17 +530,46 @@ else
   exit 1
 fi
 
-mkdir -p "$HOME/.openclaw/state"
+# The databases used to live at ~/.openclaw/state and now live under the deployment root. A
+# first deploy after that move would otherwise point the symlink at an empty directory and bring
+# AdminBot up with no data, which looks exactly like a wiped database. Seed the new location from
+# the old one instead -- copied, not moved, so the home copy stays as a fallback and a rollback to
+# an older release has something to go back to. Only when the new location does not exist yet, so
+# this happens once and never overwrites a live database.
+if [[ ! -e "$state_dir" && -n "$seed_from" && -d "$seed_from" && "$(readlink -f -- "$seed_from")" != "$state_dir" ]]; then
+  echo "Seeding $state_dir from $seed_from (one-time; the source is left in place)"
+  mkdir -p "$state_dir"
+  # The live databases only. The historical snapshots beside them -- adminbot.sqlite.backup-*,
+  # .bak-*, .before-*, .empty-* -- were half a gigabyte last time and are what a plain `cp -a`
+  # carried onto a volume that then had no room for the database to grow into. They stay at the
+  # source, which this does not touch, so nothing is lost by leaving them behind.
+  seeded=0
+  left=0
+  for entry in "$seed_from"/*; do
+    [[ -e "$entry" ]] || continue
+    case "$(basename -- "$entry")" in
+      *.backup-* | *.bak-* | *.before-* | *.empty-*)
+        left=$((left + 1))
+        continue
+        ;;
+    esac
+    cp -a -- "$entry" "$state_dir/"
+    seeded=$((seeded + 1))
+  done
+  printf 'Seeded %s file(s); left %s historical snapshot(s) at %s\n' "$seeded" "$left" "$seed_from"
+fi
+mkdir -p "$state_dir"
 if [[ -e "$release/state" && ! -L "$release/state" ]]; then
   rmdir "$release/state" 2>/dev/null || {
     echo "Refusing to replace non-empty release state directory: $release/state" >&2
     exit 1
   }
 fi
-ln -sfn "$HOME/.openclaw/state" "$release/state"
+ln -sfn "$state_dir" "$release/state"
 ln -sfn "$release" "$current"
 "$current/deploy/aurora/install-user-services.sh" \
   --root "$current" \
+  --state "$state_dir" \
   --gateway-port "$gateway_port" \
   --adminbot-port "$adminbot_port" \
   --no-start
@@ -501,8 +705,12 @@ REMOTE_CRON
     trap 'rm -f -- "$database_snapshot"' EXIT
     node "$snapshot_helper" "$local_database" "$database_snapshot"
 
-    remote_upload="${REMOTE_CONFIG}.adminbot-db-upload.$$"
-    remote_database="/h/405/${CS_USER}/.openclaw/state/adminbot.sqlite"
+    # Staged inside the state directory rather than next to openclaw.json in the home directory:
+    # the snapshot is the size of the database, and landing it on the home volume is the thing
+    # moving state off /h was meant to stop.
+    remote_upload="${REMOTE_STATE}/.adminbot-db-upload.$$"
+    remote_database="${REMOTE_STATE}/adminbot.sqlite"
+    "${SSH[@]}" mkdir -p "$REMOTE_STATE"
     "${SCP[@]}" "$database_snapshot" "${TARGET}:${remote_upload}"
     "${SSH[@]}" bash -s -- "$remote_upload" "$remote_database" <<'REMOTE_ADMINBOT_DATA'
 set -euo pipefail
@@ -558,13 +766,14 @@ REMOTE_ADMINBOT_DATA
   auth-gog)
     (($# == 0)) || die "auth-gog takes no arguments"
     "${SSHPASS_PREFIX[@]}" ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET" \
-      "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; /h/405/${CS_USER}/.local/bin/gog auth add \"\$GOG_ACCOUNT\" --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
+      "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; ${REMOTE_HOME}/.local/bin/gog auth add \"\$GOG_ACCOUNT\" --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
     ;;
 
   install-services)
     (($# == 0)) || die "install-services takes no arguments"
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
+      --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
       --no-start
@@ -574,6 +783,7 @@ REMOTE_ADMINBOT_DATA
     (($# == 0)) || die "start takes no arguments"
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
+      --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
       --start

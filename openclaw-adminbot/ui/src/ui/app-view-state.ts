@@ -20,7 +20,7 @@ import type {
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
-import type { BlockerSort } from "./adminbot/views/admin.ts";
+import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
@@ -657,6 +657,10 @@ export type AppViewState = {
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
   adminBotVenueFilter: string;
+  adminBotPreregSort: PreregSort;
+  adminBotPreregSortReversed: boolean;
+  adminBotPreregMinConfidence: number;
+  adminBotPreregMissingEdit: boolean;
   nudgeBellOpen: boolean;
   // Last press of the CV digest job on the Cron tab. Session-scoped on purpose: the durable
   // record of a run is the audit row and the document itself, and this only exists so the button
@@ -665,6 +669,8 @@ export type AppViewState = {
   // Find Interesting Papers tab. Held whole rather than as a dozen flat fields: every part of it is
   // replaced together on each search, and a half-updated search is not a state worth expressing.
   adminBotVenuePapers: import("./adminbot/controllers/admin.ts").AdminBotVenuePapersState;
+  adminBotLabPapers: import("./adminbot/controllers/admin.ts").AdminBotLabPapersState;
+  adminBotPapersTab: import("./adminbot/views/conference-papers.ts").ConferencePapersTab;
   // Review-only CSV workshop matcher. Drafts remain browser state until explicitly downloaded.
   adminBotWorkshopNudges: import("./adminbot/controllers/admin.ts").WorkshopNudgeReviewState;
   // Last press of the conference index job on the Cron tab. Same shape as the CV digest job: both

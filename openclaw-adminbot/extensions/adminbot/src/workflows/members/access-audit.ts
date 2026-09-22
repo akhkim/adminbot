@@ -86,7 +86,7 @@ export type AccessAuditEvidence = {
   portal_credential: boolean;
   /** Latest outcome of each onboarding side effect, from the audit trail. */
   calendar_invite: AccessAuditAttempt;
-  dcs_form: AccessAuditAttempt;
+  dcs_roster_row: AccessAuditAttempt;
   approval_email: AccessAuditAttempt;
   onboarding_guide: AccessAuditAttempt;
   /** Whether the audit trail was loaded. False makes every trail-backed row unverifiable. */
@@ -467,15 +467,15 @@ const BASELINE_ITEMS = [
     check: attemptCheck((evidence) => evidence.calendar_invite, "lab calendar invite"),
   },
   {
-    id: "baseline_dcs_form" as const,
-    label: "DCS Slack-access form",
-    // Filed by one onboarding template -- the full-member one (DCS_FORM_TEMPLATE_ID = "member").
+    id: "baseline_dcs_roster_row" as const,
+    label: "DCS roster sheet row",
+    // Filed by one onboarding template -- the full-member one (DCS_ROSTER_TEMPLATE_ID = "member").
     // Every other member type's onboarding never files it.
     applies: (member: AdminBotLabMember) => {
       const template = templateForMemberType(member.member_type);
       return template.ok ? template.templateId === "member" : undefined;
     },
-    check: attemptCheck((evidence) => evidence.dcs_form, "DCS form submission"),
+    check: attemptCheck((evidence) => evidence.dcs_roster_row, "DCS roster row filing"),
   },
   {
     id: "baseline_portal_login" as const,
