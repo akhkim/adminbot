@@ -293,7 +293,7 @@
     {
       "name": "adminbot-rec-letter-channel",
       "description": "Keep #help-rec-letter-request in step with open letter requests",
-      "cron": "20 10 * * 1-5",
+      "cron": "20 * * * *",
       "argv": [
         "bash",
         "scripts/adminbot-rec-letter-channel-cron.sh"
