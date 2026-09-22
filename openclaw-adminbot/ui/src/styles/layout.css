@@ -10068,6 +10068,49 @@ adminbot-deadlines-view {
   font-size: 0.9em;
 }
 
+/* Finished years fold away behind their own summary, because the board is read to plan travel
+   that has not happened yet and a lab that goes to the same three conferences every year would
+   otherwise push this year's rows further down the card each December. Native <details>, like the
+   solved-blocker history: the rows stay in the DOM and in find-in-page, they are just not in the
+   way. */
+.travel-board__past {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.travel-board__past-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.travel-board__past-summary::-webkit-details-marker {
+  display: none;
+}
+
+.travel-board__past-summary::before {
+  content: "\25b8";
+  font-size: 10px;
+}
+
+.travel-board__past[open] .travel-board__past-summary::before {
+  content: "\25be";
+}
+
+.travel-board__past[open] .travel-board__past-summary {
+  margin-bottom: var(--space-3);
+  color: var(--text);
+}
+
 /* The coauthor-email task. A different shape from the choice pills above it because it is a
    different kind of thing: those record an answer, this one asks a person to go and do
    something, so it reads like a PaperFlow task box rather than a control. */

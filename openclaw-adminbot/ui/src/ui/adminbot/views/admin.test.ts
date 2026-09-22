@@ -2070,6 +2070,73 @@ describe("renderAdminBot papers panel — conference travel", () => {
     );
     expect(container.querySelector('[data-testid="travel-board"]')).toBeNull();
   });
+
+  // Years relative to the clock rather than literals: the cut is "a year that has finished", so a
+  // fixture pinned to 2026 would quietly change sides on 1 January and take the assertion with it.
+  const thisYear = new Date().getFullYear();
+
+  function rosterFor(year: number) {
+    return {
+      ...roster,
+      key: `emnlp:${year}`,
+      year,
+      label: `EMNLP ${year}`,
+      papers_awaiting: [],
+    };
+  }
+
+  function withYears(...years: number[]) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          conferenceRosters: years.map((year) => rosterFor(year)),
+        },
+      }),
+    );
+  }
+
+  it("keeps a finished year out of the board and behind the disclosure", () => {
+    const container = withYears(thisYear, thisYear - 1);
+    const past = container.querySelector('[data-testid="travel-board-past"]');
+    // Still rendered -- a native <details> hides its contents without dropping them, so the rows
+    // stay findable by find-in-page and by a screen reader that opens the section.
+    const old = container.querySelector(
+      `[data-testid="travel-board-conference-emnlp:${thisYear - 1}"]`,
+    );
+    const current = container.querySelector(
+      `[data-testid="travel-board-conference-emnlp:${thisYear}"]`,
+    );
+    expect(old).not.toBeNull();
+    expect(past?.contains(old)).toBe(true);
+    expect(past?.contains(current)).toBe(false);
+  });
+
+  it("leaves the disclosure shut on arrival, and says how many years it holds", () => {
+    const container = withYears(thisYear, thisYear - 1, thisYear - 2);
+    const details = container.querySelector<HTMLDetailsElement>("details.travel-board__past");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toContain("Past conferences (2)");
+  });
+
+  it("offers no disclosure when nothing has finished yet", () => {
+    const container = withYears(thisYear, thisYear + 1);
+    expect(container.querySelector('[data-testid="travel-board-past"]')).toBeNull();
+    expect(container.querySelector('[data-testid="travel-board-current-empty"]')).toBeNull();
+  });
+
+  it("says so when every conference is behind the disclosure", () => {
+    const container = withYears(thisYear - 1);
+    // Otherwise the card would be a title, a blurb and a closed section, which reads as broken
+    // rather than as a lab with no accepted paper this year.
+    expect(
+      container.querySelector('[data-testid="travel-board-current-empty"]')?.textContent,
+    ).toContain("Nothing accepted for this year yet.");
+    expect(container.querySelector('[data-testid="travel-board-past"]')).not.toBeNull();
+  });
 });
 
 describe("pending actions bulk clear", () => {
