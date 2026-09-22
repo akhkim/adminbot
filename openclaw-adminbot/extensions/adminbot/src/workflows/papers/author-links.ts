@@ -112,13 +112,12 @@ export function buildAuthorLinks(params: {
   const priorByName = new Map(
     (params.priorLinks ?? []).map((link) => [link.name.trim().toLowerCase(), link]),
   );
-  const source: AdminBotPaperAuthorLink[] =
-    params.links?.length
-      ? params.links.map((link) => ({ ...link }))
-      : (params.names ?? []).map((name) => ({
-          ...priorByName.get(name.trim().toLowerCase()),
-          name,
-        }));
+  const source: AdminBotPaperAuthorLink[] = params.links?.length
+    ? params.links.map((link) => ({ ...link }))
+    : (params.names ?? []).map((name) => ({
+        ...priorByName.get(name.trim().toLowerCase()),
+        name,
+      }));
 
   const out: AdminBotPaperAuthorLink[] = [];
   const seenMembers = new Set<string>();
