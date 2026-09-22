@@ -2,7 +2,7 @@
 """
 Publish tracked submission deadlines to the Jinesis Lab Google Calendar.
 
-Reads the same `venues.json` the deadline board and reminders use, and writes one all-day event
+Reads the same `venues.json` the deadline board and reminders use, and writes one final-hour event
 per venue deadline to the lab calendar named by `ADMINBOT_DEADLINE_CALENDAR_ID`.
 
 Two things make this safe to run repeatedly:
@@ -14,9 +14,8 @@ Two things make this safe to run repeatedly:
   * Nothing is written without `--send`. The default prints the plan, matching every other script
     in the deadline set.
 
-Deadlines are AoE (UTC-12). The event is placed on the *AoE calendar date* rather than the instant
-converted into local time, because "the ICML deadline is the 15th" is what people act on; showing
-it on the 16th because Toronto is ahead of AoE would be actively misleading.
+Deadlines are AoE (UTC-12). Events span the hour before the actual cutoff, displayed in each
+viewer's local timezone; the description preserves the original AoE date and time.
 
 Env:
   ADMINBOT_DEADLINE_CALENDAR_ID   required; falls back to ADMINBOT_LAB_EMAIL
@@ -32,7 +31,7 @@ import os
 import subprocess
 import sys
 
-from adminbot_deadlines import DeadlineDataset
+from adminbot_deadlines import AoEClock, DeadlineDataset
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
@@ -82,7 +81,7 @@ def marker_for(venue_id):
 
 
 def build_event(item):
-    day = aoe_date(item["deadline_aoe"])
+    end = AoEClock.instant(item["deadline_aoe"])
     summary = f"{item['name']} — {item.get('deadline_label') or 'deadline'}"
     lines = [
         f"{item['name']} ({item.get('venue_type', 'venue')})",
@@ -95,9 +94,8 @@ def build_event(item):
     lines += ["", "Maintained by AdminBot from venues.json. Edits here are overwritten.", marker_for(item["id"])]
     return {
         "summary": summary[:200],
-        # All-day events are half-open in the Google API: end is the day after the deadline.
-        "start": day.isoformat(),
-        "end": (day + datetime.timedelta(days=1)).isoformat(),
+        "start": (end - datetime.timedelta(hours=1)).isoformat(),
+        "end": end.isoformat(),
         "description": "\n".join(lines),
     }
 
@@ -140,8 +138,8 @@ def main():
     args = ap.parse_args()
 
     items = DeadlineDataset(os.path.dirname(VENUES)).venues()
-    today = datetime.date.today()
-    horizon = today + datetime.timedelta(days=args.within_days)
+    now = AoEClock.resolve().now
+    horizon = now + datetime.timedelta(days=args.within_days)
 
     planned = []
     for item in items:
@@ -149,8 +147,8 @@ def main():
             continue
         if args.venue_type != "all" and item.get("venue_type") != args.venue_type:
             continue
-        day = aoe_date(item["deadline_aoe"])
-        if day < today or day > horizon:
+        deadline = AoEClock.instant(item["deadline_aoe"])
+        if deadline < now or deadline > horizon:
             continue
         planned.append((item, build_event(item)))
     planned.sort(key=lambda pair: pair[1]["start"])
@@ -164,12 +162,13 @@ def main():
 
     if not args.send:
         for item, event in planned:
-            print(f"  would add  {event['start']}  {event['summary'][:70]}")
+            print(f"  would sync  {event['start']} → {event['end']}  {event['summary'][:70]}")
         print("\ndry-run: nothing written. Re-run with --send to publish.")
         return
 
-    window_start = min(datetime.date.fromisoformat(e["start"]) for _, e in planned)
-    window_end = max(datetime.date.fromisoformat(e["end"]) for _, e in planned)
+    # Include old all-day entries and new timed entries, with padding for calendar timezones.
+    window_start = min(aoe_date(item["deadline_aoe"]) for item, _ in planned) - datetime.timedelta(days=1)
+    window_end = max(datetime.datetime.fromisoformat(e["end"]).date() for _, e in planned) + datetime.timedelta(days=2)
     existing = existing_events(window_start, window_end)
 
     created = updated = 0
@@ -181,7 +180,7 @@ def main():
                 "calendar", "update", CALENDAR_ID, event_id,
                 "--summary", event["summary"],
                 "--description", event["description"],
-                "--from", event["start"], "--to", event["end"], "--all-day",
+                "--from", event["start"], "--to", event["end"], "--all-day=false",
             ])
             updated += 1
             print(f"  updated  {event['start']}  {event['summary'][:66]}")
@@ -190,7 +189,7 @@ def main():
                 "calendar", "create", CALENDAR_ID,
                 "--summary", event["summary"],
                 "--description", event["description"],
-                "--from", event["start"], "--to", event["end"], "--all-day",
+                "--from", event["start"], "--to", event["end"], "--all-day=false",
             ])
             created += 1
             print(f"  created  {event['start']}  {event['summary'][:66]}")

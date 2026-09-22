@@ -57,6 +57,94 @@ const venue = (id: string, deadline: string, extra: Record<string, unknown> = {}
   ...extra,
 });
 
+describe("deadline calendar", () => {
+  const setup = `
+import os
+from unittest.mock import patch
+from types import SimpleNamespace
+os.environ['ADMINBOT_DEADLINE_CALENDAR_ID'] = 'calendar@example.test'
+os.environ['GOG_ACCOUNT'] = 'bot@example.test'
+m = load('adminbot-deadline-calendar')
+item = {'id': 'test-venue', 'name': 'Test Venue', 'deadline_aoe': '2026-09-30 23:59:59'}
+`;
+
+  it("ends a one-hour event at the actual AoE cutoff, including year rollover", () => {
+    expect(
+      runPython(`${setup}
+item['deadline_aoe'] = '2026-12-31 23:59:59'
+event = m.build_event(item)
+print(json.dumps([event['start'], event['end'], event['description']]))`),
+    ).toEqual([
+      "2027-01-01T10:59:59+00:00",
+      "2027-01-01T11:59:59+00:00",
+      expect.stringContaining("Deadline: 2026-12-31 23:59:59 AoE"),
+    ]);
+  });
+
+  it("converts an existing all-day event and updates the same ID on repeat", () => {
+    const calls = runPython(`${setup}
+calls = []
+def gog(args, check=True):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps({'events': [
+        {'id': 'existing-event', 'description': m.marker_for(item['id'])}
+    ]}))
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', side_effect=gog), \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}), \
+     patch.object(sys, 'argv', ['calendar', '--send']):
+    m.main()
+    m.main()
+print(json.dumps(calls))`) as string[][];
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual([
+      "calendar",
+      "events",
+      "calendar@example.test",
+      "--from",
+      "2026-09-29",
+      "--to",
+      "2026-10-03",
+      "--max",
+      "2500",
+      "--json",
+    ]);
+    expect(calls[1].slice(0, 4)).toEqual([
+      "calendar",
+      "update",
+      "calendar@example.test",
+      "existing-event",
+    ]);
+    expect(calls[1].slice(-5)).toEqual([
+      "--from",
+      "2026-10-01T10:59:59+00:00",
+      "--to",
+      "2026-10-01T11:59:59+00:00",
+      "--all-day=false",
+    ]);
+    expect(calls[3]).toEqual(calls[1]);
+  });
+
+  it("creates timed events, previews without Google calls, and skips expired deadlines", () => {
+    expect(
+      runPython(`${setup}
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', return_value=SimpleNamespace(returncode=0, stdout='[]')) as gog, \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}):
+    with patch.object(sys, 'argv', ['calendar']):
+        m.main()
+    preview_calls = gog.call_count
+    with patch.object(sys, 'argv', ['calendar', '--send']):
+        m.main()
+        create = gog.call_args.args[0]
+        gog.reset_mock()
+        with patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T12:00:00+00:00'}):
+            m.main()
+    print(json.dumps([preview_calls, create[:2], create[-1], gog.call_count]))`),
+    ).toEqual([0, ["calendar", "create"], "--all-day=false", 0]);
+  });
+});
+
 describe("AoEClock", () => {
   it("treats an AoE stamp as expiring twelve hours later in UTC", () => {
     expect(
@@ -877,19 +965,22 @@ print(json.dumps([row['deadline_aoe'], row['source_checked_at'], row['_source_ob
 });
 
 it("refreshes the named commitment row without borrowing submission or notification dates", () => {
-  expect(runPython(`
+  expect(
+    runPython(`
 from adminbot_conference_deadlines import conference_table_deadline
 html = '<table><tr><td>ARR submission deadline</td><td>October 12, 2026</td></tr><tr><td>NAACL commitment deadline</td><td>December 23, 2026</td></tr><tr><td>Notification</td><td>February 10, 2027</td></tr></table>'
 print(json.dumps([conference_table_deadline(html, 'NAACL commitment deadline', 2026)[0], conference_table_deadline(html, 'Missing deadline', 2026), conference_table_deadline(html + html, 'NAACL commitment deadline', 2026)]))
-`)).toEqual(["2026-12-23", null, null]);
+`),
+  ).toEqual(["2026-12-23", null, null]);
 });
 
-
 it("does not invent a tutorial abstract stage from a shared paper CFP", () => {
-  expect(runPython(`
+  expect(
+    runPython(`
 from adminbot_workshop_deadlines import split_workshop_milestones, deadline_candidates_from_text
 item = {'id':'tutorial','name':'Tutorials track','deadline_aoe':'2035-09-11 23:59:00','_openreview_deadline':'2035-09-11 23:59:00'}
 candidates = deadline_candidates_from_text('Abstract submission deadline: September 11, 2035 AoE. Paper submission deadline: September 13, 2035 AoE.', 'https://example.org/', 2035)
 print(json.dumps([row['id'] for row in split_workshop_milestones(item, candidates, 2035)]))
-`)).toEqual(["tutorial"]);
+`),
+  ).toEqual(["tutorial"]);
 });
