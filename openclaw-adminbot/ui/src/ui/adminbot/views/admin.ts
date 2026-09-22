@@ -2455,11 +2455,29 @@ function copyNudge(event: Event, message: string) {
  * Everyone appears, not just the people who said yes -- the answer a reader needs before booking
  * anything is which of these names are still question marks.
  */
+/**
+ * Whether a conference belongs to a year that has finished.
+ *
+ * A year, not a date, because a year is all the roster has: it is keyed on `accepted_venue` and
+ * `accepted_year`, and nothing upstream records when the event itself runs. That makes the only
+ * honest cut a whole year that is over. A conference in the current year stays on the board even
+ * once it has been and gone -- inferring a month from the venue name would hide travel people are
+ * still filing reimbursements and trip reports against, and being a few months too generous costs
+ * a reader one extra row where guessing wrong costs them the row they needed.
+ */
+function isPastConference(conference: ConferenceRoster, now: Date): boolean {
+  return conference.year < now.getFullYear();
+}
+
 function renderTravelBoard(props: AdminBotProps) {
   const conferences = props.data.conferenceRosters ?? [];
   if (conferences.length === 0) {
     return nothing;
   }
+  // The service sorts by year descending, so partitioning here keeps both lists in its order.
+  const now = new Date();
+  const current = conferences.filter((conference) => !isPastConference(conference, now));
+  const past = conferences.filter((conference) => isPastConference(conference, now));
   return html`
     <article class="travel-board" data-testid="travel-board">
       <div class="card-title">Conference travel</div>
@@ -2468,7 +2486,23 @@ function renderTravelBoard(props: AdminBotProps) {
         asked for this as part of the paper's nudges, so a question mark here is somebody who has
         not answered yet.
       </div>
-      ${conferences.map((conference) => renderTravelConference(conference))}
+      ${current.length === 0
+        ? html`<p class="travel-board__empty" data-testid="travel-board-current-empty">
+            Nothing accepted for this year yet.
+          </p>`
+        : current.map((conference) => renderTravelConference(conference))}
+      ${past.length === 0
+        ? nothing
+        : html`
+            <details class="travel-board__past">
+              <summary class="travel-board__past-summary">
+                Past conferences (${past.length})
+              </summary>
+              <div class="travel-board__past-body" data-testid="travel-board-past">
+                ${past.map((conference) => renderTravelConference(conference))}
+              </div>
+            </details>
+          `}
     </article>
   `;
 }
