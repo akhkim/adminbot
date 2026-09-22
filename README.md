@@ -98,4 +98,6 @@ the sync and stay here.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Open PRs against the latest sync commit on `main`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, coding-agent instructions, runtime
+integration setup, testing, screenshots, and the first-PR workflow. Open PRs against the latest
+sync commit on `main`.
