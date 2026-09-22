@@ -26,11 +26,6 @@ function setup(
   options: {
     now?: () => Date;
     gatewayUrl?: string | null;
-    submitDcsForm?: (params: {
-      firstName: string;
-      lastName: string;
-      email: string;
-    }) => Promise<void>;
     geolocateIp?: (
       ip: string,
     ) => Promise<
@@ -58,7 +53,6 @@ function setup(
     },
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.now ? { now: options.now } : {}),
-    ...(options.submitDcsForm ? { submitDcsForm: options.submitDcsForm } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
     ...(options.sendPasswordResetEmail
       ? { sendPasswordResetEmail: options.sendPasswordResetEmail }

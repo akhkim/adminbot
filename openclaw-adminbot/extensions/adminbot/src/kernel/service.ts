@@ -213,6 +213,7 @@ import {
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
+  isAdminBotPaperSlotSettled,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotVerifier,
@@ -9396,25 +9397,33 @@ export class AdminBotService {
   }
 
   /**
-   * Records that the guide's send filed a DCS Slack-access request, or failed to.
+   * Records that the guide's send filed this person's DCS roster row, or failed to.
    *
-   * The request lands on a Microsoft Form with no receipt and no callback, so this row is the only
-   * evidence it was attempted. It used to be written by the approval path; the trigger moved to
-   * the send, and the record moved with it.
+   * The row is acted on by the department's sysadmin, who reports back through no channel this
+   * service can read, so this is the only evidence on our side that the account was ever asked
+   * for. It used to be written by the approval path; the trigger moved to the send, and the record
+   * moved with it.
+   *
+   * `username` is recorded. The temporary password filed alongside it deliberately is not: the
+   * audit log is read in the Control UI, exported, and quoted into support threads, and a
+   * credential that lives in three places instead of two is a credential with three ways to leak.
+   * The sheet and the member's inbox are the only copies.
    */
-  recordDcsFormAttempt(params: {
+  recordDcsRosterRowAttempt(params: {
     actor: string;
     template_id: string;
     email: string;
-    submitted: boolean;
+    added: boolean;
+    username?: string;
     error?: string;
   }): void {
     this.recordAudit({
-      type: params.submitted ? "auth.dcs_form_submitted" : "auth.dcs_form_failed",
+      type: params.added ? "auth.dcs_roster_row_added" : "auth.dcs_roster_row_failed",
       actor: params.actor,
       details: {
         template_id: params.template_id,
         recipient: params.email,
+        ...(params.username ? { dcs_username: params.username } : {}),
         ...(params.error ? { error: params.error } : {}),
       },
     });

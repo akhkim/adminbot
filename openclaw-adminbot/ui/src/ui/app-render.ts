@@ -4100,6 +4100,18 @@ export function renderApp(state: AppViewState) {
               onVenueFilter: (venueId) => {
                 state.adminBotVenueFilter = venueId;
               },
+              preregSort: state.adminBotPreregSort,
+              onPreregSort: (key) => {
+                state.adminBotPreregSort = key;
+              },
+              preregMinConfidence: state.adminBotPreregMinConfidence,
+              onPreregMinConfidence: (value) => {
+                state.adminBotPreregMinConfidence = value;
+              },
+              preregMissingEdit: state.adminBotPreregMissingEdit,
+              onPreregMissingEdit: (value) => {
+                state.adminBotPreregMissingEdit = value;
+              },
               onOpenPaperCard: (paperId) => {
                 state.adminBotPaperCardId = paperId;
                 // The card reads the paper's evidence cycle, which is fetched the first time a

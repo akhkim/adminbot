@@ -19,7 +19,7 @@ import {
 } from "../../contracts/actions.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
-import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
+import { dcsCredentialsEmail, type DcsRosterRowRecorder } from "./dcs-roster-sheet.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
@@ -48,7 +48,7 @@ const GOG_TIMEOUT_MS = 45_000;
  */
 const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
 
-const DCS_FORM_TEMPLATE_ID = "member";
+const DCS_ROSTER_TEMPLATE_ID = "member";
 
 /**
  * The mail whose Slack Connect invitation travels separately, and the template that carries it.
@@ -88,7 +88,7 @@ export type AdminBotOnboardingSendRequest = {
   values?: Record<string, string | undefined>;
   slack_channel_id?: string;
   /**
-   * Also file the DCS Slack-access request for this person.
+   * Also file this person's row on the DCS roster sheet, and mail them the credentials it carries.
    *
    * Defaults to on for the full-member guide and off for every other template: that mail is what
    * starts a new member's CS account, and its own copy tells the reader an account request is
@@ -96,9 +96,10 @@ export type AdminBotOnboardingSendRequest = {
    * by then the member has an address and the request has already been made.
    *
    * Still a flag rather than a rule, because a re-send is not a second request: an operator
-   * resending the guide to someone who already has an account unticks it.
+   * resending the guide to someone who already has an account unticks it. Leaving it ticked would
+   * file a second row, asking for a second account under a second password.
    */
-  submit_dcs_form?: boolean;
+  add_dcs_roster_row?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
   preview?: boolean;
   /**
@@ -137,8 +138,14 @@ export type AdminBotOnboardingSendRequest = {
 export type AdminBotOnboardingSendResult = {
   template_id: string;
   subject: string;
-  /** Present when the send also filed a DCS Slack-access request; absent when it did not try. */
-  dcs_form?: { submitted: boolean; error?: string };
+  /**
+   * Present when the send also filed a DCS roster row; absent when it did not try.
+   *
+   * Carries the chosen username and the candidates it beat, so the tab can show what was asked
+   * for. Never the password: this payload is returned over the API, logged by the dry-run script
+   * and rendered in the Control UI, and the credential belongs only in the sheet and the inbox.
+   */
+  dcs_roster_row?: { added: boolean; username?: string; candidates?: string[]; error?: string };
   body: string;
   /** HTML alternative rendered from `body`; absent only when the body renders to nothing. */
   body_html?: string;
@@ -176,11 +183,11 @@ export type AdminBotOnboardingSenderOptions = {
   provisionDriveWorkspace?: DriveWorkspaceProvisioner;
   inviteToSlackConnect?: SlackConnectInviter;
   /**
-   * Files the DCS Slack-access request. Same injection seam as the two provisioners above, and the
-   * same runner the approval path uses -- the composition layer owns the script path, so a send
-   * and an approval can never file the request two different ways.
+   * Files the DCS roster row and returns the credentials it wrote. Same injection seam as the two
+   * provisioners above: the composition layer owns the spreadsheet id and the roster lookup, so a
+   * send and an approval can never file the row two different ways.
    */
-  submitDcsForm?: DcsFormRunner;
+  addDcsRosterRow?: DcsRosterRowRecorder;
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
@@ -682,39 +689,50 @@ export function createAdminBotOnboardingSender(
     });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
-    // failed form is a follow-up item, not a reason to tell the operator the send failed. Awaited
+    // failed row is a follow-up item, not a reason to tell the operator the send failed. Awaited
     // rather than fired and forgotten, because the operator asked for it in this request and the
     // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
-    let dcsForm: { submitted: boolean; error?: string } | undefined;
-    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
-    if (wantsDcsForm) {
-      if (!options.submitDcsForm) {
-        dcsForm = {
-          submitted: false,
-          error: "the DCS form runner is not configured",
-        };
+    let dcsRosterRow:
+      | { added: boolean; username?: string; candidates?: string[]; error?: string }
+      | undefined;
+    const wantsDcsRosterRow = request.add_dcs_roster_row ?? template.id === DCS_ROSTER_TEMPLATE_ID;
+    if (wantsDcsRosterRow) {
+      if (!options.addDcsRosterRow) {
+        dcsRosterRow = { added: false, error: "the DCS roster sheet is not configured" };
       } else {
-        // A name with no family name in it cannot be filed: the form asks for First and Last, and
-        // answering both with the same word is how a DCS account was requested for "Eric Eric".
-        // Reported as a failed attempt rather than thrown -- the guide itself has been sent, and
-        // this is the shape the tab and the audit already use for "somebody has to do this by
-        // hand".
-        const parts = splitDisplayName(name);
-        if (!parts) {
-          dcsForm = {
-            submitted: false,
-            error: `no last name in "${name}" — the DCS form asks for First and Last separately. Put the full name on the roster and re-send, or file the request by hand.`,
-          };
-        } else {
+        try {
+          const record = await options.addDcsRosterRow({ name, email });
+          // The row is filed; the member still has to be told what is on it. A failure here is
+          // reported apart from the row itself, because the two have different remedies: a row
+          // that did not land has to be filed again, whereas a row that landed with an unsent
+          // mail must *not* be re-filed -- that asks for a second account. Re-sending the one
+          // mail by hand is the fix, so the error says which of the two happened.
           try {
-            await options.submitDcsForm({ ...parts, email });
-            dcsForm = { submitted: true };
+            const credentials = dcsCredentialsEmail({ name, ...record });
+            await sendEmail({
+              to: email,
+              subject: credentials.subject,
+              body: credentials.body,
+              ...htmlOf(credentials.body),
+            });
+            dcsRosterRow = {
+              added: true,
+              username: record.username,
+              candidates: record.candidates,
+            };
           } catch (error) {
-            dcsForm = {
-              submitted: false,
-              error: error instanceof Error ? error.message : String(error),
+            dcsRosterRow = {
+              added: true,
+              username: record.username,
+              candidates: record.candidates,
+              error: `the roster row was filed for ${record.username}, but the credentials mail to ${email} failed: ${error instanceof Error ? error.message : String(error)}. Send the username and password by hand — do not re-run the filing, which would request a second account.`,
             };
           }
+        } catch (error) {
+          dcsRosterRow = {
+            added: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
         }
       }
     }
@@ -729,7 +747,7 @@ export function createAdminBotOnboardingSender(
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
         ...(projectInvites.length > 0 ? { project_channel_invites: projectInvites } : {}),
         ...(activeChannelInvites ? { active_channel_invites: activeChannelInvites } : {}),
-        ...(dcsForm ? { dcs_form: dcsForm } : {}),
+        ...(dcsRosterRow ? { dcs_roster_row: dcsRosterRow } : {}),
       },
     };
   };

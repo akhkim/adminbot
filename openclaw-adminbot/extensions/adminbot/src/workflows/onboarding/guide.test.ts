@@ -411,10 +411,19 @@ describe("onboarding sender", () => {
   // The full-member guide is what starts someone's CS account, and its own copy tells them an
   // account request is coming -- so sending it files the request. This used to happen on
   // registration approval, which is too late: by then they have the address the request produces.
-  it("files the DCS request when the full-member guide is sent", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+  it("files the DCS roster row when the full-member guide is sent", async () => {
+    const candidates = [
+      "ada",
+      "lovelace",
+      "alovelace",
+    ];
+    const addDcsRosterRow = vi.fn().mockResolvedValue({
+      username: "ada",
+      password: "pw-not-in-the-payload",
+      candidates,
+    });
     const sendEmail = vi.fn().mockResolvedValue(undefined);
-    const send = createAdminBotOnboardingSender({ env: ENV, submitDcsForm, sendEmail });
+    const send = createAdminBotOnboardingSender({ env: ENV, addDcsRosterRow, sendEmail });
 
     const result = await send({
       template_id: "member",
@@ -422,22 +431,56 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).toHaveBeenCalledWith({
-      firstName: "Ada",
-      lastName: "Lovelace",
+    expect(addDcsRosterRow).toHaveBeenCalledWith({
+      name: "Ada Lovelace",
       email: "ada@example.com",
     });
     if (result.ok) {
-      expect(result.payload.dcs_form).toEqual({ submitted: true });
+      expect(result.payload.dcs_roster_row).toEqual({
+        added: true,
+        username: "ada",
+        candidates,
+      });
     }
+  });
+
+  // The credential is mailed, and it is mailed on its own. The guide is cc'd to project leads and
+  // reply-to'd elsewhere on most sends; a password does not belong on a thread with an audience.
+  it("mails the credentials as their own message, and keeps them out of the payload", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      addDcsRosterRow: vi.fn().mockResolvedValue({
+        username: "ada",
+        password: "sup3rSecretTempPw",
+        candidates: ["ada"],
+      }),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      cc: ["lead@example.com"],
+    });
+    expect(result.ok).toBe(true);
+    // Two messages: the guide (cc'd) and the credentials (not).
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    const credentials = sendEmail.mock.calls.at(-1)?.[0];
+    expect(credentials.to).toBe("ada@example.com");
+    expect(credentials.cc).toBeUndefined();
+    expect(credentials.body).toContain("ada@cs.toronto.edu");
+    expect(credentials.body).toContain("sup3rSecretTempPw");
+    // The payload is returned over the API and rendered in the Control UI.
+    expect(JSON.stringify(result)).not.toContain("sup3rSecretTempPw");
   });
 
   // Every other template goes to people who are not getting a CS account from this lab.
   it("files nothing for the other templates", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const addDcsRosterRow = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      submitDcsForm,
+      addDcsRosterRow,
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
     const result = await send({
@@ -446,51 +489,85 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).not.toHaveBeenCalled();
+    expect(addDcsRosterRow).not.toHaveBeenCalled();
     if (result.ok) {
-      expect(result.payload.dcs_form).toBeUndefined();
+      expect(result.payload.dcs_roster_row).toBeUndefined();
     }
   });
 
   // A re-send is not a second request: an operator resending the guide to someone who already has
   // an account turns it off.
   it("lets a re-send opt out", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const addDcsRosterRow = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      submitDcsForm,
+      addDcsRosterRow,
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
     const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      submit_dcs_form: false,
+      add_dcs_roster_row: false,
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).not.toHaveBeenCalled();
+    expect(addDcsRosterRow).not.toHaveBeenCalled();
   });
 
   // The guide is already delivered by the time the form runs, so a failed form is reported and
   // followed up, never a reason to tell the operator the send failed.
-  it("reports a failed DCS request without failing the send", async () => {
+  it("reports a failed DCS roster filing without failing the send", async () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
       sendEmail,
-      submitDcsForm: vi.fn().mockRejectedValue(new Error("form timed out")),
+      addDcsRosterRow: vi.fn().mockRejectedValue(new Error("the sheet answered 503")),
     });
     const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      submit_dcs_form: true,
+      add_dcs_roster_row: true,
     });
     expect(result.ok).toBe(true);
     expect(sendEmail).toHaveBeenCalled();
     if (result.ok) {
       expect(result.payload.sent).toBe(true);
-      expect(result.payload.dcs_form).toEqual({ submitted: false, error: "form timed out" });
+      expect(result.payload.dcs_roster_row).toEqual({
+        added: false,
+        error: "the sheet answered 503",
+      });
+    }
+  });
+
+  // A row that landed with an unsent credentials mail must not be re-filed: that asks for a second
+  // account. The report has to say which half failed, because the remedies differ.
+  it("reports a filed row whose credentials mail failed, and says not to re-file", async () => {
+    const sendEmail = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("mailbox full"));
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      addDcsRosterRow: vi.fn().mockResolvedValue({
+        username: "ada",
+        password: "pw",
+        candidates: ["ada"],
+      }),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const row = result.payload.dcs_roster_row;
+      expect(row?.added).toBe(true);
+      expect(row?.username).toBe("ada");
+      expect(row?.error).toContain("mailbox full");
+      expect(row?.error).toContain("do not re-run the filing");
     }
   });
 

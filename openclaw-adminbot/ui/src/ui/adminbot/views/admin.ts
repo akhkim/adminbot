@@ -68,11 +68,25 @@ import {
   daysUntil,
   effectiveVenueTargets,
   venueTargetMatches,
+  type VenueTarget,
 } from "../venue-targets.ts";
 import { renderRecentEditsBody } from "./recent-edits.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
+
+/**
+ * How the pre-registration board is ordered.
+ *
+ * `readiness` is the board's original and still its default, because the sheet it replaces ranks
+ * "from most ready" and the top of that list answers "what is actually going in". The other three
+ * exist because that is only one of the questions asked of this table: `deadline` is what to worry
+ * about first, `title` is how you find one paper you already know the name of, and `editLink` puts
+ * the rows with no Overleaf edit link at the top -- which is the gap that makes a pre-registration
+ * unusable to the admins reading it, and the one thing on this board that is nobody's job until
+ * somebody looks.
+ */
+export type PreregSort = "readiness" | "deadline" | "title" | "editLink";
 import {
   PAPER_GRID_THRESHOLD,
   clearSavedEdits,
@@ -122,6 +136,21 @@ export type AdminBotProps = {
   ) => void;
   /** Venue id the pre-registration table is filtered to; empty shows every upcoming venue. */
   venueFilter?: string;
+  /** Which column the pre-registration board is sorted by. Defaults to `readiness`. */
+  preregSort?: PreregSort;
+  onPreregSort?: (key: PreregSort) => void;
+  /**
+   * Lowest confidence a paper's best target may carry and still appear, as a percentage.
+   *
+   * 0 shows everything, which is the default. The point of raising it is that a board listing
+   * every 10% maybe alongside the things actually being written reads as a longer to-do list than
+   * the lab has -- "what is really going in" is a question about the top of this range.
+   */
+  preregMinConfidence?: number;
+  onPreregMinConfidence?: (value: number) => void;
+  /** Show only rows with no Overleaf edit link -- the rows an admin has to chase. */
+  preregMissingEdit?: boolean;
+  onPreregMissingEdit?: (value: boolean) => void;
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
   paperFilter?: PaperOverviewFilter;
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
@@ -2289,7 +2318,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${table} ${editPopovers}
+    ${board(`Active papers (${papers.length})`, table, { open: true })} ${editPopovers}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
@@ -2299,13 +2328,21 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   `;
 }
 
-/** One collapsed board under the table. Closed on arrival; a board that renders nothing is absent. */
-function board(label: string, content: unknown) {
+/**
+ * One board under the table. Closed on arrival unless asked otherwise; a board that renders
+ * nothing is absent.
+ *
+ * `open` exists for the papers table itself, which is the page rather than a detail under it. It
+ * gets the same disclosure so a reader who has come for one of the boards below can fold a
+ * hundred-row table out of the way, but it arrives open, because a tab whose whole subject is
+ * hidden until you click is a tab that looks broken.
+ */
+function board(label: string, content: unknown, options: { open?: boolean } = {}) {
   if (content === nothing) {
     return nothing;
   }
   return html`
-    <details class="paper-overview__board">
+    <details class="paper-overview__board" ?open=${options.open ?? false}>
       <summary class="paper-overview__board-summary">${label}</summary>
       <div class="paper-overview__board-body">${content}</div>
     </details>
@@ -2496,6 +2533,85 @@ function overleafCell(url: string | undefined, label: string) {
     : html`<span class="venue-table__missing">—</span>`;
 }
 
+/**
+ * The Overleaf link coauthors write in, or empty.
+ *
+ * Trimmed rather than `??`, matching the cell below: a stored empty string is a blank field, and
+ * counting it as an answer is what put a link to nowhere in a column that has its own "—".
+ */
+function preregEditUrl(paper: AdminBotPaperRecord): string {
+  return paper.artifacts?.overleaf_edit_url?.trim() ?? "";
+}
+
+type PreregRow = { paper: AdminBotPaperRecord; targets: VenueTarget[] };
+
+/** How ready this paper's best target says it is. The board's original ordering. */
+function preregReadiness(row: PreregRow): number {
+  return row.targets[0]?.confidence ?? 0;
+}
+
+/**
+ * Days until the soonest deadline this paper is aimed at.
+ *
+ * The soonest rather than the first listed, because a paper aimed at two venues is due when the
+ * earlier one is due -- ordering it by the later deadline would file the most urgent rows on the
+ * board halfway down it. A target matching no card on the board has no deadline here and sorts
+ * last, which is right: "Other" is the one venue with no one date.
+ */
+function preregDeadlineDays(row: PreregRow): number {
+  const days = row.targets
+    .map(
+      (target) =>
+        PRE_REGISTRATION_VENUES.find((venue) => venueTargetMatches(target, venue.venue_id))
+          ?.deadline,
+    )
+    .map((deadline) => (deadline ? daysUntil(deadline) : undefined))
+    .filter((value): value is number => value !== undefined);
+  return days.length ? Math.min(...days) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Every ordering falls back to readiness rather than to nothing.
+ *
+ * Two papers tied on the chosen key are still not interchangeable to a reader, and leaving their
+ * order to the input means it changes as papers are edited -- a table that reshuffles rows nobody
+ * touched is one people stop trusting.
+ */
+function preregComparator(sort: PreregSort): (left: PreregRow, right: PreregRow) => number {
+  const byReadiness = (left: PreregRow, right: PreregRow) =>
+    preregReadiness(right) - preregReadiness(left) ||
+    left.paper.title.localeCompare(right.paper.title);
+  if (sort === "title") {
+    return (left, right) => left.paper.title.localeCompare(right.paper.title);
+  }
+  if (sort === "deadline") {
+    return (left, right) =>
+      preregDeadlineDays(left) - preregDeadlineDays(right) || byReadiness(left, right);
+  }
+  if (sort === "editLink") {
+    // Missing first. The useful question this column answers is not "who has one" but "who still
+    // does not", and a row with no edit link is one the admins cannot use.
+    return (left, right) =>
+      (preregEditUrl(left.paper) ? 1 : 0) - (preregEditUrl(right.paper) ? 1 : 0) ||
+      byReadiness(left, right);
+  }
+  return byReadiness;
+}
+
+const PREREG_SORT_LABELS: ReadonlyArray<readonly [PreregSort, string]> = [
+  ["readiness", "Most ready"],
+  ["deadline", "Deadline"],
+  ["title", "Title"],
+  ["editLink", "Edit link"],
+];
+
+/** The thresholds worth offering: everything, the even-odds half, and what is nearly certain. */
+const PREREG_CONFIDENCE_CHOICES: ReadonlyArray<readonly [number, string]> = [
+  [0, "Any"],
+  [50, "50%+"],
+  [75, "75%+"],
+];
+
 function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminBotProps) {
   const venues = PRE_REGISTRATION_VENUES.filter((venue) => {
     const days = daysUntil(venue.deadline);
@@ -2510,6 +2626,9 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   // and papers not aimed at it drop out entirely rather than sorting to the bottom. That is the
   // question an admin has three weeks out -- "what is going to ICLR" -- not "rank everything".
   const filter = props.venueFilter ?? "";
+  const sort = props.preregSort ?? "readiness";
+  const minConfidence = props.preregMinConfidence ?? 0;
+  const missingEditOnly = props.preregMissingEdit ?? false;
   const open = new Set(filter ? [filter] : venues.map((venue) => venue.venue_id));
   const rows = papers
     .map((paper) => ({
@@ -2524,9 +2643,11 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
       ),
     }))
     .filter((row) => row.targets.length > 0)
-    .sort(
-      (left, right) => (right.targets[0]?.confidence ?? 0) - (left.targets[0]?.confidence ?? 0),
-    );
+    // `targets` is already confidence-descending (see effectiveVenueTargets), so the first one is
+    // this paper's best shot and is what the threshold asks about.
+    .filter((row) => (row.targets[0]?.confidence ?? 0) >= minConfidence)
+    .filter((row) => !missingEditOnly || !preregEditUrl(row.paper))
+    .toSorted(preregComparator(sort));
 
   return html`
     <article class="adminbot-editor-card venue-table-card" data-testid="prereg-board">
@@ -2553,9 +2674,57 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
               </button>`,
           )}
         </div>
+        <div class="venue-table__controls">
+          <div class="blockers__sort" data-testid="prereg-sort">
+            <span>Sort by</span>
+            ${PREREG_SORT_LABELS.map(
+              ([key, label]) =>
+                html`<button
+                  type="button"
+                  class=${`btn btn--sm ${sort === key ? "primary" : ""}`}
+                  data-testid=${`prereg-sort-${key}`}
+                  aria-pressed=${sort === key}
+                  @click=${() => props.onPreregSort?.(key)}
+                >
+                  ${label}
+                </button>`,
+            )}
+          </div>
+          <div class="blockers__sort" data-testid="prereg-confidence">
+            <span>Confidence</span>
+            ${PREREG_CONFIDENCE_CHOICES.map(
+              ([value, label]) =>
+                html`<button
+                  type="button"
+                  class=${`btn btn--sm ${minConfidence === value ? "primary" : ""}`}
+                  data-testid=${`prereg-confidence-${value}`}
+                  aria-pressed=${minConfidence === value}
+                  @click=${() => props.onPreregMinConfidence?.(value)}
+                >
+                  ${label}
+                </button>`,
+            )}
+          </div>
+          <button
+            type="button"
+            class=${`btn btn--sm ${missingEditOnly ? "primary" : ""}`}
+            data-testid="prereg-missing-edit"
+            aria-pressed=${missingEditOnly}
+            @click=${() => props.onPreregMissingEdit?.(!missingEditOnly)}
+          >
+            Missing edit link
+          </button>
+        </div>
       </div>
       ${rows.length === 0
-        ? html`<p class="venue-table__empty">Nobody has pre-registered for these yet.</p>`
+        ? // An empty board and an empty *filter* are different answers, and saying the first when
+          // the second is true reads as "the lab has registered nothing" to someone who has simply
+          // narrowed the view and forgotten.
+          html`<p class="venue-table__empty" data-testid="prereg-empty">
+            ${minConfidence > 0 || missingEditOnly
+              ? "No pre-registered paper matches these filters."
+              : "Nobody has pre-registered for these yet."}
+          </p>`
         : html`
             <div class="venue-table__scroll">
               <table class="venue-table">
