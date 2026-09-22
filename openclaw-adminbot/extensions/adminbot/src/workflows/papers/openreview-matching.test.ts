@@ -143,22 +143,23 @@ describe("suggestReviewersForSubmission", () => {
       [
         member({
           id: "bernhard",
-          name: "Bernhard Example",
+          name: "Bernhard Schölkopf",
           research_topics: ["causality"],
           openreview_id: "~Bernhard_Example1",
-          reviewer_exempt: true,
         }),
       ],
       submission,
     );
-    expect(suggestion?.blocked_reason).toBe("exempt from reviewer assignment");
+    expect(suggestion?.blocked_reason).toBe(
+      "Bernhard is permanently unavailable for reviewer assignment",
+    );
   });
 
   it("never proposes the profile chairing the venue as one of its reviewers", () => {
     const [suggestion] = suggestReviewersForSubmission(
       [
         member({
-          id: "zhijing",
+          id: "chair",
           name: "Zhijing Example",
           research_topics: ["causality"],
           openreview_id: "~Zhijing_Example1",
@@ -247,6 +248,31 @@ describe("suggestReviewersForSubmission", () => {
 });
 
 describe("reviewerExemptionReason", () => {
+  it("enforces named lab policy without an editable exemption flag", () => {
+    expect(reviewerExemptionReason(member({ name: "Bernhard Schölkopf" }))).toContain(
+      "permanently unavailable",
+    );
+    expect(reviewerExemptionReason(member({ id: "bernhard" }))).toContain(
+      "permanently unavailable",
+    );
+    expect(reviewerExemptionReason(member({ openreview_id: "~Bernhard_Schölkopf1" }))).toContain(
+      "permanently unavailable",
+    );
+    expect(reviewerExemptionReason(member({ name: "Zhijing Jin" }))).toContain("must never");
+    expect(reviewerExemptionReason(member({ openreview_id: "~Zhijing_Jin1" }))).toContain("must never");
+    for (const overrides of [
+      { name: "Zhijing Jin" },
+      { id: "zhijing-jin" },
+      { openreview_id: "~Zhijing_Jin1" },
+    ]) {
+      expect(
+        suggestReviewersForSubmission(
+          [member({ ...overrides, research_topics: ["causality"] })],
+          { number: 1, title: "Causality" },
+        ),
+      ).toEqual([]);
+    }
+  });
   it("reports the standing exemption and the operator's own profile, and nothing else", () => {
     expect(reviewerExemptionReason(member({ reviewer_exempt: true }))).toBe(
       "exempt from reviewer assignment",

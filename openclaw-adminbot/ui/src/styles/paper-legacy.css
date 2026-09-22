@@ -29,13 +29,13 @@
 
 .paper-legacy__lead {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
 .paper-legacy__notice {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
@@ -47,7 +47,7 @@
 }
 
 .paper-legacy__hint {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
@@ -74,14 +74,14 @@
 /* Status this slot does not own: it comes from the social drafts and the service rejects a direct
    write, so it renders as a fact rather than as a control that would silently do nothing. */
 .paper-legacy__derived {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
   font-style: italic;
 }
 
 .paper-legacy__loading {
   margin-left: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.8em;
   font-weight: 400;
 }

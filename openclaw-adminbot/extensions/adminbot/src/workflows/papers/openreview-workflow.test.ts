@@ -240,7 +240,7 @@ describe("applyAssignment", () => {
   function withMember(overrides: Record<string, unknown>) {
     const h = harness({ now: DEADLINE });
     h.store.saveLabMember({
-      id: "bernhard",
+      id: "member-example",
       name: "Bernhard Example",
       privilege_level: "member",
       access: [],
@@ -262,6 +262,32 @@ describe("applyAssignment", () => {
     expect(result).toMatchObject({ ok: false, reason: "reviewer_exempt" });
     // The bridge is never reached, so nothing can be posted to OpenReview.
     expect(h.calls.some((call) => call[0] === "assign")).toBe(false);
+  });
+
+  it("refuses both professors even without a roster exemption flag", async () => {
+    for (const name of ["Zhijing Jin", "Bernhard Schölkopf"]) {
+      const h = withMember({ name, openreview_id: "~Professor_Example1" });
+      const result = await h.workflow.applyAssignment({
+        venueId: VENUE,
+        submission: "12",
+        reviewer: "~Professor_Example1",
+      });
+      expect(result).toMatchObject({ ok: false, reason: "reviewer_exempt" });
+      expect(h.calls.some((call) => call[0] === "assign")).toBe(false);
+    }
+  });
+
+  it("recognizes the professors by their exact OpenReview IDs alone", async () => {
+    for (const reviewer of ["~Zhijing_Jin1", "~Bernhard_Schölkopf1"]) {
+      const h = withMember({ openreview_id: reviewer });
+      const result = await h.workflow.applyAssignment({
+        venueId: VENUE,
+        submission: "12",
+        reviewer,
+      });
+      expect(result).toMatchObject({ ok: false, reason: "reviewer_exempt" });
+      expect(h.calls.some((call) => call[0] === "assign")).toBe(false);
+    }
   });
 
   it("still allows removing an exempt member, which is how the rule gets applied late", async () => {
@@ -337,9 +363,6 @@ describe("suggestReviewers", () => {
     });
 
     const [submission] = await workflow.suggestReviewers(VENUE);
-    expect(submission?.suggestions[0]).toMatchObject({
-      member_id: "zhijing",
-      blocked_reason: "is the profile chairing this venue",
-    });
+    expect(submission?.suggestions).toEqual([]);
   });
 });

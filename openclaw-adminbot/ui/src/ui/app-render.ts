@@ -44,6 +44,9 @@ import {
   loadAdminBot,
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+  setAdminBotSelectedActions,
+  toggleAdminBotSelectedAction,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
   submitAdminBotReimbursement,
@@ -4098,6 +4101,18 @@ export function renderApp(state: AppViewState) {
               onVenueFilter: (venueId) => {
                 state.adminBotVenueFilter = venueId;
               },
+              preregSort: state.adminBotPreregSort,
+              onPreregSort: (key) => {
+                state.adminBotPreregSort = key;
+              },
+              preregMinConfidence: state.adminBotPreregMinConfidence,
+              onPreregMinConfidence: (value) => {
+                state.adminBotPreregMinConfidence = value;
+              },
+              preregMissingEdit: state.adminBotPreregMissingEdit,
+              onPreregMissingEdit: (value) => {
+                state.adminBotPreregMissingEdit = value;
+              },
               onOpenPaperCard: (paperId) => {
                 state.adminBotPaperCardId = paperId;
                 // The card reads the paper's evidence cycle, which is fetched the first time a
@@ -4121,10 +4136,26 @@ export function renderApp(state: AppViewState) {
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
+              selectedActionIds: state.adminBotSelectedActionIds,
+              bulkActionBusy: state.adminBotBulkActionBusy,
+              onToggleActionSelected: (proposalId) => {
+                toggleAdminBotSelectedAction(state, proposalId);
+                requestHostUpdate?.();
+              },
+              onSetSelectedActions: (proposalIds) => {
+                setAdminBotSelectedActions(state, proposalIds);
+                requestHostUpdate?.();
+              },
+              onRemoveSelectedActions: () => {
+                void removeSelectedPendingAdminBotActions(state).finally(() =>
+                  requestHostUpdate?.(),
+                );
+                requestHostUpdate?.();
+              },
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onResolveEmailReview: (messageId, resolution) =>
                 void resolveAdminBotEmailReview(state, messageId, resolution),
-              onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onSaveMember: (member, options) => void saveAdminBotMember(state, member, options),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),
               onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),

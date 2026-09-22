@@ -20,7 +20,7 @@ import type {
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
-import type { BlockerSort } from "./adminbot/views/admin.ts";
+import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
@@ -646,6 +646,10 @@ export type AppViewState = {
   adminBotActiveCommitmentType: string | null;
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
+  // Pending-action rows ticked for a bulk clear, and whether that clear is in flight. Separate
+  // from `adminBotBusyActionId` because a bulk run has no single row to blame it on.
+  adminBotSelectedActionIds: string[];
+  adminBotBulkActionBusy: boolean;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotPhotoPolishBusy: boolean;
   adminBotPhotoApplyBusy: boolean;
@@ -653,6 +657,9 @@ export type AppViewState = {
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
   adminBotVenueFilter: string;
+  adminBotPreregSort: PreregSort;
+  adminBotPreregMinConfidence: number;
+  adminBotPreregMissingEdit: boolean;
   nudgeBellOpen: boolean;
   // Last press of the CV digest job on the Cron tab. Session-scoped on purpose: the durable
   // record of a run is the audit row and the document itself, and this only exists so the button

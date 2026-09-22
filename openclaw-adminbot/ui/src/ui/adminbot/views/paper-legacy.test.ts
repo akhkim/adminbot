@@ -77,6 +77,26 @@ function type(container: HTMLElement, testId: string, value: string): void {
 }
 
 describe("legacyGroups", () => {
+  it("shows the same OpenReview identity warning in the flat paper form", () => {
+    const { container } = draw({
+      slots: {
+        p1: cycle([
+          {
+            paper_id: "p1",
+            slot: "submission",
+            status: "provided",
+            url: "https://openreview.net/forum?id=Paper123",
+            verified_by: "openreview",
+            verified_title: "A renamed paper",
+            previous_submission_id: "Older123",
+          },
+        ]),
+      },
+    });
+    expect(container.querySelector('[data-testid="openreview-identity"]')?.textContent).toContain(
+      "Resubmission reported by OpenReview",
+    );
+  });
   it("puts every evidence slot on the page, so nothing is only reachable from the card", () => {
     const keys = new Set(
       legacyGroups()

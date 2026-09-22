@@ -43,6 +43,7 @@ import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderOpenReviewIdentity } from "./paper-slots.ts";
 
 /** What one control writes back, and to which of the two stores. */
 type LegacyField =
@@ -829,86 +830,93 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
       </div>
       ${collapsed
         ? nothing
-        : html`<form
-            class="profile__form"
-            @submit=${(event: SubmitEvent) => event.preventDefault()}
-            @input=${() => scheduleAutosave(saveTimers.get(timerKey), setTimer, commit)}
-            @focusout=${(event: FocusEvent) => {
-              const form = event.currentTarget as HTMLFormElement;
-              if (!focusLeftForm(form, event)) {
-                return;
-              }
-              // Leaving commits immediately rather than waiting out the debounce: the reader may be on
-              // their way to another paper, and a pending timer would not survive it.
-              flushAutosave(saveTimers.get(timerKey), setTimer, commit);
-            }}
-          >
-            ${legacyGroups().map((group) => {
-              // The evidence bands stay on the page while they load rather than appearing late: a
-              // section that pops in after the record fields have settled reads as the form growing
-              // under the reader's hands.
-              const evidence = group.id.startsWith("slots-");
-              const shut = props.state.collapsedGroups.has(groupKey(paper.id, group.id));
-              return html`
-                <div
-                  class=${`profile__field-group${shut ? " paper-legacy__group--collapsed" : ""}`}
-                  data-testid=${`paper-legacy-group-${paper.id}-${group.id}`}
-                >
-                  <!-- The whole heading is the button, rather than a chevron parked beside it: the
+        : html`<!-- Inside the fold rather than above it. This line is one of the paper's own
+                    answers -- which OpenReview account the submission sits under -- so a folded
+                    card that kept it would be a card that is not actually folded. -->
+            ${renderOpenReviewIdentity({
+              paperTitle: paper.title,
+              slots: props.slots?.[paper.id]?.slots ?? [],
+            })}
+            <form
+              class="profile__form"
+              @submit=${(event: SubmitEvent) => event.preventDefault()}
+              @input=${() => scheduleAutosave(saveTimers.get(timerKey), setTimer, commit)}
+              @focusout=${(event: FocusEvent) => {
+                const form = event.currentTarget as HTMLFormElement;
+                if (!focusLeftForm(form, event)) {
+                  return;
+                }
+                // Leaving commits immediately rather than waiting out the debounce: the reader may be on
+                // their way to another paper, and a pending timer would not survive it.
+                flushAutosave(saveTimers.get(timerKey), setTimer, commit);
+              }}
+            >
+              ${legacyGroups().map((group) => {
+                // The evidence bands stay on the page while they load rather than appearing late: a
+                // section that pops in after the record fields have settled reads as the form growing
+                // under the reader's hands.
+                const evidence = group.id.startsWith("slots-");
+                const shut = props.state.collapsedGroups.has(groupKey(paper.id, group.id));
+                return html`
+                  <div
+                    class=${`profile__field-group${shut ? " paper-legacy__group--collapsed" : ""}`}
+                    data-testid=${`paper-legacy-group-${paper.id}-${group.id}`}
+                  >
+                    <!-- The whole heading is the button, rather than a chevron parked beside it: the
                        heading is what names the thing being folded, and a two-pixel target next to
                        a label the reader is already aiming at is a worse version of the same
                        control. It announces its own state, so the fold works from the keyboard. -->
-                  <h3 class="profile__group-title">
-                    <button
-                      type="button"
-                      class="paper-legacy__group-toggle"
-                      data-testid=${`paper-legacy-group-toggle-${paper.id}-${group.id}`}
-                      aria-expanded=${shut ? "false" : "true"}
-                      @click=${() => toggleGroup(group.id)}
-                    >
-                      <span class="paper-legacy__collapse-icon" aria-hidden="true"
-                        >${shut ? icons.chevronRight : icons.chevronDown}</span
+                    <h3 class="profile__group-title">
+                      <button
+                        type="button"
+                        class="paper-legacy__group-toggle"
+                        data-testid=${`paper-legacy-group-toggle-${paper.id}-${group.id}`}
+                        aria-expanded=${shut ? "false" : "true"}
+                        @click=${() => toggleGroup(group.id)}
                       >
-                      <span class="profile__group-icon" aria-hidden="true"
-                        >${icons[group.icon]}</span
-                      >
-                      <span class="paper-legacy__group-label">${group.label}</span>
-                      ${evidence && loading
-                        ? html`<span class="paper-legacy__loading">loading…</span>`
-                        : nothing}
-                      <!-- What a folded band is still worth saying: how much of it is answered.
+                        <span class="paper-legacy__collapse-icon" aria-hidden="true"
+                          >${shut ? icons.chevronRight : icons.chevronDown}</span
+                        >
+                        <span class="profile__group-icon" aria-hidden="true"
+                          >${icons[group.icon]}</span
+                        >
+                        <span class="paper-legacy__group-label">${group.label}</span>
+                        ${evidence && loading
+                          ? html`<span class="paper-legacy__loading">loading…</span>`
+                          : nothing}
+                        <!-- What a folded band is still worth saying: how much of it is answered.
                            Without it the fold hides the very thing that decides whether to open
                            it, and the reader has to open every band to find the empty one. -->
-                      ${shut
-                        ? html`<span
-                            class="paper-legacy__group-count"
-                            data-testid=${`paper-legacy-group-count-${paper.id}-${group.id}`}
-                            >${filledCount(props, paper, group)} of ${group.fields.length}
-                            filled</span
-                          >`
-                        : nothing}
-                    </button>
-                  </h3>
-                  ${shut
-                    ? nothing
-                    : html`<div class="profile__field-grid">
-                        ${group.fields.map((field) => renderRow(props, paper, field))}
-                      </div>`}
-                </div>
-              `;
-            })}
-            <div class="profile__form-actions">
-              <span class="profile__autosave-hint">Saves as you type.</span>
-              <button
-                type="button"
-                class="btn primary"
-                data-testid=${`paper-legacy-save-${paper.id}`}
-                @click=${commit}
-              >
-                Save
-              </button>
-            </div>
-          </form>`}
+                        ${shut
+                          ? html`<span
+                              class="paper-legacy__group-count"
+                              data-testid=${`paper-legacy-group-count-${paper.id}-${group.id}`}
+                              >${filledCount(props, paper, group)} of ${group.fields.length}
+                              filled</span
+                            >`
+                          : nothing}
+                      </button>
+                    </h3>
+                    ${shut
+                      ? nothing
+                      : html`<div class="profile__field-grid">
+                          ${group.fields.map((field) => renderRow(props, paper, field))}
+                        </div>`}
+                  </div>
+                `;
+              })}
+              <div class="profile__form-actions">
+                <span class="profile__autosave-hint">Saves as you type.</span>
+                <button
+                  type="button"
+                  class="btn primary"
+                  data-testid=${`paper-legacy-save-${paper.id}`}
+                  @click=${commit}
+                >
+                  Save
+                </button>
+              </div>
+            </form>`}
     </section>
   `;
 }
