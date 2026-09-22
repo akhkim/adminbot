@@ -1854,6 +1854,35 @@ export async function searchVenuePapers(
 }
 
 /**
+ * Ranks the lab's own papers against a topic, a keyword, or a whole research proposal.
+ *
+ * Needs a session where the conference search does not: that one ranks a published programme, this
+ * one returns our own paper titles and where they sit. Carries the service's sentence up for the
+ * same reason -- "the embedding model is not reachable" (502) is the common failure here and it is
+ * something the reader can act on.
+ */
+export async function searchLabPaperRelevance(
+  params: { query: string },
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/lab-papers/relevance", "POST", sessionToken, {
+    query: params.query,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
  * Fill in run fields an older service does not send.
  *
  * Vercel ships this UI ahead of the Aurora service as a matter of routine, so every run field

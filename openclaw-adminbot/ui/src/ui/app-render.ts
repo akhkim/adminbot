@@ -25,6 +25,7 @@ import {
   runAdminBotCvDigestJob,
   runAdminBotChannelNamingJob,
   runAdminBotVenueIndexJob,
+  searchAdminBotLabPapers,
   searchAdminBotVenuePapers,
   cancelWorkshopNudgeRun,
   loadWorkshopNudgePreview,
@@ -4326,6 +4327,28 @@ export function renderApp(state: AppViewState) {
                 onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
                 onSearch: () => void searchAdminBotVenuePapers(state),
                 onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+                tab: state.adminBotPapersTab,
+                onTabChange: (tab) => {
+                  state.adminBotPapersTab = tab;
+                },
+                // Signed-in only: the route behind this returns the lab's own papers. A visitor
+                // gets the conference half with no tab bar at all -- see ConferencePapersProps.
+                lab: {
+                  state: state.adminBotLabPapers,
+                  onQueryChange: (query) => {
+                    state.adminBotLabPapers = { ...state.adminBotLabPapers, query };
+                  },
+                  onSearch: () => void searchAdminBotLabPapers(state),
+                  onToggleSections: (paperId) => {
+                    const open = state.adminBotLabPapers.expanded;
+                    state.adminBotLabPapers = {
+                      ...state.adminBotLabPapers,
+                      expanded: open.includes(paperId)
+                        ? open.filter((id) => id !== paperId)
+                        : [...open, paperId],
+                    };
+                  },
+                },
               }),
             )
           : nothing}

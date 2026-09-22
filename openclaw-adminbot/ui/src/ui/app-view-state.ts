@@ -669,6 +669,8 @@ export type AppViewState = {
   // Find Interesting Papers tab. Held whole rather than as a dozen flat fields: every part of it is
   // replaced together on each search, and a half-updated search is not a state worth expressing.
   adminBotVenuePapers: import("./adminbot/controllers/admin.ts").AdminBotVenuePapersState;
+  adminBotLabPapers: import("./adminbot/controllers/admin.ts").AdminBotLabPapersState;
+  adminBotPapersTab: import("./adminbot/views/conference-papers.ts").ConferencePapersTab;
   // Review-only CSV workshop matcher. Drafts remain browser state until explicitly downloaded.
   adminBotWorkshopNudges: import("./adminbot/controllers/admin.ts").WorkshopNudgeReviewState;
   // Last press of the conference index job on the Cron tab. Same shape as the CV digest job: both

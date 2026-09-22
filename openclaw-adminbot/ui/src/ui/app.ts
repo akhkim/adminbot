@@ -48,11 +48,13 @@ import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
+  createEmptyLabPapersState,
   createEmptyVenuePapersState,
   createEmptyWorkshopNudgeReviewState,
   type AdminBotCvDigestJobState,
   EMPTY_SLACK_CHANNEL_CHECK,
   type SlackChannelCheck,
+  type AdminBotLabPapersState,
   type AdminBotVenuePapersState,
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
@@ -110,6 +112,7 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
+import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
@@ -803,6 +806,9 @@ export class OpenClawApp extends LitElement {
   @state() nudgeBellOpen = false;
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
+  @state() adminBotLabPapers: AdminBotLabPapersState = createEmptyLabPapersState();
+  /** Which half of Find Interesting Papers is open. */
+  @state() adminBotPapersTab: ConferencePapersTab = "conference";
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
