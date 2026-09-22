@@ -109,7 +109,7 @@ import {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
-import type { BlockerSort } from "./adminbot/views/admin.ts";
+import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
@@ -787,6 +787,16 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBlockerSort: BlockerSort = "stage";
   /** Which venue the pre-registration table is filtered to. Empty means every upcoming venue. */
   @state() adminBotVenueFilter = "";
+  /**
+   * How the pre-registration board is sorted and narrowed.
+   *
+   * On app state rather than inside the board for the same reason the venue filter is: the board
+   * is redrawn by every unrelated change on this page -- a saved paper, an arriving nudge -- and a
+   * view somebody chose has to survive that.
+   */
+  @state() adminBotPreregSort: PreregSort = "readiness";
+  @state() adminBotPreregMinConfidence = 0;
+  @state() adminBotPreregMissingEdit = false;
   @state() nudgeBellOpen = false;
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();

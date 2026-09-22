@@ -9742,6 +9742,23 @@ adminbot-deadlines-view {
   flex-wrap: wrap;
 }
 
+/*
+ * The sort and narrowing controls, on their own line under the venue chips.
+ *
+ * Full width inside the flex head so they start at the left edge rather than sharing a row with
+ * the venue filters -- the two answer different questions ("which conference" against "how should
+ * this be ordered"), and side by side at narrow widths they wrapped into one indistinguishable
+ * run of pills.
+ */
+.venue-table__controls {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
 .venue-table__filter {
   display: inline-flex;
   align-items: baseline;

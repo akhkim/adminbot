@@ -1507,6 +1507,102 @@ describe("pre-registration venue table", () => {
     );
   });
 
+  // The fixture, by readiness: "Aimed at both" 99 (the only one with an edit link), "ICLR only"
+  // 80, "Registered from its own card" 50, "Read-only link only" 40 (edit field stored blank).
+  function drawWith(extra: Record<string, unknown>) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members, papers, loadedAt: Date.now() },
+        ...extra,
+      }),
+    );
+  }
+
+  function titlesOf(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('[data-testid="prereg-board"] tbody tr')].map(
+      (row) => row.querySelector("td")?.textContent?.trim() ?? "",
+    );
+  }
+
+  it("sorts by readiness unless told otherwise", () => {
+    expect(titlesOf(drawWith({}))[0]).toBe("Aimed at both");
+  });
+
+  it("puts the rows with no edit link first when sorted by edit link", () => {
+    const titles = titlesOf(drawWith({ preregSort: "editLink" }));
+    // The one paper that has an edit link goes last, even though it is the readiest.
+    expect(titles.at(-1)).toBe("Aimed at both");
+    // A field stored as whitespace is a missing link, not a link.
+    expect(titles.slice(0, 3)).toContain("Read-only link only");
+    // Within the missing group the original readiness order survives, so the sort is a regrouping
+    // rather than a reshuffle.
+    expect(titles.slice(0, 3)).toEqual([
+      "ICLR only",
+      "Registered from its own card",
+      "Read-only link only",
+    ]);
+  });
+
+  it("sorts by title", () => {
+    expect(titlesOf(drawWith({ preregSort: "title" }))).toEqual([
+      "Aimed at both",
+      "ICLR only",
+      "Read-only link only",
+      "Registered from its own card",
+    ]);
+  });
+
+  it("drops papers under the confidence threshold", () => {
+    expect(titlesOf(drawWith({ preregMinConfidence: 50 }))).not.toContain("Read-only link only");
+    expect(titlesOf(drawWith({ preregMinConfidence: 75 }))).toEqual(["Aimed at both", "ICLR only"]);
+    // A paper is judged on its best target, not its first: "Aimed at both" is 50% at ICLR and 99%
+    // at ARR, and it survives a 75% floor because of the second.
+    expect(titlesOf(drawWith({ preregMinConfidence: 75 }))).toContain("Aimed at both");
+  });
+
+  it("can show only the rows still missing an edit link", () => {
+    const titles = titlesOf(drawWith({ preregMissingEdit: true }));
+    expect(titles).toHaveLength(3);
+    expect(titles).not.toContain("Aimed at both");
+  });
+
+  it("says a filter emptied the board rather than that nobody has registered", () => {
+    // 90%+ leaves only "Aimed at both", which is also the one paper that has an edit link, so
+    // asking for both at once is genuinely empty rather than merely short.
+    const empty = drawWith({ preregMinConfidence: 90, preregMissingEdit: true });
+    expect(empty.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
+      "matches these filters",
+    );
+    // And still says the plain thing when no filter is on.
+    const none = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [papers[2]!],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(none.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
+      "Nobody has pre-registered",
+    );
+  });
+
+  it("folds the active papers table into a disclosure that arrives open", () => {
+    const container = drawWith({});
+    const table = container.querySelector('[data-testid="adminbot-paper-overview"]');
+    const details = table?.closest("details.paper-overview__board");
+    expect(details).not.toBeNull();
+    // Open on arrival: this is the tab's subject, not a detail under it.
+    expect((details as HTMLDetailsElement).open).toBe(true);
+    expect(details?.querySelector("summary")?.textContent).toContain("Active papers");
+  });
+
   it("carries the spreadsheet's columns, with a column per Overleaf link", () => {
     const head = draw().querySelector('[data-testid="prereg-board"] thead');
     expect(
