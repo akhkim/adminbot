@@ -362,3 +362,84 @@ describe("minimizing a paper", () => {
     expect(drawn.saved.at(-1)?.title).toBe("Renamed");
   });
 });
+
+describe("folding one section of a paper", () => {
+  const band = (container: HTMLElement, id: string, group: string) =>
+    container.querySelector<HTMLElement>(`[data-testid="paper-legacy-group-${id}-${group}"]`)!;
+  const heading = (container: HTMLElement, id: string, group: string) =>
+    container.querySelector<HTMLButtonElement>(
+      `[data-testid="paper-legacy-group-toggle-${id}-${group}"]`,
+    )!;
+  const rows = (container: HTMLElement, id: string, group: string) =>
+    band(container, id, group).querySelector(".profile__field-grid");
+
+  // Same promise as the cards: everything is on the page until the reader says otherwise.
+  it("opens every section", () => {
+    const drawn = draw();
+    for (const group of legacyGroups()) {
+      expect(rows(drawn.container, "p1", group.id)).not.toBeNull();
+      expect(heading(drawn.container, "p1", group.id).getAttribute("aria-expanded")).toBe("true");
+    }
+  });
+
+  it("hides that section's rows on a click, and brings them back on the next one", () => {
+    const drawn = draw();
+    heading(drawn.container, "p1", "venue").click();
+    expect(rows(drawn.container, "p1", "venue")).toBeNull();
+    expect(
+      band(drawn.container, "p1", "venue").classList.contains("paper-legacy__group--collapsed"),
+    ).toBe(true);
+    expect(heading(drawn.container, "p1", "venue").getAttribute("aria-expanded")).toBe("false");
+
+    heading(drawn.container, "p1", "venue").click();
+    expect(rows(drawn.container, "p1", "venue")).not.toBeNull();
+    expect(heading(drawn.container, "p1", "venue").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("leaves the sections beside it alone", () => {
+    const drawn = draw();
+    heading(drawn.container, "p1", "venue").click();
+    expect(rows(drawn.container, "p1", "project")).not.toBeNull();
+    expect(rows(drawn.container, "p1", "slots-core")).not.toBeNull();
+  });
+
+  // Per paper, not per section name: folding Venue away on one paper must not fold it on the
+  // nine below it, which is the whole reason the key carries the paper id.
+  it("folds one paper's section without touching the same section on another", () => {
+    const drawn = draw({
+      papers: [paper(), paper({ id: "p2", title: "Second paper" })],
+      slots: { p1: cycle(), p2: cycle() },
+    });
+    heading(drawn.container, "p1", "venue").click();
+    expect(rows(drawn.container, "p1", "venue")).toBeNull();
+    expect(rows(drawn.container, "p2", "venue")).not.toBeNull();
+  });
+
+  // The heading is inside the form, so a click on it must not also fold the paper away.
+  it("leaves the card itself open", () => {
+    const drawn = draw();
+    heading(drawn.container, "p1", "venue").click();
+    expect(drawn.state.collapsed.has("p1")).toBe(false);
+    expect(band(drawn.container, "p1", "project")).not.toBeNull();
+  });
+
+  // What a folded band is still worth saying. Project carries six fields and this paper answers
+  // three of them: a title, its authors, and the step it is on.
+  it("says how much of a folded section is answered", () => {
+    const drawn = draw();
+    heading(drawn.container, "p1", "project").click();
+    const count = drawn.container.querySelector(
+      '[data-testid="paper-legacy-group-count-p1-project"]',
+    );
+    expect(count?.textContent?.replace(/\s+/gu, " ").trim()).toBe("3 of 6 filled");
+  });
+
+  // The rows leave the page when the band folds, and a debounce still counting down would go with
+  // them. Same flush the card makes on the way down.
+  it("sends what was typed in the section before it folds", () => {
+    const drawn = draw();
+    type(drawn.container, "paper-legacy-p1-title", "Renamed");
+    heading(drawn.container, "p1", "project").click();
+    expect(drawn.saved.at(-1)?.title).toBe("Renamed");
+  });
+});

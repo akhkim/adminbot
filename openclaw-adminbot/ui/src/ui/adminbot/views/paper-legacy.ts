@@ -299,11 +299,31 @@ export type PaperLegacyState = {
    * the paper, so it is no more persisted than the edits buffer is.
    */
   collapsed: Set<string>;
+  /**
+   * Field groups the reader has folded shut, keyed `<paper id>::<group id>`.
+   *
+   * Per paper rather than per group name, so folding Social away on one paper leaves it open on
+   * the nine below it: a click should change the thing that was clicked and nothing else. Held
+   * beside `collapsed` and emptied the same way -- open is what this view promises, and both sets
+   * record only the reader's departures from it.
+   */
+  collapsedGroups: Set<string>;
   notice: string | null;
 };
 
 export function emptyPaperLegacyState(): PaperLegacyState {
-  return { edits: new Map(), slotsRequested: new Set(), collapsed: new Set(), notice: null };
+  return {
+    edits: new Map(),
+    slotsRequested: new Set(),
+    collapsed: new Set(),
+    collapsedGroups: new Set(),
+    notice: null,
+  };
+}
+
+/** One paper's one group. Both halves are slugs, so the separator cannot occur inside either. */
+function groupKey(paperId: string, groupId: string): string {
+  return `${paperId}::${groupId}`;
 }
 
 function editsFor(state: PaperLegacyState, paperId: string): Map<string, string> {
@@ -695,6 +715,22 @@ function renderRow(
     : html`<label class="profile__form-row">${body}</label>`;
 }
 
+/**
+ * How many of a group's fields carry an answer, counting what has been typed but not yet sent.
+ *
+ * Shown on a folded group for the same reason a folded card keeps its step: the fold should cost
+ * the reader the rows, not the one number that tells them whether opening it is worth it.
+ */
+function filledCount(
+  props: PaperLegacyProps,
+  paper: AdminBotPaperRecord,
+  group: LegacyGroup,
+): number {
+  const cycle = props.slots?.[paper.id];
+  return group.fields.filter((field) => liveValue(props.state, field, paper, cycle).trim() !== "")
+    .length;
+}
+
 function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): TemplateResult {
   const loading = Boolean(props.onLoadSlots) && !props.slots?.[paper.id];
   const commit = commitPaper(props, paper);
@@ -735,6 +771,26 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
       flushAutosave(saveTimers.get(timerKey), setTimer, commit);
       props.state.collapsed.add(paper.id);
     }
+    props.onChange();
+  };
+  /**
+   * Fold one field group shut, or open it again.
+   *
+   * A button and nothing else, unlike the card above it: a group heading sits inside the form,
+   * where the space around it belongs to some control's row, so there is no surface here that can
+   * be given to the fold without taking it from the fields.
+   */
+  const toggleGroup = (groupId: string) => {
+    const key = groupKey(paper.id, groupId);
+    if (props.state.collapsedGroups.has(key)) {
+      props.state.collapsedGroups.delete(key);
+      props.onChange();
+      return;
+    }
+    // Same reason the card flushes on the way down: the rows leave the page, and a focusout from
+    // an input that was removed rather than blurred is not one this form can count on.
+    flushAutosave(saveTimers.get(timerKey), setTimer, commit);
+    props.state.collapsedGroups.add(key);
     props.onChange();
   };
   return html`
@@ -792,18 +848,52 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
               // section that pops in after the record fields have settled reads as the form growing
               // under the reader's hands.
               const evidence = group.id.startsWith("slots-");
+              const shut = props.state.collapsedGroups.has(groupKey(paper.id, group.id));
               return html`
-                <div class="profile__field-group">
+                <div
+                  class=${`profile__field-group${shut ? " paper-legacy__group--collapsed" : ""}`}
+                  data-testid=${`paper-legacy-group-${paper.id}-${group.id}`}
+                >
+                  <!-- The whole heading is the button, rather than a chevron parked beside it: the
+                       heading is what names the thing being folded, and a two-pixel target next to
+                       a label the reader is already aiming at is a worse version of the same
+                       control. It announces its own state, so the fold works from the keyboard. -->
                   <h3 class="profile__group-title">
-                    <span class="profile__group-icon" aria-hidden="true">${icons[group.icon]}</span>
-                    ${group.label}
-                    ${evidence && loading
-                      ? html`<span class="paper-legacy__loading">loading…</span>`
-                      : nothing}
+                    <button
+                      type="button"
+                      class="paper-legacy__group-toggle"
+                      data-testid=${`paper-legacy-group-toggle-${paper.id}-${group.id}`}
+                      aria-expanded=${shut ? "false" : "true"}
+                      @click=${() => toggleGroup(group.id)}
+                    >
+                      <span class="paper-legacy__collapse-icon" aria-hidden="true"
+                        >${shut ? icons.chevronRight : icons.chevronDown}</span
+                      >
+                      <span class="profile__group-icon" aria-hidden="true"
+                        >${icons[group.icon]}</span
+                      >
+                      <span class="paper-legacy__group-label">${group.label}</span>
+                      ${evidence && loading
+                        ? html`<span class="paper-legacy__loading">loading…</span>`
+                        : nothing}
+                      <!-- What a folded band is still worth saying: how much of it is answered.
+                           Without it the fold hides the very thing that decides whether to open
+                           it, and the reader has to open every band to find the empty one. -->
+                      ${shut
+                        ? html`<span
+                            class="paper-legacy__group-count"
+                            data-testid=${`paper-legacy-group-count-${paper.id}-${group.id}`}
+                            >${filledCount(props, paper, group)} of ${group.fields.length}
+                            filled</span
+                          >`
+                        : nothing}
+                    </button>
                   </h3>
-                  <div class="profile__field-grid">
-                    ${group.fields.map((field) => renderRow(props, paper, field))}
-                  </div>
+                  ${shut
+                    ? nothing
+                    : html`<div class="profile__field-grid">
+                        ${group.fields.map((field) => renderRow(props, paper, field))}
+                      </div>`}
                 </div>
               `;
             })}
@@ -830,7 +920,8 @@ export function renderPaperLegacy(props: PaperLegacyProps): TemplateResult {
       <div class="paper-legacy__head">
         <p class="paper-legacy__lead">
           Every field on every paper, laid out like your profile. Click a paper's heading to
-          minimize it. The card view groups the same answers by what each one unblocks.
+          minimize it, or a section's to fold that section away. The card view groups the same
+          answers by what each one unblocks.
         </p>
         <button
           type="button"

@@ -132,6 +132,19 @@
   color: var(--text-muted);
 }
 
+/* The chevrons carry a viewBox and nothing else, like every other icon here, so the box that
+   holds one is what gives it a size and a stroke. Without this it draws at the replaced element's
+   default 300x150 and fills black. Same treatment as `profile__group-icon`, one size down. */
+.paper-legacy__collapse-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* A folded card is one line, so its title stops wrapping to two and the step beside it keeps its
    place at the end of the row. */
 .paper-legacy__paper--collapsed .paper-legacy__collapse-title {
@@ -144,4 +157,49 @@
   flex: 0 0 auto;
   color: var(--text-muted);
   font-size: 0.85em;
+}
+
+/* Folding one band of a card.
+
+   The heading is the whole control, so it is stripped back to the heading it replaces: the button
+   inherits the `profile__group-title` type it sits in and adds only the chevron. Same treatment
+   as the card's own fold above, one level down. */
+.paper-legacy__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.paper-legacy__group-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.paper-legacy__group-label {
+  flex: 0 1 auto;
+}
+
+/* The count sits at the end of the row rather than beside the label, so a column of folded bands
+   lines its numbers up instead of ragging them against seven different label widths. */
+.paper-legacy__group-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+/* A folded band is its heading and nothing else, so the gap the heading reserves for the rows
+   below it would otherwise leave a blank strip under every one of them. */
+.paper-legacy__group--collapsed .profile__group-title {
+  margin-bottom: 0;
 }
