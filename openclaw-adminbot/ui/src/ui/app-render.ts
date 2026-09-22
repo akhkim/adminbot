@@ -15,7 +15,6 @@ import {
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
-import { isLocalServiceOnlyMode } from "./adminbot/auth/local-service-mode.ts";
 import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
@@ -2019,7 +2018,7 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  if (!state.connected && !(state.memberId && isLocalServiceOnlyMode(state.settings))) {
+  if (!state.connected) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a

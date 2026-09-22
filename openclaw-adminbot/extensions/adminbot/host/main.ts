@@ -65,13 +65,15 @@ export type AdminBotHostDeps = {
       deviceId: string;
       role: string;
       scopes: string[];
-      issuer: string;
+      issuer: { kind: "shared-gateway-auth"; generation: string };
       ownerMemberId?: string;
     }) => Promise<{ token: string; scopes: string[] } | null>;
     requestDevicePairing: (params: Record<string, unknown>) => Promise<{
       request: { requestId: string };
     }>;
-    resolveSharedGatewayAuthIssuer: () => string | undefined;
+    resolveSharedGatewayAuthIssuer: () =>
+      | { kind: "shared-gateway-auth"; generation: string }
+      | undefined;
   };
   /** Mints a Slack Connect invite. Slack lives in another plugin, so the launcher supplies it. */
   inviteToSlackConnect?: (params: { email: string; channelId: string }) => Promise<{ url: string }>;
@@ -122,7 +124,7 @@ export function loadOpenClawEnv(): void {
  * to the shared gateway secret it deliberately no longer holds, and the member's connect frame
  * reaches the Gateway with no auth at all.
  */
-function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
+export function createDeviceTokenIssuer(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function issueMemberDeviceToken(params: {
     deviceId: string;
     publicKey: string;
@@ -203,7 +205,7 @@ function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
  * of the member's login session and capped at `allowedScopes`. The replacement token is minted by
  * the Gateway on the next connect, so nothing is stamped here.
  */
-function createDevicePairingApprover(deps: AdminBotHostDeps) {
+export function createDevicePairingApprover(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function approveMemberDevicePairing(params: {
     requestId: string;
     allowedScopes: readonly string[];

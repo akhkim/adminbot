@@ -9,22 +9,10 @@ is required. The existing Pending Actions UI handles approval and execution.
 
 ### Ad hoc PDF uploads
 
-For a local test without an OpenClaw gateway, run these in separate terminals from the repo root:
-
-```bash
-ADMINBOT_DEV_EMAIL=admin@example.test ADMINBOT_DEV_PASSWORD=local-dev-password \
-  node --env-file=.env.gptzero --import tsx scripts/start-adminbot-dev.ts
-```
-
-```bash
-VITE_ADMINBOT_SERVICE_ONLY=1 pnpm ui:dev
-```
-
-Open `http://127.0.0.1:5173` and sign in with those local credentials. The service-only flag works
-only in Vite development with both UI and backend on HTTP loopback addresses. It does not issue
-gateway credentials or enable gateway features; normal service authentication and roles still
-apply. Production builds ignore it. `.env.gptzero` must contain `GPTZERO_API_KEY` and remain ignored
-by Git. Submitting a PDF uses the real provider even with this development launcher.
+Run `./dev.sh` from the outer repository directory with your personal OpenClaw gateway running.
+Open the printed Frontend URL and click Alice in the local account picker. See `dev/README.md`
+for gateway setup. The launcher reads the ignored `.env.gptzero` file when present; it must contain
+`GPTZERO_API_KEY`. Submitting a PDF uses the real provider, including in development.
 
 Admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF (up to
 20 MB), and click **Submit**. This explicitly approves sending that file to GPTZero. The page

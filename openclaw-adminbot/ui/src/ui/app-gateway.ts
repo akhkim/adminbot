@@ -8,7 +8,6 @@ import {
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
 import { recoverFromRejectedDeviceToken } from "./adminbot/auth/flow.ts";
-import { isLocalServiceOnlyMode } from "./adminbot/auth/local-service-mode.ts";
 import {
   loadStoredMemberSession,
   pairDevice,
@@ -965,13 +964,6 @@ function maybeRecoverRejectedDeviceToken(host: GatewayHost, client: GatewayBrows
 }
 
 export function connectGateway(host: GatewayHost, options?: ConnectGatewayOptions) {
-  if (isLocalServiceOnlyMode(host.settings)) {
-    host.client?.stop();
-    host.client = null;
-    host.connected = false;
-    host.hello = null;
-    return;
-  }
   const shutdownHost = host as GatewayHostWithShutdownMessage;
   const reconnectReason = options?.reason ?? "initial";
   if (reconnectReason === "initial") {

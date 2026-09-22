@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import fs from "node:fs";
 import { request } from "node:http";
 import net from "node:net";
@@ -49,6 +50,59 @@ describe("development launcher", () => {
     expect(() => devConfig({ ADMINBOT_DEV_UI_PORT: "0" })).toThrow(/port/u);
   });
 
+  it.each(["secret", "origin", "remote"])(
+    "rejects missing or unsafe gateway setup: %s",
+    (scenario) => {
+      const temp = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-preflight-"));
+      try {
+        const configPath = path.join(temp, "openclaw.json");
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({
+            gateway: {
+              mode: "local",
+              auth: {
+                mode: "token",
+                ...(scenario === "secret" ? {} : { token: "synthetic-test-secret" }),
+              },
+              controlUi: { allowedOrigins: scenario === "origin" ? [] : ["http://127.0.0.1:5173"] },
+            },
+          }),
+        );
+        const result = spawnSync(
+          process.execPath,
+          ["--import", "tsx", "scripts/adminbot-dev-gateway.ts"],
+          {
+            cwd: fileURLToPath(new URL("../../", import.meta.url)),
+            encoding: "utf8",
+            timeout: 15000,
+            env: {
+              ...process.env,
+              OPENCLAW_STATE_DIR: temp,
+              OPENCLAW_CONFIG_PATH: configPath,
+              OPENCLAW_GATEWAY_TOKEN: "",
+              OPENCLAW_GATEWAY_PASSWORD: "",
+              ADMINBOT_CONTROL_UI_URL: "http://127.0.0.1:5173",
+              ADMINBOT_GATEWAY_WS_URL:
+                scenario === "remote" ? "wss://remote.example.test" : "ws://127.0.0.1:18789",
+            },
+          },
+        );
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          scenario === "secret"
+            ? "No gateway token/password"
+            : scenario === "origin"
+              ? "Allow http://127.0.0.1:5173"
+              : "requires a local",
+        );
+        expect(fs.existsSync(path.join(temp, "devices"))).toBe(false);
+      } finally {
+        fs.rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("refuses occupied ports without stopping the existing listener", async () => {
     const occupied = await reservePort();
     try {
@@ -63,6 +117,19 @@ describe("development launcher", () => {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-launcher-"));
     const backend = await reservePort();
     const frontend = await reservePort();
+    const gateway = await reservePort();
+    const configPath = path.join(temp, "openclaw.json");
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        gateway: {
+          mode: "local",
+          port: gateway.port,
+          auth: { mode: "token", token: "synthetic-gateway-test-secret" },
+          controlUi: { allowedOrigins: [`http://127.0.0.1:${frontend.port}`] },
+        },
+      }),
+    );
     await backend.close();
     await frontend.close();
     const child = spawn(launcher, [], {
@@ -74,6 +141,10 @@ describe("development launcher", () => {
         ADMINBOT_DEV_EMAIL: "alice@example.test",
         ADMINBOT_PORT: String(backend.port),
         ADMINBOT_DEV_UI_PORT: String(frontend.port),
+        OPENCLAW_STATE_DIR: path.join(temp, "openclaw"),
+        OPENCLAW_CONFIG_PATH: configPath,
+        OPENCLAW_GATEWAY_TOKEN: "synthetic-gateway-test-secret",
+        ADMINBOT_GATEWAY_WS_URL: `ws://127.0.0.1:${gateway.port}`,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -110,6 +181,40 @@ describe("development launcher", () => {
         }),
       });
       expect(login.status).toBe(200);
+      const session = await login.json();
+      const bytes = generateKeyPairSync("ed25519")
+        .publicKey.export({ type: "spki", format: "der" })
+        .subarray(-32);
+      const device = {
+        deviceId: createHash("sha256").update(bytes).digest("hex"),
+        publicKey: bytes.toString("base64url"),
+        scopes: ["operator.admin"],
+      };
+      const issue = (token?: string) =>
+        fetch(`${base}/auth/device-token`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(device),
+        });
+      expect((await issue()).status).toBe(401);
+      expect((await issue("invalid-session")).status).toBe(401);
+      const issued = await issue(session.session_token);
+      expect(issued.status).toBe(200);
+      expect((await issued.json()).token).toBeTruthy();
+      const memberLogin = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "bob@example.test",
+          password: "Synthetic-launcher-password!",
+        }),
+      });
+      const memberToken = await issue((await memberLogin.json()).session_token);
+      expect(memberToken.status).toBe(200);
+      expect((await memberToken.json()).scopes).not.toContain("operator.admin");
       const uiOrigin = `http://127.0.0.1:${frontend.port}`;
       const html = await (await fetch(uiOrigin)).text();
       const pickerPath = html.match(/src="(\/__adminbot_dev__\/[^"]+\.js)"/u)?.[1];
@@ -157,6 +262,7 @@ describe("development launcher", () => {
     } finally {
       child.kill("SIGTERM");
       await exited;
+      await gateway.close();
       fs.rmSync(temp, { recursive: true, force: true });
     }
   }, 90_000);
