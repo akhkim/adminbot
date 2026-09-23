@@ -1227,6 +1227,30 @@ function approvalFailureMessage(kind: string): string {
   return "Couldn't record this approval. Reload the pending list and try again.";
 }
 
+/**
+ * Why an approved action did not run.
+ *
+ * Separate from `approvalFailureMessage` because by this point the approval *is* recorded: saying
+ * "Couldn't record this approval" sent operators to approve again, which only records a duplicate
+ * and hits the same refusal. The service's own sentence is the diagnosis -- a protected cell, an
+ * expired Google token -- so it is shown whenever there is one.
+ */
+function executionFailureMessage(
+  failure: { kind: string; message?: string },
+  prefix: string,
+): string {
+  if (
+    failure.kind === "unreachable" ||
+    failure.kind === "forbidden" ||
+    failure.kind === "rate-limited"
+  ) {
+    return approvalFailureMessage(failure.kind);
+  }
+  return failure.message
+    ? `${prefix}: ${failure.message}`
+    : `${prefix}. Reload the pending list and try again.`;
+}
+
 export async function approveAdminBotAction(
   host: AdminBotHost,
   proposal: AdminBotActionProposal,
@@ -1269,7 +1293,12 @@ export async function approveAdminBotAction(
       session.baseUrl,
     );
     if (!executed.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
+      host.adminBotNotice = {
+        kind: "error",
+        text: executionFailureMessage(executed, `Approved ${proposal.id}, but it did not run`),
+      };
+      // The proposal is now approved rather than pending; reload so the row says so.
+      await loadAdminBot(host);
       return;
     }
     host.adminBotNotice = {
@@ -2080,7 +2109,10 @@ export async function executeAdminBotAction(
       session.baseUrl,
     );
     if (!executed.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
+      host.adminBotNotice = {
+        kind: "error",
+        text: executionFailureMessage(executed, `${proposal.id} did not run`),
+      };
       return;
     }
     host.adminBotNotice = {

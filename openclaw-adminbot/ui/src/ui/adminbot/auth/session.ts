@@ -1129,7 +1129,22 @@ async function privilegedActionCall<T>(
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    const mapped = mapErrorResponse(result.response, result.body, { weakOn400: false });
+    // A refused execute is almost always the connector's own sentence -- "You are trying to edit a
+    // protected cell", "gog: token expired" -- and a conflict names what changed under the
+    // approval. mapErrorResponse keeps a message only for a 400, which left the operator with
+    // "Couldn't record this approval" and nothing to act on. The route is privileged, so the
+    // service's text is safe to show.
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (
+      !mapped.message &&
+      (result.response.status === 409 || result.response.status >= 500) &&
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      return { ok: false, ...mapped, message: message.trim() };
+    }
+    return { ok: false, ...mapped };
   }
   return { ok: true, value: result.body as T };
 }

@@ -1694,6 +1694,41 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(res.status).toBe(403);
   });
 
+  it("answers a connector refusal as 500 with its message, never a 502 a tunnel would swallow", async () => {
+    // Cloudflare replaces an origin 502 with its own CORS-less page, so a refused write reached the
+    // Control UI as "Couldn't reach the AdminBot service" and the refusal itself was lost.
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async () => {
+          throw new Error(
+            "Google API error (400 badRequest): You are trying to edit a protected cell",
+          );
+        },
+      },
+    });
+    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    const proposal = await proposeSlackMessage(baseUrl);
+    const approved = await fetch(`${baseUrl}/approvals/${proposal.id}/approve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ payload_hash: proposal.hash, approver_role: "admin" }),
+    });
+    expect(approved.status).toBe(200);
+
+    const executed = await fetch(`${baseUrl}/actions/${proposal.id}/execute`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: "k1", dry_run: false }),
+    });
+
+    expect(executed.status).toBe(500);
+    await expect(executed.json()).resolves.toEqual({
+      error: {
+        message: "Google API error (400 badRequest): You are trying to edit a protected cell",
+      },
+    });
+  });
+
   it("lets a member tick off their own onboarding step but not someone else's", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "sam", { name: "Sam", email: "sam@cs.toronto.edu" });
