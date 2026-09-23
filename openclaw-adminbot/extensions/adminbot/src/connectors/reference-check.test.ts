@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { lookupContext, referenceFetch } from "./reference-check.http.js";
-import { createPdfReferenceChecker, extractPdfReferences } from "./reference-check.js";
-import { referencePdf } from "./reference-check.test-helpers.js";
+import { cooldownFor, lookupContext, referenceFetch } from "./reference-check.http.js";
+import {
+  createPdfReferenceChecker,
+  extractPdfReferences,
+  NO_TEXT_LAYER,
+  requiredDatabasesPausedUntil,
+} from "./reference-check.js";
+import { referencePdf, referencePdfPages } from "./reference-check.test-helpers.js";
 
 const citation =
   "Lovelace, A. (2024). Testing synthetic reference matching. Journal of Tests. https://doi.org/10.1234/synthetic";
@@ -45,6 +50,17 @@ describe("References-Validation integration", () => {
     expect(refs).toHaveLength(2);
     expect(refs[0]).toContain("Testing synthetic reference matching");
     expect(refs.join(" ")).not.toContain("Private");
+  });
+
+  it("reads a bibliography that starts after page 20", async () => {
+    // clawpdf stops at page 20 unless asked for more; long papers lost their references.
+    const body = Array.from({ length: 22 }, (_, i) => [`Synthetic manuscript page ${i + 1}`]);
+    const pdf = referencePdfPages([
+      ...body,
+      ["References", `[1] ${citation}`, "[2] Doe, J. (2023). A second synthetic reference."],
+    ]);
+    const refs = await extractPdfReferences(pdf);
+    expect(refs).toHaveLength(2);
   });
 
   it.each([
@@ -143,6 +159,116 @@ describe("References-Validation integration", () => {
       const finding = (await check(new Uint8Array(), signal())).findings[0];
       expect(finding.status).toBe("not_found");
       expect(finding.explanation).toBe("No matching reference found in the available databases.");
+    }
+  });
+
+  it("with requireAllDatabases, claims not found only when Crossref, OpenAlex and DBLP answered", async () => {
+    const extract = async () => [
+      "Doe, J. (2024). An entirely invented synthetic research title. Test Journal.",
+    ];
+    const statusWhen = async (throttled: string) => {
+      const check = createPdfReferenceChecker({
+        extract,
+        requireAllDatabases: true,
+        requestIntervalMs: 0,
+        fetch: vi.fn(async (input) =>
+          String(input).includes(throttled)
+            ? new Response("rate limited", { status: 429 })
+            : emptyDatabase(input),
+        ),
+      });
+      return (await check(new Uint8Array(), signal())).findings[0];
+    };
+    // Semantic Scholar and OpenAlex throttle anonymous clients; that alone must not hide a miss.
+    expect((await statusWhen("api.semanticscholar.org")).status).toBe("not_found");
+    expect((await statusWhen("api.openalex.org")).status).toBe("not_found");
+    const partial = await statusWhen("dblp.org");
+    expect(partial.status).toBe("unavailable");
+    expect(partial.explanation).toContain("not fully checked");
+  });
+
+  it("with allowOversized, checks clean entries and never looks up an unsplittable chunk", async () => {
+    const chunk = `${citation} `.repeat(30);
+    const fetcher = vi.fn(async (input) => emptyDatabase(input));
+    const check = createPdfReferenceChecker({
+      extract: async (_pdf, limits) => {
+        expect(limits?.allowOversized).toBe(true);
+        return [citation, chunk];
+      },
+      allowOversized: true,
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    const [clean, oversized] = (await check(new Uint8Array(), signal())).findings;
+    expect(clean.status).not.toBe("unavailable");
+    expect(fetcher).toHaveBeenCalled();
+    expect(oversized).toMatchObject({ status: "unavailable", oversized_chars: chunk.length });
+    expect(oversized.citation.length).toBeLessThan(310);
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes("Testing%20synthetic%20reference%20matching%20Journal"),
+      ),
+    ).toBe(false);
+  });
+
+  it("backs off a host that answers 429 or refuses connections, sharing the state across checks", async () => {
+    const cooldowns = new Map<string, number>();
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("dblp.org")) {
+        throw new TypeError("fetch failed");
+      }
+      if (url.includes("api.openalex.org")) {
+        return new Response("slow down", { status: 429, headers: { "retry-after": "120" } });
+      }
+      return emptyDatabase(input);
+    });
+    const check = createPdfReferenceChecker({
+      extract: async () => ["Doe, J. (2024). An entirely invented synthetic research title."],
+      cooldowns,
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    const before = Date.now();
+    await check(new Uint8Array(), signal());
+    expect(cooldowns.get("api.openalex.org")! - before).toBeGreaterThanOrEqual(119_000);
+    expect(cooldowns.get("dblp.org")! - before).toBeGreaterThanOrEqual(14 * 60_000);
+    expect(requiredDatabasesPausedUntil(cooldowns)).toBe(cooldowns.get("dblp.org"));
+    const hostsCalled = (from: number) =>
+      new Set(fetcher.mock.calls.slice(from).map(([url]) => new URL(String(url)).hostname));
+    const calls = fetcher.mock.calls.length;
+    await check(new Uint8Array(), signal());
+    // Neither backed-off host is asked again; the others still are.
+    expect(hostsCalled(calls).has("dblp.org")).toBe(false);
+    expect(hostsCalled(calls).has("api.openalex.org")).toBe(false);
+    expect(hostsCalled(calls).has("api.crossref.org")).toBe(true);
+  });
+
+  it("bounds Retry-After and reads HTTP dates", () => {
+    const now = Date.parse("2026-09-23T12:00:00Z");
+    expect(cooldownFor(null, now)).toBe(15 * 60_000);
+    expect(cooldownFor("5", now)).toBe(60_000);
+    expect(cooldownFor("999999", now)).toBe(6 * 60 * 60_000);
+    expect(cooldownFor("Wed, 23 Sep 2026 12:30:00 GMT", now)).toBe(30 * 60_000);
+  });
+
+  it("says a text-less PDF is a placeholder or scan, not a missing bibliography", async () => {
+    await expect(extractPdfReferences(referencePdf([" "]))).rejects.toThrow(NO_TEXT_LAYER);
+  });
+
+  it("sends the OpenAlex key only to OpenAlex", async () => {
+    const fetcher = vi.fn(async (input) => emptyDatabase(input));
+    const check = createPdfReferenceChecker({
+      extract: async () => ["Doe, J. (2024). An entirely invented synthetic research title."],
+      openAlexApiKey: "synthetic-key",
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    await check(new Uint8Array(), signal());
+    const urls = fetcher.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => url.includes("api.openalex.org"))).not.toHaveLength(0);
+    for (const url of urls) {
+      expect(url.includes("api_key=synthetic-key")).toBe(url.includes("api.openalex.org"));
     }
   });
 

@@ -206,7 +206,7 @@ describe("subtitleForTab", () => {
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
-      adminbotReferenceChecker: "Check PDF references with GPTZero.",
+      adminbotReferenceChecker: "Check PDF references against scholarly databases.",
       adminbotConferencePapers:
         "Search a conference's accepted papers, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",

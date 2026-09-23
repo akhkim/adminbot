@@ -196,6 +196,17 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
   result.doi = extractDOI(ref);
   result.year = extractYear(ref);
 
+  // ACL/EMNLP: "Names. 2014. Title. In Venue…" -- the title is the sentence after the year, which
+  // the scoring below cannot know once years are stripped (it picked "In Empirical Methods…").
+  const acl = ref
+    .replace(/^\s*[[(\s]*\d{1,4}[\])\s]*[.\s]?/, "")
+    .match(/^(.{3,2000}?)\.\s+(?:19|20)\d{2}[a-z]?\.\s+(.+?[.?!])(?:\s|$)/);
+  if (acl && !/\d/.test(acl[1]) && /,|\band\b|^\S+(?:\s\S+){0,3}$/.test(acl[1])) {
+    result.authors = acl[1].trim();
+    result.title = acl[2].replace(/\.$/, "").trim();
+    return result;
+  }
+
   // Remove ref number prefix, DOI, URLs, years in parentheses
   const cleaned = ref
     .replace(/^\s*[[(\s]*\d{1,4}[\])\s]*[.\s]?/, "")
@@ -204,8 +215,10 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
     .replace(/\(?\b(19|20)\d{2}\b\)?/g, "")
     .trim();
 
-  // Split on period followed by space (sentence boundaries)
+  // Split on period followed by space (sentence boundaries). A lone capital initial ("Aidan N.
+  // Gomez") is not a boundary: splitting there made the author list the title.
   const segments = cleaned
+    .replace(/(^|[\s,.])([A-Z])\.(?=\s)/g, "$1$2")
     .split(/[.]\s+/)
     .map((s) => s.trim().replace(/\.$/, "").trim())
     .filter((s) => s.length > 5);
@@ -215,9 +228,23 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
     // - Authors have: "and" connecting names, comma-separated capitalized names
     // - Journal/venue has: known keywords (journal, proceedings, advances, etc.)
     // - Title: typically the segment with most lowercase content words
-    const authorPattern = /\b(and)\b.*(?:,|\band\b)/i;
+    const andPattern = /\b(and)\b.*(?:,|\band\b)/i;
+    // Upstream only recognized "A and B, C"; a list ending "…, B, and C" scored as the title.
+    const namePart = /^(?:[A-Z][\p{L}'’-]*\.?\s*){1,4}$/u;
+    const authorPattern = {
+      test: (seg: string) => {
+        const parts = seg
+          .split(/,|\band\b/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        return (
+          andPattern.test(seg) || (parts.length >= 2 && parts.every((part) => namePart.test(part)))
+        );
+      },
+    };
+    // Upstream's list missed "In Empirical Methods…", page ranges and report/preprint venues.
     const venueKeywords =
-      /\b(journal|proceedings|conference|transactions|advances|letters|review|annals|bulletin|workshop|symposium|arxiv|ieee|acm|springer|nature|science)\b/i;
+      /\b(journal|proceedings|conference|transactions|advances|letters|review|annals|bulletin|workshop|symposium|arxiv|ieee|acm|springer|nature|science|technical report|preprint|pages|pp|volume|vol|press|openreview)\b|^(?:In|Proc)\b|\d+\s*[–-]\s*\d+/i;
 
     let bestTitleIdx = 0;
     let bestTitleScore = -1;

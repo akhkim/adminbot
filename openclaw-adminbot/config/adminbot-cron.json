@@ -27,6 +27,13 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-citation-checks",
+      "description": "Check the citations of each new OpenReview submission version, every half hour",
+      "cron": "25,55 * * * *",
+      "argv": ["bash", "scripts/adminbot-citation-check-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-meeting-artifacts",
       "description": "Meeting artifact drop-folder pass",
       "cron": "20 * * * *",

@@ -9,7 +9,29 @@ export type LookupContext = {
   available?: Set<string>;
   lastRequest: Map<string, number>;
   fetch: typeof globalThis.fetch;
+  /** Without a key OpenAlex shares a small daily budget across the host's IP. */
+  openAlexApiKey?: string;
+  /**
+   * Host -> epoch ms until which it is left alone. Shared across checks by the unattended sweep:
+   * DBLP blocked Aurora outright after the first sweep kept asking through its 429s.
+   */
+  cooldowns?: Map<string, number>;
 };
+
+const DEFAULT_COOLDOWN_MS = 15 * 60_000;
+const MAX_COOLDOWN_MS = 6 * 60 * 60_000;
+
+/** Retry-After as seconds or an HTTP date, bounded; absent or unreadable means the default. */
+export function cooldownFor(retryAfter: string | null, now = Date.now()): number {
+  const seconds = Number(retryAfter);
+  const ms =
+    Number.isFinite(seconds) && retryAfter?.trim()
+      ? seconds * 1000
+      : retryAfter && Number.isFinite(Date.parse(retryAfter))
+        ? Date.parse(retryAfter) - now
+        : DEFAULT_COOLDOWN_MS;
+  return Math.min(MAX_COOLDOWN_MS, Math.max(60_000, ms));
+}
 export const lookupContext = new AsyncLocalStorage<LookupContext>();
 const hosts = new Set([
   "api.crossref.org",
@@ -35,7 +57,14 @@ export async function referenceFetch(input: string, init?: RequestInit): Promise
   ) {
     throw new Error("Unsupported reference database");
   }
+  if (url.hostname === "api.openalex.org" && context.openAlexApiKey) {
+    url.searchParams.set("api_key", context.openAlexApiKey);
+  }
   const source = url.hostname;
+  if ((context.cooldowns?.get(source) ?? 0) > Date.now()) {
+    context.failures.add(source);
+    throw new Error("Reference database is cooling down");
+  }
   const signal = AbortSignal.any([context.signal, AbortSignal.timeout(12_000)]);
   try {
     const wait =
@@ -60,6 +89,12 @@ export async function referenceFetch(input: string, init?: RequestInit): Promise
       )
     ) {
       await response.body?.cancel();
+      if (response.status === 429 || response.status === 503) {
+        context.cooldowns?.set(
+          source,
+          Date.now() + cooldownFor(response.headers.get("retry-after")),
+        );
+      }
       throw new Error("Database unavailable");
     }
     const reader = response.body?.getReader();
@@ -107,8 +142,13 @@ export async function referenceFetch(input: string, init?: RequestInit): Promise
     }
     context.available?.add(source);
     return new Response(body, { status: response.status, headers: response.headers });
-  } catch {
+  } catch (error) {
     context.failures.add(source);
-    throw new Error("Reference database request failed");
+    // A refused or reset connection (not our own cancellation) is how DBLP says "too many".
+    if (error instanceof TypeError && !context.signal.aborted) {
+      context.cooldowns?.set(source, Date.now() + DEFAULT_COOLDOWN_MS);
+    }
+    // The engine swallows this, so the cause never reaches an API response.
+    throw new Error("Reference database request failed", { cause: error });
   }
 }
