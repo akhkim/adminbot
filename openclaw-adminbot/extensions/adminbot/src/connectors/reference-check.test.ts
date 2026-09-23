@@ -174,9 +174,10 @@ describe("References-Validation integration", () => {
       });
       return (await check(new Uint8Array(), signal())).findings[0];
     };
-    // Semantic Scholar throttles anonymous clients constantly; that alone must not hide a miss.
+    // Semantic Scholar and OpenAlex throttle anonymous clients; that alone must not hide a miss.
     expect((await statusWhen("api.semanticscholar.org")).status).toBe("not_found");
-    const partial = await statusWhen("api.openalex.org");
+    expect((await statusWhen("api.openalex.org")).status).toBe("not_found");
+    const partial = await statusWhen("dblp.org");
     expect(partial.status).toBe("unavailable");
     expect(partial.explanation).toContain("not fully checked");
   });
@@ -203,6 +204,22 @@ describe("References-Validation integration", () => {
         String(url).includes("Testing%20synthetic%20reference%20matching%20Journal"),
       ),
     ).toBe(false);
+  });
+
+  it("sends the OpenAlex key only to OpenAlex", async () => {
+    const fetcher = vi.fn(async (input) => emptyDatabase(input));
+    const check = createPdfReferenceChecker({
+      extract: async () => ["Doe, J. (2024). An entirely invented synthetic research title."],
+      openAlexApiKey: "synthetic-key",
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    await check(new Uint8Array(), signal());
+    const urls = fetcher.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => url.includes("api.openalex.org"))).not.toHaveLength(0);
+    for (const url of urls) {
+      expect(url.includes("api_key=synthetic-key")).toBe(url.includes("api.openalex.org"));
+    }
   });
 
   it("reports a total outage without claiming references were searched successfully", async () => {

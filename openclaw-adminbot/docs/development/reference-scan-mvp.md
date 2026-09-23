@@ -107,13 +107,15 @@ references before a desk rejection.
     entries. What the clean entries showed is still stored, but no email is raised.
   - `failed` (download error, 60-minute timeout, more than 20% of entries unchecked because
     Crossref, OpenAlex or DBLP did not answer) is retried by later sweeps, up to three attempts.
-  - "Not found" is only claimed when Crossref, OpenAlex and DBLP all answered. Semantic Scholar
-    and arXiv throttle anonymous clients and are consulted but not required.
+  - "Not found" is only claimed when Crossref and DBLP both answered. OpenAlex, Semantic Scholar
+    and arXiv are consulted but not required: OpenAlex gives an IP without an API key only a small
+    shared daily budget (set `OPENALEX_API_KEY` to use one), and the other two throttle anonymous
+    clients constantly.
   - Review-mode line numbers, ACL/ICML/NeurIPS/ICLR bibliography styles, alphabetic labels and
     hundred-author team reports are handled. Measured on this account's 328 submissions
     (2026-09-23), 272 split cleanly enough to check.
-- **Notification.** A completed check with any `not_found` or `review` citation creates an
-  `email.send` proposal to `ADMINBOT_CITATION_CHECK_NOTIFY` (default: the first
+- **Notification.** A completed check with any `not_found` citation creates an
+  `email.send` proposal (listing its `review` items too; those alone do not) to `ADMINBOT_CITATION_CHECK_NOTIFY` (default: the first
   `ADMINBOT_CONTACT_EMAILS` address). It is sent only after an admin approves it in Pending
   Actions. Without a recipient, results are only stored.
 - **Scheduling.** The `adminbot-citation-checks` cron job (`25,55 * * * *`) calls
