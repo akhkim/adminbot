@@ -115,6 +115,11 @@ export const adminBotActionTypes = [
   // payload carries the exact ranges that will be written, so the approval card shows the cells
   // rather than a diff the approver has to reconstruct.
   "sheet.update_cells",
+  // A new row at the bottom of the member roster, from the Onboarding tab's Add row. Separate from
+  // `sheet.update_cells` because an append names no cells -- Sheets finds the first empty row -- so
+  // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
+  // the approver has to locate.
+  "sheet.append_rows",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];

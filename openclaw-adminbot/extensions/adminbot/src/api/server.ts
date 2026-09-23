@@ -174,6 +174,8 @@ import {
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
+  addMemberSheetRow,
+  type MemberSheetAddRowRequest,
   type MemberSheetEditRequest,
   type MemberSheetOnboardRequest,
   type MemberSheetSource,
@@ -4836,6 +4838,50 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendJson(res, 200, onboardResult);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/membership/sheet/rows") {
+    // Writes the roster, creates a member and mails them, each approved on the spot by the admin
+    // who clicked -- so it takes a genuine admin member session, whose identity is the approver,
+    // and never the shared service principal.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const approver = approverIdentityFor(principal);
+    if (!approver) {
+      sendJson(res, 403, { error: { message: "Add row needs a signed-in admin" } });
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const addBody = readRecord(await readJson(req)) as MemberSheetAddRowRequest;
+    let addResult;
+    try {
+      addResult = await addMemberSheetRow(
+        service,
+        ctx.memberSheet,
+        addBody,
+        approver,
+        principalActor(principal),
+      );
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in addResult) {
+      sendJson(res, addResult.error.status, { error: { message: addResult.error.message } });
+      return;
+    }
+    sendJson(res, 200, addResult);
     return;
   }
   // The nightly reconciliation of the roster against the lab's spreadsheet.

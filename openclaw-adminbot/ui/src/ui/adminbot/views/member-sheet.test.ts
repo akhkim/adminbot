@@ -1,8 +1,8 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
+import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { editMemberSheetCell, memberSheetCellKey } from "../controllers/member-sheet.ts";
-import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { memberTypeOptions, renderMemberSheet } from "./member-sheet.ts";
 
 const SHEET = {
@@ -68,9 +68,9 @@ describe("the roster grid", () => {
     expect(host.querySelector("thead th.adminbot-member-roster__name")?.textContent?.trim()).toBe(
       "Column A",
     );
-    expect(host.querySelector<HTMLInputElement>("td.adminbot-member-roster__name input")?.value).toBe(
-      "Yuen Chen",
-    );
+    expect(
+      host.querySelector<HTMLInputElement>("td.adminbot-member-roster__name input")?.value,
+    ).toBe("Yuen Chen");
     const values = [...host.querySelectorAll<HTMLInputElement>("tbody input[type=text]")].map(
       (input) => input.value,
     );
@@ -125,9 +125,7 @@ describe("the roster grid", () => {
     };
     const host = draw(state);
 
-    host
-      .querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')
-      ?.click();
+    host.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')?.click();
     expect(previewOnboardSelectedRows).toHaveBeenCalledOnce();
     expect(onboardSelectedMemberRows).not.toHaveBeenCalled();
 
@@ -236,7 +234,9 @@ describe("the roster grid", () => {
         created: [
           { sheet_row: 2, email: "yuenc2@illinois.edu", template_id: "alumni", proposal_id: "a" },
         ],
-        skipped: [{ sheet_row: 3, reason: "coauthor-discussant-or-designer sends no onboarding mail" }],
+        skipped: [
+          { sheet_row: 3, reason: "coauthor-discussant-or-designer sends no onboarding mail" },
+        ],
       },
     });
     expect(text(host)).toContain("Queued 1");
@@ -370,5 +370,60 @@ describe("memberTypeOptions", () => {
 
   it("survives a sheet with no Member Type column", () => {
     expect(memberTypeOptions([{ cells: { 0: "x" } }], -1, "")).toEqual([...adminBotMemberTypes]);
+  });
+});
+
+describe("Add row", () => {
+  it("offers the form with the Member Type vocabulary", () => {
+    const host = draw({ memberSheet: SHEET });
+    expect(host.querySelector('[data-testid="member-sheet-add-row-open"]')).not.toBeNull();
+    const form = host.querySelector('[data-testid="member-sheet-add-row"]');
+    const types = [...(form?.querySelectorAll('select[name="row_member_type"] option') ?? [])]
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter(Boolean);
+    expect(types).toEqual(expect.arrayContaining(["full", "alumni"]));
+  });
+
+  it("sends what was typed and clears the form once the service took it", async () => {
+    const addMemberSheetRow = vi.fn(async () => true);
+    const host = draw({ memberSheet: SHEET, addMemberSheetRow });
+    const form = host.querySelector<HTMLFormElement>('[data-testid="member-sheet-add-row"] form')!;
+    const set = (name: string, value: string) => {
+      const field = form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)!;
+      field.value = value;
+    };
+    set("row_name", "Ada Lovelace");
+    set("row_member_type", "full");
+    set("row_email", "ada@lab.co");
+    set("row_member_attributes", "PhD");
+
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => expect(addMemberSheetRow).toHaveBeenCalledTimes(1));
+
+    expect(addMemberSheetRow).toHaveBeenCalledWith({
+      name: "Ada Lovelace",
+      member_type: "full",
+      email: "ada@lab.co",
+      member_attributes: "PhD",
+    });
+    await vi.waitFor(() =>
+      expect(form.querySelector<HTMLInputElement>('[name="row_name"]')!.value).toBe(""),
+    );
+  });
+
+  it("says which step failed when only part of it went through", () => {
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetAddRowResult: {
+        member_id: "ada-lovelace",
+        sheet: { status: "failed", reason: "You are trying to edit a protected cell or object." },
+        member: { status: "done" },
+        onboarding: { status: "done", detail: "sent to ada@lab.co" },
+      },
+    });
+    const result = host.querySelector<HTMLElement>('[data-testid="member-sheet-add-row-result"]');
+    expect(result?.className).toContain("warning");
+    expect(text(result!)).toContain("Roster sheet row: failed");
+    expect(text(result!)).toContain("Onboarding guide: done — sent to ada@lab.co");
   });
 });

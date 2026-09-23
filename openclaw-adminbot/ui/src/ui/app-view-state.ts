@@ -122,6 +122,11 @@ export type AppViewState = {
   saveMemberSheetEdits?: () => void | Promise<void>;
   onboardSelectedMemberRows?: () => void | Promise<void>;
   previewOnboardSelectedRows?: () => void | Promise<void>;
+  memberSheetAddRowResult?: import("./adminbot/auth/session.ts").MemberSheetAddRowResult | null;
+  /** Resolves true when the service took the request, so the form can close. */
+  addMemberSheetRow?: (
+    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+  ) => Promise<boolean>;
   editMemberSheetCell?: (sheetRow: number, column: number, value: string) => void;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.

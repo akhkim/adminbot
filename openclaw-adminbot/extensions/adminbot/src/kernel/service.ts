@@ -1136,6 +1136,9 @@ const DEFAULT_ACTION_POLICIES = {
   // or access edit made in the grid gets a second pair of eyes -- the poller has always refused to
   // let the sheet act as an authorization surface on its own.
   "sheet.update_cells": approvalPolicy("T2", ["admin"]),
+  // Same tier as editing cells: the new row is read by the same sweeps. It cannot overwrite a row,
+  // which is why it is not higher.
+  "sheet.append_rows": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
