@@ -25,7 +25,11 @@ export type PdfReferenceChecker = (
 
 export class ReferenceCheckError extends Error {}
 
-export async function extractPdfReferences(pdf: Uint8Array): Promise<string[]> {
+export async function extractPdfReferences(
+  pdf: Uint8Array,
+  limits: { maxReferences?: number } = {},
+): Promise<string[]> {
+  const maxReferences = limits.maxReferences ?? 100;
   const engine = await createEngine();
   try {
     const document = await engine.open(pdf);
@@ -55,8 +59,10 @@ export async function extractPdfReferences(pdf: Uint8Array): Promise<string[]> {
           "The bibliography could not be split reliably into individual references. This PDF has not been verified.",
         );
       }
-      if (references.length > 100) {
-        throw new ReferenceCheckError("This checker supports at most 100 references per PDF.");
+      if (references.length > maxReferences) {
+        throw new ReferenceCheckError(
+          `This checker supports at most ${maxReferences} references per PDF.`,
+        );
       }
       return references;
     } finally {
@@ -79,10 +85,14 @@ export function createPdfReferenceChecker(
     extract?: typeof extractPdfReferences;
     requestIntervalMs?: number;
     fetch?: typeof globalThis.fetch;
+    /** The interactive page keeps 100; the unattended OpenReview sweep allows long bibliographies. */
+    maxReferences?: number;
   } = {},
 ): PdfReferenceChecker {
   return async (pdf, signal, onProgress) => {
-    const references = await (options.extract ?? extractPdfReferences)(pdf);
+    const references = await (options.extract ?? extractPdfReferences)(pdf, {
+      maxReferences: options.maxReferences,
+    });
     signal.throwIfAborted();
     const findings: ReferenceFinding[] = [];
     onProgress?.({ completed: 0, total: references.length });

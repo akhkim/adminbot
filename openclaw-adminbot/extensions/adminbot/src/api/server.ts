@@ -8,7 +8,11 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
-import type { PdfReferenceChecker } from "../connectors/reference-check.js";
+import { createOpenReviewSubmissionReader } from "../connectors/openreview-submissions.js";
+import {
+  createPdfReferenceChecker,
+  type PdfReferenceChecker,
+} from "../connectors/reference-check.js";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
@@ -46,6 +50,7 @@ import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
+import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
 import {
   isAdminBotOpportunityCategory,
   type AdminBotOpportunityInput,
@@ -123,6 +128,7 @@ import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
 } from "../workflows/papers/mailing-list-email.js";
+import { OpenReviewCitationWatch } from "../workflows/papers/openreview-citation-watch.js";
 import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
@@ -251,6 +257,11 @@ export type AdminBotMockServiceOptions = {
   trustProxyHeaders?: boolean;
   referenceScanDependencies?: ReferenceScanDependencies;
   pdfReferenceChecker?: PdfReferenceChecker;
+  // Automatic citation checks of the OpenReview account's own submissions. Injecting a reader
+  // enables them; otherwise they need ADMINBOT_OPENREVIEW_CITATION_CHECKS=1 plus credentials.
+  openReviewSubmissionReader?: OpenReviewSubmissionReader;
+  citationWatchChecker?: PdfReferenceChecker;
+  citationWatchNotifyEmail?: string;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -580,6 +591,7 @@ type AdminBotRouteContext = {
   deviceTokenIssuer?: DeviceTokenIssuer;
   referenceScans: ReferenceScans;
   checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
+  openReviewCitationWatch?: OpenReviewCitationWatch;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -716,6 +728,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     options.pdfReferenceChecker,
     referenceDependencies.scanPdf,
   );
+  const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -893,6 +906,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sensitiveInfo,
     referenceScans,
     checkUploadedPdf,
+    ...(openReviewCitationWatch ? { openReviewCitationWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -1579,6 +1593,46 @@ async function handleAuthenticatedRoute(
       return;
     }
     await ctx.checkUploadedPdf(req, res, principalActor(principal));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/openreview/citation-checks") {
+    // Restricted manuscripts' bibliographies: admins (or the service token) only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    sendJson(res, 200, {
+      enabled: Boolean(watch),
+      ...(watch ? watch.status() : { running: false }),
+      checks: ctx.store.listOpenReviewCitationChecks(),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/openreview/citation-checks/run") {
+    // Started by the scheduled job; safe to call repeatedly -- a running sweep is not restarted,
+    // and a version already checked is never checked again.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    if (!watch) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "OpenReview citation checks are off — set ADMINBOT_OPENREVIEW_CITATION_CHECKS=1, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await watch.start());
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: error instanceof Error ? error.message : "could not list OpenReview submissions",
+        },
+      });
+    }
     return;
   }
   if (url.pathname === "/reference-scans" && (req.method === "GET" || req.method === "POST")) {
@@ -5699,6 +5753,37 @@ async function runCalendarAction(
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
 // let any signed-in member perform these actions through the agent. Require an admin member
 // Bearer session and deny the service principal outright.
+/**
+ * The sweep is opt-in at deployment: it sends the extracted bibliographies of restricted
+ * submissions to public scholarly databases, which the operator has to have agreed to.
+ */
+function createOpenReviewCitationWatch(
+  options: AdminBotMockServiceOptions,
+  store: AdminBotServiceStore,
+  service: AdminBotService,
+): OpenReviewCitationWatch | undefined {
+  const reader =
+    options.openReviewSubmissionReader ??
+    (process.env.ADMINBOT_OPENREVIEW_CITATION_CHECKS?.trim() === "1"
+      ? createOpenReviewSubmissionReader()
+      : undefined);
+  if (!reader) {
+    return undefined;
+  }
+  const notifyEmail =
+    options.citationWatchNotifyEmail ??
+    (process.env.ADMINBOT_CITATION_CHECK_NOTIFY?.trim() ||
+      process.env.ADMINBOT_CONTACT_EMAILS?.split(",")[0]?.trim() ||
+      undefined);
+  return new OpenReviewCitationWatch({
+    store,
+    service,
+    reader,
+    check: options.citationWatchChecker ?? createPdfReferenceChecker({ maxReferences: 300 }),
+    ...(notifyEmail ? { notifyEmail } : {}),
+  });
+}
+
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {

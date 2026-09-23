@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -178,6 +177,7 @@ import {
 } from "../contracts/member-duplicates.js";
 import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
+import type { OpenReviewCitationCheckStore } from "../contracts/openreview-citation-checks.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
   isAdminBotOpportunityDeadline,
@@ -245,6 +245,7 @@ import {
   type AdminBotPaperMentorRun,
   type AdminBotPaperMentorRunInput,
 } from "../contracts/papermentor.js";
+import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
@@ -443,7 +444,10 @@ export type AdminBotServiceResponse<T> =
   | { ok: true; status: number; payload: T }
   | { ok: false; status: number; error: { message: string } };
 
-export type AdminBotServiceStore = ReferenceScanStore & {
+// The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
+type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
+
+export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;

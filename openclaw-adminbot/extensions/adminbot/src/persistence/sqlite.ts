@@ -2,12 +2,6 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { ReferenceScan } from "../contracts/reference-scans.js";
-import {
-  ensureReferenceScanSchema,
-  getReferenceScan,
-  saveReferenceScan,
-} from "./reference-scans.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -54,6 +48,7 @@ import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discover
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -71,6 +66,7 @@ import type {
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
@@ -100,6 +96,17 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import {
+  ensureOpenReviewCitationCheckSchema,
+  getOpenReviewCitationCheck,
+  listOpenReviewCitationChecks,
+  saveOpenReviewCitationCheck,
+} from "./openreview-citation-checks.js";
+import {
+  ensureReferenceScanSchema,
+  getReferenceScan,
+  saveReferenceScan,
+} from "./reference-scans.js";
 
 const require = createRequire(import.meta.url);
 
@@ -776,6 +783,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
     ensureReferenceScanSchema(this.db);
+    ensureOpenReviewCitationCheckSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
@@ -2565,6 +2573,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   saveReferenceScan(scan: ReferenceScan): void {
     saveReferenceScan(this.db, scan);
+  }
+
+  getOpenReviewCitationCheck(
+    submissionId: string,
+    pdfPath: string,
+  ): OpenReviewCitationCheck | undefined {
+    return getOpenReviewCitationCheck(this.db, submissionId, pdfPath);
+  }
+
+  listOpenReviewCitationChecks(submissionId?: string): OpenReviewCitationCheck[] {
+    return listOpenReviewCitationChecks(this.db, submissionId);
+  }
+
+  saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
+    saveOpenReviewCitationCheck(this.db, check);
   }
 
   saveHelpInterest(interest: LabHelpInterest): void {

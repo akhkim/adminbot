@@ -5,7 +5,6 @@
  * SQLite path. The persistent implementation lives in store/sqlite.ts; both satisfy the same
  * interface, so the service never knows which one it has.
  */
-import type { ReferenceScan } from "../contracts/reference-scans.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -58,6 +57,7 @@ import {
   type LabDirectorStatus,
 } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
@@ -71,6 +71,7 @@ import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
   AdminBotServiceStore,
@@ -91,7 +92,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.referenceScans.get(JSON.stringify([submissionId, pdfHash]));
   }
   saveReferenceScan(scan: ReferenceScan): void {
-    this.referenceScans.set(JSON.stringify([scan.submission_id, scan.pdf_sha256]), structuredClone(scan));
+    this.referenceScans.set(
+      JSON.stringify([scan.submission_id, scan.pdf_sha256]),
+      structuredClone(scan),
+    );
+  }
+
+  private readonly openReviewCitationChecks = new Map<string, OpenReviewCitationCheck>();
+  getOpenReviewCitationCheck(
+    submissionId: string,
+    pdfPath: string,
+  ): OpenReviewCitationCheck | undefined {
+    const check = this.openReviewCitationChecks.get(JSON.stringify([submissionId, pdfPath]));
+    return check ? structuredClone(check) : undefined;
+  }
+  listOpenReviewCitationChecks(submissionId?: string): OpenReviewCitationCheck[] {
+    return [...this.openReviewCitationChecks.values()]
+      .filter((check) => submissionId === undefined || check.submission_id === submissionId)
+      .sort((a, b) => b.checked_at.localeCompare(a.checked_at))
+      .map((check) => structuredClone(check));
+  }
+  saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
+    this.openReviewCitationChecks.set(
+      JSON.stringify([check.submission_id, check.pdf_path]),
+      structuredClone(check),
+    );
   }
 
   private readonly helpInterests = new Map<string, LabHelpInterest>();
