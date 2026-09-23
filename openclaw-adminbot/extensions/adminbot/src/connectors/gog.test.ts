@@ -123,6 +123,33 @@ describe("createGogAdminBotExecutor", () => {
     expect(args).not.toContain("--from");
   });
 
+  // The removal rewrites the whole guest list, so notifying would re-send the invite to everyone
+  // still on the meeting each time one person is dropped.
+  it("removes attendees without notifying anyone", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(
+      proposal("calendar.remove_attendees", {
+        calendar_id: "jinesis.lab@gmail.com",
+        event_id: "event-9",
+        remaining_attendees: ["ada@cs.toronto.edu", "mei@cs.toronto.edu"],
+        removed_attendees: ["gone@cs.toronto.edu"],
+      }),
+    );
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "calendar.update",
+        "event-9",
+        "--attendees",
+        "ada@cs.toronto.edu,mei@cs.toronto.edu",
+      ]),
+    );
+    expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+  });
+
   it("refuses an add-attendees action that names nobody", async () => {
     const executor = createGogAdminBotExecutor({ run: vi.fn(async () => {}) });
     await expect(
