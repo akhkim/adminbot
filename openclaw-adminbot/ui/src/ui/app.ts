@@ -81,6 +81,7 @@ import {
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
 import {
+  addMemberSheetRow as addMemberSheetRowController,
   editMemberSheetCell as editMemberSheetCellController,
   loadMemberSheet as loadMemberSheetController,
   onboardSelectedMemberRows as onboardSelectedMemberRowsController,
@@ -349,6 +350,9 @@ export class OpenClawApp extends LitElement {
     | null = null;
   @state() memberSheetOnboardResult:
     | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | null = null;
+  @state() memberSheetAddRowResult:
+    | import("./adminbot/auth/session.ts").MemberSheetAddRowResult
     | null = null;
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
@@ -1771,6 +1775,15 @@ export class OpenClawApp extends LitElement {
   onboardSelectedMemberRows(): Promise<void> {
     return onboardSelectedMemberRowsController(
       this as unknown as Parameters<typeof onboardSelectedMemberRowsController>[0],
+    );
+  }
+
+  addMemberSheetRow(
+    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+  ): Promise<boolean> {
+    return addMemberSheetRowController(
+      this as unknown as Parameters<typeof addMemberSheetRowController>[0],
+      input,
     );
   }
 

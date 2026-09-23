@@ -1372,6 +1372,46 @@ export async function onboardFromMemberSheet(
   return { ok: true, value: result.body as MemberSheetOnboardResult };
 }
 
+export type MemberSheetAddRowInput = {
+  name: string;
+  member_type: string;
+  email: string;
+  slack_email?: string;
+  member_attributes?: string;
+};
+
+/** How one of Add row's three steps went. Mirrors the service's `MemberSheetAddRowStep`. */
+export type MemberSheetAddRowStep =
+  | { status: "done"; proposal_id?: string; detail?: string; template_id?: string }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string; proposal_id?: string; template_id?: string };
+
+export type MemberSheetAddRowResult = {
+  member_id: string;
+  sheet: MemberSheetAddRowStep;
+  member: MemberSheetAddRowStep;
+  onboarding: MemberSheetAddRowStep;
+};
+
+/**
+ * Adds a person to the roster and onboards them, now: the service appends the row, creates the
+ * member and sends the guide, each approved as the signed-in admin.
+ */
+export async function addMemberSheetRow(
+  input: MemberSheetAddRowInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetAddRowResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/rows", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetAddRowResult };
+}
+
 export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeRequest = {
