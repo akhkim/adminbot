@@ -33,6 +33,7 @@ import {
   searchAdminBotVenuePapers,
   sendGuestReimbursementMessage,
   setAdminBotVenue,
+  setAdminBotVenueCategory,
   setAdminBotVenueInterests,
   toggleAdminBotVenueAbstract,
   type GuestReimbursementHost,
@@ -149,6 +150,7 @@ function renderPublicPanel(state: AppViewState) {
     return renderConferencePapers({
       state: state.adminBotVenuePapers,
       onVenueChange: (venueId) => setAdminBotVenue(state, venueId),
+      onCategoryChange: (categoryId) => setAdminBotVenueCategory(state, categoryId),
       onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
       onSearch: () => void searchAdminBotVenuePapers(state),
       onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),

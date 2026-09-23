@@ -125,6 +125,8 @@ import {
   buildVenueIndex,
   refreshVenueIndexIfChanged,
   searchVenue,
+  venuePaperCategories,
+  venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
@@ -436,6 +438,7 @@ const ANONYMOUS_ROUTES = new Set([
   // the reimbursement pair is capped. Indexing a venue stays privileged: it is the expensive half
   // and the only one that writes.
   "GET /venue-papers/sources",
+  "GET /venue-papers/categories",
   "POST /venue-papers/search",
   // The Opportunities board, which the Control UI shows to visitors alongside Deadlines. Only
   // approved entries reach an anonymous caller; the handler resolves that from the principal, so
@@ -1688,12 +1691,30 @@ async function handleAuthenticatedRoute(
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/venue-papers/categories") {
+    const venueId = url.searchParams.get("venue_id")?.trim() ?? "";
+    const settings = service.getSettings();
+    const source = (settings.ok ? (settings.payload.venue_sources ?? []) : []).find(
+      (entry) => entry.id === venueId,
+    );
+    if (!source) {
+      sendJson(res, 404, { error: { message: "that conference is not on the list" } });
+      return;
+    }
+    sendJson(res, 200, {
+      venue_id: venueId,
+      categories: venuePaperCategories(ctx.store.listVenuePapers(venueId), source.label),
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/venue-papers/search") {
     // Open to visitors: see ANONYMOUS_ROUTES. The gate above admits anonymous callers only for the
     // routes named there, and applies the per-IP rate limit on the way through.
     const body = readRecord(await readJson(req));
     const venueId = asString(body.venue_id)?.trim() ?? "";
     const interests = asString(body.interests)?.trim() ?? "";
+    const categoryId = asString(body.category_id)?.trim().toLowerCase() ?? "";
     if (!venueId) {
       sendJson(res, 400, { error: { message: "venue_id is required" } });
       return;
@@ -1721,12 +1742,24 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
+    const categories = venuePaperCategories(rows, source.label);
+    const category = categoryId ? categories.find((entry) => entry.id === categoryId) : undefined;
+    if (categoryId && !category) {
+      sendJson(res, 400, {
+        error: { message: "that category is not available for this conference" },
+      });
+      return;
+    }
+    const selectedRows = categoryId
+      ? rows.filter((row) => venuePaperCategoryId(row.venue, source.label) === categoryId)
+      : rows;
     try {
-      const ranking = await searchVenue({ rows, interests, embed: ctx.embedder });
+      const ranking = await searchVenue({ rows: selectedRows, interests, embed: ctx.embedder });
       sendJson(res, 200, {
         venue_id: venueId,
         label: source.label,
-        searched: rows.length,
+        ...(category ? { category: category.label } : {}),
+        searched: selectedRows.length,
         ...ranking,
       });
     } catch (error) {
