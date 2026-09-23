@@ -11,6 +11,7 @@ import type {
 import { AdminBotService } from "../../kernel/service.js";
 import { AdminBotMemoryStore } from "../../persistence/memory.js";
 import {
+  CITATION_EXTRACTOR_VERSION,
   MAX_CITATION_CHECK_ATTEMPTS,
   OpenReviewCitationWatch,
 } from "./openreview-citation-watch.js";
@@ -178,6 +179,30 @@ describe("OpenReview citation watch", () => {
       status: "unreadable",
       error: "No References or Bibliography heading was found.",
     });
+  });
+
+  it("reads an unreadable version again once the extractor improves", async () => {
+    const { store, check, sweep } = setup({ submissions: [submission()] });
+    // Written by the first release, which predates extractor versions.
+    store.saveOpenReviewCitationCheck({
+      submission_id: "paperAAAA",
+      pdf_path: "/pdf/v1.pdf",
+      title: "Synthetic paper",
+      venue_id: "Synthetic.cc/2027/Conference/Submission",
+      status: "unreadable",
+      checked_at: "2026-09-23T17:00:00.000Z",
+      attempts: 1,
+      error: "The bibliography could not be split reliably into individual references.",
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "completed",
+      attempts: 1,
+      extractor_version: CITATION_EXTRACTOR_VERSION,
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(1);
   });
 
   it("retries transient failures on later sweeps, a bounded number of times", async () => {
