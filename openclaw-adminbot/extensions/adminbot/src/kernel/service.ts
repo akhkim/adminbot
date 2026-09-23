@@ -11067,21 +11067,15 @@ export class AdminBotService {
       surface: params.surface,
     });
 
-    if (plan.remove.length === 0) {
-      return {
-        ok: true,
-        status: 200,
-        payload: { surface: params.surface, ...plan },
-      };
-    }
-
     const targets = [...new Set((params.eventIds ?? []).map((id) => id.trim()).filter(Boolean))];
     const removed = plan.remove.map((entry) => entry.email);
 
     // The sweep runs daily and the answer rarely changes, so without this every morning filed
     // another copy of the same removal -- a queue of near-identical proposals, each carrying its
     // own snapshot, any of which an admin might approve. An identical one still waiting is reused;
-    // a different one is replaced, so exactly one removal per meeting is ever pending.
+    // a different one is replaced, so exactly one removal per meeting is ever pending. This runs
+    // even when nobody is to be removed: a removal proposed yesterday for somebody the roster now
+    // keeps must not stay approvable.
     const sameSet = (left: readonly unknown[], right: readonly string[]) =>
       left.length === right.length &&
       [...left]
@@ -11106,7 +11100,12 @@ export class AdminBotService {
       const pendingRemoved = Array.isArray(payload.removed_attendees)
         ? payload.removed_attendees
         : [];
-      if (!kept && sameSet(pendingRemoved, removed) && sameSet(pendingTargets, targets)) {
+      if (
+        !kept &&
+        removed.length > 0 &&
+        sameSet(pendingRemoved, removed) &&
+        sameSet(pendingTargets, targets)
+      ) {
         kept = pending.id;
         continue;
       }
@@ -11127,6 +11126,17 @@ export class AdminBotService {
           ...plan,
           proposal_id: kept,
           reused: true,
+          ...(superseded.length > 0 ? { superseded } : {}),
+        },
+      };
+    }
+    if (plan.remove.length === 0) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          surface: params.surface,
+          ...plan,
           ...(superseded.length > 0 ? { superseded } : {}),
         },
       };

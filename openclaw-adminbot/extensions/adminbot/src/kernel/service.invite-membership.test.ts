@@ -166,6 +166,35 @@ describe("planInviteMembership", () => {
     expect(unwrap(service.listPending()).proposals).toHaveLength(1);
   });
 
+  // Somebody flagged yesterday is back on the roster today: the removal proposed for them must not
+  // stay approvable just because today's sweep has nobody to remove.
+  it("withdraws a pending removal once nobody needs removing", () => {
+    const { service } = seededService();
+    const stale = unwrap(
+      service.planInviteMembership({
+        surface: "group_meeting",
+        eventId: "evt-monday",
+        eventIds: ["evt-monday_R1"],
+        attendees: ATTENDEES,
+        actor: "cron",
+      }),
+    );
+    const settled = unwrap(
+      service.planInviteMembership({
+        surface: "group_meeting",
+        eventId: "evt-monday",
+        eventIds: ["evt-monday_R1"],
+        attendees: ["full@cs.toronto.edu", "major@other.test"],
+        actor: "cron",
+      }),
+    );
+
+    expect(settled.remove).toEqual([]);
+    expect(settled.proposal_id).toBeUndefined();
+    expect(settled.superseded).toEqual([stale.proposal_id]);
+    expect(unwrap(service.listPending()).proposals).toHaveLength(0);
+  });
+
   it("replaces a pending removal whose names or targets changed", () => {
     const { service } = seededService();
     // Shaped like the proposals filed before this fix: aimed at the configured id alone.
