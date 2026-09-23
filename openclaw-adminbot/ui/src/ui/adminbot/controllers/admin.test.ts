@@ -4,6 +4,7 @@ import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { saveStoredMemberSession } from "../auth/session.ts";
 import {
+  ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
   approveAdminBotAction,
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberNudgeState,
@@ -295,6 +296,60 @@ describe("approveAdminBotAction", () => {
       });
     }
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("says the approval stuck and shows the connector's reason when the execute is refused", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/approve")) {
+        return new Response(
+          JSON.stringify({
+            ...proposal,
+            status: "approved",
+            approvals: [{ approver_role: "admin", approver_id: "zj" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/execute")) {
+        return new Response(
+          JSON.stringify({ error: { message: "You are trying to edit a protected cell" } }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    await approveAdminBotAction(host, proposal);
+
+    expect(host.adminBotNotice).toEqual({
+      kind: "error",
+      text: "Approved act_1, but it did not run: You are trying to edit a protected cell",
+    });
+  });
+
+  it("keeps the unreachable message when the execute request never lands", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/execute")) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response(
+        JSON.stringify({
+          ...proposal,
+          status: "approved",
+          approvals: [{ approver_role: "admin", approver_id: "zj" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await approveAdminBotAction(host, proposal);
+
+    expect(host.adminBotNotice?.text).toBe(ADMINBOT_SERVICE_UNREACHABLE_MESSAGE);
   });
 
   it("reports a permission error instead of approving when the server refuses (403)", async () => {

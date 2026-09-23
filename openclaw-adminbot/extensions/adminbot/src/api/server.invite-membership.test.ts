@@ -131,7 +131,7 @@ describe("POST /meetings/invite-membership/run", () => {
     });
     const response = await post(baseUrl);
     // The whole plan is computed from this read; a failure must never become "no attendees".
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     expect(JSON.stringify(await response.json())).toContain("token expired");
   });
 
