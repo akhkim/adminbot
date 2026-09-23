@@ -1,0 +1,147 @@
+import { createEngine } from "clawpdf";
+import {
+  findReferencesSection,
+  splitIntoReferences,
+} from "../third-party/references-validation/pdf-extract-service.js";
+import { parseGeneric } from "../third-party/references-validation/plain-text-parser.js";
+import { checkWithFallback } from "../third-party/references-validation/search-service.js";
+import { lookupContext } from "./reference-check.http.js";
+
+export type ReferenceFinding = {
+  citation: string;
+  status: "matched" | "review" | "not_found" | "unavailable";
+  explanation: string;
+  source?: string;
+  title?: string;
+  url?: string;
+};
+export type ReferenceReport = { findings: ReferenceFinding[] };
+export type ReferenceProgress = { completed: number; total: number; finding?: ReferenceFinding };
+export type PdfReferenceChecker = (
+  pdf: Uint8Array,
+  signal: AbortSignal,
+  onProgress?: (progress: ReferenceProgress) => void,
+) => Promise<ReferenceReport>;
+
+export class ReferenceCheckError extends Error {}
+
+export async function extractPdfReferences(pdf: Uint8Array): Promise<string[]> {
+  const engine = await createEngine();
+  try {
+    const document = await engine.open(pdf);
+    try {
+      if (document.pageCount > 200) {
+        throw new ReferenceCheckError("Use a PDF with at most 200 pages.");
+      }
+      const text = document.text({ maxChars: 600_001 });
+      if (text.length > 600_000) {
+        throw new ReferenceCheckError("This PDF contains too much text to check.");
+      }
+      const section = findReferencesSection(text);
+      // Never fall back to sending manuscript paragraphs as database search queries.
+      if (!section.found) {
+        throw new ReferenceCheckError(
+          "No References or Bibliography heading was found. Use a text-based PDF with a reference section; scanned images are not supported.",
+        );
+      }
+      const references = splitIntoReferences(section.sectionText);
+      if (!references.length) {
+        throw new ReferenceCheckError(
+          "No references could be extracted. This PDF has not been verified.",
+        );
+      }
+      if (references.some((reference) => reference.length >= 2000)) {
+        throw new ReferenceCheckError(
+          "The bibliography could not be split reliably into individual references. This PDF has not been verified.",
+        );
+      }
+      if (references.length > 100) {
+        throw new ReferenceCheckError("This checker supports at most 100 references per PDF.");
+      }
+      return references;
+    } finally {
+      document.destroy();
+    }
+  } catch (error) {
+    if (error instanceof ReferenceCheckError) {
+      throw error;
+    }
+    throw new ReferenceCheckError(
+      "The PDF could not be read. Check that it is valid and not password protected.",
+    );
+  } finally {
+    await engine.destroy();
+  }
+}
+
+export function createPdfReferenceChecker(
+  options: {
+    extract?: typeof extractPdfReferences;
+    requestIntervalMs?: number;
+    fetch?: typeof globalThis.fetch;
+  } = {},
+): PdfReferenceChecker {
+  return async (pdf, signal, onProgress) => {
+    const references = await (options.extract ?? extractPdfReferences)(pdf);
+    signal.throwIfAborted();
+    const findings: ReferenceFinding[] = [];
+    onProgress?.({ completed: 0, total: references.length });
+    const lastRequest = new Map<string, number>();
+    for (const citation of references) {
+      signal.throwIfAborted();
+      const failures = new Set<string>();
+      const available = new Set<string>();
+      const parsed = parseGeneric(citation);
+      const result = await lookupContext.run(
+        {
+          signal,
+          failures,
+          available,
+          lastRequest,
+          requestIntervalMs: options.requestIntervalMs,
+          fetch: options.fetch ?? globalThis.fetch,
+        },
+        () =>
+          checkWithFallback(parsed.title || citation, parsed.title ? parsed : undefined, citation),
+      );
+      signal.throwIfAborted();
+      const matched =
+        available.size > 0 &&
+        result.exists &&
+        result.matchConfidence >= 80 &&
+        !result.retracted &&
+        !result.issues.length;
+      const status = !available.size
+        ? "unavailable"
+        : matched
+          ? "matched"
+          : result.exists
+            ? "review"
+            : "not_found";
+      const explanations = [
+        matched
+          ? "A matching record was found. This does not verify the paper’s claims."
+          : status === "unavailable"
+            ? "No reference databases could be reached. Try again later or search Google Scholar."
+            : status === "not_found"
+              ? "No matching reference found in the available databases."
+              : "The best matching record needs manual review.",
+        ...(available.size && result.exists ? result.issues : []),
+        ...(result.retracted ? ["The database marks this work as retracted."] : []),
+      ];
+      const safeUrl = result.url && /^https?:\/\//i.test(result.url) ? result.url : undefined;
+      const finding: ReferenceFinding = {
+        citation,
+        status,
+        explanation: explanations.join(" "),
+        ...(available.size && result.source !== "NotFound"
+          ? { source: result.source, title: result.title }
+          : {}),
+        ...(available.size && safeUrl ? { url: safeUrl } : {}),
+      };
+      findings.push(finding);
+      onProgress?.({ completed: findings.length, total: references.length, finding });
+    }
+    return { findings };
+  };
+}

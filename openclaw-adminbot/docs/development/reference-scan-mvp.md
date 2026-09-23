@@ -11,24 +11,35 @@ is required. The existing Pending Actions UI handles approval and execution.
 
 Run `./dev.sh` from the outer repository directory with your personal OpenClaw gateway running.
 Open the printed Frontend URL and click Alice in the local account picker. See `dev/README.md`
-for gateway setup. The launcher reads the ignored `.env.gptzero` file when present; it must contain
-`GPTZERO_API_KEY`. Submitting a PDF uses the real provider, including in development.
+for gateway setup. The default CheckIfExist checker needs no API key. The checker selector also offers GPTZero, which requires GPTZERO_API_KEY and bibliography API access.
 
-Admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF (up to
-20 MB), and click **Submit**. This explicitly approves sending that file to GPTZero. The page
-shows citation counts, uncertain citations, and flagged references with explanations. It checks
-bibliographic references, not all factual claims in the paper.
+Admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF, and click
+**Submit**. With CheckIfExist selected, the backend extracts its bibliography locally using PDFium and checks the citations
+with the MIT-licensed [CheckIfExist](https://github.com/zabbonat/References-Validation)
+engine. Only extracted citation text goes to Crossref, Semantic Scholar, OpenAlex, DBLP and arXiv;
+the complete PDF is not uploaded to those services. Database queries are public API reads.
 
-The upload endpoint, `POST /reference-check/pdf?consent=send-to-gptzero`, accepts a raw
-`application/pdf` body and requires an admin member session. The service keeps the key server-side,
-validates the upload, and uses a request-scoped in-memory proposal/approval/execution flow. It
-writes no PDF, scan result, scan proposal, or scan audit to SQLite, and sends no email. Results live
-only in the current page; switching away discards them. Every submission, including the same PDF,
-is a fresh provider call and may incur a charge. GPTZero's own data handling still applies.
+The page shows every extracted citation, its best matching record, and issues requiring review.
+A missing record is **not proof of fabrication**. Unavailable databases are skipped; a reference with no match in the available databases is
+reported as not found. Only a total database outage is reported as unable to check. Text extraction and matching are heuristic: check
+the extracted bibliography against the original PDF. This does not verify the paper's claims.
 
-Only one upload check runs at a time per service process. Failed requests are not automatically
-retried. A disconnected browser does not guarantee cancellation of an upload already sent to
-GPTZero. The persistent OpenReview workflow below remains separate.
+The endpoint, `POST /reference-check/pdf?checker=references-validation&consent=query-reference-databases`, accepts a raw
+`application/pdf` body and requires an admin member session. Submit approves the exact upload
+through a request-scoped in-memory proposal/approval/execution flow. Nothing about this scan is
+written to SQLite; no PDF, result, scan history, proposal or scan audit is persisted. No email is
+sent. Results disappear when leaving the page. Repeating the same PDF performs another check.
+
+CheckIfExist limits: one check per service process, 20 MB, 200 pages, 100 extracted references, a 30-second
+upload timeout and a ten-minute overall deadline. Encrypted/unreadable PDFs and missing
+bibliography headings fail clearly; image-only scans require OCR elsewhere. Requests go directly
+to fixed database hosts, without browser CORS proxies. Per-database spacing and timeouts bound
+lookups; no extra API accounts are required, but unauthenticated public APIs can limit access.
+Disconnecting the browser aborts pending requests; requests already received cannot be recalled.
+
+The imported engine is pinned and attributed in
+`extensions/adminbot/src/third-party/references-validation/NOTICE.md`. The existing persistent
+OpenReview/GPTZero workflow below is unchanged and still needs its own GPTZero entitlement.
 
 ### OpenReview submissions
 
@@ -109,6 +120,17 @@ venue-wide discovery, scheduling, and a dedicated results UI are not included in
 
 ## Validation
 
+Manual PDF checker (real PDF extraction, synthetic database responses, HTTP/SQLite and UI):
+
+```bash
+node scripts/run-vitest.mjs run \
+  extensions/adminbot/src/connectors/reference-check.test.ts \
+  extensions/adminbot/src/api/server.pdf-reference-check.test.ts \
+  ui/src/ui/adminbot/views/reference-checker.test.ts
+```
+
+Persistent OpenReview/GPTZero workflow:
+
 ```bash
 node scripts/run-vitest.mjs run \
   extensions/adminbot/src/connectors/reference-scan.test.ts \
@@ -116,5 +138,36 @@ node scripts/run-vitest.mjs run \
 ```
 
 Tests use synthetic provider responses with real local HTTP and SQLite. They do not upload lab
-papers, call a paid API, or send messages. A live GPTZero account check is still required before
-deployment. This feature does not replace the existing OpenReview reference-check script.
+papers, call a paid API, or send messages. The persistent workflow still requires a live GPTZero
+account check before deployment; the default manual checker does not use GPTZero. This feature does not
+replace the existing OpenReview reference-check script.
+
+
+### Selecting a manual checker
+
+The PDF Reference Checker offers CheckIfExist (default) and GPTZero. Changing
+the selection keeps the PDF but clears the previous result; only Submit starts a check.
+CheckIfExist sends extracted citations to scholarly databases. GPTZero uploads
+the full PDF and may charge on each submission, including retries. It is currently marked
+as not working with our account because the API returned HTTP 403; choosing it still makes
+a real request if the service is configured. There is no automatic fallback.
+
+GPTZero uses `POST /reference-check/pdf?checker=gptzero&consent=upload-to-gptzero`.
+The service requires provider-specific consent and an authenticated admin session.
+Missing GPTZero configuration returns 503. Both manual options use transient approvals
+and keep PDFs, results, proposals and scan audits out of SQLite; the persistent OpenReview
+workflow is separate. GPTZero results show total citations, flagged findings and uncertain
+counts; CheckIfExist shows every extracted citation and its lookup status.
+
+
+The UI requests newline-delimited JSON with `Accept: application/x-ndjson`.
+CheckIfExist emits `progress` events after extraction and after each citation finishes,
+followed by a `complete` event containing the final report. GPTZero returns a single
+completion event because its API supplies the finished report. Clients without that
+Accept header retain the ordinary JSON response. Once streaming starts, failures are
+sent as `error` events. The UI keeps already received findings and reports interrupted
+checks. Changing the selected file/account clears the results; disconnecting cancels
+CheckIfExist lookups. No stream data is persisted.
+
+Not-found citations offer a **Search Google Scholar** link. Existing matches offer a database link when the provider supplies one. Clicking it opens
+Scholar with that citation as the search query; AdminBot does not query Scholar automatically.

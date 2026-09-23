@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  createPdfReferenceChecker,
+  ReferenceCheckError,
+  type PdfReferenceChecker,
+  type ReferenceReport,
+} from "../connectors/reference-check.js";
 import { GptZeroScanError } from "../connectors/reference-scan.js";
 import type {
   ReferenceScanDependencies,
@@ -11,23 +17,60 @@ import { AdminBotMemoryStore } from "../persistence/memory.js";
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 /** Request-scoped approval/execution: no PDF, proposal, audit, or result enters SQLite. */
-export function createPdfReferenceCheckHandler(scanPdf: ReferenceScanDependencies["scanPdf"]) {
+export function createPdfReferenceCheckHandler(
+  scanPdf: PdfReferenceChecker = createPdfReferenceChecker(),
+  scanGptZero?: ReferenceScanDependencies["scanPdf"],
+) {
   let busy = false;
   return async (req: IncomingMessage, res: ServerResponse, adminId: string) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
+    const stream = req.headers.accept?.includes("application/x-ndjson") ?? false;
+    const sendEvent = (event: unknown) => {
+      if (res.destroyed || res.writableEnded) {
+        throw new Error("Client disconnected");
+      }
+      if (!res.headersSent) {
+        res.setHeader("Content-Type", "application/x-ndjson");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.setHeader("Cache-Control", "no-store, no-transform");
+        res.flushHeaders();
+      }
+      res.write(JSON.stringify(event) + "\n");
+    };
     const reply = (status: number, body: unknown) => {
+      if (res.headersSent) {
+        sendEvent({ type: "error", ...(body as object) });
+        res.end();
+        return;
+      }
       res.writeHead(status);
       res.end(JSON.stringify(body));
     };
-    if (!scanPdf) {
-      reply(503, { error: { message: "GPTZero is not configured on this service." } });
+    const params = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const checker = params.get("checker") ?? "references-validation";
+    if (checker !== "references-validation" && checker !== "gptzero") {
+      reply(400, { error: { message: "Unknown reference checker." } });
       return;
     }
-    if (
-      new URL(req.url ?? "/", "http://localhost").searchParams.get("consent") !== "send-to-gptzero"
-    ) {
-      reply(400, { error: { message: "Approval to send this PDF to GPTZero is required." } });
+    const consent = checker === "gptzero" ? "upload-to-gptzero" : "query-reference-databases";
+    if (params.get("consent") !== consent) {
+      reply(400, {
+        error: {
+          message:
+            checker === "gptzero"
+              ? "Approval to upload the PDF to GPTZero is required."
+              : "Approval to query scholarly databases with the extracted citations is required.",
+        },
+      });
+      return;
+    }
+    if (checker === "gptzero" && !scanGptZero) {
+      reply(503, {
+        error: {
+          message: "GPTZero is not configured. Set GPTZERO_API_KEY on the AdminBot service.",
+        },
+      });
       return;
     }
     if (req.headers["content-type"]?.split(";")[0].trim() !== "application/pdf") {
@@ -43,8 +86,15 @@ export function createPdfReferenceCheckHandler(scanPdf: ReferenceScanDependencie
       return;
     }
     busy = true;
-    let scanFailure: GptZeroScanError | undefined;
-    const timeout = setTimeout(() => req.destroy(), 30_000);
+    let scanFailure: ReferenceCheckError | GptZeroScanError | undefined;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    res.on("close", abort);
+    const deadline = setTimeout(abort, 10 * 60_000);
+    const timeout = setTimeout(() => {
+      abort();
+      req.destroy();
+    }, 30_000);
     try {
       const chunks: Buffer[] = [];
       let size = 0;
@@ -64,18 +114,31 @@ export function createPdfReferenceCheckHandler(scanPdf: ReferenceScanDependencie
         return;
       }
       const hash = createHash("sha256").update(pdf).digest("hex");
-      let result: ReferenceScanResult | undefined;
+      let result: ReferenceReport | ReferenceScanResult | undefined;
       const service = new AdminBotService(new AdminBotMemoryStore(), {
         executor: {
           async execute(proposal) {
-            const payload = proposal.proposed_payload as { pdf_sha256?: string };
-            if (proposal.type !== "reference.scan" || payload.pdf_sha256 !== hash) {
+            const payload = proposal.proposed_payload as { pdf_sha256?: string; checker?: string };
+            if (
+              proposal.type !== "reference.scan" ||
+              payload.pdf_sha256 !== hash ||
+              payload.checker !== checker
+            ) {
               return { handled: false };
             }
             try {
-              result = await scanPdf(pdf);
+              result =
+                checker === "gptzero"
+                  ? await scanGptZero!(pdf)
+                  : await scanPdf(
+                      pdf,
+                      controller.signal,
+                      stream
+                        ? (progress) => sendEvent({ type: "progress", ...progress })
+                        : undefined,
+                    );
             } catch (error) {
-              if (error instanceof GptZeroScanError) {
+              if (error instanceof ReferenceCheckError || error instanceof GptZeroScanError) {
                 scanFailure = error;
               }
               throw error;
@@ -86,10 +149,13 @@ export function createPdfReferenceCheckHandler(scanPdf: ReferenceScanDependencie
       });
       const proposed = service.createProposal({
         type: "reference.scan",
-        summary: "Send the uploaded PDF to GPTZero for a reference check",
-        target: { service: "gptzero", target: "uploaded-pdf" },
-        proposed_payload: { pdf_sha256: hash },
-        undo_plan: "The upload to GPTZero cannot be undone.",
+        summary:
+          checker === "gptzero"
+            ? "Check PDF references with GPTZero"
+            : "Check extracted PDF references against scholarly databases",
+        target: { service: checker, target: "uploaded-pdf" },
+        proposed_payload: { pdf_sha256: hash, checker },
+        undo_plan: "Data sent to the selected checker cannot be recalled.",
       });
       if (!proposed.ok) {
         throw new Error("Could not propose scan");
@@ -107,20 +173,34 @@ export function createPdfReferenceCheckHandler(scanPdf: ReferenceScanDependencie
       if (!executed.ok || !result) {
         throw new Error("Could not execute scan");
       }
-      reply(200, result);
+      if (stream) {
+        sendEvent({ type: "complete", result: { ...result, checker } });
+        res.end();
+      } else {
+        reply(200, { ...result, checker });
+      }
     } catch {
       // Provider errors can contain manuscript text or credentials; never relay them.
       if (!res.destroyed && !res.writableEnded) {
-        reply(502, {
-          error: {
-            message:
-              scanFailure?.message ??
-              "GPTZero could not complete this check. Retrying may incur another charge.",
+        reply(
+          controller.signal.aborted ? 504 : scanFailure instanceof ReferenceCheckError ? 422 : 502,
+          {
+            error: {
+              message:
+                (controller.signal.aborted
+                  ? "The check timed out or was cancelled. Try a smaller PDF."
+                  : scanFailure?.message) ??
+                (checker === "gptzero"
+                  ? "GPTZero could not complete this check. Retrying may incur another charge."
+                  : "The reference check could not be completed."),
+            },
           },
-        });
+        );
       }
     } finally {
       clearTimeout(timeout);
+      clearTimeout(deadline);
+      res.off("close", abort);
       busy = false;
     }
   };

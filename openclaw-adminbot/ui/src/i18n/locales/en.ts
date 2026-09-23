@@ -634,7 +634,7 @@ export const en: TranslationMap = {
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotReferenceChecker: "Check PDF references with GPTZero.",
+    adminbotReferenceChecker: "Check PDF references against scholarly databases.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",

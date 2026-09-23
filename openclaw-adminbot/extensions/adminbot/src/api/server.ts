@@ -8,6 +8,7 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import type { PdfReferenceChecker } from "../connectors/reference-check.js";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
@@ -249,6 +250,7 @@ export type AdminBotMockServiceOptions = {
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
   trustProxyHeaders?: boolean;
   referenceScanDependencies?: ReferenceScanDependencies;
+  pdfReferenceChecker?: PdfReferenceChecker;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -710,7 +712,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     scanPdf: createGptZeroBibliographyScanner(),
   };
   referenceScans = new ReferenceScans(store, service, referenceDependencies);
-  const checkUploadedPdf = createPdfReferenceCheckHandler(referenceDependencies.scanPdf);
+  const checkUploadedPdf = createPdfReferenceCheckHandler(
+    options.pdfReferenceChecker,
+    referenceDependencies.scanPdf,
+  );
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.

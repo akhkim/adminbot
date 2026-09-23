@@ -43,8 +43,10 @@ state directory and auth secret. Add `http://127.0.0.1:5173` to `gateway.control
 credentials are required for agent chat, not fixture sign-in.
 
 The fixture backend keeps `state/adminbot-dev.sqlite` and stubbed calendar/email invitations.
-It does not load the normal host's live connector composition. The launcher loads the ignored
-`.env.gptzero` file when present for PDF checks; submitting a PDF still calls the real provider.
+It does not load the normal host's live connector composition. The default CheckIfExist
+checker needs no API key. It extracts references locally and queries public scholarly databases;
+submissions perform real lookups, including in development. Selecting GPTZero instead uploads the
+full PDF and requires `GPTZERO_API_KEY` with bibliography API access; submissions may incur charges.
 Ctrl+C stops only the development backend and UI, leaving your personal gateway running.
 
 The picker is injected only by the opt-in Vite development server launched through `dev.sh`.
