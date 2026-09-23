@@ -14,6 +14,8 @@ export type ReferenceFinding = {
   source?: string;
   title?: string;
   url?: string;
+  /** Set on an unsplittable chunk: its length, from which the sweep estimates hidden entries. */
+  oversized_chars?: number;
 };
 export type ReferenceReport = { findings: ReferenceFinding[] };
 export type ReferenceProgress = { completed: number; total: number; finding?: ReferenceFinding };
@@ -25,11 +27,14 @@ export type PdfReferenceChecker = (
 
 export class ReferenceCheckError extends Error {}
 
+/** An entry this long is several references the splitter could not separate. */
+export const OVERSIZED_REFERENCE = 2000;
+
 const REQUIRED_DATABASES = new Set(["api.crossref.org", "api.openalex.org", "dblp.org"]);
 
 export async function extractPdfReferences(
   pdf: Uint8Array,
-  limits: { maxReferences?: number } = {},
+  limits: { maxReferences?: number; allowOversized?: boolean } = {},
 ): Promise<string[]> {
   const maxReferences = limits.maxReferences ?? 100;
   const engine = await createEngine();
@@ -58,7 +63,10 @@ export async function extractPdfReferences(
           "No references could be extracted. This PDF has not been verified.",
         );
       }
-      if (references.some((reference) => reference.length >= 2000)) {
+      if (
+        !limits.allowOversized &&
+        references.some((reference) => reference.length >= OVERSIZED_REFERENCE)
+      ) {
         throw new ReferenceCheckError(
           "The bibliography could not be split reliably into individual references. This PDF has not been verified.",
         );
@@ -93,11 +101,17 @@ export function createPdfReferenceChecker(
     maxReferences?: number;
     /** Report "not found" only when Crossref, OpenAlex and DBLP answered; else "unavailable". */
     requireAllDatabases?: boolean;
+    /**
+     * Check the entries that split cleanly and report an unsplittable chunk as unavailable, rather
+     * than rejecting the paper. For the unattended sweep, which weighs how much went unchecked.
+     */
+    allowOversized?: boolean;
   } = {},
 ): PdfReferenceChecker {
   return async (pdf, signal, onProgress) => {
     const references = await (options.extract ?? extractPdfReferences)(pdf, {
       maxReferences: options.maxReferences,
+      allowOversized: options.allowOversized,
     });
     signal.throwIfAborted();
     const findings: ReferenceFinding[] = [];
@@ -105,6 +119,19 @@ export function createPdfReferenceChecker(
     const lastRequest = new Map<string, number>();
     for (const citation of references) {
       signal.throwIfAborted();
+      if (citation.length >= OVERSIZED_REFERENCE) {
+        // Never looked up: a query built from several run-together entries can only mislead.
+        const finding: ReferenceFinding = {
+          citation: `${citation.slice(0, 300)}…`,
+          status: "unavailable",
+          explanation:
+            "This part of the bibliography could not be split into single references and was not checked.",
+          oversized_chars: citation.length,
+        };
+        findings.push(finding);
+        onProgress?.({ completed: findings.length, total: references.length, finding });
+        continue;
+      }
       const failures = new Set<string>();
       const available = new Set<string>();
       const parsed = parseGeneric(citation);

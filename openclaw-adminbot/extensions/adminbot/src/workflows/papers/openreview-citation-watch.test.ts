@@ -207,7 +207,7 @@ describe("OpenReview citation watch", () => {
     await sweep();
     expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "failed",
-      error: "No reference database could be reached.",
+      error: "No reference could be checked.",
     });
     expect(store.listProposalsByType("email.send")).toHaveLength(0);
   });
@@ -221,10 +221,34 @@ describe("OpenReview citation watch", () => {
     await sweep();
     expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "failed",
-      error: "2 of 5 references could not be checked against every database.",
+      error: "About 2 of 5 references could not be checked.",
     });
     await sweep();
     expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("records a mostly unsplittable bibliography as unreadable, keeping what was checked", async () => {
+    const chunk = {
+      citation: "Run-together entries…",
+      status: "unavailable" as const,
+      explanation: "This part of the bibliography could not be split.",
+      // Ten typical entries' worth: 10 hidden of 10 + 8 is over the 20% limit.
+      oversized_chars: matched.citation.length * 10,
+    };
+    const { store, check, sweep } = setup({
+      submissions: [submission()],
+      check: async () => ({ findings: [...Array.from({ length: 8 }, () => matched), chunk] }),
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "unreadable",
+      error: "About 10 of 18 references could not be split out of the bibliography.",
+      findings: expect.arrayContaining([matched, chunk]),
+    });
+    // Deterministic for these bytes: not retried, and no email about a mostly unchecked paper.
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(store.listProposalsByType("email.send")).toHaveLength(0);
   });
 
   it("completes a version with a few unchecked references, without flagging them", async () => {

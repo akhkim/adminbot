@@ -215,7 +215,11 @@ export class OpenReviewCitationChecks extends LitElement {
             ? `${notFound} not found · ${issues.length - notFound} to check · ${findings.length} references`
             : `All ${findings.length} references matched a record.`
           : check.status === "unreadable"
-            ? `Could not be checked: ${check.error ?? "the PDF could not be read."}`
+            ? `Not fully checked: ${check.error ?? "the PDF could not be read."}${
+                issues.length
+                  ? ` ${issues.length} of the entries that were checked need review.`
+                  : ""
+              }`
             : `Check failed (attempt ${check.attempts}): ${check.error ?? "unknown error."}`}
         ${check.notification_proposal_id ? " An email is waiting in Pending Actions." : ""}
       </p>

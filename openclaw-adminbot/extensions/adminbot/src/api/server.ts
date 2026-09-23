@@ -5781,7 +5781,11 @@ function createOpenReviewCitationWatch(
     reader,
     check:
       options.citationWatchChecker ??
-      createPdfReferenceChecker({ maxReferences: 300, requireAllDatabases: true }),
+      createPdfReferenceChecker({
+        maxReferences: 300,
+        requireAllDatabases: true,
+        allowOversized: true,
+      }),
     ...(notifyEmail ? { notifyEmail } : {}),
   });
 }

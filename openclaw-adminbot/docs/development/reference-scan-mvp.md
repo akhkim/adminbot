@@ -100,10 +100,18 @@ references before a desk rejection.
   engine above. Only the extracted citation strings leave the host. GPTZero is never used for
   these papers, because it would upload a restricted manuscript. Bibliographies of up to 300
   references are accepted, against 100 on the interactive page.
-- **Outcomes.** `completed` stores every finding. `unreadable` (no bibliography heading,
-  encrypted, too many references) is final for that version. `failed` (download error,
-  60-minute timeout, no database reachable) is retried by later sweeps, up to three attempts.
-  A version whose every citation was `unavailable` is recorded as failed, never as clean.
+- **Outcomes.**
+  - `completed` stores every finding.
+  - `unreadable` is final for that version: no bibliography heading, encrypted, over 300
+    references, or more than 20% of the bibliography in chunks that could not be split into single
+    entries. What the clean entries showed is still stored, but no email is raised.
+  - `failed` (download error, 60-minute timeout, more than 20% of entries unchecked because
+    Crossref, OpenAlex or DBLP did not answer) is retried by later sweeps, up to three attempts.
+  - "Not found" is only claimed when Crossref, OpenAlex and DBLP all answered. Semantic Scholar
+    and arXiv throttle anonymous clients and are consulted but not required.
+  - Review-mode line numbers, ACL/ICML/NeurIPS/ICLR bibliography styles, alphabetic labels and
+    hundred-author team reports are handled. Measured on this account's 328 submissions
+    (2026-09-23), 272 split cleanly enough to check.
 - **Notification.** A completed check with any `not_found` or `review` citation creates an
   `email.send` proposal to `ADMINBOT_CITATION_CHECK_NOTIFY` (default: the first
   `ADMINBOT_CONTACT_EMAILS` address). It is sent only after an admin approves it in Pending

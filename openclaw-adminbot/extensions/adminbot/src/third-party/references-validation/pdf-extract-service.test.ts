@@ -1,7 +1,11 @@
 // Shapes taken from real conference PDFs as PDFium extracts them (\r\n line ends, U+FFFE at
 // hyphenated breaks); the names and titles are published works, not lab manuscripts.
 import { describe, expect, it } from "vitest";
-import { findReferencesSection, splitIntoReferences } from "./pdf-extract-service.js";
+import {
+  findReferencesSection,
+  splitIntoReferences,
+  stripLineNumbers,
+} from "./pdf-extract-service.js";
 
 const acl = [
   "Alan Akbik, Duncan Blythe, and Roland Vollgraf.",
@@ -77,6 +81,18 @@ describe("splitIntoReferences", () => {
     const refs = splitIntoReferences(lines.join("\n"));
     expect(refs).toHaveLength(3);
     expect(refs[1]).toMatch(/^Authora Person.*Evaluating large language models trained on code\.$/);
+  });
+
+  it("rejoins a name hyphenated across lines", () => {
+    const refs = splitIntoReferences(
+      [
+        "Mark Chen and Jerry Tworek. 2021. Evaluating large language models trained on code. arXiv.",
+        "Aakanksha Chowdhery, Sharan Narang, Jean-",
+        "baptiste Alayrac, and Josh Achiam. 2022. Palm: Scaling language modeling. arXiv.",
+      ].join("\n"),
+    );
+    expect(refs).toHaveLength(2);
+    expect(refs[1]).toContain("Jean-baptiste Alayrac");
   });
 
   it("does not end an entry at a wrapped author initial", () => {
@@ -166,5 +182,60 @@ describe("findReferencesSection", () => {
       "A For every submission:",
     ].join("\n");
     expect(findReferencesSection(text).sectionText).not.toContain("For every submission");
+  });
+});
+
+describe("stripLineNumbers", () => {
+  it("removes review-mode margin numbers, leading or trailing, so entries split", () => {
+    const body = Array.from({ length: 30 }, (_, i) => `Manuscript line ${i}`);
+    const bib = [
+      "References",
+      "Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kris￾",
+      "tina Toutanova. 2019. BERT: Pre-training of deep",
+      "bidirectional transformers. In NAACL.",
+      "Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian",
+      "Sun. 2016. Deep residual learning for image recog￾",
+      "nition. In CVPR.",
+      "Ashish Vaswani and Noam Shazeer. 2017. Attention is all",
+      "you need. In NeurIPS.",
+    ];
+    const lines = [...body, ...bib];
+    for (const numbered of [
+      lines.map((line, i) => `${line} ${540 + i}`),
+      lines.map((line, i) => `${540 + i} ${line}`),
+      // Two-column review layout: each column numbered on its own margin.
+      lines.map((line, i) => (i % 2 ? `${540 + i} ${line}` : `${line} ${540 + i}`)),
+    ]) {
+      const refs = splitIntoReferences(findReferencesSection(numbered.join("\r\n")).sectionText);
+      expect(refs).toHaveLength(3);
+      expect(refs[0]).toBe(
+        "Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of deep bidirectional transformers. In NAACL.",
+      );
+    }
+  });
+
+  it("leaves a camera-ready paper alone", () => {
+    const text = "A title\nSome text ending in a range 12\nMore text\nAnd more\nFinal line";
+    expect(stripLineNumbers(text)).toBe(text);
+  });
+});
+
+describe("author-list condensing", () => {
+  it("shortens a team report's hundreds of authors to three and et al.", () => {
+    const letters = (i: number) =>
+      String.fromCharCode(97 + (i % 26)) + String.fromCharCode(97 + Math.floor(i / 26));
+    const authors = Array.from({ length: 300 }, (_, i) => `Surname${letters(i)}, F.`);
+    // PDFium splits an accented capital into a separate mark.
+    authors[5] = "Adl´ er, J.";
+    const refs = splitIntoReferences(
+      [
+        "Alpha, A. and Beta, B. Some paper about things. In ICML, 2020.",
+        `${authors.join(", ")}, and Omega, O. Gemini: a family of highly capable multimodal models, 2024.`,
+      ].join("\n"),
+    );
+    expect(refs).toHaveLength(2);
+    expect(refs[1]).toBe(
+      "Surnameaa, F., Surnameba, et al. Gemini: a family of highly capable multimodal models, 2024.",
+    );
   });
 });
