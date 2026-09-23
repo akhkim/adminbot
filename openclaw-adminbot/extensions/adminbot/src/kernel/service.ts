@@ -5008,6 +5008,13 @@ export class AdminBotService {
       {
         ...existing,
         ...(patch as Partial<AdminBotPaperRecordInput>),
+        // A text-only edit replaces the list; inherited links must not override its names.
+        author_links:
+          patch.author_links !== undefined
+            ? (patch.author_links as AdminBotPaperRecordInput["author_links"])
+            : patch.authors !== undefined
+              ? undefined
+              : existing?.author_links,
         id: paperId,
         title: typeof patch.title === "string" ? patch.title : (existing?.title ?? ""),
         authors: Array.isArray(patch.authors)
@@ -5153,6 +5160,7 @@ export class AdminBotService {
         const links = buildAuthorLinks({
           ...(paper.author_links ? { links: paper.author_links } : {}),
           names: paper.authors,
+          priorLinks: existing?.author_links,
           roster: this.store.listLabMembers(),
         });
         return { author_links: links, authors: authorNamesFromLinks(links) };
@@ -14576,17 +14584,16 @@ function validatePaper(paper: AdminBotPaperRecordInput): string | undefined {
   if (!paper.title.trim()) {
     return "paper title is required";
   }
-  // Either list satisfies it: the card's picker sends `author_links` (names plus who they are) and
-  // never touches `authors`, which upsertPaper regenerates from the links a moment later. Checking
-  // only `authors` would refuse every save the picker makes.
-  const namedAuthors =
-    normalizeNameList(paper.authors).length +
-    (paper.author_links ?? []).filter((link) => link.name?.trim()).length;
-  if (namedAuthors === 0) {
-    return "paper authors are required";
-  }
   if (paper.author_links !== undefined && !Array.isArray(paper.author_links)) {
     return "author links must be a list";
+  }
+  // An explicit empty picker list is an invalid edit, not a request to restore old names.
+  const namedAuthors =
+    paper.author_links !== undefined
+      ? paper.author_links.filter((link) => link.name?.trim()).length
+      : normalizeNameList(paper.authors).length;
+  if (namedAuthors === 0) {
+    return "paper authors are required";
   }
   // Refused rather than rewritten. The alias becomes the project's Slack channel name, so an
   // author who typed something that cannot be one has to be told now -- not discover afterwards
