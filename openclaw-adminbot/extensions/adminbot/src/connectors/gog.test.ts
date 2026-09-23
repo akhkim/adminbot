@@ -554,6 +554,47 @@ describe("sheet.update_cells", () => {
 
     expect(run).not.toHaveBeenCalled();
   });
+
+  it("appends a roster row as typed, inserting rather than overwriting", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(
+      proposal("sheet.append_rows", {
+        spreadsheet_id: "1ZqdaRze",
+        range: "'Full Slack Member List'!A:ZZ",
+        rows: [["Ada Lovelace", "full", "=1+1"]],
+      }),
+    );
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--enable-commands-exact",
+        "sheets.append",
+        "sheets",
+        "append",
+        "1ZqdaRze",
+        "'Full Slack Member List'!A:ZZ",
+      ]),
+    );
+    expect(args[args.indexOf("--input") + 1]).toBe("RAW");
+    expect(args[args.indexOf("--insert") + 1]).toBe("INSERT_ROWS");
+    expect(JSON.parse(args[args.indexOf("--values-json") + 1] ?? "")).toEqual([
+      ["Ada Lovelace", "full", "=1+1"],
+    ]);
+  });
+
+  it("refuses an append with no rows rather than calling gog", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+    await expect(
+      executor.execute(
+        proposal("sheet.append_rows", { spreadsheet_id: "1ZqdaRze", range: "A:ZZ", rows: [] }),
+      ),
+    ).rejects.toThrow(/row matrix/u);
+    expect(run).not.toHaveBeenCalled();
+  });
 });
 
 describe("the Drive probe", () => {

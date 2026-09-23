@@ -1,10 +1,14 @@
+import type { UiSettings } from "../../storage.ts";
 // The Membership tab's grid over the lab's member spreadsheet: load it, edit cells, save the
 // edits as one approval item, and onboard a selection.
 //
 // Split out of admin.ts, which is already over the size gate.
 import {
+  addMemberSheetRow as addMemberSheetRowRequest,
   fetchMemberSheet as fetchMemberSheetRequest,
   loadStoredMemberSession,
+  type MemberSheetAddRowInput,
+  type MemberSheetAddRowResult,
   type MemberSheetEditResult,
   type MemberSheetOnboardPreview,
   type MemberSheetOnboardResult,
@@ -14,7 +18,6 @@ import {
   proposeMemberSheetEdits as proposeMemberSheetEditsRequest,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
-import type { UiSettings } from "../../storage.ts";
 
 /**
  * The Membership grid over the lab's member spreadsheet.
@@ -35,6 +38,8 @@ export type AdminBotMemberSheetHost = {
   memberSheetOnboardResult?: MemberSheetOnboardResult | null;
   /** The composed mails the selected rows would get, shown for review before anything is queued. */
   memberSheetOnboardPreview?: MemberSheetOnboardPreview | null;
+  /** What the last Add row did, step by step: sheet row, member, onboarding guide. */
+  memberSheetAddRowResult?: MemberSheetAddRowResult | null;
   settings: UiSettings;
 };
 
@@ -213,6 +218,44 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
   } finally {
     host.memberSheetBusy = false;
   }
+}
+
+/**
+ * Adds a person to the roster and onboards them in one go.
+ *
+ * Resolves true when the service took the request -- even if one of its steps failed, which the
+ * result callout reports -- so the form can close; false when nothing was done and the form should
+ * stay open with what was typed. The grid is re-read afterwards so the new row shows up in place.
+ */
+export async function addMemberSheetRow(
+  host: AdminBotMemberSheetHost,
+  input: MemberSheetAddRowInput,
+): Promise<boolean> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.memberSheetError = "Sign in again to add to the member sheet.";
+    return false;
+  }
+  host.memberSheetBusy = true;
+  host.memberSheetError = null;
+  host.memberSheetAddRowResult = null;
+  let result;
+  try {
+    result = await addMemberSheetRowRequest(
+      input,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+  } finally {
+    host.memberSheetBusy = false;
+  }
+  if (!result.ok) {
+    host.memberSheetError = describeMemberSheetFailure(result);
+    return false;
+  }
+  await loadMemberSheet(host);
+  host.memberSheetAddRowResult = result.value;
+  return true;
 }
 
 function describeMemberSheetFailure(result: { kind?: string; message?: string }): string {

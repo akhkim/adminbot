@@ -8,10 +8,7 @@
  * reach what -- the approval card is where that gets a second pair of eyes. Onboarding produces
  * `email.send` proposals for the same reason: nothing reaches Gmail without passing the gate.
  */
-import type {
-  AdminBotSheetValueRange,
-  AdminBotStoredProposal,
-} from "../contracts/actions.js";
+import type { AdminBotSheetValueRange, AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
   planSheetEdits,
@@ -22,6 +19,7 @@ import {
 import { parseRosterSheet, type RosterSheetParse } from "../workflows/members/roster-sync.js";
 import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
+import { memberIdForRow } from "../workflows/onboarding/onboarding-sweep.js";
 
 export type MemberSheetSource = {
   spreadsheetId: string;
@@ -66,9 +64,7 @@ function rangeFor(tab: string): string {
  * a `sheet.update_cells` proposal: resolving on the read path alone would let an edit be written
  * back to a tab under its old name.
  */
-async function resolveTarget(
-  source: MemberSheetSource,
-): Promise<{ tab: string; url: string }> {
+async function resolveTarget(source: MemberSheetSource): Promise<{ tab: string; url: string }> {
   const resolved = await source.resolveTab?.();
   const tab = resolved?.tab || source.tab;
   const base = `https://docs.google.com/spreadsheets/d/${source.spreadsheetId}/edit`;
@@ -99,11 +95,12 @@ export async function readMemberSheet(source: MemberSheetSource): Promise<Member
  * failure an admin can fix in the spreadsheet: every other read failure is Google's and is already
  * described by `describeMemberSheetReadFailure`.
  */
-export async function readRosterSheet(
-  source: MemberSheetSource,
-): Promise<{ parsed: RosterSheetParse; tab: string; url: string } | {
-  error: { status: number; message: string };
-}> {
+export async function readRosterSheet(source: MemberSheetSource): Promise<
+  | { parsed: RosterSheetParse; tab: string; url: string }
+  | {
+      error: { status: number; message: string };
+    }
+> {
   const target = await resolveTarget(source);
   const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
   try {
@@ -136,7 +133,13 @@ export type MemberSheetEditRequest = {
 export type MemberSheetEditResult = {
   proposal?: AdminBotStoredProposal;
   updates: AdminBotSheetValueRange[];
-  conflicts: { sheet_row: number; column: number; header: string; expected: string; actual: string }[];
+  conflicts: {
+    sheet_row: number;
+    column: number;
+    header: string;
+    expected: string;
+    actual: string;
+  }[];
   unchanged: number;
   touches_access: boolean;
 };
@@ -415,4 +418,258 @@ export async function onboardFromMemberSheet(
     });
   }
   return { created, skipped };
+}
+
+export type MemberSheetAddRowRequest = {
+  name: string;
+  member_type: string;
+  /** The address the onboarding guide goes to. */
+  email: string;
+  slack_email?: string;
+  member_attributes?: string;
+};
+
+/** How one step of an Add row went, so the tab can say which of the three landed. */
+export type MemberSheetAddRowStep =
+  | { status: "done"; proposal_id?: string; detail?: string; template_id?: string }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string; proposal_id?: string; template_id?: string };
+
+export type MemberSheetAddRowResult = {
+  member_id: string;
+  sheet: MemberSheetAddRowStep;
+  member: MemberSheetAddRowStep;
+  onboarding: MemberSheetAddRowStep;
+};
+
+/** Who clicked, as the approval gate records them. */
+export type MemberSheetApprover = { approver_role: string; approver_id: string };
+
+const MEMBER_ATTRIBUTES_HEADER = "Member Attributes";
+const ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+
+/**
+ * Propose, approve as the clicking admin, and execute, in one call.
+ *
+ * Add row is one deliberate click by an administrator on a form that says everything it will do,
+ * and "immediately" is the requirement -- so the click is the approval. It still goes through the
+ * gate rather than around it: a typed proposal, an approval naming the admin, an execution and its
+ * audit, exactly what Pending Actions records when the same admin approves there.
+ */
+async function approveAndExecute(
+  service: AdminBotService,
+  proposal: AdminBotStoredProposal,
+  approver: MemberSheetApprover,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const approved = service.approve(proposal.id, {
+    payload_hash: proposal.payload_hash,
+    ...approver,
+    note: "approved by the admin who submitted Add row",
+  });
+  if (!approved.ok) {
+    return { ok: false, reason: approved.error.message };
+  }
+  const executed = await service.execute(proposal.id, {
+    dry_run: false,
+    idempotency_key: `add-row-${proposal.id}`,
+  });
+  return executed.ok ? { ok: true } : { ok: false, reason: executed.error.message };
+}
+
+function hasAddress(cell: string | undefined, addresses: ReadonlySet<string>): boolean {
+  return (cell ?? "").split(/[\n,;]/u).some((part) => addresses.has(part.trim().toLowerCase()));
+}
+
+/**
+ * The Onboarding tab's Add row: put a new person on the roster and onboard them, now.
+ *
+ * Three steps, each reported on its own, ordered so that a failure leaves nothing worse than what
+ * the daily sweep would have done:
+ *
+ *   1. **The sheet row** (`sheet.append_rows`), in the sheet's own column order, so it lands under
+ *      the right headings whatever the tab's layout is today.
+ *   2. **The member** (`upsertLabMember`), which is the backend onboarding: privilege defaults,
+ *      access grants, the onboarding checklist and the channel proposals all hang off creation.
+ *   3. **The guide** (`onboarding.send_guide`), which mails them and provisions their Drive folder,
+ *      Slack invite and DCS row. Member Types whose onboarding is access alone skip this step.
+ *
+ * A failed sheet write does not stop the other two. The roster tab can be protected against the
+ * bot's account, and the person should not wait on a spreadsheet permission; the sweep matches
+ * members by address, so a row an admin types in by hand later is recognised rather than
+ * onboarded twice. The reverse is refused up front: somebody already on the sheet or the roster is
+ * a 409, because Add row on an existing person is the mistake this form invites.
+ */
+export async function addMemberSheetRow(
+  service: AdminBotService,
+  source: MemberSheetSource,
+  request: MemberSheetAddRowRequest,
+  approver: MemberSheetApprover,
+  actor: string,
+): Promise<MemberSheetAddRowResult | { error: { status: number; message: string } }> {
+  const name = String(request.name ?? "").trim();
+  const memberType = String(request.member_type ?? "").trim();
+  const email = String(request.email ?? "").trim();
+  const slackEmail = String(request.slack_email ?? "").trim();
+  const attributes = String(request.member_attributes ?? "").trim();
+  if (!name) {
+    return { error: { status: 400, message: "name is required" } };
+  }
+  if (!memberType) {
+    return { error: { status: 400, message: "member_type is required" } };
+  }
+  if (!ADDRESS_PATTERN.test(email)) {
+    return { error: { status: 400, message: "email must be an email address" } };
+  }
+  if (slackEmail && !ADDRESS_PATTERN.test(slackEmail)) {
+    return { error: { status: 400, message: "slack_email must be an email address" } };
+  }
+  const memberId = memberIdForRow(name);
+  if (!memberId) {
+    return { error: { status: 400, message: "name has no letters or digits to make an id from" } };
+  }
+
+  const target = await resolveTarget(source);
+  const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
+  const at = (header: string): number => grid.header.indexOf(header);
+  const typeAt = at(MEMBER_TYPE_HEADER);
+  if (typeAt < 0) {
+    return { error: { status: 422, message: `the sheet has no "${MEMBER_TYPE_HEADER}" column` } };
+  }
+  const corrAt = at(CORRESPONDENCE_HEADER);
+  const slackAt = at(SLACK_EMAIL_HEADER);
+  if (corrAt < 0 && slackAt < 0) {
+    return {
+      error: { status: 422, message: "the sheet has no email column to put the address in" },
+    };
+  }
+  const nameAt = at(NAME_HEADER) < 0 ? 0 : at(NAME_HEADER);
+
+  const addresses = new Set([email.toLowerCase(), slackEmail.toLowerCase()].filter(Boolean));
+  const onSheet = grid.rows.find(
+    (row) =>
+      (corrAt >= 0 && hasAddress(row.cells[corrAt], addresses)) ||
+      (slackAt >= 0 && hasAddress(row.cells[slackAt], addresses)),
+  );
+  if (onSheet) {
+    return {
+      error: {
+        status: 409,
+        message: `${email} is already on the sheet (row ${onSheet.sheetRow}); onboard that row instead`,
+      },
+    };
+  }
+  const roster = service.listLabMembers();
+  const known = roster.ok
+    ? roster.payload.members.find(
+        (member) =>
+          member.id === memberId || addresses.has((member.email ?? "").trim().toLowerCase()),
+      )
+    : undefined;
+  if (known) {
+    return {
+      error: {
+        status: 409,
+        message: `${known.name || known.id} is already a lab member (${known.id})`,
+      },
+    };
+  }
+
+  // The row in the sheet's column order, trimmed after the last filled cell so the append carries
+  // no tail of empty strings.
+  const row = Array.from({ length: grid.header.length }, () => "");
+  row[nameAt] = name;
+  row[typeAt] = memberType;
+  if (corrAt >= 0) {
+    row[corrAt] = email;
+  }
+  if (slackAt >= 0) {
+    row[slackAt] = slackEmail || (corrAt < 0 ? email : "");
+  }
+  const attributesAt = at(MEMBER_ATTRIBUTES_HEADER);
+  if (attributes && attributesAt >= 0) {
+    row[attributesAt] = attributes;
+  }
+  while (row.length > 1 && row.at(-1) === "") {
+    row.pop();
+  }
+
+  let sheet: MemberSheetAddRowStep;
+  const appended = service.createProposal({
+    type: "sheet.append_rows",
+    summary: `${actor}: add ${name} <${email}> (${memberType}) to the member roster`,
+    target: { service: "google", channel: "sheets", target: source.spreadsheetId },
+    proposed_payload: {
+      spreadsheet_id: source.spreadsheetId,
+      range: rangeFor(quoteTab(target.tab)),
+      rows: [row],
+    },
+  });
+  if (!appended.ok) {
+    sheet = { status: "failed", reason: appended.error.message };
+  } else {
+    const ran = await approveAndExecute(service, appended.payload, approver);
+    sheet = ran.ok
+      ? { status: "done", proposal_id: appended.payload.id }
+      : { status: "failed", reason: ran.reason, proposal_id: appended.payload.id };
+  }
+
+  const saved = service.upsertLabMember(
+    { id: memberId, name, email, member_type: memberType },
+    { source: "admin", actor },
+  );
+  if (!saved.ok) {
+    return {
+      member_id: memberId,
+      sheet,
+      member: { status: "failed", reason: saved.error.message },
+      onboarding: { status: "skipped", reason: "the member was not created" },
+    };
+  }
+  const member: MemberSheetAddRowStep = { status: "done" };
+
+  const template = templateForMemberType(memberType);
+  if (!template.ok) {
+    return {
+      member_id: memberId,
+      sheet,
+      member,
+      onboarding: { status: "skipped", reason: template.reason },
+    };
+  }
+  const queued = service.queueOnboardingGuideForMember({ memberId, actor });
+  if (!queued.ok) {
+    return {
+      member_id: memberId,
+      sheet,
+      member,
+      onboarding: { status: "failed", reason: queued.error.message },
+    };
+  }
+  const guide = service.getProposal(queued.payload.proposal_id);
+  const sent = guide
+    ? await approveAndExecute(service, guide, approver)
+    : { ok: false as const, reason: `proposal ${queued.payload.proposal_id} vanished` };
+  return {
+    member_id: memberId,
+    sheet,
+    member,
+    onboarding: sent.ok
+      ? {
+          status: "done",
+          proposal_id: queued.payload.proposal_id,
+          template_id: queued.payload.template_id,
+          detail: `sent to ${queued.payload.email}`,
+        }
+      : {
+          status: "failed",
+          reason: sent.reason,
+          proposal_id: queued.payload.proposal_id,
+          template_id: queued.payload.template_id,
+        },
+  };
+}
+
+/** Same rule as `a1Range`: quote a tab title only when Sheets requires it. */
+function quoteTab(tab: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/u.test(tab) ? tab : `'${tab.replace(/'/gu, "''")}'`;
 }

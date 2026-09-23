@@ -441,9 +441,47 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarDeleteArgs(proposal);
     case "sheet.update_cells":
       return buildSheetUpdateArgs(proposal);
+    case "sheet.append_rows":
+      return buildSheetAppendArgs(proposal);
     default:
       return undefined;
   }
+}
+
+/**
+ * The approval-gated twin of `appendGogSheetRows`, with the same `RAW` / `INSERT_ROWS` choices for
+ * the same reasons: a typed value stays the value, and nothing a person parked below the roster is
+ * overwritten.
+ */
+export function buildSheetAppendArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const spreadsheetId = requireString(payload, "spreadsheet_id");
+  const range = requireString(payload, "range");
+  const rows = payload.rows;
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0 ||
+    rows.some((row) => !Array.isArray(row) || row.length === 0)
+  ) {
+    throw new Error("sheet.append_rows proposed_payload.rows must be a non-empty row matrix");
+  }
+  const values = (rows as unknown[][]).map((row) =>
+    row.map((cell) => (cell === undefined || cell === null ? "" : String(cell))),
+  );
+  const args = rootArgs("sheets.append", optionalString(payload, "account"));
+  args.push(
+    "sheets",
+    "append",
+    spreadsheetId,
+    range,
+    "--input",
+    "RAW",
+    "--insert",
+    "INSERT_ROWS",
+    "--values-json",
+    JSON.stringify(values),
+  );
+  return args;
 }
 
 /**
