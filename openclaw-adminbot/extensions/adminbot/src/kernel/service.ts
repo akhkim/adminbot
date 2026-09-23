@@ -11033,7 +11033,13 @@ export class AdminBotService {
    */
   planInviteMembership(params: {
     surface: AdminBotInviteSurface;
+    /** The configured meeting, which names the proposal and keys its dedupe. */
     eventId: string;
+    /**
+     * The series the removal is written to, when they differ from `eventId` -- a meeting edited
+     * "this and following" lives on as several series, and the configured one may have ended.
+     */
+    eventIds?: readonly string[];
     calendarId?: string;
     attendees: readonly string[];
     actor: string;
@@ -11043,6 +11049,10 @@ export class AdminBotService {
     keep: string[];
     unrecognized: string[];
     proposal_id?: string;
+    /** Set when an identical removal was already waiting, so nothing new was filed. */
+    reused?: boolean;
+    /** Earlier pending removals for this meeting that the new one replaced. */
+    superseded?: string[];
   }> {
     const eventId = params.eventId.trim();
     if (!eventId) {
@@ -11071,6 +11081,63 @@ export class AdminBotService {
       };
     }
 
+    const targets = [...new Set((params.eventIds ?? []).map((id) => id.trim()).filter(Boolean))];
+    const removed = plan.remove.map((entry) => entry.email);
+
+    // The sweep runs daily and the answer rarely changes, so without this every morning filed
+    // another copy of the same removal -- a queue of near-identical proposals, each carrying its
+    // own snapshot, any of which an admin might approve. An identical one still waiting is reused;
+    // a different one is replaced, so exactly one removal per meeting is ever pending.
+    const sameSet = (left: readonly unknown[], right: readonly string[]) =>
+      left.length === right.length &&
+      [...left]
+        .map((value) => String(value).toLowerCase())
+        .toSorted()
+        .join(",") ===
+        [...right]
+          .map((value) => value.toLowerCase())
+          .toSorted()
+          .join(",");
+    const superseded: string[] = [];
+    let kept: string | undefined;
+    for (const pending of this.store.listProposalsByType("calendar.remove_attendees")) {
+      if (pending.status !== "pending") {
+        continue;
+      }
+      const payload = (pending.proposed_payload ?? {}) as Record<string, unknown>;
+      if ((payload.meeting_series ?? payload.event_id) !== eventId) {
+        continue;
+      }
+      const pendingTargets = Array.isArray(payload.event_ids) ? payload.event_ids : [];
+      const pendingRemoved = Array.isArray(payload.removed_attendees)
+        ? payload.removed_attendees
+        : [];
+      if (!kept && sameSet(pendingRemoved, removed) && sameSet(pendingTargets, targets)) {
+        kept = pending.id;
+        continue;
+      }
+      const withdrawn = this.removePending(pending.id, {
+        actor: params.actor,
+        note: "superseded by a newer membership sweep of the same meeting",
+      });
+      if (withdrawn.ok) {
+        superseded.push(pending.id);
+      }
+    }
+    if (kept) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          surface: params.surface,
+          ...plan,
+          proposal_id: kept,
+          reused: true,
+          ...(superseded.length > 0 ? { superseded } : {}),
+        },
+      };
+    }
+
     const label =
       params.surface === "group_meeting" ? "the Monday group meeting" : "the lab calendar";
     const proposed = this.createProposal({
@@ -11078,13 +11145,15 @@ export class AdminBotService {
       summary: `Remove ${plan.remove.length} ${
         plan.remove.length === 1 ? "person" : "people"
       } from ${label}: ${plan.remove.map((entry) => `${entry.member_name} (${entry.reason})`).join(", ")}`,
-      target: { service: "calendar", channel: "calendar", target: eventId },
+      target: { service: "calendar", channel: "calendar", target: targets[0] ?? eventId },
       proposed_payload: {
         ...(params.calendarId ? { calendar_id: params.calendarId } : {}),
-        event_id: eventId,
-        // Both lists travel: the approver reads who is being dropped, and the connector writes the
-        // set that remains, because the underlying update replaces rather than subtracts.
-        removed_attendees: plan.remove.map((entry) => entry.email),
+        event_id: targets[0] ?? eventId,
+        ...(targets.length > 0 ? { event_ids: targets, meeting_series: eventId } : {}),
+        // The approver reads who is being dropped. `remaining_attendees` is what the guest list
+        // looked like when this was planned, for the reader; the connector subtracts the removed
+        // people from the event as it stands at execution instead of writing this snapshot back.
+        removed_attendees: removed,
         remaining_attendees: plan.keep,
       },
       undo_plan: "Re-invite the removed attendees with calendar.add_attendees.",
@@ -11108,7 +11177,12 @@ export class AdminBotService {
     return {
       ok: true,
       status: 200,
-      payload: { surface: params.surface, ...plan, proposal_id: proposed.payload.id },
+      payload: {
+        surface: params.surface,
+        ...plan,
+        proposal_id: proposed.payload.id,
+        ...(superseded.length > 0 ? { superseded } : {}),
+      },
     };
   }
 

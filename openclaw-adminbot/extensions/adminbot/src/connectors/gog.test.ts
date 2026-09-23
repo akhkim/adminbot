@@ -123,31 +123,115 @@ describe("createGogAdminBotExecutor", () => {
     expect(args).not.toContain("--from");
   });
 
-  // The removal rewrites the whole guest list, so notifying would re-send the invite to everyone
-  // still on the meeting each time one person is dropped.
-  it("removes attendees without notifying anyone", async () => {
-    const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+  describe("calendar.remove_attendees", () => {
+    const liveEvent = (attendees: Array<Record<string, unknown>>) =>
+      JSON.stringify({ event: { id: "event-9", attendees } });
 
-    await executor.execute(
-      proposal("calendar.remove_attendees", {
-        calendar_id: "jinesis.lab@gmail.com",
-        event_id: "event-9",
-        remaining_attendees: ["ada@cs.toronto.edu", "mei@cs.toronto.edu"],
-        removed_attendees: ["gone@cs.toronto.edu"],
-      }),
-    );
+    // The removal rewrites the whole guest list, so notifying would re-send the invite to everyone
+    // still on the meeting each time one person is dropped.
+    it("subtracts the named people from the live guest list, silently", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () =>
+        liveEvent([
+          { email: "ada@cs.toronto.edu", responseStatus: "accepted" },
+          { email: "Gone@cs.toronto.edu" },
+          { email: "late@cs.toronto.edu" },
+          { email: "room@resource.test", resource: true },
+          { email: "maybe@cs.toronto.edu", optional: true },
+        ]),
+      );
+      const executor = createGogAdminBotExecutor({ run, capture });
 
-    const args = run.mock.calls[0]?.[0] as string[];
-    expect(args).toEqual(
-      expect.arrayContaining([
-        "calendar.update",
-        "event-9",
-        "--attendees",
-        "ada@cs.toronto.edu,mei@cs.toronto.edu",
-      ]),
-    );
-    expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          calendar_id: "jinesis.lab@gmail.com",
+          event_id: "event-9",
+          // A stale snapshot: late@ was added after the plan. Writing this back would drop them.
+          remaining_attendees: ["ada@cs.toronto.edu"],
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(capture.mock.calls[0]?.[0]).toEqual(
+        expect.arrayContaining(["calendar", "event", "jinesis.lab@gmail.com", "event-9"]),
+      );
+      const args = run.mock.calls[0]?.[0] as string[];
+      expect(args[args.indexOf("--attendees") + 1]).toBe(
+        "ada@cs.toronto.edu,late@cs.toronto.edu,room@resource.test;resource,maybe@cs.toronto.edu;optional",
+      );
+      expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+    });
+
+    // Re-approving, retrying after a timeout, or approving a duplicate proposal must not touch the
+    // event again once the people are gone.
+    it("does not write an event none of the named people are on", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => liveEvent([{ email: "ada@cs.toronto.edu" }]));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          event_id: "event-9",
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("removes from every series a split meeting lives on", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async (args: string[]) =>
+        args.includes("series-a")
+          ? liveEvent([{ email: "ada@cs.toronto.edu" }, { email: "gone@cs.toronto.edu" }])
+          : liveEvent([{ email: "ada@cs.toronto.edu" }]),
+      );
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          event_id: "series-a",
+          event_ids: ["series-a", "series-b"],
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(capture).toHaveBeenCalledTimes(2);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]?.[0]).toContain("series-a");
+    });
+
+    it("refuses a removal that would empty the guest list", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => liveEvent([{ email: "gone@cs.toronto.edu" }]));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await expect(
+        executor.execute(
+          proposal("calendar.remove_attendees", {
+            event_id: "event-9",
+            removed_attendees: ["gone@cs.toronto.edu"],
+          }),
+        ),
+      ).rejects.toThrow("refuses to empty");
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("refuses an event read that carries no guest list", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => JSON.stringify({ event: { id: "event-9" } }));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await expect(
+        executor.execute(
+          proposal("calendar.remove_attendees", {
+            event_id: "event-9",
+            removed_attendees: ["gone@cs.toronto.edu"],
+          }),
+        ),
+      ).rejects.toThrow("no attendee list");
+      expect(run).not.toHaveBeenCalled();
+    });
   });
 
   it("refuses an add-attendees action that names nobody", async () => {

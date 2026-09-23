@@ -123,6 +123,77 @@ describe("planInviteMembership", () => {
     expect(result.ok === false && result.error.message).toContain("refusing");
   });
 
+  it("writes the removal to the live series it is given", () => {
+    const { service } = seededService();
+    const result = unwrap(
+      service.planInviteMembership({
+        surface: "group_meeting",
+        eventId: "evt-monday",
+        eventIds: ["evt-monday_R20261005T133000", "evt-monday_R20260928T133000"],
+        attendees: ATTENDEES,
+        actor: "cron",
+      }),
+    );
+    const proposal = unwrap(service.listPending()).proposals.find(
+      (entry) => entry.id === result.proposal_id,
+    )!;
+    expect(proposal.proposed_payload).toMatchObject({
+      event_id: "evt-monday_R20261005T133000",
+      event_ids: ["evt-monday_R20261005T133000", "evt-monday_R20260928T133000"],
+      meeting_series: "evt-monday",
+    });
+  });
+
+  // The cron runs daily. A queue of copies of the same removal is how an admin ended up approving
+  // several of them, each one a write to the meeting.
+  it("reuses an identical pending removal instead of filing another", () => {
+    const { service } = seededService();
+    const plan = () =>
+      unwrap(
+        service.planInviteMembership({
+          surface: "group_meeting",
+          eventId: "evt-monday",
+          eventIds: ["evt-monday_R1"],
+          attendees: ATTENDEES,
+          actor: "cron",
+        }),
+      );
+    const first = plan();
+    const second = plan();
+
+    expect(second.proposal_id).toBe(first.proposal_id);
+    expect(second.reused).toBe(true);
+    expect(unwrap(service.listPending()).proposals).toHaveLength(1);
+  });
+
+  it("replaces a pending removal whose names or targets changed", () => {
+    const { service } = seededService();
+    // Shaped like the proposals filed before this fix: aimed at the configured id alone.
+    const stale = unwrap(
+      service.planInviteMembership({
+        surface: "group_meeting",
+        eventId: "evt-monday",
+        attendees: ATTENDEES,
+        actor: "cron",
+      }),
+    );
+    const fresh = unwrap(
+      service.planInviteMembership({
+        surface: "group_meeting",
+        eventId: "evt-monday",
+        eventIds: ["evt-monday_R1"],
+        attendees: ATTENDEES,
+        actor: "cron",
+      }),
+    );
+
+    expect(fresh.proposal_id).not.toBe(stale.proposal_id);
+    expect(fresh.superseded).toEqual([stale.proposal_id]);
+    expect(unwrap(service.listPending()).proposals.map((entry) => entry.id)).toEqual([
+      fresh.proposal_id,
+    ]);
+  });
+
   it("requires an event id", () => {
     const { service } = seededService();
     const result = service.planInviteMembership({
