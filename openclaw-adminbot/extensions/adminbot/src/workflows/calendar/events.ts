@@ -34,6 +34,12 @@ export type AdminBotCalendarEvent = {
   /** Addresses already on the event, so the tab can avoid re-inviting them. */
   attendees?: string[];
   all_day?: boolean;
+  /**
+   * The series an occurrence belongs to, as Google reports it. Not derivable from the id: once a
+   * meeting is edited "this and following", its later occurrences keep the original id prefix but
+   * belong to a new `<base>_R<instant>` series, and the base series stops at the split.
+   */
+  recurring_event_id?: string;
 };
 
 export type CalendarEventsReader = (params: {
@@ -129,6 +135,9 @@ export function parseCalendarEvent(value: unknown): AdminBotCalendarEvent | unde
     ...(asString(raw.htmlLink) ? { html_link: asString(raw.htmlLink) } : {}),
     ...(attendees.length ? { attendees } : {}),
     ...(start.allDay || end.allDay ? { all_day: true } : {}),
+    ...(asString(raw.recurringEventId)
+      ? { recurring_event_id: asString(raw.recurringEventId) }
+      : {}),
   };
 }
 

@@ -39,6 +39,8 @@ type GogCapture = (args: string[]) => Promise<string>;
 export type GogAdminBotExecutorOptions = {
   env?: NodeJS.ProcessEnv;
   run?: GogRun;
+  /** Reads, for the actions that must look at the live state before they write. */
+  capture?: GogCapture;
 };
 
 export type GogSheetReadOptions = {
@@ -305,8 +307,13 @@ export function createGogAdminBotExecutor(
   options: GogAdminBotExecutorOptions = {},
 ): AdminBotActionExecutor {
   const run = options.run ?? createGogRunner(options.env);
+  const capture = options.capture ?? createGogCapture(options.env);
   return {
     async execute(proposal) {
+      if (proposal.type === "calendar.remove_attendees") {
+        await removeCalendarAttendees(proposal, run, capture);
+        return { handled: true };
+      }
       if (
         proposal.type === "logistics.send_signed_document" ||
         // Same shape: bytes rather than paths, because the forms exist only as base64 on the
@@ -435,8 +442,6 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarUpdateArgs(proposal);
     case "calendar.add_attendees":
       return buildCalendarAddAttendeesArgs(proposal);
-    case "calendar.remove_attendees":
-      return buildCalendarRemoveAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
     case "sheet.update_cells":
@@ -605,41 +610,108 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
 }
 
 /**
- * Rewrite an event's attendee list to exactly `remaining_attendees`.
+ * Take the people named in `removed_attendees` off each target event, and nobody else.
  *
- * `--attendees` replaces rather than adds, which is what makes removal possible at all — there is
- * no remove-attendee flag. It is also what makes this the most dangerous arm in this file: the
- * list is absolute, so anyone missing from it is uninvited, including people added to the event
- * between the read that produced the plan and the approval that executes it.
+ * There is no remove-attendee flag, so removal is a whole-list replace (`--attendees`). The list
+ * written is computed here, from the event as it stands at execution, rather than taken from the
+ * proposal: a proposal's `remaining_attendees` is a snapshot from whenever the sweep ran, and
+ * writing it back days later uninvites everyone added in between. Subtracting from the live list
+ * also makes the action idempotent -- an event none of the named people are still on is not
+ * written at all, so re-approving, retrying after a timeout, or approving a duplicate proposal
+ * does nothing instead of touching the event again.
  *
- * Two guards, both refusing rather than guessing. An empty list is rejected because "remove
- * everybody" is never what a membership sweep means and is exactly what a failed read looks like;
- * and the payload has to name the people being dropped, so the stored proposal records the intent
- * a human approved and not just the end state.
+ * `event_ids` rather than one id because a standing meeting edited "this and following" becomes
+ * several series, and a departure has to come off every one that still has Mondays ahead.
+ *
+ * Silent (`--send-updates none`). Google treats a whole-list replace as an edit for every guest,
+ * so with `all` every remaining member got a fresh copy of the Monday meeting invite each time
+ * somebody else was dropped. The people removed are not told either: a membership sweep tidying
+ * the guest list is not news to anyone. gog sends bare `{email}` objects, so the write does reset
+ * the remaining guests' RSVPs; it cannot be avoided through gog, and is why an event that needs
+ * no change is never written.
  */
-function buildCalendarRemoveAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
+async function removeCalendarAttendees(
+  proposal: AdminBotStoredProposal,
+  run: GogRun,
+  capture: GogCapture,
+): Promise<void> {
   const payload = requirePayload(proposal);
-  const remaining = recipients(payload.remaining_attendees);
-  if (!remaining) {
-    throw new Error(
-      "calendar.remove_attendees proposed_payload.remaining_attendees is required and must not be empty",
-    );
-  }
-  if (!recipients(payload.removed_attendees)) {
+  const removed = new Set(
+    (recipients(payload.removed_attendees) ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (removed.size === 0) {
     throw new Error("calendar.remove_attendees proposed_payload.removed_attendees is required");
   }
-  const args = rootArgs("calendar.update", optionalString(payload, "account"));
-  args.push(
-    "calendar",
-    "update",
-    optionalString(payload, "calendar_id") ?? "primary",
-    requireString(payload, "event_id"),
-    "--attendees",
-    remaining,
-    "--send-updates",
-    "all",
-  );
-  return args;
+  const calendarId = optionalString(payload, "calendar_id") ?? "primary";
+  const account = optionalString(payload, "account");
+  const listed = Array.isArray(payload.event_ids)
+    ? payload.event_ids.filter((id): id is string => typeof id === "string" && !!id.trim())
+    : [];
+  const eventIds = listed.length > 0 ? listed : [requireString(payload, "event_id")];
+
+  for (const eventId of eventIds) {
+    const readArgs = rootArgs("calendar.event", account);
+    readArgs.push("calendar", "event", calendarId, eventId);
+    const attendees = parseEventAttendees(await capture(readArgs), eventId);
+    const keep = attendees.filter((attendee) => !removed.has(attendee.email.toLowerCase()));
+    if (keep.length === attendees.length) {
+      continue;
+    }
+    // An empty result is refused: "remove everybody" is never what a membership sweep means, and
+    // it is exactly what a read that came back without its guest list looks like.
+    if (keep.length === 0) {
+      throw new Error(
+        `calendar.remove_attendees refuses to empty the guest list of event ${eventId}`,
+      );
+    }
+    const args = rootArgs("calendar.update", account);
+    args.push(
+      "calendar",
+      "update",
+      calendarId,
+      eventId,
+      "--attendees",
+      keep.map(attendeeSpec).join(","),
+      "--send-updates",
+      "none",
+    );
+    await run(args);
+  }
+}
+
+type EventAttendee = { email: string; optional: boolean; resource: boolean };
+
+function parseEventAttendees(stdout: string, eventId: string): EventAttendee[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new Error(`gog calendar event ${eventId} did not return JSON: ${stdout.slice(0, 200)}`);
+  }
+  const record = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  const event = (
+    record.event && typeof record.event === "object" ? record.event : record
+  ) as Record<string, unknown>;
+  if (!Array.isArray(event.attendees)) {
+    // An event with no guest list at all cannot be the meeting a removal was planned against.
+    throw new Error(`gog calendar event ${eventId} returned no attendee list`);
+  }
+  return event.attendees.flatMap((entry) => {
+    const attendee = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const email = typeof attendee.email === "string" ? attendee.email.trim() : "";
+    return email
+      ? [{ email, optional: attendee.optional === true, resource: attendee.resource === true }]
+      : [];
+  });
+}
+
+// gog's modifier syntax, so a replace does not quietly turn optional guests into required ones or a
+// booked room into a person.
+function attendeeSpec(attendee: EventAttendee): string {
+  return `${attendee.email}${attendee.optional ? ";optional" : ""}${attendee.resource ? ";resource" : ""}`;
 }
 
 function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
