@@ -47,6 +47,30 @@ describe("References-Validation integration", () => {
     expect(refs.join(" ")).not.toContain("Private");
   });
 
+  it.each([
+    ["[1]", "[2]"],
+    ["[1] ", "[2] "],
+    ["(1)", "(2)"],
+    ["(1) ", "(2) "],
+    ["1. ", "2. "],
+  ])("splits numbered references with markers %s and %s", async (first, second) => {
+    const refs = await extractPdfReferences(
+      referencePdf([
+        "References",
+        first + "Smith J. First synthetic study.",
+        "2024.",
+        second + "Doe J. Second synthetic study.",
+        "2023.",
+      ]),
+    );
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toContain("Smith J.");
+    expect(refs[0]).toContain("2024.");
+    expect(refs[0]).not.toContain("Doe J.");
+    expect(refs[1]).toContain("Doe J.");
+    expect(refs[1]).toContain("2023.");
+  });
+
   it("separates conference-style year-ending references and stops at lettered appendices", async () => {
     const refs = await extractPdfReferences(
       referencePdf([

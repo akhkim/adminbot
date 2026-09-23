@@ -188,7 +188,7 @@ export const splitIntoReferences = (sectionText: string): string[] => {
 
   // Detect if references are numbered
   // A year on its own line or a volume number is not a citation label.
-  const numberedPattern = /^\s*(?:\[\d{1,3}\]|\(\d{1,3}\)|\d{1,3}[.)])\s+\S/;
+  const numberedPattern = /^\s*(?:(?:\[\d{1,3}\]|\(\d{1,3}\))\s*|\d{1,3}[.)]\s+)\S/;
   const hasNumbering = lines.filter((l) => numberedPattern.test(l)).length >= 2;
 
   if (hasNumbering) {
