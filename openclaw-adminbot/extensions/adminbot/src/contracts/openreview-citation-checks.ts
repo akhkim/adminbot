@@ -37,6 +37,8 @@ export type OpenReviewCitationCheck = {
   error?: string;
   /** The `email.send` proposal raised for flagged citations, if any. */
   notification_proposal_id?: string;
+  /** Which extractor produced the row; absent means the first. See the watch's version constant. */
+  extractor_version?: number;
 };
 
 export type OpenReviewCitationCheckStore = {

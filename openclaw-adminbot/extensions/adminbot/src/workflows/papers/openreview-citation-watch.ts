@@ -28,6 +28,9 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
 // A transient failure (download, timeout, every database down) is retried by later sweeps, but
 // not forever: a PDF that keeps failing is an operator's problem, not an hourly retry loop's.
 export const MAX_CITATION_CHECK_ATTEMPTS = 3;
+// Bump when extraction improves: a version it could not read before is read again once. 1 is the
+// first release, which could not split review-mode or ACL-style bibliographies at all.
+export const CITATION_EXTRACTOR_VERSION = 2;
 const DEFAULT_CHECK_TIMEOUT_MS = 60 * 60_000;
 // More unchecked references than this and the version is retried rather than reported.
 const MAX_UNCHECKED_SHARE = 0.2;
@@ -131,7 +134,9 @@ export class OpenReviewCitationWatch {
   private needsCheck(submission: OpenReviewSubmission): boolean {
     const existing = this.deps.store.getOpenReviewCitationCheck(submission.id, submission.pdf_path);
     return (
-      !existing || (existing.status === "failed" && existing.attempts < MAX_CITATION_CHECK_ATTEMPTS)
+      !existing ||
+      (existing.status === "failed" && existing.attempts < MAX_CITATION_CHECK_ATTEMPTS) ||
+      isStaleUnreadable(existing)
     );
   }
 
@@ -166,8 +171,9 @@ export class OpenReviewCitationWatch {
       pdf_path: submission.pdf_path,
       title: submission.title,
       venue_id: submission.venue_id,
-      attempts: (prior?.attempts ?? 0) + 1,
+      attempts: prior && isStaleUnreadable(prior) ? 1 : (prior?.attempts ?? 0) + 1,
       checked_at: this.now().toISOString(),
+      extractor_version: CITATION_EXTRACTOR_VERSION,
     };
     let bytes: Uint8Array;
     try {
@@ -186,7 +192,10 @@ export class OpenReviewCitationWatch {
     // per distinct PDF, and no second email about findings already raised.
     const identical = store
       .listOpenReviewCitationChecks(submission.id)
-      .find((check) => check.pdf_sha256 === pdfSha256 && check.status !== "failed");
+      .find(
+        (check) =>
+          check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isStaleUnreadable(check),
+      );
     if (identical) {
       summary.reused++;
       store.saveOpenReviewCitationCheck({
@@ -331,6 +340,12 @@ export class OpenReviewCitationWatch {
     });
     return result.ok ? result.payload.id : undefined;
   }
+}
+
+function isStaleUnreadable(check: OpenReviewCitationCheck) {
+  return (
+    check.status === "unreadable" && (check.extractor_version ?? 1) < CITATION_EXTRACTOR_VERSION
+  );
 }
 
 function versionKey(submission: OpenReviewSubmission) {
