@@ -55,7 +55,9 @@ except json.JSONDecodeError:
     print(f"citation checks: unreadable response: {sys.argv[1][:300]}", file=sys.stderr)
     raise SystemExit(1)
 
-if result.get("started"):
+if result.get("paused_until"):
+    print(f"citation checks: databases backing off until {result['paused_until']}; not started")
+elif result.get("started"):
     print(
         f"citation checks: sweep started, {result.get('pending', 0)} of "
         f"{result.get('submissions', 0)} submission(s) need a check"

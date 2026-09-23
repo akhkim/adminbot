@@ -11,6 +11,7 @@ import {
 import { createOpenReviewSubmissionReader } from "../connectors/openreview-submissions.js";
 import {
   createPdfReferenceChecker,
+  requiredDatabasesPausedUntil,
   type PdfReferenceChecker,
 } from "../connectors/reference-check.js";
 import {
@@ -5775,16 +5776,21 @@ function createOpenReviewCitationWatch(
     (process.env.ADMINBOT_CITATION_CHECK_NOTIFY?.trim() ||
       process.env.ADMINBOT_CONTACT_EMAILS?.split(",")[0]?.trim() ||
       undefined);
+  // One back-off state for the process: every check the sweep runs honors the same 429s.
+  const cooldowns = new Map<string, number>();
   return new OpenReviewCitationWatch({
     store,
     service,
     reader,
+    pausedUntil: () => requiredDatabasesPausedUntil(cooldowns),
+    pauseBetweenMs: options.citationWatchChecker ? 0 : 60_000,
     check:
       options.citationWatchChecker ??
       createPdfReferenceChecker({
         maxReferences: 300,
         requireAllDatabases: true,
         allowOversized: true,
+        cooldowns,
         ...(process.env.OPENALEX_API_KEY?.trim()
           ? { openAlexApiKey: process.env.OPENALEX_API_KEY.trim() }
           : {}),

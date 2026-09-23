@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { lookupContext, referenceFetch } from "./reference-check.http.js";
-import { createPdfReferenceChecker, extractPdfReferences } from "./reference-check.js";
+import { cooldownFor, lookupContext, referenceFetch } from "./reference-check.http.js";
+import {
+  createPdfReferenceChecker,
+  extractPdfReferences,
+  NO_TEXT_LAYER,
+  requiredDatabasesPausedUntil,
+} from "./reference-check.js";
 import { referencePdf, referencePdfPages } from "./reference-check.test-helpers.js";
 
 const citation =
@@ -204,6 +209,51 @@ describe("References-Validation integration", () => {
         String(url).includes("Testing%20synthetic%20reference%20matching%20Journal"),
       ),
     ).toBe(false);
+  });
+
+  it("backs off a host that answers 429 or refuses connections, sharing the state across checks", async () => {
+    const cooldowns = new Map<string, number>();
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("dblp.org")) {
+        throw new TypeError("fetch failed");
+      }
+      if (url.includes("api.openalex.org")) {
+        return new Response("slow down", { status: 429, headers: { "retry-after": "120" } });
+      }
+      return emptyDatabase(input);
+    });
+    const check = createPdfReferenceChecker({
+      extract: async () => ["Doe, J. (2024). An entirely invented synthetic research title."],
+      cooldowns,
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    const before = Date.now();
+    await check(new Uint8Array(), signal());
+    expect(cooldowns.get("api.openalex.org")! - before).toBeGreaterThanOrEqual(119_000);
+    expect(cooldowns.get("dblp.org")! - before).toBeGreaterThanOrEqual(14 * 60_000);
+    expect(requiredDatabasesPausedUntil(cooldowns)).toBe(cooldowns.get("dblp.org"));
+    const hostsCalled = (from: number) =>
+      new Set(fetcher.mock.calls.slice(from).map(([url]) => new URL(String(url)).hostname));
+    const calls = fetcher.mock.calls.length;
+    await check(new Uint8Array(), signal());
+    // Neither backed-off host is asked again; the others still are.
+    expect(hostsCalled(calls).has("dblp.org")).toBe(false);
+    expect(hostsCalled(calls).has("api.openalex.org")).toBe(false);
+    expect(hostsCalled(calls).has("api.crossref.org")).toBe(true);
+  });
+
+  it("bounds Retry-After and reads HTTP dates", () => {
+    const now = Date.parse("2026-09-23T12:00:00Z");
+    expect(cooldownFor(null, now)).toBe(15 * 60_000);
+    expect(cooldownFor("5", now)).toBe(60_000);
+    expect(cooldownFor("999999", now)).toBe(6 * 60 * 60_000);
+    expect(cooldownFor("Wed, 23 Sep 2026 12:30:00 GMT", now)).toBe(30 * 60_000);
+  });
+
+  it("says a text-less PDF is a placeholder or scan, not a missing bibliography", async () => {
+    await expect(extractPdfReferences(referencePdf([" "]))).rejects.toThrow(NO_TEXT_LAYER);
   });
 
   it("sends the OpenAlex key only to OpenAlex", async () => {
