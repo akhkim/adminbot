@@ -11757,7 +11757,34 @@ export class AdminBotService {
     }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [...roster.skipped];
 
+    // The roster is rebuilt from the request log, not from who is in the channel, so without these
+    // two checks every run re-invited everybody with an open request and re-proposed every removal
+    // -- once a weekday that was clutter, hourly it would flood Pending Actions with copies.
+    const history = (type: "slack.invite_to_channel" | "slack.remove_from_channel") =>
+      this.store.listProposalsByType(type).filter((proposal) => {
+        const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+        return payload.channel === channel;
+      });
+    const userOf = (proposal: AdminBotStoredProposal) =>
+      String(((proposal.proposed_payload ?? {}) as Record<string, unknown>).user_id ?? "");
+    const invites = history("slack.invite_to_channel");
+    const removals = history("slack.remove_from_channel");
+    // In the channel as far as AdminBot knows: its last executed move for them was an invite.
+    const alreadyIn = (userId: string) => {
+      const moves = [...invites, ...removals]
+        .filter((proposal) => proposal.status === "executed" && userOf(proposal) === userId)
+        .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at));
+      return moves.at(-1)?.type === "slack.invite_to_channel";
+    };
+    // One removal per settlement, whatever became of it: pending waits for an admin, executed is
+    // done, and rejected is an admin's answer that should not be asked again every hour.
+    const removalFiledSince = (userId: string, settledAt: string) =>
+      removals.some((proposal) => userOf(proposal) === userId && proposal.created_at >= settledAt);
+
     for (const person of roster.add) {
+      if (alreadyIn(person.slack_user_id)) {
+        continue;
+      }
       const proposed = this.createProposal({
         type: "slack.invite_to_channel",
         summary: `Add ${person.member_name} to #${channel} (letter request open)`,
@@ -11783,6 +11810,9 @@ export class AdminBotService {
     }
 
     for (const person of roster.remove) {
+      if (removalFiledSince(person.slack_user_id, person.settled_at)) {
+        continue;
+      }
       // Proposed only. Nothing here executes it -- see the header and the policy table.
       const proposed = this.createProposal({
         type: "slack.remove_from_channel",
