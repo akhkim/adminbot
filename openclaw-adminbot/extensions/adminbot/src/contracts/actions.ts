@@ -2429,6 +2429,9 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // One PDF sent from the Reference Checker page to references-validation or GPTZero: checker,
+    // hash, admin and outcome only. The PDF and its findings are deliberately never stored.
+    | "reference_check.pdf_checked"
     // The three-day letter warning to the head professor's inbox. One row per pass that actually
     // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
     // she hear about this letter, and when" has an answer that does not depend on her mailbox.
