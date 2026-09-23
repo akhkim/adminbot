@@ -80,7 +80,8 @@ export const searchOpenAlex = async (
   expectedYear?: string,
 ): Promise<OpenAlexResult | null> => {
   try {
-    const encodedTitle = encodeURIComponent(title);
+    // A comma separates OpenAlex filters, so one inside the title made the request a 400.
+    const encodedTitle = encodeURIComponent(title.replace(/,/g, " "));
 
     // Use mailto query parameter for polite pool instead of User-Agent header which is forbidden in browsers
     const response = await fetch(

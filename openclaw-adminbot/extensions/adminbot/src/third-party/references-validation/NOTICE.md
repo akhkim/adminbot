@@ -17,6 +17,10 @@ Local adaptations:
   instead of browser DOMParser. No manuscript/citation logging.
 - Appendix headings with suffixes (for example, “Appendix A: Details” and lettered “A APPENDIX”) end the reference section. Unnumbered year-ending citations
   are split, year-only lines are not mistaken for reference numbers, review headers removed, and oversized entries retained for fail-closed validation.
+- A lone capital initial followed by a period (“Aidan N. Gomez”) no longer ends a segment in the
+  plain-text parser, and an author list ending “…, B, and C” is recognized as authors; without
+  both, the author list was taken for the title. Commas are removed from
+  OpenAlex title filters, where they separate filters and made the request fail.
 - PDF/DOCX browser loading is omitted; AdminBot uses its existing clawpdf version on the server.
 - Predatory-journal classification and the separately sourced publisher list are omitted.
   The checker reports matching metadata and retraction information, not publisher judgments.

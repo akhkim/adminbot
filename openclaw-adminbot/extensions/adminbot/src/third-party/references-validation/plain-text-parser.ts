@@ -204,8 +204,10 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
     .replace(/\(?\b(19|20)\d{2}\b\)?/g, "")
     .trim();
 
-  // Split on period followed by space (sentence boundaries)
+  // Split on period followed by space (sentence boundaries). A lone capital initial ("Aidan N.
+  // Gomez") is not a boundary: splitting there made the author list the title.
   const segments = cleaned
+    .replace(/(^|[\s,.])([A-Z])\.(?=\s)/g, "$1$2")
     .split(/[.]\s+/)
     .map((s) => s.trim().replace(/\.$/, "").trim())
     .filter((s) => s.length > 5);
@@ -215,7 +217,20 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
     // - Authors have: "and" connecting names, comma-separated capitalized names
     // - Journal/venue has: known keywords (journal, proceedings, advances, etc.)
     // - Title: typically the segment with most lowercase content words
-    const authorPattern = /\b(and)\b.*(?:,|\band\b)/i;
+    const andPattern = /\b(and)\b.*(?:,|\band\b)/i;
+    // Upstream only recognized "A and B, C"; a list ending "…, B, and C" scored as the title.
+    const namePart = /^(?:[A-Z][\p{L}'’-]*\.?\s*){1,4}$/u;
+    const authorPattern = {
+      test: (seg: string) => {
+        const parts = seg
+          .split(/,|\band\b/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        return (
+          andPattern.test(seg) || (parts.length >= 2 && parts.every((part) => namePart.test(part)))
+        );
+      },
+    };
     const venueKeywords =
       /\b(journal|proceedings|conference|transactions|advances|letters|review|annals|bulletin|workshop|symposium|arxiv|ieee|acm|springer|nature|science)\b/i;
 
