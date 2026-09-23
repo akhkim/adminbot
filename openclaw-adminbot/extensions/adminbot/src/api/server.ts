@@ -4007,23 +4007,41 @@ async function handleAuthenticatedRoute(
       return;
     }
 
-    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`); any of them
-    // carries the series' attendee list, so the first match is enough.
-    const event = events.find((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
-    if (!event) {
+    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead
+    // is kept, not just the first: once somebody edits the meeting "this and following" in Google,
+    // the later Mondays belong to a new `<series>_R<instant>` series and the configured id names a
+    // series that has already ended. Writing to that id is what used to happen -- it re-sent the
+    // dead series to everyone on it and left the live meeting untouched, so the same removals were
+    // proposed again the next morning.
+    const occurrences = events.filter(
+      (candidate) => groupMeetingSeriesId(candidate.id) === seriesId,
+    );
+    if (occurrences.length === 0) {
       sendJson(res, 404, {
         error: { message: `no event ${seriesId} on calendar ${calendarId} in the read window` },
       });
       return;
     }
+    const targets = [
+      ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
+    ];
+    // The union, so somebody who is only on a later split still gets reconciled.
+    const attendees = [
+      ...new Map(
+        occurrences
+          .flatMap((occurrence) => occurrence.attendees ?? [])
+          .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
+      ).values(),
+    ];
 
     sendServiceResult(
       res,
       service.planInviteMembership({
         surface,
         eventId: seriesId,
+        eventIds: targets,
         calendarId,
-        attendees: event.attendees ?? [],
+        attendees,
         actor: principalActor(principal),
       }),
     );

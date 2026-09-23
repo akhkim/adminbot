@@ -116,6 +116,42 @@ describe("POST /meetings/invite-membership/run", () => {
     expect(body.proposal_id).toBeTruthy();
   });
 
+  // Once the meeting is edited "this and following", the configured id names a series that has
+  // ended. The removal has to land on the series that still have Mondays ahead.
+  it("targets every live series a split meeting lives on", async () => {
+    const baseUrl = await startService(async () => [
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20260928T133000Z`,
+        recurring_event_id: `${SERIES}_R20260928T133000`,
+      },
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20261005T133000Z`,
+        recurring_event_id: `${SERIES}_R20261005T133000`,
+      },
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20261012T133000Z`,
+        recurring_event_id: `${SERIES}_R20261005T133000`,
+      },
+    ]);
+
+    const body = (await (await post(baseUrl)).json()) as { proposal_id: string };
+    const pending = await fetch(`${baseUrl}/proposals/pending`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    const { proposals } = (await pending.json()) as {
+      proposals: Array<{ id: string; proposed_payload: Record<string, unknown> }>;
+    };
+    const proposal = proposals.find((entry) => entry.id === body.proposal_id);
+    expect(proposal?.proposed_payload.event_ids).toEqual([
+      `${SERIES}_R20260928T133000`,
+      `${SERIES}_R20261005T133000`,
+    ]);
+    expect(proposal?.proposed_payload.event_id).not.toBe(SERIES);
+  });
+
   it("drops the major coauthor when the surface is the lab calendar", async () => {
     const baseUrl = await startService(async () => [
       occurrence(["full@cs.toronto.edu", "major@other.test"]),
