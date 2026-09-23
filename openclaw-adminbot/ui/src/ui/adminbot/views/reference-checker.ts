@@ -259,7 +259,9 @@ export class ReferenceChecker extends LitElement {
                 this.total = event.total;
                 this.result = {
                   findings: [
-                    ...(this.result?.findings ?? []),
+                    // Widened on purpose: `result` was set to null above, and TypeScript keeps that
+                    // narrowing through the loop even though each progress event reassigns it.
+                    ...((this.result as ScanResult | null)?.findings ?? []),
                     ...(event.finding ? [event.finding] : []),
                   ],
                 };

@@ -95,7 +95,11 @@ describe("ad hoc PDF checks", () => {
   const endpoint = "/reference-check/pdf?consent=query-reference-databases";
   const pdf = "%PDF-synthetic-upload";
 
-  it("checks the same PDF twice without persisting scans, proposals, or scan audits", async () => {
+  const pdfHash = createHash("sha256").update(pdf).digest("hex");
+
+  // The PDF, the proposal and the findings stay request-scoped. What reaches the ledger is only
+  // the fact of the check: one row per upload, naming the checker, the hash and the outcome.
+  it("checks the same PDF twice, auditing each check but persisting no PDF or proposal", async () => {
     const { app, url, scanPdf } = await setup();
     const headers = session(app);
     const saveProposal = vi.spyOn(app.store, "saveProposal");
@@ -110,11 +114,20 @@ describe("ad hoc PDF checks", () => {
     expect(Buffer.from(scanPdf.mock.calls[0]?.[0] ?? []).toString()).toBe(pdf);
     expect(saveProposal).not.toHaveBeenCalled();
     expect(
-      audit.mock.calls.filter(([event]) => /proposal|execution|reference/u.test(event.type)),
+      audit.mock.calls.filter(([event]) => /proposal|execution/u.test(event.type)),
     ).toHaveLength(0);
+    const checks = audit.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "reference_check.pdf_checked");
+    expect(checks).toHaveLength(2);
+    expect(checks[0]).toMatchObject({
+      actor: "upload-admin",
+      details: { checker: "references-validation", pdf_sha256: pdfHash, outcome: "completed" },
+    });
+    expect(JSON.stringify(checks)).not.toContain("Synthetic citation");
   });
 
-  it("routes repeated GPTZero uploads only to GPTZero without persisting proposals or audits", async () => {
+  it("routes repeated GPTZero uploads only to GPTZero, auditing each upload but no proposal", async () => {
     const { app, url, scanPdf, scanGptZero } = await setup();
     const headers = session(app);
     const saveProposal = vi.spyOn(app.store, "saveProposal");
@@ -135,13 +148,23 @@ describe("ad hoc PDF checks", () => {
     expect(scanPdf).not.toHaveBeenCalled();
     expect(saveProposal).not.toHaveBeenCalled();
     expect(
-      audit.mock.calls.filter(([event]) => /proposal|execution|reference/u.test(event.type)),
+      audit.mock.calls.filter(([event]) => /proposal|execution/u.test(event.type)),
     ).toHaveLength(0);
     scanGptZero.mockRejectedValueOnce(new GptZeroScanError(403));
     const failed = await fetch(target, { method: "POST", headers, body: pdf });
     expect(failed.status).toBe(502);
     expect((await failed.json()).error.message).toContain("HTTP 403");
     expect(scanPdf).not.toHaveBeenCalled();
+    // A failed upload still left the building, so it is audited too.
+    const checks = audit.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "reference_check.pdf_checked");
+    expect(checks.map((event) => event.details?.outcome)).toEqual([
+      "completed",
+      "completed",
+      "failed",
+    ]);
+    expect(checks.every((event) => event.details?.checker === "gptzero")).toBe(true);
   });
 
   it("rejects unknown checkers, mismatched consent and missing GPTZero configuration", async () => {

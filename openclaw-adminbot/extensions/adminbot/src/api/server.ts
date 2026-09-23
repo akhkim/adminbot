@@ -733,6 +733,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const checkUploadedPdf = createPdfReferenceCheckHandler(
     options.pdfReferenceChecker,
     referenceDependencies.scanPdf,
+    ({ actor, ...details }) =>
+      store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "reference_check.pdf_checked",
+        actor,
+        details,
+      }),
   );
   const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and

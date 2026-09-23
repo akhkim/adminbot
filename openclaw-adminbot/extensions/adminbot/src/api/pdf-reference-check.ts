@@ -16,10 +16,26 @@ import { AdminBotMemoryStore } from "../persistence/memory.js";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-/** Request-scoped approval/execution: no PDF, proposal, audit, or result enters SQLite. */
+/** What the durable audit ledger keeps of one check: who sent what where, never the PDF. */
+export type PdfReferenceCheckAudit = {
+  actor: string;
+  checker: "references-validation" | "gptzero";
+  pdf_sha256: string;
+  outcome: "completed" | "failed";
+};
+
+/**
+ * Request-scoped approval/execution: no PDF, proposal or result enters SQLite.
+ *
+ * One thing does. The approval and execution run in a throwaway store so a manuscript never
+ * persists, but that also kept the fact of the check out of the ledger -- including a paid upload
+ * of a possibly unpublished paper to GPTZero. `audit` records it: the checker, the PDF's hash, the
+ * admin and the outcome, once the bytes have actually left for the provider.
+ */
 export function createPdfReferenceCheckHandler(
   scanPdf: PdfReferenceChecker = createPdfReferenceChecker(),
   scanGptZero?: ReferenceScanDependencies["scanPdf"],
+  audit?: (event: PdfReferenceCheckAudit) => void,
 ) {
   let busy = false;
   return async (req: IncomingMessage, res: ServerResponse, adminId: string) => {
@@ -87,6 +103,8 @@ export function createPdfReferenceCheckHandler(
     }
     busy = true;
     let scanFailure: ReferenceCheckError | GptZeroScanError | undefined;
+    // Set when the executor hands the PDF to the provider; only then is there something to audit.
+    let sent: { pdf_sha256: string; completed: boolean } | undefined;
     const controller = new AbortController();
     const abort = () => controller.abort();
     res.on("close", abort);
@@ -126,6 +144,7 @@ export function createPdfReferenceCheckHandler(
             ) {
               return { handled: false };
             }
+            sent = { pdf_sha256: hash, completed: false };
             try {
               result =
                 checker === "gptzero"
@@ -173,6 +192,9 @@ export function createPdfReferenceCheckHandler(
       if (!executed.ok || !result) {
         throw new Error("Could not execute scan");
       }
+      if (sent) {
+        sent.completed = true;
+      }
       if (stream) {
         sendEvent({ type: "complete", result: { ...result, checker } });
         res.end();
@@ -198,6 +220,18 @@ export function createPdfReferenceCheckHandler(
         );
       }
     } finally {
+      if (sent) {
+        try {
+          audit?.({
+            actor: adminId,
+            checker,
+            pdf_sha256: sent.pdf_sha256,
+            outcome: sent.completed ? "completed" : "failed",
+          });
+        } catch {
+          // The check itself already happened; a ledger hiccup must not turn it into an error.
+        }
+      }
       clearTimeout(timeout);
       clearTimeout(deadline);
       res.off("close", abort);
