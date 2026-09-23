@@ -110,7 +110,7 @@ references before a desk rejection.
   Actions. Without a recipient, results are only stored.
 - **Scheduling.** The `adminbot-citation-checks` cron job (`25,55 * * * *`) calls
   `POST /openreview/citation-checks/run`. That call lists the submissions, which surfaces a bad
-  login as HTTP 502, then starts a background sweep and returns 202. A running sweep is never
+  login as an HTTP 5xx error, then starts a background sweep and returns 202. A running sweep is never
   restarted. The sweep re-reads the submission list after every paper and always takes the most
   recently modified unchecked version next, so a new upload is checked ahead of any first-run
   backlog. The first run backfills the account's whole history, which takes hours of rate-limited

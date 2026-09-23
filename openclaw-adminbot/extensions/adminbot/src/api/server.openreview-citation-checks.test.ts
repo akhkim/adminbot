@@ -183,13 +183,14 @@ describe("OpenReview citation check routes", () => {
     expect((await as(admin, "/openreview/citation-checks")).status).toBe(200);
   });
 
-  it("reports an OpenReview login failure as 502", async () => {
+  it("reports an OpenReview login failure as a server error", async () => {
     const { call, reader } = await setup();
     vi.mocked(reader.listSubmissions).mockRejectedValueOnce(
       new Error("OpenReview rejected the login (403) — check OPENREVIEW_USERNAME/PASSWORD"),
     );
     const run = await call("/openreview/citation-checks/run", { method: "POST" });
-    expect(run.status).toBe(502);
+    // 502 in the service; sendJson sends it as 500 once #283's tunnel-safe mapping is present.
+    expect([500, 502]).toContain(run.status);
     expect((await run.json()).error.message).toContain("rejected the login");
   });
 });
