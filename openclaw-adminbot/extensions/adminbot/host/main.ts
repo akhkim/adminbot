@@ -847,7 +847,6 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
-    dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),

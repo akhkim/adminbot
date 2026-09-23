@@ -9,7 +9,7 @@
 //
 // What went with it: the manual form was the only path that previewed the exact words before
 // sending, and the only one that provisioned a Drive folder, minted a Slack Connect invite and
-// filed the DCS account request as part of the send. Onboarding from the roster composes the same
+// filed the DCS roster row as part of the send. Onboarding from the roster composes the same
 // templates but queues each mail as an `email.send` proposal for approval instead, and a template
 // whose copy references a link nobody has provisioned is skipped by name rather than half-sent.
 import { html } from "lit";

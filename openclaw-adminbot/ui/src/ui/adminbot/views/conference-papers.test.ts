@@ -3,7 +3,10 @@
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createEmptyLabPapersState,
   createEmptyVenuePapersState,
+  type AdminBotLabPaperHit,
+  type AdminBotLabPapersState,
   type AdminBotVenuePaperHit,
   type AdminBotVenuePapersState,
 } from "../controllers/admin.ts";
@@ -11,7 +14,9 @@ import {
   formatVenueLabel,
   renderConferencePapers,
   type ConferencePapersProps,
+  type ConferencePapersTab,
 } from "./conference-papers.ts";
+import type { LabPapersProps } from "./lab-papers.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -264,5 +269,175 @@ describe("renderConferencePapers", () => {
     expect(
       container.querySelector('[data-testid="conference-papers-error"]')?.textContent,
     ).toContain("not been indexed");
+  });
+});
+
+describe("the lab half of Find Interesting Papers", () => {
+  function labState(overrides: Partial<AdminBotLabPapersState> = {}): AdminBotLabPapersState {
+    return { ...createEmptyLabPapersState(), query: "causality", ...overrides };
+  }
+
+  function labHit(overrides: Partial<AdminBotLabPaperHit> = {}): AdminBotLabPaperHit {
+    const best = {
+      segment_id: "s1",
+      label: "Part 1.1.1 Evaluation hacking",
+      score: 0.44,
+      margin: 0.2,
+      band: "core",
+    };
+    return {
+      paper_id: "eval-awareness",
+      title: "Eval Awareness",
+      score: 0.44,
+      margin: 0.2,
+      band: "core",
+      segments: [best],
+      best_segment: best,
+      matched_terms: ["causality"],
+      evidence: "title_only",
+      ...overrides,
+    };
+  }
+
+  function drawLab(
+    lab: Partial<AdminBotLabPapersState> = {},
+    handlers: Partial<LabPapersProps> = {},
+    tab: ConferencePapersTab = "lab",
+  ) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const labProps: LabPapersProps = {
+      state: labState(lab),
+      onQueryChange: vi.fn(),
+      onSearch: vi.fn(),
+      onToggleSections: vi.fn(),
+      ...handlers,
+    };
+    const props: ConferencePapersProps = {
+      state: { ...createEmptyVenuePapersState(), sources: SOURCES },
+      onVenueChange: vi.fn(),
+      onInterestsChange: vi.fn(),
+      onSearch: vi.fn(),
+      onToggleAbstract: vi.fn(),
+      lab: labProps,
+      tab,
+      onTabChange: vi.fn(),
+    };
+    render(renderConferencePapers(props), container);
+    return { container, props, labProps };
+  }
+
+  it("shows no tab bar for a visitor, who has no lab half at all", () => {
+    // The route behind it returns the lab's own paper titles and is gated server-side, so a tab
+    // that could only 401 is a worse answer than no tab.
+    const { container } = draw();
+    expect(container.querySelector('[data-testid="conference-papers-tabs"]')).toBeNull();
+    expect(container.querySelector('[data-testid="conference-papers-venue"]')).not.toBeNull();
+  });
+
+  it("offers both halves to a member, and opens on the conference one", () => {
+    const { container } = drawLab({}, {}, "conference");
+    expect(container.querySelector('[data-testid="conference-papers-tabs"]')).not.toBeNull();
+    // The conference search is still what the page is for; ours is the second answer.
+    expect(container.querySelector('[data-testid="conference-papers-venue"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="lab-papers-query"]')).toBeNull();
+  });
+
+  it("swaps the panel when the lab tab is selected", () => {
+    const { container } = drawLab();
+    expect(container.querySelector('[data-testid="lab-papers-query"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="conference-papers-venue"]')).toBeNull();
+  });
+
+  it("asks the host to change tab rather than deciding itself", () => {
+    const { container, props } = drawLab({}, {}, "conference");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="conference-papers-tab-lab"]')!
+      .click();
+    expect(props.onTabChange).toHaveBeenCalledWith("lab");
+  });
+
+  it("will not rank an empty query", () => {
+    const { container } = drawLab({ query: "   " });
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="lab-papers-search"]')!.disabled,
+    ).toBe(true);
+  });
+
+  it("names the section a paper answers and how thin the record was", () => {
+    const { container } = drawLab({
+      result: {
+        query_kind: "proposal",
+        segment_count: 16,
+        scored: 94,
+        matches: [labHit()],
+        off_topic: [],
+        nothing_relevant: false,
+        uncovered_segments: [],
+      },
+    });
+    const row = container.querySelector('[data-testid="lab-paper-eval-awareness"]');
+    expect(text(row)).toContain("Eval Awareness");
+    expect(text(row)).toContain("Part 1.1.1 Evaluation hacking");
+    // The caveat that matters: a core band read off eight words is not a fact.
+    expect(text(row)).toContain("from the title alone");
+    expect(text(row)).toContain("Core");
+  });
+
+  it("lists the sections nothing covers, which is the half a paper list cannot answer", () => {
+    const { container } = drawLab({
+      result: {
+        query_kind: "proposal",
+        segment_count: 16,
+        scored: 94,
+        matches: [labHit()],
+        off_topic: [],
+        nothing_relevant: false,
+        uncovered_segments: [{ id: "p1.2.4", label: "Part 1.2.4 Regulation", text: "…" }],
+      },
+    });
+    const gaps = container.querySelector('[data-testid="lab-papers-gaps"]');
+    expect(text(gaps)).toContain("1 sections nothing covers");
+    expect(text(gaps)).toContain("Part 1.2.4 Regulation");
+  });
+
+  it("does not offer a gap list for a plain keyword search", () => {
+    // "Which sections are uncovered" is meaningless when the query had no sections.
+    const { container } = drawLab({
+      result: {
+        query_kind: "keywords",
+        segment_count: 1,
+        scored: 94,
+        matches: [labHit()],
+        off_topic: [],
+        nothing_relevant: false,
+        uncovered_segments: [{ id: "q", label: "causality", text: "causality" }],
+      },
+    });
+    expect(container.querySelector('[data-testid="lab-papers-gaps"]')).toBeNull();
+  });
+
+  it("says an empty result is a fact about the lab, not a failed search", () => {
+    const { container } = drawLab({
+      result: {
+        query_kind: "keywords",
+        segment_count: 1,
+        scored: 94,
+        matches: [],
+        off_topic: [],
+        nothing_relevant: true,
+        uncovered_segments: [],
+      },
+    });
+    expect(text(container.querySelector('[data-testid="lab-papers-none"]'))).toContain(
+      "Nothing of ours is about this",
+    );
+  });
+
+  it("carries the service's own error sentence", () => {
+    const { container } = drawLab({ error: "could not reach the embedding model" });
+    expect(text(container.querySelector('[data-testid="lab-papers-error"]'))).toContain(
+      "could not reach the embedding model",
+    );
   });
 });

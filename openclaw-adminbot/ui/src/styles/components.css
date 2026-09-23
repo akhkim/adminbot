@@ -1362,7 +1362,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-muted);
+  background: var(--bg-muted);
 }
 
 .workshop-nudges__detail {
@@ -1438,7 +1438,7 @@
 }
 
 .workshop-nudges .chip[data-status="allowed"] {
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
 }
 
 .workshop-nudges .chip[data-status="prohibited"] {
@@ -1497,7 +1497,7 @@
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-muted);
+  background: var(--bg-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
@@ -1562,6 +1562,43 @@
   color: var(--text-strong);
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
+}
+
+/* Bulk-clear bar above the pending-action list. Sits outside .adminbot-action-list so the
+   list keeps its own top margin and the bar reads as a header for it rather than a first row. */
+.adminbot-action-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+}
+
+.adminbot-action-bulk__all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+/* The list's own top margin would double the gap under the bulk bar. */
+.adminbot-action-bulk + .adminbot-action-list {
+  margin-top: var(--space-2);
+}
+
+.adminbot-action__select {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .adminbot-action-list,
@@ -4038,7 +4075,7 @@
 }
 
 .cron-error {
-  color: var(--danger-color);
+  color: var(--danger);
 }
 
 .cron-required-legend {
@@ -4048,7 +4085,7 @@
 }
 
 .cron-required-marker {
-  color: var(--danger-color);
+  color: var(--danger);
   font-weight: 700;
   margin-left: 3px;
 }
@@ -4303,6 +4340,30 @@
   min-height: 3.2em;
   resize: vertical;
   font-size: var(--control-ui-text-md);
+}
+
+/*
+ * The two halves of Find Interesting Papers. Sits above both panels rather than inside either, so
+ * switching tabs does not move the control that switched them.
+ */
+.conference-papers__tabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+/* The uncovered sections, and one paper's other matched sections. Both are read, not scanned. */
+.lab-papers__gaps,
+.lab-papers__sections {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.lab-papers__sections {
+  font-size: 0.9em;
 }
 
 .conference-papers__actions {
@@ -9695,12 +9756,12 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-funder__option small {
   display: block;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-reimbursement-funder__locked {
   margin: var(--space-2) 0 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
@@ -9725,7 +9786,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-check__funder {
   margin-left: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.8em;
   font-weight: 400;
 }
@@ -9753,18 +9814,18 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-reimbursement-check__list--warn li {
-  border-left-color: color-mix(in srgb, var(--warning, #a67c00) 45%, transparent);
+  border-left-color: color-mix(in srgb, var(--warn, #a67c00) 45%, transparent);
 }
 
 /* The rule id, because the finance office quotes them back. */
 .adminbot-reimbursement-check__id {
   font-family: var(--mono);
   font-size: 0.85em;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-reimbursement-check__list small {
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-reimbursement-check__unrecoverable {
@@ -9774,7 +9835,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-check__amounts {
   margin: var(--space-2) 0 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
 }
 
@@ -9791,7 +9852,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-submit small {
   flex: 1 1 18rem;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-reimbursement-sent {
@@ -10422,7 +10483,7 @@ details[open] > .ov-expandable-toggle::after {
   align-self: flex-start;
   min-width: 1.4em;
   padding: 1px 5px;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -10572,7 +10633,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-calendar__card-description {
   display: grid;
   gap: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
@@ -10667,7 +10728,7 @@ details[open] > .ov-expandable-toggle::after {
    does. Not a warning colour: this is the normal path, not a mistake. */
 .adminbot-calendar__confirm {
   margin-right: auto;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
 }
 
@@ -10711,7 +10772,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-calendar__event-when,
 .adminbot-calendar__match-email {
-  color: var(--text-muted);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -10759,7 +10820,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-allocation-table th {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -10815,7 +10876,7 @@ details[open] > .ov-expandable-toggle::after {
   gap: var(--space-1, 4px);
   cursor: pointer;
   list-style: none;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-time-allocation-table__note summary::-webkit-details-marker {
@@ -11057,11 +11118,11 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-chart__off {
-  fill: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  fill: color-mix(in srgb, var(--muted) 18%, transparent);
 }
 
 .adminbot-time-chart__legend-off {
-  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
 }
 
 .adminbot-time-allocation-table__task--off {
@@ -11072,7 +11133,7 @@ details[open] > .ov-expandable-toggle::after {
   display: inline-flex;
   align-items: center;
   margin-right: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* The icon carries no intrinsic size, so without this the anchor laid out at zero and a row's
@@ -11263,7 +11324,7 @@ details[open] > .ov-expandable-toggle::after {
   li[data-own="false"]
   .adminbot-time-availability__deadline-label {
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-time-availability__deadline-list li[data-own="true"] {
@@ -11292,7 +11353,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__own-only,
 .adminbot-time-availability__empty-note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   /* Hints were the smallest thing on the page; on this view they carry real guidance, so they
      sit at the scoped --control-ui-text-sm (14px) rather than the caption size. */
   font-size: var(--control-ui-text-sm);
@@ -11343,23 +11404,21 @@ details[open] > .ov-expandable-toggle::after {
   resize: vertical;
 }
 
-/* The primary actions read as muted stone instead of the app-wide accent blue: on this dark page
-   a brighter fill reads as the action color without shouting, and it keeps the same neutral
-   family as the cards around it. Text stays light on it, so the button is elevated but not loud. */
+/* Neutral primary actions follow the same palette in light, dark and custom themes. */
 .adminbot-time-availability .btn.primary {
-  border-color: #45454d;
-  background: #2e2e34;
-  color: #e4e4e7;
+  border-color: var(--border-strong);
+  background: var(--secondary);
+  color: var(--text);
 }
 
 .adminbot-time-availability .btn.primary:hover {
-  background: #3a3a42;
-  border-color: #505059;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .adminbot-time-availability .btn.primary:active {
-  background: #26262b;
-  border-color: #45454d;
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
 }
 
 /* The conference button's plus icon sits in an inline span, so the SVG rides the text baseline
@@ -11374,7 +11433,7 @@ details[open] > .ov-expandable-toggle::after {
    format). Used by the member form and the onboarding panel, neither of which had a rule for it. */
 .adminbot-form__hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   line-height: 1.45;
 }

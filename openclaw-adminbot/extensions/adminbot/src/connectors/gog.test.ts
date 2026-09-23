@@ -8,6 +8,7 @@ import { renderEmailBodyHtml } from "./email-html.js";
 import {
   createGogAdminBotExecutor,
   createGogDriveProbe,
+  appendGogSheetRows,
   readGogSheetRows,
   readGogSheetTabs,
 } from "./gog.js";
@@ -224,6 +225,47 @@ describe("createGogAdminBotExecutor", () => {
         }),
       ),
     ).resolves.toEqual({ handled: false });
+  });
+});
+
+describe("appendGogSheetRows", () => {
+  it("appends as RAW and as inserted rows", async () => {
+    const run = vi.fn(async () => {});
+    await appendGogSheetRows("sheet-1", [["a", "b"]], { run, env: {} });
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.append",
+      "sheets",
+      "append",
+      "sheet-1",
+      "A:ZZ",
+      // Not USER_ENTERED: under it Sheets parses each string the way it parses typing, and a
+      // generated credential it decided was a formula or a number is not the credential any more.
+      "--input",
+      "RAW",
+      // Not OVERWRITE: that writes into whatever a human parked below the last populated row.
+      "--insert",
+      "INSERT_ROWS",
+      "--values-json",
+      JSON.stringify([["a", "b"]]),
+    ]);
+  });
+
+  it("refuses an empty row set rather than reporting a no-op as an append", async () => {
+    const run = vi.fn(async () => {});
+    await expect(appendGogSheetRows("sheet-1", [], { run, env: {} })).rejects.toThrow(
+      /empty row set/u,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("requires a spreadsheet id", async () => {
+    const run = async () => {};
+    await expect(appendGogSheetRows("  ", [["a"]], { run, env: {} })).rejects.toThrow(
+      /requires a spreadsheet id/u,
+    );
   });
 });
 

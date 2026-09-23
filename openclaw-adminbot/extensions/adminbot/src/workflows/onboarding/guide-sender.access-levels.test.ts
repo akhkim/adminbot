@@ -18,6 +18,7 @@ import {
   type AdminBotExternalCollaboratorSubgroup,
 } from "../../contracts/actions.js";
 import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
+import { createDcsRosterSheetRecorder, DCS_ROSTER_SHEET_COLUMNS } from "./dcs-roster-sheet.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
   ADMINBOT_ACTIVE_CHANNELS_ENV,
@@ -51,9 +52,8 @@ type Recorded = {
   mail: Array<{ to: string; subject: string }>;
   drive: string[];
   connect: Array<{ email: string; channelId: string }>;
-  dcs: string[];
-  /** What the DCS runner was asked to file, which is the half that reached the university. */
-  dcsNames: Array<{ firstName: string; lastName: string }>;
+  /** Rows appended to the DCS roster sheet, which is the half that reaches the university. */
+  dcsRows: string[][];
 };
 
 /**
@@ -69,7 +69,7 @@ async function send(
   result: Awaited<ReturnType<ReturnType<typeof createAdminBotOnboardingSender>>>;
   recorded: Recorded;
 }> {
-  const recorded: Recorded = { mail: [], drive: [], connect: [], dcs: [], dcsNames: [] };
+  const recorded: Recorded = { mail: [], drive: [], connect: [], dcsRows: [] };
   const sender = createAdminBotOnboardingSender({
     // Built here, never inherited: `resolveActiveChannels` and the deployment tokens read the
     // environment, and a test that took the host's would pass or fail depending on whose machine
@@ -90,12 +90,19 @@ async function send(
       recorded.connect.push({ email, channelId });
       return { url: "https://join.slack.com/share/TEST" };
     },
-    // Returns void, like the real runner: the send reports `dcs_form.submitted` from whether this
-    // resolved or threw, not from anything it hands back.
-    submitDcsForm: async ({ firstName, lastName }) => {
-      recorded.dcs.push(templateId);
-      recorded.dcsNames.push({ firstName, lastName });
-    },
+    // The real recorder over a fake sheet, rather than a stub of it. What goes in the row is the
+    // one thing here that cannot be quietly wrong, and the rules that decide it -- the username
+    // candidates and the mononym refusal -- live inside the recorder, so a stub would assert
+    // against nothing. The sheet starts as a bare header row, so every candidate is free.
+    addDcsRosterRow: createDcsRosterSheetRecorder({
+      spreadsheetId: "sheet-1",
+      readRows: async () => [[...DCS_ROSTER_SHEET_COLUMNS]],
+      appendRows: async (_spreadsheetId, rows) => {
+        recorded.dcsRows.push(...rows);
+      },
+      generatePassword: () => "TEST-TEMP-PASSWORD",
+      now: () => new Date("2026-09-20T00:00:00Z"),
+    }),
     headProfessorWhatsapp: () => "+1 555 0100",
     // Always injected. See the file header: this is the only option with a real-world fallback.
     sendEmail: async ({ to, subject }) => {
@@ -238,28 +245,44 @@ describe("access levels with no onboarding mail at all", () => {
   });
 });
 
-// The DCS request is filed on the university's system under the lab's name, so what goes in its
-// two required fields is the one thing here that cannot be quietly wrong.
-describe("the DCS request's name", () => {
+// The row is acted on by the university's sysadmin under the lab's name, so what goes in it is
+// the one thing here that cannot be quietly wrong.
+describe("the DCS roster row", () => {
   const DCS_TEMPLATE = "member";
+  const column = (row: string[], name: (typeof DCS_ROSTER_SHEET_COLUMNS)[number]) =>
+    row[DCS_ROSTER_SHEET_COLUMNS.indexOf(name)];
 
-  it("files the family name from the roster's one free-text name", async () => {
+  it("files the preferred username built from the roster's one free-text name", async () => {
     const { recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
-    expect(recorded.dcsNames).toEqual([{ firstName: "Eric", lastName: "Zhang" }]);
+    expect(recorded.dcsRows).toHaveLength(1);
+    const row = recorded.dcsRows[0] as string[];
+    expect(column(row, "full_name")).toBe("Eric Zhang");
+    expect(column(row, "dcs_username")).toBe("eric");
+    expect(column(row, "dcs_password")).toBe("TEST-TEMP-PASSWORD");
+    expect(column(row, "date_of_this_row_change")).toBe("2026-09-20");
   });
 
-  // The bug as reported: a one-word name filed a real account for "Eric Eric".
-  it("refuses to file rather than answering both fields with the same word", async () => {
+  // A brand-new account gets the least-privileged value in the DCS vocabulary. An escalation is a
+  // deliberate later row, never a side effect of onboarding.
+  it("asks for the least-privileged access when the roster grants nothing yet", async () => {
+    const { recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
+    expect(column(recorded.dcsRows[0] as string[], "permission")).toBe("UofT-slack-only");
+  });
+
+  // The bug this inherited from the retired form: a one-word name once filed a real account for
+  // "Eric Eric". Two of the three username rules are built from the last name, so the refusal
+  // travelled with them.
+  it("refuses to file rather than inventing a username from a mononym", async () => {
     const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
-    expect(recorded.dcsNames).toEqual([]);
-    const dcs = payloadOf(result).dcs_form;
-    expect(dcs?.submitted).toBe(false);
-    expect(dcs?.error).toContain("no last name");
+    expect(recorded.dcsRows).toEqual([]);
+    const row = payloadOf(result).dcs_roster_row;
+    expect(row?.added).toBe(false);
+    expect(row?.error).toContain("first and a last name");
   });
 
-  // The guide is the thing the member is waiting for; the form is a side errand. A name the form
+  // The guide is the thing the member is waiting for; the row is a side errand. A name the rules
   // cannot take must not hold up the mail.
-  it("still sends the guide when the form cannot be filed", async () => {
+  it("still sends the guide when the row cannot be filed", async () => {
     const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
     expect(payloadOf(result).sent).toBe(true);
     expect(recorded.mail).toHaveLength(1);

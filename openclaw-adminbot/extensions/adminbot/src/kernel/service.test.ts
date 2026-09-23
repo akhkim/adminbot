@@ -3785,7 +3785,53 @@ describe("AdminBotService", () => {
         body: "Announcement: lab meeting moved to Friday.\n\nhttps://jinesis-admin.vercel.app",
       },
     });
-    expect(result.skipped).toEqual([{ member_id: "e2", reason: "member has no email" }]);
+    expect(result.skipped).toEqual([
+      { member_id: "e2", reason: "member has no correspondence or account email" },
+    ]);
+  });
+
+  it("writes to the correspondence address, and reaches a member who has only that one", async () => {
+    // `email` is the departmental identity the account is keyed by. It is not necessarily a mailbox
+    // anybody reads, and the roster says so: the correspondence address is the one the lab writes
+    // to for outreach, and several members have no departmental address at all.
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "c1",
+        name: "Reads Elsewhere",
+        email: "c1@cs.toronto.edu",
+        correspondence_email: "elsewhere@example.test",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "c2",
+        name: "No Departmental Mailbox",
+        correspondence_email: "only@example.test",
+      }),
+    );
+
+    const result = unwrap(
+      await service.sendMemberNudge(
+        {
+          channel: "email",
+          recipient_member_ids: ["c1", "c2"],
+          message: "Add the Overleaf link to your ICLR paper.",
+          subject: "Overleaf link",
+        },
+        "admin-1",
+      ),
+    );
+
+    expect(result.skipped).toEqual([]);
+    expect(
+      result.created.map((proposal) => (proposal.proposed_payload as { to?: string }).to),
+    ).toEqual(["elsewhere@example.test", "only@example.test"]);
+    // The approval card and the audit row name the same address the send used.
+    expect(result.created[0]?.target).toMatchObject({ target: "elsewhere@example.test" });
   });
 
   it("skips a recipient whose send actually fails at execution, without failing the rest of the batch", async () => {

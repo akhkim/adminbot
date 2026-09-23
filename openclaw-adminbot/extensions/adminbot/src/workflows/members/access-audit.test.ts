@@ -42,7 +42,7 @@ function evidence(overrides: Partial<AccessAuditEvidence> = {}): AccessAuditEvid
     slack_account_known: true,
     portal_credential: true,
     calendar_invite: "succeeded",
-    dcs_form: "succeeded",
+    dcs_roster_row: "succeeded",
     approval_email: "succeeded",
     onboarding_guide: "succeeded",
     audit_trail_available: true,
@@ -281,7 +281,7 @@ describe("summarizeAccessAudit", () => {
       auditMemberAccess(member({ id: "a", member_type: "full" }), evidence()),
       auditMemberAccess(
         member({ id: "b", member_type: "full" }),
-        evidence({ calendar_invite: "failed", dcs_form: "failed" }),
+        evidence({ calendar_invite: "failed", dcs_roster_row: "failed" }),
       ),
     ];
     const summary = summarizeAccessAudit(rows);
@@ -330,15 +330,15 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
     expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
   });
 
-  it("asks the DCS form only of the template that files it", () => {
+  it("asks the DCS roster row only of the template that files it", () => {
     expect(
-      finding(auditMemberAccess(member({ member_type: "full" }), evidence()), "baseline_dcs_form")
+      finding(auditMemberAccess(member({ member_type: "full" }), evidence()), "baseline_dcs_roster_row")
         .verdict,
     ).toBe("pass");
     // Every other template's onboarding never files the form.
     for (const type of ["coauthor-major", "coauthor-minor", "alumni", "interviewee"]) {
       expect(
-        finding(auditMemberAccess(member({ member_type: type }), evidence()), "baseline_dcs_form")
+        finding(auditMemberAccess(member({ member_type: type }), evidence()), "baseline_dcs_roster_row")
           .verdict,
         type,
       ).toBe("not_applicable");
@@ -365,7 +365,7 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
     // A blank Member Type cannot say whether onboarding owed this person these. Grading them
     // would turn a gap in the spreadsheet into a fault against the person.
     const row = auditMemberAccess(member({ member_type: "" }), evidence());
-    for (const item of ["baseline_approval_email", "baseline_dcs_form", "baseline_portal_login"]) {
+    for (const item of ["baseline_approval_email", "baseline_dcs_roster_row", "baseline_portal_login"]) {
       const entry = finding(row, item);
       expect(entry.verdict, item).toBe("unverifiable");
       expect(entry.detail.length).toBeGreaterThan(0);

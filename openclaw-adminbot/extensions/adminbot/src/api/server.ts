@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
+import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
 import {
   createOpenReviewForumProbe,
@@ -98,17 +99,19 @@ import {
   adminBotLabCalendarId,
   createCalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
-import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
+import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster-sheet.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
   type AdminBotOnboardingSender,
+  type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
 import {
   createImportColumnMapper,
   type ImportColumnMapper,
 } from "../workflows/papers/import-columns.js";
+import { findRelevantLabPapers } from "../workflows/papers/lab-relevance-search.js";
 import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
@@ -318,15 +321,14 @@ export type AdminBotMockServiceOptions = {
    * and neither belongs in a test about who the wire lets in.
    */
   autoQueueMeetingRequests?: boolean;
-  // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
-  // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
+  // Overrides the DCS roster-sheet recorder outright (tests use this to assert on the call
+  // without touching a real spreadsheet). If unset, dcsRosterSheetId decides whether one gets
   // built at all.
-  dcsFormRunner?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
-  // Path to scripts/adminbot-dcs-form-submit.ts. Injected from the repo-root composition layer
-  // for the same reason openReviewScriptPath is: this factory has no access to the repo root.
-  // Absent in unit/mock setups, which leaves DCS form submission silently unwired (no attempt,
-  // no audit event) rather than half-working.
-  dcsFormScriptPath?: string;
+  dcsRosterRecorder?: AdminBotOnboardingSenderOptions["addDcsRosterRow"];
+  // The spreadsheet new full members are filed on. Absent in unit/mock setups, which leaves the
+  // filing unwired (no attempt, no audit event) rather than half-working -- the same shape the
+  // retired DCS form script had, for the same reason.
+  dcsRosterSheetId?: string;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
@@ -608,7 +610,7 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
  *
  * Wraps whatever connector the launcher injected and answers this one type in-process, because the
  * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
- * invites the project channels and files the DCS request before the mail goes out. Everything else
+ * invites the project channels and files the DCS roster row before the mail goes out. Everything else
  * falls through untouched.
  *
  * `handled: false` when no sender is configured, which is what the service turns into an audited
@@ -642,8 +644,8 @@ function executorWithOnboardingGuide(
         ...(payload.values && typeof payload.values === "object"
           ? { values: payload.values as Record<string, string | undefined> }
           : {}),
-        ...(typeof payload.submit_dcs_form === "boolean"
-          ? { submit_dcs_form: payload.submit_dcs_form }
+        ...(typeof payload.add_dcs_roster_row === "boolean"
+          ? { add_dcs_roster_row: payload.add_dcs_roster_row }
           : {}),
       });
       if (!result.ok) {
@@ -727,11 +729,6 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
-    ...(() => {
-      const submitDcsForm =
-        options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
-      return submitDcsForm ? { submitDcsForm } : {};
-    })(),
     ...(gatewayUrl ? { gatewayUrl } : {}),
     // An explicitly injected geolocator wins (tests and the host inject their own);
     // otherwise build the IPinfo Lite one when a token is configured. With neither, the
@@ -756,16 +753,47 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // and a deployment (or a route test) has to be able to say no to that.
   const autoQueueMeetingRequests =
     options.autoQueueMeetingRequests ?? process.env.ADMINBOT_CALL_SHEET_AUTO_QUEUE !== "0";
-  // The same runner the approval path gets, so an onboarding send and an approval file the DCS
-  // request identically. Undefined when no script path is configured, which the sender reports
-  // rather than silently skipping.
-  const dcsFormRunner =
-    options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
+  // Files a new full member's row on the sheet the department's sysadmin acts on, and hands back
+  // the credentials it wrote so the sender can mail them. Undefined when no spreadsheet is
+  // configured, which the sender reports rather than silently skipping.
+  //
+  // The roster lookup is wired here rather than inside the workflow for the same reason
+  // portalLoginEmail is: the extension owns no store, and the row needs the member's id, career
+  // stage, UofT affiliation and granted compute access, none of which the send request carries.
+  const dcsRosterRecorder =
+    options.dcsRosterRecorder ??
+    createDcsRosterSheetRecorder({
+      spreadsheetId: options.dcsRosterSheetId ?? process.env.ADMINBOT_DCS_ROSTER_SHEET_ID ?? "",
+      readRows: (spreadsheetId) => readGogSheetRows(spreadsheetId),
+      appendRows: (spreadsheetId, rows) => appendGogSheetRows(spreadsheetId, rows),
+      lookupMember: (email) => {
+        const wanted = email.trim().toLowerCase();
+        const roster = service.listLabMembers();
+        if (!wanted || !roster.ok) {
+          return undefined;
+        }
+        return roster.payload.members.find((entry) =>
+          [entry.email, entry.correspondence_email, entry.calendar_email]
+            .filter((address): address is string => Boolean(address))
+            .some((address) => address.trim().toLowerCase() === wanted),
+        );
+      },
+      // Usernames the roster knows about but the sheet may not carry yet: everyone minted before
+      // this sheet existed. Without them the first few rows would propose names already in use.
+      rosterUsernames: () => {
+        const roster = service.listLabMembers();
+        return roster.ok
+          ? roster.payload.members
+              .map((entry) => entry.dcs_username?.trim())
+              .filter((entry): entry is string => Boolean(entry))
+          : [];
+      },
+    });
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
       provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
-      ...(dcsFormRunner ? { submitDcsForm: dcsFormRunner } : {}),
+      ...(dcsRosterRecorder ? { addDcsRosterRow: dcsRosterRecorder } : {}),
       // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
       headProfessorWhatsapp: () => {
         const settings = service.getSettings();
@@ -1090,7 +1118,7 @@ async function handleAuthRoute(
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/signup") {
@@ -1102,7 +1130,7 @@ async function handleAuthRoute(
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/login") {
@@ -1118,7 +1146,7 @@ async function handleAuthRoute(
       sendJson(res, result.status, { error: result.error.message, code: result.code });
       return;
     }
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (url.pathname === "/auth/registrations" || url.pathname.startsWith("/auth/registrations/")) {
@@ -1147,6 +1175,7 @@ async function handleAuthRoute(
     sendAuthResult(
       res,
       ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
+      requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
   }
@@ -1158,7 +1187,11 @@ async function handleAuthRoute(
     }
     // No principal resolution first: an impersonated session that has already expired should still
     // be closable, and the auth service refuses anything that is not an impersonation row anyway.
-    sendAuthResult(res, ctx.auth.endImpersonation(token));
+    sendAuthResult(
+      res,
+      ctx.auth.endImpersonation(token),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/pair-device") {
@@ -1179,7 +1212,7 @@ async function handleAuthRoute(
     if (token) {
       ctx.auth.logout(token);
     }
-    clearSessionCookie(res);
+    clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     sendJson(res, 200, { logged_out: true });
     return;
   }
@@ -1195,7 +1228,7 @@ async function handleAuthRoute(
         return ip ? { remoteIp: ip } : {};
       })(),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
@@ -1204,7 +1237,7 @@ async function handleAuthRoute(
       token: asString(body.token),
       newPassword: asString(body.new_password),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password") {
@@ -1223,9 +1256,9 @@ async function handleAuthRoute(
       asString(body.new_password),
     );
     if (result.ok) {
-      clearSessionCookie(res);
+      clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     }
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/email") {
@@ -1249,7 +1282,7 @@ async function handleAuthRoute(
       asString(body.current_password),
       remoteIp(req, ctx.trustProxyHeaders),
     );
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   sendJson(res, 404, { error: { message: "not found" } });
@@ -1285,7 +1318,11 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(res, ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy));
+    sendAuthResult(
+      res,
+      ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
@@ -1293,7 +1330,11 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(res, ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy));
+    sendAuthResult(
+      res,
+      ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   sendJson(res, 404, { error: { message: "not found" } });
@@ -1722,6 +1763,43 @@ async function handleAuthenticatedRoute(
         ...ranking,
       });
     } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    return;
+  }
+
+  // The lab's own papers, ranked against a topic or a whole proposal. See
+  // workflows/papers/lab-relevance.ts.
+  //
+  // Deliberately *not* on ANONYMOUS_ROUTES, unlike the conference search directly above it. That
+  // one ranks a published conference programme against text the caller typed, so it carries no lab
+  // data; this one returns our paper titles, the sections they answer and how thin the record
+  // behind each placement is. Same data as `GET /papers`, so it takes the same gate: the global
+  // one, which admits only an authenticated caller.
+  if (req.method === "POST" && url.pathname === "/lab-papers/relevance") {
+    const body = readRecord(await readJson(req));
+    const query = asString(body.query)?.trim() ?? "";
+    if (!query) {
+      sendJson(res, 400, { error: { message: "say what to look for first" } });
+      return;
+    }
+    const papers = service.listPapers();
+    if (!papers.ok) {
+      sendServiceResult(res, papers);
+      return;
+    }
+    try {
+      const report = await findRelevantLabPapers({
+        papers: papers.payload.papers,
+        query,
+        embed: ctx.embedder,
+      });
+      sendJson(res, 200, report);
+    } catch (error) {
+      // The embedding model being unreachable is the common failure and it is not the caller's
+      // fault, so it reads as a gateway error rather than a bad request.
       sendJson(res, 502, {
         error: { message: error instanceof Error ? error.message : String(error) },
       });
@@ -3343,6 +3421,7 @@ async function handleAuthenticatedRoute(
         ...(body.dry_run === false ? { dryRun: false } : {}),
         ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
       }),
+      requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
   }
@@ -4448,6 +4527,29 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
     return;
   }
+  // Onboarding for one member of the roster, which is what the Members tab's Add-member button
+  // runs after it has created the record. Matched before `onboardingStep` below, whose pattern
+  // would otherwise read "guide" as the id of a checklist step (there is no such step, so it would
+  // 404 rather than do this).
+  //
+  // Admin member session only, for the same reason /onboarding/guide is: approving what this
+  // queues mints a Slack Connect invite and mails a stranger. The shared service principal
+  // authenticates every agent tool call regardless of who is chatting, so accepting it here
+  // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
+  const memberOnboardingGuide = /^\/lab\/members\/([^/]+)\/onboarding\/guide$/u.exec(url.pathname);
+  if (req.method === "POST" && memberOnboardingGuide?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.queueOnboardingGuideForMember({
+        memberId: decodeURIComponent(memberOnboardingGuide[1]),
+        actor: principalActor(principal),
+      }),
+    );
+    return;
+  }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "POST" && onboardingStep?.[1] && onboardingStep[2]) {
     const memberId = decodeURIComponent(onboardingStep[1]);
@@ -4761,15 +4863,19 @@ async function handleAuthenticatedRoute(
       sent: result.payload.sent,
     });
     // The DCS request moved here from registration approval, and its audit trail moves with it:
-    // the request is filed on someone else's system with no receipt, so the only record that it
-    // happened at all is this one.
-    if (result.payload.dcs_form) {
-      service.recordDcsFormAttempt({
+    // the row is acted on by someone else's sysadmin, so the only record on this side that it was
+    // ever asked for is this one. The username is recorded because it is what a later question
+    // ("which account did we ask for?") is about; the password it was filed with is not, here or
+    // anywhere else AdminBot writes.
+    if (result.payload.dcs_roster_row) {
+      const row = result.payload.dcs_roster_row;
+      service.recordDcsRosterRowAttempt({
         actor: principalActor(principal),
         template_id: result.payload.template_id,
         email: body.email,
-        submitted: result.payload.dcs_form.submitted,
-        ...(result.payload.dcs_form.error ? { error: result.payload.dcs_form.error } : {}),
+        added: row.added,
+        ...(row.username ? { username: row.username } : {}),
+        ...(row.error ? { error: row.error } : {}),
       });
     }
     sendJson(res, 200, result.payload);
@@ -5697,10 +5803,14 @@ function applyCors(
   return true;
 }
 
-function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>): void {
+function sendAuthResult<T>(
+  res: ServerResponse,
+  result: AdminBotAuthResponse<T>,
+  secure: boolean,
+): void {
   if (result.ok) {
     if (result.sessionToken) {
-      setSessionCookie(res, result.sessionToken);
+      setSessionCookie(res, result.sessionToken, secure);
     }
     sendJson(res, result.status, result.payload);
     return;
@@ -5712,17 +5822,25 @@ function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>)
   sendJson(res, result.status, body);
 }
 
-// No Secure attribute: the AdminBot service is reached over loopback plain HTTP, where a Secure
-// cookie would never be sent back. SameSite=Lax + HttpOnly still block third-party/script access.
-function setSessionCookie(res: ServerResponse, token: string): void {
+// `Secure` whenever the request arrived over TLS -- see requestIsSecure. It used to be omitted
+// unconditionally, on the grounds that the service is reached over loopback plain HTTP; that is
+// true of the cron wrappers, and false of every browser that reaches it through the public proxy,
+// which is where a session cookie is actually issued. HttpOnly and SameSite=Lax are unconditional.
+function sessionCookieAttributes(secure: boolean): string {
+  return `HttpOnly; SameSite=Lax; Path=/${secure ? "; Secure" : ""}`;
+}
+
+function setSessionCookie(res: ServerResponse, token: string, secure: boolean): void {
   res.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`,
+    `${SESSION_COOKIE}=${token}; ${sessionCookieAttributes(secure)}; Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`,
   );
 }
 
-function clearSessionCookie(res: ServerResponse): void {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+// Same attributes as the cookie being cleared: a browser only replaces a cookie when the pair
+// matches, so a logout that forgot Secure would leave the real cookie in place.
+function clearSessionCookie(res: ServerResponse, secure: boolean): void {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; ${sessionCookieAttributes(secure)}; Max-Age=0`);
 }
 
 function bearerToken(req: IncomingMessage): string | undefined {
@@ -5755,6 +5873,30 @@ function cookieToken(req: IncomingMessage): string | undefined {
 // address, not the real caller's — the actual IP only shows up in X-Forwarded-For, which the
 // proxy sets and the app must not trust unless it knows every request actually passes through
 // that proxy (otherwise a direct caller could hand-write the header to spoof it).
+/**
+ * Whether this request reached us over TLS, and so whether its session cookie may be `Secure`.
+ *
+ * Decided per request rather than once at startup because both are true of the same deployment:
+ * the service is reached over loopback plain HTTP by the cron wrappers and the verify commands,
+ * and over HTTPS by real browsers through the public proxy (ADMINBOT_PUBLIC_URL). A cookie marked
+ * `Secure` on the loopback path would never come back, and one left unmarked on the public path
+ * travels in the clear the first time anything addresses that host over http://.
+ *
+ * `x-forwarded-proto` only when the proxy is trusted, exactly as remoteIp treats x-forwarded-for:
+ * an untrusted client could otherwise set it, though here the lie is self-harming (it only adds a
+ * restriction to the attacker's own cookie).
+ */
+function requestIsSecure(req: IncomingMessage, trustProxyHeaders: boolean): boolean {
+  if (trustProxyHeaders) {
+    const header = req.headers["x-forwarded-proto"];
+    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
+    if (first) {
+      return first.toLowerCase() === "https";
+    }
+  }
+  return Boolean((req.socket as { encrypted?: boolean }).encrypted);
+}
+
 function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
   if (trustProxyHeaders) {
     const header = req.headers["x-forwarded-for"];
