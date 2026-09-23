@@ -29,6 +29,8 @@ Local adaptations:
   labels; numbered mode requires the bibliography to start with a label; lettered appendix,
   checklist and limitations headings end the section unless more entries follow; and appendix
   prose run onto the last entry is cut back.
+- The plain-text parser takes the sentence after the year as an ACL entry's title, and penalizes
+  "In …", page ranges, reports and preprints as venues, where it picked the venue as the title.
 - PDF/DOCX browser loading is omitted; AdminBot uses its existing clawpdf version on the server.
 - Predatory-journal classification and the separately sourced publisher list are omitted.
   The checker reports matching metadata and retraction information, not publisher judgments.
