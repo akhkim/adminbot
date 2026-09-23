@@ -37,7 +37,9 @@ export async function extractPdfReferences(
       if (document.pageCount > 200) {
         throw new ReferenceCheckError("Use a PDF with at most 200 pages.");
       }
-      const text = document.text({ maxChars: 600_001 });
+      // clawpdf reads only the first 20 pages unless told otherwise, which silently dropped the
+      // bibliography of any paper whose references run past page 20.
+      const text = document.text({ maxChars: 600_001, maxPages: document.pageCount });
       if (text.length > 600_000) {
         throw new ReferenceCheckError("This PDF contains too much text to check.");
       }

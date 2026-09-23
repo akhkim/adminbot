@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { lookupContext, referenceFetch } from "./reference-check.http.js";
 import { createPdfReferenceChecker, extractPdfReferences } from "./reference-check.js";
-import { referencePdf } from "./reference-check.test-helpers.js";
+import { referencePdf, referencePdfPages } from "./reference-check.test-helpers.js";
 
 const citation =
   "Lovelace, A. (2024). Testing synthetic reference matching. Journal of Tests. https://doi.org/10.1234/synthetic";
@@ -45,6 +45,17 @@ describe("References-Validation integration", () => {
     expect(refs).toHaveLength(2);
     expect(refs[0]).toContain("Testing synthetic reference matching");
     expect(refs.join(" ")).not.toContain("Private");
+  });
+
+  it("reads a bibliography that starts after page 20", async () => {
+    // clawpdf stops at page 20 unless asked for more; long papers lost their references.
+    const body = Array.from({ length: 22 }, (_, i) => [`Synthetic manuscript page ${i + 1}`]);
+    const pdf = referencePdfPages([
+      ...body,
+      ["References", `[1] ${citation}`, "[2] Doe, J. (2023). A second synthetic reference."],
+    ]);
+    const refs = await extractPdfReferences(pdf);
+    expect(refs).toHaveLength(2);
   });
 
   it.each([
