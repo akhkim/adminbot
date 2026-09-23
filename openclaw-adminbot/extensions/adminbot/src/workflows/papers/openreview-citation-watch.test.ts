@@ -212,6 +212,32 @@ describe("OpenReview citation watch", () => {
     expect(store.listProposalsByType("email.send")).toHaveLength(0);
   });
 
+  it("retries a version when too many references could not be checked", async () => {
+    const unavailable = { ...notFound, status: "unavailable" as const };
+    const { store, check, sweep } = setup({
+      submissions: [submission()],
+      check: async () => ({ findings: [matched, matched, matched, unavailable, unavailable] }),
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "failed",
+      error: "2 of 5 references could not be checked against every database.",
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("completes a version with a few unchecked references, without flagging them", async () => {
+    const unavailable = { ...notFound, status: "unavailable" as const };
+    const { store, sweep } = setup({
+      submissions: [submission()],
+      check: async () => ({ findings: [matched, matched, matched, matched, matched, unavailable] }),
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")?.status).toBe("completed");
+    expect(store.listProposalsByType("email.send")).toHaveLength(0);
+  });
+
   it("records a failed download without checking anything", async () => {
     const { store, check, sweep } = setup({
       submissions: [submission()],

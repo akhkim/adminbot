@@ -25,6 +25,8 @@ export type PdfReferenceChecker = (
 
 export class ReferenceCheckError extends Error {}
 
+const REQUIRED_DATABASES = new Set(["api.crossref.org", "api.openalex.org", "dblp.org"]);
+
 export async function extractPdfReferences(
   pdf: Uint8Array,
   limits: { maxReferences?: number } = {},
@@ -89,6 +91,8 @@ export function createPdfReferenceChecker(
     fetch?: typeof globalThis.fetch;
     /** The interactive page keeps 100; the unattended OpenReview sweep allows long bibliographies. */
     maxReferences?: number;
+    /** Report "not found" only when Crossref, OpenAlex and DBLP answered; else "unavailable". */
+    requireAllDatabases?: boolean;
   } = {},
 ): PdfReferenceChecker {
   return async (pdf, signal, onProgress) => {
@@ -123,18 +127,27 @@ export function createPdfReferenceChecker(
         result.matchConfidence >= 80 &&
         !result.retracted &&
         !result.issues.length;
-      const status = !available.size
-        ? "unavailable"
-        : matched
-          ? "matched"
-          : result.exists
-            ? "review"
-            : "not_found";
+      // A rate-limited database may hold the work; with requireAllDatabases, "not found" is only
+      // claimed once the broad-coverage databases answered. Semantic Scholar and arXiv throttle
+      // anonymous clients constantly, so requiring them would mean never reporting anything.
+      const incomplete =
+        options.requireAllDatabases === true &&
+        [...failures].some((source) => REQUIRED_DATABASES.has(source));
+      const status =
+        !available.size || (incomplete && !matched && !result.exists)
+          ? "unavailable"
+          : matched
+            ? "matched"
+            : result.exists
+              ? "review"
+              : "not_found";
       const explanations = [
         matched
           ? "A matching record was found. This does not verify the paper’s claims."
           : status === "unavailable"
-            ? "No reference databases could be reached. Try again later or search Google Scholar."
+            ? available.size
+              ? "No match in the databases that answered, but not every database could be reached, so this was not fully checked."
+              : "No reference databases could be reached. Try again later or search Google Scholar."
             : status === "not_found"
               ? "No matching reference found in the available databases."
               : "The best matching record needs manual review.",

@@ -157,6 +157,30 @@ describe("References-Validation integration", () => {
     }
   });
 
+  it("with requireAllDatabases, claims not found only when Crossref, OpenAlex and DBLP answered", async () => {
+    const extract = async () => [
+      "Doe, J. (2024). An entirely invented synthetic research title. Test Journal.",
+    ];
+    const statusWhen = async (throttled: string) => {
+      const check = createPdfReferenceChecker({
+        extract,
+        requireAllDatabases: true,
+        requestIntervalMs: 0,
+        fetch: vi.fn(async (input) =>
+          String(input).includes(throttled)
+            ? new Response("rate limited", { status: 429 })
+            : emptyDatabase(input),
+        ),
+      });
+      return (await check(new Uint8Array(), signal())).findings[0];
+    };
+    // Semantic Scholar throttles anonymous clients constantly; that alone must not hide a miss.
+    expect((await statusWhen("api.semanticscholar.org")).status).toBe("not_found");
+    const partial = await statusWhen("api.openalex.org");
+    expect(partial.status).toBe("unavailable");
+    expect(partial.explanation).toContain("not fully checked");
+  });
+
   it("reports a total outage without claiming references were searched successfully", async () => {
     const check = createPdfReferenceChecker({
       extract: async () => [citation],

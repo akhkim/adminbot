@@ -196,6 +196,17 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
   result.doi = extractDOI(ref);
   result.year = extractYear(ref);
 
+  // ACL/EMNLP: "Names. 2014. Title. In Venue…" -- the title is the sentence after the year, which
+  // the scoring below cannot know once years are stripped (it picked "In Empirical Methods…").
+  const acl = ref
+    .replace(/^\s*[[(\s]*\d{1,4}[\])\s]*[.\s]?/, "")
+    .match(/^(.{3,2000}?)\.\s+(?:19|20)\d{2}[a-z]?\.\s+(.+?[.?!])(?:\s|$)/);
+  if (acl && !/\d/.test(acl[1]) && /,|\band\b|^\S+(?:\s\S+){0,3}$/.test(acl[1])) {
+    result.authors = acl[1].trim();
+    result.title = acl[2].replace(/\.$/, "").trim();
+    return result;
+  }
+
   // Remove ref number prefix, DOI, URLs, years in parentheses
   const cleaned = ref
     .replace(/^\s*[[(\s]*\d{1,4}[\])\s]*[.\s]?/, "")
@@ -231,8 +242,9 @@ export const parseGeneric = (ref: string): ParsedPlainTextRef => {
         );
       },
     };
+    // Upstream's list missed "In Empirical Methods…", page ranges and report/preprint venues.
     const venueKeywords =
-      /\b(journal|proceedings|conference|transactions|advances|letters|review|annals|bulletin|workshop|symposium|arxiv|ieee|acm|springer|nature|science)\b/i;
+      /\b(journal|proceedings|conference|transactions|advances|letters|review|annals|bulletin|workshop|symposium|arxiv|ieee|acm|springer|nature|science|technical report|preprint|pages|pp|volume|vol|press|openreview)\b|^(?:In|Proc)\b|\d+\s*[–-]\s*\d+/i;
 
     let bestTitleIdx = 0;
     let bestTitleScore = -1;

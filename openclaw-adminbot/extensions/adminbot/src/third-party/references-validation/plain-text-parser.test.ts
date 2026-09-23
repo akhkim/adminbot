@@ -18,6 +18,27 @@ describe("parseGeneric", () => {
     ).toBe("Adam: A method for stochastic optimization");
   });
 
+  it("takes the sentence after the year as an ACL entry's title, not the venue", () => {
+    expect(
+      parseGeneric(
+        "Jeffrey Pennington, Richard Socher, and Christopher D. Manning. 2014. Glove: Global vectors for word representation. In Empirical Methods in Natural Language Processing (EMNLP), pages 1532–1543.",
+      ).title,
+    ).toBe("Glove: Global vectors for word representation");
+    expect(
+      parseGeneric(
+        "Jason Yosinski, Jeff Clune, Yoshua Bengio, and Hod Lipson. 2014. How transferable are features in deep neural networks? In Advances in neural information processing systems, pages 3320–3328.",
+      ).title,
+    ).toBe("How transferable are features in deep neural networks?");
+  });
+
+  it("does not take a page-range venue for the title in title-first entries", () => {
+    expect(
+      parseGeneric(
+        "Tariq Alhindi, Tuhin Chakrabarty, Elena Musi, and Smaranda Muresan. Multitask instruction-based prompting for fallacy recognition. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, pp. 8172–8187, Abu Dhabi, December 2022.",
+      ).title,
+    ).toBe("Multitask instruction-based prompting for fallacy recognition");
+  });
+
   it("keeps parsing references without initials as before", () => {
     expect(
       parseGeneric(

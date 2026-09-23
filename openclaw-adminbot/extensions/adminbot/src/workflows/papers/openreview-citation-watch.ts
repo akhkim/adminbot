@@ -29,6 +29,8 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
 // not forever: a PDF that keeps failing is an operator's problem, not an hourly retry loop's.
 export const MAX_CITATION_CHECK_ATTEMPTS = 3;
 const DEFAULT_CHECK_TIMEOUT_MS = 60 * 60_000;
+// More unchecked references than this and the version is retried rather than reported.
+const MAX_UNCHECKED_SHARE = 0.2;
 // Bounds the email, not the check: every finding stays on the stored record and in the UI.
 const MAX_EMAILED_FINDINGS = 40;
 
@@ -226,14 +228,19 @@ export class OpenReviewCitationWatch {
       });
       return;
     }
-    if (findings.every((finding) => finding.status === "unavailable")) {
-      // Nothing was actually checked; recording this as complete would read as a clean paper.
+    const unchecked = findings.filter((finding) => finding.status === "unavailable").length;
+    if (unchecked > findings.length * MAX_UNCHECKED_SHARE) {
+      // Too little was actually checked; recording this as complete would read as a clean paper.
+      // A later sweep retries, by which time a rate-limited database has usually recovered.
       summary.failed++;
       store.saveOpenReviewCitationCheck({
         ...base,
         pdf_sha256: pdfSha256,
         status: "failed",
-        error: "No reference database could be reached.",
+        error:
+          unchecked === findings.length
+            ? "No reference database could be reached."
+            : `${unchecked} of ${findings.length} references could not be checked against every database.`,
       });
       return;
     }
