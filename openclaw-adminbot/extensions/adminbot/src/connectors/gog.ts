@@ -616,6 +616,11 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
  * everybody" is never what a membership sweep means and is exactly what a failed read looks like;
  * and the payload has to name the people being dropped, so the stored proposal records the intent
  * a human approved and not just the end state.
+ *
+ * Silent (`--send-updates none`). Because the write is a whole-list replace, Google treats it as
+ * an edit to every guest on the event, and with `all` each remaining member got a fresh copy of
+ * the Monday meeting invite every time somebody else was dropped. The people removed are not told
+ * either, which is the point: a membership sweep tidying the guest list is not news to anyone.
  */
 function buildCalendarRemoveAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
   const payload = requirePayload(proposal);
@@ -637,7 +642,7 @@ function buildCalendarRemoveAttendeesArgs(proposal: AdminBotStoredProposal): str
     "--attendees",
     remaining,
     "--send-updates",
-    "all",
+    "none",
   );
   return args;
 }
