@@ -181,6 +181,30 @@ describe("References-Validation integration", () => {
     expect(partial.explanation).toContain("not fully checked");
   });
 
+  it("with allowOversized, checks clean entries and never looks up an unsplittable chunk", async () => {
+    const chunk = `${citation} `.repeat(30);
+    const fetcher = vi.fn(async (input) => emptyDatabase(input));
+    const check = createPdfReferenceChecker({
+      extract: async (_pdf, limits) => {
+        expect(limits?.allowOversized).toBe(true);
+        return [citation, chunk];
+      },
+      allowOversized: true,
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    const [clean, oversized] = (await check(new Uint8Array(), signal())).findings;
+    expect(clean.status).not.toBe("unavailable");
+    expect(fetcher).toHaveBeenCalled();
+    expect(oversized).toMatchObject({ status: "unavailable", oversized_chars: chunk.length });
+    expect(oversized.citation.length).toBeLessThan(310);
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes("Testing%20synthetic%20reference%20matching%20Journal"),
+      ),
+    ).toBe(false);
+  });
+
   it("reports a total outage without claiming references were searched successfully", async () => {
     const check = createPdfReferenceChecker({
       extract: async () => [citation],

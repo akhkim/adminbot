@@ -12,6 +12,7 @@ export type CitationCheckFinding = {
   source?: string;
   title?: string;
   url?: string;
+  oversized_chars?: number;
 };
 
 /**

@@ -228,8 +228,35 @@ export class OpenReviewCitationWatch {
       });
       return;
     }
-    const unchecked = findings.filter((finding) => finding.status === "unavailable").length;
-    if (unchecked > findings.length * MAX_UNCHECKED_SHARE) {
+    // An unsplittable chunk hides several entries; count it as the entries it probably holds.
+    const lengths = findings
+      .filter((finding) => !finding.oversized_chars)
+      .map((finding) => finding.citation.length)
+      .toSorted((a, b) => a - b);
+    const typical = lengths[Math.floor(lengths.length / 2)] ?? 200;
+    const weight = (finding: ReferenceFinding) =>
+      finding.oversized_chars ? Math.max(1, Math.round(finding.oversized_chars / typical)) : 1;
+    const unchecked = findings
+      .filter((finding) => finding.status === "unavailable")
+      .reduce((sum, finding) => sum + weight(finding), 0);
+    const total = findings.reduce((sum, finding) => sum + weight(finding), 0);
+    const unsplittable = findings
+      .filter((finding) => finding.oversized_chars)
+      .reduce((sum, finding) => sum + weight(finding), 0);
+    if (unsplittable > total * MAX_UNCHECKED_SHARE) {
+      // The same bytes split the same way every time, so retrying cannot help. What the clean
+      // entries showed is kept for a reader, but a mostly unchecked paper raises no email.
+      summary.checked++;
+      store.saveOpenReviewCitationCheck({
+        ...base,
+        pdf_sha256: pdfSha256,
+        status: "unreadable",
+        findings,
+        error: `About ${unsplittable} of ${total} references could not be split out of the bibliography.`,
+      });
+      return;
+    }
+    if (unchecked > total * MAX_UNCHECKED_SHARE) {
       // Too little was actually checked; recording this as complete would read as a clean paper.
       // A later sweep retries, by which time a rate-limited database has usually recovered.
       summary.failed++;
@@ -238,9 +265,9 @@ export class OpenReviewCitationWatch {
         pdf_sha256: pdfSha256,
         status: "failed",
         error:
-          unchecked === findings.length
-            ? "No reference database could be reached."
-            : `${unchecked} of ${findings.length} references could not be checked against every database.`,
+          unchecked === total
+            ? "No reference could be checked."
+            : `About ${unchecked} of ${total} references could not be checked.`,
       });
       return;
     }
