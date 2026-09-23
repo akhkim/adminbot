@@ -4,15 +4,32 @@
  * Brought across from the lab branch `luke/time-allocation` (commit a4c560bd), where it was added
  * alongside the time-availability tab so that surface could be driven without the real service.
  * The mock service moved to `extensions/adminbot/src/api/server.ts` in the restructuring; that
- * import is the only change from the original.
+ * launcher now shares the normal host’s device authentication helpers.
  *
  * Distinct from `start-adminbot.mjs`, which runs the real service against the real database. This
- * one deliberately stubs the calendar and email connectors, so nothing it does leaves the machine.
+ * one stubs calendar and email invitations. Explicit PDF checks can still use GPTZero when configured.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createDeviceTokenIssuer,
+  createDevicePairingApprover,
+} from "../extensions/adminbot/host/main.ts";
 import { createAdminBotMockService } from "../extensions/adminbot/src/api/server.ts";
+import {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+} from "../src/plugin-sdk/device-bootstrap.ts";
+
+const devicePairing = {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+};
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const email = requireEnv("ADMINBOT_DEV_EMAIL").toLowerCase();
@@ -32,6 +49,8 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const app = createAdminBotMockService({
   databasePath,
   auditRetentionDays: 7,
+  deviceTokenIssuer: createDeviceTokenIssuer({ devicePairing }),
+  devicePairingApprover: createDevicePairingApprover({ devicePairing }),
   // Keep this local bootstrap isolated from real calendar/email connectors.
   calendarInviteRunner: async () => {},
   accountApprovedEmailRunner: async () => {},

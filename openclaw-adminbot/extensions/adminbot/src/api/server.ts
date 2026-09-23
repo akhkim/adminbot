@@ -8,6 +8,16 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import { createOpenReviewSubmissionReader } from "../connectors/openreview-submissions.js";
+import {
+  createPdfReferenceChecker,
+  requiredDatabasesPausedUntil,
+  type PdfReferenceChecker,
+} from "../connectors/reference-check.js";
+import {
+  createGptZeroBibliographyScanner,
+  createPublicOpenReviewPdfReader,
+} from "../connectors/reference-scan.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -41,6 +51,7 @@ import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
+import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
 import {
   isAdminBotOpportunityCategory,
   type AdminBotOpportunityInput,
@@ -49,6 +60,7 @@ import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
+import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
 import {
   buildNewsletterDraft,
   draftMemberBlurb,
@@ -56,6 +68,7 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -116,6 +129,7 @@ import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
 } from "../workflows/papers/mailing-list-email.js";
+import { OpenReviewCitationWatch } from "../workflows/papers/openreview-citation-watch.js";
 import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
@@ -142,6 +156,7 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
 import {
   previewCallSheetPush,
   proposeCallSheetPush,
@@ -245,6 +260,13 @@ export type AdminBotMockServiceOptions = {
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
   trustProxyHeaders?: boolean;
+  referenceScanDependencies?: ReferenceScanDependencies;
+  pdfReferenceChecker?: PdfReferenceChecker;
+  // Automatic citation checks of the OpenReview account's own submissions. Injecting a reader
+  // enables them; otherwise they need ADMINBOT_OPENREVIEW_CITATION_CHECKS=1 plus credentials.
+  openReviewSubmissionReader?: OpenReviewSubmissionReader;
+  citationWatchChecker?: PdfReferenceChecker;
+  citationWatchNotifyEmail?: string;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -573,6 +595,9 @@ type AdminBotRouteContext = {
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
+  referenceScans: ReferenceScans;
+  checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
+  openReviewCitationWatch?: OpenReviewCitationWatch;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -673,6 +698,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // off `service`, and the executor has to be handed to `service` before that. A holder resolved
   // at execute time is what lets one arm of the executor reach forward to it without either
   // construction having to move.
+  let referenceScans: ReferenceScans;
   let onboardingSenderRef: AdminBotOnboardingSender | undefined;
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
     executorWithOnboardingGuide(executor, () => onboardingSenderRef);
@@ -682,7 +708,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
     // executed in-process by the sender, not by the CLI connector, so a deployment with no
     // executor at all still executes this one.
-    executor: withOnboarding(baseOptions.executor),
+    executor: {
+      execute: (proposal) =>
+        referenceScans.executor(withOnboarding(baseOptions.executor)).execute(proposal),
+    },
   };
   if (options.databasePath) {
     const durable = createAdminBotSqliteService({
@@ -696,6 +725,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
+  const referenceDependencies = options.referenceScanDependencies ?? {
+    readPdf: createPublicOpenReviewPdfReader(),
+    scanPdf: createGptZeroBibliographyScanner(),
+  };
+  referenceScans = new ReferenceScans(store, service, referenceDependencies);
+  const checkUploadedPdf = createPdfReferenceCheckHandler(
+    options.pdfReferenceChecker,
+    referenceDependencies.scanPdf,
+  );
+  const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -871,6 +910,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     auth,
     privacyBroker,
     sensitiveInfo,
+    referenceScans,
+    checkUploadedPdf,
+    ...(openReviewCitationWatch ? { openReviewCitationWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -1552,6 +1594,80 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.checkUploadedPdf(req, res, principalActor(principal));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/openreview/citation-checks") {
+    // Restricted manuscripts' bibliographies: admins (or the service token) only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    sendJson(res, 200, {
+      enabled: Boolean(watch),
+      ...(watch ? watch.status() : { running: false }),
+      checks: ctx.store.listOpenReviewCitationChecks(),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/openreview/citation-checks/run") {
+    // Started by the scheduled job; safe to call repeatedly -- a running sweep is not restarted,
+    // and a version already checked is never checked again.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    if (!watch) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "OpenReview citation checks are off — set ADMINBOT_OPENREVIEW_CITATION_CHECKS=1, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await watch.start());
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: error instanceof Error ? error.message : "could not list OpenReview submissions",
+        },
+      });
+    }
+    return;
+  }
+  if (url.pathname === "/reference-scans" && (req.method === "GET" || req.method === "POST")) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (req.method === "GET") {
+      const scan = ctx.referenceScans.get(
+        url.searchParams.get("submission_id") ?? "",
+        url.searchParams.get("pdf_sha256") ?? "",
+      );
+      sendJson(res, scan ? 200 : 404, scan ?? { error: { message: "scan not found" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    if (typeof body.submission_id !== "string" || typeof body.notify_email !== "string") {
+      sendJson(res, 400, { error: { message: "submission_id and notify_email are required" } });
+      return;
+    }
+    try {
+      const result = await ctx.referenceScans.propose(body.submission_id, body.notify_email);
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 422, {
+        error: { message: error instanceof Error ? error.message : "scan proposal failed" },
+      });
+    }
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
     // Triggers outbound email on behalf of the lab; not a per-member action.
     if (!requirePrivileged(res, principal)) {
@@ -5735,6 +5851,51 @@ async function runCalendarAction(
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
 // let any signed-in member perform these actions through the agent. Require an admin member
 // Bearer session and deny the service principal outright.
+/**
+ * The sweep is opt-in at deployment: it sends the extracted bibliographies of restricted
+ * submissions to public scholarly databases, which the operator has to have agreed to.
+ */
+function createOpenReviewCitationWatch(
+  options: AdminBotMockServiceOptions,
+  store: AdminBotServiceStore,
+  service: AdminBotService,
+): OpenReviewCitationWatch | undefined {
+  const reader =
+    options.openReviewSubmissionReader ??
+    (process.env.ADMINBOT_OPENREVIEW_CITATION_CHECKS?.trim() === "1"
+      ? createOpenReviewSubmissionReader()
+      : undefined);
+  if (!reader) {
+    return undefined;
+  }
+  const notifyEmail =
+    options.citationWatchNotifyEmail ??
+    (process.env.ADMINBOT_CITATION_CHECK_NOTIFY?.trim() ||
+      process.env.ADMINBOT_CONTACT_EMAILS?.split(",")[0]?.trim() ||
+      undefined);
+  // One back-off state for the process: every check the sweep runs honors the same 429s.
+  const cooldowns = new Map<string, number>();
+  return new OpenReviewCitationWatch({
+    store,
+    service,
+    reader,
+    pausedUntil: () => requiredDatabasesPausedUntil(cooldowns),
+    pauseBetweenMs: options.citationWatchChecker ? 0 : 60_000,
+    check:
+      options.citationWatchChecker ??
+      createPdfReferenceChecker({
+        maxReferences: 300,
+        requireAllDatabases: true,
+        allowOversized: true,
+        cooldowns,
+        ...(process.env.OPENALEX_API_KEY?.trim()
+          ? { openAlexApiKey: process.env.OPENALEX_API_KEY.trim() }
+          : {}),
+      }),
+    ...(notifyEmail ? { notifyEmail } : {}),
+  });
+}
+
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {

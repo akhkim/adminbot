@@ -5,6 +5,8 @@
   "description": "OpenClaw AdminBot action broker plugin",
   "type": "module",
   "dependencies": {
+    "clawpdf": "0.3.0",
+    "fast-xml-parser": "5.7.0",
     "typebox": "1.1.39"
   },
   "devDependencies": {

@@ -177,6 +177,7 @@ import {
 } from "../contracts/member-duplicates.js";
 import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
+import type { OpenReviewCitationCheckStore } from "../contracts/openreview-citation-checks.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
   isAdminBotOpportunityDeadline,
@@ -244,6 +245,7 @@ import {
   type AdminBotPaperMentorRun,
   type AdminBotPaperMentorRunInput,
 } from "../contracts/papermentor.js";
+import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
@@ -442,7 +444,10 @@ export type AdminBotServiceResponse<T> =
   | { ok: true; status: number; payload: T }
   | { ok: false; status: number; error: { message: string } };
 
-export type AdminBotServiceStore = {
+// The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
+type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
+
+export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
@@ -1045,6 +1050,7 @@ const DEFAULT_ACTION_POLICIES = {
   // at a joiner the spreadsheet produced and agrees they are real -- the sweep that files these
   // reads a sheet a typo can reach, and the mail it triggers also provisions a Slack invite and a
   // CS account request. Those are not things to undo.
+  "reference.scan": approvalPolicy("T3", ["admin"]),
   "onboarding.send_guide": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the

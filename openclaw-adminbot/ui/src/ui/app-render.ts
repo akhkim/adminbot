@@ -1,6 +1,8 @@
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
+import "./adminbot/views/reference-checker.ts";
+import "./adminbot/views/openreview-citation-checks.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
@@ -4319,6 +4321,16 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyGrantReport, (m) =>
               m.renderGrantReport({ papers: state.adminBotData.papers }),
             )
+          : nothing}
+        ${state.tab === "adminbotReferenceChecker"
+          ? html`<adminbot-reference-checker
+                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+              ></adminbot-reference-checker>
+              <adminbot-openreview-citation-checks
+                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+              ></adminbot-openreview-citation-checks>`
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

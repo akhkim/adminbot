@@ -28,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   clearStoredMemberSession();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -750,13 +751,19 @@ describe("viewing the lab as another member", () => {
 
 describe("refresh preserves sessions during temporary failures", () => {
   it.each([404, 429, 500, 502, 503])("keeps a stored login after HTTP %s", async (status) => {
-    saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2030-01-01T00:00:00Z" });
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
     expect(await resumeMemberSession(makeHost())).toBe("unreachable");
     expect(loadStoredMemberSession()?.sessionToken).toBe("synthetic-session");
   });
   it.each([401, 403])("clears rejected sessions after HTTP %s", async (status) => {
-    saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2030-01-01T00:00:00Z" });
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
     expect(await resumeMemberSession(makeHost())).toBe("cleared");
     expect(loadStoredMemberSession()).toBeNull();

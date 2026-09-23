@@ -29,11 +29,25 @@ the backend, frontend changes reload in Vite, and fixture JSON changes require r
 or restarting this launcher.
 
 Override `ADMINBOT_PORT` or `ADMINBOT_DEV_UI_PORT` to change ports. If either port is occupied,
-the launcher exits before seeding and leaves the existing process alone. This starts the development
-service and UI; the full dashboard still requires a separately configured OpenClaw gateway
-(and agent chat needs a model). Without the gateway, account authentication succeeds but the
-picker explains the missing connection and offers sign-out instead of pretending the dashboard
-is ready.
+the launcher exits before seeding and leaves the existing process alone.
+
+Start your personal OpenClaw gateway before running `./dev.sh`. The launcher checks its local
+port, shared-auth configuration, and allowed UI origin before seeding. It does not change your
+OpenClaw settings or start/stop your gateway. The backend reuses the normal device-token issuance
+and privilege-capped pairing code. No service-only bypass is needed or supported.
+
+By default the gateway URL is `ws://127.0.0.1:18789`; set `ADMINBOT_GATEWAY_WS_URL` if your
+configured gateway port differs. Both processes must share the same OpenClaw configuration,
+state directory and auth secret. Add `http://127.0.0.1:5173` to `gateway.controlUi.allowedOrigins`
+(or your overridden UI port), preserving existing origins, then restart the gateway. Model
+credentials are required for agent chat, not fixture sign-in.
+
+The fixture backend keeps `state/adminbot-dev.sqlite` and stubbed calendar/email invitations.
+It does not load the normal host's live connector composition. The default CheckIfExist
+checker needs no API key. It extracts references locally and queries public scholarly databases;
+submissions perform real lookups, including in development. Selecting GPTZero instead uploads the
+full PDF and requires `GPTZERO_API_KEY` with bibliography API access; submissions may incur charges.
+Ctrl+C stops only the development backend and UI, leaving your personal gateway running.
 
 The picker is injected only by the opt-in Vite development server launched through `dev.sh`.
 It is excluded from builds (including builds run with the picker flag), disabled in production
