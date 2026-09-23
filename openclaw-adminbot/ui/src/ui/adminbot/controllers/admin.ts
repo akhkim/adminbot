@@ -1632,7 +1632,7 @@ export async function loadAdminBotVenueCategories(host: AdminBotHost): Promise<v
       : "",
     error: result.ok
       ? null
-      : failureText(result, "Could not load conference categories.", session.baseUrl),
+      : result.message?.trim() || cvErrorText(result.kind, "load conference categories"),
   };
 }
 
