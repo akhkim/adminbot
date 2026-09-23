@@ -644,7 +644,7 @@
 .paper-slots__branch-number {
   padding: 1px var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--surface-2, var(--bg));
+  background: var(--bg-muted, var(--bg));
   font-size: var(--control-ui-text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -743,7 +743,7 @@
   padding: var(--space-3);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-2, transparent);
+  background: var(--bg-muted, transparent);
 }
 
 .paper-stages__lede {
@@ -1106,7 +1106,7 @@
 
 .ptl__head-hint {
   font-size: var(--control-ui-text-xs);
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .ptl__lane--core { --lane: #6d66c2; }
@@ -1149,7 +1149,7 @@
   font-size: var(--control-ui-text-xs);
   font-style: italic;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .ptl__lane-gate--done {
@@ -1174,7 +1174,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: var(--control-ui-text-xs);
-  color: var(--text-muted);
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -1271,7 +1271,7 @@
 
 .paper-trip__check small {
   display: block;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .paper-trip__actions {

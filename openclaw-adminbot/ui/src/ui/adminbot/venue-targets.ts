@@ -14,7 +14,7 @@
 
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import { aoeInstantMs } from "./data/deadline-time.ts";
-import { DEADLINE_VENUES } from "./data/deadlines.ts";
+import { DEADLINE_VENUES, type DeadlineVenue } from "./data/deadlines.ts";
 import { parseVenue } from "./data/venue-catalog.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
@@ -179,6 +179,147 @@ export function nextDeadlineVenue(now = new Date()) {
     .map((venue) => ({ venue, days: daysUntil(venue.deadline, now) as number }))
     .filter((entry) => entry.days >= 0)
     .sort((left, right) => left.days - right.days)[0];
+}
+
+// ── which venues the pre-registration board still cares about ────────────────────────────
+
+/** A venue as the board offers it: what to call it, when it is due, and what it is waiting on. */
+export type PreRegistrationVenue = {
+  venue_id: string;
+  label: string;
+  /** AoE date of the submission deadline, when the deadline board knows one. */
+  deadline?: string;
+  /** True once submission has closed and the venue has not released decisions yet. */
+  awaiting_results: boolean;
+};
+
+/** The deadline-board rows that describe one venue. An id can name several (abstract, paper). */
+function deadlineRowsFor(venueId: string) {
+  return DEADLINE_VENUES.filter((venue) =>
+    venueTargetMatches({ venue_id: venue.id, label: venue.name, confidence: 0 }, venueId),
+  );
+}
+
+/**
+ * When a venue stops being worth pre-registering for.
+ *
+ * The results date, not the submission deadline. A paper whose venue closed last week is still
+ * live work -- the authors are waiting on a decision, and the board is where the lab reads what is
+ * outstanding -- so dropping the row the moment submission closes hides exactly the papers whose
+ * status is least settled. A venue that publishes no notification date falls back to its
+ * submission deadline, which is the old behaviour and the best guess available.
+ *
+ * The latest across the venue's rows, because an abstract deadline and its full-paper deadline are
+ * two rows describing one cycle and the cycle ends when the last of them resolves.
+ */
+export function venueOpenUntilMs(venueId: string): number | undefined {
+  let latest: number | undefined;
+  for (const venue of deadlineRowsFor(venueId)) {
+    const instant = decisionInstantMs(venue) ?? aoeInstantMs(venue.deadline_aoe);
+    if (Number.isFinite(instant)) {
+      latest = latest === undefined ? instant : Math.max(latest, instant);
+    }
+  }
+  return latest;
+}
+
+/**
+ * When this row's decisions are due, or undefined when the venue has published no date for them.
+ *
+ * Three sources because the dataset carries the same fact three ways. `notification_aoe` is the
+ * top-level field and 132 of the 163 rows have it -- but the two venues this board exists for do
+ * not, and reading only that field left ICLR 2027 and ARR October falling back to their submission
+ * deadlines, which is the behaviour this was meant to change. Both publish the date in `schedule`
+ * instead: ICLR as a `notification` milestone ("Final decisions", 16 Dec), ARR as `cycle_end`
+ * ("Cycle ends", 20 Dec), which is that route's equivalent -- an ARR cycle has no single decision
+ * day, and when the cycle is over the bet is settled either way.
+ *
+ * `conference` is deliberately not one of them. A venue stops being a pre-registration once the
+ * answer is known; what happens at the conference four months later belongs to the travel flow.
+ */
+function decisionInstantMs(venue: DeadlineVenue): number | undefined {
+  const dates = [
+    venue.notification_aoe?.trim(),
+    ...venue.schedule
+      .filter((entry) => entry.milestone === "notification" || entry.milestone === "cycle_end")
+      .map((entry) => entry.date ?? entry.ends),
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    // A milestone carries a bare day where the top-level field carries a full AoE timestamp.
+    .map((value) => aoeInstantMs(/[ T]\d{2}:\d{2}/u.test(value) ? value : `${value} 23:59:59`))
+    .filter((value) => Number.isFinite(value));
+  return dates.length ? Math.max(...dates) : undefined;
+}
+
+/** The soonest submission deadline this venue still has ahead of it, else its last one. */
+function submissionDeadlineOf(venueId: string, now: number): string | undefined {
+  const dated = deadlineRowsFor(venueId)
+    .map((venue) => ({ date: venue.deadline_aoe, at: aoeInstantMs(venue.deadline_aoe) }))
+    .filter((entry) => Number.isFinite(entry.at))
+    .toSorted((left, right) => left.at - right.at);
+  const ahead = dated.find((entry) => entry.at >= now);
+  return (ahead ?? dated.at(-1))?.date?.slice(0, 10);
+}
+
+/**
+ * The venues the pre-registration board should offer.
+ *
+ * Two changes from simply listing the curated set. It keeps a venue until its **results** are out
+ * rather than until its submission closes (see venueOpenUntilMs), and it includes every venue a
+ * paper is actually aimed at, not only the three the picker offers. The second half is what makes
+ * the board honest: a paper aimed at a venue outside the curated list matched no chip, so it was
+ * absent from this table entirely while its own card showed the target.
+ *
+ * Still not the whole deadline board. A chip nothing is aimed at and nobody can pick is a row that
+ * buries the ones the lab is working toward, which is the reason the curated list exists.
+ */
+export function openPreRegistrationVenues(
+  papers: readonly AdminBotPaperRecord[],
+  now = new Date(),
+): PreRegistrationVenue[] {
+  const at = now.getTime();
+  const candidates: Array<{ venue_id: string; label: string }> = [...PRE_REGISTRATION_VENUES];
+  for (const paper of papers) {
+    for (const target of effectiveVenueTargets(paper)) {
+      // Deduplicated with the same matcher the chips filter rows by, not by id. Two chips that
+      // `venueTargetMatches` cannot tell apart -- "ARR August 2026" against the curated "ARR
+      // October", which share a family and a year -- would each select the other's papers, so the
+      // second one is a duplicate wearing a different name rather than a venue of its own. The
+      // curated entry wins, because its label is what the lab calls the venue while a target's is
+      // whatever the author typed into Add a project.
+      if (!candidates.some((venue) => venueTargetMatches(target, venue.venue_id))) {
+        candidates.push({ venue_id: target.venue_id, label: target.label });
+      }
+    }
+  }
+  return (
+    candidates
+      .flatMap((venue) => {
+        const until = venueOpenUntilMs(venue.venue_id);
+        if (until === undefined || until < at) {
+          return [];
+        }
+        const deadline = submissionDeadlineOf(venue.venue_id, at);
+        const due = deadline ? aoeInstantMs(`${deadline} 23:59:59`) : Number.NaN;
+        return [
+          {
+            venue_id: venue.venue_id,
+            label: venue.label,
+            deadline,
+            awaiting_results: Number.isFinite(due) && due < at,
+          },
+        ];
+      })
+      // Still-open submissions first and soonest-first inside that, then the ones being waited on.
+      // The first group is work somebody can still act on; the second is work already handed over.
+      .toSorted(
+        (left, right) =>
+          Number(left.awaiting_results) - Number(right.awaiting_results) ||
+          (daysUntil(left.deadline, now) ?? Number.POSITIVE_INFINITY) -
+            (daysUntil(right.deadline, now) ?? Number.POSITIVE_INFINITY) ||
+          left.label.localeCompare(right.label),
+      )
+  );
 }
 
 /**

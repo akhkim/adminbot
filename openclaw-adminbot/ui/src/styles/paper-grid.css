@@ -50,12 +50,12 @@
 
 .paper-grid__muted {
   margin-left: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.9em;
 }
 
 .paper-grid__warn {
-  color: var(--warning, #a67c00);
+  color: var(--warn, #a67c00);
 }
 
 .paper-grid__hint,
@@ -75,7 +75,7 @@
   padding: 8px;
   border: 1px solid var(--border, #26324a);
   border-radius: 6px;
-  background: var(--surface, #141b2b);
+  background: var(--bg-elevated, #141b2b);
   color: var(--text, #d7e2f4);
   resize: vertical;
 }
@@ -86,7 +86,7 @@
   display: grid;
   gap: 4px;
   font-size: 12.5px;
-  color: var(--text-muted, #9fb0cc);
+  color: var(--muted, #9fb0cc);
 }
 
 .paper-grid__import-summary .btn {
@@ -95,7 +95,7 @@
 
 .paper-grid__notice {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.85em;
   line-height: 1.5;
 }
@@ -166,7 +166,7 @@
   z-index: 2;
   padding: 0 var(--space-2);
   background: var(--sheet-gutter);
-  color: var(--text-muted);
+  color: var(--muted);
   text-align: right;
   font-size: 0.9em;
 }
@@ -282,7 +282,7 @@
 
 .paper-grid__cell input:disabled {
   background: color-mix(in srgb, var(--text) 5%, var(--bg));
-  color: var(--text-muted);
+  color: var(--muted);
   cursor: not-allowed;
 }
 
@@ -290,11 +290,11 @@
    survives the focus ring taking the border. */
 
 .paper-grid__cell--bad input {
-  background: color-mix(in srgb, var(--warning, #a67c00) 22%, var(--bg));
+  background: color-mix(in srgb, var(--warn, #a67c00) 22%, var(--bg));
 }
 
 .paper-grid__pending {
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* Recent-changes panel. A per-browser log, not the audit trail — the service has no
@@ -340,7 +340,7 @@
 
 .paper-grid__history-when {
   min-width: 6ch;
-  color: var(--text-muted);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -470,7 +470,7 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--sheet-line);
   border-radius: var(--radius-sm, 4px);
-  background: var(--bg-raised, var(--bg));
+  background: var(--bg-elevated, var(--bg));
   color: var(--text);
   font-weight: 400;
   text-align: left;
@@ -479,7 +479,7 @@
 }
 
 .paper-grid__help-hint {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 0.92em;
 }
 
@@ -520,7 +520,7 @@
   border: 1px solid var(--sheet-line);
   border-radius: 999px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--muted);
   font: inherit;
   font-size: 0.85em;
   cursor: pointer;
@@ -638,7 +638,7 @@
 
 .paper-grid__cell select:disabled {
   background-color: color-mix(in srgb, var(--text) 5%, var(--bg));
-  color: var(--text-muted);
+  color: var(--muted);
   cursor: not-allowed;
   opacity: 0.8;
 }

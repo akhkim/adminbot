@@ -1328,6 +1328,7 @@
     "adminbot:deadlines:board": "python3 scripts/adminbot-deadline-web-ui-gen.py",
     "adminbot:deadlines:collect": "python3 scripts/adminbot-deadline-collect.py",
     "adminbot:dev": "node --import tsx start-adminbot.ts",
+    "adminbot:dev:seed": "node --import tsx scripts/seed-adminbot-dev.ts",
     "adminbot:email": "node --import tsx scripts/adminbot-email-automation.ts",
     "adminbot:templates:check": "node --import tsx scripts/adminbot-email-templates-sync.ts",
     "adminbot:openreview": "python3 scripts/adminbot-openreview.py",

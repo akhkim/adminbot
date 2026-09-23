@@ -25,6 +25,7 @@ import {
   runAdminBotCvDigestJob,
   runAdminBotChannelNamingJob,
   runAdminBotVenueIndexJob,
+  searchAdminBotLabPapers,
   searchAdminBotVenuePapers,
   cancelWorkshopNudgeRun,
   loadWorkshopNudgePreview,
@@ -44,6 +45,9 @@ import {
   loadAdminBot,
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+  setAdminBotSelectedActions,
+  toggleAdminBotSelectedAction,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
   submitAdminBotReimbursement,
@@ -3931,10 +3935,11 @@ export function renderApp(state: AppViewState) {
               // The pre-registration and decision banners belong to whoever is reading. Active
               // Papers, which shares this renderer, does not set this.
               personal: true,
-              // Which surface the page opens on, not what it lets anyone do: an administrator
-              // arrives here to file links across every paper at once, so the sheet is their first
-              // screen from the third paper on, where a member gets it from the fifth. The role is
-              // the one already resolved for the whole render, so this cannot disagree with the
+              // Which surface to fall back to, not what it lets anyone do: everybody now opens on
+              // the flat view, and this decides what "Back to cards" hands them afterwards -- an
+              // administrator arrives here to file links across every paper at once, so they get
+              // the sheet from the third paper on where a member gets it from the fifth. The role
+              // is the one already resolved for the whole render, so this cannot disagree with the
               // tabs beside it.
               viewerIsAdmin: accessRole === "admin",
             })
@@ -4097,6 +4102,22 @@ export function renderApp(state: AppViewState) {
               onVenueFilter: (venueId) => {
                 state.adminBotVenueFilter = venueId;
               },
+              preregSort: state.adminBotPreregSort,
+              onPreregSort: (key) => {
+                state.adminBotPreregSort = key;
+              },
+              preregSortReversed: state.adminBotPreregSortReversed,
+              onPreregSortReversed: (value) => {
+                state.adminBotPreregSortReversed = value;
+              },
+              preregMinConfidence: state.adminBotPreregMinConfidence,
+              onPreregMinConfidence: (value) => {
+                state.adminBotPreregMinConfidence = value;
+              },
+              preregMissingEdit: state.adminBotPreregMissingEdit,
+              onPreregMissingEdit: (value) => {
+                state.adminBotPreregMissingEdit = value;
+              },
               onOpenPaperCard: (paperId) => {
                 state.adminBotPaperCardId = paperId;
                 // The card reads the paper's evidence cycle, which is fetched the first time a
@@ -4120,10 +4141,26 @@ export function renderApp(state: AppViewState) {
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
+              selectedActionIds: state.adminBotSelectedActionIds,
+              bulkActionBusy: state.adminBotBulkActionBusy,
+              onToggleActionSelected: (proposalId) => {
+                toggleAdminBotSelectedAction(state, proposalId);
+                requestHostUpdate?.();
+              },
+              onSetSelectedActions: (proposalIds) => {
+                setAdminBotSelectedActions(state, proposalIds);
+                requestHostUpdate?.();
+              },
+              onRemoveSelectedActions: () => {
+                void removeSelectedPendingAdminBotActions(state).finally(() =>
+                  requestHostUpdate?.(),
+                );
+                requestHostUpdate?.();
+              },
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onResolveEmailReview: (messageId, resolution) =>
                 void resolveAdminBotEmailReview(state, messageId, resolution),
-              onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onSaveMember: (member, options) => void saveAdminBotMember(state, member, options),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),
               onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
@@ -4290,6 +4327,28 @@ export function renderApp(state: AppViewState) {
                 onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
                 onSearch: () => void searchAdminBotVenuePapers(state),
                 onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+                tab: state.adminBotPapersTab,
+                onTabChange: (tab) => {
+                  state.adminBotPapersTab = tab;
+                },
+                // Signed-in only: the route behind this returns the lab's own papers. A visitor
+                // gets the conference half with no tab bar at all -- see ConferencePapersProps.
+                lab: {
+                  state: state.adminBotLabPapers,
+                  onQueryChange: (query) => {
+                    state.adminBotLabPapers = { ...state.adminBotLabPapers, query };
+                  },
+                  onSearch: () => void searchAdminBotLabPapers(state),
+                  onToggleSections: (paperId) => {
+                    const open = state.adminBotLabPapers.expanded;
+                    state.adminBotLabPapers = {
+                      ...state.adminBotLabPapers,
+                      expanded: open.includes(paperId)
+                        ? open.filter((id) => id !== paperId)
+                        : [...open, paperId],
+                    };
+                  },
+                },
               }),
             )
           : nothing}

@@ -111,6 +111,7 @@ import {
   createImportColumnMapper,
   type ImportColumnMapper,
 } from "../workflows/papers/import-columns.js";
+import { findRelevantLabPapers } from "../workflows/papers/lab-relevance-search.js";
 import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
@@ -1114,7 +1115,7 @@ async function handleAuthRoute(
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/signup") {
@@ -1126,7 +1127,7 @@ async function handleAuthRoute(
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/login") {
@@ -1142,7 +1143,7 @@ async function handleAuthRoute(
       sendJson(res, result.status, { error: result.error.message, code: result.code });
       return;
     }
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (url.pathname === "/auth/registrations" || url.pathname.startsWith("/auth/registrations/")) {
@@ -1171,6 +1172,7 @@ async function handleAuthRoute(
     sendAuthResult(
       res,
       ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
+      requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
   }
@@ -1182,7 +1184,11 @@ async function handleAuthRoute(
     }
     // No principal resolution first: an impersonated session that has already expired should still
     // be closable, and the auth service refuses anything that is not an impersonation row anyway.
-    sendAuthResult(res, ctx.auth.endImpersonation(token));
+    sendAuthResult(
+      res,
+      ctx.auth.endImpersonation(token),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/pair-device") {
@@ -1203,7 +1209,7 @@ async function handleAuthRoute(
     if (token) {
       ctx.auth.logout(token);
     }
-    clearSessionCookie(res);
+    clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     sendJson(res, 200, { logged_out: true });
     return;
   }
@@ -1219,7 +1225,7 @@ async function handleAuthRoute(
         return ip ? { remoteIp: ip } : {};
       })(),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
@@ -1228,7 +1234,7 @@ async function handleAuthRoute(
       token: asString(body.token),
       newPassword: asString(body.new_password),
     });
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password") {
@@ -1247,9 +1253,9 @@ async function handleAuthRoute(
       asString(body.new_password),
     );
     if (result.ok) {
-      clearSessionCookie(res);
+      clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     }
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/email") {
@@ -1273,7 +1279,7 @@ async function handleAuthRoute(
       asString(body.current_password),
       remoteIp(req, ctx.trustProxyHeaders),
     );
-    sendAuthResult(res, result);
+    sendAuthResult(res, result, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   sendJson(res, 404, { error: { message: "not found" } });
@@ -1309,7 +1315,11 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(res, ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy));
+    sendAuthResult(
+      res,
+      ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
@@ -1317,7 +1327,11 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(res, ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy));
+    sendAuthResult(
+      res,
+      ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
+      requestIsSecure(req, ctx.trustProxyHeaders),
+    );
     return;
   }
   sendJson(res, 404, { error: { message: "not found" } });
@@ -1716,6 +1730,43 @@ async function handleAuthenticatedRoute(
         ...ranking,
       });
     } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    return;
+  }
+
+  // The lab's own papers, ranked against a topic or a whole proposal. See
+  // workflows/papers/lab-relevance.ts.
+  //
+  // Deliberately *not* on ANONYMOUS_ROUTES, unlike the conference search directly above it. That
+  // one ranks a published conference programme against text the caller typed, so it carries no lab
+  // data; this one returns our paper titles, the sections they answer and how thin the record
+  // behind each placement is. Same data as `GET /papers`, so it takes the same gate: the global
+  // one, which admits only an authenticated caller.
+  if (req.method === "POST" && url.pathname === "/lab-papers/relevance") {
+    const body = readRecord(await readJson(req));
+    const query = asString(body.query)?.trim() ?? "";
+    if (!query) {
+      sendJson(res, 400, { error: { message: "say what to look for first" } });
+      return;
+    }
+    const papers = service.listPapers();
+    if (!papers.ok) {
+      sendServiceResult(res, papers);
+      return;
+    }
+    try {
+      const report = await findRelevantLabPapers({
+        papers: papers.payload.papers,
+        query,
+        embed: ctx.embedder,
+      });
+      sendJson(res, 200, report);
+    } catch (error) {
+      // The embedding model being unreachable is the common failure and it is not the caller's
+      // fault, so it reads as a gateway error rather than a bad request.
       sendJson(res, 502, {
         error: { message: error instanceof Error ? error.message : String(error) },
       });
@@ -3337,6 +3388,7 @@ async function handleAuthenticatedRoute(
         ...(body.dry_run === false ? { dryRun: false } : {}),
         ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
       }),
+      requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
   }
@@ -4458,6 +4510,29 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/papers/nudges") {
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  // Onboarding for one member of the roster, which is what the Members tab's Add-member button
+  // runs after it has created the record. Matched before `onboardingStep` below, whose pattern
+  // would otherwise read "guide" as the id of a checklist step (there is no such step, so it would
+  // 404 rather than do this).
+  //
+  // Admin member session only, for the same reason /onboarding/guide is: approving what this
+  // queues mints a Slack Connect invite and mails a stranger. The shared service principal
+  // authenticates every agent tool call regardless of who is chatting, so accepting it here
+  // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
+  const memberOnboardingGuide = /^\/lab\/members\/([^/]+)\/onboarding\/guide$/u.exec(url.pathname);
+  if (req.method === "POST" && memberOnboardingGuide?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.queueOnboardingGuideForMember({
+        memberId: decodeURIComponent(memberOnboardingGuide[1]),
+        actor: principalActor(principal),
+      }),
+    );
     return;
   }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
@@ -5713,10 +5788,14 @@ function applyCors(
   return true;
 }
 
-function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>): void {
+function sendAuthResult<T>(
+  res: ServerResponse,
+  result: AdminBotAuthResponse<T>,
+  secure: boolean,
+): void {
   if (result.ok) {
     if (result.sessionToken) {
-      setSessionCookie(res, result.sessionToken);
+      setSessionCookie(res, result.sessionToken, secure);
     }
     sendJson(res, result.status, result.payload);
     return;
@@ -5728,17 +5807,25 @@ function sendAuthResult<T>(res: ServerResponse, result: AdminBotAuthResponse<T>)
   sendJson(res, result.status, body);
 }
 
-// No Secure attribute: the AdminBot service is reached over loopback plain HTTP, where a Secure
-// cookie would never be sent back. SameSite=Lax + HttpOnly still block third-party/script access.
-function setSessionCookie(res: ServerResponse, token: string): void {
+// `Secure` whenever the request arrived over TLS -- see requestIsSecure. It used to be omitted
+// unconditionally, on the grounds that the service is reached over loopback plain HTTP; that is
+// true of the cron wrappers, and false of every browser that reaches it through the public proxy,
+// which is where a session cookie is actually issued. HttpOnly and SameSite=Lax are unconditional.
+function sessionCookieAttributes(secure: boolean): string {
+  return `HttpOnly; SameSite=Lax; Path=/${secure ? "; Secure" : ""}`;
+}
+
+function setSessionCookie(res: ServerResponse, token: string, secure: boolean): void {
   res.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`,
+    `${SESSION_COOKIE}=${token}; ${sessionCookieAttributes(secure)}; Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`,
   );
 }
 
-function clearSessionCookie(res: ServerResponse): void {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+// Same attributes as the cookie being cleared: a browser only replaces a cookie when the pair
+// matches, so a logout that forgot Secure would leave the real cookie in place.
+function clearSessionCookie(res: ServerResponse, secure: boolean): void {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; ${sessionCookieAttributes(secure)}; Max-Age=0`);
 }
 
 function bearerToken(req: IncomingMessage): string | undefined {
@@ -5771,6 +5858,30 @@ function cookieToken(req: IncomingMessage): string | undefined {
 // address, not the real caller's — the actual IP only shows up in X-Forwarded-For, which the
 // proxy sets and the app must not trust unless it knows every request actually passes through
 // that proxy (otherwise a direct caller could hand-write the header to spoof it).
+/**
+ * Whether this request reached us over TLS, and so whether its session cookie may be `Secure`.
+ *
+ * Decided per request rather than once at startup because both are true of the same deployment:
+ * the service is reached over loopback plain HTTP by the cron wrappers and the verify commands,
+ * and over HTTPS by real browsers through the public proxy (ADMINBOT_PUBLIC_URL). A cookie marked
+ * `Secure` on the loopback path would never come back, and one left unmarked on the public path
+ * travels in the clear the first time anything addresses that host over http://.
+ *
+ * `x-forwarded-proto` only when the proxy is trusted, exactly as remoteIp treats x-forwarded-for:
+ * an untrusted client could otherwise set it, though here the lie is self-harming (it only adds a
+ * restriction to the attacker's own cookie).
+ */
+function requestIsSecure(req: IncomingMessage, trustProxyHeaders: boolean): boolean {
+  if (trustProxyHeaders) {
+    const header = req.headers["x-forwarded-proto"];
+    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
+    if (first) {
+      return first.toLowerCase() === "https";
+    }
+  }
+  return Boolean((req.socket as { encrypted?: boolean }).encrypted);
+}
+
 function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
   if (trustProxyHeaders) {
     const header = req.headers["x-forwarded-for"];
