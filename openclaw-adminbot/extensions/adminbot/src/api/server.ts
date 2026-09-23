@@ -5785,6 +5785,9 @@ function createOpenReviewCitationWatch(
         maxReferences: 300,
         requireAllDatabases: true,
         allowOversized: true,
+        ...(process.env.OPENALEX_API_KEY?.trim()
+          ? { openAlexApiKey: process.env.OPENALEX_API_KEY.trim() }
+          : {}),
       }),
     ...(notifyEmail ? { notifyEmail } : {}),
   });

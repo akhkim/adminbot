@@ -30,7 +30,12 @@ export class ReferenceCheckError extends Error {}
 /** An entry this long is several references the splitter could not separate. */
 export const OVERSIZED_REFERENCE = 2000;
 
-const REQUIRED_DATABASES = new Set(["api.crossref.org", "api.openalex.org", "dblp.org"]);
+// Crossref (journals, the ACL Anthology) and DBLP (CS venues, arXiv) have generous anonymous limits.
+// OpenAlex now allows an anonymous IP only a tiny shared daily budget, and Semantic Scholar and
+// arXiv throttle constantly: requiring any of them would leave most references unchecked.
+const REQUIRED_DATABASES = new Set(["api.crossref.org", "dblp.org"]);
+// Informational, not a discrepancy: ML papers are routinely cited from arXiv alone.
+const INFORMATIONAL_ISSUE = /^Found in arXiv \(not indexed/;
 
 export async function extractPdfReferences(
   pdf: Uint8Array,
@@ -99,13 +104,14 @@ export function createPdfReferenceChecker(
     fetch?: typeof globalThis.fetch;
     /** The interactive page keeps 100; the unattended OpenReview sweep allows long bibliographies. */
     maxReferences?: number;
-    /** Report "not found" only when Crossref, OpenAlex and DBLP answered; else "unavailable". */
+    /** Report "not found" only when Crossref and DBLP answered; otherwise "unavailable". */
     requireAllDatabases?: boolean;
     /**
      * Check the entries that split cleanly and report an unsplittable chunk as unavailable, rather
      * than rejecting the paper. For the unattended sweep, which weighs how much went unchecked.
      */
     allowOversized?: boolean;
+    openAlexApiKey?: string;
   } = {},
 ): PdfReferenceChecker {
   return async (pdf, signal, onProgress) => {
@@ -143,6 +149,7 @@ export function createPdfReferenceChecker(
           lastRequest,
           requestIntervalMs: options.requestIntervalMs,
           fetch: options.fetch ?? globalThis.fetch,
+          ...(options.openAlexApiKey ? { openAlexApiKey: options.openAlexApiKey } : {}),
         },
         () =>
           checkWithFallback(parsed.title || citation, parsed.title ? parsed : undefined, citation),
@@ -153,7 +160,7 @@ export function createPdfReferenceChecker(
         result.exists &&
         result.matchConfidence >= 80 &&
         !result.retracted &&
-        !result.issues.length;
+        !result.issues.some((issue) => !INFORMATIONAL_ISSUE.test(issue));
       // A rate-limited database may hold the work; with requireAllDatabases, "not found" is only
       // claimed once the broad-coverage databases answered. Semantic Scholar and arXiv throttle
       // anonymous clients constantly, so requiring them would mean never reporting anything.

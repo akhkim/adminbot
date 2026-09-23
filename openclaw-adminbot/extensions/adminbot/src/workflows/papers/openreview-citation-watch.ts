@@ -290,7 +290,9 @@ export class OpenReviewCitationWatch {
     store.saveOpenReviewCitationCheck(check);
     summary.checked++;
     const flagged = findings.filter(isFlagged);
-    if (!flagged.length) {
+    // "Review" is mostly a weak or metadata-mismatched match; on its own it would mail about nearly
+    // every paper. A reference found nowhere is what a desk rejection is about, so only that mails.
+    if (!flagged.some((finding) => finding.status === "not_found")) {
       return;
     }
     summary.flagged++;

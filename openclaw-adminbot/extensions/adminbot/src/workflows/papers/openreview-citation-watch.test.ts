@@ -148,6 +148,19 @@ describe("OpenReview citation watch", () => {
     });
   });
 
+  it("raises no proposal when nothing is outright not found", async () => {
+    const review = { ...notFound, status: "review" as const, explanation: "Weak match." };
+    const { store, sweep } = setup({
+      submissions: [submission()],
+      check: async () => ({ findings: [matched, review] }),
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")?.findings).toContainEqual(
+      review,
+    );
+    expect(store.listProposalsByType("email.send")).toHaveLength(0);
+  });
+
   it("raises no proposal for a clean paper or without a recipient", async () => {
     const clean = setup({ submissions: [submission()] });
     await clean.sweep();

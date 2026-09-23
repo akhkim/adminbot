@@ -9,6 +9,8 @@ export type LookupContext = {
   available?: Set<string>;
   lastRequest: Map<string, number>;
   fetch: typeof globalThis.fetch;
+  /** Without a key OpenAlex shares a small daily budget across the host's IP. */
+  openAlexApiKey?: string;
 };
 export const lookupContext = new AsyncLocalStorage<LookupContext>();
 const hosts = new Set([
@@ -34,6 +36,9 @@ export async function referenceFetch(input: string, init?: RequestInit): Promise
     url.password
   ) {
     throw new Error("Unsupported reference database");
+  }
+  if (url.hostname === "api.openalex.org" && context.openAlexApiKey) {
+    url.searchParams.set("api_key", context.openAlexApiKey);
   }
   const source = url.hostname;
   const signal = AbortSignal.any([context.signal, AbortSignal.timeout(12_000)]);
