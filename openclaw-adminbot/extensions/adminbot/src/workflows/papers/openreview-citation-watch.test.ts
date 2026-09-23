@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  NO_TEXT_LAYER,
   ReferenceCheckError,
   type PdfReferenceChecker,
   type ReferenceFinding,
@@ -216,6 +217,78 @@ describe("OpenReview citation watch", () => {
     });
     await sweep();
     expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels a text-less upload as a placeholder, to be checked when the paper arrives", async () => {
+    const { store, sweep } = setup({
+      submissions: [submission()],
+      check: async () => {
+        throw new ReferenceCheckError(NO_TEXT_LAYER);
+      },
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "unreadable",
+      error: "Placeholder PDF with no text; the full paper is checked when it is uploaded.",
+    });
+  });
+
+  it("waits while the required databases back off, without spending retries", async () => {
+    let pausedUntil: number | undefined = Date.now() + 60_000;
+    const store = new AdminBotMemoryStore();
+    const check = vi.fn<PdfReferenceChecker>(async () => {
+      // A back-off that starts mid-check leaves most of the paper unchecked.
+      pausedUntil = Date.now() + 60_000;
+      return { findings: [matched, { ...notFound, status: "unavailable" as const }] };
+    });
+    const watch = new OpenReviewCitationWatch({
+      store,
+      service: new AdminBotService(store),
+      reader: {
+        profileId: async () => "~Synthetic_Author1",
+        listSubmissions: async () => [
+          submission(),
+          submission({ id: "paperBBBB", modified_at: 0 }),
+        ],
+        readPdf: async (id) => Buffer.from(`%PDF-${id}`),
+      },
+      check,
+      pausedUntil: () => pausedUntil,
+    });
+    const paused = await watch.start();
+    expect(paused).toMatchObject({ started: false, paused_until: expect.any(String) });
+    expect(check).not.toHaveBeenCalled();
+
+    pausedUntil = undefined;
+    await watch.start();
+    await watch.idle();
+    // Checked the newest paper, saw the back-off begin, and stopped before the next one.
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "failed",
+      attempts: 0,
+    });
+    expect(store.getOpenReviewCitationCheck("paperBBBB", "/pdf/v1.pdf")).toBeUndefined();
+  });
+
+  it("gives a version that failed under an older extractor fresh retries", async () => {
+    const { store, check, sweep } = setup({ submissions: [submission()] });
+    store.saveOpenReviewCitationCheck({
+      submission_id: "paperAAAA",
+      pdf_path: "/pdf/v1.pdf",
+      title: "Synthetic paper",
+      venue_id: "Synthetic.cc/2027/Conference/Submission",
+      status: "failed",
+      checked_at: "2026-09-23T18:34:00.000Z",
+      attempts: MAX_CITATION_CHECK_ATTEMPTS,
+      extractor_version: CITATION_EXTRACTOR_VERSION - 1,
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "completed",
+      attempts: 1,
+    });
   });
 
   it("retries transient failures on later sweeps, a bounded number of times", async () => {

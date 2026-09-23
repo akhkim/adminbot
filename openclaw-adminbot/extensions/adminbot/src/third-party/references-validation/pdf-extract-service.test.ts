@@ -2,6 +2,7 @@
 // hyphenated breaks); the names and titles are published works, not lab manuscripts.
 import { describe, expect, it } from "vitest";
 import {
+  condenseAuthorRuns,
   findReferencesSection,
   splitIntoReferences,
   stripLineNumbers,
@@ -237,5 +238,20 @@ describe("author-list condensing", () => {
     expect(refs[1]).toBe(
       "Surnameaa, F., Surnameba, et al. Gemini: a family of highly capable multimodal models, 2024.",
     );
+  });
+});
+
+describe("condenseAuthorRuns", () => {
+  it("collapses a team report's author list even when it starts mid-chunk", () => {
+    const team = Array.from(
+      { length: 280 },
+      (_, i) => `Name${String.fromCharCode(97 + (i % 26))} Person`,
+    );
+    const chunk = `Short, A., Entry, et al. A first title, 2024. ${team.join(", ")}, and Last Author. Gemini: a family of models. arXiv, 2024.`;
+    const condensed = condenseAuthorRuns(chunk);
+    expect(chunk.length).toBeGreaterThan(3000);
+    expect(condensed.length).toBeLessThan(300);
+    expect(condensed).toContain("et al.");
+    expect(condensed).toContain("Gemini: a family of models");
   });
 });

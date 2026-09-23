@@ -355,6 +355,30 @@ export const splitIntoReferences = (sectionText: string): string[] => {
 const isAuthorToken = (token: string): boolean =>
   token.length <= 40 && !/\p{Ll}{4,}\s+\p{Ll}{2,}/u.test(token.replace(/^and\s+/, ""));
 
+/**
+ * Every run of more than twelve author tokens, wherever it starts, collapsed to three and
+ * "et al." Used to size an unsplittable chunk by the entries it holds rather than by names:
+ * two entries run together, one of them a 300-author team report, are two entries, not thirty.
+ */
+export const condenseAuthorRuns = (text: string): string => {
+  const tokens = text.split(", ");
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; ) {
+    let end = i;
+    while (end < tokens.length && isAuthorToken(tokens[end])) {
+      end++;
+    }
+    if (end - i > 12) {
+      kept.push(...tokens.slice(i, i + 3), "et al.");
+      i = end;
+    } else {
+      kept.push(...tokens.slice(i, Math.max(end, i + 1)));
+      i = Math.max(end, i + 1);
+    }
+  }
+  return kept.join(", ");
+};
+
 const condenseAuthors = (ref: string): string => {
   const tokens = ref.split(", ");
   let run = 0;

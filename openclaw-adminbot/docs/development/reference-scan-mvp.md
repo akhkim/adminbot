@@ -114,6 +114,11 @@ references before a desk rejection.
   - Review-mode line numbers, ACL/ICML/NeurIPS/ICLR bibliography styles, alphabetic labels and
     hundred-author team reports are handled. Measured on this account's 328 submissions
     (2026-09-23), 272 split cleanly enough to check.
+- **Pacing and back-off.** A database that answers 429 or 503, or refuses connections, is left
+  alone for its `Retry-After` (15 minutes if it gives none, at most 6 hours), shared by every check
+  in the process. While Crossref or DBLP is backing off, the sweep does not start or stops before
+  the next paper, and a paper interrupted by it does not spend a retry. Papers are a minute apart.
+  A placeholder upload with no text is recorded as such and checked when the paper is uploaded.
 - **Notification.** A completed check with any `not_found` citation creates an
   `email.send` proposal (listing its `review` items too; those alone do not) to `ADMINBOT_CITATION_CHECK_NOTIFY` (default: the first
   `ADMINBOT_CONTACT_EMAILS` address). It is sent only after an admin approves it in Pending

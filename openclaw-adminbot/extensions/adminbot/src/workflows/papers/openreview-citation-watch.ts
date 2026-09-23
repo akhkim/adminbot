@@ -12,7 +12,9 @@
 // uploaded mid-backfill is checked next rather than after the backlog.
 
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
+  NO_TEXT_LAYER,
   ReferenceCheckError,
   type PdfReferenceChecker,
   type ReferenceFinding,
@@ -30,7 +32,8 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
 export const MAX_CITATION_CHECK_ATTEMPTS = 3;
 // Bump when extraction improves: a version it could not read before is read again once. 1 is the
 // first release, which could not split review-mode or ACL-style bibliographies at all.
-export const CITATION_EXTRACTOR_VERSION = 2;
+// 3 splits review-mode and team-report bibliographies and sizes merged chunks by entries.
+export const CITATION_EXTRACTOR_VERSION = 3;
 const DEFAULT_CHECK_TIMEOUT_MS = 60 * 60_000;
 // More unchecked references than this and the version is retried rather than reported.
 const MAX_UNCHECKED_SHARE = 0.2;
@@ -46,12 +49,21 @@ export type OpenReviewCitationWatchDeps = {
   notifyEmail?: string;
   now?: () => Date;
   checkTimeoutMs?: number;
+  /**
+   * When the databases a "not found" depends on are backing off (epoch ms), or undefined. The
+   * sweep waits rather than recording papers as failed and spending their retries.
+   */
+  pausedUntil?: () => number | undefined;
+  /** Gap between papers, so a backfill stays well inside the free databases' limits. */
+  pauseBetweenMs?: number;
 };
 
 export type OpenReviewCitationSweepStart = {
   started: boolean;
   submissions: number;
   pending: number;
+  /** Set when the sweep did not start because the required databases are backing off. */
+  paused_until?: string;
   last_sweep?: OpenReviewCitationSweepSummary;
 };
 
@@ -91,6 +103,16 @@ export class OpenReviewCitationWatch {
         started: false,
         submissions: 0,
         pending: 0,
+        ...(this.last ? { last_sweep: { ...this.last } } : {}),
+      };
+    }
+    const paused = this.deps.pausedUntil?.();
+    if (paused) {
+      return {
+        started: false,
+        submissions: 0,
+        pending: 0,
+        paused_until: new Date(paused).toISOString(),
         ...(this.last ? { last_sweep: { ...this.last } } : {}),
       };
     }
@@ -136,7 +158,7 @@ export class OpenReviewCitationWatch {
     return (
       !existing ||
       (existing.status === "failed" && existing.attempts < MAX_CITATION_CHECK_ATTEMPTS) ||
-      isStaleUnreadable(existing)
+      isStale(existing)
     );
   }
 
@@ -150,8 +172,12 @@ export class OpenReviewCitationWatch {
           (submission) => !attempted.has(versionKey(submission)) && this.needsCheck(submission),
         )
         .toSorted((a, b) => b.modified_at - a.modified_at)[0];
-      if (!next) {
+      if (!next || this.deps.pausedUntil?.()) {
+        // Paused: the next scheduled run resumes once the databases are answering again.
         return;
+      }
+      if (attempted.size > 0 && this.deps.pauseBetweenMs) {
+        await delay(this.deps.pauseBetweenMs);
       }
       attempted.add(versionKey(next));
       await this.checkVersion(next, summary);
@@ -171,7 +197,7 @@ export class OpenReviewCitationWatch {
       pdf_path: submission.pdf_path,
       title: submission.title,
       venue_id: submission.venue_id,
-      attempts: prior && isStaleUnreadable(prior) ? 1 : (prior?.attempts ?? 0) + 1,
+      attempts: prior && isStale(prior) ? 1 : (prior?.attempts ?? 0) + 1,
       checked_at: this.now().toISOString(),
       extractor_version: CITATION_EXTRACTOR_VERSION,
     };
@@ -193,8 +219,7 @@ export class OpenReviewCitationWatch {
     const identical = store
       .listOpenReviewCitationChecks(submission.id)
       .find(
-        (check) =>
-          check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isStaleUnreadable(check),
+        (check) => check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isStale(check),
       );
     if (identical) {
       summary.reused++;
@@ -222,7 +247,10 @@ export class OpenReviewCitationWatch {
           ...base,
           pdf_sha256: pdfSha256,
           status: "unreadable",
-          error: error.message,
+          error:
+            error.message === NO_TEXT_LAYER
+              ? "Placeholder PDF with no text; the full paper is checked when it is uploaded."
+              : error.message,
         });
         return;
       }
@@ -266,11 +294,14 @@ export class OpenReviewCitationWatch {
       return;
     }
     if (unchecked > total * MAX_UNCHECKED_SHARE) {
+      // The databases, not the paper: a back-off mid-check does not use up one of its retries.
+      const backingOff = Boolean(this.deps.pausedUntil?.());
       // Too little was actually checked; recording this as complete would read as a clean paper.
       // A later sweep retries, by which time a rate-limited database has usually recovered.
       summary.failed++;
       store.saveOpenReviewCitationCheck({
         ...base,
+        attempts: backingOff ? base.attempts - 1 : base.attempts,
         pdf_sha256: pdfSha256,
         status: "failed",
         error:
@@ -344,9 +375,11 @@ export class OpenReviewCitationWatch {
   }
 }
 
-function isStaleUnreadable(check: OpenReviewCitationCheck) {
+/** Unreadable or failed under an older extractor: read again once, with fresh retries. */
+function isStale(check: OpenReviewCitationCheck) {
   return (
-    check.status === "unreadable" && (check.extractor_version ?? 1) < CITATION_EXTRACTOR_VERSION
+    (check.status === "unreadable" || check.status === "failed") &&
+    (check.extractor_version ?? 1) < CITATION_EXTRACTOR_VERSION
   );
 }
 

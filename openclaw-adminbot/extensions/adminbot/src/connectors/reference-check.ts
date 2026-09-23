@@ -1,5 +1,6 @@
 import { createEngine } from "clawpdf";
 import {
+  condenseAuthorRuns,
   findReferencesSection,
   splitIntoReferences,
 } from "../third-party/references-validation/pdf-extract-service.js";
@@ -27,6 +28,10 @@ export type PdfReferenceChecker = (
 
 export class ReferenceCheckError extends Error {}
 
+/** Typically a placeholder upload before the full paper is due, or a scanned image. */
+export const NO_TEXT_LAYER =
+  "This PDF has no text to read: it is a placeholder or a scanned image.";
+
 /** An entry this long is several references the splitter could not separate. */
 export const OVERSIZED_REFERENCE = 2000;
 
@@ -34,6 +39,15 @@ export const OVERSIZED_REFERENCE = 2000;
 // OpenAlex now allows an anonymous IP only a tiny shared daily budget, and Semantic Scholar and
 // arXiv throttle constantly: requiring any of them would leave most references unchecked.
 const REQUIRED_DATABASES = new Set(["api.crossref.org", "dblp.org"]);
+/** When the databases a "not found" depends on can next be asked; undefined if they can now. */
+export function requiredDatabasesPausedUntil(
+  cooldowns: Map<string, number>,
+  now = Date.now(),
+): number | undefined {
+  const until = Math.max(0, ...[...REQUIRED_DATABASES].map((host) => cooldowns.get(host) ?? 0));
+  return until > now ? until : undefined;
+}
+
 // Informational, not a discrepancy: ML papers are routinely cited from arXiv alone.
 const INFORMATIONAL_ISSUE = /^Found in arXiv \(not indexed/;
 
@@ -54,6 +68,9 @@ export async function extractPdfReferences(
       const text = document.text({ maxChars: 600_001, maxPages: document.pageCount });
       if (text.length > 600_000) {
         throw new ReferenceCheckError("This PDF contains too much text to check.");
+      }
+      if (!text.trim()) {
+        throw new ReferenceCheckError(NO_TEXT_LAYER);
       }
       const section = findReferencesSection(text);
       // Never fall back to sending manuscript paragraphs as database search queries.
@@ -112,6 +129,8 @@ export function createPdfReferenceChecker(
      */
     allowOversized?: boolean;
     openAlexApiKey?: string;
+    /** Shared back-off state; see LookupContext.cooldowns. */
+    cooldowns?: Map<string, number>;
   } = {},
 ): PdfReferenceChecker {
   return async (pdf, signal, onProgress) => {
@@ -132,7 +151,8 @@ export function createPdfReferenceChecker(
           status: "unavailable",
           explanation:
             "This part of the bibliography could not be split into single references and was not checked.",
-          oversized_chars: citation.length,
+          // Sized by entries, not names: a 300-author team report is one entry.
+          oversized_chars: condenseAuthorRuns(citation).length,
         };
         findings.push(finding);
         onProgress?.({ completed: findings.length, total: references.length, finding });
@@ -150,6 +170,7 @@ export function createPdfReferenceChecker(
           requestIntervalMs: options.requestIntervalMs,
           fetch: options.fetch ?? globalThis.fetch,
           ...(options.openAlexApiKey ? { openAlexApiKey: options.openAlexApiKey } : {}),
+          ...(options.cooldowns ? { cooldowns: options.cooldowns } : {}),
         },
         () =>
           checkWithFallback(parsed.title || citation, parsed.title ? parsed : undefined, citation),
