@@ -27,9 +27,12 @@ function proposal(
 
 describe("createAdminBotSlackAdminExecutor", () => {
   it("renames a channel", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", text: async () => '{"ok":true}' });
+    const fetchImpl = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => '{"ok":true}',
+    });
     const executor = createAdminBotSlackAdminExecutor({
       env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
       fetchImpl,
@@ -57,7 +60,12 @@ describe("createAdminBotSlackAdminExecutor", () => {
         statusText: "OK",
         text: async () => '{"ok":true,"channel":{"id":"D1"}}',
       })
-      .mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", text: async () => '{"ok":true}' });
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true}',
+      });
     const executor = createAdminBotSlackAdminExecutor({
       env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
       fetchImpl,
@@ -172,6 +180,91 @@ describe("createAdminBotSlackAdminExecutor", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  describe("slack.remove_from_channel", () => {
+    // Slack answers `restricted_action` when a bot token tries to kick somebody out of a public
+    // channel, and it answers it with HTTP 200 -- so the only signal is the body. Both active
+    // channels are public, which is why no amount of bot scope fixes this and the kick has to run
+    // on the user token. The directory lookup stays on the bot, which holds channels:read.
+    const env = {
+      SLACK_BOT_TOKEN: "xoxb-test",
+      SLACK_USER_TOKEN: "xoxp-test",
+    } as NodeJS.ProcessEnv;
+
+    function okJson(body: string) {
+      return { ok: true, status: 200, statusText: "OK", text: async () => body };
+    }
+
+    it("looks the channel up as the bot and kicks as the user", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(
+          okJson('{"ok":true,"channels":[{"id":"C0A06H6K6DV","name":"jinesis-active"}]}'),
+        )
+        .mockResolvedValueOnce(okJson('{"ok":true}'));
+      const executor = createAdminBotSlackAdminExecutor({ env, fetchImpl });
+
+      const result = await executor.execute(
+        proposal("slack.remove_from_channel", {
+          channel: "jinesis-active",
+          user_id: "U09V5B5F0A1",
+        }),
+      );
+
+      expect(result).toEqual({ handled: true });
+      const [lookupUrl, lookupInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
+      expect(lookupUrl).toContain("conversations.list");
+      expect((lookupInit.headers as Record<string, string>).Authorization).toBe("Bearer xoxb-test");
+
+      const [kickUrl, kickInit] = fetchImpl.mock.calls[1] as [string, RequestInit];
+      expect(kickUrl).toBe("https://slack.com/api/conversations.kick");
+      // The whole point of the change: this header is the user token, not the bot's.
+      expect((kickInit.headers as Record<string, string>).Authorization).toBe("Bearer xoxp-test");
+      expect(JSON.parse(String(kickInit.body))).toEqual({
+        channel: "C0A06H6K6DV",
+        user: "U09V5B5F0A1",
+      });
+    });
+
+    it("surfaces restricted_action rather than reading the 200 as success", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(
+          okJson('{"ok":true,"channels":[{"id":"C0A06H6K6DV","name":"jinesis-active"}]}'),
+        )
+        .mockResolvedValueOnce(okJson('{"ok":false,"error":"restricted_action"}'));
+      const executor = createAdminBotSlackAdminExecutor({ env, fetchImpl });
+
+      await expect(
+        executor.execute(
+          proposal("slack.remove_from_channel", {
+            channel: "jinesis-active",
+            user_id: "U09V5B5F0A1",
+          }),
+        ),
+      ).rejects.toThrow(/restricted_action/u);
+    });
+
+    it("refuses before calling Slack when the user token is missing", async () => {
+      // Falling back to the bot token here would record an approval against a call that Slack was
+      // never going to honour, so a deployment without the token fails closed instead.
+      const fetchImpl = vi.fn();
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(
+          proposal("slack.remove_from_channel", {
+            channel: "jinesis-active",
+            user_id: "U09V5B5F0A1",
+          }),
+        ),
+      ).rejects.toThrow(/SLACK_USER_TOKEN is required/u);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+  });
+
   it("returns handled:false for unrelated action types", async () => {
     const fetchImpl = vi.fn();
     const executor = createAdminBotSlackAdminExecutor({
@@ -179,7 +272,9 @@ describe("createAdminBotSlackAdminExecutor", () => {
       fetchImpl,
     });
 
-    const result = await executor.execute(proposal("email.send", { to: "a@b.com", subject: "x", body: "y" }));
+    const result = await executor.execute(
+      proposal("email.send", { to: "a@b.com", subject: "x", body: "y" }),
+    );
     expect(result).toEqual({ handled: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });

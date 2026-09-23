@@ -2,8 +2,17 @@
 // privilege level and collaborator subgroup that go with it.
 //
 //   node --import tsx scripts/adminbot-import-member-types.ts <file.csv> [--apply] [--base-url URL]
+//                                                              [--skip NAME]
 //
 // Dry run unless --apply is passed: it prints every change it would make and writes nothing.
+//
+// The dry run reads the roster with ADMINBOT_SERVICE_TOKEN. `--apply` additionally needs
+// ADMINBOT_ADMIN_SESSION_TOKEN, an admin Control UI session: privilege_level and
+// collaborator_subgroup are governance fields, and the service principal is not allowed to set
+// them on any record, including through this script.
+//
+// `--skip NAME` leaves a roster record exactly as it is, matched on the roster's name. It exists
+// for the row that would demote whoever is running the import.
 //
 // Three differences from adminbot-import-member-sheet.ts, which reads the same export:
 //
@@ -32,6 +41,13 @@ const MEMBER_TYPE_COLUMN = "Member Type";
 // what privilege someone holds, and "mailing-list" is not part of the access design at all.
 export const SUBGROUP_BY_TOKEN: Record<string, AdminBotExternalCollaboratorSubgroup> = {
   interviewee: "interviewee",
+  // The sheet grades interviews in the same column: "probing" is a conversation still in progress
+  // and "reject" is one that ended in a no. Both are the same *access* shape -- somebody the lab
+  // has talked to and granted nothing further -- so both land on `interviewee` rather than earning
+  // subgroups of their own. Whether a rejected candidate should hold a roster row at all is a
+  // separate question, settled by the prune rather than by this map.
+  "interviewee-probing": "interviewee",
+  "interviewee-reject": "interviewee",
   "slightly-better-than-emails": "slightly_better_than_emails",
   acquaintance: "acquaintance",
   alumni: "alumni",
@@ -69,6 +85,15 @@ const SUBGROUP_PRECEDENCE: readonly AdminBotExternalCollaboratorSubgroup[] = [
   "alumni",
 ];
 
+/**
+ * Column S tokens that grant the admin privilege.
+ *
+ * `adminbot-admin` is the documented spelling and `admin` is the one the sheet also uses. Reading
+ * only the former did not make the other row safe -- it made it silently a plain member, which is
+ * the quieter half of getting an access decision wrong.
+ */
+const ADMIN_TOKENS = new Set(["adminbot-admin", "admin"]);
+
 export function memberTypeTokens(memberType: string): string[] {
   return memberType
     .split(",")
@@ -103,7 +128,7 @@ export function classify(memberType: string): Classification {
   if (tokens.includes("full")) {
     return {
       kind: "full",
-      privilege_level: tokens.includes("adminbot-admin") ? "admin" : "member",
+      privilege_level: tokens.some((token) => ADMIN_TOKENS.has(token)) ? "admin" : "member",
     };
   }
   const named = tokens.map((token) => SUBGROUP_BY_TOKEN[token]).filter(Boolean);
@@ -123,6 +148,35 @@ export function classify(memberType: string): Classification {
   };
 }
 
+/**
+ * Roster lookup by every address a record carries.
+ *
+ * The sheet's lower section leaves the name column blank and identifies people by their Slack
+ * address instead, so a name-only matcher skips those rows without saying so -- 33 of them on the
+ * current export, all but one of them somebody this import is supposed to reach.
+ *
+ * An address two records share identifies neither, and is stored as `null` so the caller reports
+ * the clash rather than picking whichever record happened to be read second.
+ */
+function rosterByEmail(
+  roster: ReadonlyArray<Record<string, unknown>>,
+): Map<string, Record<string, unknown> | null> {
+  const byEmail = new Map<string, Record<string, unknown> | null>();
+  for (const member of roster) {
+    for (const field of ["email", "correspondence_email", "calendar_email"]) {
+      const address = String(member[field] ?? "")
+        .trim()
+        .toLowerCase();
+      if (!address) {
+        continue;
+      }
+      const seen = byEmail.get(address);
+      byEmail.set(address, seen === undefined || seen === member ? member : null);
+    }
+  }
+  return byEmail;
+}
+
 type Plan = {
   id: string;
   name: string;
@@ -134,12 +188,29 @@ type Plan = {
 async function run(params: {
   rows: Array<Record<string, string>>;
   nameColumn: string;
+  /** Columns to identify a row by when the name column is blank, in the order they are tried. */
+  emailColumns: readonly string[];
+  /** Roster names to leave exactly as they are, normalized. Set by `--skip`. */
+  skip: ReadonlySet<string>;
   apply: boolean;
   baseUrl: string;
 }): Promise<void> {
-  const token = process.env.ADMINBOT_SERVICE_TOKEN;
+  // Reading the roster takes any principal; writing `privilege_level` and `collaborator_subgroup`
+  // takes an admin *member* session, because the service deliberately limits the shared service
+  // principal to the same whitelist as a member self-edit (see the PUT /lab/members/:id handler).
+  // Checked before the first write rather than discovered on it: the failure is otherwise one 400
+  // per member, after the run has already reported what it was about to do.
+  const adminToken = process.env.ADMINBOT_ADMIN_SESSION_TOKEN;
+  const token = adminToken ?? process.env.ADMINBOT_SERVICE_TOKEN;
   if (!token) {
-    throw new Error("ADMINBOT_SERVICE_TOKEN is not set");
+    throw new Error("neither ADMINBOT_ADMIN_SESSION_TOKEN nor ADMINBOT_SERVICE_TOKEN is set");
+  }
+  if (params.apply && !adminToken) {
+    throw new Error(
+      "--apply writes privilege_level, which the service token may not set. " +
+        "Set ADMINBOT_ADMIN_SESSION_TOKEN to an admin Control UI session token " +
+        "(localStorage key openclaw.adminbot.session.v1, or POST /auth/login -> session_token).",
+    );
   }
   const response = await fetch(`${params.baseUrl}/lab/members`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -150,6 +221,7 @@ async function run(params: {
   const roster =
     ((await response.json()) as { members?: Array<Record<string, unknown>> }).members ?? [];
   const byName = new Map(roster.map((m) => [normalizeName(String(m.name ?? "")), m]));
+  const byEmail = rosterByEmail(roster);
 
   const plans: Plan[] = [];
   const unchanged: string[] = [];
@@ -157,21 +229,49 @@ async function run(params: {
   const unmappable: string[] = [];
   const decided: string[] = [];
   const demotions: string[] = [];
+  const skipped: string[] = [];
+  const ambiguous: string[] = [];
 
   for (const row of params.rows) {
     const name = (row[params.nameColumn] ?? "").trim();
-    if (!name) {
+    let member = name ? byName.get(normalizeName(name)) : undefined;
+    let label = name;
+    if (!member && !name) {
+      for (const column of params.emailColumns) {
+        const address = (row[column] ?? "").trim().toLowerCase();
+        if (!address) {
+          continue;
+        }
+        const found = byEmail.get(address);
+        if (found === null) {
+          ambiguous.push(`${address} · more than one roster record carries this address`);
+          label = address;
+          break;
+        }
+        if (found) {
+          member = found;
+          label = `${String(found.name ?? address)} (matched on ${address})`;
+          break;
+        }
+        label ||= address;
+      }
+    }
+    // Nothing on the row identifies anybody -- no name and no address. Not worth reporting.
+    if (!label) {
       continue;
     }
-    const member = byName.get(normalizeName(name));
     if (!member) {
-      unmatched.push(name);
+      unmatched.push(label);
+      continue;
+    }
+    if (params.skip.has(normalizeName(String(member.name ?? "")))) {
+      skipped.push(`${String(member.name ?? label)} · --skip`);
       continue;
     }
     const memberType = (row[MEMBER_TYPE_COLUMN] ?? "").trim();
     const verdict = classify(memberType);
     if (verdict.kind === "unmappable") {
-      unmappable.push(`${name} · ${verdict.reason}`);
+      unmappable.push(`${label} · ${verdict.reason}`);
       continue;
     }
 
@@ -189,7 +289,7 @@ async function run(params: {
 
     if (verdict.kind === "collaborator" && verdict.alsoNamed.length > 0) {
       decided.push(
-        `${name} · sheet says "${memberType}" -> ${verdict.collaborator_subgroup} (not ${verdict.alsoNamed.join(", ")})`,
+        `${label} · sheet says "${memberType}" -> ${verdict.collaborator_subgroup} (not ${verdict.alsoNamed.join(", ")})`,
       );
     }
 
@@ -211,16 +311,18 @@ async function run(params: {
       verdict.privilege_level === "external_collaborator"
     ) {
       demotions.push(
-        `${name} · ${currentPrivilege} -> external_collaborator/${
+        `${label} · ${currentPrivilege} -> external_collaborator/${
           verdict.kind === "collaborator" ? verdict.collaborator_subgroup : "?"
         }`,
       );
     }
-    plans.push({ id: String(member.id), name, patch, before, after });
+    plans.push({ id: String(member.id), name: label, patch, before, after });
   }
 
   console.log(`sheet rows        : ${params.rows.length}`);
-  console.log(`matched by name   : ${plans.length + unchanged.length + unmappable.length}`);
+  console.log(
+    `matched to roster : ${plans.length + unchanged.length + unmappable.length + skipped.length}`,
+  );
   console.log(`already correct   : ${unchanged.length}`);
   console.log(`would change      : ${plans.length}`);
   console.log(`no Member Type    : ${unmappable.length} (left exactly as they are)`);
@@ -249,6 +351,18 @@ async function run(params: {
   if (unmappable.length) {
     console.log(`\n${unmappable.length} row(s) with nothing to import — untouched:`);
     for (const line of unmappable) {
+      console.log(`  ${line}`);
+    }
+  }
+  if (skipped.length) {
+    console.log(`\n${skipped.length} row(s) left untouched by request:`);
+    for (const line of skipped) {
+      console.log(`  ${line}`);
+    }
+  }
+  if (ambiguous.length) {
+    console.log(`\n${ambiguous.length} address(es) that identify more than one record — skipped:`);
+    for (const line of ambiguous) {
       console.log(`  ${line}`);
     }
   }
@@ -284,14 +398,27 @@ async function run(params: {
 
 function main(): void {
   const args = process.argv.slice(2);
-  const file = args.find((arg) => !arg.startsWith("--"));
+  const flagValues = new Set(
+    args.flatMap((arg, index) => (arg === "--skip" || arg === "--base-url" ? [index + 1] : [])),
+  );
+  const file = args.find((arg, index) => !arg.startsWith("--") && !flagValues.has(index));
   const apply = args.includes("--apply");
+  // Roster names this run must not touch. The sheet is the authority on what somebody *is*, but a
+  // row that would take away the privilege of the person doing the import is worth being able to
+  // hold back by hand rather than by editing the export.
+  const skip = new Set(
+    args.flatMap((arg, index) =>
+      arg === "--skip" && args[index + 1] ? [normalizeName(args[index + 1] as string)] : [],
+    ),
+  );
   const baseUrl =
     args.includes("--base-url") && args[args.indexOf("--base-url") + 1]?.startsWith("http")
       ? (args[args.indexOf("--base-url") + 1] as string)
       : "http://127.0.0.1:8765";
   if (!file) {
-    throw new Error("usage: adminbot-import-member-types.ts <file.csv> [--apply] [--base-url URL]");
+    throw new Error(
+      "usage: adminbot-import-member-types.ts <file.csv> [--apply] [--base-url URL] [--skip NAME]",
+    );
   }
 
   const table = parseCsv(fs.readFileSync(file, "utf8"));
@@ -304,7 +431,9 @@ function main(): void {
     .filter((cells) => cells.some((cell) => cell.trim()))
     .map((cells) => Object.fromEntries(header.map((key, index) => [key, cells[index] ?? ""])));
 
-  void run({ rows, nameColumn: header[0] ?? "", apply, baseUrl });
+  // Every address column the sheet carries, used only for rows with no name.
+  const emailColumns = header.filter((key) => /mail/iu.test(key));
+  void run({ rows, nameColumn: header[0] ?? "", emailColumns, skip, apply, baseUrl });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

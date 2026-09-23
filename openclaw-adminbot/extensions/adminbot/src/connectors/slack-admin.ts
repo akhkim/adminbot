@@ -65,8 +65,13 @@ export function createAdminBotSlackAdminExecutor(
       }
       if (proposal.type === "slack.remove_from_channel") {
         const payload = readInvitePayload(proposal, "slack.remove_from_channel");
-        const token = resolveSlackBotToken(env);
-        await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
+        await removeFromSlackChannel(
+          resolveSlackBotToken(env),
+          resolveSlackUserToken(env),
+          payload.channel,
+          payload.user_id,
+          fetchImpl,
+        );
         return { handled: true };
       }
       if (proposal.type === "member_nudge.escalate") {
@@ -315,17 +320,34 @@ async function createSlackChannel(
  * which is never something a roster sweep should be doing and is worth surfacing rather than
  * swallowing alongside the benign cases.
  */
+/*
+ * Two tokens, and not interchangeably.
+ *
+ * Slack refuses `conversations.kick` for a bot token on a public channel and answers
+ * `restricted_action` -- HTTP 200 with `ok: false`, so it reads as a success to anything not
+ * checking the body. Removing somebody from a public channel is a workspace-admin action, and no
+ * bot scope grants it; `#jinesis-active` and `#random-active` are both public, so adding scopes to
+ * the bot would not have fixed it. The kick therefore goes out on the user token, which is the
+ * same one `admin.users.invite` already runs on.
+ *
+ * The directory lookup stays on the bot token: it is the identity holding `channels:read` and
+ * `groups:read`, and the user token is not guaranteed to carry them.
+ *
+ * Worth knowing when reading Slack's own audit log: the removal is attributed to whoever owns the
+ * user token, not to the admin who approved the action. AdminBot's audit log records the approver.
+ */
 async function removeFromSlackChannel(
-  token: string,
+  botToken: string,
+  userToken: string,
   channelName: string,
   userId: string,
   fetchImpl: SlackAdminFetch,
 ): Promise<void> {
-  const channelId = await resolveChannelId(token, channelName, fetchImpl);
+  const channelId = await resolveChannelId(botToken, channelName, fetchImpl);
   const removal = await fetchImpl("https://slack.com/api/conversations.kick", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${userToken}`,
       "Content-Type": "application/json; charset=utf-8",
     },
     body: JSON.stringify({ channel: channelId, user: userId }),
@@ -383,6 +405,25 @@ function resolveSlackBotToken(env: NodeJS.ProcessEnv): string {
   const token = env.SLACK_BOT_TOKEN?.trim();
   if (!token) {
     throw new Error("SLACK_BOT_TOKEN is required for Slack admin actions");
+  }
+  return token;
+}
+
+/**
+ * The workspace-admin token, required by the one action a bot may not perform.
+ *
+ * Deliberately a separate resolver rather than a fallback to the bot token: a removal that
+ * silently ran as the bot would come back `restricted_action` from Slack with a 200, and the point
+ * of failing here is that a misconfigured deployment refuses the action instead of recording an
+ * approval against a call that was never going to work.
+ */
+function resolveSlackUserToken(env: NodeJS.ProcessEnv): string {
+  const token = env.SLACK_USER_TOKEN?.trim();
+  if (!token) {
+    throw new Error(
+      "SLACK_USER_TOKEN is required to remove somebody from a channel: Slack refuses " +
+        "conversations.kick for a bot token with restricted_action",
+    );
   }
   return token;
 }

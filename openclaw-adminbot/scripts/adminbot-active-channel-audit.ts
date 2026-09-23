@@ -184,7 +184,11 @@ async function main(): Promise<void> {
   if (!account.botToken) {
     throw new Error("Slack bot token is not configured");
   }
-  const api = (await getSlackWriteClient({ botToken: account.botToken })) as unknown as SlackApi;
+  // `getSlackWriteClient` takes the token itself and returns a WebClient; the generic
+  // `apiCall` is what the other Slack scripts in this repo drive it through.
+  const client = getSlackWriteClient(account.botToken);
+  const api: SlackApi = (method, params) =>
+    client.apiCall(method, params) as Promise<Record<string, never>>;
 
   const channelIds = await resolveChannelIds(api, ADMINBOT_ACTIVE_CHANNELS);
   const missing = ADMINBOT_ACTIVE_CHANNELS.filter((name) => !channelIds.has(name.toLowerCase()));
