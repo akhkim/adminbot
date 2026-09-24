@@ -129,6 +129,34 @@ describe("GET /ops/llm-load and /ops/failed-requests", () => {
     expect(failed.status).toBe(403);
   });
 
+  it("returns 502 when the shared gateway is configured but unreachable", async () => {
+    const previousUrl = process.env.LLM_GATEWAY_URL;
+    const previousToken = process.env.LLM_GATEWAY_TOKEN;
+    process.env.LLM_GATEWAY_URL = "http://127.0.0.1:1";
+    process.env.LLM_GATEWAY_TOKEN = "synthetic-gateway-token";
+    try {
+      const { baseUrl } = await startService();
+      const response = await fetch(`${baseUrl}/ops/llm-load`, {
+        headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+      });
+      expect(response.status).toBe(502);
+      await expect(response.json()).resolves.toEqual({
+        error: { message: "shared LLM gateway is unreachable" },
+      });
+    } finally {
+      if (previousUrl === undefined) {
+        delete process.env.LLM_GATEWAY_URL;
+      } else {
+        process.env.LLM_GATEWAY_URL = previousUrl;
+      }
+      if (previousToken === undefined) {
+        delete process.env.LLM_GATEWAY_TOKEN;
+      } else {
+        process.env.LLM_GATEWAY_TOKEN = previousToken;
+      }
+    }
+  });
+
   it("lists recorded external failures for a privileged caller", async () => {
     const ledger = createMemoryFailedRequestLedger();
     ledger.record({
