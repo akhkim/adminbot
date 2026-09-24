@@ -1466,3 +1466,19 @@
 .onboarding-checklist__section {
   margin-top: var(--space-5);
 }
+
+.logistics-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.logistics-sync > span {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
