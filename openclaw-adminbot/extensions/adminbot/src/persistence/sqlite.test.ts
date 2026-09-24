@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
@@ -30,6 +31,24 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("adds an expiry index to existing databases so session cleanup avoids a table scan", () => {
+    const databasePath = tempDbPath();
+    createAdminBotSqliteService({ databasePath }).close();
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec("DROP INDEX adminbot_sessions_expiry_idx");
+    legacy.close();
+
+    createAdminBotSqliteService({ databasePath }).close();
+    const migrated = new DatabaseSync(databasePath);
+    const plan = migrated
+      .prepare("EXPLAIN QUERY PLAN DELETE FROM adminbot_sessions WHERE expires_at < ?")
+      .all("2026-09-24T00:00:00.000Z") as Array<{ detail: string }>;
+    expect(
+      plan.some((step) => step.detail.includes("USING INDEX adminbot_sessions_expiry_idx")),
+    ).toBe(true);
+    migrated.close();
+  });
+
   it("keeps verified submission metadata across restarts and removes stale metadata", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });
