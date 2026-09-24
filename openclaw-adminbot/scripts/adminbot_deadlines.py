@@ -194,6 +194,10 @@ _MILESTONE_FROM_LABEL = {
     "commitment": "commitment",
     "arr commitment": "commitment",
     "rebuttal ends": "rebuttal",
+    # ARR splits its August 2026 response window into phases and names only the first
+    # publicly, so that row's date is the initial response rather than the window's end.
+    "initial author response": "rebuttal",
+    "author response": "rebuttal",
     "camera-ready": "camera_ready",
     "camera ready": "camera_ready",
 }

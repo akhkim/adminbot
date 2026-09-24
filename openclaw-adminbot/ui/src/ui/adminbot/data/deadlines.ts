@@ -318,6 +318,12 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "period"
       },
       {
+        "milestone": "rebuttal",
+        "label": "Initial author response due",
+        "date": "2026-09-19",
+        "kind": "date"
+      },
+      {
         "milestone": "notification",
         "label": "Meta-reviews released",
         "date": "2026-10-08",
@@ -2383,7 +2389,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4PS"
       }
     ],
-    "stale": false
+    "stale": true
   },
   {
     "id": "neurips2026_ws_AI4Mat",
@@ -8407,6 +8413,73 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "2026-09-29 23:59:59",
         "deadline_label": "submission",
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticLS"
+      }
+    ],
+    "stale": false
+  },
+  {
+    "id": "arr_2026_august_rebuttal",
+    "name": "ARR — August 2026 cycle (author response)",
+    "venue_type": "rebuttal",
+    "venue_group": "ARR August 2026",
+    "track": "rebuttal",
+    "venue_family": "ARR",
+    "conference_location": "",
+    "workshop_location": "",
+    "entry_type": "rebuttal",
+    "archival_status": "unknown",
+    "venue_priority": "standard",
+    "archival": false,
+    "submission_type": "",
+    "milestone": "rebuttal",
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response period",
+        "starts": "2026-09-14",
+        "ends": "2026-09-24",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-10-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-10-11",
+        "kind": "date"
+      }
+    ],
+    "deadline_label": "initial author response",
+    "deadline_aoe": "2026-09-19 23:59:59",
+    "notification_aoe": "",
+    "link": "https://aclrollingreview.org/dates",
+    "homepage_url": "",
+    "cfp_url": "",
+    "openreview_url": "",
+    "source_url": "https://aclrollingreview.org/dates",
+    "source_checked_at": "2026-09-20T00:00:00Z",
+    "deadline_source_kind": "official_cfp",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_official_url": "https://aclrollingreview.org/dates",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "deadline_id": "arr_2026_august_rebuttal",
+    "venue_id": "arr_2026_august_rebuttal",
+    "venue_aliases": [
+      "arr_2026_august_rebuttal"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-09-20T00:00:00Z",
+        "deadline_aoe": "2026-09-19 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "initial author response",
+        "link": "https://aclrollingreview.org/dates"
       }
     ],
     "stale": false
