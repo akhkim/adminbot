@@ -16,7 +16,9 @@ const {
   loadBootstrapMock: vi.fn(),
   loadMemberPrivilegeMock: vi.fn(async () => {}),
   restoreComposerMock: vi.fn<(...args: unknown[]) => boolean>(() => false),
-  resumeMemberSessionMock: vi.fn(async () => "resumed"),
+  resumeMemberSessionMock: vi.fn<(_host: unknown, isCurrent?: () => boolean) => Promise<string>>(
+    async () => "resumed",
+  ),
 }));
 
 vi.mock("./app-gateway.ts", () => ({ connectGateway: connectGatewayMock }));
@@ -127,6 +129,10 @@ describe("handleConnected member operator scopes", () => {
     resumeMemberSessionMock.mockClear();
     handleConnected(host as never);
     expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1);
+    const isCurrent = resumeMemberSessionMock.mock.calls[0]?.[1];
+    expect(isCurrent?.()).toBe(true);
+    host.connectGeneration += 1;
+    expect(isCurrent?.()).toBe(false);
     ready();
     await Promise.resolve();
     expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1);

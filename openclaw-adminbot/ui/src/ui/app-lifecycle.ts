@@ -134,18 +134,20 @@ export function handleConnected(host: LifecycleHost) {
     if (!gatewayTokenPresent && hasStoredMemberSession()) {
       // The bootstrap read only configures the gateway UI. Session verification reads the
       // AdminBot URL from settings already resolved above, so run both requests in parallel.
-      void resumeMemberSession(memberHost).then((outcome) => {
-        if (host.connectGeneration !== connectGeneration) {
-          return;
-        }
-        // A rejected session returns to the gate; an unreachable service retains the login.
-        if (outcome === "cleared") {
-          connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
-        }
-        // Clearing the browser token is not reactive; repaint so the pending view can become
-        // the sign-in gate even if the gateway has not emitted an event yet.
-        host.requestUpdate?.();
-      });
+      void resumeMemberSession(memberHost, () => host.connectGeneration === connectGeneration).then(
+        (outcome) => {
+          if (host.connectGeneration !== connectGeneration) {
+            return;
+          }
+          // A rejected session returns to the gate; an unreachable service retains the login.
+          if (outcome === "cleared") {
+            connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+          }
+          // Clearing the browser token is not reactive; repaint so the pending view can become
+          // the sign-in gate even if the gateway has not emitted an event yet.
+          host.requestUpdate?.();
+        },
+      );
     } else {
       // Gateway token already present (break-glass/URL-param or same-tab reload):
       // the full resume is skipped, so eagerly load privilege from any stored
