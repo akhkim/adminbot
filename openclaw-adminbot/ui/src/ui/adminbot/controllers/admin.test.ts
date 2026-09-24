@@ -356,6 +356,44 @@ describe("loadAdminBot over the member session", () => {
     expect(host.adminBotData.loadedAt).not.toBeNull();
   });
 
+  it("preserves a roster that arrives while papers are still loading", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    let resolvePapers: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/lab/members/self")) {
+        return Promise.resolve(json({ member: { id: "pat", name: "Pat" } }));
+      }
+      if (url.includes("/lab/members?view=summary")) {
+        return Promise.resolve(
+          json({
+            self: { id: "pat", name: "Pat" },
+            members: [
+              { id: "pat", name: "Pat" },
+              { id: "lee", name: "Lee" },
+            ],
+          }),
+        );
+      }
+      if (url.includes("/papers")) {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+
+    const pending = loadAdminBot(host, "general");
+    await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
+    await loadAdminBotRoster(host);
+    expect(host.adminBotData.members).toHaveLength(2);
+    resolvePapers(json({ papers: [] }));
+    await pending;
+    expect(host.adminBotData.members).toHaveLength(2);
+  });
+
   it("uses the legacy roster only when the self route is absent during rollout", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

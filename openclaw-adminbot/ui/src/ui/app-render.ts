@@ -2780,7 +2780,7 @@ export function renderApp(state: AppViewState) {
   }
   if (
     hasMemberSession &&
-    state.adminBotData.loadedAt &&
+    state.adminBotData.members.some((member) => member.id === state.memberId) &&
     needsRosterForTab &&
     !state.adminBotRosterLoadedAt &&
     !state.adminBotRosterLoading &&
@@ -2788,8 +2788,12 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
   }
+  // Availability can show the signed-in member's schedule while the admin picker fills in.
   const rosterPendingForTab =
-    hasMemberSession && needsRosterForTab && !state.adminBotRosterLoadedAt;
+    hasMemberSession &&
+    needsRosterForTab &&
+    !state.adminBotRosterLoadedAt &&
+    state.tab !== "adminbotTimeAvailability";
   if (
     adminBotPanel === "members" &&
     (hasMemberSession || state.adminBotData.loadedAt) &&
@@ -4335,7 +4339,7 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
           : nothing}
-        ${state.tab === "adminbotCalendar" && adminBotMode === "admin" && !rosterPendingForTab
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
