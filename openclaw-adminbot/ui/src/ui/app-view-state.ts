@@ -6,6 +6,7 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
 import type {
@@ -159,6 +160,7 @@ export type AppViewState = {
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
+  loadMoreMeetings?: () => Promise<void>;
   toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
   fileMeeting?: (draft: {
     topic: string;
@@ -484,8 +486,9 @@ export type AppViewState = {
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
   // Where the lab is, for the dashboard card. Null until the first load; the card renders nothing
   // rather than an empty map.
-  adminBotMemberMap: MemberMap | null;
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId: number;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
@@ -538,6 +541,9 @@ export type AppViewState = {
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsLoadingMore: boolean;
+  adminBotMeetingsNextCursor: MeetingCursor | null;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render

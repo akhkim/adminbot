@@ -3328,6 +3328,140 @@ describe("the meetings routes", () => {
     expect(body.meetings[0]?.attendee_count).toBe(2);
   });
 
+  it("pages recordings without repeating or skipping rows when a newer one arrives", async () => {
+    const { baseUrl } = await startService();
+    const adminToken = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    const memberTokenValue = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const attendees = [
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+      { member_id: "bo", display_name: "Bo Other", source: "manual", present: true },
+    ];
+    fileMeeting(baseUrl, {
+      id: "older-a",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "older-b",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "short",
+      started_at: "2026-08-11T14:00:00Z",
+      duration_minutes: 2,
+    });
+    fileMeeting(baseUrl, {
+      id: "newest",
+      started_at: "2026-08-12T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    const headers = { Authorization: `Bearer ${memberTokenValue}` };
+    const first = await fetch(`${baseUrl}/meetings?limit=2`, { headers });
+    expect(first.status).toBe(200);
+    const page1 = (await first.json()) as {
+      meetings: Array<{
+        id: string;
+        attendees: Array<{ member_id?: string }>;
+        attendee_count: number;
+      }>;
+      next_cursor: { started_at: string; id: string };
+    };
+    expect(page1.meetings.map((meeting) => meeting.id)).toEqual(["newest", "older-b"]);
+    expect(page1.meetings[0]?.attendees).toEqual([
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+    ]);
+    expect(page1.meetings[0]?.attendee_count).toBe(2);
+    fileMeeting(baseUrl, {
+      id: "arrived-later",
+      started_at: "2026-08-13T14:00:00Z",
+      duration_minutes: 30,
+    });
+    const cursor = new URLSearchParams({
+      limit: "2",
+      before_started_at: page1.next_cursor.started_at,
+      before_id: page1.next_cursor.id,
+    });
+    const second = await fetch(`${baseUrl}/meetings?${cursor}`, { headers });
+    const page2 = (await second.json()) as {
+      meetings: Array<{ id: string }>;
+      next_cursor?: unknown;
+    };
+    expect(page2.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
+    expect(page2.next_cursor).toBeUndefined();
+
+    const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    expect(adminPage.meetings[0]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
+    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(legacy.meetings).toHaveLength(4);
+    expect(legacy.next_cursor).toBeUndefined();
+  });
+
+  it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const dated = fileMeeting(baseUrl, { id: "dated", duration_minutes: 30 });
+    const store = mockFor(baseUrl).store;
+    for (const [id, started_at] of [
+      ["z-invalid", "not-a-date"],
+      ["y-blank", ""],
+      ["x-invalid", "malformed"],
+    ]) {
+      store.saveMeeting({ ...dated, id, started_at });
+    }
+
+    const seen: string[] = [];
+    let cursor: { started_at: string; id: string } | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const query = new URLSearchParams({ limit: "1" });
+      if (cursor) {
+        query.set("before_started_at", cursor.started_at);
+        query.set("before_id", cursor.id);
+      }
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as {
+        meetings: Array<{ id: string }>;
+        next_cursor?: { started_at: string; id: string };
+      };
+      seen.push(...page.meetings.map((meeting) => meeting.id));
+      cursor = page.next_cursor;
+      if (!cursor) {
+        break;
+      }
+    }
+    expect(seen).toEqual(["dated", "z-invalid", "y-blank", "x-invalid"]);
+    expect(cursor).toBeUndefined();
+  });
+
+  it("rejects malformed recording page requests", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    for (const query of [
+      "limit=0",
+      "limit=51",
+      "before_id=x",
+      "limit=2&before_id=x",
+      "limit=2&before_started_at=bad",
+      `limit=2&before_started_at=${"x".repeat(101)}&before_id=x`,
+    ]) {
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
   it("refuses an anonymous read", async () => {
     const { baseUrl } = await startService();
     fileMeeting(baseUrl);

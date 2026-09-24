@@ -41,6 +41,7 @@ export const ADMINBOT_SEEDED_PORTAL_PASSWORD = "jinesis";
 const MIN_PASSWORD_LENGTH = 10;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;
+const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 // Reset links are mailed, so they live long enough to survive a slow inbox but not long enough to
 // sit in one as a standing credential.
@@ -500,7 +501,8 @@ export class AdminBotAuthService {
     if (!session || session.revoked_at) {
       return undefined;
     }
-    const nowIso = this.now().toISOString();
+    const now = this.now();
+    const nowIso = now.toISOString();
     if (session.expires_at <= nowIso) {
       return undefined;
     }
@@ -508,9 +510,11 @@ export class AdminBotAuthService {
     if (!member) {
       return undefined;
     }
-    this.store.touchSession(tokenHash, nowIso);
-    // Opportunistic cleanup of expired rows on the read path so sessions do not accumulate.
-    this.store.pruneSessionsBefore(nowIso);
+    // The session expires at a fixed time; recording activity on every read only writes the same
+    // row repeatedly and makes every authenticated request contend with other SQLite writers.
+    if (session.last_seen_at <= new Date(now.getTime() - SESSION_TOUCH_INTERVAL_MS).toISOString()) {
+      this.store.touchSession(tokenHash, nowIso);
+    }
     if (!session.impersonated_by) {
       return { kind: "member", member, session };
     }
@@ -1158,6 +1162,9 @@ export class AdminBotAuthService {
     const nowMs = this.now().getTime();
     const createdIso = new Date(nowMs).toISOString();
     const expiresIso = new Date(nowMs + (impersonation?.ttlMs ?? this.sessionTtlMs)).toISOString();
+    // New sessions are much rarer than authenticated requests; clean expired rows here so
+    // checking an existing session never scans or deletes unrelated sessions.
+    this.store.pruneSessionsBefore(createdIso);
     this.store.saveSession({
       token_hash: hashToken(rawToken),
       member_id: member.id,

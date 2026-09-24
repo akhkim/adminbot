@@ -3965,18 +3965,50 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/meetings") {
     // Two audiences, one route. A member gets their own attendance and a headcount; the roster is
-    // personal data about everyone else and stays with the admins. The service principal reads as
-    // a member would -- it drives agent tool calls on behalf of whoever is chatting, so it is not
-    // entitled to a roster its caller could not see.
-    if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      sendServiceResult(res, service.listMeetings());
-      return;
-    }
+    // personal data about everyone else and stays with the admins. Only member sessions may read
+    // recordings, so the service principal cannot use this route to bypass that split.
     if (principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "member session required" } });
       return;
     }
-    sendServiceResult(res, service.listMeetingsForMember(principal.member.id));
+    const isAdmin = principal.member.privilege_level === "admin";
+    const limitText = url.searchParams.get("limit");
+    if (limitText === null) {
+      if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
+        sendJson(res, 400, { error: { message: "invalid meetings page" } });
+        return;
+      }
+      sendServiceResult(
+        res,
+        isAdmin ? service.listMeetings() : service.listMeetingsForMember(principal.member.id),
+      );
+      return;
+    }
+    const beforeStartedAt = url.searchParams.get("before_started_at");
+    const beforeId = url.searchParams.get("before_id");
+    const limit = Number(limitText);
+    if (
+      !/^[1-9]\d*$/u.test(limitText) ||
+      limit > 50 ||
+      (beforeStartedAt === null) !== (beforeId === null) ||
+      (beforeStartedAt !== null &&
+        (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
+    ) {
+      sendJson(res, 400, { error: { message: "invalid meetings page" } });
+      return;
+    }
+    const page = {
+      limit,
+      ...(beforeStartedAt !== null && beforeId !== null
+        ? { before: { started_at: beforeStartedAt, id: beforeId } }
+        : {}),
+    };
+    sendServiceResult(
+      res,
+      isAdmin
+        ? service.listMeetingsPage(page)
+        : service.listMeetingsPageForMember(principal.member.id, page),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/meetings") {

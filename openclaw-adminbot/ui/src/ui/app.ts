@@ -29,6 +29,7 @@ import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
   CalendarEventDraft,
   LabBroadcast,
@@ -79,6 +80,7 @@ import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
+  loadMoreAdminBotMeetings,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
@@ -392,6 +394,10 @@ export class OpenClawApp extends LitElement {
   @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
+  adminBotMeetingsRequestVersion = 0;
+  @state() adminBotMeetingsLoadingMore = false;
+  @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
+  @state() adminBotMeetingsVisibleCount = 12;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -676,8 +682,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
-  @state() adminBotMemberMap: MemberMap | null = null;
+  @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
+  adminBotMemberMapRequestId = 0;
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -1825,6 +1832,12 @@ export class OpenClawApp extends LitElement {
 
   loadMeetings(): Promise<void> {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  loadMoreMeetings(): Promise<void> {
+    return loadMoreAdminBotMeetings(
+      this as unknown as Parameters<typeof loadMoreAdminBotMeetings>[0],
+    );
   }
 
   loadMeetingNudges(): Promise<void> {

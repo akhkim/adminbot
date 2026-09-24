@@ -48,22 +48,70 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
     host.adminBotMeetingsError = SIGN_IN_FIRST;
     return;
   }
+  const version = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
+  host.adminBotMeetingsRequestVersion = version;
   host.adminBotMeetingsLoading = true;
+  host.adminBotMeetingsLoadingMore = false;
   host.adminBotMeetingsError = null;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const result = await fetchMeetings(stored.sessionToken, baseUrl);
-    if (!sameSession(stored.sessionToken)) {
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12 });
+    if (!sameSession(stored.sessionToken) || host.adminBotMeetingsRequestVersion !== version) {
       return;
     }
     if (!result.ok) {
       host.adminBotMeetingsError = failureText(result, "Could not load meetings.", baseUrl);
       return;
     }
-    host.adminBotMeetings = result.value;
+    host.adminBotMeetings = result.value.meetings;
+    host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
+    host.adminBotMeetingsVisibleCount = 12;
   } finally {
-    if (sameSession(stored.sessionToken)) {
+    if (sameSession(stored.sessionToken) && host.adminBotMeetingsRequestVersion === version) {
       host.adminBotMeetingsLoading = false;
+    }
+  }
+}
+
+export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void> {
+  const before = host.adminBotMeetingsNextCursor;
+  if (!before || host.adminBotMeetingsLoadingMore) {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotMeetingsError = SIGN_IN_FIRST;
+    return;
+  }
+  const version = host.adminBotMeetingsRequestVersion;
+  host.adminBotMeetingsLoadingMore = true;
+  host.adminBotMeetingsError = null;
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  try {
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12, before });
+    if (
+      !sameSession(stored.sessionToken) ||
+      host.adminBotMeetingsRequestVersion !== version ||
+      host.adminBotMeetingsNextCursor !== before
+    ) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotMeetingsError = failureText(result, "Could not load more meetings.", baseUrl);
+      return;
+    }
+    const loaded = host.adminBotMeetings ?? [];
+    const seen = new Set(loaded.map((meeting) => meeting.id));
+    const fresh = result.value.meetings.filter((meeting) => !seen.has(meeting.id));
+    host.adminBotMeetings = [...loaded, ...fresh];
+    host.adminBotMeetingsVisibleCount = Math.min(
+      host.adminBotMeetings.length,
+      host.adminBotMeetingsVisibleCount + 12,
+    );
+    host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
+  } finally {
+    if (sameSession(stored.sessionToken) && host.adminBotMeetingsRequestVersion === version) {
+      host.adminBotMeetingsLoadingMore = false;
     }
   }
 }
