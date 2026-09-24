@@ -640,19 +640,7 @@ export class StateStore {
     message: EmailMessage,
     classification: { category: string; reason: string },
   ): boolean {
-    const existing = this.db
-      .prepare(
-        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
-      )
-      .get(message.id) as { status?: string } | undefined;
-    if (
-      existing?.status === "completed" ||
-      existing?.status === "needs_review" ||
-      existing?.status === "reviewed" ||
-      existing?.status === "processing"
-    )
-      return false;
-    this.db
+    const claimed = this.db
       .prepare(
         `INSERT INTO adminbot_email_messages
       (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
@@ -662,7 +650,9 @@ export class StateStore {
         thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
         reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
         attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
-        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`,
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at
+      WHERE adminbot_email_messages.status NOT IN
+        ('completed', 'needs_review', 'reviewed', 'processing')`,
       )
       .run(
         message.id,
@@ -675,8 +665,8 @@ export class StateStore {
           ? new Date(Number(message.internalDate)).toISOString()
           : null,
         new Date().toISOString(),
-      );
-    return true;
+      ).changes;
+    return claimed === 1;
   }
 
   finish(
@@ -696,26 +686,29 @@ export class StateStore {
     key: string,
     operation: () => Promise<T>,
   ): Promise<T | undefined> {
-    const existing = this.db
+    const claimed = this.db
       .prepare(
-        "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
+      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO NOTHING`,
       )
-      .get(messageId, key) as
-      { status: string; result_json?: string } | undefined;
-    if (existing?.status === "completed")
-      return existing.result_json
-        ? (JSON.parse(existing.result_json) as T)
-        : undefined;
-    if (existing?.status === "started")
+      .run(messageId, key, new Date().toISOString()).changes;
+    if (claimed !== 1) {
+      const existing = this.db
+        .prepare(
+          "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        )
+        .get(messageId, key) as
+        | { status: string; result_json?: string }
+        | undefined;
+      if (existing?.status === "completed") {
+        return existing.result_json
+          ? (JSON.parse(existing.result_json) as T)
+          : undefined;
+      }
       throw new Error(
         `effect ${key} was started previously; manual review prevents a duplicate`,
       );
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
-      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`,
-      )
-      .run(messageId, key, new Date().toISOString());
+    }
     const result = await operation();
     this.db
       .prepare(
