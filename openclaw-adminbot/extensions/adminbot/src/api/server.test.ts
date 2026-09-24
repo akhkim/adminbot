@@ -333,6 +333,19 @@ describe("AdminBot mock service", () => {
     expect((viewBody.member as { id: string }).id).toBe("ada");
   });
 
+  it("searches the public claim roster without exposing full member profiles", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "ada", { name: "Ada Lovelace", privilege_level: "member" });
+    await seedMember(baseUrl, "alan", { name: "Alan Turing", privilege_level: "member" });
+    const response = await fetch(`${baseUrl}/auth/roster?q=ada`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      members: [{ id: "ada", name: "Ada Lovelace" }],
+    });
+    const overlong = await fetch(`${baseUrl}/auth/roster?q=${"x".repeat(81)}`);
+    expect(overlong.status).toBe(400);
+  });
+
   it("signup then approval creates a member reachable by login", async () => {
     const { baseUrl } = await startService();
     const signup = await fetch(`${baseUrl}/auth/signup`, {

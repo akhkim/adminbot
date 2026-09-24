@@ -364,6 +364,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return page ? members.slice(page.offset, page.offset + page.limit) : members;
   }
 
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const pending = new Set(
+      [...this.registrations.values()]
+        .filter((entry) => entry.kind === "claim" && entry.status === "pending")
+        .map((entry) => entry.member_id),
+    );
+    return [...this.labMembers.values()]
+      .filter(
+        (member) =>
+          member.name.toLowerCase().includes(needle) &&
+          !this.credentialsByMemberId.has(member.id) &&
+          !pending.has(member.id),
+      )
+      .toSorted(
+        (left, right) =>
+          compareIndexedPageText(left.name, right.name) || compareSqliteText(left.id, right.id),
+      )
+      .slice(0, limit)
+      .map(({ id, name }) => ({ id, name }));
+  }
+
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
     return [...this.labMembers.values()]
       .toSorted(

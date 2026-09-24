@@ -2998,14 +2998,20 @@ export async function signupMember(
 }
 
 // Public roster of unclaimed members backing the claim picker (no auth).
-export async function fetchRoster(baseUrl: string): Promise<AuthResult<RosterMember[]>> {
+export async function fetchRoster(
+  baseUrl: string,
+  query = "",
+): Promise<AuthResult<RosterMember[]>> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/auth/roster`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
+    response = await fetch(
+      `${baseUrl}/auth/roster${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+      {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      },
+    );
   } catch {
     return { ok: false, kind: "unreachable" };
   }

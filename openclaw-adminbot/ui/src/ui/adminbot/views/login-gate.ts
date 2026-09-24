@@ -375,10 +375,7 @@ function renderRosterPicker(state: AppViewState) {
       </div>
     `;
   }
-  const filter = state.rosterFilter.trim().toLowerCase();
-  const matches = filter
-    ? state.rosterMembers.filter((member) => member.name.toLowerCase().includes(filter))
-    : state.rosterMembers;
+  const matches = state.rosterMembers;
   return html`
     <div class="field login-gate__picker">
       <span>${t("login.member.roster.label")}</span>
@@ -389,6 +386,8 @@ function renderRosterPicker(state: AppViewState) {
         .value=${state.rosterFilter}
         @input=${(e: Event) => {
           state.rosterFilter = (e.target as HTMLInputElement).value;
+          state.rosterLoading = true;
+          state.scheduleRosterSearch();
         }}
         placeholder=${t("login.member.roster.searchPlaceholder")}
       />
@@ -422,7 +421,6 @@ function renderRosterPicker(state: AppViewState) {
                         class="login-gate__picker-option"
                         @click=${() => {
                           state.selectedMemberId = member.id;
-                          state.rosterFilter = "";
                         }}
                       >
                         ${member.name}

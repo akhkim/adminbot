@@ -249,6 +249,7 @@ export type AppViewState = {
   beginViewAs: (memberId: string) => Promise<void>;
   endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
+  scheduleRosterSearch: () => void;
   tab: Tab;
   /**
    * This visit arrived on the root and has not been navigated since, so `tab` is a default nobody

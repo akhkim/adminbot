@@ -1091,21 +1091,10 @@ export class AdminBotAuthService {
     return { ok: true, status: 200, payload: { status: "rejected" } };
   }
 
-  // Public picker: roster members that are still unclaimed and have no pending claim. Exposes only
-  // id + name so an anonymous caller cannot harvest emails or other member fields.
-  listRoster(): AdminBotRosterEntry[] {
-    const pendingClaimMemberIds = new Set(
-      this.store
-        .listAccountRegistrations("pending")
-        .flatMap((entry) => (entry.kind === "claim" && entry.member_id ? [entry.member_id] : [])),
-    );
-    return this.store
-      .listLabMembers()
-      .filter(
-        (member) =>
-          !this.store.getCredentialByMemberId(member.id) && !pendingClaimMemberIds.has(member.id),
-      )
-      .map((member) => ({ id: member.id, name: member.name }));
+  // Anonymous results stay bounded even when the lab roster grows; the store filters claimed and
+  // pending profiles before LIMIT so a busy first page cannot hide eligible members.
+  listRoster(query = ""): AdminBotRosterEntry[] {
+    return this.store.searchUnclaimedRoster(query.trim(), 20);
   }
 
   // Admin review list. Adds member name for claims and the proposed profile for signups; never

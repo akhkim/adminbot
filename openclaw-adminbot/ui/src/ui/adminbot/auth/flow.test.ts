@@ -14,6 +14,7 @@ import {
   beginViewAs,
   endViewAs,
   loadMemberPrivilege,
+  loadRoster,
   recoverFromRejectedDeviceToken,
   resumeMemberSession,
   toggleOnboardingStep,
@@ -96,6 +97,28 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
     ...overrides,
   };
 }
+
+describe("loadRoster search", () => {
+  it("keeps the newest search results when an older response arrives later", async () => {
+    let releaseOld: ((response: Response) => void) | undefined;
+    const oldResponse = new Promise<Response>((resolve) => {
+      releaseOld = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      String(input).includes("q=Ada")
+        ? oldResponse
+        : jsonResponse(200, { members: [{ id: "alan", name: "Alan Turing" }] }),
+    );
+    const host = makeHost({ rosterFilter: "Ada" });
+    const first = loadRoster(host);
+    host.rosterFilter = "Alan";
+    await loadRoster(host);
+    releaseOld?.(jsonResponse(200, { members: [{ id: "ada", name: "Ada Lovelace" }] }));
+    await first;
+    expect(host.rosterMembers).toEqual([{ id: "alan", name: "Alan Turing" }]);
+    expect(host.rosterLoading).toBe(false);
+  });
+});
 
 // Signing in must not downgrade the gateway URL the page is already configured with. AdminBot
 // advertised its own loopback address, so adopting it pointed a hosted browser at port 18789 on the

@@ -1326,6 +1326,25 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
   }
 
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, json_extract(m.payload_json, '$.name') AS name
+         FROM adminbot_lab_members m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM adminbot_member_credentials c WHERE c.member_id = m.id
+         ) AND m.id NOT IN (
+           SELECT r.member_id FROM adminbot_account_registrations r
+           WHERE r.status = 'pending' AND r.kind = 'claim' AND r.member_id IS NOT NULL
+         ) ${needle ? "AND instr(adminbot_lower(json_extract(m.payload_json, '$.name')), ?) > 0" : ""}
+         ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+         LIMIT ?`,
+      )
+      .all(...(needle ? [needle] : []), limit) as Array<{ id: string; name: string | null }>;
+    return rows.map(({ id, name }) => ({ id, name: name ?? "" }));
+  }
+
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
     const rows = this.db
       .prepare(
