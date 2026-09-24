@@ -1170,20 +1170,12 @@ marker="$state_dir/.adminbot-sync-pending"
 backup="${database}.backup-${token}"
 database_new="${database}.new-${token}"
 retired_sidecars="${database}.retired-sidecars-${token}"
-replaced=0
 cleanup() {
   status=$?
   trap - EXIT
   set +e
   rm -f -- "$upload" "$database_new"
   if ((status != 0)); then
-    if ((replaced == 0)); then
-      for suffix in wal shm; do
-        if [[ -e "${retired_sidecars}.${suffix}" && ! -e "${database}-${suffix}" ]]; then
-          mv -- "${retired_sidecars}.${suffix}" "${database}-${suffix}" || true
-        fi
-      done
-    fi
     echo 'Database replacement incomplete; writer services remain stopped for operator review.' >&2
   fi
   exit "$status"
@@ -1236,7 +1228,6 @@ for suffix in wal shm; do
   fi
 done
 mv -f -- "$database_new" "$database"
-replaced=1
 rm -- "$marker"
 printf 'verified_database=%s backup=%s writers=stopped\n' "$database" "$backup"
 REMOTE_ADMINBOT_DATA

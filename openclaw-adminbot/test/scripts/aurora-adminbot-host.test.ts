@@ -488,6 +488,7 @@ describe("Aurora AdminBot hosting", () => {
     expect(replace).toContain(".adminbot-sync-pending");
     expect(replace).toContain('retired_sidecars="${database}.retired-sidecars-${token}"');
     expect(replace).not.toContain('mv -- "${database}${suffix}" "${backup}${suffix}"');
+    expect(replace).not.toContain('mv -- "${retired_sidecars}.${suffix}" "${database}-${suffix}"');
     expect(script).not.toContain('cp -p "$REMOTE_STATE/adminbot.sqlite"');
     expect(script).not.toContain('rm -f "$REMOTE_STATE/adminbot.sqlite-wal"');
     expect(script).toContain("assert_remote_state_ready");
@@ -505,6 +506,7 @@ describe("Aurora AdminBot hosting", () => {
     fs.mkdirSync(bin);
     const systemctl = path.join(bin, "systemctl");
     const stat = path.join(bin, "stat");
+    const mv = path.join(bin, "mv");
     fs.writeFileSync(
       systemctl,
       '#!/usr/bin/env bash\n[[ "$1" == --user && "$2" == show ]] || exit 2\necho "${SYSTEMCTL_STATE:-inactive}"\n',
@@ -513,8 +515,13 @@ describe("Aurora AdminBot hosting", () => {
       stat,
       '#!/usr/bin/env bash\nif [[ "$1" == -f ]]; then echo ext4; else /usr/bin/stat "$@"; fi\n',
     );
+    fs.writeFileSync(
+      mv,
+      '#!/usr/bin/env bash\nif [[ "$FAIL_MAIN_RENAME" == 1 && "$1" == -f && "$3" == *.new-* ]]; then exit 71; fi\nexec /bin/mv "$@"\n',
+    );
     fs.chmodSync(systemctl, 0o755);
     fs.chmodSync(stat, 0o755);
+    fs.chmodSync(mv, 0o755);
     const database = path.join(directory, "adminbot.sqlite");
     const upload = path.join(directory, "upload.sqlite");
     const create = (file: string, value: string) =>
@@ -536,10 +543,10 @@ describe("Aurora AdminBot hosting", () => {
       ).trim();
     create(database, "previous");
     create(upload, "replacement");
-    const run = (state: string) =>
+    const run = (state: string, token: string, failMainRename = false) =>
       spawnSync(
         "bash",
-        ["-s", "--", upload, database, path.join(root, "scripts/snapshot-sqlite.mjs"), "fixture"],
+        ["-s", "--", upload, database, path.join(root, "scripts/snapshot-sqlite.mjs"), token],
         {
           input: replace,
           encoding: "utf8",
@@ -547,18 +554,27 @@ describe("Aurora AdminBot hosting", () => {
             ...process.env,
             PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
             SYSTEMCTL_STATE: state,
+            FAIL_MAIN_RENAME: failMainRename ? "1" : "0",
           },
         },
       );
 
-    const active = run("active");
+    const active = run("active", "active");
     expect(active.status).not.toBe(0);
     expect(active.stderr).toContain("restarted during snapshot");
     expect(read(database)).toBe("previous");
     expect(fs.existsSync(path.join(directory, ".adminbot-sync-pending"))).toBe(false);
     create(upload, "replacement");
 
-    const completed = run("inactive");
+    const interrupted = run("inactive", "interrupted", true);
+    expect(interrupted.status).not.toBe(0);
+    expect(read(database)).toBe("previous");
+    expect(read(`${database}.backup-interrupted`)).toBe("previous");
+    expect(fs.existsSync(path.join(directory, ".adminbot-sync-pending"))).toBe(true);
+    fs.rmSync(path.join(directory, ".adminbot-sync-pending"));
+    create(upload, "replacement");
+
+    const completed = run("inactive", "fixture");
     expect(completed.status, completed.stderr).toBe(0);
     expect(read(database)).toBe("replacement");
     expect(read(`${database}.backup-fixture`)).toBe("previous");
