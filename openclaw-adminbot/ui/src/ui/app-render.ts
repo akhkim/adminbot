@@ -200,7 +200,6 @@ import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
-import { renderPublicShell } from "./adminbot/views/public-shell.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
@@ -855,6 +854,10 @@ const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyL
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
+  notifyLazyViewChanged,
+);
+const lazyPublicShell = createLazyView(
+  () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewChanged,
 );
 const lazyOpportunities = createLazyView(
@@ -2019,7 +2022,9 @@ export function renderApp(state: AppViewState) {
       return html` ${renderLanding(state)} ${renderGatewayUrlConfirmation(state)} `;
     }
     return html`
-      ${renderPublicShell(withAccessibleTab(state, accessRole))}
+      ${renderLazyView(lazyPublicShell, (module) =>
+        module.renderPublicShell(withAccessibleTab(state, accessRole)),
+      )}
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
