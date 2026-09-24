@@ -325,6 +325,34 @@ describe("loadAdminBot over the member session", () => {
     );
   });
 
+  it("opens a non-paper page without fetching papers, then loads them when requested", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+    });
+
+    await loadAdminBot(host, "general", false);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:8765/lab/members/self",
+    ]);
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+    expect(host.adminBotData.papersLoadedAt).toBeNull();
+    expect(host.adminBotError).toBeNull();
+
+    host.adminBotRosterLoadedAt = 123;
+    host.adminBotData.members = [{ id: "pat" }, { id: "lee" }] as never;
+    host.adminBotMemberList = { ...createEmptyAdminBotMemberList(), loadedAt: 456 };
+    await loadAdminBot(host, "general", true, true);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/papers"))).toHaveLength(1);
+    expect(host.adminBotData.papers.map((paper) => paper.id)).toEqual(["paper-1"]);
+    expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    expect(host.adminBotData.members.map((member) => member.id).toSorted()).toEqual(["lee", "pat"]);
+    expect(host.adminBotRosterLoadedAt).toBe(123);
+    expect(host.adminBotMemberList?.loadedAt).toBe(456);
+  });
+
   it("makes the own profile available before a slow paper read completes", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

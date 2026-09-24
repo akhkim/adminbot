@@ -63,7 +63,7 @@ import {
   type ConferenceRoster,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
-import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
+import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
@@ -786,6 +786,7 @@ export type AdminBotDashboardData = {
   emailReviewHistory?: AdminBotResolvedEmailReviewItem[];
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
+  papersLoadedAt: number | null;
   nudges: AdminBotPaperNudge[];
   /**
    * Who is going to each conference the lab has an accepted paper at.
@@ -835,9 +836,10 @@ export type AdminBotHost = {
   requestUpdate?: () => void;
   client: GatewayBrowserClient | null;
   connected: boolean;
-  // The dashboard's member-map card, loaded alongside the roster. See data/member-map.ts.
-  adminBotMemberMap: MemberMap | null;
+  // The dashboard's member-map card. Undefined means it has not been requested yet.
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId?: number;
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
@@ -975,6 +977,7 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     emailReviewHistory: [],
     members: [],
     papers: [],
+    papersLoadedAt: null,
     nudges: [],
     settings: null,
     sensitiveInfo: null,
@@ -1189,14 +1192,13 @@ function readArray<T>(value: unknown, key: string): T[] {
   return Array.isArray(raw) ? (raw as T[]) : [];
 }
 
-// Dashboard read path for a signed-in member. Their own profile and papers are the two surfaces every
-// signed-in person may read, so a failure there is a real error; the privileged extras (pending
-// queue, nudges, settings, sensitive info) are fetched best-effort and simply stay empty for a
-// member whose session the server refuses them to.
+// Signed-in read path. The own profile is always required; the full paper list is required only
+// when the active page uses it. Privileged extras are best-effort and stay empty when refused.
 async function loadAdminBotOverSession(
   host: AdminBotHost,
   mode: AdminBotLoadMode,
   session: { sessionToken: string; baseUrl: string },
+  includePapers: boolean,
 ): Promise<void> {
   const isCurrent = () => loadStoredMemberSession()?.sessionToken === session.sessionToken;
   host.adminBotLoading = true;
@@ -1255,7 +1257,7 @@ async function loadAdminBotOverSession(
     // The profile and public deadlines can render while the larger paper read is still pending.
     host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
     host.requestUpdate?.();
-    const papers = await read("/papers");
+    const papers = includePapers ? await read("/papers") : undefined;
     if (!isCurrent()) {
       return;
     }
@@ -1263,6 +1265,7 @@ async function loadAdminBotOverSession(
       ...createEmptyAdminBotDashboardData(),
       members: currentMemberRows(),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: includePapers ? Date.now() : null,
       // Admin queues still need their own read before the dashboard is complete.
       loadedAt: mode === "general" ? Date.now() : null,
     };
@@ -1299,6 +1302,7 @@ async function loadAdminBotOverSession(
       ),
       members: currentMemberRows(),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: includePapers ? Date.now() : null,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
       settings:
@@ -1368,13 +1372,20 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
 export async function loadAdminBot(
   host: AdminBotHost,
   mode: AdminBotLoadMode = "admin",
+  includePapers = true,
+  preserveRoster = false,
 ): Promise<void> {
   // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
-  host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
-  host.adminBotRosterLoadedAt = null;
-  host.adminBotRosterLoading = false;
-  host.adminBotRosterError = null;
-  if (host.adminBotMemberList?.loadedAt) {
+  // Opening a paper page after a non-paper page changes no member rows, so keep its loaded roster.
+  if (!preserveRoster) {
+    // Profile edits may also change the Dashboard map; only that tab will fetch it again.
+    invalidateMemberMap(host);
+    host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
+    host.adminBotRosterLoadedAt = null;
+    host.adminBotRosterLoading = false;
+    host.adminBotRosterError = null;
+  }
+  if (!preserveRoster && host.adminBotMemberList?.loadedAt) {
     host.adminBotMemberList = { ...host.adminBotMemberList, loadedAt: null };
   }
   // A signed-in member reads through their own session. The gateway tool path needs
@@ -1383,16 +1394,18 @@ export async function loadAdminBot(
   // which is what made edits look like they never persisted.
   const stored = loadStoredMemberSession();
   if (stored) {
-    await loadAdminBotOverSession(host, mode, {
-      sessionToken: stored.sessionToken,
-      baseUrl: resolveAdminBotBaseUrl(host.settings),
-    });
+    await loadAdminBotOverSession(
+      host,
+      mode,
+      {
+        sessionToken: stored.sessionToken,
+        baseUrl: resolveAdminBotBaseUrl(host.settings),
+      },
+      includePapers,
+    );
     if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
       return;
     }
-    // Not awaited and never able to fail the load: the map is one dashboard card, and the roster
-    // and papers above it are what the page is actually for.
-    void loadMemberMap(host);
     return;
   }
   const startingClient = host.client;
@@ -1419,6 +1432,7 @@ export async function loadAdminBot(
         ...createEmptyAdminBotDashboardData(),
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+        papersLoadedAt: Date.now(),
         loadedAt: Date.now(),
       };
       return;
@@ -1465,6 +1479,7 @@ export async function loadAdminBot(
       emailReviewHistory: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: Date.now(),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
@@ -3178,7 +3193,7 @@ export async function saveAdminBotOwnSchedule(
     return;
   }
   host.adminBotNotice = { kind: "success", text: "Saved your schedule." };
-  await loadAdminBot(host);
+  await loadAdminBot(host, "admin", Boolean(host.adminBotData.papersLoadedAt));
 }
 
 export function setAdminBotNudgeChannel(host: AdminBotHost, channel: MemberNudgeChannel): void {

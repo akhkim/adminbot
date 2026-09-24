@@ -281,7 +281,7 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotData?.members).toEqual([]);
     expect(host.adminBotMemberList?.rows).toEqual([]);
     expect(host.adminBotRosterLoadedAt).toBeNull();
-    expect(host.adminBotMemberMap).toBeNull();
+    expect(host.adminBotMemberMap).toBeUndefined();
     expect(host.adminBotReimbursement?.messages).toEqual([]);
     expect(host.adminBotLogisticsRequests).toEqual([]);
     expect(host.adminBotLogisticsRequestsLoadedAt).toBeNull();

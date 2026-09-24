@@ -257,6 +257,46 @@ describe("refreshActiveTab", () => {
     expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
   });
 
+  it("does not request the paper list when Time Availability first opens", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+
+    await refreshActiveTab(host as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(host, "admin", false, false);
+  });
+
+  it("loads papers after navigating from a non-paper page to Active Papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
+  it("waits for an in-flight non-paper load before requesting the missing papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotLoading: boolean;
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+
+    app.adminBotLoading = false;
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
   it("does not start a second roster read while the dashboard is loading", async () => {
     const host = createHost();
     host.tab = "adminbotMembers";

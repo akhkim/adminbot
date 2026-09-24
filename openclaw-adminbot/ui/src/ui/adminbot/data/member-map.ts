@@ -43,9 +43,30 @@ export type MemberMap = {
 
 export type MemberMapHost = {
   settings: UiSettings;
-  adminBotMemberMap: MemberMap | null;
+  /** Undefined until the Dashboard first requests this optional card. */
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId?: number;
 };
+
+export function invalidateMemberMap(host: {
+  adminBotMemberMap?: MemberMap | null;
+  adminBotMemberMapLoading?: boolean;
+  adminBotMemberMapRequestId?: number;
+}): void {
+  host.adminBotMemberMapRequestId = (host.adminBotMemberMapRequestId ?? 0) + 1;
+  host.adminBotMemberMap = undefined;
+  host.adminBotMemberMapLoading = false;
+}
+
+export function needsDashboardMemberMap(
+  tab: string,
+  hasMemberSession: boolean,
+  map: MemberMap | null | undefined,
+  loading: boolean,
+): boolean {
+  return tab === "dashboard" && hasMemberSession && map === undefined && !loading;
+}
 
 type RawPlace = {
   key?: unknown;
@@ -148,7 +169,11 @@ export function parseMemberMap(body: unknown): MemberMap | null {
  */
 export async function loadMemberMap(host: MemberMapHost): Promise<void> {
   const token = loadStoredMemberSession()?.sessionToken ?? null;
-  const isCurrent = () => (loadStoredMemberSession()?.sessionToken ?? null) === token;
+  const requestId = (host.adminBotMemberMapRequestId ?? 0) + 1;
+  host.adminBotMemberMapRequestId = requestId;
+  const isCurrent = () =>
+    (loadStoredMemberSession()?.sessionToken ?? null) === token &&
+    host.adminBotMemberMapRequestId === requestId;
   host.adminBotMemberMapLoading = true;
   try {
     const response = await fetch(`${resolveAdminBotBaseUrl(host.settings)}/member-map`, {
@@ -168,6 +193,10 @@ export async function loadMemberMap(host: MemberMapHost): Promise<void> {
     // Unreachable service, offline, blocked request: leave the card empty.
   } finally {
     if (isCurrent()) {
+      // A failed optional card stays empty; do not retry on every dashboard render.
+      if (host.adminBotMemberMap === undefined) {
+        host.adminBotMemberMap = null;
+      }
       host.adminBotMemberMapLoading = false;
     }
   }

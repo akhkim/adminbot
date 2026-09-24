@@ -675,8 +675,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
-  @state() adminBotMemberMap: MemberMap | null = null;
+  @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
+  adminBotMemberMapRequestId = 0;
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";

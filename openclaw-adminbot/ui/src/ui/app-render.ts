@@ -170,12 +170,14 @@ import {
   type MeetingFormState,
   type SignatureFormState,
 } from "./adminbot/data/logistics-requests.ts";
+import { loadMemberMap, needsDashboardMemberMap } from "./adminbot/data/member-map.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
+import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import {
@@ -2748,14 +2750,16 @@ export function renderApp(state: AppViewState) {
   const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
-  // The member's own record and paper list back the landing page. The full lab roster is only
-  // needed on the pages below; fetching it on every visit made the ordinary profile expensive.
+  // A member's own record starts every signed-in view. The paper list and full roster are fetched
+  // only for pages that use them; asking for both on Meetings or Availability delayed those views.
   //
   // `state.connected` stays on the gateway-driven half only. A member reads over their own HTTP
   // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
   // requiring one was the second half of why the landing page came up blank for plain members.
   const hasMemberSession = Boolean(state.memberId);
   const needsRosterForTab = needsLabRoster(state.tab, adminBotMode, adminBotPanel);
+  const needsPapersForTab =
+    needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat);
   // Time Availability needs the roster to fill its member picker but renders its own view, so it
   // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
   // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
@@ -2766,17 +2770,32 @@ export function renderApp(state: AppViewState) {
     state.tab === "adminbotTimeAvailability" || state.tab === "adminbotMeetings";
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
+  const needsFirstPaperRead =
+    hasMemberSession &&
+    needsPapersForTab &&
+    Boolean(state.adminBotData.loadedAt) &&
+    !state.adminBotData.papersLoadedAt;
   if (
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
-    !state.adminBotData.loadedAt
+    (!state.adminBotData.loadedAt || needsFirstPaperRead)
   ) {
-    void loadAdminBot(state, adminBotMode)
+    void loadAdminBot(state, adminBotMode, needsPapersForTab, needsFirstPaperRead)
       // The settings this needs arrive with that load, which is why it hangs off the end of it
       // rather than being read during the render that started it.
       .then(() => applyViewerHome(state))
       .finally(() => requestHostUpdate?.());
+  }
+  if (
+    needsDashboardMemberMap(
+      state.tab,
+      hasMemberSession,
+      state.adminBotMemberMap,
+      state.adminBotMemberMapLoading,
+    )
+  ) {
+    void loadMemberMap(state).finally(() => requestHostUpdate?.());
   }
   if (
     hasMemberSession &&
@@ -3474,7 +3493,7 @@ export function renderApp(state: AppViewState) {
                       @click=${() => {
                         if (!state.adminBotData.loadedAt) {
                           state.adminBotError = null;
-                          void loadAdminBot(state, adminBotMode).finally(() =>
+                          void loadAdminBot(state, adminBotMode, needsPapersForTab).finally(() =>
                             requestHostUpdate?.(),
                           );
                         } else {
@@ -3489,7 +3508,11 @@ export function renderApp(state: AppViewState) {
             </div>`
           : nothing}
         ${state.tab === "dashboard"
-          ? renderDashboard(state, accessRole, () => void loadAdminBot(state, adminBotMode))
+          ? renderDashboard(
+              state,
+              accessRole,
+              () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
+            )
           : nothing}
         ${state.tab === "profile"
           ? renderLocationPrompt({
@@ -3909,7 +3932,7 @@ export function renderApp(state: AppViewState) {
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,
-              onRefresh: () => void loadAdminBot(state, adminBotMode),
+              onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
               // Default to your own schedule once the roster lands: it is the one you came for,
               // and it is the only one you can edit. A plain member is pinned to it -- whose time
               // is committed where is planning data for the people who plan, so reading another
@@ -4221,7 +4244,7 @@ export function renderApp(state: AppViewState) {
               onNudgeSetRecipients: (memberIds) => setAdminBotNudgeRecipients(state, memberIds),
               onSendNudge: () => void sendAdminBotMemberNudge(state),
               onRefresh: () => {
-                void loadAdminBot(state, adminBotMode);
+                void loadAdminBot(state, adminBotMode, needsPapersForTab);
                 if (adminBotPanel === "members") {
                   void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
                 }
@@ -4318,7 +4341,7 @@ export function renderApp(state: AppViewState) {
                     loadBadgeDefinitions(state),
                     loadAdminBadgeNominations(state),
                     loadBadgeSuggestions(state),
-                    loadAdminBot(state, "admin"),
+                    loadAdminBot(state, "admin", needsPapersForTab),
                   ]);
                 },
                 onSaveDefinition: (input) => saveAdminBadgeDefinition(state, input),
@@ -5378,7 +5401,7 @@ export function renderApp(state: AppViewState) {
                         data: state.adminBotData,
                         busyActionId: state.adminBotBusyActionId,
                         notice: state.adminBotNotice,
-                        onRefresh: () => void loadAdminBot(state, adminBotMode),
+                        onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
                         onApprove: (proposal) => void approveAdminBotAction(state, proposal),
                         onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
                         onExecute: (proposal) => void executeAdminBotAction(state, proposal),
