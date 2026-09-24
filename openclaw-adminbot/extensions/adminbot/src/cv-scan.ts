@@ -1,3 +1,4 @@
+import { routeLlmFetch } from "./kernel/llm-gateway-client.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
@@ -602,7 +603,7 @@ async function extractCvEntries(
   signal?: AbortSignal,
 ): Promise<AdminBotCvEntry[]> {
   const baseUrl = assertLoopbackModelUrl(env);
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
+  const response = await routeLlmFetch(fetchImpl, "local", env)(new URL("chat/completions", baseUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
@@ -720,7 +721,7 @@ export async function draftMemberBlurb(
         .join(" | "),
     )
     .join("\n");
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
+  const response = await routeLlmFetch(fetchImpl, "local", env)(new URL("chat/completions", baseUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,

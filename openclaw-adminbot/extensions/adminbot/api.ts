@@ -124,3 +124,6 @@ export {
 export { summarizeMeeting } from "./src/workflows/meetings/summarize.js";
 export { parseVtt } from "./src/workflows/meetings/vtt.js";
 export { parseParticipantCsv } from "./src/workflows/meetings/attendance.js";
+
+export { createLlmGateway } from "./src/kernel/llm-gateway.js";
+export { routeLlmFetch, readLlmGatewayStatus } from "./src/kernel/llm-gateway-client.js";

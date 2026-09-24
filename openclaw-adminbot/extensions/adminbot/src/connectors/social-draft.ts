@@ -1,3 +1,4 @@
+import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
 /**
  * The vendor leg of the LinkedIn draft: PDF extraction and generation, both via OpenRouter.
  *
@@ -114,7 +115,7 @@ async function callOpenRouter(
   label: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetchImpl(OPENROUTER_URL, {
+  const response = await routeLlmFetch(fetchImpl, "public", env)(OPENROUTER_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${requireOpenRouterKey(env)}`,

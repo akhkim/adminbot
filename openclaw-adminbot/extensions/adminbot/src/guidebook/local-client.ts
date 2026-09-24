@@ -1,3 +1,4 @@
+import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
 /**
  * Loopback-only HTTP clients for the guidebook corpus.
  *
@@ -136,7 +137,7 @@ export async function completeLocally(params: {
   temperature?: number;
 }): Promise<string> {
   const parsed = (await postJson(
-    params.fetchImpl,
+    routeLlmFetch(params.fetchImpl, "local"),
     params.baseUrl,
     "chat/completions",
     params.apiKey,
