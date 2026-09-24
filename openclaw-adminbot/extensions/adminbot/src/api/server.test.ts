@@ -109,16 +109,16 @@ async function listPending(baseUrl: string): Promise<RegistrationView[]> {
   return ((await res.json()) as { registrations: RegistrationView[] }).registrations;
 }
 
-function approveRegistration(baseUrl: string, id: string): { member_id: string } {
-  const result = mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
+async function approveRegistration(baseUrl: string, id: string): Promise<{ member_id: string }> {
+  const result = await mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`approve failed for ${id}: ${result.error.message}`);
   }
   return result.payload;
 }
 
-function rejectRegistration(baseUrl: string, id: string): void {
-  const result = mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
+async function rejectRegistration(baseUrl: string, id: string): Promise<void> {
+  const result = await mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`reject failed for ${id}: ${result.error.message}`);
   }
@@ -134,7 +134,7 @@ async function approveClaim(baseUrl: string, memberId: string, email: string): P
   if (!registration) {
     throw new Error(`no pending claim for ${memberId}`);
   }
-  approveRegistration(baseUrl, registration.id);
+  await approveRegistration(baseUrl, registration.id);
 }
 
 async function loginToken(baseUrl: string, email: string): Promise<string> {
@@ -219,6 +219,35 @@ describe("AdminBot mock service", () => {
     await expect(members.json()).resolves.toEqual({
       error: { message: "authentication required" },
     });
+  });
+
+  it("waits for a session lookup before deciding access to a protected route", async () => {
+    const { baseUrl, mock } = await startService();
+    const original = mock.auth.resolveSession.bind(mock.auth);
+    let lookupStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
+    let releaseLookup!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    Object.defineProperty(mock.auth, "resolveSession", {
+      value: async (token: string) => {
+        lookupStarted();
+        await blocked;
+        return original(token);
+      },
+    });
+    const request = fetch(`${baseUrl}/settings`, {
+      headers: { Authorization: "Bearer invalid-member-session" },
+    });
+    try {
+      await started;
+    } finally {
+      releaseLookup();
+    }
+    expect((await request).status).toBe(401);
   });
 
   it("accepts Slack channel naming events for the service principal", async () => {
@@ -311,7 +340,7 @@ describe("AdminBot mock service", () => {
     const pending = await listPending(baseUrl);
     const registration = pending.find((entry) => entry.member_id === "ada");
     expect(registration?.kind).toBe("claim");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -349,7 +378,7 @@ describe("AdminBot mock service", () => {
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
     expect(registration).toBeDefined();
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
 
     const members = await (
       await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
@@ -381,7 +410,7 @@ describe("AdminBot mock service", () => {
     expect(signup.status).toBe(200);
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
 
     // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
     await Promise.resolve();
@@ -416,7 +445,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
     await Promise.resolve();
@@ -444,7 +473,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -503,7 +532,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "nope");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -527,7 +556,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "mk");
-    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
+    expect(await approveRegistration(baseUrl, registration!.id)).toEqual({
       status: "approved",
       member_id: "mk",
     });
@@ -551,7 +580,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
     expect(approveBody).toEqual({ status: "approved", member_id: "rk" });
     expect(await loginToken(baseUrl, "rk@cs.toronto.edu")).toBeTruthy();
   });
@@ -569,7 +598,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rj");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",

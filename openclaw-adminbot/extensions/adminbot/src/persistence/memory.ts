@@ -347,6 +347,18 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.labMembers.set(member.id, member);
   }
 
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
+  ): boolean {
+    const member = this.labMembers.get(memberId);
+    if (!member) {
+      return false;
+    }
+    this.labMembers.set(memberId, { ...member, ...patch });
+    return true;
+  }
+
   getLabMember(memberId: string): AdminBotLabMember | undefined {
     return this.labMembers.get(memberId);
   }
@@ -1288,9 +1300,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.credentialsByMemberId.get(memberId);
   }
 
+  listCredentialMemberIds(): string[] {
+    return [...this.credentialsByMemberId.keys()];
+  }
+
   saveCredential(credential: AdminBotMemberCredential): void {
     this.credentialsByMemberId.set(credential.member_id, credential);
     this.credentialsByEmail.set(credential.email.toLowerCase(), credential);
+  }
+
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean {
+    const credential = this.credentialsByMemberId.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: updatedAt });
+    this.revokeSessionsForMember(memberId, updatedAt);
+    return true;
   }
 
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
@@ -1309,8 +1340,50 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.credentialsByEmail.set(updated.email, updated);
   }
 
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken" {
+    const credential = this.credentialsByMemberId.get(memberId);
+    const member = this.labMembers.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash || !member) {
+      return "stale";
+    }
+    const email = newEmail.toLowerCase();
+    const holder = this.credentialsByEmail.get(email);
+    if ((holder && holder.member_id !== memberId) || this.getPendingRegistrationByEmail(email)) {
+      return "taken";
+    }
+    this.updateCredentialEmail(memberId, email, updatedAt);
+    this.labMembers.set(memberId, { ...member, email, updated_at: updatedAt });
+    return "changed";
+  }
+
   saveAccountRegistration(registration: AdminBotAccountRegistration): void {
     this.registrations.set(registration.id, registration);
+  }
+
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean {
+    if (registration.status !== "pending") {
+      throw new Error("only pending registrations can be inserted here");
+    }
+    if (
+      this.registrations.has(registration.id) ||
+      this.getCredentialByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getCredentialByMemberId(registration.member_id)) ||
+      this.getPendingRegistrationByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getPendingRegistrationByMemberId(registration.member_id))
+    ) {
+      return false;
+    }
+    this.registrations.set(registration.id, registration);
+    return true;
   }
 
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
@@ -1355,6 +1428,20 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.sessions.set(session.token_hash, session);
   }
 
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean {
+    if (
+      this.credentialsByMemberId.get(session.member_id)?.password_scrypt !== expectedPasswordHash ||
+      this.sessions.has(session.token_hash)
+    ) {
+      return false;
+    }
+    this.sessions.set(session.token_hash, session);
+    return true;
+  }
+
   getSession(tokenHash: string): AdminBotAuthSession | undefined {
     return this.sessions.get(tokenHash);
   }
@@ -1395,6 +1482,22 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         reset.used_at = usedAt;
       }
     }
+  }
+
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean {
+    const reset = this.passwordResets.get(tokenHash);
+    const credential = reset && this.credentialsByMemberId.get(reset.member_id);
+    if (!reset || reset.used_at || reset.expires_at <= usedAt || !credential) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: usedAt });
+    this.markPasswordResetsUsedForMember(reset.member_id, usedAt);
+    this.revokeSessionsForMember(reset.member_id, usedAt);
+    return true;
   }
 
   pruneSessionsBefore(cutoffIso: string): number {

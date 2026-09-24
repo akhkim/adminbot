@@ -488,6 +488,20 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   ): boolean;
   releaseExecutionClaim(effectKey: string, actionId: string): void;
   saveLabMember(member: AdminBotLabMember): void;
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Pick<AdminBotLabMember, "updated_at"> &
+      Partial<
+        Pick<
+          AdminBotLabMember,
+          | "last_login_at"
+          | "last_login_country"
+          | "last_login_continent"
+          | "last_login_city"
+          | "last_login_timezone"
+        >
+      >,
+  ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
@@ -666,12 +680,33 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   pruneAuditEventsBefore(cutoffIso: string): number;
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
+  /** Member IDs with portal credentials, for the public unclaimed-roster picker. */
+  listCredentialMemberIds(): string[];
   saveCredential(credential: AdminBotMemberCredential): void;
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean;
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken";
   savePasswordReset(reset: AdminBotPasswordReset): void;
   getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
   markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean;
   saveAccountRegistration(registration: AdminBotAccountRegistration): void;
+  /** Insert a pending claim/signup only when no pending email or claim-member collision exists. */
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean;
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
   listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
   updateAccountRegistrationDecision(
@@ -683,6 +718,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
   getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
   saveSession(session: AdminBotAuthSession): void;
+  /** Prevent a stale verified password from minting a session after a concurrent password change. */
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean;
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;

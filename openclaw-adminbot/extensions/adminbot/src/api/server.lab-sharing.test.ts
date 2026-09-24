@@ -19,7 +19,10 @@ afterEach(async () => {
 });
 
 async function startLab() {
-  const mock = createAdminBotMockService({ serviceToken: SERVICE_TOKEN, allowedOrigins: ["http://127.0.0.1:5197"] });
+  const mock = createAdminBotMockService({
+    serviceToken: SERVICE_TOKEN,
+    allowedOrigins: ["http://127.0.0.1:5197"],
+  });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
     mock.server.listen(0, "127.0.0.1", () => {
@@ -76,13 +79,13 @@ async function memberSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ member_id: memberId, email, password: "correcthorse" }),
   });
-  const registration = mock.auth
-    .listRegistrations("pending")
-    .find((entry) => entry.member_id === memberId);
+  const registration = (await mock.auth.listRegistrations("pending")).find(
+    (entry) => entry.member_id === memberId,
+  );
   if (!registration) {
     throw new Error(`no registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -524,57 +527,62 @@ it("supports compact mutation responses without changing legacy responses", asyn
   expect((await legacy.json()).requests).toHaveLength(1);
 });
 
-it("allows compact-response preference in an allowed-origin preflight",async()=>{
- const {baseUrl}=await startLab();
- const response=await fetch(`${baseUrl}/lab-sharing/requests/paper-1`,{method:"OPTIONS",headers:{Origin:"http://127.0.0.1:5197","Access-Control-Request-Method":"PUT","Access-Control-Request-Headers":"authorization,content-type,prefer"}});
- expect(response.headers.get("access-control-allow-headers")).toContain("Prefer");
+it("allows compact-response preference in an allowed-origin preflight", async () => {
+  const { baseUrl } = await startLab();
+  const response = await fetch(`${baseUrl}/lab-sharing/requests/paper-1`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://127.0.0.1:5197",
+      "Access-Control-Request-Method": "PUT",
+      "Access-Control-Request-Headers": "authorization,content-type,prefer",
+    },
+  });
+  expect(response.headers.get("access-control-allow-headers")).toContain("Prefer");
 });
 
-  // The broadcast archive, end to end: admin publishes, every member reads back the history.
-  it("keeps a broadcast archive that members can read and only admins can add to", async () => {
-    const { mock, baseUrl } = await startLab();
-    const member = await memberSession(mock, baseUrl, "member");
-    const admin = await memberSession(mock, baseUrl, "admin");
-    const url = `${baseUrl}/lab-sharing/status`;
-    const publish = (headers: Record<string, string>, message: string) =>
-      fetch(url, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({
-          availability: "away",
-          message,
-          expires_at: "2099-01-01T00:00:00Z",
-        }),
-      });
+// The broadcast archive, end to end: admin publishes, every member reads back the history.
+it("keeps a broadcast archive that members can read and only admins can add to", async () => {
+  const { mock, baseUrl } = await startLab();
+  const member = await memberSession(mock, baseUrl, "member");
+  const admin = await memberSession(mock, baseUrl, "admin");
+  const url = `${baseUrl}/lab-sharing/status`;
+  const publish = (headers: Record<string, string>, message: string) =>
+    fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        availability: "away",
+        message,
+        expires_at: "2099-01-01T00:00:00Z",
+      }),
+    });
 
-    // Publishing is admin-only; reading is not, because a broadcast is addressed to everybody.
-    expect((await publish(member, "Members cannot broadcast")).status).toBe(403);
-    expect((await publish(admin, "First broadcast")).status).toBe(200);
-    expect((await publish(admin, "Second broadcast")).status).toBe(200);
+  // Publishing is admin-only; reading is not, because a broadcast is addressed to everybody.
+  expect((await publish(member, "Members cannot broadcast")).status).toBe(403);
+  expect((await publish(admin, "First broadcast")).status).toBe(200);
+  expect((await publish(admin, "Second broadcast")).status).toBe(200);
 
-    const seen = await fetch(url, { headers: member });
-    expect(seen.status).toBe(200);
-    const payload = (await seen.json()) as {
-      status: { message: string } | null;
-      history: Array<{ message: string; id?: string }>;
-      can_manage: boolean;
-    };
-    expect(payload.status?.message).toBe("Second broadcast");
-    // The first one survives the second, which the single-row table it replaced could not do.
-    expect(payload.history.map((row) => row.message)).toEqual([
-      "Second broadcast",
-      "First broadcast",
-    ]);
-    expect(payload.can_manage).toBe(false);
+  const seen = await fetch(url, { headers: member });
+  expect(seen.status).toBe(200);
+  const payload = (await seen.json()) as {
+    status: { message: string } | null;
+    history: Array<{ message: string; id?: string }>;
+    can_manage: boolean;
+  };
+  expect(payload.status?.message).toBe("Second broadcast");
+  // The first one survives the second, which the single-row table it replaced could not do.
+  expect(payload.history.map((row) => row.message)).toEqual([
+    "Second broadcast",
+    "First broadcast",
+  ]);
+  expect(payload.can_manage).toBe(false);
 
-    // Clearing takes the current one down without emptying the record of it.
-    expect(
-      (await fetch(`${url}/clear`, { method: "POST", headers: admin })).status,
-    ).toBe(200);
-    const after = (await (await fetch(url, { headers: admin })).json()) as {
-      status: unknown;
-      history: unknown[];
-    };
-    expect(after.status).toBeNull();
-    expect(after.history).toHaveLength(2);
-  });
+  // Clearing takes the current one down without emptying the record of it.
+  expect((await fetch(`${url}/clear`, { method: "POST", headers: admin })).status).toBe(200);
+  const after = (await (await fetch(url, { headers: admin })).json()) as {
+    status: unknown;
+    history: unknown[];
+  };
+  expect(after.status).toBeNull();
+  expect(after.history).toHaveLength(2);
+});

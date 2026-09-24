@@ -165,7 +165,7 @@ async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   if (!pending) {
     throw new Error("no pending claim for zhijing");
   }
-  const approved = mock.auth.approveRegistration(pending.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(pending.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
