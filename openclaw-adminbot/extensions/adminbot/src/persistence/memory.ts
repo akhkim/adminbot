@@ -74,6 +74,8 @@ import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
+  AdminBotLabMemberSummary,
+  AdminBotListPage,
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
   AdminBotSlackConnectInvite,
@@ -84,6 +86,34 @@ import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
 function slackConnectInviteKey(email: string, channelId: string): string {
   return `${email.trim().toLowerCase()}\u0000${channelId}`;
+}
+
+function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
+  const needle = q.toLowerCase();
+  return [member.name, member.email, ...(member.research_topics ?? []), ...(member.projects ?? [])]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(needle));
+}
+
+function paperMatchesQuery(paper: AdminBotPaperRecord, q: string): boolean {
+  const needle = q.toLowerCase();
+  return [paper.title, paper.venue, ...paper.authors]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(needle));
+}
+
+function compareSqliteText(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+function comparePageText(left: string, right: string): number {
+  return compareSqliteText(left.toLowerCase(), right.toLowerCase());
+}
+
+const foldAscii = (value: string) => value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
+
+function compareIndexedPageText(left: string, right: string): number {
+  return compareSqliteText(foldAscii(left), foldAscii(right));
 }
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
@@ -321,10 +351,41 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.labMembers.get(memberId);
   }
 
-  listLabMembers(): AdminBotLabMember[] {
-    return [...this.labMembers.values()].toSorted((left, right) =>
-      left.name.localeCompare(right.name),
-    );
+  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
+    const members = [...this.labMembers.values()]
+      .filter((member) => !page?.q || memberMatchesQuery(member, page.q))
+      .toSorted((left, right) =>
+        page
+          ? compareIndexedPageText(left.name, right.name) || compareSqliteText(left.id, right.id)
+          : left.name.localeCompare(right.name),
+      );
+    return page ? members.slice(page.offset, page.offset + page.limit) : members;
+  }
+
+  listLabMemberSummaries(): AdminBotLabMemberSummary[] {
+    return [...this.labMembers.values()]
+      .toSorted(
+        (left, right) =>
+          comparePageText(left.name, right.name) || compareSqliteText(left.id, right.id),
+      )
+      .map((member) => {
+        const summary = { ...member };
+        delete summary.field_provenance;
+        delete (summary as Partial<AdminBotLabMember>).access;
+        return summary.onboarding
+          ? {
+              ...summary,
+              onboarding: {
+                steps: summary.onboarding.steps.map(({ id, status }) => ({ id, status })),
+              },
+            }
+          : summary;
+      });
+  }
+
+  countLabMembers(q?: string): number {
+    return [...this.labMembers.values()].filter((member) => !q || memberMatchesQuery(member, q))
+      .length;
   }
 
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
@@ -367,9 +428,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
-  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[] {
+  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[] {
+    const selected = Array.isArray(memberId) ? new Set(memberId) : null;
     return [...this.badgeAssignments.values()]
-      .filter((assignment) => !memberId || assignment.member_id === memberId)
+      .filter(
+        (assignment) =>
+          !memberId ||
+          (selected ? selected.has(assignment.member_id) : assignment.member_id === memberId),
+      )
       .toSorted((left, right) => left.awarded_at.localeCompare(right.awarded_at));
   }
 
@@ -712,10 +778,19 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.papers.get(paperId);
   }
 
-  listPapers(): AdminBotPaperRecord[] {
-    return [...this.papers.values()].toSorted((left, right) =>
-      left.title.localeCompare(right.title),
-    );
+  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[] {
+    const papers = [...this.papers.values()]
+      .filter((paper) => !page?.q || paperMatchesQuery(paper, page.q))
+      .toSorted((left, right) =>
+        page
+          ? compareIndexedPageText(left.title, right.title) || compareSqliteText(left.id, right.id)
+          : left.title.localeCompare(right.title),
+      );
+    return page ? papers.slice(page.offset, page.offset + page.limit) : papers;
+  }
+
+  countPapers(q?: string): number {
+    return [...this.papers.values()].filter((paper) => !q || paperMatchesQuery(paper, q)).length;
   }
 
   deletePaper(paperId: string): boolean {

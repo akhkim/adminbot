@@ -26,6 +26,7 @@ async function raceWithNextMacrotask(promise: Promise<unknown>): Promise<"resolv
 }
 
 const mocks = vi.hoisted(() => ({
+  loadAdminBotMock: vi.fn(async () => {}),
   refreshChatMock: vi.fn(async () => {}),
   scheduleChatScrollMock: vi.fn(),
   scheduleLogsScrollMock: vi.fn(),
@@ -66,6 +67,10 @@ const mocks = vi.hoisted(() => ({
   stopNodesPollingMock: vi.fn(),
 }));
 
+vi.mock("./adminbot/controllers/admin.ts", () => ({
+  loadAdminBot: mocks.loadAdminBotMock,
+  loadAdminBotVenueSources: vi.fn(async () => {}),
+}));
 vi.mock("./app-chat.ts", () => ({
   refreshChat: mocks.refreshChatMock,
 }));
@@ -240,6 +245,45 @@ describe("refreshActiveTab", () => {
     channels: [mocks.loadChannelsMock, false],
     tools: null,
   } as const;
+
+  it("reuses cached Time Availability data on revisit; the view has its own Refresh", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { adminBotData: { loadedAt: number } };
+    app.adminBotData = { loadedAt: Date.now() };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it("does not start a second roster read while the dashboard is loading", async () => {
+    const host = createHost();
+    host.tab = "adminbotMembers";
+    const app = host as typeof host & { adminBotLoading: boolean };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it("calls the Calendar loader with its app receiver", async () => {
+    const host = createHost();
+    host.tab = "adminbotCalendar";
+    let receiver: unknown;
+    const loadCalendarEvents = vi.fn(function (this: unknown) {
+      receiver = this;
+      return Promise.resolve();
+    });
+    (host as typeof host & { loadCalendarEvents: typeof loadCalendarEvents }).loadCalendarEvents =
+      loadCalendarEvents;
+
+    await refreshActiveTab(host as never);
+
+    expect(loadCalendarEvents).toHaveBeenCalledOnce();
+    expect(receiver).toBe(host);
+  });
 
   it("routes agents cron panel refresh through cron loaders", async () => {
     const host = createHost();

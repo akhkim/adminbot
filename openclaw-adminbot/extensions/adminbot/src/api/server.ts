@@ -73,6 +73,7 @@ import {
   AdminBotMemoryStore,
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotListPage,
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
   type AdminBotServiceStore,
@@ -139,6 +140,8 @@ import {
   buildVenueIndex,
   refreshVenueIndexIfChanged,
   searchVenue,
+  venuePaperCategories,
+  venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
@@ -460,6 +463,7 @@ const ANONYMOUS_ROUTES = new Set([
   // the reimbursement pair is capped. Indexing a venue stays privileged: it is the expensive half
   // and the only one that writes.
   "GET /venue-papers/sources",
+  "GET /venue-papers/categories",
   "POST /venue-papers/search",
   // The Opportunities board, which the Control UI shows to visitors alongside Deadlines. Only
   // approved entries reach an anonymous caller; the handler resolves that from the principal, so
@@ -730,6 +734,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const checkUploadedPdf = createPdfReferenceCheckHandler(
     options.pdfReferenceChecker,
     referenceDependencies.scanPdf,
+    ({ actor, ...details }) =>
+      store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "reference_check.pdf_checked",
+        actor,
+        details,
+      }),
   );
   const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
@@ -1806,12 +1818,30 @@ async function handleAuthenticatedRoute(
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/venue-papers/categories") {
+    const venueId = url.searchParams.get("venue_id")?.trim() ?? "";
+    const settings = service.getSettings();
+    const source = (settings.ok ? (settings.payload.venue_sources ?? []) : []).find(
+      (entry) => entry.id === venueId,
+    );
+    if (!source) {
+      sendJson(res, 404, { error: { message: "that conference is not on the list" } });
+      return;
+    }
+    sendJson(res, 200, {
+      venue_id: venueId,
+      categories: venuePaperCategories(ctx.store.listVenuePapers(venueId), source.label),
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/venue-papers/search") {
     // Open to visitors: see ANONYMOUS_ROUTES. The gate above admits anonymous callers only for the
     // routes named there, and applies the per-IP rate limit on the way through.
     const body = readRecord(await readJson(req));
     const venueId = asString(body.venue_id)?.trim() ?? "";
     const interests = asString(body.interests)?.trim() ?? "";
+    const categoryId = asString(body.category_id)?.trim().toLowerCase() ?? "";
     if (!venueId) {
       sendJson(res, 400, { error: { message: "venue_id is required" } });
       return;
@@ -1839,12 +1869,24 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
+    const categories = venuePaperCategories(rows, source.label);
+    const category = categoryId ? categories.find((entry) => entry.id === categoryId) : undefined;
+    if (categoryId && !category) {
+      sendJson(res, 400, {
+        error: { message: "that category is not available for this conference" },
+      });
+      return;
+    }
+    const selectedRows = categoryId
+      ? rows.filter((row) => venuePaperCategoryId(row.venue, source.label) === categoryId)
+      : rows;
     try {
-      const ranking = await searchVenue({ rows, interests, embed: ctx.embedder });
+      const ranking = await searchVenue({ rows: selectedRows, interests, embed: ctx.embedder });
       sendJson(res, 200, {
         venue_id: venueId,
         label: source.label,
-        searched: rows.length,
+        ...(category ? { category: category.label } : {}),
+        searched: selectedRows.length,
         ...ranking,
       });
     } catch (error) {
@@ -3284,6 +3326,29 @@ async function handleAuthenticatedRoute(
     await handleLabSharingRoute(req, res, url, service, principal.member.id);
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab/members/self") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    const result = service.getLabMemberView(principal.member.id);
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              member: redactConfidentialMemberFields(result.payload.member, {
+                memberId: principal.member.id,
+                isAdmin: principal.member.privilege_level === "admin",
+                isMemberSession: true,
+              }),
+            },
+          }
+        : result,
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab/members") {
     // The roster is lab-internal but not confidential, with two exceptions. What a member discloses
     // about their health or family is written for one reader, and this response goes to all of
@@ -3296,13 +3361,50 @@ async function handleAuthenticatedRoute(
       isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
       isMemberSession: principal.kind === "member",
     };
-    const result = service.listLabMembers();
+    const view = url.searchParams.get("view");
+    if (view !== null && view !== "summary") {
+      sendJson(res, 400, { error: { message: "invalid member view" } });
+      return;
+    }
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    if (view === "summary") {
+      if (page) {
+        sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
+        return;
+      }
+      const result = service.listLabMemberSummaries(
+        principal.kind === "member" ? principal.member.id : undefined,
+      );
+      sendServiceResult(
+        res,
+        result.ok
+          ? {
+              ...result,
+              payload: {
+                members: result.payload.members.map((member) =>
+                  redactConfidentialMemberFields(member, viewer),
+                ),
+                ...(result.payload.self
+                  ? { self: redactConfidentialMemberFields(result.payload.self, viewer) }
+                  : {}),
+              },
+            }
+          : result,
+      );
+      return;
+    }
+    const result = service.listLabMembers(page);
     sendServiceResult(
       res,
       result.ok
         ? {
             ...result,
             payload: {
+              ...result.payload,
               members: result.payload.members.map((member) =>
                 redactConfidentialMemberFields(member, viewer),
               ),
@@ -4022,7 +4124,12 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers") {
-    sendServiceResult(res, service.listPapers());
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    sendServiceResult(res, service.listPapers(page));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/slot-overview") {
@@ -5590,6 +5697,25 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
   }
   const level = principal.member.privilege_level;
   return level === "admin";
+}
+
+function readListPage(url: URL): AdminBotListPage | "invalid" | undefined {
+  const params = url.searchParams;
+  if (!["limit", "offset", "q"].some((key) => params.has(key))) {
+    return undefined;
+  }
+  const rawLimit = params.get("limit") ?? "50";
+  const rawOffset = params.get("offset") ?? "0";
+  const q = (params.get("q") ?? "").trim();
+  if (!/^[1-9]\d*$/u.test(rawLimit) || !/^\d+$/u.test(rawOffset) || q.length > 120) {
+    return "invalid";
+  }
+  const limit = Number(rawLimit);
+  const offset = Number(rawOffset);
+  if (!Number.isSafeInteger(limit) || limit > 100 || !Number.isSafeInteger(offset)) {
+    return "invalid";
+  }
+  return { limit, offset, ...(q ? { q } : {}) };
 }
 
 /** `?limit=` for the edit-history reads, or nothing and let the service pick its default. */

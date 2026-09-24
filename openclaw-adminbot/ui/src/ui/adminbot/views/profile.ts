@@ -73,6 +73,7 @@ export type ProfileProps = {
   /** `memberId` is who the badge is for; omitted means the viewer themselves. */
   onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
   onPickBadgeNominee?: (memberId: string) => void;
+  onOpenBadgeNominee?: () => void;
   /** Propose a badge the catalogue does not have. An admin decides whether it joins. */
   onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
   onToggleBadgeSuggestForm?: (open: boolean) => void;
@@ -1302,9 +1303,7 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
                    needs a new category is exactly the kind this form exists for. -->
               <datalist id="profile-badge-categories">
                 ${[
-                  ...new Set(
-                    (state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category),
-                  ),
+                  ...new Set((state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category)),
                 ]
                   .toSorted()
                   .map((category) => html`<option value=${category}></option>`)}
@@ -1464,10 +1463,25 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
             value: forSelf ? "" : (nominee.id ?? ""),
             placeholder: t("profile.badges.nominateSearch"),
             label: t("profile.badges.nominateWho"),
-            disabled: state.profileBadgeBusy || rosterOptions.length === 0,
+            disabled: state.profileBadgeBusy,
             onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+            onOpen: () => props.onOpenBadgeNominee?.(),
           })}
         </div>
+        ${state.adminBotRosterLoading
+          ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
+          : state.adminBotRosterError
+            ? html`<p class="profile__section-subtitle" role="alert">
+                Could not load lab members.
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => props.onOpenBadgeNominee?.()}
+                >
+                  Try again
+                </button>
+              </p>`
+            : nothing}
         ${forSelf
           ? nothing
           : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
@@ -1833,6 +1847,24 @@ function renderLinks(member: LabMember) {
 const SAVE_TOAST_MS = 2600;
 let toastNoticeText: string | null = null;
 let toastDismissTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function resetProfileSessionState(): void {
+  if (basicsSaveTimer) {
+    clearTimeout(basicsSaveTimer);
+    basicsSaveTimer = undefined;
+  }
+  for (const controller of accountCheckAborts.values()) {
+    controller.abort();
+  }
+  accountCheckAborts.clear();
+  accountCheckedValues.clear();
+  pendingFocusFieldKey = null;
+  if (toastDismissTimer) {
+    clearTimeout(toastDismissTimer);
+    toastDismissTimer = undefined;
+  }
+  toastNoticeText = null;
+}
 
 function renderSaveToast(state: AppViewState) {
   const notice = state.adminBotNotice;

@@ -22,6 +22,10 @@ import type { AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in to see the lab's meeting recordings.";
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 function failureText(
   result: { kind: string; message?: string },
   fallback: string,
@@ -49,13 +53,18 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
     const result = await fetchMeetings(stored.sessionToken, baseUrl);
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotMeetingsError = failureText(result, "Could not load meetings.", baseUrl);
       return;
     }
     host.adminBotMeetings = result.value;
   } finally {
-    host.adminBotMeetingsLoading = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotMeetingsLoading = false;
+    }
   }
 }
 
@@ -81,13 +90,18 @@ export async function setAdminBotMeetingAttendance(
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
     const result = await saveMeetingAttendance(meetingId, [attendee], stored.sessionToken, baseUrl);
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotMeetingsError = failureText(result, "Could not save attendance.", baseUrl);
       return;
     }
     host.adminBotMeetings = replaceMeeting(host.adminBotMeetings ?? [], result.value);
   } finally {
-    host.adminBotMeetingsSaving = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotMeetingsSaving = false;
+    }
   }
 }
 
@@ -120,6 +134,9 @@ export async function fileAdminBotMeeting(
       stored.sessionToken,
       baseUrl,
     );
+    if (!sameSession(stored.sessionToken)) {
+      return false;
+    }
     if (!result.ok) {
       host.adminBotMeetingsError = failureText(result, "Could not file the meeting.", baseUrl);
       return false;
@@ -127,7 +144,9 @@ export async function fileAdminBotMeeting(
     host.adminBotMeetings = [result.value, ...(host.adminBotMeetings ?? [])];
     return true;
   } finally {
-    host.adminBotMeetingsSaving = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotMeetingsSaving = false;
+    }
   }
 }
 
@@ -154,6 +173,9 @@ export async function loadAdminBotMeetingNudges(host: AdminBotHost): Promise<voi
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
     const result = await fetchMeetingAttendanceNudges(stored.sessionToken, baseUrl);
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotMeetingNudgeError = failureText(
         result,
@@ -164,7 +186,9 @@ export async function loadAdminBotMeetingNudges(host: AdminBotHost): Promise<voi
     }
     host.adminBotMeetingNudgePreview = result.value;
   } finally {
-    host.adminBotMeetingNudgeBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotMeetingNudgeBusy = false;
+    }
   }
 }
 
@@ -186,6 +210,9 @@ export async function sendAdminBotMeetingNudges(host: AdminBotHost): Promise<voi
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
     const result = await sendMeetingAttendanceNudges(stored.sessionToken, baseUrl);
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotMeetingNudgeError = failureText(
         result,
@@ -196,7 +223,12 @@ export async function sendAdminBotMeetingNudges(host: AdminBotHost): Promise<voi
     }
     host.adminBotMeetingNudgeResult = result.value;
   } finally {
-    host.adminBotMeetingNudgeBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotMeetingNudgeBusy = false;
+    }
+  }
+  if (!sameSession(stored.sessionToken)) {
+    return;
   }
   await loadAdminBotMeetingNudges(host);
 }

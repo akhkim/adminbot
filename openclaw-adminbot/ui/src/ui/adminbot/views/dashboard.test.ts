@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
+import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
 import * as deadlineTime from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
@@ -35,6 +36,54 @@ function attentionIds(container: HTMLElement): string[] {
 }
 
 describe("renderDashboard", () => {
+  it("shows loading instead of empty work while the first read is pending", () => {
+    const container = renderPage(
+      createState({ adminBotData: createEmptyAdminBotDashboardData(), adminBotLoading: true }),
+    );
+    expect(container.querySelector('[data-testid="dashboard-loading"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows the member's profile action while papers are still loading", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ id: "m1", name: "Ada" }],
+        },
+        adminBotLoading: true,
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(
+      container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Loading your papers");
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows a retryable failure instead of zero work after the first read fails", () => {
+    const onRetry = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderDashboard(
+        createState({
+          adminBotData: createEmptyAdminBotDashboardData(),
+          adminBotError: "Service unavailable",
+        }),
+        "admin",
+        onRetry,
+      ),
+      container,
+    );
+    expect(container.querySelector('[data-testid="dashboard-load-error"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    container.querySelector<HTMLButtonElement>("button")?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("says nothing is waiting when nothing is", () => {
     const container = renderPage(createState());
     expect(attentionIds(container)).toEqual([]);
@@ -649,8 +698,10 @@ describe("the lab-wide broadcast", () => {
 
   it("shows nothing when there is no broadcast", () => {
     expect(
-      renderPage(createState({ adminBotBroadcast: null } as Partial<AppViewState>), "member")
-        .querySelector('[data-testid="dashboard-broadcast"]'),
+      renderPage(
+        createState({ adminBotBroadcast: null } as Partial<AppViewState>),
+        "member",
+      ).querySelector('[data-testid="dashboard-broadcast"]'),
     ).toBeNull();
   });
 

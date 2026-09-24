@@ -263,8 +263,8 @@ function requestUpdate(state: AppViewState): void {
 }
 
 // The inline "add a tag" chip and the announcement compose dialog keep their transient UI state
-// here rather than on AppViewState: typing state and an open flag are not things a re-render or a
-// future backend sync should care about.
+// here rather than on AppViewState: typing state and open flags survive a re-render, but are cleared
+// when the signed-in member changes.
 let memberSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let addingTag = false;
 let tagDraft = "";
@@ -272,9 +272,9 @@ let tagDraft = "";
  * The composed feed lives on view state, not at module scope.
  *
  * Everything else parked in this block is transient chrome -- an open flag, a half-typed tag --
- * which a re-render may keep and a sign-out has no opinion about. An announcement is neither: it is
- * content somebody wrote under their own name, so at module scope it outlived the session that
- * wrote it and the next member to sign in on the same page load inherited it, signed by them.
+ * which a re-render may keep. They still belong to the current member and must be cleared on
+ * sign-out, especially announcement text and a help-request message that would otherwise appear
+ * under the next member's name.
  */
 function announcementsOf(state: AppViewState): Announcement[] {
   return state.labSharingAnnouncements ?? [];
@@ -290,6 +290,22 @@ let askSpecialMessage = "";
 let confirmingGeneralCall = false;
 // Which "Your requests" row is asking for a second, confirming click before it is deleted.
 let confirmingDeleteRequestId: string | null = null;
+
+export function resetLabSharingSessionState(): void {
+  if (memberSearchTimer) {
+    clearTimeout(memberSearchTimer);
+    memberSearchTimer = undefined;
+  }
+  addingTag = false;
+  tagDraft = "";
+  composingAnnouncement = false;
+  announcementDraft = "";
+  viewingInviteId = null;
+  askingMemberId = null;
+  askSpecialMessage = "";
+  confirmingGeneralCall = false;
+  confirmingDeleteRequestId = null;
+}
 
 // ---------------------------------------------------------------------------
 // 1. Director status strip

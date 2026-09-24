@@ -93,6 +93,7 @@ export async function loadAdminBotLogisticsRequests(host: AdminBotLogisticsHost)
   host.adminBotLogisticsRequestsError = null;
   try {
     const result = await fetchLogisticsRequests(wire.token, wire.baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== wire.token) return;
     if (!result.ok) {
       host.adminBotLogisticsRequests = [];
       host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
@@ -100,7 +101,9 @@ export async function loadAdminBotLogisticsRequests(host: AdminBotLogisticsHost)
     }
     host.adminBotLogisticsRequests = result.value;
   } finally {
-    host.adminBotLogisticsRequestsLoading = false;
+    if (loadStoredMemberSession()?.sessionToken === wire.token) {
+      host.adminBotLogisticsRequestsLoading = false;
+    }
   }
 }
 
@@ -127,6 +130,8 @@ export async function openAdminBotLogisticsRequest(
   host.adminBotLogisticsOpenLoading = true;
   try {
     const result = await fetchLogisticsRequest(requestId, wire.token, wire.baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== wire.token) return;
+    if (host.adminBotLogisticsOpenRequestId !== requestId) return;
     if (!result.ok) {
       host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
       // Back to the list rather than an empty card: whatever went wrong, there is nothing to show.
@@ -135,7 +140,9 @@ export async function openAdminBotLogisticsRequest(
     }
     host.adminBotLogisticsOpenRequest = result.value;
   } finally {
-    host.adminBotLogisticsOpenLoading = false;
+    if (loadStoredMemberSession()?.sessionToken === wire.token) {
+      host.adminBotLogisticsOpenLoading = false;
+    }
   }
 }
 

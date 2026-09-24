@@ -12,8 +12,8 @@
 // carry no session (so it could only ever show the summary, even to an admin), and would look like
 // an embedded document rather than a card. The dashboard renders the JSON itself.
 
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { UiSettings } from "../../storage.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
 export type MemberMapPlace = {
@@ -111,9 +111,12 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
 }
 
 export function parseMemberMap(body: unknown): MemberMap | null {
-  const raw = body as
-    | { mode?: unknown; places?: unknown; unplaced?: unknown; counts?: unknown }
-    | null;
+  const raw = body as {
+    mode?: unknown;
+    places?: unknown;
+    unplaced?: unknown;
+    counts?: unknown;
+  } | null;
   if (!raw || !Array.isArray(raw.places)) {
     return null;
   }
@@ -144,22 +147,28 @@ export function parseMemberMap(body: unknown): MemberMap | null {
  * The card renders nothing when there is nothing to draw.
  */
 export async function loadMemberMap(host: MemberMapHost): Promise<void> {
+  const token = loadStoredMemberSession()?.sessionToken ?? null;
+  const isCurrent = () => (loadStoredMemberSession()?.sessionToken ?? null) === token;
   host.adminBotMemberMapLoading = true;
   try {
-    const stored = loadStoredMemberSession();
     const response = await fetch(`${resolveAdminBotBaseUrl(host.settings)}/member-map`, {
       // Capitalised to match every other authed call in the Control UI (see session.ts).
       // Header names are case-insensitive on the wire, but a lone lowercase one reads as a
       // different code path to anyone grepping, and to a test asserting over all calls.
-      headers: stored ? { Authorization: `Bearer ${stored.sessionToken}` } : {},
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!response.ok) {
+    if (!response.ok || !isCurrent()) {
       return;
     }
-    host.adminBotMemberMap = parseMemberMap(await response.json());
+    const parsed = parseMemberMap(await response.json());
+    if (isCurrent()) {
+      host.adminBotMemberMap = parsed;
+    }
   } catch {
     // Unreachable service, offline, blocked request: leave the card empty.
   } finally {
-    host.adminBotMemberMapLoading = false;
+    if (isCurrent()) {
+      host.adminBotMemberMapLoading = false;
+    }
   }
 }

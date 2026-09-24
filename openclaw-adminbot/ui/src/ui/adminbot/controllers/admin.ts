@@ -42,10 +42,12 @@ import {
   rebuildVenueIndexes,
   runChannelNamingSweep,
   publishCvDigest,
+  fetchVenueCategories,
   searchLabPaperRelevance,
   searchVenuePapers,
   sendMemberNudge,
   sendWorkshopNudges,
+  type VenuePaperCategory,
   deleteOwnPaper,
   updateOwnProfile,
   updateSettingsAsAdmin,
@@ -206,6 +208,7 @@ export type AdminBotVenuePaperHit = {
 export type AdminBotVenueSearchResult = {
   venue_id: string;
   label: string;
+  category?: string;
   /** How many accepted papers were ranked, so "12 of 3,704" is answerable. */
   searched: number;
   results: AdminBotVenuePaperHit[];
@@ -217,6 +220,10 @@ export type AdminBotVenuePapersState = {
   sources: AdminBotVenueSourceView[];
   loadingSources: boolean;
   venueId: string;
+  categories: VenuePaperCategory[];
+  loadingCategories: boolean;
+  /** Empty means every category in the selected conference. */
+  categoryId: string;
   /** Free text, prefilled from the member's own research_topics and editable per search. */
   interests: string;
   /** False until the member edits the box, so a prefill can be refreshed and an edit cannot. */
@@ -233,6 +240,9 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     sources: [],
     loadingSources: false,
     venueId: "",
+    categories: [],
+    loadingCategories: false,
+    categoryId: "",
     interests: "",
     interestsTouched: false,
     searching: false,
@@ -790,6 +800,17 @@ export type AdminBotDashboardData = {
   loadedAt: number | null;
 };
 
+export type AdminBotMemberListState = {
+  rows: AdminBotLabMember[];
+  total: number;
+  limit: number;
+  offset: number;
+  query: string;
+  loading: boolean;
+  error: string | null;
+  loadedAt: number | null;
+};
+
 // Draft state for the "Announcements" compose form (member_nudge.send): channel + message text
 // plus which members are currently checked. Filtering the recipient table stays pure client-side
 // DOM hide/show (same pattern as the Lab Members and Papers filter forms); only the checked
@@ -811,6 +832,7 @@ export type GuestReimbursementHost = {
 };
 
 export type AdminBotHost = {
+  requestUpdate?: () => void;
   client: GatewayBrowserClient | null;
   connected: boolean;
   // The dashboard's member-map card, loaded alongside the roster. See data/member-map.ts.
@@ -819,6 +841,11 @@ export type AdminBotHost = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  adminBotRosterLoadedAt?: number | null;
+  adminBotRosterLoading?: boolean;
+  adminBotRosterError?: string | null;
+  adminBotRosterRequestId?: number;
+  adminBotMemberList?: AdminBotMemberListState;
   adminBotBusyActionId: string | null;
   adminBotSelectedActionIds: string[];
   adminBotBulkActionBusy: boolean;
@@ -955,6 +982,122 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
   };
 }
 
+export function createEmptyAdminBotMemberList(): AdminBotMemberListState {
+  return {
+    rows: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+    query: "",
+    loading: false,
+    error: null,
+    loadedAt: null,
+  };
+}
+
+export async function loadAdminBotMemberList(
+  host: AdminBotHost,
+  query = host.adminBotMemberList?.query ?? "",
+  offset = host.adminBotMemberList?.offset ?? 0,
+): Promise<void> {
+  const previous = host.adminBotMemberList ?? createEmptyAdminBotMemberList();
+  const limit = previous.limit;
+  const pending: AdminBotMemberListState = {
+    ...previous,
+    rows: query === previous.query && offset === previous.offset ? previous.rows : [],
+    query,
+    offset,
+    loading: true,
+    error: null,
+  };
+  host.adminBotMemberList = pending;
+  const session = loadStoredMemberSession();
+  const isCurrent = () =>
+    host.adminBotMemberList === pending &&
+    loadStoredMemberSession()?.sessionToken === session?.sessionToken;
+  try {
+    if (!session) {
+      const search = query.trim().toLocaleLowerCase();
+      const matches = host.adminBotData.members.filter((member) =>
+        [
+          member.name,
+          member.email,
+          ...(member.research_topics ?? []),
+          ...(member.projects ?? []),
+        ].some((value) => value?.toLocaleLowerCase().includes(search)),
+      );
+      host.adminBotMemberList = {
+        rows: matches.slice(offset, offset + limit),
+        total: matches.length,
+        limit,
+        offset,
+        query,
+        loading: false,
+        error: null,
+        loadedAt: Date.now(),
+      };
+      return;
+    }
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      q: query.trim(),
+    });
+    const result = await fetchMemberResource(
+      `/lab/members?${params}`,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!isCurrent()) {
+      return;
+    }
+    if (!result.ok) {
+      throw new Error(
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "You do not have access to the lab roster."
+            : "Could not load lab members. Please try again.",
+      );
+    }
+    const response = readRecord(result.value);
+    const members = readArray<AdminBotLabMember>(response, "members");
+    // Older services return the complete roster. Keep the new UI usable during separate UI/API deploys.
+    const filtered =
+      typeof response.total === "number"
+        ? members
+        : members.filter((member) =>
+            [
+              member.name,
+              member.email,
+              ...(member.research_topics ?? []),
+              ...(member.projects ?? []),
+            ].some((value) =>
+              value?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+            ),
+          );
+    host.adminBotMemberList = {
+      rows: typeof response.total === "number" ? members : filtered.slice(offset, offset + limit),
+      total: typeof response.total === "number" ? response.total : filtered.length,
+      limit,
+      offset,
+      query,
+      loading: false,
+      error: null,
+      loadedAt: Date.now(),
+    };
+  } catch (error) {
+    if (!isCurrent()) {
+      return;
+    }
+    host.adminBotMemberList = {
+      ...host.adminBotMemberList!,
+      loading: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function adminBotUnavailableError(host: Pick<AdminBotHost, "connected" | "client">): string | null {
   if (!host.connected) {
     return "Gateway is not connected.";
@@ -1046,7 +1189,7 @@ function readArray<T>(value: unknown, key: string): T[] {
   return Array.isArray(raw) ? (raw as T[]) : [];
 }
 
-// Dashboard read path for a signed-in member. Members and papers are the two surfaces every
+// Dashboard read path for a signed-in member. Their own profile and papers are the two surfaces every
 // signed-in person may read, so a failure there is a real error; the privileged extras (pending
 // queue, nudges, settings, sensitive info) are fetched best-effort and simply stay empty for a
 // member whose session the server refuses them to.
@@ -1055,6 +1198,7 @@ async function loadAdminBotOverSession(
   mode: AdminBotLoadMode,
   session: { sessionToken: string; baseUrl: string },
 ): Promise<void> {
+  const isCurrent = () => loadStoredMemberSession()?.sessionToken === session.sessionToken;
   host.adminBotLoading = true;
   host.adminBotError = null;
   const read = async (path: string): Promise<unknown> => {
@@ -1070,15 +1214,57 @@ async function loadAdminBotOverSession(
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     return result.ok ? result.value : undefined;
   };
+  const readSelf = async (): Promise<unknown> => {
+    const result = await fetchMemberResource(
+      "/lab/members/self",
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    if (result.kind !== "not-found" || !host.memberId) {
+      throw new Error(
+        result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
+      );
+    }
+    // During an API-first rollout the old service has only the unpaged roster route. Filter its
+    // already-redacted response to the authenticated member; never cache peers on this cold path.
+    const legacy = await read("/lab/members");
+    return {
+      member: readArray<AdminBotLabMember>(legacy, "members").find(
+        (member) => member.id === host.memberId,
+      ),
+    };
+  };
   try {
-    const [members, papers] = await Promise.all([read("/lab/members"), read("/papers")]);
+    const selfResponse = await readSelf();
+    if (!isCurrent()) {
+      return;
+    }
+    const self = readRecord(readRecord(selfResponse).member) as AdminBotLabMember;
+    if (!self.id) {
+      throw new Error("Your member profile could not be loaded.");
+    }
+    const memberRows = host.adminBotRosterLoadedAt
+      ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
+      : [self];
+    // The profile and public deadlines can render while the larger paper read is still pending.
+    host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
+    host.requestUpdate?.();
+    const papers = await read("/papers");
+    if (!isCurrent()) {
+      return;
+    }
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      members: memberRows,
+      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      // Admin queues still need their own read before the dashboard is complete.
+      loadedAt: mode === "general" ? Date.now() : null,
+    };
+    host.requestUpdate?.();
     if (mode === "general") {
-      host.adminBotData = {
-        ...createEmptyAdminBotDashboardData(),
-        members: readArray<AdminBotLabMember>(members, "members"),
-        papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-        loadedAt: Date.now(),
-      };
       return;
     }
     const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
@@ -1090,6 +1276,9 @@ async function loadAdminBotOverSession(
         optional("/settings"),
         optional("/sensitive-info"),
       ]);
+    if (!isCurrent()) {
+      return;
+    }
     const settingsRecord = readRecord(settings);
     const sensitiveInfoRecord = readRecord(sensitiveInfo);
     const markdown = readString(sensitiveInfoRecord, "markdown");
@@ -1105,7 +1294,7 @@ async function loadAdminBotOverSession(
         emailReview,
         "recent_resolutions",
       ),
-      members: readArray<AdminBotLabMember>(members, "members"),
+      members: memberRows,
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
@@ -1115,9 +1304,61 @@ async function loadAdminBotOverSession(
       loadedAt: Date.now(),
     };
   } catch (err) {
-    host.adminBotError = err instanceof Error ? err.message : String(err);
+    if (isCurrent()) {
+      host.adminBotError = err instanceof Error ? err.message : String(err);
+    }
   } finally {
-    host.adminBotLoading = false;
+    if (isCurrent()) {
+      host.adminBotLoading = false;
+    }
+  }
+}
+
+/** Full roster only for surfaces that use other members' schedules, names, or badges. */
+export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.adminBotRosterLoading || host.adminBotRosterLoadedAt) {
+    return;
+  }
+  const requestId = (host.adminBotRosterRequestId ?? 0) + 1;
+  host.adminBotRosterRequestId = requestId;
+  host.adminBotRosterLoading = true;
+  host.adminBotRosterError = null;
+  const isCurrent = () =>
+    host.adminBotRosterRequestId === requestId &&
+    loadStoredMemberSession()?.sessionToken === stored.sessionToken;
+  try {
+    const result = await fetchMemberResource(
+      "/lab/members?view=summary",
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!isCurrent()) {
+      return;
+    }
+    if (!result.ok) {
+      throw new Error(
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : "Could not load lab members. Please try again.",
+      );
+    }
+    const response = readRecord(result.value);
+    const self = readRecord(response.self) as AdminBotLabMember;
+    const roster = readArray<AdminBotLabMember>(response, "members");
+    host.adminBotData = {
+      ...host.adminBotData,
+      members: self.id ? roster.map((member) => (member.id === self.id ? self : member)) : roster,
+    };
+    host.adminBotRosterLoadedAt = Date.now();
+  } catch (error) {
+    if (isCurrent()) {
+      host.adminBotRosterError = error instanceof Error ? error.message : String(error);
+    }
+  } finally {
+    if (isCurrent()) {
+      host.adminBotRosterLoading = false;
+    }
   }
 }
 
@@ -1125,6 +1366,14 @@ export async function loadAdminBot(
   host: AdminBotHost,
   mode: AdminBotLoadMode = "admin",
 ): Promise<void> {
+  // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
+  host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
+  host.adminBotRosterLoadedAt = null;
+  host.adminBotRosterLoading = false;
+  host.adminBotRosterError = null;
+  if (host.adminBotMemberList?.loadedAt) {
+    host.adminBotMemberList = { ...host.adminBotMemberList, loadedAt: null };
+  }
   // A signed-in member reads through their own session. The gateway tool path needs
   // operator.write, which a plain member's paired device deliberately does not hold, so for them
   // every tool call fails and the dashboard renders empty -- including after a successful save,
@@ -1135,11 +1384,17 @@ export async function loadAdminBot(
       sessionToken: stored.sessionToken,
       baseUrl: resolveAdminBotBaseUrl(host.settings),
     });
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
     // Not awaited and never able to fail the load: the map is one dashboard card, and the roster
     // and papers above it are what the page is actually for.
     void loadMemberMap(host);
     return;
   }
+  const startingClient = host.client;
+  const gatewayLoadIsCurrent = () =>
+    loadStoredMemberSession() === null && host.client === startingClient;
   const unavailable = adminBotUnavailableError(host);
   if (unavailable) {
     host.adminBotError = unavailable;
@@ -1154,6 +1409,9 @@ export async function loadAdminBot(
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
         invokeAdminBotTool(host, "adminbot_list_papers"),
       ]);
+      if (!gatewayLoadIsCurrent()) {
+        return;
+      }
       host.adminBotData = {
         ...createEmptyAdminBotDashboardData(),
         members: readArray<AdminBotLabMember>(members, "members"),
@@ -1177,6 +1435,9 @@ export async function loadAdminBot(
       invokeAdminBotTool(host, "adminbot_get_settings"),
       invokeAdminBotTool(host, "adminbot_get_sensitive_info"),
     ]);
+    if (!gatewayLoadIsCurrent()) {
+      return;
+    }
     const essentialFailures = [membersResult, papersResult].filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -1208,9 +1469,13 @@ export async function loadAdminBot(
       loadedAt: Date.now(),
     };
   } catch (err) {
-    host.adminBotError = formatAdminBotToolError(err);
+    if (gatewayLoadIsCurrent()) {
+      host.adminBotError = formatAdminBotToolError(err);
+    }
   } finally {
-    host.adminBotLoading = false;
+    if (gatewayLoadIsCurrent()) {
+      host.adminBotLoading = false;
+    }
   }
 }
 
@@ -1257,17 +1522,22 @@ export async function approveAdminBotAction(
 ): Promise<void> {
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
+  let sessionToken: string | undefined;
   try {
     const session = requirePrivilegedSession(host);
     if (!session) {
       return;
     }
+    sessionToken = session.sessionToken;
     const approved = await approveActionAsMember(
       proposal.id,
       proposal.payload_hash,
       session.sessionToken,
       session.baseUrl,
     );
+    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+      return;
+    }
     if (!approved.ok) {
       host.adminBotNotice = { kind: "error", text: approvalFailureMessage(approved.kind) };
       return;
@@ -1292,6 +1562,9 @@ export async function approveAdminBotAction(
       session.sessionToken,
       session.baseUrl,
     );
+    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+      return;
+    }
     if (!executed.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -1307,7 +1580,9 @@ export async function approveAdminBotAction(
     };
     await loadAdminBot(host);
   } finally {
-    host.adminBotBusyActionId = null;
+    if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
+      host.adminBotBusyActionId = null;
+    }
   }
 }
 
@@ -1349,17 +1624,22 @@ export async function resolveAdminBotEmailReview(
 ): Promise<void> {
   host.adminBotBusyActionId = `email-review:${messageId}`;
   host.adminBotNotice = null;
+  let sessionToken: string | undefined;
   try {
     const session = requirePrivilegedSession(host);
     if (!session) {
       return;
     }
+    sessionToken = session.sessionToken;
     const result = await resolveEmailReviewAsAdmin(
       messageId,
       resolution,
       session.sessionToken,
       session.baseUrl,
     );
+    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -1381,7 +1661,9 @@ export async function resolveAdminBotEmailReview(
     };
     await loadAdminBot(host);
   } finally {
-    host.adminBotBusyActionId = null;
+    if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
+      host.adminBotBusyActionId = null;
+    }
   }
 }
 
@@ -1564,6 +1846,9 @@ export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void
         ? state.interests
         : interestsFromTopics(self?.research_topics),
     };
+    if (host.adminBotVenuePapers.venueId) {
+      await loadAdminBotVenueCategories(host);
+    }
   } catch (error) {
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
@@ -1579,6 +1864,55 @@ export function setAdminBotVenue(host: AdminBotHost, venueId: string): void {
   host.adminBotVenuePapers = {
     ...host.adminBotVenuePapers,
     venueId,
+    categories: [],
+    loadingCategories: Boolean(venueId),
+    categoryId: "",
+    searching: false,
+    result: null,
+    error: null,
+    expanded: [],
+  };
+  if (venueId) {
+    void loadAdminBotVenueCategories(host);
+  }
+}
+
+export async function loadAdminBotVenueCategories(host: AdminBotHost): Promise<void> {
+  const venueId = host.adminBotVenuePapers.venueId;
+  const requestedCategoryId = host.adminBotVenuePapers.categoryId;
+  if (!venueId) {
+    return;
+  }
+  const session = optionalSession(host);
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: true,
+    categories: [],
+  };
+  const result = await fetchVenueCategories(venueId, session.sessionToken, session.baseUrl);
+  // A quick second selection must not let the first conference's slower response win the race.
+  if (host.adminBotVenuePapers.venueId !== venueId) {
+    return;
+  }
+  const categories = result.ok ? result.value.categories : [];
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: false,
+    categories,
+    categoryId: categories.some((category) => category.id === requestedCategoryId)
+      ? requestedCategoryId
+      : "",
+    error: result.ok
+      ? null
+      : result.message?.trim() || cvErrorText(result.kind, "load conference categories"),
+  };
+}
+
+export function setAdminBotVenueCategory(host: AdminBotHost, categoryId: string): void {
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    categoryId,
+    searching: false,
     result: null,
     error: null,
     expanded: [],
@@ -1604,7 +1938,7 @@ export function toggleAdminBotVenueAbstract(host: AdminBotHost, paperId: string)
 /** Ranks the chosen conference against the interests currently in the box. */
 export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<void> {
   const session = optionalSession(host);
-  const { venueId, interests } = host.adminBotVenuePapers;
+  const { venueId, interests, categoryId } = host.adminBotVenuePapers;
   if (!venueId || !interests.trim()) {
     return;
   }
@@ -1616,10 +1950,18 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
   };
   try {
     const result = await searchVenuePapers(
-      { venueId, interests },
+      { venueId, interests, categoryId },
       session.sessionToken,
       session.baseUrl,
     );
+    // A result belongs to the exact conference and category that produced it. If the member
+    // changed either control while the request was running, leave the newer selection untouched.
+    if (
+      host.adminBotVenuePapers.venueId !== venueId ||
+      host.adminBotVenuePapers.categoryId !== categoryId
+    ) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotVenuePapers = {
         ...host.adminBotVenuePapers,
@@ -1635,6 +1977,12 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
       result: result.value as AdminBotVenueSearchResult,
     };
   } catch (error) {
+    if (
+      host.adminBotVenuePapers.venueId !== venueId ||
+      host.adminBotVenuePapers.categoryId !== categoryId
+    ) {
+      return;
+    }
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
       searching: false,
@@ -1993,12 +2341,17 @@ export async function removePendingAdminBotAction(
 ): Promise<void> {
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
+  let sessionToken: string | undefined;
   try {
     const session = requirePrivilegedSession(host);
     if (!session) {
       return;
     }
+    sessionToken = session.sessionToken;
     const removed = await removePendingAction(proposal.id, session.sessionToken, session.baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+      return;
+    }
     if (!removed.ok) {
       host.adminBotNotice = { kind: "error", text: approvalFailureMessage(removed.kind) };
       return;
@@ -2006,7 +2359,9 @@ export async function removePendingAdminBotAction(
     host.adminBotNotice = { kind: "success", text: "Removed " + proposal.id + "." };
     await loadAdminBot(host);
   } finally {
-    host.adminBotBusyActionId = null;
+    if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
+      host.adminBotBusyActionId = null;
+    }
   }
 }
 
@@ -2044,11 +2399,13 @@ export async function removeSelectedPendingAdminBotActions(host: AdminBotHost): 
   }
   host.adminBotBulkActionBusy = true;
   host.adminBotNotice = null;
+  let sessionToken: string | undefined;
   try {
     const session = requirePrivilegedSession(host);
     if (!session) {
       return;
     }
+    sessionToken = session.sessionToken;
     // Only ids still on the board. A selection can outlive the row it points at -- somebody else
     // executed or removed it between the tick and the press -- and asking the service to remove a
     // proposal that is already gone reports a failure for work that is, in fact, done.
@@ -2067,7 +2424,13 @@ export async function removeSelectedPendingAdminBotActions(host: AdminBotHost): 
     let firstFailure: string | undefined;
     let removed = 0;
     for (const id of targets) {
+      if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+        return;
+      }
       const result = await removePendingAction(id, session.sessionToken, session.baseUrl);
+      if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+        return;
+      }
       if (result.ok) {
         removed += 1;
       } else {
@@ -2087,7 +2450,9 @@ export async function removeSelectedPendingAdminBotActions(host: AdminBotHost): 
       : { kind: "success", text: `Removed ${removed} pending action${plural}.` };
     await loadAdminBot(host);
   } finally {
-    host.adminBotBulkActionBusy = false;
+    if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
+      host.adminBotBulkActionBusy = false;
+    }
   }
 }
 
@@ -2097,17 +2462,22 @@ export async function executeAdminBotAction(
 ): Promise<void> {
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
+  let sessionToken: string | undefined;
   try {
     const session = requirePrivilegedSession(host);
     if (!session) {
       return;
     }
+    sessionToken = session.sessionToken;
     const executed = await executeActionAsMember(
       proposal.id,
       `control-ui-${proposal.id}`,
       session.sessionToken,
       session.baseUrl,
     );
+    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+      return;
+    }
     if (!executed.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -2121,7 +2491,9 @@ export async function executeAdminBotAction(
     };
     await loadAdminBot(host);
   } finally {
-    host.adminBotBusyActionId = null;
+    if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
+      host.adminBotBusyActionId = null;
+    }
   }
 }
 
@@ -2140,7 +2512,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
     // Last, so a governance field can never be overwritten by a profile key of the same name.
     // The service re-checks every key against its own whitelist regardless.
-    ...(member.profile ?? {}),
+    ...member.profile,
   };
 }
 
@@ -2175,6 +2547,29 @@ function toolProfileParams(profile: Record<string, unknown> | undefined): Record
     }
   }
   return params;
+}
+
+// Autosaves can overlap when a member pauses and then keeps typing. Queue writes to the same
+// record in request order: ignoring an old response is not enough if the server commits it last.
+const memberSaveQueues = new WeakMap<AdminBotHost, Map<string, Promise<void>>>();
+
+function serializeMemberSave(
+  host: AdminBotHost,
+  key: string,
+  work: () => Promise<void>,
+): Promise<void> {
+  let queue = memberSaveQueues.get(host);
+  if (!queue) {
+    queue = new Map();
+    memberSaveQueues.set(host, queue);
+  }
+  const pending = (queue.get(key) ?? Promise.resolve()).catch(() => {}).then(work);
+  queue.set(key, pending);
+  return pending.finally(() => {
+    if (queue?.get(key) === pending) {
+      queue.delete(key);
+    }
+  });
 }
 
 // Saves a member from the Lab Members admin editor. Governance fields (privilege_level,
@@ -2214,6 +2609,9 @@ export async function saveAdminBotMember(
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
     if (!result.ok) {
       const message =
         result.kind === "unreachable"
@@ -2230,12 +2628,19 @@ export async function saveAdminBotMember(
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
-    host.adminBotNotice = options.onboard
+    const notice = options.onboard
       ? await onboardSavedMember(host, member.id, stored.sessionToken)
-      : { kind: "success", text: `Saved member ${member.id}.` };
+      : { kind: "success" as const, text: `Saved member ${member.id}.` };
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
+    host.adminBotNotice = notice;
     await loadAdminBot(host);
     return;
   }
+  const startingClient = host.client;
+  const gatewaySaveIsCurrent = () =>
+    loadStoredMemberSession() === null && host.client === startingClient;
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_lab_member", {
       id: member.id,
@@ -2248,6 +2653,9 @@ export async function saveAdminBotMember(
       ...(member.status ? { status: member.status } : {}),
       ...toolProfileParams(member.profile),
     });
+    if (!gatewaySaveIsCurrent()) {
+      return;
+    }
     // The break-glass path cannot onboard: queueing a guide needs an admin member session, and
     // this one is the shared service principal, which the route refuses. Said out loud rather
     // than dropped, so a tick nobody acted on is not mistaken for one that worked.
@@ -2259,10 +2667,12 @@ export async function saveAdminBotMember(
       : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
   } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
+    if (gatewaySaveIsCurrent()) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: formatAdminBotToolError(err),
+      };
+    }
   }
 }
 
@@ -2595,30 +3005,52 @@ export async function saveAdminBotOwnProfile(
     };
     return;
   }
-  const result = await updateOwnProfile(
-    memberId,
-    fields,
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
+  return serializeMemberSave(
+    host,
+    JSON.stringify(["profile", stored.sessionToken, memberId]),
+    async () => {
+      if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+        return;
+      }
+      host.adminBotNotice = null;
+      const result = await updateOwnProfile(
+        memberId,
+        fields,
+        stored.sessionToken,
+        resolveAdminBotBaseUrl(host.settings),
+      );
+      if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+        return;
+      }
+      if (!result.ok) {
+        const message =
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : result.kind === "rate-limited"
+              ? "Too many attempts. Wait a moment and try again."
+              : (result.message ??
+                "Couldn't save your profile. Sign in again, check the values, and retry.");
+        host.adminBotNotice = { kind: "error", text: message };
+        return;
+      }
+      host.adminBotNotice = { kind: "success", text: "Saved your profile." };
+      const updated = result.value as AdminBotLabMember;
+      host.adminBotData = {
+        ...host.adminBotData,
+        members: host.adminBotData.members.map((member) =>
+          member.id === memberId ? { ...member, ...updated } : member,
+        ),
+      };
+      if (host.adminBotMemberList) {
+        host.adminBotMemberList = {
+          ...host.adminBotMemberList,
+          rows: host.adminBotMemberList.rows.map((member) =>
+            member.id === memberId ? { ...member, ...updated } : member,
+          ),
+        };
+      }
+    },
   );
-  if (!result.ok) {
-    const message =
-      result.kind === "unreachable"
-        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-        : result.kind === "rate-limited"
-          ? "Too many attempts. Wait a moment and try again."
-          : // A validation refusal names the value it rejected ("LinkedIn link must be a profile
-            // URL"); the generic line below cannot, and the whole record is sent on every save, so
-            // without the service's own sentence one bad field silently freezes every other edit.
-            // 403 (editing someone else's id) folds into auth-failed here; the UI never offers
-            // this affordance on another member's row, so it reads as a stale session.
-            (result.message ??
-            "Couldn't save your profile. Sign in again, check the values, and retry.");
-    host.adminBotNotice = { kind: "error", text: message };
-    return;
-  }
-  host.adminBotNotice = { kind: "success", text: "Saved your profile." };
-  await loadAdminBot(host);
 }
 
 export async function polishAdminBotOwnProfilePhoto(host: AdminBotHost): Promise<void> {
@@ -2818,6 +3250,9 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
     if (!result.ok) {
       const text =
         result.kind === "unreachable"
@@ -2842,7 +3277,9 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
     host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
     await loadAdminBot(host);
   } finally {
-    host.adminBotMemberNudge = { ...host.adminBotMemberNudge, busy: false };
+    if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
+      host.adminBotMemberNudge = { ...host.adminBotMemberNudge, busy: false };
+    }
   }
 }
 
@@ -2924,27 +3361,47 @@ export async function saveAdminBotPaper(
   // for break-glass sessions that hold a gateway token but no member login.
   const stored = loadStoredMemberSession();
   if (stored) {
-    const saved = await saveOwnPaper(
-      paper.id,
-      {
-        title: paper.title,
-        authors: paper.authors,
-        current_step: paper.currentStep,
-        ...details,
-        ...acceptance,
-        ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
-        ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+    return serializeMemberSave(
+      host,
+      JSON.stringify(["paper", stored.sessionToken, paper.id]),
+      async () => {
+        if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+          return;
+        }
+        const saved = await saveOwnPaper(
+          paper.id,
+          {
+            title: paper.title,
+            authors: paper.authors,
+            current_step: paper.currentStep,
+            ...details,
+            ...acceptance,
+            ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
+            ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+          },
+          stored.sessionToken,
+          resolveAdminBotBaseUrl(host.settings),
+        );
+        if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+          return;
+        }
+        if (!saved.ok) {
+          host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
+          return;
+        }
+        host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
+        const updated = saved.value as AdminBotPaperRecord;
+        if (updated?.id === paper.id) {
+          const papers = host.adminBotData.papers;
+          host.adminBotData = {
+            ...host.adminBotData,
+            papers: papers.some((row) => row.id === paper.id)
+              ? papers.map((row) => (row.id === paper.id ? { ...row, ...updated } : row))
+              : [...papers, updated],
+          };
+        }
       },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
     );
-    if (!saved.ok) {
-      host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
-      return;
-    }
-    host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
-    await loadAdminBot(host);
-    return;
   }
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_paper", {
@@ -3000,6 +3457,11 @@ export async function deleteAdminBotPaper(
   host: AdminBotHost,
   paper: Pick<AdminBotPaperRecord, "id" | "title">,
 ): Promise<void> {
+  const startingToken = loadStoredMemberSession()?.sessionToken ?? null;
+  const startingClient = host.client;
+  const stillCurrent = () =>
+    (loadStoredMemberSession()?.sessionToken ?? null) === startingToken &&
+    host.client === startingClient;
   host.adminBotBusyActionId = paper.id;
   host.adminBotNotice = null;
   try {
@@ -3010,6 +3472,9 @@ export async function deleteAdminBotPaper(
         stored.sessionToken,
         resolveAdminBotBaseUrl(host.settings),
       );
+      if (!stillCurrent()) {
+        return;
+      }
       if (!removed.ok) {
         host.adminBotNotice = { kind: "error", text: paperDeleteErrorText(removed.kind) };
         return;
@@ -3019,15 +3484,23 @@ export async function deleteAdminBotPaper(
       return;
     }
     await invokeAdminBotTool(host, "adminbot_delete_paper", { paperId: paper.id });
+    if (!stillCurrent()) {
+      return;
+    }
     host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
     await loadAdminBot(host);
   } catch (err) {
+    if (!stillCurrent()) {
+      return;
+    }
     host.adminBotNotice = {
       kind: "error",
       text: formatAdminBotToolError(err),
     };
   } finally {
-    host.adminBotBusyActionId = null;
+    if (stillCurrent()) {
+      host.adminBotBusyActionId = null;
+    }
   }
 }
 
@@ -3109,21 +3582,30 @@ export async function sendAdminBotReimbursementMessage(
   files: File[],
 ): Promise<void> {
   const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) return;
+  if (!userMessage || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = {
     ...host.adminBotReimbursement,
     busy: true,
     error: null,
     artifacts: [],
   };
+  const requestState = host.adminBotReimbursement;
   try {
     const receipts = await Promise.all(files.map(receiptPayload));
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_converse", {
       message: userMessage,
       messages: host.adminBotReimbursement.messages,
       draft: host.adminBotReimbursement.draft,
       ...(receipts.length ? { receipts } : {}),
     })) as ReimbursementConversationResult;
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     host.adminBotReimbursement = {
       messages: [
         ...host.adminBotReimbursement.messages,
@@ -3146,6 +3628,9 @@ export async function sendAdminBotReimbursementMessage(
       ...(result.check ? { check: result.check } : {}),
     };
   } catch (err) {
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -3155,18 +3640,27 @@ export async function sendAdminBotReimbursementMessage(
 }
 
 export async function generateAdminBotReimbursement(host: AdminBotHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
+  const requestState = host.adminBotReimbursement;
   try {
     const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_generate", {
       draft: host.adminBotReimbursement.draft,
     })) as ReimbursementGenerationResult;
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
     };
   } catch (err) {
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -3196,6 +3690,7 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
     return;
   }
   host.adminBotReimbursement = { ...state, busy: true, error: null };
+  const requestState = host.adminBotReimbursement;
   try {
     const result = await submitReimbursementPackage(
       {
@@ -3211,6 +3706,12 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (
+      host.adminBotReimbursement !== requestState ||
+      loadStoredMemberSession()?.sessionToken !== stored.sessionToken
+    ) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotReimbursement = {
         ...host.adminBotReimbursement,
@@ -3228,6 +3729,9 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
       submission: { to: result.value.to, reply_to: result.value.reply_to },
     };
   } catch (err) {
+    if (host.adminBotReimbursement !== requestState) {
+      return;
+    }
     host.adminBotReimbursement = {
       ...host.adminBotReimbursement,
       busy: false,
@@ -3319,7 +3823,9 @@ export async function sendGuestReimbursementMessage(
   files: File[],
 ): Promise<void> {
   const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) return;
+  if (!userMessage || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = {
     ...host.adminBotReimbursement,
     busy: true,
@@ -3370,7 +3876,9 @@ export async function sendGuestReimbursementMessage(
 }
 
 export async function generateGuestReimbursement(host: GuestReimbursementHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
+    return;
+  }
   host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
   try {
     const result = (await guestReimbursementRequest(

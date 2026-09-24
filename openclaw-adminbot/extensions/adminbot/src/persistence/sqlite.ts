@@ -26,7 +26,11 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -71,6 +75,8 @@ import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotLabMemberSummary,
+  type AdminBotListPage,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingRecord,
@@ -109,6 +115,23 @@ import {
 } from "./reference-scans.js";
 
 const require = createRequire(import.meta.url);
+
+// Search only fields that every authenticated roster reader may see. Never match on notes or
+// personal circumstances: even a yes/no search result would reveal private content.
+const LAB_MEMBER_SEARCH = `(
+  instr(adminbot_lower(coalesce(json_extract(m.payload_json, '$.name'), '')), ?) > 0 OR
+  instr(adminbot_lower(coalesce(json_extract(m.payload_json, '$.email'), '')), ?) > 0 OR
+  EXISTS (SELECT 1 FROM json_each(m.payload_json, '$.research_topics') topic
+    WHERE instr(adminbot_lower(topic.value), ?) > 0) OR
+  EXISTS (SELECT 1 FROM json_each(m.payload_json, '$.projects') project
+    WHERE instr(adminbot_lower(project.value), ?) > 0)
+)`;
+const PAPER_SEARCH = `(
+  instr(adminbot_lower(coalesce(json_extract(p.payload_json, '$.title'), '')), ?) > 0 OR
+  instr(adminbot_lower(coalesce(json_extract(p.payload_json, '$.venue'), '')), ?) > 0 OR
+  EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.authors') author
+    WHERE instr(adminbot_lower(author.value), ?) > 0)
+)`;
 
 export type AdminBotSqliteServiceOptions = {
   databasePath: string;
@@ -151,6 +174,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
+    this.db.function("adminbot_lower", { deterministic: true }, (value) =>
+      String(value ?? "").toLowerCase(),
+    );
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -283,6 +310,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_lab_members_privilege_idx
         ON adminbot_lab_members(privilege_level, updated_at);
+      CREATE INDEX IF NOT EXISTS adminbot_lab_members_name_idx
+        ON adminbot_lab_members(json_extract(payload_json, '$.name'), id);
+      CREATE INDEX IF NOT EXISTS adminbot_lab_members_name_nocase_idx
+        ON adminbot_lab_members(json_extract(payload_json, '$.name') COLLATE NOCASE, id);
 
       CREATE TABLE IF NOT EXISTS adminbot_badge_definitions (
         id TEXT PRIMARY KEY,
@@ -371,6 +402,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_papers_step_idx
         ON adminbot_papers(current_step, updated_at);
+      CREATE INDEX IF NOT EXISTS adminbot_papers_title_idx
+        ON adminbot_papers(json_extract(payload_json, '$.title'), id);
+      CREATE INDEX IF NOT EXISTS adminbot_papers_title_nocase_idx
+        ON adminbot_papers(json_extract(payload_json, '$.title') COLLATE NOCASE, id);
 
       -- One row per evidence slot, per paper. Real columns rather than a JSON blob on the paper:
       -- the nudge sweep reads status across every open paper at once, and that is a query, not a
@@ -1267,13 +1302,56 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotLabMember>(row.payload_json) : undefined;
   }
 
-  listLabMembers(): AdminBotLabMember[] {
+  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
+    const q = page?.q?.toLowerCase();
+    const where = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
+    // ponytail: NOCASE indexes the common paged read but folds ASCII only. Search still folds
+    // Unicode; add a persisted Unicode sort key if locale-aware global ordering becomes necessary.
     const rows = this.db
       .prepare(
-        "SELECT payload_json FROM adminbot_lab_members ORDER BY json_extract(payload_json, '$.name')",
+        `SELECT m.payload_json FROM adminbot_lab_members m ${where}
+          ORDER BY ${page ? "json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id" : "json_extract(m.payload_json, '$.name')"}
+          ${page ? "LIMIT ? OFFSET ?" : ""}`,
+      )
+      .all(...(q ? [q, q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      payload_json: string;
+    }>;
+    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  listLabMemberSummaries(): AdminBotLabMemberSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.payload_json FROM adminbot_lab_members m
+         ORDER BY adminbot_lower(json_extract(m.payload_json, '$.name')), m.id`,
       )
       .all() as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+    return rows.map((row) => {
+      const summary = parseJson<AdminBotLabMember>(row.payload_json);
+      delete summary.field_provenance;
+      delete (summary as Partial<AdminBotLabMember>).access;
+      if (summary.onboarding && !Array.isArray(summary.onboarding)) {
+        return {
+          ...summary,
+          onboarding: {
+            steps: Array.isArray(summary.onboarding.steps)
+              ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
+              : [],
+          },
+        };
+      }
+      return summary;
+    });
+  }
+
+  countLabMembers(q?: string): number {
+    const needle = q?.toLowerCase();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM adminbot_lab_members m ${needle ? `WHERE ${LAB_MEMBER_SEARCH}` : ""}`,
+      )
+      .get(...(needle ? [needle, needle, needle, needle] : [])) as { total: number };
+    return row.total;
   }
 
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
@@ -1381,24 +1459,33 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotBadgeAssignment>(row.payload_json) : undefined;
   }
 
-  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[] {
+  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[] {
     const rows = (
-      memberId
+      Array.isArray(memberId)
         ? this.db
             .prepare(
               `SELECT payload_json
                 FROM adminbot_badge_assignments
+                WHERE member_id IN (SELECT value FROM json_each(?))
+                ORDER BY awarded_at ASC`,
+            )
+            .all(JSON.stringify(memberId))
+        : memberId
+          ? this.db
+              .prepare(
+                `SELECT payload_json
+                FROM adminbot_badge_assignments
                 WHERE member_id = ?
                 ORDER BY awarded_at ASC`,
-            )
-            .all(memberId)
-        : this.db
-            .prepare(
-              `SELECT payload_json
+              )
+              .all(memberId)
+          : this.db
+              .prepare(
+                `SELECT payload_json
                 FROM adminbot_badge_assignments
                 ORDER BY awarded_at ASC`,
-            )
-            .all()
+              )
+              .all()
     ) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotBadgeAssignment>(row.payload_json));
   }
@@ -2075,13 +2162,29 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotPaperRecord>(row.payload_json) : undefined;
   }
 
-  listPapers(): AdminBotPaperRecord[] {
+  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[] {
+    const q = page?.q?.toLowerCase();
+    const where = q ? `WHERE ${PAPER_SEARCH}` : "";
     const rows = this.db
       .prepare(
-        "SELECT payload_json FROM adminbot_papers ORDER BY json_extract(payload_json, '$.title')",
+        `SELECT p.payload_json FROM adminbot_papers p ${where}
+          ORDER BY ${page ? "json_extract(p.payload_json, '$.title') COLLATE NOCASE, p.id" : "json_extract(p.payload_json, '$.title')"}
+          ${page ? "LIMIT ? OFFSET ?" : ""}`,
       )
-      .all() as Array<{ payload_json: string }>;
+      .all(...(q ? [q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      payload_json: string;
+    }>;
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));
+  }
+
+  countPapers(q?: string): number {
+    const needle = q?.toLowerCase();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM adminbot_papers p ${needle ? `WHERE ${PAPER_SEARCH}` : ""}`,
+      )
+      .get(...(needle ? [needle, needle, needle] : [])) as { total: number };
+    return row.total;
   }
 
   deletePaper(paperId: string): boolean {
@@ -2809,28 +2912,60 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   appendLoginEvent(event: AdminBotLoginEvent): void {
     this.db
-      .prepare("INSERT INTO adminbot_login_events (id, member_id, at) VALUES (?, ?, ?)")
-      .run(event.id, event.member_id, event.at);
+      .prepare(
+        `INSERT INTO adminbot_login_events
+         (id, member_id, at, country, continent, city, timezone)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.member_id,
+        event.at,
+        event.country ?? null,
+        event.continent ?? null,
+        event.city ?? null,
+        event.timezone ?? null,
+      );
+  }
+
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_login_events SET
+           country = COALESCE(NULLIF(?, ''), country),
+           continent = COALESCE(NULLIF(?, ''), continent),
+           city = COALESCE(NULLIF(?, ''), city),
+           timezone = COALESCE(NULLIF(?, ''), timezone)
+         WHERE id = ?`,
+      )
+      .run(
+        location.country ?? null,
+        location.continent ?? null,
+        location.city ?? null,
+        location.timezone ?? null,
+        id,
+      );
   }
 
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT id, member_id, at FROM adminbot_login_events
+    const rows = this.db
+      .prepare(
+        `SELECT id, member_id, at, country, continent, city, timezone FROM adminbot_login_events
          WHERE member_id = ? ORDER BY at DESC, rowid DESC LIMIT ?`,
-        )
-        // -1 is SQLite's "no limit", which keeps this one statement rather than two.
-        .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[]
-    );
+      )
+      // -1 is SQLite's "no limit", which keeps this one statement rather than two.
+      .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[];
+    return rows.map(loginEventFromRow);
   }
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
-    return this.db
+    const rows = this.db
       .prepare(
-        "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
+        `SELECT id, member_id, at, country, continent, city, timezone
+         FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC`,
       )
       .all(since) as AdminBotLoginEvent[];
+    return rows.map(loginEventFromRow);
   }
 
   appendTabVisit(visit: AdminBotTabVisit): void {
@@ -3608,6 +3743,13 @@ function ensureDatabaseDirectory(databasePath: string): void {
  * nullable columns are dropped rather than carried through as `null` -- otherwise every caller
  * would have to treat "no URL" and "URL is null" as two different absences.
  */
+function loginEventFromRow(row: AdminBotLoginEvent): AdminBotLoginEvent {
+  // Nullable SQL columns represent absent location fields in the event contract.
+  return Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== null),
+  ) as AdminBotLoginEvent;
+}
+
 function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord {
   const text = (key: string): string | undefined => {
     const value = row[key];
