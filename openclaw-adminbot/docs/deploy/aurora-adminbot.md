@@ -155,10 +155,23 @@ until an operator reviews it. A retry never treats a half-completed seed as live
 state.
 
 The deploy command installs service definitions but does not start them.
-It holds a per-root lock while stopping services, building, seeding, and
-switching `current`. A second deploy is refused. If an interrupted run leaves
-the lock behind, inspect the state, units, and `current` before an operator
-removes it; do not blindly retry.
+It holds an account-wide writer lock while stopping services, building, seeding,
+and switching `current`. Other deployments and host-script commands that can
+start writers or change live configuration are refused until it finishes. If an
+interrupted run leaves the lock behind, inspect the state, units, and `current`
+before an operator removes it; do not blindly retry. This lock cannot prevent
+processes started outside the host script from writing to the database.
+
+`sync-adminbot-data` replaces an existing database only on approved local
+storage. Before running it, confirm the local source is authoritative, stop
+all processes that can write to that source, and verify no independent remote
+writer remains. Supply both `--confirm-db-replacement` and
+`--confirm-source-quiesced` to record those operator checks. The command stops
+all known remote writer units, snapshots and verifies the source and remote
+backup, then swaps the database. It leaves writers stopped so an operator can
+inspect the result before running `start`. Snapshot integrity and table counts
+cannot prove that a concurrent update was not missed. A failed or interrupted
+swap may leave a pending marker that blocks `start` until operator review.
 
 ## 3. Configure secrets and OpenClaw
 

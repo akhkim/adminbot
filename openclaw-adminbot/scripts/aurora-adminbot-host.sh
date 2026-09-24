@@ -33,6 +33,7 @@ MIN_DEPLOY_FREE_INODES="${AURORA_MIN_DEPLOY_FREE_INODES:-200000}"
 SEED_STATE="${AURORA_SEED_STATE:-}"
 INIT_EMPTY_STATE="0"
 CONFIRM_SOURCE_QUIESCED="0"
+CONFIRM_DB_REPLACEMENT="0"
 REF="HEAD"
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
@@ -59,7 +60,9 @@ Options:
   --seed-state <dir>     Remote state directory to snapshot after stopping its writers,
                           only when the new root has no state/ yet.
   --confirm-source-quiesced
-                        Confirm no other process can write the source during seeding
+                        Confirm no other process can write the source during seeding or sync
+  --confirm-db-replacement
+                        Confirm the local database is authoritative before sync-adminbot-data
   --init-empty-state     Explicitly initialize a new, empty state on approved local storage
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
@@ -83,7 +86,7 @@ Commands:
   upload-env <file>      Install a secrets env file with mode 0600
   sync-slack-env <file>  Merge only Slack tokens into the remote env and restart Gateway
   sync-cron-jobs [db]    Sync local OpenClaw cron jobs into Aurora via Gateway RPC
-  sync-adminbot-data [db] Safely replace Aurora's AdminBot database and restart services
+  sync-adminbot-data [db] Stage a verified replacement database; leave writers stopped
   upload-config <file>   Install openclaw.json with mode 0600
   auth-gog               Run gog's remote/manual OAuth flow on Aurora
   install-services       Regenerate user-systemd units without starting them
@@ -130,6 +133,10 @@ while (($# > 0)); do
       ;;
     --confirm-source-quiesced)
       CONFIRM_SOURCE_QUIESCED="1"
+      shift
+      ;;
+    --confirm-db-replacement)
+      CONFIRM_DB_REPLACEMENT="1"
       shift
       ;;
     --ref)
@@ -230,6 +237,124 @@ check_local_tools() {
 remote_install_script() {
   printf '%s/deploy/aurora/install-user-services.sh' "$REMOTE_CURRENT"
 }
+
+local_cleanup_file=""
+remote_cleanup_file=""
+remote_lock_token=""
+sync_writers_stopped="0"
+cleanup_mutation() {
+  status=$?
+  trap - EXIT
+  if ((status != 0)) && [[ "$sync_writers_stopped" == "1" ]]; then
+    echo 'Database sync failed after stopping writers; inspect state and backup before starting services.' >&2
+  fi
+  if [[ -n "$remote_lock_token" ]]; then
+    if [[ -n "$remote_cleanup_file" ]]; then
+      "${SSH[@]}" rm -f -- "$remote_cleanup_file" || {
+        echo 'Warning: a staged remote upload needs operator cleanup.' >&2
+        status=1
+      }
+    fi
+    if ! "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$remote_lock_token" <<'REMOTE_DEPLOY_UNLOCK'
+set -euo pipefail
+lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
+token="$2"
+[[ -d "$lock_dir" && -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$token" ]] || {
+  echo 'Refusing to remove a writer lock owned by another run.' >&2
+  exit 1
+}
+rm -- "$lock_dir/owner"
+rmdir -- "$lock_dir"
+REMOTE_DEPLOY_UNLOCK
+    then
+      echo 'Warning: writer lock could not be released; operator review is required.' >&2
+      status=1
+    fi
+  fi
+  if [[ -n "$local_cleanup_file" ]]; then
+    rm -f -- "$local_cleanup_file"
+  fi
+  exit "$status"
+}
+
+acquire_writer_lock() {
+  command -v ssh >/dev/null || die "ssh is required locally"
+  new_lock_token="${COMMAND}-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$new_lock_token" <<'REMOTE_DEPLOY_LOCK'
+set -euo pipefail
+token="$2"
+config_dir="$HOME/.config/jinesis-adminbot"
+mkdir -p -- "$config_dir"
+lock_dir="$config_dir/.writer.lock"
+mkdir -m 700 -- "$lock_dir" 2>/dev/null || {
+  echo 'Refusing command: another AdminBot writer operation holds the account lock.' >&2
+  exit 1
+}
+trap 'rm -f -- "$lock_dir/owner"; rmdir -- "$lock_dir"' EXIT
+printf '%s\n' "$token" >"$lock_dir/owner"
+trap - EXIT
+REMOTE_DEPLOY_LOCK
+  remote_lock_token="$new_lock_token"
+  trap cleanup_mutation EXIT
+}
+
+assert_remote_state_ready() {
+  "${SSH[@]}" bash -s -- "$REMOTE_STATE" <<'REMOTE_STATE_READY'
+set -euo pipefail
+state_dir="$1"
+database="$state_dir/adminbot.sqlite"
+[[ -d "$state_dir" && ! -L "$state_dir" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing to start writers: AdminBot state is missing.' >&2
+  exit 1
+}
+for marker in .adminbot-seed-pending .adminbot-sync-pending; do
+  [[ ! -e "$state_dir/$marker" && ! -L "$state_dir/$marker" ]] || {
+    echo 'Refusing to start writers: an incomplete database operation needs operator review.' >&2
+    exit 1
+  }
+done
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing to start SQLite writers on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+REMOTE_STATE_READY
+}
+
+assert_remote_units_match_root() {
+  "${SSH[@]}" bash -s -- "$REMOTE_CURRENT" <<'REMOTE_UNITS_MATCH_ROOT'
+set -euo pipefail
+expected="$(readlink -f -- "$1")" || exit 1
+[[ -n "$expected" && -d "$expected" ]] || {
+  echo 'Refusing to use writer units: current release is missing.' >&2
+  exit 1
+}
+for unit in jinesis-adminbot.service jinesis-openclaw-gateway.service; do
+  actual="$(systemctl --user show "$unit" -p WorkingDirectory --value)" || exit 1
+  [[ "$actual" == "$expected" ]] || {
+    printf 'Refusing to use %s: it points to a different release.\n' "$unit" >&2
+    exit 1
+  }
+done
+REMOTE_UNITS_MATCH_ROOT
+}
+
+# All commands that can alter the live configuration, database, or writer lifecycle share one
+# account-wide lock. `deploy` runs for different roots on the same account cannot race each other.
+case "$COMMAND" in
+  upload-env | sync-slack-env | sync-cron-jobs | sync-adminbot-data | upload-config | auth-gog | install-services | start | stop | restart)
+    if [[ "$COMMAND" == sync-adminbot-data ]]; then
+      [[ "$CONFIRM_DB_REPLACEMENT" == "1" && "$CONFIRM_SOURCE_QUIESCED" == "1" ]] ||
+        die "sync-adminbot-data requires --confirm-db-replacement and --confirm-source-quiesced"
+    fi
+    acquire_writer_lock
+    ;;
+esac
 
 case "$COMMAND" in
   check)
@@ -332,31 +457,8 @@ REMOTE
     release_id="${sha}-$(date -u +%Y%m%dT%H%M%SZ)"
     remote_release="${REMOTE_BASE}/releases/${release_id}"
     archive="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.tar")"
-    remote_lock_token=""
-    cleanup_deploy() {
-      status=$?
-      trap - EXIT
-      if [[ -n "$remote_lock_token" ]]; then
-        if ! "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$remote_lock_token" <<'REMOTE_DEPLOY_UNLOCK'
-set -euo pipefail
-lock_dir="$1/.adminbot-deploy.lock"
-token="$2"
-[[ -d "$lock_dir" && -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$token" ]] || {
-  echo 'Refusing to remove a deployment lock owned by another run.' >&2
-  exit 1
-}
-rm -- "$lock_dir/owner"
-rmdir -- "$lock_dir"
-REMOTE_DEPLOY_UNLOCK
-        then
-          echo 'Warning: deployment lock could not be released; operator review is required.' >&2
-          status=1
-        fi
-      fi
-      rm -f -- "$archive"
-      exit "$status"
-    }
-    trap cleanup_deploy EXIT
+    local_cleanup_file="$archive"
+    trap cleanup_mutation EXIT
 
     if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
       printf 'note: the worktree is dirty; deploy uses committed ref %s only\n' "$REF" >&2
@@ -396,34 +498,7 @@ if [[ "$free_inodes" =~ ^[0-9]+$ ]] && ((free_inodes < min_inodes)); then
 fi
 REMOTE_SPACE
 
-    # One run owns the mutable stop/build/seed/cutover sequence. A stale lock fails closed until
-    # an operator inspects it; the EXIT trap removes only a lock carrying this run's token.
-    new_lock_token="$(basename -- "$archive")-$$"
-    "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$new_lock_token" <<'REMOTE_DEPLOY_LOCK'
-set -euo pipefail
-base="$1"
-token="$2"
-[[ "$base" == /* && "$base" != *".."* && "$base" != / && "$base" != "$HOME" ]] || {
-  echo 'Refusing deployment lock outside an approved root.' >&2
-  exit 1
-}
-depth="${base#/}"
-depth="${depth//[!\/]/}"
-((${#depth} >= 2)) || {
-  echo 'Refusing deployment lock under a shallow root.' >&2
-  exit 1
-}
-mkdir -p -- "$base"
-lock_dir="$base/.adminbot-deploy.lock"
-mkdir -m 700 -- "$lock_dir" 2>/dev/null || {
-  echo 'Refusing deploy: another deployment holds this root lock.' >&2
-  exit 1
-}
-trap 'rm -f -- "$lock_dir/owner"; rmdir -- "$lock_dir"' EXIT
-printf '%s\n' "$token" >"$lock_dir/owner"
-trap - EXIT
-REMOTE_DEPLOY_LOCK
-    remote_lock_token="$new_lock_token"
+    acquire_writer_lock
 
     # Check state before stopping services, then prune to the newest KEEP_RELEASES release
     # directories -- NOT a full wipe. Whatever `current` pointed to (the release actually
@@ -511,8 +586,18 @@ case "$filesystem" in
     exit 1
     ;;
 esac
+if [[ -f "$state_dir/adminbot.sqlite" ]]; then
+  filesystem="$(stat -f -c %T -- "$state_dir/adminbot.sqlite")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+fi
 if [[ -n "$seed_state" ]]; then
-  [[ -d "$seed_state" && -f "$seed_state/adminbot.sqlite" ]] || {
+  [[ -d "$seed_state" && -f "$seed_state/adminbot.sqlite" && ! -L "$seed_state/adminbot.sqlite" ]] || {
     echo 'Refusing seed: source database is missing.' >&2
     exit 1
   }
@@ -520,14 +605,16 @@ if [[ -n "$seed_state" ]]; then
     echo 'Refusing seed: the deploying account does not own the source database.' >&2
     exit 1
   }
-  filesystem="$(stat -f -c %T -- "$seed_state")" || exit 1
-  case "$filesystem" in
-    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
-    *)
-      printf 'Refusing SQLite seed from unsupported %s filesystem.\n' "$filesystem" >&2
-      exit 1
-      ;;
-  esac
+  for location in "$seed_state" "$seed_state/adminbot.sqlite"; do
+    filesystem="$(stat -f -c %T -- "$location")" || exit 1
+    case "$filesystem" in
+      ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+      *)
+        printf 'Refusing SQLite seed from unsupported %s filesystem.\n' "$filesystem" >&2
+        exit 1
+        ;;
+    esac
+  done
 fi
 systemctl --user show-environment >/dev/null || {
   echo 'Refusing deploy: user systemd is unavailable; cannot stop database writers.' >&2
@@ -706,6 +793,16 @@ case "$filesystem" in
     exit 1
     ;;
 esac
+if [[ -f "$state_dir/adminbot.sqlite" ]]; then
+  filesystem="$(stat -f -c %T -- "$state_dir/adminbot.sqlite")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 # Seed only a new state directory. A raw copy of a WAL database can pair a database file with
 # WAL frames from a different moment, losing committed writes. The old state stays untouched.
@@ -738,7 +835,7 @@ if [[ -n "$seed_from" ]]; then
   }
   # WAL is unsupported on network filesystems. A snapshot is consistent, but placing the next
   # live WAL database on NFS/FUSE would preserve the same storage hazard under a new pathname.
-  for location in "$seed_from" "$base"; do
+  for location in "$seed_from" "$seed_from/adminbot.sqlite" "$base"; do
     filesystem="$(stat -f -c %T -- "$location")" || exit 1
     case "$filesystem" in
       ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
@@ -889,8 +986,10 @@ REMOTE
     (($# == 1)) || die "sync-slack-env requires exactly one env file"
     [[ -f "$1" ]] || die "env file not found: $1"
     check_local_tools
+    assert_remote_state_ready
+    assert_remote_units_match_root
     slack_env="$(mktemp "${TMPDIR:-/tmp}/jinesis-slack-env.XXXXXX")"
-    trap 'rm -f -- "$slack_env"' EXIT
+    local_cleanup_file="$slack_env"
     awk '
       /^SLACK_(BOT|APP|USER)_TOKEN=/ {
         key = $0
@@ -936,6 +1035,8 @@ REMOTE_SLACK
   sync-cron-jobs)
     (($# <= 1)) || die "sync-cron-jobs accepts at most one SQLite database path"
     check_local_tools
+    assert_remote_state_ready
+    assert_remote_units_match_root
     command -v node >/dev/null || die "node is required locally"
     local_database="${1:-$HOME/.openclaw/state/openclaw.sqlite}"
     [[ -f "$local_database" ]] || die "OpenClaw state database not found: $local_database"
@@ -943,7 +1044,7 @@ REMOTE_SLACK
     importer="$REPO_ROOT/scripts/import-openclaw-cron-jobs.mjs"
     [[ -f "$exporter" && -f "$importer" ]] || die "cron migration helpers are missing"
     cron_bundle="$(mktemp "${TMPDIR:-/tmp}/jinesis-cron-jobs.XXXXXX.json")"
-    trap 'rm -f -- "$cron_bundle"' EXIT
+    local_cleanup_file="$cron_bundle"
     node "$exporter" "$local_database" "$REPO_ROOT" "$REMOTE_CURRENT" >"$cron_bundle"
     chmod 600 "$cron_bundle"
 
@@ -993,60 +1094,154 @@ REMOTE_CRON
     check_local_tools
     command -v node >/dev/null || die "node is required locally"
     local_database="${1:-$REPO_ROOT/state/adminbot.sqlite}"
-    [[ -f "$local_database" ]] || die "AdminBot database not found: $local_database"
+    [[ -f "$local_database" && ! -L "$local_database" ]] ||
+      die "AdminBot source database must be a regular file: $local_database"
     snapshot_helper="$REPO_ROOT/scripts/snapshot-sqlite.mjs"
     [[ -f "$snapshot_helper" ]] || die "SQLite snapshot helper is missing"
+    assert_remote_units_match_root
+
+    # Reject unsupported storage and stop every managed writer before taking the replacement
+    # snapshot. Any failure from this point leaves writers stopped for operator review.
+    "${SSH[@]}" bash -s -- "$REMOTE_STATE" <<'REMOTE_ADMINBOT_PREPARE'
+set -euo pipefail
+state_dir="$1"
+database="$state_dir/adminbot.sqlite"
+[[ -d "$state_dir" && ! -L "$state_dir" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing database replacement: destination state or database is missing.' >&2
+  exit 1
+}
+for marker in .adminbot-seed-pending .adminbot-sync-pending; do
+  [[ ! -e "$state_dir/$marker" && ! -L "$state_dir/$marker" ]] || {
+    echo 'Refusing database replacement: an incomplete database operation needs review.' >&2
+    exit 1
+  }
+done
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing database replacement on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+systemctl --user show-environment >/dev/null || exit 1
+{
+  systemctl --user stop \
+    jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+    jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+    jinesis-openclaw-gateway.service jinesis-adminbot.service 2>/dev/null || true
+} >&2
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing database replacement: %s is still %s.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_ADMINBOT_PREPARE
+    sync_writers_stopped="1"
+
     database_snapshot="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.sqlite")"
     rm -f -- "$database_snapshot"
-    trap 'rm -f -- "$database_snapshot"' EXIT
-    node "$snapshot_helper" "$local_database" "$database_snapshot"
-
-    # Staged inside the state directory rather than next to openclaw.json in the home directory:
-    # the snapshot is the size of the database, and landing it on the home volume is the thing
-    # moving state off /h was meant to stop.
-    remote_upload="${REMOTE_STATE}/.adminbot-db-upload.$$"
-    remote_database="${REMOTE_STATE}/adminbot.sqlite"
-    "${SSH[@]}" mkdir -p "$REMOTE_STATE"
-    "${SCP[@]}" "$database_snapshot" "${TARGET}:${remote_upload}"
-    "${SSH[@]}" bash -s -- "$remote_upload" "$remote_database" <<'REMOTE_ADMINBOT_DATA'
+    local_cleanup_file="$database_snapshot"
+    node "$snapshot_helper" "$local_database" "$database_snapshot" --verify
+    remote_upload="${REMOTE_STATE}/.adminbot-db-upload-${remote_lock_token}.sqlite"
+    remote_cleanup_file="$remote_upload"
+    "${SCP[@]}" -p "$database_snapshot" "${TARGET}:${remote_upload}"
+    "${SSH[@]}" bash -s -- \
+      "$remote_upload" \
+      "$REMOTE_STATE/adminbot.sqlite" \
+      "$REMOTE_CURRENT/scripts/snapshot-sqlite.mjs" \
+      "$remote_lock_token" <<'REMOTE_ADMINBOT_DATA'
 set -euo pipefail
+export PATH=$HOME/.local/bin:$PATH
 upload="$1"
 database="$2"
-database_new="${database}.new"
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-adminbot_stopped=0
+helper="$3"
+token="$4"
+state_dir="$(dirname -- "$database")"
+marker="$state_dir/.adminbot-sync-pending"
+backup="${database}.backup-${token}"
+database_new="${database}.new-${token}"
+retired_sidecars="${database}.retired-sidecars-${token}"
+replaced=0
 cleanup() {
   status=$?
+  trap - EXIT
+  set +e
   rm -f -- "$upload" "$database_new"
-  if ((adminbot_stopped)); then
-    systemctl --user start jinesis-adminbot.service >/dev/null 2>&1 || true
+  if ((status != 0)); then
+    if ((replaced == 0)); then
+      for suffix in wal shm; do
+        if [[ -e "${retired_sidecars}.${suffix}" && ! -e "${database}-${suffix}" ]]; then
+          mv -- "${retired_sidecars}.${suffix}" "${database}-${suffix}" || true
+        fi
+      done
+    fi
+    echo 'Database replacement incomplete; writer services remain stopped for operator review.' >&2
   fi
   exit "$status"
 }
 trap cleanup EXIT
-[[ -f "$upload" ]] || {
-  printf 'AdminBot database upload is missing: %s\n' "$upload" >&2
+[[ -f "$upload" && ! -L "$upload" && -f "$helper" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing database replacement: upload, helper, or destination is missing.' >&2
   exit 1
 }
-mkdir -p "$(dirname "$database")"
-chmod 600 "$upload"
-systemctl --user stop jinesis-adminbot.service
-adminbot_stopped=1
-if [[ -f "$database" ]]; then
-  cp -p -- "$database" "${database}.backup-${timestamp}"
-fi
-rm -f -- "${database}-wal" "${database}-shm"
-install -m 600 "$upload" "$database_new"
+[[ ! -e "$marker" && ! -L "$marker" ]] || {
+  echo 'Refusing database replacement: an earlier sync is incomplete.' >&2
+  exit 1
+}
+[[ ! -e "$state_dir/.adminbot-seed-pending" && ! -L "$state_dir/.adminbot-seed-pending" ]] || {
+  echo 'Refusing database replacement: an earlier seed is incomplete.' >&2
+  exit 1
+}
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing database replacement on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing database replacement: %s restarted during snapshot.\n' "$unit" >&2
+    exit 1
+  }
+done
+node "$helper" "$database" "$backup" --verify
+node "$helper" "$upload" "$database_new" --verify
+for suffix in wal shm; do
+  [[ ! -L "${database}-${suffix}" && ! -e "${retired_sidecars}.${suffix}" && ! -L "${retired_sidecars}.${suffix}" ]] || {
+    echo 'Refusing database replacement: a sidecar path is unsafe or already exists.' >&2
+    exit 1
+  }
+done
+printf 'Database replacement pending operator review if interrupted.\n' >"$marker"
+for suffix in wal shm; do
+  if [[ -e "${database}-${suffix}" ]]; then
+    mv -- "${database}-${suffix}" "${retired_sidecars}.${suffix}"
+  fi
+done
 mv -f -- "$database_new" "$database"
-systemctl --user restart \
-  jinesis-adminbot.service \
-  jinesis-openclaw-gateway.service
-adminbot_stopped=0
-systemctl --user --no-pager --full status \
-  jinesis-adminbot.service \
-  jinesis-openclaw-gateway.service
+replaced=1
+rm -- "$marker"
+printf 'verified_database=%s backup=%s writers=stopped\n' "$database" "$backup"
 REMOTE_ADMINBOT_DATA
-    printf 'AdminBot database synced; AdminBot and Gateway restarted.\n'
+    remote_cleanup_file=""
+    printf 'AdminBot database replaced from a verified snapshot; writers remain stopped. Review the result, then run start.\n'
     ;;
 
   upload-config)
@@ -1077,6 +1272,7 @@ REMOTE_ADMINBOT_DATA
 
   start)
     (($# == 0)) || die "start takes no arguments"
+    assert_remote_state_ready
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
       --state "$REMOTE_STATE" \
@@ -1087,15 +1283,29 @@ REMOTE_ADMINBOT_DATA
 
   stop)
     (($# == 0)) || die "stop takes no arguments"
-    "${SSH[@]}" systemctl --user stop \
-      jinesis-adminbot-sheet-poller.timer \
-      jinesis-adminbot-sheet-poller.service \
-      jinesis-openclaw-gateway.service \
-      jinesis-adminbot.service
+    "${SSH[@]}" bash -s <<'REMOTE_STOP'
+set -euo pipefail
+units=(
+  jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service
+  jinesis-openclaw-gateway.service jinesis-adminbot.service
+)
+systemctl --user stop "${units[@]}" 2>/dev/null || true
+for unit in "${units[@]}"; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing to continue: %s is still %s.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_STOP
     ;;
 
   restart)
     (($# == 0)) || die "restart takes no arguments"
+    assert_remote_state_ready
+    assert_remote_units_match_root
     "${SSH[@]}" systemctl --user restart \
       jinesis-adminbot.service \
       jinesis-openclaw-gateway.service
