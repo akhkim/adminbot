@@ -1171,7 +1171,7 @@ export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
       ${renderNotice(state)} ${renderMonth(state)} ${renderDraftPanel(state)}
-      ${renderInvitePanel(state)}
+      ${state.adminBotRosterLoadedAt ? renderInvitePanel(state) : nothing}
       ${renderCards(
         state,
         state.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,

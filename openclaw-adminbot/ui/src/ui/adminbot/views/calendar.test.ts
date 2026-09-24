@@ -30,6 +30,7 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
 
 function state(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
+    adminBotRosterLoadedAt: Date.now(),
     adminBotData: {
       members: [member()],
       papers: [paper()],
@@ -112,6 +113,15 @@ describe("the draft panel", () => {
     );
     expect(container.textContent).toContain("the draft ends before it starts");
   });
+});
+
+it("shows the calendar while the roster loads, then enables audience planning", () => {
+  const pending = renderToDiv(state({ adminBotRosterLoadedAt: null }));
+  expect(pending.querySelector('[data-testid="calendar-grid"]')).toBeTruthy();
+  expect(pending.querySelector('[data-testid="calendar-invite-panel"]')).toBeNull();
+
+  const ready = renderToDiv(state());
+  expect(ready.querySelector('[data-testid="calendar-invite-panel"]')).toBeTruthy();
 });
 
 describe("the invite panel", () => {

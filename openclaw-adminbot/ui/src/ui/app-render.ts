@@ -4339,7 +4339,7 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
           : nothing}
-        ${state.tab === "adminbotCalendar" && adminBotMode === "admin" && !rosterPendingForTab
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
