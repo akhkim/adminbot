@@ -1,3 +1,4 @@
+import { routeLlmFetch } from "../../kernel/llm-gateway-client.js";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -262,7 +263,7 @@ async function callLocalReimbursementModel(
     (message) => message.role === "assistant",
   )?.content;
 
-  const response = await fetchLocalModel(fetchImpl, new URL("chat/completions", baseUrl), {
+  const response = await fetchLocalModel(routeLlmFetch(fetchImpl, "local", env), new URL("chat/completions", baseUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
@@ -362,9 +363,9 @@ say both forms are ready for review. Return JSON only.`,
  * local reimbursement model is not listening. Name the endpoint so the dashboard says what to fix.
  */
 async function fetchLocalModel(
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: ReturnType<typeof routeLlmFetch<Response>>,
   url: URL,
-  init: RequestInit,
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
 ): Promise<Response> {
   try {
     return await fetchImpl(url, init);
