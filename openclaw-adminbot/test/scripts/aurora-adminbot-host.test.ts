@@ -111,6 +111,7 @@ describe("Aurora AdminBot hosting", () => {
     expect(script).toContain("--no-start");
     expect(script).toContain('-L "${GATEWAY_PORT}:127.0.0.1:${GATEWAY_PORT}"');
     expect(script).toContain('-L "${ADMINBOT_PORT}:127.0.0.1:${ADMINBOT_PORT}"');
+    expect(script.match(/--writer-lock-token/g)).toHaveLength(3);
   });
 
   it("builds connect and auth-gog SSH commands with and without sshpass", () => {
@@ -282,7 +283,95 @@ describe("Aurora AdminBot hosting", () => {
     expect(
       fs.existsSync(path.join(directory, ".config/systemd/user/jinesis-adminbot.service")),
     ).toBe(false);
+    expect(fs.existsSync(path.join(directory, ".config/jinesis-adminbot/.writer.lock"))).toBe(
+      false,
+    );
+
+    const lock = path.join(directory, ".config/jinesis-adminbot/.writer.lock");
+    fs.mkdirSync(lock);
+    fs.writeFileSync(path.join(lock, "owner"), "parent-run\n");
+    const nested = spawnSync(
+      "bash",
+      [installer, "--root", requestedRoot, "--writer-lock-token", "parent-run"],
+      { encoding: "utf8", env },
+    );
+    expect(nested.stderr).toContain("jinesis-adminbot.service is active");
+    expect(fs.readFileSync(path.join(lock, "owner"), "utf8")).toBe("parent-run\n");
+    const forged = spawnSync(
+      "bash",
+      [installer, "--root", requestedRoot, "--writer-lock-token", "other-run"],
+      { encoding: "utf8", env },
+    );
+    expect(forged.stderr).toContain("installer does not own the AdminBot writer lock");
+    expect(fs.readFileSync(path.join(lock, "owner"), "utf8")).toBe("parent-run\n");
   });
+
+  it("keeps direct installation locked after checking units so a concurrent start cannot pass", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aurora-install-race-"));
+    temporaryDirectories.push(directory);
+    const release = path.join(directory, "release");
+    const bin = path.join(directory, "bin");
+    const unitDir = path.join(directory, ".config/systemd/user");
+    const fifo = path.join(unitDir, "jinesis-ollama.service");
+    fs.mkdirSync(path.join(release, "node_modules/.bin"), { recursive: true });
+    fs.mkdirSync(path.join(release, "dist"));
+    fs.mkdirSync(path.join(release, "deploy/aurora"), { recursive: true });
+    fs.mkdirSync(bin);
+    fs.mkdirSync(unitDir, { recursive: true });
+    fs.writeFileSync(path.join(release, "dist/entry.js"), "");
+    fs.writeFileSync(path.join(release, "deploy/aurora/adminbot.env.example"), "TEST=1\n");
+    for (const file of [
+      path.join(release, "node_modules/.bin/tsx"),
+      path.join(release, "deploy/aurora/install-member-sheet-poller.sh"),
+    ]) {
+      fs.writeFileSync(file, "#!/usr/bin/env bash\nexit 0\n");
+      fs.chmodSync(file, 0o755);
+    }
+    execFileSync("mkfifo", [fifo]);
+    const stubs: Record<string, string> = {
+      systemctl:
+        '#!/usr/bin/env bash\nif [[ "$2" == show-environment ]]; then exit 0; fi\nif [[ "$2" == show ]]; then\n  if [[ "$3" == jinesis-adminbot.service ]]; then\n    count=$(cat "$SHOW_COUNT" 2>/dev/null || echo 0)\n    count=$((count + 1))\n    echo "$count" >"$SHOW_COUNT"\n    if ((count == 2)); then touch "$AFTER_CHECK"; fi\n  fi\n  echo inactive\n  exit 0\nfi\nexit 0\n',
+      readlink: '#!/usr/bin/env bash\n[[ "$1" == -f ]] || exit 2\ncd "$2" && pwd -P\n',
+      ssh: '#!/usr/bin/env bash\n[[ "$1" == -o ]] || exit 2\nshift 2\nshift\nexec "$@"\n',
+      python3: "#!/usr/bin/env bash\nexit 0\n",
+      loginctl: "#!/usr/bin/env bash\necho Linger=yes\n",
+    };
+    for (const [name, source] of Object.entries(stubs)) {
+      const file = path.join(bin, name);
+      fs.writeFileSync(file, source);
+      fs.chmodSync(file, 0o755);
+    }
+    const harness = path.join(directory, "race.sh");
+    fs.writeFileSync(
+      harness,
+      '#!/usr/bin/env bash\nset -u\nbash "$INSTALLER" --root "$RELEASE" --state "$RELEASE/state" --no-start >"$WORK/installer.out" 2>&1 &\ninstaller_pid=$!\nfor ((i=0; i<200; i++)); do\n  [[ -f "$AFTER_CHECK" ]] && break\n  sleep 0.02\ndone\n[[ -f "$AFTER_CHECK" ]] || { kill "$installer_pid" 2>/dev/null || true; exit 70; }\nbash "$HOST_SCRIPT" --user tester --host example.invalid start >"$WORK/start.out" 2>&1\necho "$?" >"$WORK/start.code"\ncat <"$FIFO" >/dev/null &\nwait "$installer_pid"\n',
+    );
+    const result = spawnSync("bash", [harness], {
+      encoding: "utf8",
+      timeout: 15_000,
+      env: {
+        ...process.env,
+        HOME: directory,
+        PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        WORK: directory,
+        RELEASE: release,
+        FIFO: fifo,
+        INSTALLER: installer,
+        HOST_SCRIPT: hostScript,
+        SHOW_COUNT: path.join(directory, "show-count"),
+        AFTER_CHECK: path.join(directory, "after-check"),
+        AURORA_SSH_PASSWORD: "",
+      },
+    });
+    expect(result.status, fs.readFileSync(path.join(directory, "installer.out"), "utf8")).toBe(0);
+    expect(Number(fs.readFileSync(path.join(directory, "start.code"), "utf8"))).not.toBe(0);
+    expect(fs.readFileSync(path.join(directory, "start.out"), "utf8")).toContain(
+      "another AdminBot writer operation holds the account lock",
+    );
+    expect(fs.existsSync(path.join(directory, ".config/jinesis-adminbot/.writer.lock"))).toBe(
+      false,
+    );
+  }, 20_000);
 
   it("requires an authoritative, quiescent source before attempting database sync", () => {
     const result = spawnSync(

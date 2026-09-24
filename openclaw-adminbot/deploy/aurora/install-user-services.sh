@@ -11,6 +11,7 @@ STATE_DIR=""
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
 START_MODE="no"
+WRITER_LOCK_TOKEN=""
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,8 @@ Options:
   --adminbot-port <port> Default: 8765
   --start                Validate environment and enable/start services
   --no-start             Install/enable unit files without starting (default)
+  --writer-lock-token <token>
+                         Use the account lock held by aurora-adminbot-host.sh
 EOF
 }
 
@@ -60,6 +63,11 @@ while (($# > 0)); do
       START_MODE="no"
       shift
       ;;
+    --writer-lock-token)
+      (($# >= 2)) || die "--writer-lock-token requires a value"
+      WRITER_LOCK_TOKEN="$2"
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
@@ -84,7 +92,32 @@ STATE_DIR="${STATE_DIR:-$HOME/.openclaw/state}"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 
-# This installer is also callable directly, without aurora-adminbot-host.sh's account lock.
+# A direct installer joins the same account lock as the host wrapper. A wrapper run passes its
+# token so the nested installer can verify ownership without trying to acquire the lock twice.
+lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
+if [[ -n "$WRITER_LOCK_TOKEN" ]]; then
+  [[ -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$WRITER_LOCK_TOKEN" ]] ||
+    die "installer does not own the AdminBot writer lock"
+else
+  mkdir -p -- "$(dirname -- "$lock_dir")"
+  mkdir -m 700 -- "$lock_dir" 2>/dev/null || die "another AdminBot writer operation holds the account lock"
+  WRITER_LOCK_TOKEN="installer-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  release_writer_lock() {
+    status=$?
+    trap - EXIT
+    if [[ -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$WRITER_LOCK_TOKEN" ]]; then
+      rm -- "$lock_dir/owner"
+      rmdir -- "$lock_dir"
+    else
+      echo 'Warning: installer lock needs operator review.' >&2
+      status=1
+    fi
+    exit "$status"
+  }
+  trap release_writer_lock EXIT
+  printf '%s\n' "$WRITER_LOCK_TOKEN" >"$lock_dir/owner"
+fi
+
 # Rewriting units while old-root writers are active can switch their release on a later restart.
 assert_writers_stopped() {
   systemctl --user show-environment >/dev/null || die "user systemd is unavailable"

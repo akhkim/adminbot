@@ -703,7 +703,7 @@ REMOTE_CLEAN
     # the release's state at it. An earlier revision dodged this by keeping the single optional value
     # last; two of them cannot both be last, so they carry a prefix that is stripped on arrival and
     # keeps them non-empty on the wire.
-    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$REMOTE_STATE" "$REMOTE_BASE" "prior=$prior_release" "seed=$SEED_STATE" "$INIT_EMPTY_STATE" <<'REMOTE'
+    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$REMOTE_STATE" "$REMOTE_BASE" "prior=$prior_release" "seed=$SEED_STATE" "$INIT_EMPTY_STATE" "$remote_lock_token" <<'REMOTE'
 set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 release="$1"
@@ -716,6 +716,7 @@ base="$6"
 prior_release="${7#prior=}"
 seed_state="${8#seed=}"
 init_empty="$9"
+lock_token="${10}"
 cd "$release"
 tar -xf source.tar
 rm -f source.tar
@@ -975,6 +976,7 @@ trap restore_units_on_failure EXIT
   --state "$state_dir" \
   --gateway-port "$gateway_port" \
   --adminbot-port "$adminbot_port" \
+  --writer-lock-token "$lock_token" \
   --no-start
 # Keep the old release addressable until its replacement is built, the state is verified, and
 # service definitions are installed. Rename a fresh symlink so readers never see a missing current.
@@ -1279,6 +1281,7 @@ REMOTE_ADMINBOT_DATA
       --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
+      --writer-lock-token "$remote_lock_token" \
       --no-start
     ;;
 
@@ -1291,6 +1294,7 @@ REMOTE_ADMINBOT_DATA
       --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
+      --writer-lock-token "$remote_lock_token" \
       --start
     ;;
 

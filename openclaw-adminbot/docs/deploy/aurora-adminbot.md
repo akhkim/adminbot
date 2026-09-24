@@ -160,7 +160,9 @@ and switching `current`. Other deployments and host-script commands that can
 start writers or change live configuration are refused until it finishes. If an
 interrupted run leaves the lock behind, inspect the state, units, and `current`
 before an operator removes it; do not blindly retry. This lock cannot prevent
-processes started outside the host script from writing to the database.
+processes started outside the host script from writing to the database. Direct
+service-installer runs acquire the same account lock; the host script passes its
+lock token to the nested installer during deploy and start.
 
 `sync-adminbot-data` replaces an existing database only on approved local
 storage. Before running it, confirm the local source is authoritative, stop
