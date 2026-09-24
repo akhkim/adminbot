@@ -23,63 +23,36 @@ describe("createLlmLoadRouter", () => {
     }
   });
 
-  it("lets public work proceed while local is full", async () => {
+  it("queues public work while local is full and wakes it on local release", async () => {
     const router = createLlmLoadRouter({ maxLocal: 1, maxPublic: 2 });
     const local = await router.acquire("local");
-    const publicLease = await router.acquire("public");
-    expect(router.status()).toMatchObject({
-      local_active: 1,
-      public_active: 1,
-      queued: 0,
-    });
+    const waiting = router.acquire("public");
+    expect(router.status()).toMatchObject({ local_active: 1, public_active: 0, queued: 1 });
     local.release();
-    publicLease.release();
-  });
-
-  it("drains each pool independently without letting newcomers jump its FIFO", async () => {
-    const router = createLlmLoadRouter({ maxLocal: 1, maxPublic: 1 });
-    const local = await router.acquire("local");
-    const publicLease = await router.acquire("public");
-    let localGranted = false;
-    const waitingLocal = router.acquire("local").then((lease) => {
-      localGranted = true;
-      lease.release();
-    });
-    const waitingPublic = router.acquire("public");
-
-    publicLease.release();
-    const nextPublic = await waitingPublic;
-    expect(localGranted).toBe(false);
-    let newcomerGranted = false;
-    const newcomer = router.acquire("public").then((lease) => {
-      newcomerGranted = true;
-      return lease;
-    });
-    await Promise.resolve();
-    expect(newcomerGranted).toBe(false);
-
-    nextPublic.release();
-    (await newcomer).release();
-    local.release();
-    await waitingLocal;
-  });
-
-  it("removes an aborted waiter without stranding work in the other pool", async () => {
-    const router = createLlmLoadRouter({ maxLocal: 1, maxPublic: 1 });
-    const local = await router.acquire("local");
-    const publicLease = await router.acquire("public");
-    const controller = new AbortController();
-    const blockedLocal = router.acquire("local", controller.signal);
-    const waitingPublic = router.acquire("public");
-
-    publicLease.release();
-    const nextPublic = await waitingPublic;
-    controller.abort();
-
-    await expect(blockedLocal).rejects.toThrow("cancelled");
+    (await waiting).release();
     expect(router.status().queued).toBe(0);
-    nextPublic.release();
-    local.release();
+  });
+
+  it("keeps public FIFO order and removes cancelled waiters", async () => {
+    const router = createLlmLoadRouter({ maxPublic: 1 });
+    const first = await router.acquire("public");
+    const controller = new AbortController();
+    const cancelled = router.acquire("public", controller.signal);
+    const rejection = expect(cancelled).rejects.toThrow("cancelled");
+    const second = router.acquire("public");
+    controller.abort();
+    await rejection;
+    expect(router.status().queued).toBe(1);
+    first.release();
+    (await second).release();
+    expect(router.status().public_active).toBe(0);
+  });
+
+  it("cannot configure above the shared hard caps", () => {
+    expect(createLlmLoadRouter({ maxPublic: 500, maxLocal: 30 }).status()).toMatchObject({
+      max_public: 100,
+      max_local: 8,
+    });
   });
 
   it("releases a lease only once", async () => {

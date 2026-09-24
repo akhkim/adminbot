@@ -34,18 +34,9 @@ type Waiter = {
   onAbort?: () => void;
 };
 
-/**
- * In-process slot allocator. A non-LLM preflight: counting and waiting only.
- *
- * Public (OpenRouter-class) work is preferred whenever both pools have room. Local GPU slots
- * stay reserved for privacy classification and private tasks. When public is at cap, callers wait
- * in FIFO order instead of piling onto Aurora.
- *
- * PaperMentor can import the same module and, in a shared process, the same singleton. Across
- * processes, point both at one SQLite ledger later; the acquire/release contract stays this.
- */
+/** Atomic in-process allocator, owned by the shared HTTP gateway in production. */
 export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoadRouter {
-  const maxLocal = clampPositive(options.maxLocal, adminBotLlmDefaultMaxLocal);
+  const maxLocal = Math.min(clampPositive(options.maxLocal, adminBotLlmDefaultMaxLocal), 8);
   const maxPublic = Math.min(
     clampPositive(options.maxPublic, adminBotLlmDefaultMaxPublic),
     adminBotLlmDefaultMaxPublicCeiling,
@@ -71,7 +62,7 @@ export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoad
       } else {
         publicActive = Math.max(0, publicActive - 1);
       }
-      drain(kind);
+      drain();
     };
   }
 
@@ -89,7 +80,7 @@ export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoad
         release: releaseOnce(kind),
       };
     }
-    if (publicActive >= maxPublic) {
+    if (publicActive >= maxPublic || localActive >= maxLocal) {
       return undefined;
     }
     publicActive += 1;
@@ -99,7 +90,12 @@ export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoad
     };
   }
 
-  function drain(kind: AdminBotLlmSlotKind): void {
+  function drain(): void {
+    drainPool("local");
+    drainPool("public");
+  }
+
+  function drainPool(kind: AdminBotLlmSlotKind): void {
     const queue = queues[kind];
     while (queue.length > 0) {
       const waiter = queue[0]!;
@@ -131,7 +127,7 @@ export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoad
           const index = queue.indexOf(waiter);
           if (index >= 0) {
             queue.splice(index, 1);
-            drain(kind);
+            drain();
           }
           reject(new Error("LLM queue wait was cancelled"));
         };
@@ -140,7 +136,7 @@ export function createLlmLoadRouter(options: LlmLoadRouterOptions = {}): LlmLoad
           signal.addEventListener("abort", onAbort, { once: true });
         }
         queues[kind].push(waiter);
-        drain(kind);
+        drain();
       });
     },
     status() {
