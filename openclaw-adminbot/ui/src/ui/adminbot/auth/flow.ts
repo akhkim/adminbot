@@ -772,6 +772,7 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   host.adminBotOnboardingAcknowledged = host.memberId
     ? hasAcknowledgedOnboardingChecklist(host.memberId)
     : true;
+  clearSignedOutView(host);
   await connectAsMember(host, session, session.session_token);
 }
 
@@ -943,6 +944,7 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     host.adminBotOnboardingAcknowledged = host.memberId
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
+    clearSignedOutView(host);
     await connectAsMember(host, result.value, stored.sessionToken);
     return "resumed";
   }

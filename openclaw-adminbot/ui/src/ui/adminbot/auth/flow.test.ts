@@ -609,6 +609,37 @@ describe("device-bound gateway token", () => {
     );
   });
 
+  it("makes a verified member available while gateway token minting is pending", async () => {
+    let finishDevice: ((response: Response) => void) | undefined;
+    const deviceResponse = new Promise<Response>((resolve) => {
+      finishDevice = resolve;
+    });
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/auth/login")) {
+        return jsonResponse(200, loginBody);
+      }
+      if (String(input).includes("/auth/device-token")) {
+        return deviceResponse;
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    });
+
+    const signingIn = submitMemberAuth(host);
+    await vi.waitFor(() =>
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("/auth/device-token"))).toBe(
+        true,
+      ),
+    );
+    expect(host.memberId).toBe("pat");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("sess");
+    expect(host.connect).not.toHaveBeenCalled();
+
+    finishDevice?.(jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }));
+    await signingIn;
+    expect(host.connect).toHaveBeenCalled();
+  });
+
   it("fails closed when the service cannot mint a device token", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     routedFetch({

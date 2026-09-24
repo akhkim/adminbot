@@ -2028,7 +2028,12 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  if (!state.connected) {
+  // Meeting recordings are read through the verified member session, so a slow or unavailable
+  // gateway connection must not send an already signed-in member back to the login form.
+  if (
+    !state.connected &&
+    !(state.tab === "adminbotMeetings" && state.memberId && loadStoredMemberSession())
+  ) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a
@@ -2767,6 +2772,7 @@ export function renderApp(state: AppViewState) {
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   if (
+    state.tab !== "adminbotMeetings" &&
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
@@ -2780,7 +2786,7 @@ export function renderApp(state: AppViewState) {
   }
   if (
     hasMemberSession &&
-    state.adminBotData.loadedAt &&
+    (state.tab === "adminbotMeetings" || state.adminBotData.loadedAt) &&
     needsRosterForTab &&
     !state.adminBotRosterLoadedAt &&
     !state.adminBotRosterLoading &&
@@ -3468,7 +3474,7 @@ export function renderApp(state: AppViewState) {
                       class="btn btn--sm"
                       type="button"
                       @click=${() => {
-                        if (!state.adminBotData.loadedAt) {
+                        if (!state.adminBotData.loadedAt && state.tab !== "adminbotMeetings") {
                           state.adminBotError = null;
                           void loadAdminBot(state, adminBotMode).finally(() =>
                             requestHostUpdate?.(),
@@ -3851,7 +3857,7 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${state.tab === "adminbotMeetings" && !rosterPendingForTab
+        ${state.tab === "adminbotMeetings"
           ? renderAdminBotMeetings({
               meetings: state.adminBotMeetings ?? [],
               loading: state.adminBotMeetingsLoading,
