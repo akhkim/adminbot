@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
-import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
+import { enqueueAdminBotMutation, resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   changeMemberEmail,
   claimMember,
@@ -567,30 +567,56 @@ describe("offline GET cache and mutation outbox", () => {
     });
   });
 
-  it("does not replay a queued mutation with another session or origin", async () => {
+  it("uses cached reads during a service outage but never for authorization failures", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { members: [] }));
+    await fetchMemberResource("/lab/members", "synthetic", BASE_URL);
+    fetcher.mockImplementation(async () => jsonResponse(503, {}));
+    await expect(fetchMemberResource("/lab/members", "synthetic", BASE_URL)).resolves.toMatchObject(
+      { ok: true, cached: true },
+    );
+    for (const code of [401, 403]) {
+      fetcher.mockImplementation(async () => jsonResponse(code, {}));
+      await expect(
+        fetchMemberResource("/lab/members", "synthetic", BASE_URL),
+      ).resolves.toMatchObject({ ok: false });
+    }
+  });
+
+  it("does not queue or replay failed profile writes after reconnect", async () => {
     await resetAdminBotOfflineMemory();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
-    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", "https://admin-a.test");
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    await expect(pendingQueuedAdminBotWriteCount("ada-session", BASE_URL)).resolves.toBe(0);
     fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }));
-    await fetchMemberResource("/prime", "mei-session", "https://admin-b.test");
-
+    await fetchMemberResource("/prime", "ada-session", BASE_URL);
+    fetchMock.mockClear();
     await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      "https://admin-b.test/lab/members/ada",
-      expect.anything(),
-    );
-    await expect(
-      pendingQueuedAdminBotWriteCount("ada-session", "https://admin-a.test"),
-    ).resolves.toBe(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
-    await fetchMemberResource("/prime", "ada-session", "https://admin-a.test");
-    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 1, remaining: 0 });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://admin-a.test/lab/members/ada",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer ada-session" }),
-      }),
+  it("retains legacy approval entries without replaying them", async () => {
+    await resetAdminBotOfflineMemory();
+    const token = "synthetic-legacy-session";
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+    const principalKey = [...new Uint8Array(digest)]
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+    await enqueueAdminBotMutation(
+      { baseUrl: BASE_URL, principalKey },
+      {
+        method: "POST",
+        path: "/proposals/synthetic/approve",
+        payload: { hash: "synthetic" },
+      },
     );
+    const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, {}));
+    await fetchMemberResource("/prime", token, BASE_URL);
+    fetcher.mockClear();
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 1 });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("clears replay credentials when the member logs out", async () => {

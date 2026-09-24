@@ -25,6 +25,7 @@ import {
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
 import { formatFileSize } from "../data/logistics-requests.ts";
+import type { DraftStatus } from "../offline/draft-sync.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
   APPLICATION_STATUS_SUGGESTIONS,
@@ -57,7 +58,7 @@ export type LogisticsTemplate = "documentSignature" | "recommendationLetters" | 
 // Making a request is what this tab is; reading everyone's is an admin's job on top of it.
 export type LogisticsMode = "make" | "view";
 
-// Saving is local-only (IndexedDB on the member's device) and per request type, so each container
+// Saving is local-first and per request type, so each container
 // reports its own outcome rather than sharing one "Saved at" that would follow the member from
 // form to form and describe the wrong draft.
 //
@@ -67,6 +68,14 @@ export type LogisticsMode = "make" | "view";
 type RequestSaveProps = {
   saving: boolean;
   savedAt: number | null;
+  sync?: {
+    status: DraftStatus;
+    hasLegacy?: boolean;
+    onImportLegacy: () => void;
+    onDownload: () => void;
+    error?: string;
+    onResolve: (choice: "mine" | "server") => void;
+  };
   saveError: string | null;
   onSave: () => void;
   onSubmit: () => void;
@@ -374,6 +383,32 @@ function submitBlockText(block: SubmitBlock): string {
   return t("logistics.request.blocked.empty");
 }
 
+function renderDraftSyncStatus(sync: NonNullable<RequestSaveProps["sync"]>) {
+  if (sync.status === "conflict") {
+    return html`
+      Another tab or device saved a different version. Your copy is kept on this device.
+      <button class="btn" type="button" @click=${sync.onDownload}>Download both versions</button>
+      <button class="btn" type="button" @click=${() => sync.onResolve("mine")}>
+        Replace server copy with mine
+      </button>
+      <button class="btn" type="button" @click=${() => sync.onResolve("server")}>
+        Use server copy
+      </button>
+    `;
+  }
+  if (sync.error) {
+    return sync.error;
+  }
+  return {
+    loading: "Opening saved draft…",
+    saving: "Saving on this device…",
+    local: "Saved on this device · waiting to sync",
+    syncing: "Saved on this device · syncing…",
+    synced: "All changes saved",
+    error: "Could not save. Keep this page open and try Save again.",
+  }[sync.status];
+}
+
 function renderRequestActions(props: RequestSaveProps) {
   const saved = props.savedAt
     ? new Date(props.savedAt).toLocaleTimeString([], {
@@ -410,7 +445,11 @@ function renderRequestActions(props: RequestSaveProps) {
     <div class="logistics-request__actions">
       <!-- Status sits with the buttons rather than above them: it is the answer to pressing one of
            them, and a member who just did is looking here. -->
-      <span class="logistics-request__status" role="status">${status}</span>
+      <span class="logistics-request__status" role="status"
+        >${!props.sync || props.submitError || props.submitted || props.saveError
+          ? status
+          : nothing}</span
+      >
       ${props.submitBlocked && !props.submitted
         ? html`
             <span class="logistics-request__blocked" data-testid="logistics-blocked"
@@ -1101,7 +1140,29 @@ function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
 // the three templates has its own tab under "Requests to Zhijing", so arriving here already means
 // having chosen, and a picker would be a second place to make the same choice.
 function renderMakeRequest(props: AdminBotLogisticsProps) {
+  const form =
+    props.template === "recommendationLetters"
+      ? props.letters
+      : props.template === "bookMeeting"
+        ? props.meeting
+        : props.signature;
+  const showSync = props.template !== "documentSignature" || props.signature.editing;
   return html`
+    ${form.sync && showSync
+      ? html`<div class="card logistics-sync" role="status" data-testid="draft-sync-status">
+          <span>${renderDraftSyncStatus(form.sync)}</span>
+          ${form.sync.hasLegacy
+            ? html`<button class="btn" type="button" @click=${form.sync.onImportLegacy}>
+                Restore draft saved by the previous version
+              </button>`
+            : nothing}
+          ${form.sync.status !== "conflict"
+            ? html`<button class="btn" type="button" @click=${form.sync.onDownload}>
+                Download saved copies
+              </button>`
+            : nothing}
+        </div>`
+      : nothing}
     ${props.template === "recommendationLetters"
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"

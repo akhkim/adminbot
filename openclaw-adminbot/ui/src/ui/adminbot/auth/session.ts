@@ -8,11 +8,10 @@ import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
+import { configureDraftSync } from "../offline/draft-sync.ts";
 import {
   cacheAdminBotGet,
   type AdminBotOfflineScope,
-  enqueueAdminBotMutation,
-  flushAdminBotOutbox,
   pendingAdminBotOutboxCount,
   readCachedAdminBotGet,
 } from "../offline/outbox.ts";
@@ -419,29 +418,10 @@ export async function flushQueuedAdminBotWrites(): Promise<{ flushed: number; re
   if (!auth?.offlineScope) {
     return { flushed: 0, remaining: 0 };
   }
-  return flushAdminBotOutbox(auth.offlineScope, async (item) => {
-    try {
-      const response = await fetch(`${item.base_url}${item.path}`, {
-        method: item.method,
-        credentials: "omit",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${auth.token}`,
-        },
-        ...(item.method === "DELETE" ? {} : { body: JSON.stringify(item.payload) }),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  });
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("online", () => {
-    void flushQueuedAdminBotWrites();
-  });
+  // Old generic outbox entries may represent approvals or non-idempotent submissions.
+  // Retain them for recovery, but never execute them on reconnect. Only revisioned
+  // member drafts have an automatic synchronization contract.
+  return { flushed: 0, remaining: await pendingAdminBotOutboxCount(auth.offlineScope) };
 }
 
 // Bearer-authenticated POST/PUT for member-session routes. Same unreachable
@@ -471,21 +451,24 @@ async function authedJson(
     });
   } catch {
     if (method === "GET") {
-      const cached = offlineScope ? await readCachedAdminBotGet(offlineScope, path) : undefined;
+      const cached = offlineScope
+        ? await readCachedAdminBotGet(offlineScope, path).catch(() => undefined)
+        : undefined;
       if (cached !== undefined) {
         return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
       }
-    } else if (offlineScope) {
-      await enqueueAdminBotMutation(offlineScope, { method, path, payload });
     }
     return { unreachable: true };
   }
+  if (method === "GET" && [502, 503, 504].includes(response.status) && offlineScope) {
+    const cached = await readCachedAdminBotGet(offlineScope, path).catch(() => undefined);
+    if (cached !== undefined) {
+      return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+    }
+  }
   const body = await readJson(response);
   if (method === "GET" && response.ok && offlineScope) {
-    void cacheAdminBotGet(offlineScope, path, body);
-  }
-  if (method !== "GET" && response.ok) {
-    void flushQueuedAdminBotWrites();
+    void cacheAdminBotGet(offlineScope, path, body).catch(() => {});
   }
   return { response, body };
 }
@@ -1921,6 +1904,27 @@ export async function fetchRoster(baseUrl: string): Promise<AuthResult<RosterMem
   return { ok: true, value: members };
 }
 
+export async function cacheOfflineMemberSession(
+  token: string,
+  baseUrl: string,
+  session: MemberSessionInfo,
+): Promise<void> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  if (!scope) {
+    return;
+  }
+  // Never persist gateway credentials with the offline identity snapshot.
+  await cacheAdminBotGet(scope, "/offline-identity", {
+    expires_at: session.expires_at,
+    member: {
+      id: session.member.id,
+      privilege_level: session.member.privilege_level,
+      onboarding: session.member.onboarding,
+    },
+    gateway: { token: "" },
+  }).catch(() => {});
+}
+
 export async function fetchMemberSession(
   token: string,
   baseUrl: string,
@@ -1929,16 +1933,33 @@ export async function fetchMemberSession(
   try {
     response = await fetch(`${baseUrl}/auth/session`, {
       method: "GET",
+      signal: AbortSignal.timeout(5000),
       credentials: "omit",
       headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     });
   } catch {
+    const scope = await resolveOfflineScope(baseUrl, token);
+    const cached = scope
+      ? ((await readCachedAdminBotGet(scope, "/offline-identity").catch(() => undefined)) as
+          | MemberSessionInfo
+          | undefined)
+      : undefined;
+    if (cached?.member?.id && Date.parse(cached.expires_at) > Date.now()) {
+      return { ok: true, value: cached, cached: true };
+    }
     return { ok: false, kind: "unreachable" };
   }
   const body = await readJson(response);
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      const scope = await resolveOfflineScope(baseUrl, token);
+      if (scope) {
+        await cacheAdminBotGet(scope, "/offline-identity", null).catch(() => {});
+      }
+    }
     return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
   }
+  await cacheOfflineMemberSession(token, baseUrl, body as MemberSessionInfo);
   return { ok: true, value: body as MemberSessionInfo };
 }
 
@@ -1996,6 +2017,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 }
 
 export function clearStoredMemberSession(): void {
+  configureDraftSync("signed-out", null);
   lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {
