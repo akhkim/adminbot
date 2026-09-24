@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
+import { buildDeadlineBoardEntries, entriesForDeadlinePeriod } from "./deadlines.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -168,12 +169,16 @@ describe("renderDashboard", () => {
     expect(container.querySelector('[data-testid="dashboard-deadlines"]')).not.toBeNull();
     expect(board.querySelector('.deadline-board__search input[type="search"]')).not.toBeNull();
     expect(board.querySelector('[data-testid="deadline-group-all"]')).not.toBeNull();
-    expect(
-      [...board.querySelectorAll<HTMLElement>(".deadline-group")].reduce(
-        (total, group) => total + Number(group.dataset.count),
-        0,
-      ),
-    ).toBeGreaterThan(100);
+    const renderedCount = [...board.querySelectorAll<HTMLElement>(".deadline-group")].reduce(
+      (total, group) => total + Number(group.dataset.count),
+      0,
+    );
+    const completeUpcomingCount = entriesForDeadlinePeriod(
+      buildDeadlineBoardEntries(),
+      Date.now(),
+      "upcoming",
+    ).length;
+    expect(renderedCount).toBe(completeUpcomingCount);
     expect(board.textContent).toContain("Past and upcoming conference & workshop deadlines.");
     container.remove();
   });
@@ -422,6 +427,6 @@ describe("notifications on the dashboard", () => {
     );
     const banner = container.querySelector('[data-testid="dashboard-offline"]');
     expect(banner?.textContent).toContain("Working offline");
-    expect(banner?.textContent).toContain("2 edits waiting to send");
+    expect(banner?.textContent).toContain("2 edits retained from the old queue");
   });
 });
