@@ -3704,14 +3704,84 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void {
-    this.db
-      .prepare(
-        `UPDATE adminbot_account_registrations
+  ): boolean {
+    return (
+      this.db
+        .prepare(
+          `UPDATE adminbot_account_registrations
           SET status = ?, decided_by = ?, decided_at = ?
-          WHERE id = ?`,
-      )
-      .run(status, decidedBy, decidedAt, id);
+          WHERE id = ? AND status = 'pending'`,
+        )
+        .run(status, decidedBy, decidedAt, id).changes > 0
+    );
+  }
+
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db.prepare(`${REGISTRATION_COLUMNS} WHERE id = ?`).get(id) as
+        | AccountRegistrationRow
+        | undefined;
+      if (!row || row.status !== "pending") {
+        this.db.exec("ROLLBACK");
+        return { ok: false, reason: "not_pending" };
+      }
+      const memberId = row.kind === "claim" ? row.member_id : preparedMember?.id;
+      if (
+        !memberId ||
+        (row.kind === "signup" &&
+          (!preparedMember ||
+            this.db.prepare("SELECT 1 FROM adminbot_lab_members WHERE id = ?").get(memberId))) ||
+        (row.kind === "claim" &&
+          !this.db.prepare("SELECT 1 FROM adminbot_lab_members WHERE id = ?").get(memberId)) ||
+        this.db
+          .prepare("SELECT 1 FROM adminbot_member_credentials WHERE member_id = ? OR email = ?")
+          .get(memberId, row.email)
+      ) {
+        this.db.exec("ROLLBACK");
+        return { ok: false, reason: "conflict" };
+      }
+      if (preparedMember && row.kind === "signup") {
+        this.db
+          .prepare(
+            `INSERT INTO adminbot_lab_members (id, privilege_level, updated_at, payload_json)
+           VALUES (?, ?, ?, ?)`,
+          )
+          .run(
+            preparedMember.id,
+            preparedMember.privilege_level,
+            preparedMember.updated_at,
+            JSON.stringify(preparedMember),
+          );
+      }
+      this.db
+        .prepare(
+          `INSERT INTO adminbot_member_credentials
+         (member_id, email, password_scrypt, claimed_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(memberId, row.email, row.password_scrypt, decidedAt, decidedAt);
+      this.db
+        .prepare(
+          `UPDATE adminbot_account_registrations
+         SET status = 'approved', decided_by = ?, decided_at = ?
+         WHERE id = ? AND status = 'pending'`,
+        )
+        .run(decidedBy, decidedAt, id);
+      this.db.exec("COMMIT");
+      return { ok: true, member_id: memberId };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        return { ok: false, reason: "conflict" };
+      }
+      throw error;
+    }
   }
 
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {

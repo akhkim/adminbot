@@ -125,7 +125,8 @@ export async function seedAdminBotDev(options: {
   const { service, store, close } = createAdminBotSqliteService({ databasePath });
   const auth = new AdminBotAuthService({
     store,
-    createMember: (input) => unwrap(service.upsertLabMember(input)),
+    prepareMember: (input) => unwrap(service.prepareLabMember(input)),
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
   });
   try {
     // Refuse identity collisions before updating any profile. An email change needs deliberate

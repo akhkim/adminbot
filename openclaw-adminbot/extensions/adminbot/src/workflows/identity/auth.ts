@@ -184,6 +184,7 @@ type AuthStoreMethod =
   | "saveSession"
   | "saveSessionIfCredentialCurrent"
   | "touchSession"
+  | "tryApproveRegistration"
   | "trySavePendingRegistration"
   | "updateAccountRegistrationDecision"
   | "updateCredentialEmail";
@@ -196,7 +197,10 @@ export type AdminBotAuthStore = {
 
 export type AdminBotAuthServiceOptions = {
   store: AdminBotAuthStore;
-  createMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  // Preparing a signup member must not write: only the store can commit member, credential and
+  // approval together, after the pending decision has been claimed across processes.
+  prepareMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  afterMemberCreated?: (member: AdminBotLabMember) => Awaitable<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, granting the
   // new member's account email view access to the lab calendar. A rejection is audited but never
   // fails or delays the approval response — see approveRegistration.
@@ -287,7 +291,8 @@ const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week"]);
 
 export class AdminBotAuthService {
   private readonly store: AdminBotAuthStore;
-  private readonly createMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  private readonly prepareMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  private readonly afterMemberCreated?: (member: AdminBotLabMember) => Awaitable<void>;
   private readonly inviteToLabCalendar?: CalendarInviteRunner;
   private readonly sendAccountApprovedEmail?: (params: {
     email: string;
@@ -320,7 +325,8 @@ export class AdminBotAuthService {
 
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
-    this.createMember = options.createMember;
+    this.prepareMember = options.prepareMember;
+    this.afterMemberCreated = options.afterMemberCreated;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
@@ -986,8 +992,7 @@ export class AdminBotAuthService {
     }
   }
 
-  // Approve a pending request: `claim` binds a credential to the named roster member; `signup`
-  // first mints a plain member from the stored profile, then binds the credential to it.
+  // The store commits the decision, credential and any new roster member as one transaction.
   async approveRegistration(
     id: string,
     decidedBy: string,
@@ -1002,25 +1007,36 @@ export class AdminBotAuthService {
         return authError(404, "registration not found");
       }
       const nowIso = this.now().toISOString();
-      const memberId =
-        registration.kind === "claim"
-          ? registration.member_id
-          : (await this.createMember(signupMemberInput(registration))).id;
-      if (!memberId) {
-        return authError(409, "registration is missing a member");
+      const preparedMember =
+        registration.kind === "signup"
+          ? await this.prepareMember(signupMemberInput(registration))
+          : undefined;
+      const approved = await this.store.tryApproveRegistration(
+        id,
+        decidedBy,
+        nowIso,
+        preparedMember,
+      );
+      if (!approved.ok) {
+        return authError(
+          approved.reason === "not_pending" ? 404 : 409,
+          approved.reason === "not_pending" ? "registration not found" : "registration conflict",
+        );
       }
-      await this.store.saveCredential({
-        member_id: memberId,
-        email: registration.email,
-        password_scrypt: registration.password_scrypt,
-        claimed_at: nowIso,
-        updated_at: nowIso,
-      });
-      await this.store.updateAccountRegistrationDecision(id, "approved", decidedBy, nowIso);
+      const memberId = approved.member_id;
+      let memberHookError: string | undefined;
+      if (preparedMember && this.afterMemberCreated) {
+        try {
+          await this.afterMemberCreated(preparedMember);
+        } catch (error) {
+          memberHookError = error instanceof Error ? error.message : String(error);
+        }
+      }
       await this.audit("auth.registration_approved", decidedBy, {
         registration_id: id,
         kind: registration.kind,
         member_id: memberId,
+        ...(memberHookError ? { member_hook_error: memberHookError } : {}),
       });
       this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
       void this.notifyAccountApproved(registration.email, memberId, decidedBy).catch(() => {});
@@ -1232,12 +1248,15 @@ export class AdminBotAuthService {
       if (!registration || registration.status !== "pending") {
         return authError(404, "registration not found");
       }
-      await this.store.updateAccountRegistrationDecision(
+      const rejected = await this.store.updateAccountRegistrationDecision(
         id,
         "rejected",
         decidedBy,
         this.now().toISOString(),
       );
+      if (!rejected) {
+        return authError(404, "registration not found");
+      }
       await this.audit("auth.registration_rejected", decidedBy, {
         registration_id: id,
         kind: registration.kind,

@@ -99,6 +99,19 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     }
   }
 
+  private async lockRegistrationKeys(
+    client: PoolClient,
+    email: string,
+    claimMemberId?: string,
+  ): Promise<void> {
+    // Both signup/claim and approval lock the same keys before checking credentials. Sorting
+    // avoids a cycle when different pending requests involve the same email and member.
+    const keys = [email.toLowerCase(), ...(claimMemberId ? [`claim-member:${claimMemberId}`] : [])];
+    for (const key of keys.sort()) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key]);
+    }
+  }
+
   async saveLabMember(member: AdminBotLabMember): Promise<void> {
     await this.pool.query(
       `INSERT INTO ${this.table("adminbot_lab_members")}
@@ -384,6 +397,8 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     const missingMember = new Error("credential member is missing from the roster");
     try {
       return await this.transaction(async (client) => {
+        // Signup/approval take this lock before touching credentials; keep the order consistent.
+        await this.lockRegistrationKeys(client, email);
         const credential = await client.query<{ password_scrypt: string }>(
           `SELECT password_scrypt FROM ${this.table("adminbot_member_credentials")}
            WHERE member_id = $1 FOR UPDATE`,
@@ -392,8 +407,6 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
         if (credential.rows[0]?.password_scrypt !== expectedPasswordHash) {
           return "stale";
         }
-        // A pending registration lives in another table, so its writer takes the same email lock.
-        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [email]);
         const pending = await client.query(
           `SELECT 1 FROM ${this.table("adminbot_account_registrations")}
            WHERE status = 'pending' AND lower(email) = $1 LIMIT 1`,
@@ -553,7 +566,11 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     }
     const email = registration.email.toLowerCase();
     return this.transaction(async (client) => {
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [email]);
+      await this.lockRegistrationKeys(
+        client,
+        email,
+        registration.kind === "claim" ? registration.member_id : undefined,
+      );
       const credential = await client.query(
         `SELECT 1 FROM ${this.table("adminbot_member_credentials")}
          WHERE email = $1 OR member_id = $2 LIMIT 1`,
@@ -628,12 +645,90 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): Promise<void> {
-    await this.pool.query(
+  ): Promise<boolean> {
+    const updated = await this.pool.query(
       `UPDATE ${this.table("adminbot_account_registrations")}
-       SET status = $1, decided_by = $2, decided_at = $3 WHERE id = $4`,
+       SET status = $1, decided_by = $2, decided_at = $3
+       WHERE id = $4 AND status = 'pending'`,
       [status, decidedBy, decidedAt, id],
     );
+    return updated.rowCount === 1;
+  }
+
+  async tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): Promise<{ ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" }> {
+    try {
+      return await this.transaction(async (client) => {
+        // Email and member ID are immutable after insertion. Read them before taking the advisory
+        // locks, then recheck status under a row lock to serialize another admin's decision.
+        const initial = await client.query<RegistrationRow>(
+          `${this.registrationColumns()} WHERE id = $1`,
+          [id],
+        );
+        const registration = initial.rows[0];
+        if (!registration || registration.status !== "pending") {
+          return { ok: false, reason: "not_pending" };
+        }
+        await this.lockRegistrationKeys(
+          client,
+          registration.email,
+          registration.kind === "claim" ? (registration.member_id ?? undefined) : undefined,
+        );
+        const locked = await client.query<RegistrationRow>(
+          `${this.registrationColumns()} WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        const row = locked.rows[0];
+        if (!row || row.status !== "pending") {
+          return { ok: false, reason: "not_pending" };
+        }
+        const memberId = row.kind === "claim" ? row.member_id : preparedMember?.id;
+        if (!memberId || (row.kind === "signup" && !preparedMember)) {
+          return { ok: false, reason: "conflict" };
+        }
+        if (row.kind === "claim") {
+          const roster = await client.query(
+            `SELECT 1 FROM ${this.table("adminbot_lab_members")} WHERE id = $1 FOR KEY SHARE`,
+            [memberId],
+          );
+          if (roster.rowCount !== 1) {
+            return { ok: false, reason: "conflict" };
+          }
+        } else {
+          await client.query(
+            `INSERT INTO ${this.table("adminbot_lab_members")}
+             (id, privilege_level, updated_at, payload_json) VALUES ($1, $2, $3, $4)`,
+            [
+              memberId,
+              preparedMember!.privilege_level,
+              preparedMember!.updated_at,
+              JSON.stringify(preparedMember),
+            ],
+          );
+        }
+        await client.query(
+          `INSERT INTO ${this.table("adminbot_member_credentials")}
+           (member_id, email, password_scrypt, claimed_at, updated_at)
+           VALUES ($1, $2, $3, $4, $4)`,
+          [memberId, row.email.toLowerCase(), row.password_scrypt, decidedAt],
+        );
+        await client.query(
+          `UPDATE ${this.table("adminbot_account_registrations")}
+           SET status = 'approved', decided_by = $1, decided_at = $2 WHERE id = $3`,
+          [decidedBy, decidedAt, id],
+        );
+        return { ok: true, member_id: memberId };
+      });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "23505") {
+        return { ok: false, reason: "conflict" };
+      }
+      throw error;
+    }
   }
 
   async getPendingRegistrationByEmail(

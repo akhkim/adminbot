@@ -28,25 +28,26 @@ function open(databasePath: string) {
   const db = createAdminBotSqliteService({ databasePath });
   const auth = new AdminBotAuthService({
     store: db.store,
-    createMember: (member) => {
-      const result = db.service.upsertLabMember(member);
+    prepareMember: (member) => {
+      const result = db.service.prepareLabMember(member);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => db.service.afterMemberCreated(member),
   });
   return { ...db, auth };
 }
 
 describe("local development member fixtures", () => {
-  it("persists all fixture roles and usable logins without external calls", () => {
+  it("persists all fixture roles and usable logins without external calls", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
       throw new Error("Fixture seeding must not fetch anything");
     });
     const databasePath = database();
     const fixture = parseDevMembers(JSON.parse(fs.readFileSync(fixturePath, "utf8")));
-    expect(seedAdminBotDev({ databasePath, fixturePath, password })).toMatchObject({
+    expect(await seedAdminBotDev({ databasePath, fixturePath, password })).toMatchObject({
       members: fixture.length,
       accountsCreated: fixture.length,
     });
@@ -55,14 +56,14 @@ describe("local development member fixtures", () => {
       expect(db.store.listLabMembers()).toHaveLength(fixture.length);
       for (const member of fixture) {
         expect(db.store.getLabMember(member.id)).toMatchObject(member);
-        const login = db.auth.login({ email: member.email, password });
+        const login = await db.auth.login({ email: member.email, password });
         expect(login.ok).toBe(true);
         if (login.ok) {
           expect(login.payload.member.id).toBe(member.id);
           expect(login.payload.member.privilege_level).toBe(member.privilege_level);
         }
       }
-      expect(db.auth.listRegistrations("pending")).toHaveLength(0);
+      expect(await db.auth.listRegistrations("pending")).toHaveLength(0);
       expect(
         db.store
           .listAuditEvents()
@@ -78,9 +79,9 @@ describe("local development member fixtures", () => {
     }
   });
 
-  it("updates the same profiles without resetting passwords or removing unrelated members", () => {
+  it("updates the same profiles without resetting passwords or removing unrelated members", async () => {
     const databasePath = database();
-    seedAdminBotDev({ databasePath, password });
+    await seedAdminBotDev({ databasePath, password });
     const first = open(databasePath);
     let hash: string | undefined;
     try {
@@ -93,20 +94,21 @@ describe("local development member fixtures", () => {
       first.close();
     }
     expect(
-      seedAdminBotDev({ databasePath, password: "Another-local-password!" }).accountsCreated,
+      (await seedAdminBotDev({ databasePath, password: "Another-local-password!" }))
+        .accountsCreated,
     ).toBe(0);
     const second = open(databasePath);
     try {
       expect(second.store.listLabMembers()).toHaveLength(6);
       expect(second.store.getLabMember("dev-bob")?.name).toBe("Bob Example");
       expect(second.store.getCredentialByMemberId("dev-bob")?.password_scrypt).toBe(hash);
-      expect(second.auth.login({ email: "bob@example.test", password }).ok).toBe(true);
+      expect((await second.auth.login({ email: "bob@example.test", password })).ok).toBe(true);
     } finally {
       second.close();
     }
   });
 
-  it("rejects invalid fixtures before creating a database", () => {
+  it("rejects invalid fixtures before creating a database", async () => {
     const databasePath = database();
     const invalidFixture = path.join(path.dirname(databasePath), "invalid.json");
     fs.writeFileSync(
@@ -121,9 +123,9 @@ describe("local development member fixtures", () => {
         },
       ]),
     );
-    expect(() => seedAdminBotDev({ databasePath, fixturePath: invalidFixture, password })).toThrow(
-      /hours/u,
-    );
+    await expect(
+      seedAdminBotDev({ databasePath, fixturePath: invalidFixture, password }),
+    ).rejects.toThrow(/hours/u);
     expect(fs.existsSync(databasePath)).toBe(false);
   });
 
@@ -141,19 +143,21 @@ describe("local development member fixtures", () => {
     expect(() => parseDevMembers(rows)).toThrow();
   });
 
-  it("refuses the normal database and a symlink to it", () => {
+  it("refuses the normal database and a symlink to it", async () => {
     const databasePath = database();
     const normal = path.join(path.dirname(databasePath), "adminbot.sqlite");
-    expect(() => seedAdminBotDev({ databasePath: normal, password })).toThrow(
+    await expect(seedAdminBotDev({ databasePath: normal, password })).rejects.toThrow(
       /development database/u,
     );
     fs.writeFileSync(normal, "leave alone");
     fs.symlinkSync(normal, databasePath);
-    expect(() => seedAdminBotDev({ databasePath, password })).toThrow(/development database/u);
+    await expect(seedAdminBotDev({ databasePath, password })).rejects.toThrow(
+      /development database/u,
+    );
     expect(fs.readFileSync(normal, "utf8")).toBe("leave alone");
   });
 
-  it("refuses an identity collision before inserting other fixture members", () => {
+  it("refuses an identity collision before inserting other fixture members", async () => {
     const databasePath = database();
     const first = open(databasePath);
     try {
@@ -167,7 +171,7 @@ describe("local development member fixtures", () => {
     } finally {
       first.close();
     }
-    expect(() => seedAdminBotDev({ databasePath, password })).toThrow(/collision/u);
+    await expect(seedAdminBotDev({ databasePath, password })).rejects.toThrow(/collision/u);
     const second = open(databasePath);
     try {
       expect(second.store.listLabMembers()).toHaveLength(1);
@@ -177,9 +181,11 @@ describe("local development member fixtures", () => {
     }
   });
 
-  it("requires a password supplied outside the fixture", () => {
+  it("requires a password supplied outside the fixture", async () => {
     const databasePath = database();
-    expect(() => seedAdminBotDev({ databasePath, password: "short" })).toThrow(/at least 10/u);
+    await expect(seedAdminBotDev({ databasePath, password: "short" })).rejects.toThrow(
+      /at least 10/u,
+    );
     expect(fs.existsSync(databasePath)).toBe(false);
   });
 });

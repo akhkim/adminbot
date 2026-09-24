@@ -724,7 +724,14 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void;
+  ): boolean;
+  /** Approve one pending request and insert its credential/member in one database transaction. */
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" };
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
   getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
   saveSession(session: AdminBotAuthSession): void;
@@ -2880,6 +2887,26 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: next };
   }
 
+  /** Validate and materialize a signup profile without writing it before approval commits. */
+  prepareLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
+    if (this.store.getLabMember(member.id)) {
+      return serviceError(409, "member already exists");
+    }
+    return this.upsertLabMember(member, {}, true);
+  }
+
+  /** Run the existing profile hooks only after a signup's member and credential commit together. */
+  afterMemberCreated(member: AdminBotLabMember): void {
+    this.afterLabMemberWritten(
+      undefined,
+      member,
+      member,
+      member.privilege_level,
+      member.updated_at,
+      {},
+    );
+  }
+
   /**
    * The one funnel every profile write goes through -- the member's own form, an admin, the
    * spreadsheet importer, the CV scan.
@@ -2892,6 +2919,7 @@ export class AdminBotService {
   upsertLabMember(
     member: AdminBotLabMemberInput,
     origin: AdminBotWriteOrigin = {},
+    prepareOnly = false,
   ): AdminBotServiceResponse<AdminBotLabMember> {
     if (Array.isArray(member.milestones)) {
       member = {
@@ -2985,7 +3013,22 @@ export class AdminBotService {
     if (stored.availability_notes !== undefined && !stored.availability_notes.trim()) {
       delete stored.availability_notes;
     }
+    if (prepareOnly) {
+      return { ok: true, status: 200, payload: stored };
+    }
     this.store.saveLabMember(stored);
+    this.afterLabMemberWritten(existing, member, stored, privilegeLevel, now, origin);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private afterLabMemberWritten(
+    existing: AdminBotLabMember | undefined,
+    member: AdminBotLabMemberInput,
+    stored: AdminBotLabMember,
+    privilegeLevel: AdminBotPrivilegeLevel,
+    now: string,
+    origin: AdminBotWriteOrigin,
+  ): void {
     this.clearResolvedProfileNotifications(stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
@@ -3059,7 +3102,6 @@ export class AdminBotService {
         source: origin.source ?? "import",
       },
     });
-    return { ok: true, status: 200, payload: stored };
   }
 
   /**

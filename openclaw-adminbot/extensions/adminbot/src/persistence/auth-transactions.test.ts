@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import type { AdminBotAccountRegistration, AdminBotAuthSession } from "../contracts/actions.js";
+import type {
+  AdminBotAccountRegistration,
+  AdminBotAuthSession,
+  AdminBotLabMember,
+} from "../contracts/actions.js";
 import { AdminBotMemoryStore } from "./memory.js";
 import { AdminBotSqliteStore } from "./sqlite.js";
 
@@ -27,6 +31,106 @@ function session(tokenHash: string): AdminBotAuthSession {
     last_seen_at: then,
   };
 }
+
+function member(id: string): AdminBotLabMember {
+  return {
+    id,
+    name: id,
+    privilege_level: "member",
+    access: [],
+    created_at: then,
+    updated_at: now,
+  };
+}
+
+it("commits signup member, credential and approval once, without overwriting another account", () => {
+  for (const store of [new AdminBotMemoryStore(), new AdminBotSqliteStore(":memory:")]) {
+    try {
+      const signup: AdminBotAccountRegistration = {
+        id: "signup",
+        kind: "signup",
+        email: "new@example.test",
+        password_scrypt: "new-hash",
+        status: "pending",
+        created_at: then,
+      };
+      expect(store.trySavePendingRegistration(signup)).toBe(true);
+      store.saveLabMember(member("existing"));
+      expect(store.tryApproveRegistration("signup", "admin", now, member("existing"))).toEqual({
+        ok: false,
+        reason: "conflict",
+      });
+      expect(store.getAccountRegistration("signup")?.status).toBe("pending");
+      expect(store.getCredentialByEmail(signup.email)).toBeUndefined();
+
+      expect(store.tryApproveRegistration("signup", "admin", now, member("new"))).toEqual({
+        ok: true,
+        member_id: "new",
+      });
+      expect(store.getLabMember("new")).toEqual(member("new"));
+      expect(store.getCredentialByEmail(signup.email)).toMatchObject({
+        member_id: "new",
+        password_scrypt: "new-hash",
+      });
+      expect(store.getAccountRegistration("signup")?.status).toBe("approved");
+      expect(store.tryApproveRegistration("signup", "other", now, member("other"))).toEqual({
+        ok: false,
+        reason: "not_pending",
+      });
+      expect(store.getLabMember("other")).toBeUndefined();
+    } finally {
+      if (store instanceof AdminBotSqliteStore) store.close();
+    }
+  }
+});
+
+it("a rejected claim cannot later create or replace credentials", () => {
+  for (const store of [new AdminBotMemoryStore(), new AdminBotSqliteStore(":memory:")]) {
+    try {
+      store.saveLabMember(member("ada"));
+      expect(
+        store.trySavePendingRegistration(registration("claim", "ada", "ada@example.test")),
+      ).toBe(true);
+      expect(store.updateAccountRegistrationDecision("claim", "rejected", "admin", now)).toBe(true);
+      expect(store.tryApproveRegistration("claim", "other", now)).toEqual({
+        ok: false,
+        reason: "not_pending",
+      });
+      expect(store.updateAccountRegistrationDecision("claim", "approved", "other", now)).toBe(
+        false,
+      );
+      expect(store.getCredentialByMemberId("ada")).toBeUndefined();
+    } finally {
+      if (store instanceof AdminBotSqliteStore) store.close();
+    }
+  }
+});
+
+it("an approval never overwrites a credential added after a claim was submitted", () => {
+  for (const store of [new AdminBotMemoryStore(), new AdminBotSqliteStore(":memory:")]) {
+    try {
+      store.saveLabMember(member("ada"));
+      expect(
+        store.trySavePendingRegistration(registration("claim", "ada", "ada@example.test")),
+      ).toBe(true);
+      store.saveCredential({
+        member_id: "ada",
+        email: "ada@example.test",
+        password_scrypt: "existing-hash",
+        claimed_at: then,
+        updated_at: then,
+      });
+      expect(store.tryApproveRegistration("claim", "admin", now)).toEqual({
+        ok: false,
+        reason: "conflict",
+      });
+      expect(store.getCredentialByMemberId("ada")?.password_scrypt).toBe("existing-hash");
+      expect(store.getAccountRegistration("claim")?.status).toBe("pending");
+    } finally {
+      if (store instanceof AdminBotSqliteStore) store.close();
+    }
+  }
+});
 
 it("enforces pending email and member uniqueness at the SQLite write boundary", () => {
   const store = new AdminBotSqliteStore(":memory:");

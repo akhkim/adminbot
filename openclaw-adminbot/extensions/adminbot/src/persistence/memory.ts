@@ -1412,13 +1412,57 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void {
+  ): boolean {
     const registration = this.registrations.get(id);
-    if (registration) {
-      registration.status = status;
-      registration.decided_by = decidedBy;
-      registration.decided_at = decidedAt;
+    if (!registration || registration.status !== "pending") {
+      return false;
     }
+    this.registrations.set(id, {
+      ...registration,
+      status,
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return true;
+  }
+
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" } {
+    const registration = this.registrations.get(id);
+    if (!registration || registration.status !== "pending") {
+      return { ok: false, reason: "not_pending" };
+    }
+    const memberId = registration.kind === "claim" ? registration.member_id : preparedMember?.id;
+    if (
+      !memberId ||
+      (registration.kind === "signup" && (!preparedMember || this.labMembers.has(memberId))) ||
+      (registration.kind === "claim" && !this.labMembers.has(memberId)) ||
+      this.credentialsByMemberId.has(memberId) ||
+      this.credentialsByEmail.has(registration.email.toLowerCase())
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (preparedMember && registration.kind === "signup") {
+      this.labMembers.set(memberId, preparedMember);
+    }
+    this.saveCredential({
+      member_id: memberId,
+      email: registration.email,
+      password_scrypt: registration.password_scrypt,
+      claimed_at: decidedAt,
+      updated_at: decidedAt,
+    });
+    this.registrations.set(id, {
+      ...registration,
+      status: "approved",
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return { ok: true, member_id: memberId };
   }
 
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {

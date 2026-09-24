@@ -763,15 +763,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   );
   const auth = new AdminBotAuthService({
     store,
-    // Signup approval mints a roster member through the same governed path as any admin edit so
-    // access grants and validation stay identical.
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    // Prepare the governed profile without writing; approval commits the member, credential, and
+    // decision together before the profile hooks run.
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.

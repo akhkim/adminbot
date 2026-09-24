@@ -52,13 +52,14 @@ async function main(): Promise<void> {
   // seed run must not mail anyone or touch the real lab calendar.
   const auth = new AdminBotAuthService({
     store,
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
   });
 
   try {

@@ -26,7 +26,7 @@ describe.skipIf(!url || !schema || !password)("PostgreSQL auth store", () => {
       const store = new AdminBotPostgresAuthStore(pool, schema!);
       const auth = new AdminBotAuthService({
         store,
-        createMember: async () => {
+        prepareMember: async () => {
           throw new Error("member creation is outside this check");
         },
       });
@@ -265,6 +265,136 @@ describe.skipIf(!url || !schema || !password)("PostgreSQL auth store", () => {
         memberId,
       ]);
       await pool.query(`DELETE FROM "${schema}".adminbot_lab_members WHERE id = $1`, [memberId]);
+      await pool.end();
+    }
+  });
+
+  it("approves once across store instances and rolls back a conflicting signup member", async () => {
+    const target = new URL(url!);
+    if (
+      !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
+      !/^adminbot_migration_[a-z0-9_]+$/u.test(schema!)
+    ) {
+      throw new Error("PostgreSQL auth test requires a local migration schema");
+    }
+    const pool = new pg.Pool({ connectionString: url, max: 4, connectionTimeoutMillis: 3000 });
+    const first = new AdminBotPostgresAuthStore(pool, schema!);
+    const second = new AdminBotPostgresAuthStore(pool, schema!);
+    const marker = randomUUID().replaceAll("-", "");
+    const registrationIds = [
+      `dev-pg-approve-${marker}`,
+      `dev-pg-conflict-${marker}`,
+      `dev-pg-claim-${marker}`,
+    ];
+    const memberIds = [
+      `dev-pg-approved-a-${marker}`,
+      `dev-pg-approved-b-${marker}`,
+      `dev-pg-holder-${marker}`,
+      `dev-pg-orphan-${marker}`,
+    ];
+    const email = `approved-${marker}@example.test`;
+    const conflictEmail = `conflict-${marker}@example.test`;
+    const claimEmail = `claim-${marker}@example.test`;
+    const now = new Date().toISOString();
+    try {
+      const template = await first.getLabMember("dev-alice");
+      if (!template) {
+        throw new Error("fictional fixture member missing");
+      }
+      const prepared = (id: string): AdminBotLabMember => ({
+        ...template,
+        id,
+        name: id,
+        email,
+        created_at: now,
+        updated_at: now,
+      });
+      expect(
+        await first.trySavePendingRegistration({
+          id: registrationIds[0],
+          kind: "signup",
+          email,
+          password_scrypt: "new-hash",
+          status: "pending",
+          created_at: now,
+        }),
+      ).toBe(true);
+      const results = await Promise.all([
+        first.tryApproveRegistration(registrationIds[0], "admin-a", now, prepared(memberIds[0])),
+        second.tryApproveRegistration(registrationIds[0], "admin-b", now, prepared(memberIds[1])),
+      ]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      const winner = results.find((result) => result.ok);
+      expect(winner?.member_id).toBeDefined();
+      expect((await first.getCredentialByEmail(email))?.member_id).toBe(winner?.member_id);
+      expect((await first.getAccountRegistration(registrationIds[0]))?.status).toBe("approved");
+      expect(
+        await first.updateAccountRegistrationDecision(registrationIds[0], "rejected", "other", now),
+      ).toBe(false);
+      const roster = await Promise.all(memberIds.slice(0, 2).map((id) => first.getLabMember(id)));
+      expect(roster.filter(Boolean)).toHaveLength(1);
+
+      expect(
+        await first.trySavePendingRegistration({
+          id: registrationIds[1],
+          kind: "signup",
+          email: conflictEmail,
+          password_scrypt: "pending-hash",
+          status: "pending",
+          created_at: now,
+        }),
+      ).toBe(true);
+      await first.saveLabMember(prepared(memberIds[2]));
+      expect(
+        await first.trySavePendingRegistration({
+          id: registrationIds[2],
+          kind: "claim",
+          member_id: memberIds[2],
+          email: claimEmail,
+          password_scrypt: "claim-hash",
+          status: "pending",
+          created_at: now,
+        }),
+      ).toBe(true);
+      await first.saveCredential({
+        member_id: memberIds[2],
+        email: conflictEmail,
+        password_scrypt: "existing-hash",
+        claimed_at: now,
+        updated_at: now,
+      });
+      expect(
+        await first.tryApproveRegistration(
+          registrationIds[1],
+          "admin",
+          now,
+          prepared(memberIds[3]),
+        ),
+      ).toEqual({ ok: false, reason: "conflict" });
+      expect(await first.getLabMember(memberIds[3])).toBeUndefined();
+      expect((await first.getCredentialByEmail(conflictEmail))?.password_scrypt).toBe(
+        "existing-hash",
+      );
+      expect((await first.getAccountRegistration(registrationIds[1]))?.status).toBe("pending");
+      expect(await first.tryApproveRegistration(registrationIds[2], "admin", now)).toEqual({
+        ok: false,
+        reason: "conflict",
+      });
+      expect((await first.getCredentialByMemberId(memberIds[2]))?.password_scrypt).toBe(
+        "existing-hash",
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM "${schema}".adminbot_account_registrations WHERE id = ANY($1)`,
+        [registrationIds],
+      );
+      await pool.query(
+        `DELETE FROM "${schema}".adminbot_member_credentials WHERE member_id = ANY($1)`,
+        [memberIds],
+      );
+      await pool.query(`DELETE FROM "${schema}".adminbot_lab_members WHERE id = ANY($1)`, [
+        memberIds,
+      ]);
       await pool.end();
     }
   });

@@ -50,13 +50,14 @@ function setup(
   const service = new AdminBotService(store);
   const auth = new AdminBotAuthService({
     store,
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.now ? { now: options.now } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
@@ -146,7 +147,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used by login");
       },
     });
@@ -190,7 +191,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used by login");
       },
     });
@@ -231,7 +232,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used by email change");
       },
     });
@@ -405,13 +406,14 @@ describe("AdminBotAuthService claim/login flow", () => {
     const service = new AdminBotService(store);
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: (input) => {
-        const result = service.upsertLabMember(input);
+      prepareMember: (input) => {
+        const result = service.prepareLabMember(input);
         if (!result.ok) {
           throw new Error(result.error.message);
         }
         return result.payload;
       },
+      afterMemberCreated: (member) => service.afterMemberCreated(member),
     });
     const first = asyncAuth.approveRegistration(registration!.id, "admin");
     await vi.waitFor(() => expect(reads).toBe(1));
@@ -424,6 +426,42 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(store.getCredentialByEmail("new@example.com")?.member_id).toBe(
       store.listLabMembers()[0]?.id,
     );
+  });
+
+  it("runs signup effects only for the approval that commits across service instances", async () => {
+    const { store, auth } = setup();
+    await auth.signup({
+      email: "new@example.com",
+      password: "correcthorse",
+      profile: { name: "New Person" },
+    });
+    const registration = (await auth.listRegistrations("pending"))[0];
+    const service = new AdminBotService(store);
+    const afterMemberCreated = vi.fn((created: AdminBotLabMember) =>
+      service.afterMemberCreated(created),
+    );
+    const makeAuth = () =>
+      new AdminBotAuthService({
+        store,
+        prepareMember: (input) => {
+          const result = service.prepareLabMember(input);
+          if (!result.ok) {
+            throw new Error(result.error.message);
+          }
+          return result.payload;
+        },
+        afterMemberCreated,
+      });
+    const responses = await Promise.all([
+      makeAuth().approveRegistration(registration!.id, "admin-a"),
+      makeAuth().approveRegistration(registration!.id, "admin-b"),
+    ]);
+    expect(responses.map((response) => response.status).toSorted()).toEqual([200, 404]);
+    expect(store.listLabMembers()).toHaveLength(1);
+    expect(store.getCredentialByEmail("new@example.com")?.member_id).toBe(
+      store.listLabMembers()[0]?.id,
+    );
+    expect(afterMemberCreated).toHaveBeenCalledTimes(1);
   });
 
   it("rejected registrations behave as unknown on login", async () => {
@@ -477,7 +515,7 @@ describe("AdminBotAuthService claim/login flow", () => {
       });
       const asyncAuth = new AdminBotAuthService({
         store: asyncStore,
-        createMember: () => {
+        prepareMember: () => {
           throw new Error("not used before approval");
         },
       });
@@ -530,7 +568,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
     const auth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used before approval");
       },
     });
@@ -1076,7 +1114,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used by password change");
       },
     });
@@ -1475,7 +1513,7 @@ describe("AdminBotAuthService password reset", () => {
     });
     const asyncAuth = new AdminBotAuthService({
       store: asyncStore,
-      createMember: () => {
+      prepareMember: () => {
         throw new Error("not used by password reset");
       },
     });
@@ -1500,13 +1538,14 @@ describe("AdminBotAuthService password reset", () => {
     const service = new AdminBotService(store);
     const auth = new AdminBotAuthService({
       store,
-      createMember: (input) => {
-        const result = service.upsertLabMember(input);
+      prepareMember: (input) => {
+        const result = service.prepareLabMember(input);
         if (!result.ok) {
           throw new Error(result.error.message);
         }
         return result.payload;
       },
+      afterMemberCreated: (member) => service.afterMemberCreated(member),
       gatewayUrl: GATEWAY_URL,
       now: () => now,
       sendPasswordResetEmail: async (params) => {
@@ -1766,13 +1805,14 @@ describe("lab calendar invite backfill", () => {
     };
     const withRunner = new AdminBotAuthService({
       store,
-      createMember: (input) => {
-        const result = new AdminBotService(store).upsertLabMember(input);
+      prepareMember: (input) => {
+        const result = new AdminBotService(store).prepareLabMember(input);
         if (!result.ok) {
           throw new Error(result.error.message);
         }
         return result.payload;
       },
+      afterMemberCreated: (member) => new AdminBotService(store).afterMemberCreated(member),
       inviteToLabCalendar,
     });
     return { store, auth: withRunner, plainAuth: auth };
