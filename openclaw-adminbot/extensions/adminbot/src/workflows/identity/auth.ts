@@ -509,8 +509,6 @@ export class AdminBotAuthService {
       return undefined;
     }
     this.store.touchSession(tokenHash, nowIso);
-    // Opportunistic cleanup of expired rows on the read path so sessions do not accumulate.
-    this.store.pruneSessionsBefore(nowIso);
     if (!session.impersonated_by) {
       return { kind: "member", member, session };
     }
@@ -1169,6 +1167,9 @@ export class AdminBotAuthService {
     const nowMs = this.now().getTime();
     const createdIso = new Date(nowMs).toISOString();
     const expiresIso = new Date(nowMs + (impersonation?.ttlMs ?? this.sessionTtlMs)).toISOString();
+    // New sessions are much rarer than authenticated requests; clean expired rows here so
+    // checking an existing session never scans or deletes unrelated sessions.
+    this.store.pruneSessionsBefore(createdIso);
     this.store.saveSession({
       token_hash: hashToken(rawToken),
       member_id: member.id,
