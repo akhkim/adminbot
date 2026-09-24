@@ -409,7 +409,7 @@ function renderMonth(state: AppViewState) {
               data-testid=${`calendar-day-${day.key}`}
             >
               <span class="adminbot-calendar__day-number">${day.day}</span>
-              ${renderDayTrips(state, day.key)}
+              ${state.adminBotRosterLoadedAt ? renderDayTrips(state, day.key) : nothing}
               ${events.slice(0, CHIPS_PER_DAY).map((event) => renderChip(state, event, timezone))}
               ${events.length > CHIPS_PER_DAY
                 ? html`<button
@@ -1171,7 +1171,7 @@ export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
       ${renderNotice(state)} ${renderMonth(state)} ${renderDraftPanel(state)}
-      ${renderInvitePanel(state)}
+      ${state.adminBotRosterLoadedAt ? renderInvitePanel(state) : nothing}
       ${renderCards(
         state,
         state.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,

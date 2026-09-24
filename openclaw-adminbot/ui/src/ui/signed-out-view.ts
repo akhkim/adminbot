@@ -6,6 +6,9 @@
 // to the landing page. Carrying the surface in a query param makes each one a real history entry
 // (and a shareable link) without giving them tab routes they do not otherwise need.
 
+import { canAccessTab } from "./adminbot/access.ts";
+import { pathIsRoot, tabFromPath } from "./navigation.ts";
+
 export type SignedOutView = "landing" | "login" | "guest-reimbursements";
 
 const SIGNED_OUT_PARAM = "signedOut";
@@ -25,6 +28,7 @@ const PARAM_BY_VIEW: Record<SignedOutView, string | null> = {
 export type SignedOutViewHost = {
   authGateVisible?: boolean;
   guestReimbursements?: boolean;
+  basePath?: string;
 };
 
 export function signedOutViewFromSearch(search: string): SignedOutView {
@@ -74,11 +78,22 @@ export function syncSignedOutViewWithLocation(host: SignedOutViewHost) {
   if (search === undefined) {
     return;
   }
-  applySignedOutView(host, signedOutViewFromSearch(search));
+  const path = window.location.pathname;
+  const basePath = host.basePath ?? "";
+  const requestedTab = tabFromPath(path, basePath);
+  const defaultView =
+    requestedTab && !pathIsRoot(path, basePath) && !canAccessTab(requestedTab, "anonymous")
+      ? "login"
+      : "landing";
+  applySignedOutView(
+    host,
+    new URLSearchParams(search).has(SIGNED_OUT_PARAM)
+      ? signedOutViewFromSearch(search)
+      : defaultView,
+  );
 }
 
-// Signing out drops the member session; leaving `?signedOut=login` behind would put a visitor back
-// on the gate on the next reload instead of the landing page.
+// A completed sign-in or sign-out should not leave a signed-out overlay in the URL.
 export function clearSignedOutView(host: SignedOutViewHost) {
   applySignedOutView(host, "landing");
   writeSignedOutViewToUrl("landing", true);

@@ -677,6 +677,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
         ON adminbot_sessions(member_id, expires_at);
 
+      CREATE INDEX IF NOT EXISTS adminbot_sessions_expiry_idx
+        ON adminbot_sessions(expires_at);
+
       CREATE TABLE IF NOT EXISTS adminbot_password_resets (
         token_hash TEXT PRIMARY KEY,
         member_id TEXT NOT NULL,

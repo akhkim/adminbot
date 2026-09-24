@@ -485,8 +485,9 @@ export type AppViewState = {
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
   // Where the lab is, for the dashboard card. Null until the first load; the card renders nothing
   // rather than an empty map.
-  adminBotMemberMap: MemberMap | null;
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId: number;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from

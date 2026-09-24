@@ -641,6 +641,60 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(auth.resolveSession(relogin.payload.session_token)).toBeUndefined();
   });
 
+  it("prunes expired sessions on sign-in, not on every authenticated request", () => {
+    let current = new Date("2026-01-01T00:00:00.000Z");
+    const { store, auth } = setup({ now: () => current });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const prune = vi.spyOn(store, "pruneSessionsBefore");
+
+    const first = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    if (!first.ok) {
+      throw new Error("login failed");
+    }
+    expect(prune).toHaveBeenCalledTimes(1);
+    expect(auth.resolveSession(first.payload.session_token)?.member.id).toBe("ada");
+    expect(auth.resolveSession(first.payload.session_token)?.member.id).toBe("ada");
+    expect(prune).toHaveBeenCalledTimes(1);
+
+    current = new Date("2026-01-09T00:00:00.000Z");
+    expect(auth.resolveSession(first.payload.session_token)).toBeUndefined();
+    const second = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    expect(second.ok).toBe(true);
+    expect(prune).toHaveBeenCalledTimes(2);
+    expect(prune.mock.results[1]?.value).toBe(1);
+  });
+
+  it("records session activity at most once every five minutes", () => {
+    let current = new Date("2026-01-01T00:00:00.000Z");
+    const { store, auth } = setup({ now: () => current });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    if (!login.ok) {
+      throw new Error("login failed");
+    }
+    const token = login.payload.session_token;
+    const touch = vi.spyOn(store, "touchSession");
+
+    for (let i = 0; i < 20; i++) {
+      expect(auth.resolveSession(token)?.member.id).toBe("ada");
+    }
+    current = new Date("2026-01-01T00:04:59.999Z");
+    auth.resolveSession(token);
+    expect(touch).not.toHaveBeenCalled();
+
+    current = new Date("2026-01-01T00:05:00.000Z");
+    auth.resolveSession(token);
+    auth.resolveSession(token);
+    expect(touch).toHaveBeenCalledTimes(1);
+
+    current = new Date("2026-01-01T00:10:00.000Z");
+    auth.resolveSession(token);
+    expect(touch).toHaveBeenCalledTimes(2);
+    auth.logout(token);
+    expect(auth.resolveSession(token)).toBeUndefined();
+    expect(touch).toHaveBeenCalledTimes(2);
+  });
+
   it("changes a password", () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");

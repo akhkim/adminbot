@@ -1,10 +1,10 @@
 // AoE date arithmetic and urgency banding for the bundled deadline snapshot.
 //
 // Extracted from views/deadlines.ts so the full board and the two-row summary on the profile page
-// agree on what "3 days left" means. Both read DEADLINE_VENUES; only the presentation differs, and
-// a countdown that disagreed between the two surfaces would read as a bug in the data.
+// agree on what "3 days left" means. Both read the same generated summary; only the presentation
+// differs. A countdown that disagreed between the two surfaces would read as a bug in the data.
 
-import { DEADLINE_VENUES, type DeadlineVenue } from "./deadlines.ts";
+import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./deadlines-summary.ts";
 
 export const MS_DAY = 86_400_000;
 
@@ -125,14 +125,14 @@ export function countdownLabel(ms: number): string {
   return `${d}d ${clock}`;
 }
 
-export type DeadlineEntry = { venue: DeadlineVenue; instant: number };
+export type DeadlineEntry = { venue: DeadlineSummaryVenue; instant: number };
 
 // "Major" is a conference/track submission deadline, read from the generated entry type. Workshops
 // dominate the snapshot and often share a handful of instants, so including them would make a
 // two-row summary repeat one workshop group. Rebuttals
 // are excluded for the same reason they are not submissions -- they are work on a paper already in,
 // not a deadline to aim a new one at. The full board still lists every one of them.
-function isMajorConference(venue: DeadlineVenue): boolean {
+function isMajorConference(venue: DeadlineSummaryVenue): boolean {
   return (
     venue.entry_type !== "workshop" &&
     venue.entry_type !== "rebuttal" &&
@@ -191,7 +191,7 @@ export function allUpcomingConferences(
   now: number,
   options: { archivalOnly?: boolean } = {},
 ): DeadlineEntry[] {
-  return DEADLINE_VENUES.filter(isMajorConference)
+  return DEADLINE_SUMMARIES.filter(isMajorConference)
     .filter(
       (venue) => !options.archivalOnly || venue.archival_status === "archival",
     )
@@ -209,7 +209,7 @@ export function allUpcomingConferences(
  * they got.
  */
 export function allUpcomingVenues(now: number): DeadlineEntry[] {
-  return DEADLINE_VENUES.map((venue) => ({
+  return DEADLINE_SUMMARIES.map((venue) => ({
     venue,
     instant: aoeInstantMs(venue.deadline_aoe),
   }))

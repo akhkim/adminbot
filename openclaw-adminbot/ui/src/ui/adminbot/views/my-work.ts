@@ -56,7 +56,7 @@ import type {
 } from "../controllers/admin.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
-import { DEADLINE_VENUES } from "../data/deadlines.ts";
+import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -1693,7 +1693,7 @@ function renderAddButton(state: AppViewState) {
  * from scratch.
  */
 function upcomingVenues(now = new Date()) {
-  const future = DEADLINE_VENUES.filter((venue) => {
+  const future = DEADLINE_SUMMARIES.filter((venue) => {
     const due = aoeInstantMs(venue.deadline_aoe);
     return Number.isFinite(due) && due > now.getTime();
   })
