@@ -66,7 +66,7 @@ system `python3` picks the packages up. Rerun
 
 The AdminBot service classifies every `adminbot_reason` request with local
 Ollama `gemma4:e4b` before any remote call. Generic tasks can use NVIDIA NIM
-`minimaxai/minimax-m3`. Private tasks are replaced with opaque placeholders;
+`nvidia/nemotron-3-ultra-550b-a55b`. Private tasks are replaced with opaque placeholders;
 only the sanitized task reaches NIM, and Gemma fills the placeholders locally.
 Use `privacy="private"` or `sensitiveTerms` to force private handling. Missing
 keys, uncertain or malformed classification, unsafe sanitization, and model
@@ -90,12 +90,13 @@ Vercel Function, analytics collector, or other hosted middleware.
 
 ### Load, failover, and offline
 
-Concurrent local (Aurora-class) privacy/private calls are capped at 8 in-process
-slots. Generic public work prefers OpenRouter when `OPENROUTER_API_KEY` is set,
-capped at 100 (hard ceiling 500). Extra callers wait in FIFO order instead of
-piling onto the GPUs. Nodes default to loopback Aurora (`RTX6000`); set
-`ADMINBOT_LLM_NODES` to `id|baseUrl|gpu` CSV for aurora, maple (`RTX6000`), and
-conserto3 (`H100`). PaperMentor can share the same process allocator.
+The [shared LLM gateway](llm-gateway.md) coordinates AdminBot and PaperMentor across
+processes. Public requests wait when either 100 public or 8 local calls are active.
+Local privacy calls remain capped at 8. Set `LLM_GATEWAY_URL` and `LLM_GATEWAY_TOKEN`
+in participating services and run one gateway with `node --import tsx start-llm-gateway.ts`.
+Without that configuration, the in-process allocator is development-only and cannot
+coordinate separate services. See the gateway guide for GPU tunnels, streaming,
+cancellation, and deployment checks.
 
 A failed DCS form submit is written to `adminbot_failed_external_requests` with
 the exact payload, then retried at `ADMINBOT_DCS_AWS_FALLBACK_URL` if set, then
