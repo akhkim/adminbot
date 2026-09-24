@@ -443,11 +443,11 @@ function renderOfflineBanner(state: AppViewState) {
     return nothing;
   }
   const reads = cached
-    ? "Showing the last copy saved on this device. You can still read and type; sends wait until AdminBot is reachable."
+    ? "Showing the last copy saved on this device. You can still read and edit supported drafts. Submit requests when AdminBot is reachable."
     : "";
   const writes =
     pending > 0
-      ? `${pending} edit${pending === 1 ? "" : "s"} waiting to send, like a WhatsApp message queued without signal.`
+      ? `${pending} edit${pending === 1 ? "" : "s"} retained from the old queue. Review and submit again when connected; these will not send automatically.`
       : "";
   return html`
     <section class="dashboard__nudge-warning" data-tone="warn" data-testid="dashboard-offline" role="status">

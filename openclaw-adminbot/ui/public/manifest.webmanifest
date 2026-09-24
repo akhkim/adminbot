@@ -2,11 +2,14 @@
   "name": "Jinesis Portal",
   "short_name": "Jinesis",
   "description": "The Jinesis lab's portal: papers, deadlines, requests and your own record.",
+  "id": "./",
+  "scope": "./",
   "start_url": "./",
   "display": "standalone",
   "theme_color": "#0a0a0a",
   "background_color": "#0a0a0a",
   "icons": [
+    { "src": "./adminbot-logo.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
     {
       "src": "./favicon.svg",
       "sizes": "any",

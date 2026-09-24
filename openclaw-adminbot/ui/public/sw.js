@@ -47,19 +47,23 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "ADMINBOT_OFFLINE_STATUS") return;
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const entries = await Promise.all(
+        PRECACHE_URLS.map((url) => cache.match(new URL(url, self.registration.scope).href)),
+      );
+      event.ports[0]?.postMessage({ offlineReady: entries.every(Boolean) });
+    }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   // Skip non-GET and cross-origin requests.
   if (event.request.method !== "GET" || url.origin !== self.location.origin) {
-    return;
-  }
-
-  // Skip top-level navigations so the browser can handle HTTP auth
-  // challenges natively — WWW-Authenticate dialogs are bypassed when the
-  // response comes from a service worker, breaking reverse-proxy setups
-  // with basic/digest auth in front of the gateway.
-  if (event.request.mode === "navigate") {
     return;
   }
 
@@ -72,11 +76,31 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (event.request.mode === "navigate") {
+    // A one-time browser-managed navigation preserves reverse-proxy auth dialogs.
+    if (url.searchParams.get("__adminbot_native_auth") === "1") return;
+    const shell = new URL("./", self.registration.scope).href;
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.status === 401 && response.headers.has("WWW-Authenticate")) {
+            url.searchParams.set("__adminbot_native_auth", "1");
+            return Response.redirect(url.href, 302);
+          }
+          return response;
+        })
+        .catch(
+          async () => (await (await caches.open(CACHE_NAME)).match(shell)) ?? Response.error(),
+        ),
+    );
+    return;
+  }
+
   // Cache-first for hashed assets; network-first for HTML/other. Reading across
   // all retained build caches lets open tabs still load their prior-build
   // chunks, but a cached HTML fallback is ignored so a poisoned entry can never
   // be served as a module — it self-heals on the next load.
-  if (url.pathname.includes("/assets/")) {
+  if (url.pathname.startsWith(new URL("assets/", self.registration.scope).pathname)) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached && !isHtmlResponse(cached)) {
@@ -85,23 +109,43 @@ self.addEventListener("fetch", (event) => {
         return fetch(event.request).then((response) => {
           if (response.ok && !isHtmlResponse(response)) {
             const clone = response.clone();
-            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)),
+            );
           }
           return response;
         });
       }),
     );
   } else {
+    // Only known public UI files belong in the shared shell cache. Authenticated
+    // records use the account-scoped IndexedDB cache, never the service worker.
+    const publicFiles = [
+      "manifest.webmanifest",
+      "favicon.svg",
+      "favicon-32.png",
+      "apple-touch-icon.png",
+      "favicon.ico",
+      "adminbot-logo.png",
+      "bg-dark.png",
+      "paperflow.svg",
+    ];
+    const allowed = publicFiles.some(
+      (name) => url.href === new URL(name, self.registration.scope).href,
+    );
+    if (!allowed) return;
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok) {
+          if (response.ok && !isHtmlResponse(response)) {
             const clone = response.clone();
-            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)),
+            );
           }
           return response;
         })
-        .catch(() => caches.match(event.request)),
+        .catch(async () => (await caches.match(event.request)) ?? Response.error()),
     );
   }
 });

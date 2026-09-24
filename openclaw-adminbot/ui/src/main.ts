@@ -13,6 +13,13 @@ declare const OPENCLAW_CONTROL_UI_BUILD_ID: string | undefined;
 
 const isProd = (import.meta as ViteImportMeta).env?.PROD === true;
 
+// Remove the one-time service-worker bypass after native reverse-proxy authentication.
+const navigationUrl = new URL(window.location.href);
+if (navigationUrl.searchParams.has("__adminbot_native_auth")) {
+  navigationUrl.searchParams.delete("__adminbot_native_auth");
+  window.history.replaceState(window.history.state, "", navigationUrl);
+}
+
 syncDocumentPublicAssetLinks();
 
 if (isProd && "serviceWorker" in navigator) {

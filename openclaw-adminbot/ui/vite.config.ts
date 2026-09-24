@@ -1,5 +1,6 @@
-// Control UI config module wires vite behavior.
 import { execFileSync } from "node:child_process";
+// Control UI config module wires vite behavior.
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -213,9 +214,15 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
 }
 
 function controlUiServiceWorkerBuildIdPlugin(buildId: string): Plugin {
+  let offlineAssets: string[] = [];
   return {
     name: "control-ui-service-worker-build-id",
     apply: "build",
+    generateBundle(_options, bundle) {
+      offlineAssets = Object.keys(bundle)
+        .filter((name) => /\.(?:js|css|woff2?)$/.test(name))
+        .map((name) => `./${name}`);
+    },
     closeBundle() {
       const swPath = path.join(outDir, "sw.js");
       const publicSwPath = path.join(here, "public/sw.js");
@@ -224,7 +231,14 @@ function controlUiServiceWorkerBuildIdPlugin(buildId: string): Plugin {
       // dist/ lives outside the vite root, so emptyOutDir skips it and a previous build leaves an
       // already-substituted sw.js behind. Fall back to the pristine public copy in that case.
       const source = built.includes(placeholder) ? built : fs.readFileSync(publicSwPath, "utf8");
-      const updated = source.replace(placeholder, JSON.stringify(buildId));
+      // Uncommitted builds at the same Git revision must not share a shell cache.
+      const cacheBuildId = `${buildId}-${createHash("sha256").update(JSON.stringify(offlineAssets)).update(source).digest("hex").slice(0, 12)}`;
+      const updated = source
+        .replace(placeholder, JSON.stringify(cacheBuildId))
+        .replace(
+          'const PRECACHE_URLS = ["./"];',
+          `const PRECACHE_URLS = ${JSON.stringify(["./", ...offlineAssets])};`,
+        );
       if (updated === source) {
         throw new Error(`Control UI service worker build id placeholder missing in ${swPath}`);
       }
