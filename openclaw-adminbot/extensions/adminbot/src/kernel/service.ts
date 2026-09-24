@@ -489,13 +489,15 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   releaseExecutionClaim(effectKey: string, actionId: string): void;
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
-  listLabMembers(): AdminBotLabMember[];
+  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  listLabMemberSummaries(): AdminBotLabMemberSummary[];
+  countLabMembers(q?: string): number;
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
   getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined;
   listBadgeDefinitions(): AdminBotBadgeDefinition[];
   saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void;
   getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined;
-  listBadgeAssignments(memberId?: string): AdminBotBadgeAssignment[];
+  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[];
   deleteBadgeAssignment(memberId: string, badgeId: string): boolean;
   saveOpportunity(opportunity: AdminBotOpportunity): void;
   getOpportunity(opportunityId: string): AdminBotOpportunity | undefined;
@@ -555,7 +557,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
-  listPapers(): AdminBotPaperRecord[];
+  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[];
+  countPapers(q?: string): number;
   deletePaper(paperId: string): boolean;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
@@ -701,6 +704,13 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
   deleteSlackChannelNamingRecord(channelId: string): boolean;
 };
+
+export type AdminBotListPage = { limit: number; offset: number; q?: string };
+
+export type AdminBotLabMemberSummary = Omit<
+  AdminBotLabMember,
+  "onboarding" | "field_provenance" | "access"
+> & { onboarding?: { steps: Array<{ id: string; status: string }> } };
 
 export type AdminBotLabMemberView = AdminBotLabMember & {
   assigned_badges?: AdminBotAssignedBadge[];
@@ -3081,11 +3091,70 @@ export class AdminBotService {
     };
   }
 
-  listLabMembers(): AdminBotServiceResponse<{ members: AdminBotLabMemberView[] }> {
+  listLabMembers(page?: AdminBotListPage): AdminBotServiceResponse<{
+    members: AdminBotLabMemberView[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+  }> {
+    const members = this.store.listLabMembers(page);
+    const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
+      page ? members.map((member) => member.id) : undefined,
+    );
+    const deadlines = members.some((member) => member.milestones?.length)
+      ? this.deadlineReadModel(DEADLINE_VENUES)
+      : undefined;
     return {
       ok: true,
       status: 200,
-      payload: { members: this.store.listLabMembers().map((member) => this.memberView(member)) },
+      payload: {
+        members: members.map((member) =>
+          this.memberView(
+            member,
+            this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
+            deadlines,
+          ),
+        ),
+        ...(page
+          ? { total: this.store.countLabMembers(page.q), limit: page.limit, offset: page.offset }
+          : {}),
+      },
+    };
+  }
+
+  listLabMemberSummaries(selfId?: string): AdminBotServiceResponse<{
+    members: Array<AdminBotLabMemberSummary & { assigned_badges?: AdminBotAssignedBadge[] }>;
+    self?: AdminBotLabMemberView;
+  }> {
+    // ponytail: This still materializes the whole roster. Replace it with per-tab reads before
+    // relying on this dashboard at 10,000 members or high concurrent traffic.
+    const members = this.store.listLabMemberSummaries();
+    const self = selfId ? this.store.getLabMember(selfId) : undefined;
+    const { badgesById, assignmentsByMember } = this.rosterBadgeViews();
+    const deadlines = members.some((member) => member.milestones?.length)
+      ? this.deadlineReadModel(DEADLINE_VENUES)
+      : undefined;
+    const assigned = (memberId: string) =>
+      this.assignedBadgesFor(memberId, assignmentsByMember.get(memberId) ?? [], badgesById);
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        members: members.map((member) => this.memberView(member, assigned(member.id), deadlines)),
+        ...(self ? { self: this.memberView(self, assigned(self.id), deadlines) } : {}),
+      },
+    };
+  }
+
+  getLabMemberView(memberId: string): AdminBotServiceResponse<{ member: AdminBotLabMemberView }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { member: this.memberView(member, this.assignedBadgesFor(member.id)) },
     };
   }
 
@@ -3778,24 +3847,43 @@ export class AdminBotService {
     };
   }
 
-  private memberView(member: AdminBotLabMember): AdminBotLabMemberView {
+  private rosterBadgeViews(memberIds?: string[]): {
+    badgesById: Map<string, AdminBotBadgeDefinition>;
+    assignmentsByMember: Map<string, AdminBotBadgeAssignment[]>;
+  } {
+    const badgesById = new Map(this.store.listBadgeDefinitions().map((badge) => [badge.id, badge]));
+    const assignmentsByMember = new Map<string, AdminBotBadgeAssignment[]>();
+    for (const assignment of this.store.listBadgeAssignments(memberIds)) {
+      const assigned = assignmentsByMember.get(assignment.member_id) ?? [];
+      assigned.push(assignment);
+      assignmentsByMember.set(assignment.member_id, assigned);
+    }
+    return { badgesById, assignmentsByMember };
+  }
+
+  private memberView<T extends AdminBotLabMember | AdminBotLabMemberSummary>(
+    member: T,
+    assigned: AdminBotAssignedBadge[],
+    deadlines?: unknown[],
+  ): T & { assigned_badges?: AdminBotAssignedBadge[] } {
     if (member.milestones?.length) {
       member = {
         ...member,
         milestones: reconcileDeadlineMilestones(
           member.milestones,
-          this.deadlineReadModel(DEADLINE_VENUES),
+          deadlines ?? this.deadlineReadModel(DEADLINE_VENUES),
         ),
-      };
+      } as T;
     }
-    const assigned = this.assignedBadgesFor(member.id);
     return { ...member, ...(assigned.length ? { assigned_badges: assigned } : {}) };
   }
 
-  private assignedBadgesFor(memberId: string): AdminBotAssignedBadge[] {
-    const badgesById = new Map(this.store.listBadgeDefinitions().map((badge) => [badge.id, badge]));
-    return this.store
-      .listBadgeAssignments(memberId)
+  private assignedBadgesFor(
+    memberId: string,
+    assignments = this.store.listBadgeAssignments(memberId),
+    badgesById = new Map(this.store.listBadgeDefinitions().map((badge) => [badge.id, badge])),
+  ): AdminBotAssignedBadge[] {
+    return assignments
       .flatMap((assignment) => {
         const badge = badgesById.get(assignment.badge_id);
         if (!badge) {
@@ -9022,11 +9110,21 @@ export class AdminBotService {
     });
   }
 
-  listPapers(): AdminBotServiceResponse<{ papers: AdminBotPaperRecord[] }> {
+  listPapers(page?: AdminBotListPage): AdminBotServiceResponse<{
+    papers: AdminBotPaperRecord[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+  }> {
     return {
       ok: true,
       status: 200,
-      payload: { papers: this.store.listPapers().map(withPaperTimeline) },
+      payload: {
+        papers: this.store.listPapers(page).map(withPaperTimeline),
+        ...(page
+          ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
+          : {}),
+      },
     };
   }
 

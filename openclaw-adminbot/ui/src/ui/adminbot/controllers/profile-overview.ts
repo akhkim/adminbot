@@ -53,6 +53,10 @@ function session(host: AdminBotProfileOverviewHost): { token: string; baseUrl: s
     : null;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadAdminBotProfileOverview(
   host: AdminBotProfileOverviewHost,
 ): Promise<void> {
@@ -65,6 +69,9 @@ export async function loadAdminBotProfileOverview(
   host.adminBotProfileOverviewError = null;
   try {
     const result = await fetchMemberProfileOverview(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotProfileOverview = [];
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
@@ -78,13 +85,21 @@ export async function loadAdminBotProfileOverview(
     // waiting for them together. A failure here does not blank the page it rides on -- the columns
     // are the reason someone opened it, so the queue simply stays empty.
     const escalated = await fetchEscalatedNudges(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
     // The same page, the same reader, the same argument: the papers waiting on her yes are a
     // queue on My Desk, and a third spinner for two rows is worse than loading them together.
     const piReview = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     host.adminBotPiReview = piReview.ok ? piReview.value : [];
   } finally {
-    host.adminBotProfileOverviewLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewLoading = false;
+    }
   }
 }
 
@@ -111,6 +126,9 @@ export async function remindAdminBotIncompleteProfiles(
   host.adminBotProfileOverviewNotice = null;
   try {
     const result = await runMandatoryFieldsReminder(wire.token, wire.baseUrl, scope);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
       return;
@@ -121,7 +139,9 @@ export async function remindAdminBotIncompleteProfiles(
     // Re-read so the "last reminded" column reflects what just happened.
     host.adminBotProfileOverviewLoadedAt = null;
   } finally {
-    host.adminBotProfileOverviewReminding = false;
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewReminding = false;
+    }
   }
 }
 
@@ -142,6 +162,9 @@ export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): 
   host.adminBotProfileOverviewNotice = null;
   try {
     const result = await seedNudgeList(wire.token, wire.baseUrl, false);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
       return;
@@ -155,6 +178,8 @@ export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): 
         : t("profileOverview.nudgeList.seededNone");
     host.adminBotProfileOverviewLoadedAt = null;
   } finally {
-    host.adminBotProfileOverviewReminding = false;
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewReminding = false;
+    }
   }
 }

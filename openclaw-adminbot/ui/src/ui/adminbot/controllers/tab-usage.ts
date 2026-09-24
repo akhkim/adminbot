@@ -44,6 +44,10 @@ function session(host: AdminBotTabUsageHost): { token: string; baseUrl: string }
     : null;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadAdminBotTabUsage(host: AdminBotTabUsageHost): Promise<void> {
   const wire = session(host);
   if (!wire) {
@@ -54,6 +58,9 @@ export async function loadAdminBotTabUsage(host: AdminBotTabUsageHost): Promise<
   host.adminBotTabUsageError = null;
   try {
     const result = await fetchTabVisitReport(wire.token, wire.baseUrl, host.adminBotTabUsageDays);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       // The old window is left on screen rather than blanked: an unreachable service should not
       // also erase the numbers somebody was reading.
@@ -62,7 +69,9 @@ export async function loadAdminBotTabUsage(host: AdminBotTabUsageHost): Promise<
     }
     host.adminBotTabUsage = result.value;
   } finally {
-    host.adminBotTabUsageLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotTabUsageLoading = false;
+    }
   }
 }
 
@@ -84,6 +93,9 @@ export async function exportAdminBotTabUsage(host: AdminBotTabUsageHost): Promis
   host.adminBotTabUsageError = null;
   try {
     const result = await fetchTabVisitRows(wire.token, wire.baseUrl, host.adminBotTabUsageDays);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotTabUsageError = failureText(result, wire.baseUrl);
       return;
@@ -93,7 +105,9 @@ export async function exportAdminBotTabUsage(host: AdminBotTabUsageHost): Promis
       tabVisitsCsv(result.value),
     );
   } finally {
-    host.adminBotTabUsageExporting = false;
+    if (sameSession(wire.token)) {
+      host.adminBotTabUsageExporting = false;
+    }
   }
 }
 

@@ -73,6 +73,7 @@ import {
   AdminBotMemoryStore,
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotListPage,
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
   type AdminBotServiceStore,
@@ -3325,6 +3326,29 @@ async function handleAuthenticatedRoute(
     await handleLabSharingRoute(req, res, url, service, principal.member.id);
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab/members/self") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    const result = service.getLabMemberView(principal.member.id);
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              member: redactConfidentialMemberFields(result.payload.member, {
+                memberId: principal.member.id,
+                isAdmin: principal.member.privilege_level === "admin",
+                isMemberSession: true,
+              }),
+            },
+          }
+        : result,
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab/members") {
     // The roster is lab-internal but not confidential, with two exceptions. What a member discloses
     // about their health or family is written for one reader, and this response goes to all of
@@ -3337,13 +3361,50 @@ async function handleAuthenticatedRoute(
       isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
       isMemberSession: principal.kind === "member",
     };
-    const result = service.listLabMembers();
+    const view = url.searchParams.get("view");
+    if (view !== null && view !== "summary") {
+      sendJson(res, 400, { error: { message: "invalid member view" } });
+      return;
+    }
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    if (view === "summary") {
+      if (page) {
+        sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
+        return;
+      }
+      const result = service.listLabMemberSummaries(
+        principal.kind === "member" ? principal.member.id : undefined,
+      );
+      sendServiceResult(
+        res,
+        result.ok
+          ? {
+              ...result,
+              payload: {
+                members: result.payload.members.map((member) =>
+                  redactConfidentialMemberFields(member, viewer),
+                ),
+                ...(result.payload.self
+                  ? { self: redactConfidentialMemberFields(result.payload.self, viewer) }
+                  : {}),
+              },
+            }
+          : result,
+      );
+      return;
+    }
+    const result = service.listLabMembers(page);
     sendServiceResult(
       res,
       result.ok
         ? {
             ...result,
             payload: {
+              ...result.payload,
               members: result.payload.members.map((member) =>
                 redactConfidentialMemberFields(member, viewer),
               ),
@@ -4063,7 +4124,12 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers") {
-    sendServiceResult(res, service.listPapers());
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    sendServiceResult(res, service.listPapers(page));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/slot-overview") {
@@ -5631,6 +5697,25 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
   }
   const level = principal.member.privilege_level;
   return level === "admin";
+}
+
+function readListPage(url: URL): AdminBotListPage | "invalid" | undefined {
+  const params = url.searchParams;
+  if (!["limit", "offset", "q"].some((key) => params.has(key))) {
+    return undefined;
+  }
+  const rawLimit = params.get("limit") ?? "50";
+  const rawOffset = params.get("offset") ?? "0";
+  const q = (params.get("q") ?? "").trim();
+  if (!/^[1-9]\d*$/u.test(rawLimit) || !/^\d+$/u.test(rawOffset) || q.length > 120) {
+    return "invalid";
+  }
+  const limit = Number(rawLimit);
+  const offset = Number(rawOffset);
+  if (!Number.isSafeInteger(limit) || limit > 100 || !Number.isSafeInteger(offset)) {
+    return "invalid";
+  }
+  return { limit, offset, ...(q ? { q } : {}) };
 }
 
 /** `?limit=` for the edit-history reads, or nothing and let the service pick its default. */

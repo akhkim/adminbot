@@ -12,6 +12,8 @@
 import { html, LitElement } from "lit";
 import { icons } from "../../icons.ts";
 
+const MAX_VISIBLE_OPTIONS = 50;
+
 export type MemberOption = {
   id: string;
   name: string;
@@ -34,9 +36,7 @@ function matches(option: MemberOption, query: string): boolean {
   if (!needle) {
     return true;
   }
-  return (
-    normalize(option.name).includes(needle) || normalize(option.hint ?? "").includes(needle)
-  );
+  return normalize(option.name).includes(needle) || normalize(option.hint ?? "").includes(needle);
 }
 
 class AdminbotMemberSelect extends LitElement {
@@ -47,6 +47,7 @@ class AdminbotMemberSelect extends LitElement {
     label: { type: String },
     disabled: { type: Boolean },
     onPick: { attribute: false },
+    onOpen: { attribute: false },
     open: { state: true },
     query: { state: true },
     active: { state: true },
@@ -59,6 +60,7 @@ class AdminbotMemberSelect extends LitElement {
   declare label: string;
   declare disabled: boolean;
   declare onPick: (memberId: string) => void;
+  declare onOpen: () => void;
   declare open: boolean;
   declare query: string;
   declare active: number;
@@ -71,6 +73,7 @@ class AdminbotMemberSelect extends LitElement {
     this.label = "";
     this.disabled = false;
     this.onPick = () => {};
+    this.onOpen = () => {};
     this.open = false;
     this.query = "";
     this.active = 0;
@@ -108,7 +111,7 @@ class AdminbotMemberSelect extends LitElement {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
-    const options = this.filtered;
+    const options = this.filtered.slice(0, MAX_VISIBLE_OPTIONS);
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       this.open = true;
@@ -131,8 +134,10 @@ class AdminbotMemberSelect extends LitElement {
   }
 
   protected override render() {
-    const options = this.filtered;
+    const matches = this.filtered;
+    const options = matches.slice(0, MAX_VISIBLE_OPTIONS);
     const listId = "time-availability-member-list";
+    const hintId = "time-availability-member-hint";
     return html`
       <div class="country-select">
         <input
@@ -142,6 +147,7 @@ class AdminbotMemberSelect extends LitElement {
           role="combobox"
           aria-expanded=${this.open ? "true" : "false"}
           aria-controls=${listId}
+          aria-describedby=${matches.length > MAX_VISIBLE_OPTIONS ? hintId : ""}
           aria-autocomplete="list"
           aria-label=${this.label}
           data-testid="time-availability-member-search"
@@ -152,6 +158,7 @@ class AdminbotMemberSelect extends LitElement {
             this.open = true;
             this.query = "";
             this.active = 0;
+            this.onOpen();
           }}
           @input=${(event: Event) => {
             this.query = (event.target as HTMLInputElement).value;
@@ -197,6 +204,11 @@ class AdminbotMemberSelect extends LitElement {
               </ul>
             `
           : null}
+        ${this.open && matches.length > MAX_VISIBLE_OPTIONS
+          ? html`<div id=${hintId} class="member-select__hint" role="status">
+              Showing the first ${MAX_VISIBLE_OPTIONS} matches. Type to narrow the list.
+            </div>`
+          : null}
       </div>
     `;
   }
@@ -213,6 +225,7 @@ export function renderMemberSelect(params: {
   label: string;
   disabled: boolean;
   onPick: (memberId: string) => void;
+  onOpen?: () => void;
 }) {
   return html`
     <adminbot-member-select
@@ -222,6 +235,7 @@ export function renderMemberSelect(params: {
       .label=${params.label}
       .disabled=${params.disabled}
       .onPick=${params.onPick}
+      .onOpen=${params.onOpen ?? (() => {})}
     ></adminbot-member-select>
   `;
 }

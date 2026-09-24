@@ -7,7 +7,12 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
-import { blankFields, renderProfile, type ProfileProps } from "./profile.ts";
+import {
+  blankFields,
+  renderProfile,
+  resetProfileSessionState,
+  type ProfileProps,
+} from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {
@@ -80,7 +85,22 @@ describe("renderProfile autosave", () => {
   });
 
   afterEach(() => {
+    resetProfileSessionState();
     vi.useRealTimers();
+  });
+
+  it("cancels a pending profile save when the signed-in member changes", () => {
+    const member = createMember();
+    const onSave = vi.fn();
+    const container = renderPage(createState(member), onSave);
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat's private draft";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+
+    resetProfileSessionState();
+    vi.advanceTimersByTime(1_000);
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
@@ -975,7 +995,9 @@ describe("renderProfile field types", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("text");
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe(
+      "text",
+    );
     // Weekly capacity is the denominator the Time Availability chart reads every commitment
     // against, so the page has to ask for it. Bounded to the range the service accepts, so an
     // impossible week is refused by the control rather than by a rejected save.
@@ -1461,7 +1483,8 @@ it("saves the missing-form checkbox and clears it when a link is supplied", () =
   const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
-  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value =
+    "https://docs.google.com/forms/d/e/test/viewform";
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
 });

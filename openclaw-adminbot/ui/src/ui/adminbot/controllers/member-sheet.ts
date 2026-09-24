@@ -47,6 +47,10 @@ export function memberSheetCellKey(sheetRow: number, column: number): string {
   return `${sheetRow}:${column}`;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadMemberSheet(host: AdminBotMemberSheetHost): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
@@ -60,6 +64,9 @@ export async function loadMemberSheet(host: AdminBotMemberSheetHost): Promise<vo
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.memberSheetError = describeMemberSheetFailure(result);
       return;
@@ -71,7 +78,9 @@ export async function loadMemberSheet(host: AdminBotMemberSheetHost): Promise<vo
     host.memberSheetBaseline = {};
     host.memberSheetSaveResult = null;
   } finally {
-    host.memberSheetBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.memberSheetBusy = false;
+    }
   }
 }
 
@@ -123,6 +132,9 @@ export async function saveMemberSheetEdits(host: AdminBotMemberSheetHost): Promi
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.memberSheetError = describeMemberSheetFailure(result);
       return;
@@ -144,7 +156,9 @@ export async function saveMemberSheetEdits(host: AdminBotMemberSheetHost): Promi
       );
     }
   } finally {
-    host.memberSheetBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.memberSheetBusy = false;
+    }
   }
 }
 
@@ -175,13 +189,18 @@ export async function previewOnboardSelectedRows(host: AdminBotMemberSheetHost):
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.memberSheetError = describeMemberSheetFailure(result);
       return;
     }
     host.memberSheetOnboardPreview = result.value;
   } finally {
-    host.memberSheetBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.memberSheetBusy = false;
+    }
   }
 }
 
@@ -204,6 +223,9 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.memberSheetError = describeMemberSheetFailure(result);
       return;
@@ -216,7 +238,9 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
     const created = new Set(result.value.created.map((entry) => entry.sheet_row));
     host.memberSheetSelection = rows.filter((row) => !created.has(row));
   } finally {
-    host.memberSheetBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.memberSheetBusy = false;
+    }
   }
 }
 
@@ -246,14 +270,22 @@ export async function addMemberSheetRow(
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return false;
+    }
   } finally {
-    host.memberSheetBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.memberSheetBusy = false;
+    }
   }
   if (!result.ok) {
     host.memberSheetError = describeMemberSheetFailure(result);
     return false;
   }
   await loadMemberSheet(host);
+  if (!sameSession(stored.sessionToken)) {
+    return false;
+  }
   host.memberSheetAddRowResult = result.value;
   return true;
 }

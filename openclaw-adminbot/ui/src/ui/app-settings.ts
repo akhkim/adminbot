@@ -461,6 +461,9 @@ function loadConfigSchemaAfterPrimary(
 
 export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
   const app = host as unknown as SettingsAppHost;
+  // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
+  const loadAdminBotOnce = () =>
+    app.adminBotData?.loadedAt || app.adminBotLoading ? Promise.resolve() : loadAdminBot(app);
   const refreshRun = beginControlUiRefresh(host, host.tab);
   try {
     switch (host.tab) {
@@ -485,21 +488,19 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
-      // From `luke/time-allocation`: the tab reads the roster, so refreshing on it has to reload
-      // the roster. Without a case here the refresh control was inert on that surface.
       case "adminbotTimeAvailability":
-        await loadAdminBot(app);
+        await loadAdminBotOnce();
         break;
       // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
       // only exist once the member list has loaded.
       case "adminbotConferencePapers":
-        await loadAdminBot(app);
+        await loadAdminBotOnce();
         await loadAdminBotVenueSources(app);
         break;
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
         const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
-        await Promise.all([loadAdminBot(app), loadEvents?.() ?? Promise.resolve()]);
+        await Promise.all([loadAdminBotOnce(), loadEvents?.call(app) ?? Promise.resolve()]);
         break;
       }
       case "adminbotRegistrations":

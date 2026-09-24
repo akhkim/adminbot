@@ -7,7 +7,10 @@ import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
+import {
+  findDuplicateMembers,
+  type MemberDuplicatePair,
+} from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
@@ -185,6 +188,21 @@ export type AdminBotProps = {
   loading: boolean;
   error: string | null;
   data: AdminBotDashboardData;
+  /** Search and page over the full roster; absent for callers with a complete local roster. */
+  memberList?: {
+    rows: AdminBotLabMember[];
+    total: number;
+    limit: number;
+    offset: number;
+    query: string;
+    loading: boolean;
+    error: string | null;
+  };
+  onMemberListChange?: (query: string, offset: number) => void;
+  rosterLoadedAt?: number | null;
+  rosterLoading?: boolean;
+  rosterError?: string | null;
+  onLoadFullRoster?: () => void;
   busyActionId: string | null;
   notice: { kind: "success" | "error"; text: string } | null;
   onRefresh: () => void;
@@ -339,12 +357,6 @@ function paperConference(paper: AdminBotPaperRecord): string {
   return conference?.trim() || "Unspecified";
 }
 
-function paperTopic(paper: AdminBotPaperRecord): string {
-  const artifacts = paper.artifacts ?? {};
-  const topic = artifacts.topic ?? artifacts.research_topic ?? noteField(paper.notes, "Topic");
-  return topic?.trim() || "Unspecified";
-}
-
 function renderMetric(label: string, value: string | number, detail?: string) {
   return html`
     <div class="adminbot-metric">
@@ -461,7 +473,7 @@ function openMemberEditor(memberId: string, props: AdminBotProps): void {
 // Debounced autosave for the edit-member popover: every change lands on the record without the
 // Save button. Keyed per form so two open popovers never flush each other, and deliberately not
 // wired to the add-member form — autosaving there would create a member from a half-typed id.
-const memberAutosaveTimers = new WeakMap<HTMLFormElement, ReturnType<typeof setTimeout>>();
+const memberAutosaveTimers = new Map<HTMLFormElement, ReturnType<typeof setTimeout>>();
 
 function queueMemberAutosave(event: Event, props: AdminBotProps): void {
   const form = event.currentTarget;
@@ -999,48 +1011,21 @@ function conferencesForMember(member: AdminBotLabMember, papers: AdminBotPaperRe
   );
 }
 
-// Mirrors the service's ownership rule (upsertOwnPaper) so the UI only offers an edit form the
-// server will accept: the member filed the paper, or is named in its authors -- by id or email
-// outright, by bare name only when that name is unambiguous on the roster.
-function memberOwnsPaper(
-  paper: AdminBotPaperRecord,
-  member: AdminBotLabMember | undefined,
-  members: AdminBotLabMember[],
-): boolean {
-  if (!member) {
-    return false;
-  }
-  if (paper.submitted_by_member_id === member.id) {
-    return true;
-  }
-  const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
-  if (
-    [member.id, member.email]
-      .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
-      .some((value) => authors.includes(value))
-  ) {
-    return true;
-  }
-  const name = member.name.trim().toLocaleLowerCase();
-  if (!name || !authors.includes(name)) {
-    return false;
-  }
-  return members.filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length === 1;
-}
-
 function signedInMember(props: AdminBotProps): AdminBotLabMember | undefined {
   return props.signedInMemberId
     ? props.data.members.find((member) => member.id === props.signedInMemberId)
     : undefined;
 }
 
-function filterMemberSpreadsheet(event: Event): void {
+function filterMemberSpreadsheet(event: Event, paged: boolean): void {
   const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) return;
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
   const sheet = form.closest<HTMLElement>(".adminbot-member-sheet");
   if (!sheet) return;
   const data = new FormData(form);
-  const search = getFormValue(data, "search").toLocaleLowerCase();
+  const search = paged ? "" : getFormValue(data, "search").toLocaleLowerCase();
   const status = getFormValue(data, "status");
   const project = getFormValue(data, "project");
   const paper = getFormValue(data, "paper");
@@ -1057,7 +1042,19 @@ function filterMemberSpreadsheet(event: Event): void {
     if (matches) visible += 1;
   }
   const count = sheet.querySelector<HTMLElement>("[data-member-result-count]");
-  if (count) count.textContent = `${visible} ${visible === 1 ? "person" : "people"}`;
+  if (count) {
+    count.textContent = paged
+      ? `${visible} on this page`
+      : `${visible} ${visible === 1 ? "person" : "people"}`;
+  }
+}
+
+function resetMemberPageFacets(target: EventTarget | null): void {
+  if (!(target instanceof Element)) return;
+  const form = target.closest(".adminbot-member-sheet")?.querySelector(".adminbot-member-filters");
+  for (const select of form?.querySelectorAll<HTMLSelectElement>("select") ?? []) {
+    select.value = "";
+  }
 }
 
 /**
@@ -1479,7 +1476,7 @@ function renderDeleteMember(member: AdminBotLabMember, props: AdminBotProps) {
 // non-admin path cannot even express a governance change.
 function renderMemberSelfEditPopover(
   member: AdminBotLabMember,
-  index: number,
+  index: number | "own",
   props: AdminBotProps,
 ) {
   const editId = `adminbot-self-edit-member-${index}`;
@@ -1566,8 +1563,16 @@ function sortSignedInMemberFirst(
 }
 
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
+  const page = props.memberList;
   const papers = props.data.papers;
   const members = sortSignedInMemberFirst(allMembers, props.signedInMemberId);
+  const ownMember = signedInMember(props);
+  const ownMemberOutsidePage =
+    props.mode === "general" &&
+    page !== undefined &&
+    ownMember !== undefined &&
+    !members.some((member) => member.id === ownMember.id);
+  const total = page?.total ?? members.length;
   const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
@@ -1583,18 +1588,52 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
         <div>
           <strong>People database</strong>
           <span>Research, staffing, and publication context</span>
+          ${ownMemberOutsidePage && ownMember
+            ? html`<button
+                class="btn btn--sm adminbot-member-sheet__edit"
+                type="button"
+                popovertarget="adminbot-self-edit-member-own"
+                @click=${() => openMemberEditor(ownMember.id, props)}
+              >
+                Edit my profile
+              </button>`
+            : nothing}
         </div>
-        <span class="pill" data-member-result-count>${members.length} people</span>
+        <span
+          class="pill"
+          data-member-result-count
+          .textContent=${`${total} ${total === 1 ? "person" : "people"}`}
+        ></span>
       </div>
       <form
         class="adminbot-member-filters"
-        @input=${filterMemberSpreadsheet}
-        @change=${filterMemberSpreadsheet}
+        @input=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
+        @change=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          if (page) {
+            const form = event.currentTarget as HTMLFormElement;
+            resetMemberPageFacets(form);
+            props.onMemberListChange?.(getFormValue(new FormData(form), "search").trim(), 0);
+          }
+        }}
       >
-        <label
-          ><span>Search</span
-          ><input name="search" type="search" placeholder="Name, topic, project…"
-        /></label>
+        <div class="adminbot-member-filters__search">
+          <label
+            ><span>Search</span
+            ><input
+              name="search"
+              type="search"
+              placeholder="Name, topic, project…"
+              .value=${page?.query ?? ""}
+              ?disabled=${page?.loading ?? false}
+          /></label>
+          ${page
+            ? html`<button class="btn btn--sm" type="submit" ?disabled=${page.loading}>
+                Search
+              </button>`
+            : nothing}
+        </div>
         <label
           ><span>Status</span
           ><select name="status">
@@ -1624,6 +1663,12 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </select></label
         >
       </form>
+      ${page
+        ? html`<p class="muted">
+            Status, project, paper, and conference filters apply to this page and reset when you
+            change pages.
+          </p>`
+        : nothing}
       <div class="adminbot-member-sheet__scroll" @mousedown=${startSheetPan}>
         <table>
           <thead>
@@ -1817,10 +1862,57 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             })}
           </tbody>
         </table>
-        ${members.length === 0
-          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
+        ${members.length === 0 && !page?.loading && !page?.error
+          ? html`<div class="adminbot-empty adminbot-empty--compact">
+              ${page?.query ? "No matching lab members." : "No lab members yet."}
+            </div>`
           : nothing}
       </div>
+      ${page
+        ? html`<nav class="adminbot-form__actions" aria-label="Member pages">
+              <span role="status" aria-live="polite">
+                ${page.loading
+                  ? "Loading people…"
+                  : members.length === 0
+                    ? `Showing 0 of ${page.total}`
+                    : `Showing ${page.offset + 1}–${Math.min(page.offset + members.length, page.total)} of ${page.total}`}
+              </span>
+              <button
+                class="btn btn--sm"
+                type="button"
+                ?disabled=${page.loading || page.offset === 0}
+                @click=${(event: Event) => {
+                  resetMemberPageFacets(event.currentTarget);
+                  props.onMemberListChange?.(page.query, Math.max(0, page.offset - page.limit));
+                }}
+              >
+                Previous
+              </button>
+              <button
+                class="btn btn--sm"
+                type="button"
+                ?disabled=${page.loading || page.offset + page.limit >= page.total}
+                @click=${(event: Event) => {
+                  resetMemberPageFacets(event.currentTarget);
+                  props.onMemberListChange?.(page.query, page.offset + page.limit);
+                }}
+              >
+                Next
+              </button>
+            </nav>
+            ${page.error
+              ? html`<div class="callout danger" role="alert">
+                  ${page.error}
+                  <button
+                    class="btn btn--sm"
+                    type="button"
+                    @click=${() => props.onMemberListChange?.(page.query, page.offset)}
+                  >
+                    Try again
+                  </button>
+                </div>`
+              : nothing}`
+        : nothing}
       ${members.map((member, index) => {
         const rowEdit = memberRowEdit(member, props);
         if (rowEdit === "admin") {
@@ -1828,6 +1920,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
         }
         return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
       })}
+      ${ownMemberOutsidePage && ownMember
+        ? renderMemberSelfEditPopover(ownMember, "own", props)
+        : nothing}
       ${props.mode === "admin" && props.onLoadRecentEdits
         ? members.map((member, index) => renderMemberEditsPopover(member, index, props))
         : nothing}
@@ -1842,6 +1937,11 @@ const DUPLICATE_REASONS: Record<string, string> = {
   same_name: "same name",
   name_contains: "one name is the other plus a middle name",
 };
+const DUPLICATE_PAGE_SIZE = 20;
+const duplicateViews = new WeakMap<
+  readonly AdminBotLabMember[],
+  { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number }
+>();
 
 /** The fields this record has that the other one does not -- the half it would contribute. */
 function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMember): string[] {
@@ -1934,10 +2034,19 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
   if (props.mode !== "admin" || !props.onMergeMembers) {
     return nothing;
   }
-  const pairs = findDuplicateMembers(members);
+  const cached = duplicateViews.get(members);
+  const view = cached ?? { pairs: findDuplicateMembers(members), page: 0 };
+  if (!cached) {
+    duplicateViews.set(members, view);
+  }
+  const { pairs } = view;
   if (pairs.length === 0) {
     return nothing;
   }
+  const pageCount = Math.ceil(pairs.length / DUPLICATE_PAGE_SIZE);
+  view.page = Math.min(view.page, pageCount - 1);
+  const start = view.page * DUPLICATE_PAGE_SIZE;
+  const shown = pairs.slice(start, start + DUPLICATE_PAGE_SIZE);
   const merge = (survivor: AdminBotLabMember, duplicate: AdminBotLabMember) => {
     if (
       !globalThis.confirm(
@@ -1979,8 +2088,53 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
         recorded twice. Choose which record survives — it keeps its own answers and gains everything
         only the other one knows.
       </div>
+      ${pageCount > 1
+        ? html`<nav class="adminbot-form__actions" aria-label="Duplicate pair pages">
+            <span>Showing ${start + 1}–${start + shown.length} of ${pairs.length} pairs</span>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${view.page === 0}
+              @click=${() => {
+                view.page -= 1;
+                props.onRerender?.();
+              }}
+            >
+              Previous
+            </button>
+            <label>
+              Page
+              <input
+                class="input"
+                type="number"
+                min="1"
+                max=${pageCount}
+                .value=${String(view.page + 1)}
+                @change=${(event: Event) => {
+                  const requested = Number((event.currentTarget as HTMLInputElement).value);
+                  if (Number.isInteger(requested)) {
+                    view.page = Math.max(0, Math.min(requested - 1, pageCount - 1));
+                    props.onRerender?.();
+                  }
+                }}
+              />
+              of ${pageCount}
+            </label>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${view.page + 1 >= pageCount}
+              @click=${() => {
+                view.page += 1;
+                props.onRerender?.();
+              }}
+            >
+              Next
+            </button>
+          </nav>`
+        : nothing}
       <ul class="adminbot-duplicates__list">
-        ${pairs.map(
+        ${shown.map(
           (pair) => html`
             <li class="adminbot-duplicate">
               <span class="adminbot-duplicate__why">
@@ -2001,16 +2155,39 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
 }
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  const spreadsheet = renderMemberSpreadsheet(props, members);
+  const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
   // The spreadsheet is the single roster view for every mode: admins edit any row, members
   // edit their own row inline, everyone else reads. Only the Add-member popover is admin-only.
   if (props.mode === "general") {
     return spreadsheet;
   }
-  return html`${renderDuplicateMembers(props, members)}${renderMembersWithoutEmail(
-      props,
-      members,
-    )}${spreadsheet}
+  const fullRosterChecks =
+    props.memberList && !props.rosterLoadedAt
+      ? html`<section class="adminbot-panel" data-testid="member-roster-checks-on-demand">
+          <div class="card-title">Roster-wide checks</div>
+          <p class="card-sub">
+            Check for possible duplicate records and members without an email when you need to
+            review them. Loading these checks reads the full lab roster.
+          </p>
+          ${props.rosterError ? html`<p role="alert">${props.rosterError}</p>` : nothing}
+          <button
+            class="btn btn--sm"
+            type="button"
+            ?disabled=${props.rosterLoading}
+            @click=${() => props.onLoadFullRoster?.()}
+          >
+            ${props.rosterLoading ? "Loading roster checks…" : "Load roster checks"}
+          </button>
+        </section>`
+      : html`${props.memberList && props.rosterLoadedAt
+          ? html`<p class="card-sub" role="status">
+              Roster-wide checks completed for ${members.length} members. Findings appear below.
+            </p>`
+          : nothing}${renderDuplicateMembers(props, members)}${renderMembersWithoutEmail(
+          props,
+          members,
+        )}`;
+  return html`${spreadsheet}${fullRosterChecks}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button
@@ -2046,93 +2223,6 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
         </form>
       </article>
     </div> `;
-}
-
-/**
- * Editable fields for one paper. Shared by the row popover and kept separate from the record so a
- * member-scoped caller can compose the same inputs without the governance ones.
- */
-function renderPaperFormFields(paper: AdminBotPaperRecord) {
-  return html`
-    <div class="form-grid adminbot-form__grid">
-      <label class="adminbot-form__field"
-        ><span>Paper id</span><input name="id" .value=${paper.id} readonly
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Title</span><input name="title" .value=${paper.title} required
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Conference</span
-        ><input
-          name="conference"
-          .value=${paperConference(paper) === "Unspecified" ? "" : paperConference(paper)}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Topic</span
-        ><input name="topic" .value=${paperTopic(paper) === "Unspecified" ? "" : paperTopic(paper)}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Authors</span><input name="authors" .value=${paper.authors.join(", ")} required
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Current step</span
-        ><select name="currentStep">
-          ${paperSteps.map(
-            (step) =>
-              html`<option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabels[step] ?? friendly(step)}
-              </option>`,
-          )}
-        </select></label
-      >
-      <label class="adminbot-form__field"
-        ><span>Overleaf edit URL</span
-        ><input
-          name="overleafEditUrl"
-          type="url"
-          .value=${paper.artifacts?.overleaf_edit_url ?? ""}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Google Drive PDF</span
-        ><input
-          name="googleDrivePdfUrl"
-          type="url"
-          .value=${paper.artifacts?.google_drive_pdf_url ?? ""}
-      /></label>
-    </div>
-  `;
-}
-
-/**
- * Edit surface for one paper, anchored to its own row in the timeline. This mirrors how a lab
- * member is edited from their row rather than from a second list underneath, so the timeline is
- * the single place a paper is both read and changed.
- */
-function renderPaperEditPopover(paper: AdminBotPaperRecord, index: number, props: AdminBotProps) {
-  const editId = `adminbot-edit-paper-${index}`;
-  return html`
-    <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
-      <button
-        class="btn btn--sm adminbot-popover__close"
-        type="button"
-        popovertarget=${editId}
-        popovertargetaction="hide"
-      >
-        Close
-      </button>
-      <div class="card-title">Edit paper</div>
-      <div class="card-sub">
-        ${paper.title} · ${paper.authors.join(", ") || "No authors"} ·
-        ${formatTime(paper.updated_at)}
-      </div>
-      <form class="adminbot-form" @submit=${(event: Event) => submitPaperForm(event, props)}>
-        ${renderPaperFormFields(paper)}
-        <div class="adminbot-form__actions">
-          <button class="btn btn--sm primary" type="submit">Save paper</button>
-        </div>
-      </form>
-    </article>
-  `;
 }
 
 function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean }) {
@@ -2212,6 +2302,15 @@ function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean
 
 /** Open sheet, or null for the table. Module-level like my-work's, and reset by onExit. */
 let paperGridState: PaperGridState | null = null;
+
+export function resetAdminViewSessionState(): void {
+  for (const timer of memberAutosaveTimers.values()) {
+    clearTimeout(timer);
+  }
+  memberAutosaveTimers.clear();
+  openedMemberEditors.clear();
+  paperGridState = null;
+}
 
 /**
  * Active Papers.
@@ -2310,19 +2409,11 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
           </button>`
         : nothing,
   });
-  const editPopovers = papers.map((paper, index) =>
-    props.mode !== "general" || memberOwnsPaper(paper, signedInMember(props), props.data.members)
-      ? renderPaperEditPopover(paper, index, props)
-      : nothing,
-  );
   if (props.mode === "general") {
-    // Members file their own submissions here. The popover carries no reminder-status field: that
-    // is paper-flow governance the service rejects from a member write.
-    return html`${table} ${editPopovers}
-    ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
+    return html`${table} ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${board(`Active papers (${papers.length})`, table, { open: true })} ${editPopovers}
+    ${board(`Active papers (${papers.length})`, table, { open: true })}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
@@ -3186,44 +3277,59 @@ function announceChannelHasContact(
   return channel === "slack" ? Boolean(member.slack_user_id) : Boolean(member.email);
 }
 
-function filterAnnouncementRecipients(event: Event): void {
-  const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) return;
-  const sheet = form.closest<HTMLElement>(".adminbot-nudge-recipients");
-  if (!sheet) return;
-  const data = new FormData(form);
-  const search = getFormValue(data, "search").toLocaleLowerCase();
-  const status = getFormValue(data, "status");
-  const branch = getFormValue(data, "branch");
-  const privilege = getFormValue(data, "privilege");
-  const project = getFormValue(data, "project");
-  const conference = getFormValue(data, "conference");
-  let visible = 0;
-  for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
-    const matches =
-      (!search || (row.dataset.search ?? "").includes(search)) &&
-      (!status || row.dataset.status === status) &&
-      (!branch || row.dataset.branch === branch) &&
-      (!privilege || row.dataset.privilege === privilege) &&
-      (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
-      (!conference || (row.dataset.conferences ?? "").split("|").includes(conference));
-    row.hidden = !matches;
-    if (matches) visible += 1;
+const RECIPIENT_PAGE_SIZE = 50;
+type RecipientFilters = {
+  search: string;
+  status: string;
+  branch: string;
+  privilege: string;
+  project: string;
+  conference: string;
+};
+type RecipientView = { filters: RecipientFilters; page: number };
+const recipientViews = new WeakMap<AdminBotDashboardData, RecipientView>();
+
+function recipientView(data: AdminBotDashboardData): RecipientView {
+  let view = recipientViews.get(data);
+  if (!view) {
+    view = {
+      filters: { search: "", status: "", branch: "", privilege: "", project: "", conference: "" },
+      page: 0,
+    };
+    recipientViews.set(data, view);
   }
-  const count = sheet.querySelector<HTMLElement>("[data-recipient-result-count]");
-  if (count) count.textContent = `${visible} ${visible === 1 ? "person" : "people"} visible`;
+  return view;
 }
 
-// Adds every currently-visible (unhidden by the filter form) row to the existing selection,
-// rather than replacing it, so switching filters to build up a recipient list across several
-// passes ("NLP members" then separately "trial members") doesn't drop earlier picks.
+function filterAnnouncementRecipients(event: Event, props: AdminBotProps): void {
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement)) return;
+  const data = new FormData(form);
+  const view = recipientView(props.data);
+  view.filters = {
+    search: getFormValue(data, "search").toLocaleLowerCase(),
+    status: getFormValue(data, "status"),
+    branch: getFormValue(data, "branch"),
+    privilege: getFormValue(data, "privilege"),
+    project: getFormValue(data, "project"),
+    conference: getFormValue(data, "conference"),
+  };
+  view.page = 0;
+  props.onRerender?.();
+}
+
+// Adds the current page's selectable rows to the existing selection. Earlier pages stay picked.
 function selectAllVisibleRecipients(event: Event, props: AdminBotProps): void {
   const button = event.currentTarget;
-  if (!(button instanceof HTMLElement)) return;
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
   const sheet = button.closest<HTMLElement>(".adminbot-nudge-recipients");
-  if (!sheet) return;
+  if (!sheet) {
+    return;
+  }
   const visibleIds = [...sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")]
-    .filter((row) => !row.hidden)
+    .filter((row) => !row.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled)
     .map((row) => row.dataset.memberId)
     .filter((id): id is string => Boolean(id));
   props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...visibleIds])]);
@@ -3257,6 +3363,48 @@ function selectOnboardingLaggards(
   props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...laggards])]);
 }
 
+function matchesRecipient(
+  member: AdminBotLabMember,
+  papers: AdminBotPaperRecord[],
+  filters: RecipientFilters,
+): boolean {
+  if (filters.status && (member.status ?? "active") !== filters.status) {
+    return false;
+  }
+  if (filters.branch && member.research_branch !== filters.branch) {
+    return false;
+  }
+  if (filters.privilege && member.privilege_level !== filters.privilege) {
+    return false;
+  }
+  if (filters.project && !member.projects?.includes(filters.project)) {
+    return false;
+  }
+  if (!filters.search && !filters.conference) {
+    return true;
+  }
+  const conferences = ongoingConferencesForMember(member, papers);
+  if (filters.conference && !conferences.includes(filters.conference)) {
+    return false;
+  }
+  return (
+    !filters.search ||
+    [
+      member.name,
+      member.email,
+      member.slack_user_id,
+      member.research_branch,
+      ...(member.research_topics ?? []),
+      ...(member.projects ?? []),
+      ...conferences,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(filters.search)
+  );
+}
+
 function renderAnnouncementRecipients(
   props: AdminBotProps,
   members: AdminBotLabMember[],
@@ -3264,20 +3412,28 @@ function renderAnnouncementRecipients(
 ) {
   const channel = props.memberNudge.channel;
   const selected = new Set(props.memberNudge.selectedMemberIds);
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const view = recipientView(props.data);
+  const filtered = members.filter((member) => matchesRecipient(member, papers, view.filters));
+  view.page = Math.min(
+    view.page,
+    Math.max(0, Math.ceil(filtered.length / RECIPIENT_PAGE_SIZE) - 1),
+  );
+  const offset = view.page * RECIPIENT_PAGE_SIZE;
+  const pageMembers = filtered.slice(offset, offset + RECIPIENT_PAGE_SIZE);
+  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].toSorted();
   const branches = [
     ...new Set(
       members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
     ),
-  ].sort();
-  const privileges = [...new Set(members.map((member) => member.privilege_level))].sort();
-  const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
+  ].toSorted();
+  const privileges = [...new Set(members.map((member) => member.privilege_level))].toSorted();
+  const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].toSorted();
   // Only venues someone on the roster still has live work for: announcing about a conference
   // whose papers are all finished has no audience.
   // Taken from the active papers themselves, not from the roster. Deriving it per member meant a
   // paper whose authors do not resolve to a member record contributed no venue at all, so real
   // ongoing conferences went missing from the list.
-  const conferences = [...new Set(papers.filter(isOngoingPaper).map(paperConference))].sort(
+  const conferences = [...new Set(papers.filter(isOngoingPaper).map(paperConference))].toSorted(
     (left, right) => left.localeCompare(right),
   );
   return html`
@@ -3287,34 +3443,48 @@ function renderAnnouncementRecipients(
           <strong>Recipients</strong>
           <span>${selected.size} selected</span>
         </div>
-        <span class="pill" data-recipient-result-count>${members.length} people visible</span>
+        <span class="pill" data-recipient-result-count>
+          ${filtered.length} matching ${filtered.length === 1 ? "person" : "people"}
+        </span>
       </div>
       <form
         class="adminbot-member-filters"
-        @input=${filterAnnouncementRecipients}
-        @change=${filterAnnouncementRecipients}
+        @input=${(event: Event) => {
+          if (event.target instanceof HTMLInputElement) {
+            filterAnnouncementRecipients(event, props);
+          }
+        }}
+        @change=${(event: Event) => {
+          if (event.target instanceof HTMLSelectElement) {
+            filterAnnouncementRecipients(event, props);
+          }
+        }}
       >
         <label
           ><span>Search</span
-          ><input name="search" type="search" placeholder="Name, topic, project…"
+          ><input
+            name="search"
+            type="search"
+            placeholder="Name, topic, project…"
+            .value=${view.filters.search}
         /></label>
         <label
           ><span>Status</span
-          ><select name="status">
+          ><select name="status" .value=${view.filters.status}>
             <option value="">All statuses</option>
             ${statuses.map((value) => html`<option value=${value}>${friendly(value)}</option>`)}
           </select></label
         >
         <label
           ><span>Research branch</span
-          ><select name="branch">
+          ><select name="branch" .value=${view.filters.branch}>
             <option value="">All branches</option>
             ${branches.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
         <label
           ><span>Privilege</span
-          ><select name="privilege">
+          ><select name="privilege" .value=${view.filters.privilege}>
             <option value="">All levels</option>
             ${privileges.map(
               (value) =>
@@ -3324,14 +3494,14 @@ function renderAnnouncementRecipients(
         >
         <label
           ><span>Project</span
-          ><select name="project">
+          ><select name="project" .value=${view.filters.project}>
             <option value="">All projects</option>
             ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
         <label
           ><span>Ongoing conference</span
-          ><select name="conference">
+          ><select name="conference" .value=${view.filters.conference}>
             <option value="">All conferences</option>
             ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
@@ -3372,7 +3542,7 @@ function renderAnnouncementRecipients(
             </tr>
           </thead>
           <tbody>
-            ${members.map((member) => {
+            ${pageMembers.map((member) => {
               const memberConferences = ongoingConferencesForMember(member, papers);
               const search = [
                 member.name,
@@ -3444,10 +3614,41 @@ function renderAnnouncementRecipients(
             })}
           </tbody>
         </table>
-        ${members.length === 0
-          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
+        ${filtered.length === 0
+          ? html`<div class="adminbot-empty adminbot-empty--compact">
+              ${members.length === 0 ? "No lab members yet." : "No matching recipients."}
+            </div>`
           : nothing}
       </div>
+      <nav class="adminbot-form__actions" aria-label="Recipient pages">
+        <span role="status">
+          ${filtered.length === 0
+            ? "Showing 0 of 0"
+            : `Showing ${offset + 1}–${offset + pageMembers.length} of ${filtered.length}`}
+        </span>
+        <button
+          class="btn btn--sm"
+          type="button"
+          ?disabled=${view.page === 0}
+          @click=${() => {
+            view.page--;
+            props.onRerender?.();
+          }}
+        >
+          Previous
+        </button>
+        <button
+          class="btn btn--sm"
+          type="button"
+          ?disabled=${offset + RECIPIENT_PAGE_SIZE >= filtered.length}
+          @click=${() => {
+            view.page++;
+            props.onRerender?.();
+          }}
+        >
+          Next
+        </button>
+      </nav>
     </section>
   `;
 }
@@ -3569,7 +3770,9 @@ function renderPanel(props: AdminBotProps) {
           <div class="card-title">Lab members</div>
           <div class="card-sub">
             ${general
-              ? "Read-only lab roster."
+              ? props.signedInMemberId
+                ? "Browse the lab roster and edit your own profile."
+                : "Browse the lab roster."
               : "Edit roster details, member information, and access defaults."}
           </div>
           ${renderMembers(props, props.data.members)}
@@ -3601,6 +3804,8 @@ function renderPanel(props: AdminBotProps) {
 
 export function renderAdminBot(props: AdminBotProps) {
   const loadedAt = props.data.loadedAt ? formatRelativeTimestamp(props.data.loadedAt) : "not yet";
+  const firstLoadPending = props.loading && props.data.loadedAt === null;
+  const firstLoadFailed = Boolean(props.error) && props.data.loadedAt === null;
   const general = props.mode === "general";
   // The lab-wide roll-up belongs to the page that is about the lab. On Reimbursement Form Prep or
   // Announcements it was four numbers about something else entirely, sitting above the thing you
@@ -3610,7 +3815,7 @@ export function renderAdminBot(props: AdminBotProps) {
   const addMember = !general && props.panel === "members";
   const addPaper = props.panel === "papers" && (!general || props.signedInMemberId);
   return html`
-    <section class="adminbot-shell">
+    <section class="adminbot-shell" aria-busy=${props.loading ? "true" : "false"}>
       <div class="adminbot-actions">
         ${addMember
           ? html`<button
@@ -3640,8 +3845,18 @@ export function renderAdminBot(props: AdminBotProps) {
             ${props.notice.text}
           </div>`
         : nothing}
-      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
-      ${isLabOverview
+      ${props.error ? html`<div class="callout danger" role="alert">${props.error}</div>` : nothing}
+      ${firstLoadPending
+        ? html`<div class="adminbot-empty" role="status" data-testid="adminbot-first-load">
+            Loading AdminBot…
+          </div>`
+        : nothing}
+      ${firstLoadFailed
+        ? html`<div class="adminbot-empty" data-testid="adminbot-first-load-error">
+            <button class="btn btn--sm" type="button" @click=${props.onRefresh}>Try again</button>
+          </div>`
+        : nothing}
+      ${isLabOverview && !firstLoadPending && !firstLoadFailed
         ? html`<div class="adminbot-metrics">
             ${general
               ? nothing
@@ -3657,8 +3872,9 @@ export function renderAdminBot(props: AdminBotProps) {
               : renderMetric("Nudges", props.data.nudges.length, `loaded ${loadedAt}`)}
           </div>`
         : nothing}
-
-      <section class="grid grid-cols-2 adminbot-grid">${renderPanel(props)}</section>
+      ${firstLoadPending || firstLoadFailed
+        ? nothing
+        : html`<section class="grid grid-cols-2 adminbot-grid">${renderPanel(props)}</section>`}
     </section>
   `;
 }

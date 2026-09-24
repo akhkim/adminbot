@@ -9,7 +9,7 @@ import {
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
-import { renderAdminBot, type AdminBotProps } from "./admin.ts";
+import { renderAdminBot, resetAdminViewSessionState, type AdminBotProps } from "./admin.ts";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return { ...members[0]!, ...overrides };
@@ -87,6 +87,208 @@ function baseProps(overrides: Partial<AdminBotProps> = {}): AdminBotProps {
 // jsdom has no Popover API; the form submit handlers close their popover after saving.
 beforeAll(() => {
   (HTMLElement.prototype as { hidePopover?: () => void }).hidePopover ??= () => undefined;
+});
+
+describe("renderAdminBot first load", () => {
+  it("shows progress instead of an empty roster while the first request is pending", () => {
+    const container = renderToDiv(
+      baseProps({ loading: true, data: createEmptyAdminBotDashboardData() }),
+      { openEditors: false },
+    );
+    expect(container.querySelector('[data-testid="adminbot-first-load"]')?.textContent).toContain(
+      "Loading AdminBot",
+    );
+    expect(container.querySelector(".adminbot-member-sheet")).toBeNull();
+    expect(container.querySelector(".adminbot-shell")?.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("offers a retry after the first request fails and keeps stale data on later failures", () => {
+    const onRefresh = vi.fn();
+    const failed = renderToDiv(
+      baseProps({
+        data: createEmptyAdminBotDashboardData(),
+        error: "Request failed",
+        onRefresh,
+      }),
+      { openEditors: false },
+    );
+    expect(failed.querySelector(".adminbot-member-sheet")).toBeNull();
+    failed
+      .querySelector<HTMLButtonElement>('[data-testid="adminbot-first-load-error"] button')
+      ?.click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    const stale = renderToDiv(baseProps({ error: "Request failed" }), { openEditors: false });
+    expect(stale.querySelector(".adminbot-member-sheet")).not.toBeNull();
+    expect(stale.querySelector('[data-testid="adminbot-first-load-error"]')).toBeNull();
+  });
+});
+
+describe("renderAdminBot paged roster", () => {
+  it("shows one loading label instead of a false page range while fetching", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        memberList: {
+          rows: [],
+          total: 1005,
+          limit: 50,
+          offset: 50,
+          query: "",
+          loading: true,
+          error: null,
+        },
+      }),
+      { openEditors: false },
+    );
+    const nav = container.querySelector('nav[aria-label="Member pages"]');
+    expect(nav?.textContent).toContain("Loading people…");
+    expect(nav?.textContent).not.toContain("Showing 0 of 1005");
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+  });
+
+  it("keeps the result count renderable after a local filter updates it", () => {
+    const container = document.createElement("div");
+    const initial = baseProps({
+      mode: "general",
+      memberList: {
+        rows: [member({ id: "one" }), member({ id: "two" })],
+        total: 2,
+        limit: 20,
+        offset: 0,
+        query: "",
+        loading: false,
+        error: null,
+      },
+    });
+    render(renderAdminBot(initial), container);
+    container
+      .querySelector<HTMLInputElement>('input[name="search"]')
+      ?.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toBe(
+      "2 on this page",
+    );
+
+    const searched = baseProps({
+      ...initial,
+      memberList: { ...initial.memberList!, rows: [member({ id: "one" })], total: 1, query: "one" },
+    });
+    expect(() => render(renderAdminBot(searched), container)).not.toThrow();
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toBe("1 person");
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+  });
+
+  it("keeps my profile editable when it is outside the loaded page", () => {
+    const onSaveOwnProfile = vi.fn();
+    const other = member({ id: "other", name: "Other Member" });
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        signedInMemberId: "pat",
+        memberList: {
+          rows: [other],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "other",
+          loading: false,
+          error: null,
+        },
+        onSaveOwnProfile,
+      }),
+    );
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).toContain(
+      "Other Member",
+    );
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).not.toContain(
+      "Pat Doe",
+    );
+    expect(container.querySelector('nav[aria-label="Member pages"]')?.textContent).toContain(
+      "Showing 21–21 of 42",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '.adminbot-member-sheet__heading button[popovertarget="adminbot-self-edit-member-own"]',
+      ),
+    ).not.toBeNull();
+    container
+      .querySelector<HTMLFormElement>("#adminbot-self-edit-member-own form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSaveOwnProfile).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ name: "Pat Doe" }),
+    );
+  });
+
+  it("shows the loaded page and its full count, and searches across all members", () => {
+    const onMemberListChange = vi.fn();
+    const pageMember = member({ id: "page-21", name: "Page Twenty One" });
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        memberList: {
+          rows: [pageMember],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "robot",
+          loading: false,
+          error: null,
+        },
+        onMemberListChange,
+      }),
+      { openEditors: false },
+    );
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).toContain(
+      "Page Twenty One",
+    );
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toContain(
+      "42 people",
+    );
+    expect(container.querySelector('nav[aria-label="Member pages"]')?.textContent).toContain(
+      "Showing 21–21 of 42",
+    );
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      'nav[aria-label="Member pages"] button',
+    );
+    buttons[0]?.click();
+    buttons[1]?.click();
+    expect(onMemberListChange).toHaveBeenNthCalledWith(1, "robot", 0);
+    expect(onMemberListChange).toHaveBeenNthCalledWith(2, "robot", 40);
+    const search = container.querySelector<HTMLInputElement>('input[name="search"]');
+    search!.value = "  language  ";
+    container
+      .querySelector(".adminbot-member-filters")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onMemberListChange).toHaveBeenLastCalledWith("language", 0);
+  });
+
+  it("shows a page-load error with a retry and does not claim an empty roster", () => {
+    const onMemberListChange = vi.fn();
+    const container = renderToDiv(
+      baseProps({
+        memberList: {
+          rows: [],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "robot",
+          loading: false,
+          error: "Request failed",
+        },
+        onMemberListChange,
+      }),
+      { openEditors: false },
+    );
+    expect(container.querySelector(".adminbot-member-sheet__scroll")?.textContent).not.toContain(
+      "No lab members yet",
+    );
+    container
+      .querySelector<HTMLButtonElement>('nav[aria-label="Member pages"] ~ .callout button')
+      ?.click();
+    expect(onMemberListChange).toHaveBeenCalledWith("robot", 20);
+  });
 });
 
 /**
@@ -376,6 +578,88 @@ describe("renderAdminBot members panel — edit affordance", () => {
       )
       ?.click();
     expect(saved).toEqual([["terry-jingchen-zhang", "terry-zhang"]]);
+  });
+
+  it("renders only one page of a huge duplicate set and can reach its last pair", () => {
+    const roster = Array.from({ length: 100 }, (_, i) =>
+      member({ id: `same-${i}`, name: "Same Name", email: `same-${i}@lab.test` }),
+    );
+    const props = baseProps({
+      mode: "admin",
+      data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+      memberList: {
+        rows: roster.slice(0, 20),
+        total: roster.length,
+        limit: 20,
+        offset: 0,
+        query: "",
+        loading: false,
+        error: null,
+      },
+      rosterLoadedAt: Date.now(),
+      onMergeMembers: () => undefined,
+      onRerender: () => undefined,
+    });
+    const container = document.createElement("div");
+    const draw = () => render(renderAdminBot(props), container);
+    const pairIds = (row: Element | undefined) =>
+      [...(row?.querySelectorAll(".adminbot-duplicate__id") ?? [])].map((node) =>
+        node.textContent?.trim(),
+      );
+    draw();
+    const panel = container.querySelector('[data-testid="member-duplicates"]');
+    expect(panel?.querySelector(".card-sub")?.textContent).toContain("4950 pairs");
+    expect(panel?.querySelectorAll(".adminbot-duplicates__list > li")).toHaveLength(20);
+    panel
+      ?.querySelector<HTMLButtonElement>('nav[aria-label="Duplicate pair pages"] button:last-child')
+      ?.click();
+    draw();
+    expect(
+      pairIds(container.querySelector(".adminbot-duplicates__list > li") ?? undefined),
+    ).toEqual(["same-0", "same-21"]);
+    const page = container.querySelector<HTMLInputElement>(
+      'nav[aria-label="Duplicate pair pages"] input',
+    );
+    page!.value = page!.max;
+    page!.dispatchEvent(new Event("change", { bubbles: true }));
+    draw();
+    const rows = [...container.querySelectorAll(".adminbot-duplicates__list > li")];
+    expect(rows).toHaveLength(10);
+    expect(pairIds(rows.at(-1))).toEqual(["same-98", "same-99"]);
+  });
+
+  it("opens paged members without a full roster and loads roster-wide checks only on request", () => {
+    let requested = 0;
+    const props = baseProps({
+      mode: "admin",
+      data: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [member({ id: "pat", name: "Pat Doe" })],
+        loadedAt: Date.now(),
+      },
+      memberList: {
+        rows: [member({ id: "lee", name: "Lee River", email: "lee@lab.test" })],
+        total: 10_000,
+        limit: 50,
+        offset: 0,
+        query: "",
+        loading: false,
+        error: null,
+      },
+      rosterLoadedAt: null,
+      onLoadFullRoster: () => {
+        requested += 1;
+      },
+      onMergeMembers: () => undefined,
+    });
+    const container = renderToDiv(props);
+    expect(container.textContent).toContain("Lee River");
+    expect(container.textContent).toContain("of 10000");
+    expect(container.querySelector('[data-testid="member-duplicates"]')).toBeNull();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="member-roster-checks-on-demand"] button')
+      ?.click();
+    expect(requested).toBe(1);
   });
 
   it("offers the address-less purge only when there is something in it, and previews without a confirm", () => {
@@ -1154,6 +1438,93 @@ describe("renderAdminBot announcements panel", () => {
     expect(new Set(recipients)).toEqual(new Set(["existing", "a", "b"]));
   });
 
+  it("pages recipients while filtering the full roster and keeping selections across pages", () => {
+    const roster = Array.from({ length: 105 }, (_, index) =>
+      member({
+        id: `person-${index + 1}`,
+        name: `Person ${index + 1}`,
+        slack_user_id: index === 75 ? undefined : `U${index + 1}`,
+        projects: index >= 103 ? ["Causal"] : ["Atlas"],
+      }),
+    );
+    const container = document.createElement("div");
+    const props = baseProps({
+      mode: "admin",
+      panel: "announcements",
+      data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+      memberNudge: {
+        channel: "slack",
+        message: "",
+        subject: "",
+        selectedMemberIds: ["existing"],
+        busy: false,
+      },
+      onRerender: () => render(renderAdminBot(props), container),
+      onNudgeSetRecipients: (ids) => {
+        props.memberNudge = { ...props.memberNudge, selectedMemberIds: ids };
+        render(renderAdminBot(props), container);
+      },
+    });
+    render(renderAdminBot(props), container);
+    const rowIds = () =>
+      [
+        ...container.querySelectorAll<HTMLTableRowElement>(".adminbot-nudge-recipients tbody tr"),
+      ].map((row) => row.dataset.memberId);
+    const pages = () => container.querySelector<HTMLElement>('nav[aria-label="Recipient pages"]');
+    const clickPage = (label: string) =>
+      [...(pages()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((button) => button.textContent?.trim() === label)
+        ?.click();
+
+    expect(rowIds()).toHaveLength(50);
+    expect(pages()?.textContent).toContain("Showing 1–50 of 105");
+    clickPage("Next");
+    expect(rowIds()).toHaveLength(50);
+    expect(rowIds()[0]).toBe("person-51");
+    container
+      .querySelector<HTMLButtonElement>(".adminbot-nudge-recipients__actions button")
+      ?.click();
+    expect(props.memberNudge.selectedMemberIds).toContain("existing");
+    expect(props.memberNudge.selectedMemberIds).toContain("person-51");
+    expect(props.memberNudge.selectedMemberIds).not.toContain("person-76");
+
+    clickPage("Next");
+    expect(rowIds()).toEqual([
+      "person-101",
+      "person-102",
+      "person-103",
+      "person-104",
+      "person-105",
+    ]);
+    const project = container.querySelector<HTMLSelectElement>(
+      '.adminbot-nudge-recipients select[name="project"]',
+    );
+    if (!project) {
+      throw new Error("missing project filter");
+    }
+    project.value = "Causal";
+    project.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(rowIds()).toEqual(["person-104", "person-105"]);
+    expect(pages()?.textContent).toContain("Showing 1–2 of 2");
+    expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
+      "2 matching people",
+    );
+    expect(props.memberNudge.selectedMemberIds).toContain("person-51");
+
+    const search = container.querySelector<HTMLInputElement>(
+      '.adminbot-nudge-recipients input[name="search"]',
+    );
+    if (!search) {
+      throw new Error("missing recipient search");
+    }
+    search.value = "Person 105";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(rowIds()).toEqual(["person-105"]);
+    expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
+      "1 matching person",
+    );
+  });
+
   it("preselects members who haven't marked the LinkedIn step done, skipping alumni/external", () => {
     let recipients: string[] = [];
     const step = (status: string) => ({ steps: [{ id: "linkedin", status }] });
@@ -1369,26 +1740,14 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(addCard?.querySelector('select[name="reminderStatus"]')).toBeNull();
   });
 
-  it("shows the edit form on a paper the member authors and hides it on one they don't", () => {
+  it("does not build unreachable edit popovers for every paper", () => {
     const container = renderToDiv(
       papersProps({}, [paper(), paper({ id: "paper-2", authors: ["Someone Else"] })]),
     );
-
-    const forms = [
-      ...container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
-    ];
-    expect(forms).toHaveLength(1);
-    expect(forms[0]?.querySelector<HTMLInputElement>('input[name="id"]')?.value).toBe("paper-1");
-  });
-
-  it("treats a paper the member filed as theirs even when the authors are written differently", () => {
-    const container = renderToDiv(
-      papersProps({}, [paper({ authors: ["P. Doe"], submitted_by_member_id: "pat" })]),
-    );
-
     expect(
       container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid^="paper-overview-open-"]')).toHaveLength(2);
   });
 
   it("keeps deletion out of the member view", () => {
@@ -1410,7 +1769,7 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(row).not.toBeNull();
     // The title opens the record, so a paper is still read and edited in one place.
     expect(row?.querySelector("button.logistics-requests__open")).not.toBeNull();
-    expect(container.querySelector('[id^="adminbot-edit-paper-"]')).not.toBeNull();
+    expect(container.querySelector('[id^="adminbot-edit-paper-"]')).toBeNull();
   });
 
   it("offers no add-paper form when nobody is signed in", () => {
@@ -1860,6 +2219,25 @@ describe("renderAdminBot members panel — lenient saves and autosave", () => {
       vi.advanceTimersByTime(300);
       expect(saved).toHaveLength(1);
       expect(saved[0]!.profile?.location).toBe("Toronto, Canada");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels an old member form's autosave on account switch", () => {
+    vi.useFakeTimers();
+    try {
+      const onSaveMember = vi.fn();
+      const container = renderToDiv(baseProps({ mode: "admin", onSaveMember }));
+      const form = editForm(container);
+      const location = form.querySelector<HTMLInputElement>('input[name="location"]')!;
+      location.value = "Private draft";
+      location.dispatchEvent(new Event("input", { bubbles: true }));
+
+      resetAdminViewSessionState();
+      vi.advanceTimersByTime(1_000);
+
+      expect(onSaveMember).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

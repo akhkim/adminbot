@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { loadHistory, recordHistory } from "../paper-grid.ts";
 import {
   renderMyWork,
+  resetMyWorkSessionState,
   resetMyWorkViewModeForTest,
   resetPaperSheetChoice,
   showMyWorkCardsForTest,
@@ -1532,6 +1534,16 @@ describe("project details autosave", () => {
     expect(saved.at(-1)).toMatchObject({ id: "p1", title: "A better title" });
   });
 
+  it("does not save an old member's pending edit after the session changes", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Private draft", rerender);
+
+    resetMyWorkSessionState();
+    vi.advanceTimersByTime(1000);
+
+    expect(saved).toHaveLength(0);
+  });
+
   it("restarts the timer on every keystroke rather than saving mid-word", () => {
     const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
     for (const value of ["A", "Ab", "Abc"]) {
@@ -1543,6 +1555,27 @@ describe("project details autosave", () => {
     vi.advanceTimersByTime(900);
     expect(saved).toHaveLength(1);
     expect(saved.at(-1)).toMatchObject({ title: "Abc" });
+  });
+
+  it("keeps the focused editor when a saved paper updates the cached list", () => {
+    const { container, state, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    input.focus();
+    input.value = "A better title";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    state.adminBotData = {
+      ...state.adminBotData,
+      papers: [paper({ title: "A better title" })],
+    };
+    rerender();
+
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("A better title");
   });
 
   it("holds a draft it cannot write instead of firing a doomed request", () => {
@@ -1622,6 +1655,45 @@ describe("the flat view", () => {
   // otherwise leave every later spec looking at it.
   afterEach(() => {
     resetMyWorkViewModeForTest();
+  });
+
+  it("drops an old member's flat-form draft and pending autosave on session reset", () => {
+    vi.useFakeTimers();
+    try {
+      resetMyWorkViewModeForTest();
+      const first = draw();
+      const title = first.container.querySelector<HTMLInputElement>(
+        '[data-testid="paper-legacy-p1-title"]',
+      )!;
+      title.value = "Private draft";
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+      first.rerender();
+      expect(title.value).toBe("Private draft");
+      recordHistory([
+        {
+          at: new Date().toISOString(),
+          paperTitle: "Private paper",
+          column: "Title",
+          from: "",
+          to: "Private draft",
+          kind: "added",
+        },
+      ]);
+
+      resetMyWorkSessionState();
+      vi.advanceTimersByTime(1000);
+      expect(first.saved).toHaveLength(0);
+      expect(loadHistory()).toEqual([]);
+
+      const second = draw();
+      expect(
+        second.container.querySelector<HTMLInputElement>('[data-testid="paper-legacy-p1-title"]')
+          ?.value,
+      ).toBe("Causal abstraction");
+    } finally {
+      resetMyWorkSessionState();
+      vi.useRealTimers();
+    }
   });
 
   it("offers the button beside the spreadsheet one", () => {

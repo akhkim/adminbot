@@ -10,6 +10,7 @@ import type {
 } from "./adminbot/auth/session.ts";
 import type {
   AdminBotDashboardData,
+  AdminBotMemberListState,
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -440,6 +441,11 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  adminBotRosterLoadedAt: number | null;
+  adminBotRosterLoading: boolean;
+  adminBotRosterError: string | null;
+  adminBotRosterRequestId: number;
+  adminBotMemberList: AdminBotMemberListState;
   // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
   // search query for finding other members' requests, and the list of members invited to help on
   // the member's own request. The list of requests the member has already responded to, and the

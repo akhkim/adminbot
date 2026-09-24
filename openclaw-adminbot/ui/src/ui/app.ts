@@ -46,6 +46,7 @@ import type {
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
+  createEmptyAdminBotMemberList,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
@@ -58,6 +59,7 @@ import {
   type AdminBotVenuePapersState,
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
+  type AdminBotMemberListState,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -113,9 +115,12 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
+import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
+import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
+import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -126,6 +131,7 @@ import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
+import { resetProfileSessionState } from "./adminbot/views/profile.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
 import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
@@ -662,6 +668,11 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
+  @state() adminBotRosterLoadedAt: number | null = null;
+  @state() adminBotRosterLoading = false;
+  @state() adminBotRosterError: string | null = null;
+  adminBotRosterRequestId = 0;
+  @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
   @state() adminBotMemberMap: MemberMap | null = null;
@@ -1298,49 +1309,34 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  resetMemberViewSessionState() {
+    resetMyWorkSessionState();
+    resetProfileSessionState();
+    resetLabSharingSessionState();
+    resetAdminViewSessionState();
+  }
+
   async beginViewAs(memberId: string) {
+    dismissAllToasts();
+    resetNotificationPopups();
     await beginViewAsInternal(
       this as unknown as Parameters<typeof beginViewAsInternal>[0],
       memberId,
     );
-    // The admin's own toasts and notifications belong to the session being parked, not to the
-    // member whose view is opening. Carried across, they read as that member's -- which is the one
-    // thing a view meant to show what somebody else sees must not do.
-    dismissAllToasts();
-    resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
   }
 
   async endViewAs() {
-    await endViewAsInternal(this as unknown as Parameters<typeof endViewAsInternal>[0]);
-    // Same reasoning as signOutMember: the toasts, the popped-ids set and the notification list
-    // all belong to the session that just ended. Left in place, the admin lands back on their own
-    // dashboard reading the member's unread notifications.
     dismissAllToasts();
     resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
+    await endViewAsInternal(this as unknown as Parameters<typeof endViewAsInternal>[0]);
   }
 
   async signOutMember() {
-    await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
-    // Everything in the corner and everything in the list belonged to the session that just ended.
-    // The popped-ids set has to go too, or the next member to sign in on this browser gets a
-    // dashboard card with no popup because somebody else's session already "saw" it.
+    // Toast and notification dedupe state belong to the departing session. The auth flow clears
+    // member data synchronously, before network logout can overlap a fresh sign-in.
     dismissAllToasts();
     resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
+    await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
   }
 
   openChangePassword() {
