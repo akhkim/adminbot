@@ -11,8 +11,31 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotLoginEvent, AdminBotLoginLocation } from "../contracts/activity-log.js";
-import type { AdminBotListPage } from "../kernel/service.js";
+import type { AdminBotLabMemberSummary, AdminBotListPage } from "../kernel/service.js";
 import type { AdminBotAuthStore } from "../workflows/identity/auth.js";
+
+// Match SQLite's JS lowercase search, including non-ASCII names and topics.
+function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
+  return [
+    member.name,
+    member.email,
+    ...(Array.isArray(member.research_topics) ? member.research_topics : []),
+    ...(Array.isArray(member.projects) ? member.projects : []),
+  ].some((value) => typeof value === "string" && value.toLowerCase().includes(q));
+}
+
+const LAB_MEMBER_SEARCH = `(
+  strpos(lower(coalesce(m.payload_json::jsonb ->> 'name', '')), $1) > 0 OR
+  strpos(lower(coalesce(m.payload_json::jsonb ->> 'email', '')), $1) > 0 OR
+  EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE
+    WHEN jsonb_typeof(m.payload_json::jsonb -> 'research_topics') = 'array'
+    THEN m.payload_json::jsonb -> 'research_topics' ELSE '[]'::jsonb END) AS topic(value)
+    WHERE strpos(lower(topic.value), $1) > 0) OR
+  EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE
+    WHEN jsonb_typeof(m.payload_json::jsonb -> 'projects') = 'array'
+    THEN m.payload_json::jsonb -> 'projects' ELSE '[]'::jsonb END) AS project(value)
+    WHERE strpos(lower(project.value), $1) > 0)
+)`;
 
 type RegistrationRow = AdminBotAccountRegistration & {
   member_id: string | null;
@@ -119,28 +142,10 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
       );
       const matches = rows
         .map((row) => JSON.parse(row.payload_json) as AdminBotLabMember)
-        .filter((member) =>
-          [
-            member.name,
-            member.email,
-            ...(Array.isArray(member.research_topics) ? member.research_topics : []),
-            ...(Array.isArray(member.projects) ? member.projects : []),
-          ].some((value) => typeof value === "string" && value.toLowerCase().includes(q)),
-        );
+        .filter((member) => memberMatchesQuery(member, q));
       return page ? matches.slice(page.offset, page.offset + page.limit) : matches;
     }
-    const search = q
-      ? `WHERE strpos(lower(coalesce(m.payload_json::jsonb ->> 'name', '')), $1) > 0
-         OR strpos(lower(coalesce(m.payload_json::jsonb ->> 'email', '')), $1) > 0
-         OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE
-                      WHEN jsonb_typeof(m.payload_json::jsonb -> 'research_topics') = 'array'
-                      THEN m.payload_json::jsonb -> 'research_topics' ELSE '[]'::jsonb END) AS topic(value)
-                    WHERE strpos(lower(topic.value), $1) > 0)
-         OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE
-                      WHEN jsonb_typeof(m.payload_json::jsonb -> 'projects') = 'array'
-                      THEN m.payload_json::jsonb -> 'projects' ELSE '[]'::jsonb END) AS project(value)
-                    WHERE strpos(lower(project.value), $1) > 0)`
-      : "";
+    const search = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
     const values: unknown[] = q ? [q] : [];
     if (page) {
       values.push(page.limit, page.offset);
@@ -155,6 +160,55 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
       values,
     );
     return rows.map((row) => JSON.parse(row.payload_json) as AdminBotLabMember);
+  }
+
+  async listLabMemberSummaries(): Promise<AdminBotLabMemberSummary[]> {
+    const rows = await this.rows<{ payload_json: string }>(
+      `SELECT payload_json FROM ${this.table("adminbot_lab_members")}`,
+    );
+    return rows
+      .map((row) => JSON.parse(row.payload_json) as AdminBotLabMember)
+      .sort(
+        (left, right) =>
+          Buffer.compare(
+            Buffer.from((left.name ?? "").toLowerCase()),
+            Buffer.from((right.name ?? "").toLowerCase()),
+          ) || Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)),
+      )
+      .map((member) => {
+        delete member.field_provenance;
+        delete (member as Partial<AdminBotLabMember>).access;
+        if (member.onboarding && !Array.isArray(member.onboarding)) {
+          return {
+            ...member,
+            onboarding: {
+              steps: Array.isArray(member.onboarding.steps)
+                ? member.onboarding.steps.map(({ id, status }) => ({ id, status }))
+                : [],
+            },
+          };
+        }
+        return member;
+      });
+  }
+
+  async countLabMembers(q?: string): Promise<number> {
+    const needle = q?.toLowerCase();
+    if (needle && /[^\x00-\x7f]/u.test(needle)) {
+      // Preserve JS case folding for the rare Unicode query until a persisted search key exists.
+      const rows = await this.rows<{ payload_json: string }>(
+        `SELECT payload_json FROM ${this.table("adminbot_lab_members")}`,
+      );
+      return rows.filter((row) =>
+        memberMatchesQuery(JSON.parse(row.payload_json) as AdminBotLabMember, needle),
+      ).length;
+    }
+    const row = await this.first<{ total: string }>(
+      `SELECT COUNT(*) AS total FROM ${this.table("adminbot_lab_members")} m
+       ${needle ? `WHERE ${LAB_MEMBER_SEARCH}` : ""}`,
+      needle ? [needle] : [],
+    );
+    return Number(row?.total ?? 0);
   }
 
   async appendMemberLocation(entry: AdminBotMemberLocationEntry): Promise<void> {

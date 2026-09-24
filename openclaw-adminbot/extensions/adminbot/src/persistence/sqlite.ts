@@ -77,6 +77,7 @@ import {
   type AdminBotActionExecutor,
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
+  type AdminBotMeetingArtifactRecord,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingRecord,
@@ -181,6 +182,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
+      PRAGMA busy_timeout = 5000;
 
       CREATE TABLE IF NOT EXISTS adminbot_proposals (
         id TEXT PRIMARY KEY,
@@ -595,6 +597,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_meeting_artifacts (
+        file_id TEXT PRIMARY KEY,
+        file_name TEXT NOT NULL,
+        meeting_id TEXT,
+        status TEXT NOT NULL,
+        processed_at TEXT NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS adminbot_member_notifications (
         id TEXT PRIMARY KEY,
@@ -3153,6 +3163,32 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
+  }
+
+  hasAttachedMeetingArtifact(fileId: string): boolean {
+    const row = this.db
+      .prepare("SELECT status FROM adminbot_meeting_artifacts WHERE file_id = ?")
+      .get(fileId) as { status?: string } | undefined;
+    return row?.status === "attached";
+  }
+
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_meeting_artifacts (file_id, file_name, meeting_id, status, processed_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(file_id) DO UPDATE SET
+           meeting_id = excluded.meeting_id,
+           status = excluded.status,
+           processed_at = excluded.processed_at`,
+      )
+      .run(
+        record.file_id,
+        record.file_name,
+        record.meeting_id ?? null,
+        record.status,
+        record.processed_at,
+      );
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {

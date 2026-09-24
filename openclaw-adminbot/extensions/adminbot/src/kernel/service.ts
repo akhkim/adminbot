@@ -447,6 +447,14 @@ export type AdminBotServiceResponse<T> =
 // The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
 type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
 
+export type AdminBotMeetingArtifactRecord = {
+  file_id: string;
+  file_name: string;
+  meeting_id?: string;
+  status: "attached" | "unmatched" | "empty";
+  processed_at: string;
+};
+
 export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
@@ -645,6 +653,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  hasAttachedMeetingArtifact(fileId: string): boolean;
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
    * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
    * replaces its own row rather than stacking a second copy of the same sentence.

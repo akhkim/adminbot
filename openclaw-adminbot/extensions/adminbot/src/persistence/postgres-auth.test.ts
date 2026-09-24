@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
+import type { AdminBotLabMember } from "../contracts/actions.js";
 import { AdminBotAuthService } from "../workflows/identity/auth.js";
 import { AdminBotPostgresAuthStore } from "./postgres-auth.js";
+import { AdminBotSqliteStore } from "./sqlite.js";
 
 const url = process.env.ADMINBOT_TEST_POSTGRES_URL;
 const schema = process.env.ADMINBOT_TEST_POSTGRES_SCHEMA;
@@ -68,6 +70,90 @@ describe.skipIf(!url || !schema || !password)("PostgreSQL auth store", () => {
       expect(results.map((member) => member.id)).toContain(id);
     } finally {
       await pool.query(`DELETE FROM "${schema}".adminbot_lab_members WHERE id = $1`, [id]);
+      await pool.end();
+    }
+  });
+
+  it("matches SQLite roster ordering, search counts, and summary redaction", async () => {
+    const target = new URL(url!);
+    if (
+      !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
+      !/^adminbot_migration_[a-z0-9_]+$/u.test(schema!)
+    ) {
+      throw new Error("PostgreSQL auth test requires a local migration schema");
+    }
+    const pool = new pg.Pool({ connectionString: url, max: 2, connectionTimeoutMillis: 3000 });
+    const postgres = new AdminBotPostgresAuthStore(pool, schema!);
+    const sqlite = new AdminBotSqliteStore(":memory:");
+    const marker = randomUUID().replaceAll("-", "");
+    const now = "2026-09-01T00:00:00.000Z";
+    const step = {
+      id: "setup",
+      label: "Set up account",
+      status: "current" as const,
+      category: "Getting started",
+      required: true,
+    };
+    const members: AdminBotLabMember[] = [
+      {
+        id: `dev-roster-a-${marker}`,
+        name: `apple ${marker}`,
+        email: `contact-${marker}@example.test`,
+        privilege_level: "member",
+        access: [],
+        research_topics: [`topic-${marker}`],
+        projects: [`project-${marker}`],
+        field_provenance: { name: { source: "member", at: now } },
+        onboarding: { steps: [step], completed: [], remaining: [step], opened_at: now },
+        created_at: now,
+        updated_at: now,
+      },
+      ...(["Zed", "Émile", "émile"] as const).map((name, index) => ({
+        id: `dev-roster-${index}-${marker}`,
+        name: `${name} ${marker}`,
+        privilege_level: "member" as const,
+        access: [],
+        created_at: now,
+        updated_at: now,
+      })),
+    ];
+    const ids = new Set(members.map((member) => member.id));
+    try {
+      const before = await postgres.countLabMembers();
+      for (const member of members) {
+        sqlite.saveLabMember(member);
+        await postgres.saveLabMember(member);
+      }
+      expect(await postgres.countLabMembers()).toBe(before + sqlite.countLabMembers());
+      for (const q of [
+        `ÉMILE ${marker}`,
+        `zEd ${marker}`,
+        `topic-${marker}`,
+        `project-${marker}`,
+        `contact-${marker}`,
+        `missing-${marker}`,
+      ]) {
+        expect(await postgres.countLabMembers(q)).toBe(sqlite.countLabMembers(q));
+      }
+      expect(
+        (await postgres.listLabMembers({ limit: 2, offset: 1, q: marker })).map(
+          (member) => member.id,
+        ),
+      ).toEqual(
+        sqlite.listLabMembers({ limit: 2, offset: 1, q: marker }).map((member) => member.id),
+      );
+      const summaries = (await postgres.listLabMemberSummaries()).filter((member) =>
+        ids.has(member.id),
+      );
+      expect(summaries).toEqual(sqlite.listLabMemberSummaries());
+      expect(summaries[0]).not.toHaveProperty("access");
+      expect(summaries[0]).not.toHaveProperty("field_provenance");
+      expect(summaries[0]?.onboarding).toEqual({ steps: [{ id: "setup", status: "current" }] });
+    } finally {
+      await pool.query(`DELETE FROM "${schema}".adminbot_lab_members WHERE id = ANY($1)`, [
+        [...ids],
+      ]);
+      sqlite.close();
       await pool.end();
     }
   });

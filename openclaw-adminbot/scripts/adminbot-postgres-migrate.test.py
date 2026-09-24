@@ -40,7 +40,7 @@ def fixture(path):
           thread_id TEXT PRIMARY KEY, candidate_email TEXT NOT NULL,
           decision TEXT NOT NULL, source_message_id TEXT NOT NULL,
           status TEXT NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE adminbot_meeting_artifacts (
+        CREATE TABLE IF NOT EXISTS adminbot_meeting_artifacts (
           file_id TEXT PRIMARY KEY, file_name TEXT NOT NULL, meeting_id TEXT,
           status TEXT NOT NULL, processed_at TEXT NOT NULL);
     """)

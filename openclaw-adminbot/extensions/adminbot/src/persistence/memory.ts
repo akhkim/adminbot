@@ -76,6 +76,7 @@ import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
   AdminBotLabMemberSummary,
   AdminBotListPage,
+  AdminBotMeetingArtifactRecord,
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
   AdminBotSlackConnectInvite,
@@ -229,6 +230,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
   private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
+  private readonly meetingArtifacts = new Map<string, AdminBotMeetingArtifactRecord>();
   private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
@@ -1156,6 +1158,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteMeeting(meetingId: string): boolean {
     return this.meetings.delete(meetingId);
+  }
+
+  hasAttachedMeetingArtifact(fileId: string): boolean {
+    return this.meetingArtifacts.get(fileId)?.status === "attached";
+  }
+
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void {
+    this.meetingArtifacts.set(record.file_id, structuredClone(record));
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {
