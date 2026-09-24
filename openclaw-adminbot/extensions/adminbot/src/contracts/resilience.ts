@@ -2,7 +2,7 @@
 
 export const adminBotLlmDefaultMaxLocal = 8;
 export const adminBotLlmDefaultMaxPublic = 100;
-export const adminBotLlmDefaultMaxPublicCeiling = 500;
+export const adminBotLlmDefaultMaxPublicCeiling = 100;
 
 export type AdminBotLlmNodeGpu = "RTX6000" | "H100" | "other";
 
