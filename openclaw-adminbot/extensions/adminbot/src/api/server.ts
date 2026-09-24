@@ -1,3 +1,4 @@
+import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
@@ -50,6 +51,7 @@ import {
   createMemoryFailedRequestLedger,
   type FailedExternalRequestLedger,
 } from "../persistence/failed-requests.js";
+import { createMemberDraftStore, type MemberDraftStore } from "../persistence/member-drafts.js";
 import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
 import {
@@ -111,6 +113,7 @@ import {
   sendServiceResult,
 } from "./server.http.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
+import { handleMemberDraft } from "./server.member-drafts.js";
 import {
   readWorkshopNudgeRun,
   sendWorkshopNudges,
@@ -354,6 +357,7 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  memberDrafts: MemberDraftStore;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
@@ -425,6 +429,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, serviceOptions(options));
   }
+  const memberDrafts =
+    store instanceof AdminBotSqliteStore ? store.memberDraftStore() : createMemberDraftStore();
   const failedRequestLedger =
     options.failedRequestLedger ??
     (store instanceof AdminBotSqliteStore
@@ -537,6 +543,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const ctx: AdminBotRouteContext = {
     service,
     store,
+    memberDrafts,
     auth,
     privacyBroker,
     sensitiveInfo,
@@ -1062,6 +1069,20 @@ async function handleAuthenticatedRoute(
   // anonymous callers unless it is explicitly added to ANONYMOUS_ROUTES.
   if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
     sendJson(res, 401, { error: { message: "authentication required" } });
+    return;
+  }
+  if (url.pathname.startsWith("/member-drafts/")) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "Member session required" } });
+      return;
+    }
+    await handleMemberDraft(
+      req,
+      res,
+      ctx.memberDrafts,
+      principal.member.id,
+      url.pathname.slice("/member-drafts/".length),
+    );
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
@@ -1934,11 +1955,22 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
-    sendJson(res, 200, await privacyBroker.handle(body));
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once("close", cancel);
+    try {
+      sendJson(res, 200, await privacyBroker.handle(body, controller.signal));
+    } finally {
+      res.off("close", cancel);
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/ops/llm-load") {
-    sendJson(res, 200, ctx.llmRouter.status());
+    sendJson(
+      res,
+      200,
+      process.env.LLM_GATEWAY_URL ? await readLlmGatewayStatus() : ctx.llmRouter.status(),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/ops/failed-requests") {
