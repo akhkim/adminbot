@@ -95,9 +95,12 @@ async function withStore<T>(
     return await new Promise<T>((resolve, reject) => {
       const transaction = db.transaction(storeName, mode);
       const request = run(transaction.objectStore(storeName));
-      request.addEventListener("success", () => resolve(request.result));
-      request.addEventListener("error", () =>
-        reject(request.error ?? new Error("AdminBot offline storage failed.")),
+      transaction.addEventListener("complete", () => resolve(request.result));
+      transaction.addEventListener("abort", () =>
+        reject(transaction.error ?? new Error("AdminBot offline storage failed.")),
+      );
+      transaction.addEventListener("error", () =>
+        reject(transaction.error ?? new Error("AdminBot offline storage failed.")),
       );
     });
   } finally {
