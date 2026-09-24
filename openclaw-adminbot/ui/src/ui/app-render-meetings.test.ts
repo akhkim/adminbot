@@ -12,6 +12,49 @@ describe("Meeting Recordings entry", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows a neutral status while a stored session is being verified, then the gate on failure", () => {
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2099-01-01T00:00:00Z",
+    });
+    const app = new OpenClawApp();
+    app.tab = "adminbotMeetings";
+    app.authGateVisible = true;
+    const container = document.createElement("div");
+
+    render(renderApp(app as unknown as AppViewState), container);
+    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeTruthy();
+    expect(container.querySelector(".login-gate__form")).toBeNull();
+    expect(container.querySelector(".landing")).toBeNull();
+    expect(container.querySelector(".meetings")).toBeNull();
+
+    app.memberAuthFailure = { kind: "adminbot-unreachable" };
+    render(renderApp(app as unknown as AppViewState), container);
+    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeNull();
+    expect(container.querySelector(".login-gate__form")).toBeTruthy();
+  });
+
+  it("keeps a verified member off the sign-in form while the gateway connects", () => {
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2099-01-01T00:00:00Z",
+    });
+    const app = new OpenClawApp();
+    app.tab = "profile";
+    app.memberId = "synthetic-member";
+    app.memberPrivilegeLevel = "member";
+    const container = document.createElement("div");
+
+    render(renderApp(app as unknown as AppViewState), container);
+    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeTruthy();
+    expect(container.querySelector(".login-gate__form")).toBeNull();
+
+    app.lastError = "Synthetic gateway failure";
+    render(renderApp(app as unknown as AppViewState), container);
+    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeNull();
+    expect(container.querySelector(".login-gate__form")).toBeTruthy();
+  });
+
   it("loads meetings from the member session before gateway, roster, or papers", async () => {
     saveStoredMemberSession({
       sessionToken: "synthetic-session",

@@ -187,7 +187,7 @@ import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
-import { renderLoginGate } from "./adminbot/views/login-gate.ts";
+import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics, type LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
 import {
@@ -2002,14 +2002,21 @@ export function renderApp(state: AppViewState) {
     privilegeLevel: state.memberPrivilegeLevel,
     gatewayConnected: state.connected,
   });
+  const restoringProtectedSession =
+    Boolean(loadStoredMemberSession()) &&
+    !state.memberAuthFailure &&
+    !state.memberFormError &&
+    !state.lastError;
 
-  // A visitor gets the landing page and then the public shell, not a wall: the two surfaces the
-  // access table opens to `anonymous` need no gateway, and the sign-in gate is something they open
-  // from the landing page or the public topbar.
+  // Public surfaces open immediately. A protected link waits for a stored session to be verified
+  // before showing either the member page or sign-in; a token in storage alone grants nothing.
   // The gateway URL confirmation overlay stays mounted throughout so URL-param flows keep working.
   if (accessRole === "anonymous") {
     if (state.guestReimbursements) {
       return html` ${renderGuestReimbursements(state)} ${renderGatewayUrlConfirmation(state)} `;
+    }
+    if (restoringProtectedSession && !canAccessTab(state.tab, accessRole)) {
+      return html` ${renderSessionRestorePending(state)} ${renderGatewayUrlConfirmation(state)} `;
     }
     if (state.authGateVisible) {
       return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
@@ -2034,6 +2041,9 @@ export function renderApp(state: AppViewState) {
     !state.connected &&
     !(state.tab === "adminbotMeetings" && state.memberId && loadStoredMemberSession())
   ) {
+    if (restoringProtectedSession) {
+      return html` ${renderSessionRestorePending(state)} ${renderGatewayUrlConfirmation(state)} `;
+    }
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a

@@ -110,19 +110,37 @@ describe("handleConnected member operator scopes", () => {
     hasStoredMemberSessionMock.mockReset();
     hasStoredMemberSessionMock.mockReturnValue(true);
     loadMemberPrivilegeMock.mockReset();
+    resumeMemberSessionMock.mockReset();
+    resumeMemberSessionMock.mockResolvedValue("resumed");
     vi.stubGlobal("window", { addEventListener: vi.fn() });
   });
 
-  it("waits for bootstrap before restoring a member session", async () => {
+  it("restores a member session without waiting for bootstrap", async () => {
     const host = createHost(null);
     host.settings.token = "";
     let ready!: () => void;
-    loadBootstrapMock.mockReturnValue(new Promise<void>((resolve) => { ready = resolve; }));
+    loadBootstrapMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+    );
     resumeMemberSessionMock.mockClear();
     handleConnected(host as never);
-    expect(resumeMemberSessionMock).not.toHaveBeenCalled();
+    expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1);
     ready();
-    await vi.waitFor(() => expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(resumeMemberSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("repaints after a stored session is rejected", async () => {
+    const host = { ...createHost(null), requestUpdate: vi.fn() };
+    host.settings.token = "";
+    resumeMemberSessionMock.mockResolvedValueOnce("cleared");
+
+    handleConnected(host as never);
+
+    await vi.waitFor(() => expect(host.requestUpdate).toHaveBeenCalledTimes(1));
+    expect(connectGatewayMock).toHaveBeenCalledTimes(1);
   });
 
   it("reconnects when admin privilege resolves after the initial connect", async () => {
