@@ -182,6 +182,18 @@ class MigrationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("null primary key", result.stderr)
 
+    def test_rejects_stored_generated_column_before_import(self):
+        self.path.chmod(0o600)
+        db = sqlite3.connect(self.path)
+        db.execute("CREATE TABLE adminbot_extra (id TEXT PRIMARY KEY, "
+                   "shadow TEXT AS (id || '-x') STORED)")
+        db.commit()
+        db.close()
+        self.path.chmod(0o444)
+        result = self.run_script("plan", "--sqlite", str(self.path))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hidden/generated column", result.stderr)
+
     def test_rejects_blob(self):
         other = Path(self.temp.name) / "blob.sqlite"
         fixture(other)

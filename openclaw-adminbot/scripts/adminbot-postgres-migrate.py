@@ -148,6 +148,8 @@ def table_model(db, name, ddl):
     if observed != expected:
         raise MigrationError("unrecognized CHECK constraint in " + name)
     cols = db.execute("PRAGMA table_info(" + ident(name) + ")").fetchall()
+    if [col[:6] for col in db.execute("PRAGMA table_xinfo(" + ident(name) + ")")] != cols:
+        raise MigrationError("hidden/generated column needs manual review in " + name)
     if not cols or any(not IDENT.fullmatch(col[1]) or col[2].upper() not in TYPES for col in cols):
         raise MigrationError("unsupported column name/type in " + name)
     if any((name, col[1]) in BYTEA_COLUMNS and col[2].upper() != "TEXT" for col in cols):

@@ -63,9 +63,16 @@ function verdictTtlMs(verdict) {
 }
 
 export function defaultReferenceCachePath() {
-  return (
-    process.env.ADMINBOT_DB_PATH || path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite")
-  );
+  const explicit = process.env.ADMINBOT_REFERENCE_CACHE_PATH?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const statePath =
+    process.env.ADMINBOT_DB_PATH?.trim() ||
+    path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
+  return statePath === ":memory:"
+    ? statePath
+    : path.join(path.dirname(statePath), "adminbot-reference-verdict-cache.sqlite");
 }
 
 export class ReferenceVerdictCache {
