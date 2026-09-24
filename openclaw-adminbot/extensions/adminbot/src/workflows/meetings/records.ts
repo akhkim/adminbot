@@ -17,15 +17,33 @@ import type {
 } from "../../contracts/actions.js";
 import { mergeAttendance } from "./attendance.js";
 
+const RFC3339_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+/** Keep new records in one UTC format that both JavaScript and SQLite can sort. */
+export function normalizedMeetingStartedAt(value: string): string | undefined {
+  if (!RFC3339_INSTANT.test(value)) {
+    return undefined;
+  }
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) {
+    return undefined;
+  }
+  const normalized = new Date(time).toISOString();
+  return /^\d{4}-/u.test(normalized) ? normalized : undefined;
+}
+
 /** Why an input cannot be filed, or undefined when it can. */
-export function validateMeeting(input: AdminBotMeetingRecordInput): string | undefined {
+export function validateMeeting(
+  input: AdminBotMeetingRecordInput,
+  allowUnchangedHistoricalDate = false,
+): string | undefined {
   if (!input.id?.trim()) {
     return "id is required";
   }
   if (!input.topic?.trim()) {
     return "topic is required";
   }
-  if (!input.started_at?.trim() || Number.isNaN(Date.parse(input.started_at))) {
+  if (!allowUnchangedHistoricalDate && !normalizedMeetingStartedAt(input.started_at)) {
     return "started_at must be an RFC3339 timestamp";
   }
   // A record with neither link is not a recording anyone can open, and filing one would put a dead
@@ -58,10 +76,12 @@ export function mergeMeeting(
     ...(attendees ? { attendees } : {}),
     // Both are the product of a model or a file that may be re-processed; keeping the newer one is
     // right, keeping the older one over an absent one is what stops a re-ingest from erasing it.
-    ...(input.transcript ?? existing?.transcript
+    ...((input.transcript ?? existing?.transcript)
       ? { transcript: input.transcript ?? existing?.transcript }
       : {}),
-    ...(input.summary ?? existing?.summary ? { summary: input.summary ?? existing?.summary } : {}),
+    ...((input.summary ?? existing?.summary)
+      ? { summary: input.summary ?? existing?.summary }
+      : {}),
     created_at: existing?.created_at ?? now,
     updated_at: now,
   } as AdminBotMeetingRecord;
@@ -131,10 +151,7 @@ export function meetsDurationFloor(
 }
 
 /** Newest first: a meetings tab is read to catch up on the one just missed. */
-export function byMostRecent(
-  left: AdminBotMeetingRecord,
-  right: AdminBotMeetingRecord,
-): number {
+export function byMostRecent(left: AdminBotMeetingRecord, right: AdminBotMeetingRecord): number {
   return Date.parse(right.started_at) - Date.parse(left.started_at);
 }
 
@@ -143,7 +160,5 @@ export function attendedBy(
   meeting: AdminBotMeetingRecord,
   memberId: string,
 ): AdminBotMeetingAttendee | undefined {
-  return meeting.attendees?.find(
-    (attendee) => attendee.member_id === memberId && attendee.present,
-  );
+  return meeting.attendees?.find((attendee) => attendee.member_id === memberId && attendee.present);
 }

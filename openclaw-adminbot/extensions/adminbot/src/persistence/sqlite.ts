@@ -78,12 +78,14 @@ import {
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
   type AdminBotMeetingArtifactRecord,
+  type AdminBotMeetingCursor,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingRecord,
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { meetsDurationFloor } from "../workflows/meetings/records.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
 import {
   adminBotEmailReviewFromRow,
@@ -597,6 +599,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_meetings_page_idx
+        ON adminbot_meetings(COALESCE(julianday(started_at), 0) DESC, id DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_meeting_artifacts (
         file_id TEXT PRIMARY KEY,
@@ -1352,6 +1356,25 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, json_extract(m.payload_json, '$.name') AS name
+         FROM adminbot_lab_members m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM adminbot_member_credentials c WHERE c.member_id = m.id
+         ) AND m.id NOT IN (
+           SELECT r.member_id FROM adminbot_account_registrations r
+           WHERE r.status = 'pending' AND r.kind = 'claim' AND r.member_id IS NOT NULL
+         ) ${needle ? "AND instr(adminbot_lower(json_extract(m.payload_json, '$.name')), ?) > 0" : ""}
+         ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+         LIMIT ?`,
+      )
+      .all(...(needle ? [needle] : []), limit) as Array<{ id: string; name: string | null }>;
+    return rows.map(({ id, name }) => ({ id, name: name ?? "" }));
   }
 
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
@@ -3159,6 +3182,54 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .prepare("SELECT payload_json FROM adminbot_meetings ORDER BY started_at DESC")
       .all() as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMeetingRecord>(row.payload_json));
+  }
+
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[] {
+    const chunkSize = Math.max(64, options.limit);
+    const first = this.db.prepare(
+      `SELECT id, started_at, payload_json FROM adminbot_meetings
+       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
+    );
+    const after = this.db.prepare(
+      `SELECT id, started_at, payload_json FROM adminbot_meetings
+       WHERE COALESCE(julianday(started_at), 0) <= COALESCE(julianday(?), 0)
+         AND (COALESCE(julianday(started_at), 0) < COALESCE(julianday(?), 0) OR id < ?)
+       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
+    );
+    const meetings: AdminBotMeetingRecord[] = [];
+    let before = options.before;
+    while (meetings.length < options.limit) {
+      const rows = (
+        before
+          ? after.all(before.started_at, before.started_at, before.id, chunkSize)
+          : first.all(chunkSize)
+      ) as Array<{
+        id: string;
+        started_at: string;
+        payload_json: string;
+      }>;
+      if (rows.length === 0) {
+        break;
+      }
+      for (const row of rows) {
+        before = { started_at: row.started_at, id: row.id };
+        const meeting = parseJson<AdminBotMeetingRecord>(row.payload_json);
+        if (meetsDurationFloor(meeting, options.minimumMinutes)) {
+          meetings.push(meeting);
+          if (meetings.length === options.limit) {
+            break;
+          }
+        }
+      }
+      if (rows.length < chunkSize) {
+        break;
+      }
+    }
+    return meetings;
   }
 
   deleteMeeting(meetingId: string): boolean {

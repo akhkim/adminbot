@@ -289,6 +289,7 @@ import {
   byMostRecent,
   meetsDurationFloor,
   mergeMeeting,
+  normalizedMeetingStartedAt,
   redactMeetingForMember,
   validateMeeting,
 } from "../workflows/meetings/records.js";
@@ -444,6 +445,8 @@ export type AdminBotServiceResponse<T> =
   | { ok: true; status: number; payload: T }
   | { ok: false; status: number; error: { message: string } };
 
+export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "id">;
+
 // The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
 type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
 
@@ -512,6 +515,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
   countLabMembers(q?: string): number;
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
@@ -652,6 +656,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
   hasAttachedMeetingArtifact(fileId: string): boolean;
   recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
@@ -8477,12 +8486,23 @@ export class AdminBotService {
    * each time. mergeMeeting is what keeps the earlier fields.
    */
   upsertMeeting(input: AdminBotMeetingRecordInput): AdminBotServiceResponse<AdminBotMeetingRecord> {
-    const validation = validateMeeting(input);
+    const existing = input.id?.trim() ? this.store.getMeeting(input.id) : undefined;
+    // An artifact update repeats the stored start time. Preserve historical nonstandard values
+    // until an explicit data repair, rather than moving old recordings during an unrelated update.
+    const unchangedHistoricalDate =
+      existing !== undefined && input.started_at === existing.started_at;
+    const validation = validateMeeting(input, unchangedHistoricalDate);
     if (validation) {
       return serviceError(400, validation);
     }
-    const existing = this.store.getMeeting(input.id);
-    const stored = mergeMeeting(existing, input, new Date().toISOString());
+    const startedAt = unchangedHistoricalDate
+      ? input.started_at
+      : normalizedMeetingStartedAt(input.started_at)!;
+    const stored = mergeMeeting(
+      existing,
+      { ...input, started_at: startedAt },
+      new Date().toISOString(),
+    );
     this.store.saveMeeting(stored);
     this.recordAudit({
       type: existing ? "meeting.updated" : "meeting.recorded",
@@ -8535,6 +8555,54 @@ export class AdminBotService {
           redactMeetingForMember(meeting, memberId),
         ),
       },
+    };
+  }
+
+  /** A bounded archive read for the UI; the unpaged methods above still serve existing callers. */
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+  }): AdminBotServiceResponse<{
+    meetings: AdminBotMeetingRecord[];
+    next_cursor?: AdminBotMeetingCursor;
+  }> {
+    return { ok: true, status: 200, payload: this.listedMeetingsPage(options) };
+  }
+
+  listMeetingsPageForMember(
+    memberId: string,
+    options: { limit: number; before?: AdminBotMeetingCursor },
+  ): AdminBotServiceResponse<{
+    meetings: AdminBotMeetingRecord[];
+    next_cursor?: AdminBotMeetingCursor;
+  }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const page = this.listedMeetingsPage(options);
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        ...page,
+        meetings: page.meetings.map((meeting) => redactMeetingForMember(meeting, memberId)),
+      },
+    };
+  }
+
+  private listedMeetingsPage(options: { limit: number; before?: AdminBotMeetingCursor }) {
+    const eligible = this.store.listMeetingsPage({
+      limit: options.limit + 1,
+      ...(options.before ? { before: options.before } : {}),
+      minimumMinutes: this.resolveSettings().meeting_minimum_minutes ?? 0,
+    });
+    const meetings = eligible.slice(0, options.limit);
+    const last = meetings.at(-1);
+    return {
+      meetings,
+      ...(eligible.length > options.limit && last
+        ? { next_cursor: { started_at: last.started_at, id: last.id } }
+        : {}),
     };
   }
 

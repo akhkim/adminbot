@@ -29,6 +29,7 @@ import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
   CalendarEventDraft,
   LabBroadcast,
@@ -79,6 +80,7 @@ import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
+  loadMoreAdminBotMeetings,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
@@ -392,6 +394,10 @@ export class OpenClawApp extends LitElement {
   @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
+  adminBotMeetingsRequestVersion = 0;
+  @state() adminBotMeetingsLoadingMore = false;
+  @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
+  @state() adminBotMeetingsVisibleCount = 12;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -417,6 +423,7 @@ export class OpenClawApp extends LitElement {
   @state() rosterError: RosterError = null;
   @state() rosterFilter = "";
   @state() selectedMemberId: string | null = null;
+  private rosterSearchTimer?: ReturnType<typeof setTimeout>;
   @state() memberName = "";
   @state() memberSlackUserId = "";
   @state() memberRole = "";
@@ -1360,6 +1367,13 @@ export class OpenClawApp extends LitElement {
     await loadRosterInternal(this as unknown as Parameters<typeof loadRosterInternal>[0]);
   }
 
+  scheduleRosterSearch() {
+    clearTimeout(this.rosterSearchTimer);
+    this.rosterSearchTimer = setTimeout(() => {
+      void this.loadRoster();
+    }, 200);
+  }
+
   handleChatScroll(event: Event) {
     handleChatScrollInternal(
       this as unknown as Parameters<typeof handleChatScrollInternal>[0],
@@ -1818,6 +1832,12 @@ export class OpenClawApp extends LitElement {
 
   loadMeetings(): Promise<void> {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  loadMoreMeetings(): Promise<void> {
+    return loadMoreAdminBotMeetings(
+      this as unknown as Parameters<typeof loadMoreAdminBotMeetings>[0],
+    );
   }
 
   loadMeetingNudges(): Promise<void> {

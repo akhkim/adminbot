@@ -2998,14 +2998,20 @@ export async function signupMember(
 }
 
 // Public roster of unclaimed members backing the claim picker (no auth).
-export async function fetchRoster(baseUrl: string): Promise<AuthResult<RosterMember[]>> {
+export async function fetchRoster(
+  baseUrl: string,
+  query = "",
+): Promise<AuthResult<RosterMember[]>> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/auth/roster`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
+    response = await fetch(
+      `${baseUrl}/auth/roster${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+      {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      },
+    );
   } catch {
     return { ok: false, kind: "unreachable" };
   }
@@ -3239,19 +3245,43 @@ export type MeetingRecord = {
   notes?: string;
 };
 
+export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
+
+export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
+
 export async function fetchMeetings(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<MeetingRecord[]>> {
-  const result = await authedJson(baseUrl, "/meetings", "GET", sessionToken);
+  page?: { limit: number; before?: MeetingCursor },
+): Promise<AuthResult<MeetingPage>> {
+  const params = new URLSearchParams();
+  if (page) {
+    params.set("limit", String(page.limit));
+    if (page.before) {
+      params.set("before_started_at", page.before.started_at);
+      params.set("before_id", page.before.id);
+    }
+  }
+  const result = await authedJson(
+    baseUrl,
+    `/meetings${page ? `?${params}` : ""}`,
+    "GET",
+    sessionToken,
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { meetings?: MeetingRecord[] } | null;
-  return { ok: true, value: body?.meetings ?? [] };
+  const body = result.body as MeetingPage | null;
+  return {
+    ok: true,
+    value: {
+      meetings: body?.meetings ?? [],
+      ...(body?.next_cursor ? { next_cursor: body.next_cursor } : {}),
+    },
+  };
 }
 
 export async function saveMeetingAttendance(

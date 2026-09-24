@@ -31,6 +31,143 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("searches only eligible roster names before applying the public result cap", () => {
+    const instance = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    for (let index = 0; index < 26; index += 1) {
+      unwrap(
+        instance.service.upsertLabMember({
+          id: `m-${String(index).padStart(2, "0")}`,
+          name: `Ada ${String(index).padStart(2, "0")}`,
+          privilege_level: "member",
+        }),
+      );
+    }
+    unwrap(
+      instance.service.upsertLabMember({
+        id: "unicode",
+        name: "Δelta",
+        privilege_level: "member",
+      }),
+    );
+    instance.store.saveCredential({
+      member_id: "m-00",
+      email: "m0@example.invalid",
+      password_scrypt: "synthetic",
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    instance.store.saveAccountRegistration({
+      id: "pending-1",
+      kind: "claim",
+      member_id: "m-01",
+      email: "m1@example.invalid",
+      password_scrypt: "synthetic",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    const first = instance.store.searchUnclaimedRoster("", 20);
+    expect(first).toHaveLength(20);
+    expect(first[0]?.id).toBe("m-02");
+    expect(first.every((entry) => Object.keys(entry).join(",") === "id,name")).toBe(true);
+    expect(instance.store.searchUnclaimedRoster("ada 2", 20)).toHaveLength(6);
+    expect(instance.store.searchUnclaimedRoster("δEL", 20)).toEqual([
+      { id: "unicode", name: "Δelta" },
+    ]);
+    instance.close();
+  });
+
+  it("pages past filtered recordings and orders equal timestamps by id", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const file = (id: string, startedAt: string, minutes: number) =>
+      unwrap(
+        lab.service.upsertMeeting({
+          id,
+          topic: `Synthetic ${id}`,
+          started_at: startedAt,
+          duration_minutes: minutes,
+          recording: { share_url: `https://example.test/${id}` },
+          source: "manual",
+        }),
+      );
+    file("newest", "2026-09-10T14:00:00Z", 30);
+    for (let index = 0; index < 80; index++) {
+      file(`short-${index}`, new Date(Date.UTC(2026, 8, 9, 0, index)).toISOString(), 1);
+    }
+    file("older-a", "2026-08-01T14:00:00Z", 30);
+    file("older-b", "2026-08-01T14:00:00Z", 30);
+    const first = unwrap(lab.service.listMeetingsPage({ limit: 2 }));
+    expect(first.meetings.map((meeting) => meeting.id)).toEqual(["newest", "older-b"]);
+    expect(first.next_cursor).toEqual({ started_at: "2026-08-01T14:00:00.000Z", id: "older-b" });
+    const second = unwrap(lab.service.listMeetingsPage({ limit: 2, before: first.next_cursor }));
+    expect(second.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
+    expect(second.next_cursor).toBeUndefined();
+    lab.close();
+  });
+
+  it("pages through old rows with unparseable or blank timestamps", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const result = lab.service.upsertMeeting({
+      id: "dated",
+      topic: "Synthetic meeting",
+      started_at: "2026-09-10T14:00:00Z",
+      duration_minutes: 30,
+      recording: { share_url: "https://example.test/dated" },
+      source: "manual",
+    });
+    const dated = unwrap(result);
+    for (const [id, started_at] of [
+      ["z-invalid", "not-a-date"],
+      ["y-blank", ""],
+      ["x-invalid", "malformed"],
+    ]) {
+      lab.store.saveMeeting({ ...dated, id, started_at });
+    }
+
+    const seen: string[] = [];
+    let cursor: { started_at: string; id: string } | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const page = unwrap(
+        lab.service.listMeetingsPage({ limit: 1, ...(cursor ? { before: cursor } : {}) }),
+      );
+      seen.push(...page.meetings.map((meeting) => meeting.id));
+      cursor = page.next_cursor;
+      if (!cursor) {
+        break;
+      }
+    }
+    expect(seen).toEqual(["dated", "z-invalid", "y-blank", "x-invalid"]);
+    expect(cursor).toBeUndefined();
+    lab.close();
+  });
+
+  it("stores new offset dates in UTC while leaving an unchanged historical date alone", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const save = (id: string, started_at: string) =>
+      lab.service.upsertMeeting({
+        id,
+        topic: `Synthetic ${id}`,
+        started_at,
+        duration_minutes: 30,
+        recording: { share_url: `https://example.test/${id}` },
+        source: "manual",
+      });
+    const offset = unwrap(save("offset", "2026-09-10T14:00:00+02:00"));
+    expect(offset.started_at).toBe("2026-09-10T12:00:00.000Z");
+    unwrap(save("newer", "2026-09-10T13:00:00Z"));
+    expect(
+      unwrap(lab.service.listMeetingsPage({ limit: 2 })).meetings.map((row) => row.id),
+    ).toEqual(["newer", "offset"]);
+
+    const legacy = { ...offset, id: "legacy", started_at: "September 10, 2026" };
+    lab.store.saveMeeting(legacy);
+    const updated = unwrap(save("legacy", legacy.started_at));
+    expect(updated.started_at).toBe(legacy.started_at);
+    expect(lab.store.getMeeting("legacy")?.started_at).toBe(legacy.started_at);
+    expect(save("new-bad", legacy.started_at)).toMatchObject({ ok: false, status: 400 });
+    expect(save("", "2026-09-10T14:00:00Z")).toMatchObject({ ok: false, status: 400 });
+    lab.close();
+  });
+
   it("adds an expiry index to existing databases so session cleanup avoids a table scan", () => {
     const databasePath = tempDbPath();
     createAdminBotSqliteService({ databasePath }).close();

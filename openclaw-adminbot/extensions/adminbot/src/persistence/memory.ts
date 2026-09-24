@@ -77,11 +77,13 @@ import type {
   AdminBotLabMemberSummary,
   AdminBotListPage,
   AdminBotMeetingArtifactRecord,
+  AdminBotMeetingCursor,
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { meetsDurationFloor } from "../workflows/meetings/records.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -374,6 +376,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
           : left.name.localeCompare(right.name),
       );
     return page ? members.slice(page.offset, page.offset + page.limit) : members;
+  }
+
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const pending = new Set(
+      [...this.registrations.values()]
+        .filter((entry) => entry.kind === "claim" && entry.status === "pending")
+        .map((entry) => entry.member_id),
+    );
+    return [...this.labMembers.values()]
+      .filter(
+        (member) =>
+          member.name.toLowerCase().includes(needle) &&
+          !this.credentialsByMemberId.has(member.id) &&
+          !pending.has(member.id),
+      )
+      .toSorted(
+        (left, right) =>
+          compareIndexedPageText(left.name, right.name) || compareSqliteText(left.id, right.id),
+      )
+      .slice(0, limit)
+      .map(({ id, name }) => ({ id, name }));
   }
 
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
@@ -1154,6 +1178,27 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listMeetings(): AdminBotMeetingRecord[] {
     return [...this.meetings.values()];
+  }
+
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[] {
+    const timestamp = (meeting: AdminBotMeetingCursor) => Date.parse(meeting.started_at) || 0;
+    return [...this.meetings.values()]
+      .filter((meeting) => meetsDurationFloor(meeting, options.minimumMinutes))
+      .filter(
+        (meeting) =>
+          !options.before ||
+          timestamp(meeting) < timestamp(options.before) ||
+          (timestamp(meeting) === timestamp(options.before) &&
+            compareSqliteText(meeting.id, options.before.id) < 0),
+      )
+      .sort(
+        (left, right) => timestamp(right) - timestamp(left) || compareSqliteText(right.id, left.id),
+      )
+      .slice(0, options.limit);
   }
 
   deleteMeeting(meetingId: string): boolean {

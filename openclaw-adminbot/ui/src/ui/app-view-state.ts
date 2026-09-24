@@ -6,6 +6,7 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
 import type {
@@ -159,6 +160,7 @@ export type AppViewState = {
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
+  loadMoreMeetings?: () => Promise<void>;
   toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
   fileMeeting?: (draft: {
     topic: string;
@@ -247,6 +249,7 @@ export type AppViewState = {
   beginViewAs: (memberId: string) => Promise<void>;
   endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
+  scheduleRosterSearch: () => void;
   tab: Tab;
   /**
    * This visit arrived on the root and has not been navigated since, so `tab` is a default nobody
@@ -538,6 +541,9 @@ export type AppViewState = {
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsLoadingMore: boolean;
+  adminBotMeetingsNextCursor: MeetingCursor | null;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render

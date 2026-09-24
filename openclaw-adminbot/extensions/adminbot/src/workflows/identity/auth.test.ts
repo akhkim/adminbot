@@ -491,6 +491,40 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(roster).toEqual([{ id: "c", name: "c" }]);
   });
 
+  it("returns at most 20 matching names after excluding pending and claimed members", async () => {
+    const { store, auth } = setup();
+    for (let index = 0; index < 30; index += 1) {
+      store.saveLabMember(
+        member(`m-${String(index).padStart(2, "0")}`, `m${index}@example.invalid`, {
+          name: `Ada ${String(index).padStart(2, "0")}`,
+        }),
+      );
+    }
+    store.saveCredential({
+      member_id: "m-00",
+      email: "m0@example.invalid",
+      password_scrypt: "synthetic",
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    store.saveAccountRegistration({
+      id: "pending-1",
+      kind: "claim",
+      member_id: "m-01",
+      email: "m1@example.invalid",
+      password_scrypt: "synthetic",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    expect(await auth.listRoster()).toHaveLength(20);
+    const matches = await auth.listRoster("aDa 2");
+    expect(matches.map((entry) => entry.name)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `Ada 2${index}`),
+    );
+    expect((await auth.listRoster("Ada")).some((entry) => entry.id === "m-00")).toBe(false);
+    expect((await auth.listRoster("Ada")).some((entry) => entry.id === "m-01")).toBe(false);
+  });
+
   it("accepts only one pending request when async claims and signups race", async () => {
     for (const collision of ["member", "email"] as const) {
       const { store } = setup();
@@ -589,20 +623,6 @@ describe("AdminBotAuthService claim/login flow", () => {
 
     expect(await claim).toMatchObject({ ok: false, status: 403 });
     expect(store.listAccountRegistrations("pending")).toEqual([]);
-  });
-
-  it("reads credential membership once for a large roster", async () => {
-    const { store, auth } = setup();
-    for (let index = 0; index < 200; index += 1) {
-      store.saveLabMember(member(`person-${index}`, `person-${index}@example.com`));
-    }
-    await claimAndApprove(store, auth, "claimed", "claimed@example.com");
-    const listIds = vi.spyOn(store, "listCredentialMemberIds");
-    const lookupOne = vi.spyOn(store, "getCredentialByMemberId");
-
-    expect(await auth.listRoster()).toHaveLength(200);
-    expect(listIds).toHaveBeenCalledTimes(1);
-    expect(lookupOne).not.toHaveBeenCalled();
   });
 
   it("rejects short passwords for claim and signup", async () => {

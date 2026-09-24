@@ -183,6 +183,7 @@ type AuthStoreMethod =
   | "savePasswordReset"
   | "saveSession"
   | "saveSessionIfCredentialCurrent"
+  | "searchUnclaimedRoster"
   | "touchSession"
   | "tryApproveRegistration"
   | "trySavePendingRegistration"
@@ -1267,22 +1268,10 @@ export class AdminBotAuthService {
     }
   }
 
-  // Public picker: roster members that are still unclaimed and have no pending claim. Exposes only
-  // id + name so an anonymous caller cannot harvest emails or other member fields.
-  async listRoster(): Promise<AdminBotRosterEntry[]> {
-    const pendingClaimMemberIds = new Set(
-      (await this.store.listAccountRegistrations("pending")).flatMap((entry) =>
-        entry.kind === "claim" && entry.member_id ? [entry.member_id] : [],
-      ),
-    );
-    const claimedMemberIds = new Set(await this.store.listCredentialMemberIds());
-    const available: AdminBotRosterEntry[] = [];
-    for (const member of await this.store.listLabMembers()) {
-      if (!claimedMemberIds.has(member.id) && !pendingClaimMemberIds.has(member.id)) {
-        available.push({ id: member.id, name: member.name });
-      }
-    }
-    return available;
+  // Anonymous results stay bounded even when the lab roster grows; the store filters claimed and
+  // pending profiles before LIMIT so a busy first page cannot hide eligible members.
+  async listRoster(query = ""): Promise<AdminBotRosterEntry[]> {
+    return await this.store.searchUnclaimedRoster(query.trim(), 20);
   }
 
   // Admin review list. Adds member name for claims and the proposed profile for signups; never

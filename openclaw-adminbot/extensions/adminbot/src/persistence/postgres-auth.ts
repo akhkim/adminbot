@@ -333,6 +333,35 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     return rows.map((row) => row.member_id);
   }
 
+  async searchUnclaimedRoster(
+    query: string,
+    limit: number,
+  ): Promise<Array<{ id: string; name: string }>> {
+    // Eligibility is filtered in SQL; the name match and order stay in JS so they fold case exactly
+    // as the SQLite store's adminbot_lower / NOCASE path does.
+    const rows = await this.rows<{ id: string; name: string | null }>(
+      `SELECT m.id, m.payload_json::jsonb ->> 'name' AS name
+       FROM ${this.table("adminbot_lab_members")} m
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ${this.table("adminbot_member_credentials")} c WHERE c.member_id = m.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM ${this.table("adminbot_account_registrations")} r
+         WHERE r.status = 'pending' AND r.kind = 'claim' AND r.member_id = m.id
+       )`,
+    );
+    const needle = query.toLowerCase();
+    const nocase = (value: string) => value.replace(/[A-Z]/gu, (ch) => ch.toLowerCase());
+    return rows
+      .map(({ id, name }) => ({ id, name: name ?? "" }))
+      .filter((entry) => !needle || entry.name.toLowerCase().includes(needle))
+      .sort((left, right) => {
+        const a = nocase(left.name);
+        const b = nocase(right.name);
+        return a < b ? -1 : a > b ? 1 : left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+      })
+      .slice(0, limit);
+  }
+
   async saveCredential(credential: AdminBotMemberCredential): Promise<void> {
     await this.pool.query(
       `INSERT INTO ${this.table("adminbot_member_credentials")}

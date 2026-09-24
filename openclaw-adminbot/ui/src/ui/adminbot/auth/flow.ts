@@ -241,6 +241,10 @@ export type MemberAuthHost = {
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetings?: import("./session.ts").MeetingRecord[];
+  adminBotMeetingsRequestVersion?: number;
+  adminBotMeetingsNextCursor?: import("./session.ts").MeetingCursor | null;
+  adminBotMeetingsLoadingMore?: boolean;
+  adminBotMeetingsVisibleCount?: number;
   adminBotMeetingsLoading?: boolean;
   adminBotMeetingsSaving?: boolean;
   adminBotMeetingsError?: string | null;
@@ -427,12 +431,19 @@ function buildSignupProfile(host: MemberAuthHost): SignupProfile {
 // Loads the unclaimed roster for the claim picker. Called when the user enters
 // claim mode; leaves an existing selection untouched on refresh.
 export async function loadRoster(host: MemberAuthHost): Promise<void> {
+  const query = host.rosterFilter.trim();
   host.rosterLoading = true;
   host.memberAuthFailure = null;
   try {
-    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings));
+    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings), query);
+    if (host.rosterFilter.trim() !== query) {
+      return;
+    }
     if (result.ok) {
-      host.rosterMembers = result.value;
+      const selected = host.rosterMembers.find((member) => member.id === host.selectedMemberId);
+      host.rosterMembers = selected
+        ? [selected, ...result.value.filter((member) => member.id !== selected.id)]
+        : result.value;
       host.rosterError = null;
       return;
     }
@@ -443,7 +454,9 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
       host.memberAuthFailure = { kind: "adminbot-unreachable" };
     }
   } finally {
-    host.rosterLoading = false;
+    if (host.rosterFilter.trim() === query) {
+      host.rosterLoading = false;
+    }
   }
 }
 
@@ -457,12 +470,16 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
 async function ensureMemberDeviceToken(
   host: MemberAuthHost,
   sessionToken: string,
+  isCurrent?: () => boolean,
 ): Promise<boolean> {
-  if (typeof crypto === "undefined" || !crypto.subtle) {
+  if (isCurrent?.() === false || typeof crypto === "undefined" || !crypto.subtle) {
     return false;
   }
   try {
     const identity = await loadOrCreateDeviceIdentity();
+    if (isCurrent?.() === false) {
+      return false;
+    }
     const result = await issueDeviceToken(
       {
         deviceId: identity.deviceId,
@@ -475,7 +492,7 @@ async function ensureMemberDeviceToken(
     if (!result.ok) {
       return false;
     }
-    if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+    if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== sessionToken) {
       return false;
     }
     // Stored under the same key the gateway client reads at connect, so the client picks it up
@@ -499,9 +516,10 @@ async function connectAsMember(
   host: MemberAuthHost,
   session: { session_token?: string; gateway?: { url?: string } },
   sessionToken: string,
+  isCurrent?: () => boolean,
 ) {
-  const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
-  if (loadStoredMemberSession()?.sessionToken !== sessionToken) {
+  const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken, isCurrent);
+  if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== sessionToken) {
     return;
   }
   if (!hasDeviceToken) {
@@ -648,6 +666,10 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
   host.adminBotMeetings = undefined;
+  host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
+  host.adminBotMeetingsNextCursor = null;
+  host.adminBotMeetingsLoadingMore = false;
+  host.adminBotMeetingsVisibleCount = 12;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;
@@ -773,6 +795,7 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   host.adminBotOnboardingAcknowledged = host.memberId
     ? hasAcknowledgedOnboardingChecklist(host.memberId)
     : true;
+  clearSignedOutView(host);
   await connectAsMember(host, session, session.session_token);
 }
 
@@ -914,14 +937,17 @@ export async function submitMemberAuth(host: MemberAuthHost): Promise<void> {
 // Resume outcome kinds let the init path decide whether to fall back to the gate.
 export type ResumeOutcome = "no-session" | "resumed" | "unreachable" | "cleared";
 
-export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeOutcome> {
+export async function resumeMemberSession(
+  host: MemberAuthHost,
+  isCurrent?: () => boolean,
+): Promise<ResumeOutcome> {
   const stored = loadStoredMemberSession();
   if (!stored) {
     return "no-session";
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   const result = await fetchMemberSession(stored.sessionToken, baseUrl);
-  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+  if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
     return "no-session";
   }
   if (result.ok) {
@@ -944,7 +970,8 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     host.adminBotOnboardingAcknowledged = host.memberId
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
-    await connectAsMember(host, result.value, stored.sessionToken);
+    clearSignedOutView(host);
+    await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
     return "resumed";
   }
   if (result.kind === "unreachable") {
@@ -953,8 +980,10 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     host.memberAuthFailure = { kind: "adminbot-unreachable" };
     return "unreachable";
   }
-  // 401 / rejected: the stored session is dead — drop it and show the gate.
-  clearStoredMemberSession();
+  // 401 / rejected: the stored session is dead. Remove its data and gateway access before
+  // returning to the gate; clearing only the browser token leaves an authenticated view alive.
+  clearLocalMemberSession(host);
+  await clearMemberDeviceToken(() => loadStoredMemberSession() === null);
   return "cleared";
 }
 
@@ -1097,9 +1126,7 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
   }
 }
 
-export async function signOutMember(host: MemberAuthHost): Promise<void> {
-  const stored = loadStoredMemberSession();
-  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+function clearLocalMemberSession(host: MemberAuthHost): void {
   clearStoredMemberSession();
   clearMemberScopedData(host);
   host.memberAuthFailure = null;
@@ -1129,8 +1156,6 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
   host.loginMode = "signin";
-  // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
-  clearSignedOutView(host);
   // Tear down the live gateway connection and drop the gateway token from the
   // in-memory + sessionStorage-scoped plumbing.
   host.client?.stop();
@@ -1139,6 +1164,14 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.hello = null;
   host.password = "";
   host.applySettings({ ...host.settings, token: "" });
+}
+
+export async function signOutMember(host: MemberAuthHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  clearLocalMemberSession(host);
+  // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
+  clearSignedOutView(host);
   // Local state must be gone before the first await. A new sign-in can finish while old token
   // revocation is pending; its identity and connection must not be cleared by that completion.
   await clearMemberDeviceToken(() => loadStoredMemberSession() === null);
