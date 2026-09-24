@@ -8,9 +8,18 @@ ssh <aurora-host> -l <cs-user>
 ```
 
 AdminBot does not need a GPU to remain online. Run the Gateway, AdminBot API,
-and hourly email processor as user-level systemd services. Keep code, secrets,
-SQLite state, and configuration in the backed-up CS home directory. Put package
-and model caches on `/mfs1/u/<user>`; do not put durable state in `/tmp`.
+and hourly email processor as user-level systemd services. Keep secrets in the
+account's private configuration directory and put package/model caches on
+`/mfs1/u/<user>`; do not put durable state in `/tmp`.
+
+**Storage decision still required:** SQLite's WAL mode is not supported on
+network filesystems such as NFS or FUSE mounts. A successful snapshot or extra
+free space does not make a network-mounted live database safe. Obtain an approved
+local block-storage location or a managed PostgreSQL service, with a verified
+backup/restore plan, before moving the database. The deploy command checks both
+new and existing SQLite state and refuses an unsupported mount before stopping
+services. An existing deployment on such a mount needs an operator-led storage
+remediation; retrying deploy cannot make the mount safe.
 
 ## Architecture
 
@@ -79,20 +88,19 @@ linked to `/mfs1/u/<cs-user>/jinesis-adminbot/state`, keeping SQLite state
 outside a replaceable release. The pnpm store is pinned beside them rather than
 left to pnpm's default, which picks a location by mount point.
 
-The deployment lives on `/mfs1`, the cluster store, because it is the only
-volume on Aurora with room: three releases each carry their own `node_modules`,
-the pnpm store is most of a gigabyte, and the AdminBot database is a quarter of
-one. `/h` (home) is routinely at 100%, and `/w/406` — where this deployment
-lived briefly — is a **2.1 GB, 80k-inode** volume that it does not fit on.
-`--root <path>` (or `$AURORA_DEPLOY_ROOT`) moves it, which is also how you
-deploy a second copy without disturbing the live one.
+The code and package cache need a large volume: three releases carry their own
+`node_modules`, and the pnpm store is most of a gigabyte. `/h` is routinely at
+100%, and `/w/406` is a **2.1 GB, 80k-inode** volume that has already filled.
+`/mfs1` has room for code and caches, but its network mount is **not** a safe
+SQLite WAL destination. The current script couples `--root` and `state/`, so
+that layout needs an approved storage design before using it to move live state.
 
 `deploy` refuses to start if the target volume has less than 4 GB or 200,000
 inodes free (`$AURORA_MIN_DEPLOY_FREE_MB`, `$AURORA_MIN_DEPLOY_FREE_INODES`).
 This is not hypothetical caution: when `/w/406` filled, SQLite answered every
 write with `disk I/O error`, including the audit row each login attempt makes,
-so the service returned 500 and the Control UI rendered that as *"That email and
-password did not match a lab member account"* — to a roster of people whose
+so the service returned 500 and the Control UI rendered that as _"That email and
+password did not match a lab member account"_ — to a roster of people whose
 passwords were correct.
 
 What deliberately stays in the home directory is everything that either has to
@@ -100,30 +108,74 @@ be there or should not be on a shared volume: the systemd user units in
 `~/.config/systemd/user`, the toolchain in `~/.local`, and the two 0600 secret
 files, `~/.config/jinesis-adminbot/adminbot.env` and `~/.openclaw/openclaw.json`.
 
-On the first deploy to a new root, if its `state/` does not exist, the databases
-are copied across once from the directory the previously live release in that
-same root was using. Moving to a *different* root has nothing to inherit from, so
-name the source:
+On the first deploy to a new root, name the source explicitly with `--seed-state`.
+An intentionally new installation instead requires `--init-empty-state`. Neither
+option can create a new SQLite database on an unsupported filesystem. The
+deploying account must own the source database and must be able to stop all
+same-account writer services. Confirm no other process writes to the source
+during the move, then pass `--confirm-source-quiesced`. The script stops and
+checks its known writer units, but it cannot discover other writers. That flag
+is an operator attestation, not an automatic proof. The snapshot is
+integrity-checked and its table counts are compared with the source before the
+new `current` symlink is installed. Those checks cannot detect a concurrent
+update that changes a row without changing the table count, so they do not by
+themselves guarantee a lossless migration. The previous state and release are
+retained for rollback.
+If service installation fails, the previous unit definitions are restored, but
+the services stay stopped until an operator reviews and restarts them.
+
+Moving to a _different_ root has nothing to inherit from. Name the source only
+after arranging approved local storage for both the source snapshot and target:
 
 ```bash
 scripts/aurora-adminbot-host.sh --user <cs-user> \
-  --root /mfs1/u/<cs-user>/jinesis-adminbot \
-  --seed-state /w/406/adminbot/state \
+  --root <approved-local-root> \
+  --seed-state <quiesced-local-state-dir> \
+  --confirm-source-quiesced \
   deploy
 ```
 
-Without `--seed-state`, a deploy into an empty new root on a host that already
-holds databases is **refused**, and prints the ones it found. There is no
-automatic fallback to `~/.openclaw/state`: that was safe exactly once, before
-state had ever moved, and seeding from it today would roll the lab back to a
-months-old snapshot while looking like a clean deploy.
+The prior network-mount-to-network-mount recipe is deliberately blocked. An
+operator must plan the live migration with CSLab and verify where the state will
+live; this runbook does not authorize copying live lab data to a workstation or
+a new host.
 
-The source is left in place as a fallback, and the historical snapshots beside
-the live databases (`*.backup-*`, `*.bak-*`, `*.before-*`, `*.empty-*`) are
-deliberately not copied: they were half a gigabyte last time and are what filled
-`/w/406`. Nothing is copied over a state directory that already exists.
+Without either explicit flag, a deploy into an empty new root is **refused**.
+There is no automatic fallback to another state directory; an old copy could
+silently roll the lab back while looking like a clean deploy. Use
+`--init-empty-state` only when creating a genuinely new installation with no
+existing records to preserve.
+
+The source is left in place as a fallback. Historical snapshots beside the live
+databases (`*.backup-*`, `*.bak-*`, `*.before-*`, `*.empty-*`) and transient
+`-wal`/`-shm` files are not copied. Nothing is copied over an existing state
+directory. A new state directory is staged and renamed only after verification.
+If a later step fails, a pending marker blocks a retry from using that snapshot
+until an operator reviews it. A retry never treats a half-completed seed as live
+state.
 
 The deploy command installs service definitions but does not start them.
+It holds an account-wide writer lock while stopping services, building, seeding,
+and switching `current`. Other deployments and host-script commands that can
+start writers or change live configuration are refused until it finishes. If an
+interrupted run leaves the lock behind, inspect the state, units, and `current`
+before an operator removes it; do not blindly retry. This lock cannot prevent
+processes started outside the host script from writing to the database. Direct
+service-installer runs acquire the same account lock; the host script passes its
+lock token to the nested installer during deploy and start. The member Sheet
+poller installer accepts only that inherited token, so run it through the
+locked service installer.
+
+`sync-adminbot-data` replaces an existing database only on approved local
+storage. Before running it, confirm the local source is authoritative, stop
+all processes that can write to that source, and verify no independent remote
+writer remains. Supply both `--confirm-db-replacement` and
+`--confirm-source-quiesced` to record those operator checks. The command stops
+all known remote writer units, snapshots and verifies the source and remote
+backup, then swaps the database. It leaves writers stopped so an operator can
+inspect the result before running `start`. Snapshot integrity and table counts
+cannot prove that a concurrent update was not missed. A failed or interrupted
+swap may leave a pending marker that blocks `start` until operator review.
 
 ## 3. Configure secrets and OpenClaw
 
@@ -182,7 +234,10 @@ scripts/aurora-adminbot-host.sh --user <cs-user> status
 
 The start command refuses to proceed while the env file contains
 `REPLACE_ME`, while `openclaw.json` is missing, or while gog authentication is
-unavailable.
+unavailable. `start` and `install-services` also refuse to rewrite unit files
+while any managed database writer is active. Use `stop` before installing units
+or switching release roots; use `restart` for a service already running from
+the current release.
 
 Inspect logs independently:
 
