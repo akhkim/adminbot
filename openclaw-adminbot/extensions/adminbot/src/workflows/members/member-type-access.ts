@@ -9,8 +9,9 @@
  * appeared one sweep at a time, hours apart, with no single place that could answer "what does
  * moving this person from `full` to `alumni` actually do to them".
  *
- * This is that place. It is a *diff*, not an actuator: it reports what somebody gains and loses, and
- * the service turns the losses into proposals an admin approves. Nothing here writes anything.
+ * This is that place. It is a *diff*, not an actuator: it reports what somebody gains and loses.
+ * The roster sync turns the losses into proposals an admin approves; an admin's own Lab Members
+ * save applies both directions at once (api/server.member-type-change.ts). Nothing here writes.
  *
  * Every answer is computed from the existing predicates rather than restated, deliberately. A
  * second copy of "who belongs on the calendar" would drift from the one that sends the invites, and
@@ -18,13 +19,16 @@
  */
 import {
   adminBotHasPortalAccess,
+  adminBotMemberTypeTokens,
   type AdminBotExternalCollaboratorSubgroup,
   type AdminBotLabMember,
+  type AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
 import {
   ADMINBOT_ACTIVE_CHANNELS,
   ADMINBOT_FRIENDS_CHANNELS,
   resolveSubgroup,
+  subgroupForMemberType,
 } from "./access-audit.js";
 import {
   collaboratorSubgroupAccess,
@@ -142,7 +146,10 @@ export type MemberTypeAccessDelta = {
    * against what they lose, which is the direction that fails safe.
    */
   slack_channels_to_remove: string[];
-  /** Rooms a newly granted row covers and no previous row did. Never acted on automatically. */
+  /**
+   * Rooms a newly granted row covers and no previous row did. The nightly roster sync never acts on
+   * these; an admin changing the type on the Lab Members tab does.
+   */
   slack_channels_to_add: string[];
 };
 
@@ -185,8 +192,32 @@ export function memberTypeAccessDelta(
   member: AdminBotLabMember,
   nextMemberType: string | undefined,
 ): MemberTypeAccessDelta {
-  const before = memberTypeAccessProfile(member);
-  const after = memberTypeAccessProfile(member, nextMemberType);
+  return accessDeltaBetween(
+    memberTypeAccessProfile(member),
+    memberTypeAccessProfile(member, nextMemberType),
+  );
+}
+
+/**
+ * What a whole-record change does to one person: the record before a save against the record after.
+ *
+ * `memberTypeAccessDelta` varies the type alone, which is right for the roster sync -- it writes
+ * only that column. An admin's Lab Members save also moves `privilege_level` and
+ * `collaborator_subgroup` with the type (see `privilegeForMemberTypeChange`), and a subgroup already
+ * on the record outranks the column, so diffing the type alone would report "nothing changes" for
+ * every external collaborator whose subgroup was set.
+ */
+export function memberAccessDelta(
+  before: AdminBotLabMember,
+  after: AdminBotLabMember,
+): MemberTypeAccessDelta {
+  return accessDeltaBetween(memberTypeAccessProfile(before), memberTypeAccessProfile(after));
+}
+
+function accessDeltaBetween(
+  before: MemberTypeAccessProfile,
+  after: MemberTypeAccessProfile,
+): MemberTypeAccessDelta {
   const heldBefore = new Set(before.grants.map((grant) => grant.item));
   const heldAfter = new Set(after.grants.map((grant) => grant.item));
   const granted = after.grants.filter((grant) => !heldBefore.has(grant.item));
@@ -203,9 +234,52 @@ export function memberTypeAccessDelta(
     subgroup_pinned: before.subgroup_source === "record",
     granted,
     revoked,
-    slack_channels_to_remove: [...channelsFor(revoked)].filter((channel) => !kept.has(channel)),
+    // A full member carries no matrix rows because they are entitled to more than any of them, not
+    // less -- so becoming one must not read as losing #jinesis-active. Without this, promoting an
+    // external collaborator to `full` removed them from the lab's own rooms.
+    slack_channels_to_remove:
+      after.subgroup_source === "full_member"
+        ? []
+        : [...channelsFor(revoked)].filter((channel) => !kept.has(channel)),
     slack_channels_to_add: [...channelsFor(granted)].filter((channel) => !had.has(channel)),
   };
+}
+
+/**
+ * The access level a new Member Type implies, or undefined to leave it as it is.
+ *
+ * Read off how the live roster already pairs the two (2026-09-24, 180 rows): every `full` row is
+ * `member` or `admin`, and every other collaboration type is `external_collaborator` with the
+ * subgroup its token names. So:
+ *
+ *   - `full` -> `member`, or stays `trial` for somebody still on trial.
+ *   - a collaboration type -> `external_collaborator` + that subgroup (most-committed token wins).
+ *   - anything else (blank, `mailing-list`, the operational tags) -> no change: the column does not
+ *     say what access somebody should have.
+ *
+ * An admin is never moved. Taking somebody's admin rights away -- possibly the admin making the
+ * edit -- is a decision to make in the Privilege field, not a side effect of a Member Type cell.
+ */
+export function privilegeForMemberTypeChange(
+  member: AdminBotLabMember,
+  nextMemberType: string | undefined,
+):
+  | {
+      privilege_level: AdminBotPrivilegeLevel;
+      collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
+    }
+  | undefined {
+  if (member.privilege_level === "admin") {
+    return undefined;
+  }
+  const tokens = adminBotMemberTypeTokens(nextMemberType);
+  if (tokens.includes("full")) {
+    return { privilege_level: member.privilege_level === "trial" ? "trial" : "member" };
+  }
+  const subgroup = subgroupForMemberType(nextMemberType);
+  return subgroup
+    ? { privilege_level: "external_collaborator", collaborator_subgroup: subgroup }
+    : undefined;
 }
 
 /** Whether a delta is worth telling anybody about. */

@@ -2399,6 +2399,8 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.revised"
     | "deadline_proposal.published"
     | "lab_member.upserted"
+    // A Lab Members type change applied on the spot: access level, sheet, Slack, meeting, mail.
+    | "lab_member.member_type_applied"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
     // One pass of a standing local event's guest list against where people actually are.

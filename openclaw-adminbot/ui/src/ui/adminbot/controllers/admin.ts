@@ -65,6 +65,7 @@ import {
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
+import { describeMemberTypeChange } from "../data/member-type-change.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
@@ -2651,9 +2652,14 @@ export async function saveAdminBotMember(
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
+    // A Member Type change is applied on the spot -- access level, sheet, rooms, meeting -- and the
+    // notice says what each of those did rather than a bare "saved".
+    const typeChange = result.value.member_type_change;
     const notice = options.onboard
       ? await onboardSavedMember(host, member.id, stored.sessionToken)
-      : { kind: "success" as const, text: `Saved member ${member.id}.` };
+      : typeChange
+        ? describeMemberTypeChange(member.id, typeChange)
+        : { kind: "success" as const, text: `Saved member ${member.id}.` };
     if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
       return;
     }

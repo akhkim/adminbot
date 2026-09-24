@@ -463,6 +463,36 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+### Changing a Member Type
+
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
+the welcome mail, and applies it on the spot. The admin's save is the approval: each external
+step is still a typed proposal, approved by that admin, executed and audited, the same way Add
+row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+genuine admin session and only when the type actually changes (compared token-wise, so
+`Coauthor-Major ` is not a change). The service token still cannot set the field.
+
+- **Access level follows the type.** `full` becomes `member`, or stays `trial`. Any collaboration
+  type becomes `external_collaborator` with that type's subgroup, and the most-committed token
+  wins. Blank, `mailing-list` and the operational tags leave it alone. **Admins are never moved**:
+  removing admin rights is a decision for the Privilege field. A Privilege or subgroup the admin
+  changed in the same save wins over the implied one.
+- **The sheet row is updated.** Member Type is written back to the person's row on the member
+  sheet, so the 06:10 roster sync does not put the old type back. It is guarded against concurrent
+  edits like a grid edit.
+- **Slack rooms** named by the access matrix are joined or left (`slack.invite_to_channel` /
+  `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
+- **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
+  `calendar.remove_attendees`, both `--send-updates none`).
+- **Lab calendar** read access is granted silently when they gain it. No action revokes a calendar
+  share, so a loss is reported in the notice for someone to handle by hand.
+- **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
+  (`onboarding.send_guide`). Every other change sends nothing.
+
+Each step is reported separately in the save notice. A failed step does not undo the save or stop
+the others, and it turns the notice red. The whole change is recorded as
+`lab_member.member_type_applied` in the audit log.
+
 ### Roster sync
 
 `scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads

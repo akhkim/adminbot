@@ -107,10 +107,13 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
+import { privilegeForMemberTypeChange } from "../workflows/members/member-type-access.js";
+import { sameMemberType } from "../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../workflows/members/travel-history.js";
 import {
   ADMINBOT_LAB_EMAIL_ENV,
   adminBotLabCalendarId,
+  type CalendarInviteRunner,
   createCalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster-sheet.js";
@@ -188,6 +191,7 @@ import {
   readMemberSheet,
   readRosterSheet,
 } from "./server.member-sheet.js";
+import { applyMemberTypeChange } from "./server.member-type-change.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
@@ -593,6 +597,8 @@ type AdminBotRouteContext = {
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
+  /** Grants lab-calendar read access, silently. Shared with auth so both use one runner. */
+  inviteToLabCalendar: CalendarInviteRunner;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
@@ -761,6 +767,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
       DEFAULT_ALLOWED_ORIGINS,
   );
+  const calendarInviteRunner = options.calendarInviteRunner ?? createCalendarInviteRunner();
   const auth = new AdminBotAuthService({
     store,
     // Prepare the governed profile without writing; approval commits the member, credential, and
@@ -776,7 +783,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
-    inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
+    inviteToLabCalendar: calendarInviteRunner,
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
@@ -962,6 +969,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
     readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
     labCalendar: resolveLabCalendar(),
+    inviteToLabCalendar: calendarInviteRunner,
     draftCalendarEvent:
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
@@ -1559,6 +1567,67 @@ async function handleDeviceTokenRoute(
 
 // An approval must name a real person, so the shared service principal (which every agent tool
 // call authenticates as) cannot supply one.
+/**
+ * The Monday group meeting as it stands: every live series id and the union of their guests.
+ *
+ * Shared by the membership sweep and a Lab Members type change, so both write to the same series.
+ * A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead is
+ * kept, not just the first: once somebody edits the meeting "this and following" in Google, the
+ * later Mondays belong to a new `<series>_R<instant>` series and the configured id names a series
+ * that has already ended. Writing to that id is what used to happen -- it re-sent the dead series
+ * to everyone on it and left the live meeting untouched, so the same removals were proposed again
+ * the next morning.
+ */
+async function readGroupMeetingSeries(
+  ctx: AdminBotRouteContext,
+  calendarId: string,
+  eventId?: string,
+): Promise<
+  | { calendarId: string; seriesId: string; targets: string[]; attendees: string[] }
+  | { error: { status: number; message: string } }
+> {
+  if (!ctx.readCalendarEvents) {
+    return { error: { status: 503, message: "calendar reading is not configured" } };
+  }
+  const seriesId = groupMeetingSeriesId(eventId || resolveGroupMeetingEventId());
+  let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
+  try {
+    events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+  } catch (error) {
+    // Plans are computed from this read. A failed read must not become "the meeting has no
+    // attendees", which is a proposal to empty it.
+    return {
+      error: {
+        status: 502,
+        message: `could not read the calendar: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    };
+  }
+  const occurrences = events.filter((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
+  if (occurrences.length === 0) {
+    return {
+      error: {
+        status: 404,
+        message: `no event ${seriesId} on calendar ${calendarId} in the read window`,
+      },
+    };
+  }
+  const targets = [
+    ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
+  ];
+  // The union, so somebody who is only on a later split still gets reconciled.
+  const attendees = [
+    ...new Map(
+      occurrences
+        .flatMap((occurrence) => occurrence.attendees ?? [])
+        .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
+    ).values(),
+  ];
+  return { calendarId, seriesId, targets, attendees };
+}
+
 function approverIdentityFor(
   principal: AdminBotPrincipal,
 ): { approver_role: string; approver_id: string } | undefined {
@@ -4131,17 +4200,67 @@ async function handleAuthenticatedRoute(
     // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
     // to the database and do not come through here.
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      sendServiceResult(
-        res,
-        service.upsertLabMember(
-          { ...(body as AdminBotLabMemberInput), id: memberId },
-          // An admin correcting somebody's record is not that member adopting the tool, so this is
-          // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
-          // "who typed this" has an answer either way -- and comes from principalActor so that an
-          // admin doing this while viewing as another admin is still recorded as themselves.
-          { source: "admin", actor: principalActor(principal) },
-        ),
+      const existing = ctx.store.getLabMember(memberId);
+      const input = body as AdminBotLabMemberInput;
+      // A Member Type change is re-onboarding without the welcome mail: the access level follows
+      // the type unless this same save picks one explicitly, and the rooms, meeting and sheet row
+      // are brought into line below, approved by this admin's click.
+      const typeChanged =
+        existing !== undefined &&
+        typeof input.member_type === "string" &&
+        !sameMemberType(existing.member_type, input.member_type);
+      const implied = typeChanged
+        ? privilegeForMemberTypeChange(existing, input.member_type)
+        : undefined;
+      const explicitPrivilege =
+        input.privilege_level !== undefined && input.privilege_level !== existing?.privilege_level;
+      const explicitSubgroup =
+        input.collaborator_subgroup !== undefined &&
+        input.collaborator_subgroup !== existing?.collaborator_subgroup;
+      const saved = service.upsertLabMember(
+        {
+          ...input,
+          ...(implied && !explicitPrivilege
+            ? {
+                privilege_level: implied.privilege_level,
+                ...(explicitSubgroup || !implied.collaborator_subgroup
+                  ? {}
+                  : { collaborator_subgroup: implied.collaborator_subgroup }),
+              }
+            : {}),
+          id: memberId,
+        },
+        // An admin correcting somebody's record is not that member adopting the tool, so this is
+        // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
+        // "who typed this" has an answer either way -- and comes from principalActor so that an
+        // admin doing this while viewing as another admin is still recorded as themselves.
+        { source: "admin", actor: principalActor(principal) },
       );
+      const approver = approverIdentityFor(principal);
+      if (!saved.ok || !typeChanged || !existing || !approver) {
+        sendServiceResult(res, saved);
+        return;
+      }
+      const actor = principalActor(principal);
+      const member_type_change = await applyMemberTypeChange(
+        {
+          service,
+          approver,
+          actor,
+          ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
+          readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
+          inviteToLabCalendar: ctx.inviteToLabCalendar,
+          recordAudit: (event) =>
+            ctx.store.recordAudit({
+              id: `aud_${randomUUID()}`,
+              timestamp: new Date().toISOString(),
+              ...event,
+            }),
+        },
+        existing,
+        saved.payload,
+      );
+      sendJson(res, 200, { ...saved.payload, member_type_change });
       return;
     }
     if (principal.kind === "service") {
@@ -4297,57 +4416,18 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.readCalendarEvents) {
-      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
-      return;
-    }
     const body = readRecord(await readJsonOrEmpty(req));
     const surface = asString(body.surface) === "lab_calendar" ? "lab_calendar" : "group_meeting";
-    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
-    const seriesId = groupMeetingSeriesId(asString(body.event_id) || resolveGroupMeetingEventId());
-
-    let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
-    try {
-      events = await ctx.readCalendarEvents({ calendarId, max: 250 });
-    } catch (error) {
-      // The plan is computed from this read. A failed read must not become "the meeting has no
-      // attendees", which is a proposal to empty it.
-      sendJson(res, 502, {
-        error: {
-          message: `could not read the calendar: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      });
-      return;
-    }
-
-    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead
-    // is kept, not just the first: once somebody edits the meeting "this and following" in Google,
-    // the later Mondays belong to a new `<series>_R<instant>` series and the configured id names a
-    // series that has already ended. Writing to that id is what used to happen -- it re-sent the
-    // dead series to everyone on it and left the live meeting untouched, so the same removals were
-    // proposed again the next morning.
-    const occurrences = events.filter(
-      (candidate) => groupMeetingSeriesId(candidate.id) === seriesId,
+    const meeting = await readGroupMeetingSeries(
+      ctx,
+      asString(body.calendar_id) || ctx.labCalendar.id,
+      asString(body.event_id) || undefined,
     );
-    if (occurrences.length === 0) {
-      sendJson(res, 404, {
-        error: { message: `no event ${seriesId} on calendar ${calendarId} in the read window` },
-      });
+    if ("error" in meeting) {
+      sendJson(res, meeting.error.status, { error: { message: meeting.error.message } });
       return;
     }
-    const targets = [
-      ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
-    ];
-    // The union, so somebody who is only on a later split still gets reconciled.
-    const attendees = [
-      ...new Map(
-        occurrences
-          .flatMap((occurrence) => occurrence.attendees ?? [])
-          .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
-      ).values(),
-    ];
+    const { calendarId, seriesId, targets, attendees } = meeting;
 
     sendServiceResult(
       res,

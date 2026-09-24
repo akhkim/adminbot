@@ -164,6 +164,24 @@ export type BadgeNominationView = {
 
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
+/**
+ * What a Member Type change on the Lab Members tab did, step by step. Mirrors the service's
+ * `MemberTypeChangeResult` (extensions/adminbot/src/api/server.member-type-change.ts).
+ */
+export type MemberTypeChangeSummary = {
+  from?: string;
+  to?: string;
+  privilege_level: { from: string; to: string };
+  collaborator_subgroup: { from?: string; to?: string };
+  steps: Array<{
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail";
+    target?: string;
+    status: "done" | "skipped" | "failed";
+    detail?: string;
+    proposal_id?: string;
+  }>;
+};
+
 export type LabMember = {
   id?: string;
   name?: string | null;
@@ -656,7 +674,7 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LabMember>> {
+): Promise<AuthResult<LabMember & { member_type_change?: MemberTypeChangeSummary }>> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}`,
@@ -676,7 +694,10 @@ export async function upsertLabMemberAsAdmin(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body as LabMember };
+  return {
+    ok: true,
+    value: result.body as LabMember & { member_type_change?: MemberTypeChangeSummary },
+  };
 }
 
 /**
