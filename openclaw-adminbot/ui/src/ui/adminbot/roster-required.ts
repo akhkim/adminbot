@@ -4,9 +4,11 @@ import type { AdminBotLoadMode } from "./controllers/admin.ts";
 export function needsLabRoster(tab: string, mode: AdminBotLoadMode, panel: string | null): boolean {
   return (
     tab === "myWork" ||
-    tab === "adminbotTimeAvailability" ||
     (mode === "admin" &&
-      (tab === "adminbotMeetings" || tab === "adminbotBadges" || tab === "adminbotCalendar")) ||
+      (tab === "adminbotTimeAvailability" ||
+        tab === "adminbotMeetings" ||
+        tab === "adminbotBadges" ||
+        tab === "adminbotCalendar")) ||
     panel === "papers" ||
     panel === "announcements"
   );

@@ -396,6 +396,9 @@ describe("mailbox scan watermark", () => {
     });
     state.finish("broke", "failed", "boom");
     expect(state.isSettled("broke")).toBe(false);
+    expect(
+      state.begin(message({ id: "broke" }), { category: "unknown", reason: "retry" }),
+    ).toBe(true);
     expect(state.isSettled("never-seen")).toBe(false);
     cleanup();
   });
@@ -427,5 +430,78 @@ describe("mailbox scan watermark", () => {
       status: "needs_review",
     });
     cleanup();
+  });
+});
+
+describe("email automation claims", () => {
+  it("allows only one run to claim an interleaved message", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-email-claim-"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const first = new StateStore(databasePath);
+    const second = new StateStore(databasePath);
+    const item = message({ id: "race" });
+    const kind = { category: "student_reachout", reason: "test" };
+    let competingClaim: boolean | undefined;
+    const prepare = first.db.prepare.bind(first.db);
+    vi.spyOn(first.db, "prepare").mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (String(sql).includes("SELECT status FROM adminbot_email_messages WHERE message_id")) {
+        const get = statement.get.bind(statement);
+        vi.spyOn(statement, "get").mockImplementation((...args) => {
+          const row = get(...args);
+          competingClaim = second.begin(item, kind);
+          return row;
+        });
+      }
+      return statement;
+    });
+    try {
+      const firstClaim = first.begin(item, kind);
+      const secondClaim = competingClaim ?? second.begin(item, kind);
+      expect(Number(firstClaim) + Number(secondClaim)).toBe(1);
+    } finally {
+      first.close();
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("starts an external effect only once when two runs interleave", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-email-effect-"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const first = new StateStore(databasePath);
+    const second = new StateStore(databasePath);
+    let executions = 0;
+    let competingEffect: Promise<string | undefined> | undefined;
+    const operation = async () => {
+      executions += 1;
+      return "sent";
+    };
+    const prepare = first.db.prepare.bind(first.db);
+    vi.spyOn(first.db, "prepare").mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (String(sql).includes("SELECT status, result_json FROM adminbot_email_effects")) {
+        const get = statement.get.bind(statement);
+        vi.spyOn(statement, "get").mockImplementation((...args) => {
+          const row = get(...args);
+          competingEffect = second.effect("race", "send", operation);
+          return row;
+        });
+      }
+      return statement;
+    });
+    try {
+      const firstEffect = first.effect("race", "send", operation);
+      competingEffect ??= second.effect("race", "send", operation);
+      const results = await Promise.allSettled([firstEffect, competingEffect]);
+      expect(executions).toBe(1);
+      expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+      expect(await second.effect("race", "send", operation)).toBe("sent");
+      expect(executions).toBe(1);
+    } finally {
+      first.close();
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

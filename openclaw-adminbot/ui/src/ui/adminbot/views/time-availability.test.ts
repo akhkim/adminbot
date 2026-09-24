@@ -199,11 +199,14 @@ describe("renderAdminBotTimeAvailability", () => {
       .querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
       ?.click();
     expect(onRefresh).toHaveBeenCalledOnce();
+    const loadingView = renderView({ onRefresh, loading: true });
     expect(
-      renderView({ onRefresh, loading: true }).querySelector<HTMLButtonElement>(
-        ".adminbot-time-availability__refresh",
-      )?.disabled,
+      loadingView.querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+        ?.disabled,
     ).toBe(true);
+    expect(
+      loadingView.querySelector("[data-testid=time-availability-jinesis-table]"),
+    ).not.toBeNull();
   });
 
   // Editing is self-only: the service routes a member session to its own record, so showing the
