@@ -30,7 +30,11 @@ export function createMemberDraftStore(db?: DatabaseSync): MemberDraftStore {
       | { revision: number; mutation_id: string; data_json: string }
       | undefined;
     return row
-      ? { revision: row.revision, mutationId: row.mutation_id, data: JSON.parse(row.data_json) }
+      ? {
+          revision: row.revision,
+          mutationId: row.mutation_id,
+          data: parseDraftData(row.data_json),
+        }
       : null;
   };
   return {
@@ -73,4 +77,12 @@ export function createMemberDraftStore(db?: DatabaseSync): MemberDraftStore {
       }
     },
   };
+}
+
+function parseDraftData(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
