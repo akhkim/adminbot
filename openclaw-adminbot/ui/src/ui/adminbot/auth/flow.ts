@@ -24,6 +24,7 @@ import {
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
+import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
 import type { TripDraft } from "../views/time-availability.trips.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
@@ -142,6 +143,7 @@ export type MemberAuthHost = {
   adminBotRosterRequestId?: number;
   adminBotMemberMap?: import("../data/member-map.ts").MemberMap | null;
   adminBotMemberMapLoading?: boolean;
+  adminBotMemberMapRequestId?: number;
   adminBotLoading?: boolean;
   adminBotError?: string | null;
   adminBotMemberList?: AdminBotMemberListState;
@@ -524,8 +526,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotRosterLoadedAt = null;
   host.adminBotRosterLoading = false;
   host.adminBotRosterError = null;
-  host.adminBotMemberMap = null;
-  host.adminBotMemberMapLoading = false;
+  invalidateMemberMap(host);
   if (host.adminBotData) {
     host.adminBotData = createEmptyAdminBotDashboardData();
   }

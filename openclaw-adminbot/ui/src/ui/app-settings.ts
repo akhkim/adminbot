@@ -11,6 +11,7 @@ import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
+import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -462,8 +463,17 @@ function loadConfigSchemaAfterPrimary(
 export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
   const app = host as unknown as SettingsAppHost;
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
+  const needsPapers = needsLabPapers(host.tab);
   const loadAdminBotOnce = () =>
-    app.adminBotData?.loadedAt || app.adminBotLoading ? Promise.resolve() : loadAdminBot(app);
+    app.adminBotLoading ||
+    (app.adminBotData?.loadedAt && (!needsPapers || app.adminBotData.papersLoadedAt))
+      ? Promise.resolve()
+      : loadAdminBot(
+          app,
+          "admin",
+          needsPapers,
+          Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
+        );
   const refreshRun = beginControlUiRefresh(host, host.tab);
   try {
     switch (host.tab) {
