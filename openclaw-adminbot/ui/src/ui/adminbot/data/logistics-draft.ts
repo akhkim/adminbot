@@ -166,6 +166,10 @@ export type MeetingRequestDraftHost = {
   adminBotMeetingSaveError: string | null;
 };
 
+function scopeStillActive(host: object, scope: string): boolean {
+  return !("adminBotLogisticsDraftScope" in host) || host.adminBotLogisticsDraftScope === scope;
+}
+
 const EMPTY_SCHOOL: Omit<RecommendationSchool, "id"> = {
   school: "",
   applicationDeadline: "",
@@ -526,7 +530,7 @@ export async function restoreAdminBotLogisticsDraft(
   scope: string,
 ): Promise<void> {
   const draft = await loadLogisticsDraft(scope).catch(() => null);
-  if (!draft) {
+  if (!draft || !scopeStillActive(host, scope)) {
     return;
   }
   host.adminBotLogisticsDescription = draft.description;
@@ -572,7 +576,7 @@ export async function restoreAdminBotLettersDraft(
   scope: string,
 ): Promise<void> {
   const draft = await loadRecommendationLettersDraft(scope).catch(() => null);
-  if (!draft) {
+  if (!draft || !scopeStillActive(host, scope)) {
     return;
   }
   host.adminBotLettersSchools = draft.schools;
@@ -610,7 +614,7 @@ export async function restoreAdminBotMeetingDraft(
   scope: string,
 ): Promise<void> {
   const draft = await loadMeetingRequestDraft(scope).catch(() => null);
-  if (!draft) {
+  if (!draft || !scopeStillActive(host, scope)) {
     return;
   }
   host.adminBotMeetingRows = draft.meetings;

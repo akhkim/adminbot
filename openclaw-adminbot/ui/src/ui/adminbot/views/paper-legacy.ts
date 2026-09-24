@@ -556,6 +556,13 @@ function requestEvidence(props: PaperLegacyProps): void {
 
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+export function cancelPaperLegacyAutosave(): void {
+  for (const timer of saveTimers.values()) {
+    clearTimeout(timer);
+  }
+  saveTimers.clear();
+}
+
 function commitPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): () => void {
   return () => {
     const cycle = props.slots?.[paper.id];

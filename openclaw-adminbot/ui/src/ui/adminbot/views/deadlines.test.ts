@@ -1532,6 +1532,7 @@ it("never displays bundled deadlines when the first live request fails and suppo
   const load = vi.spyOn(store, "listPublished").mockRejectedValue(new Error("offline"));
   render(renderDeadlines({ proposalStore: store }), container);
   await settle(container);
+  expect(load).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not load live deadlines",
   );

@@ -42,6 +42,9 @@ export async function loadAdminBotNotifications(
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   const result = await fetchNotifications(stored.sessionToken, baseUrl);
+  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    return;
+  }
   if (!result.ok) {
     host.adminBotNotificationsError =
       result.kind === "unreachable" ? null : (result.message ?? null);
@@ -102,6 +105,9 @@ export async function markAdminBotNotificationsRead(
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   const result = await markNotificationsRead(stored.sessionToken, baseUrl, notificationIds);
+  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    return;
+  }
   if (!result.ok) {
     return;
   }
@@ -126,7 +132,6 @@ export function resetNotificationPopups(): void {
   popped.clear();
 }
 
-
 /**
  * The lab-wide broadcast, for the top of the dashboard.
  *
@@ -144,6 +149,9 @@ export async function loadAdminBotBroadcast(host: AdminBotHost): Promise<void> {
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),
   );
+  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    return;
+  }
   // Set even on failure, so the lazy loader in app-render does not retry on every render.
   host.adminBotBroadcast = result.ok ? result.value.status : null;
   host.adminBotBroadcastHistory = result.ok ? result.value.history : [];
@@ -203,6 +211,9 @@ export async function publishAdminBotBroadcast(
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotBroadcastNotice = {
         kind: "error",
@@ -220,6 +231,8 @@ export async function publishAdminBotBroadcast(
       text: body ? "Posted to the lab." : "Broadcast taken down.",
     };
   } finally {
-    host.adminBotBroadcastBusy = false;
+    if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
+      host.adminBotBroadcastBusy = false;
+    }
   }
 }

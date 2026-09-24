@@ -146,6 +146,10 @@ function session(host: AdminBotPaperSlotsHost): { token: string; baseUrl: string
     : null;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost): Promise<void> {
   const wire = session(host);
   if (!wire) {
@@ -156,6 +160,9 @@ export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost
   host.adminBotPaperSlotsError = null;
   try {
     const result = await fetchPaperSlotOverview(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotOverview = [];
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
@@ -163,7 +170,9 @@ export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost
     }
     host.adminBotPaperSlotOverview = result.value;
   } finally {
-    host.adminBotPaperSlotsLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsLoading = false;
+    }
   }
 }
 
@@ -200,6 +209,9 @@ export async function loadAdminBotPaperSlots(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await fetchPaperSlots(paperId, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -209,7 +221,9 @@ export async function loadAdminBotPaperSlots(
       [paperId]: result.value,
     };
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
 }
 
@@ -241,6 +255,9 @@ export async function saveAdminBotPaperWeeklyUpdate(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await savePaperWeeklyUpdate(paperId, body, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -258,7 +275,9 @@ export async function saveAdminBotPaperWeeklyUpdate(
       };
     }
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
 }
 
@@ -275,6 +294,9 @@ export async function saveAdminBotPaperSlot(
   }
   host.adminBotPaperSlotsError = null;
   const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
+  if (!sameSession(wire.token)) {
+    return;
+  }
   if (!result.ok) {
     host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
     return;
@@ -319,6 +341,9 @@ async function mutateCycle(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await run(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(
         result as { kind: string; message?: string },
@@ -327,9 +352,17 @@ async function mutateCycle(
       return;
     }
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
+  }
+  if (!sameSession(wire.token)) {
+    return;
   }
   await loadAdminBotPaperSlots(host, paperId);
+  if (!sameSession(wire.token)) {
+    return;
+  }
   host.adminBotPaperSlotsLoadedAt = null;
 }
 
@@ -429,6 +462,9 @@ export async function loadAdminBotNudgeBatches(host: AdminBotPaperSlotsHost): Pr
   host.adminBotPaperSlotsNotice = null;
   try {
     const result = await fetchPaperNudgeBatches(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -441,7 +477,9 @@ export async function loadAdminBotNudgeBatches(host: AdminBotPaperSlotsHost): Pr
       .filter((batch) => batch.deliverable)
       .map((batch) => batch.member_id);
   } finally {
-    host.adminBotPaperNudgeLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperNudgeLoading = false;
+    }
   }
 }
 
@@ -487,11 +525,17 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     // time keeps every request short, and makes a failure name the person it belongs to instead of
     // condemning the batch.
     for (const [index, memberId] of recipients.entries()) {
+      if (!sameSession(wire.token)) {
+        return;
+      }
       host.adminBotPaperSlotsNotice = t("paperSlots.nudgingProgress", {
         done: String(index),
         total: String(recipients.length),
       });
       const result = await runPaperSlotReminder(wire.token, wire.baseUrl, [memberId]);
+      if (!sameSession(wire.token)) {
+        return;
+      }
       if (!result.ok) {
         // Keep going: one unreachable recipient is not a reason to leave the rest unchased, and
         // the ledger is stamped per person, so the ones that landed stay landed.
@@ -516,7 +560,9 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     // Re-read so "last nudged" reflects what just happened.
     host.adminBotPaperSlotsLoadedAt = null;
   } finally {
-    host.adminBotPaperSlotsNudging = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsNudging = false;
+    }
   }
 }
 
@@ -544,11 +590,15 @@ export function editAdminBotTrip(
 async function refreshCardsForConference(
   host: AdminBotPaperSlotsHost,
   conferenceKey: string,
+  token: string,
 ): Promise<void> {
   const affected = Object.entries(host.adminBotPaperSlots)
     .filter(([, cycle]) => cycle.conferenceKey === conferenceKey)
     .map(([paperId]) => paperId);
   for (const paperId of affected) {
+    if (!sameSession(token)) {
+      return;
+    }
     await loadAdminBotPaperSlots(host, paperId);
   }
 }
@@ -582,6 +632,9 @@ export async function saveAdminBotTrip(
       wire.token,
       wire.baseUrl,
     );
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -591,9 +644,11 @@ export async function saveAdminBotTrip(
     // two copies of it is how a form starts disagreeing with the server.
     delete drafts[conferenceKey];
     host.adminBotTripDrafts = drafts;
-    await refreshCardsForConference(host, conferenceKey);
+    await refreshCardsForConference(host, conferenceKey, wire.token);
   } finally {
-    host.adminBotTripSavingKey = null;
+    if (sameSession(wire.token)) {
+      host.adminBotTripSavingKey = null;
+    }
   }
 }
 
@@ -610,6 +665,9 @@ export async function withdrawAdminBotTrip(
   host.adminBotPaperSlotsError = null;
   try {
     const result = await deleteConferenceTrip(conferenceKey, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -617,8 +675,10 @@ export async function withdrawAdminBotTrip(
     const drafts = { ...host.adminBotTripDrafts };
     delete drafts[conferenceKey];
     host.adminBotTripDrafts = drafts;
-    await refreshCardsForConference(host, conferenceKey);
+    await refreshCardsForConference(host, conferenceKey, wire.token);
   } finally {
-    host.adminBotTripSavingKey = null;
+    if (sameSession(wire.token)) {
+      host.adminBotTripSavingKey = null;
+    }
   }
 }

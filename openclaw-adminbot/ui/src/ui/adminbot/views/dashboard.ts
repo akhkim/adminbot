@@ -638,7 +638,24 @@ function renderBroadcast(state: AppViewState) {
   `;
 }
 
-export function renderDashboard(state: AppViewState, role: AccessRole) {
+export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?: () => void) {
+  if (role !== "anonymous" && state.adminBotData?.loadedAt === null) {
+    return html`<div class="dashboard">
+      ${renderBroadcast(state)}
+      <section class="dashboard__attention" aria-live="polite">
+        ${state.adminBotError
+          ? html`<div class="callout danger" role="alert" data-testid="dashboard-load-error">
+              Could not load your dashboard.
+              ${onRetry
+                ? html`<button class="btn btn--sm" type="button" @click=${onRetry}>
+                    Try again
+                  </button>`
+                : nothing}
+            </div>`
+          : html`<p role="status" data-testid="dashboard-loading">Loading your dashboard…</p>`}
+      </section>
+    </div>`;
+  }
   return html`
     <div class="dashboard">
       ${renderBroadcast(state)} ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}

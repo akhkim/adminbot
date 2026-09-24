@@ -193,6 +193,19 @@ describe("draftError", () => {
 });
 
 describe("renderAdminBotTimeAvailability", () => {
+  it("offers a manual schedule refresh and disables it while loading", () => {
+    const onRefresh = vi.fn();
+    renderView({ onRefresh })
+      .querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+      ?.click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(
+      renderView({ onRefresh, loading: true }).querySelector<HTMLButtonElement>(
+        ".adminbot-time-availability__refresh",
+      )?.disabled,
+    ).toBe(true);
+  });
+
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
   it("shows the add-commitment button on your own schedule and hides it on someone else's", () => {

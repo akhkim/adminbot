@@ -986,10 +986,8 @@ class AdminbotDeadlinesView extends LitElement {
       },
       5 * 60 * 1000,
     );
-    void this.loadPublishedDeadlines();
-    if (this.accessRole !== "anonymous" && this.memberId) {
-      void this.loadProposals();
-    }
+    // The first `updated` call loads the bound store. Loading here as well requests the same
+    // deadline dataset twice on every visit (and can request the default URL before settings bind).
   }
 
   override disconnectedCallback(): void {

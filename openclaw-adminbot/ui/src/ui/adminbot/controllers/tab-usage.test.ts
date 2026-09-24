@@ -1,7 +1,15 @@
 // The export, which is the half of this feature a paper actually reads.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createStorageMock } from "../../../test-helpers/storage.ts";
+import type { UiSettings } from "../../storage.ts";
 import type { TabVisitRow } from "../auth/session.ts";
-import { tabVisitsCsv } from "./tab-usage.ts";
+import { saveStoredMemberSession } from "../auth/session.ts";
+import {
+  exportAdminBotTabUsage,
+  loadAdminBotTabUsage,
+  tabVisitsCsv,
+  type AdminBotTabUsageHost,
+} from "./tab-usage.ts";
 
 function row(fields: Partial<TabVisitRow> & { tab: string }): TabVisitRow {
   return {
@@ -47,5 +55,77 @@ describe("tabVisitsCsv", () => {
 
   it("answers an empty log with a header and nothing else", () => {
     expect(tabVisitsCsv([])).toBe("id,member_id,tab,at,impersonated");
+  });
+});
+
+describe("tab usage session boundary", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores A's late report after B signs in", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "token-a", memberId: "a" } as never);
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host: AdminBotTabUsageHost = {
+      settings: { adminBotUrl: "https://admin.safe.eu" } as UiSettings,
+      adminBotTabUsage: null,
+      adminBotTabUsageDays: 7,
+      adminBotTabUsageLoading: false,
+      adminBotTabUsageError: null,
+      adminBotTabUsageExporting: false,
+    };
+    const loading = loadAdminBotTabUsage(host);
+    saveStoredMemberSession({ sessionToken: "token-b", memberId: "b" } as never);
+    host.adminBotTabUsageLoading = false;
+    finish?.(
+      new Response(JSON.stringify({ visits: 99, tabs: [] }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await loading;
+    expect(host.adminBotTabUsage).toBeNull();
+    expect(host.adminBotTabUsageLoading).toBe(false);
+  });
+
+  it("does not download A's late CSV under B's session", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "token-a", memberId: "a" } as never);
+    const createElement = vi.fn(() => {
+      throw new Error("stale export downloaded");
+    });
+    vi.stubGlobal("document", { createElement });
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host: AdminBotTabUsageHost = {
+      settings: { adminBotUrl: "https://admin.safe.eu" } as UiSettings,
+      adminBotTabUsage: null,
+      adminBotTabUsageDays: 7,
+      adminBotTabUsageLoading: false,
+      adminBotTabUsageError: null,
+      adminBotTabUsageExporting: false,
+    };
+    const exporting = exportAdminBotTabUsage(host);
+    saveStoredMemberSession({ sessionToken: "token-b", memberId: "b" } as never);
+    host.adminBotTabUsageExporting = false;
+    finish?.(
+      new Response(JSON.stringify({ visits: [row({ tab: "private" })] }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await exporting;
+    expect(createElement).not.toHaveBeenCalled();
   });
 });

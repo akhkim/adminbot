@@ -93,6 +93,7 @@ import {
   partitionByCompletion,
 } from "../paper-completion.ts";
 import {
+  clearHistory,
   clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
@@ -114,7 +115,12 @@ import {
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
-import { emptyPaperLegacyState, renderPaperLegacy, type PaperLegacyState } from "./paper-legacy.ts";
+import {
+  cancelPaperLegacyAutosave,
+  emptyPaperLegacyState,
+  renderPaperLegacy,
+  type PaperLegacyState,
+} from "./paper-legacy.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
@@ -2470,6 +2476,28 @@ const decisionDrafts = new Map<
   string,
   { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
 >();
+
+/** Discard unsaved paper edits before a different member can use this browser session. */
+export function resetMyWorkSessionState(): void {
+  for (const timer of detailsSaveTimers.values()) {
+    clearTimeout(timer);
+  }
+  detailsSaveTimers.clear();
+  detailsLastSaved.clear();
+  cancelPaperLegacyAutosave();
+  clearHistory();
+  gridState = null;
+  legacyState = null;
+  legacyDismissed = false;
+  gridChoice = "auto";
+  showAllSlots.clear();
+  collapsedDecisions.clear();
+  savedDecisions.clear();
+  dirtyDecisions.clear();
+  dismissedDecisions.clear();
+  emailTasks.clear();
+  decisionDrafts.clear();
+}
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
 function venueOf(paper: AdminBotPaperRecord): string {
