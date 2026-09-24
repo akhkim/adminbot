@@ -12,6 +12,7 @@ import {
   type LabCalendar,
   type LocationDrift,
   type MeetingRecord,
+  type MeetingCursor,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
   type LabBroadcast,
@@ -896,6 +897,10 @@ export type AdminBotHost = {
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsRequestVersion?: number;
+  adminBotMeetingsLoadingMore: boolean;
+  adminBotMeetingsNextCursor: MeetingCursor | null;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // The attendance nudge an admin previews and sends from the Meeting Recordings tab.

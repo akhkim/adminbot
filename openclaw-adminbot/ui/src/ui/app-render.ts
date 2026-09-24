@@ -3856,8 +3856,14 @@ export function renderApp(state: AppViewState) {
               meetings: state.adminBotMeetings ?? [],
               visibleCount: state.adminBotMeetingsVisibleCount,
               onShowMore: (nextCount) => {
-                state.adminBotMeetingsVisibleCount = nextCount;
+                if (nextCount <= (state.adminBotMeetings?.length ?? 0)) {
+                  state.adminBotMeetingsVisibleCount = nextCount;
+                } else {
+                  void state.loadMoreMeetings?.();
+                }
               },
+              hasMore: Boolean(state.adminBotMeetingsNextCursor),
+              loadingMore: state.adminBotMeetingsLoadingMore,
               loading: state.adminBotMeetingsLoading,
               saving: state.adminBotMeetingsSaving,
               error: state.adminBotMeetingsError,

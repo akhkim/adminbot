@@ -28,6 +28,8 @@ export type AdminBotMeetingsProps = {
   meetings: MeetingRecord[];
   visibleCount: number;
   onShowMore: (nextCount: number) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -485,16 +487,25 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
       ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
-      ${visibleCount < props.meetings.length
+      ${visibleCount < props.meetings.length || props.hasMore
         ? html`<button
             class="btn meetings__more"
             type="button"
             data-testid="meetings-show-more"
-            @click=${() => props.onShowMore(Math.min(props.meetings.length, visibleCount + 12))}
+            ?disabled=${props.loadingMore}
+            aria-busy=${props.loadingMore ? "true" : "false"}
+            @click=${() =>
+              props.onShowMore(
+                visibleCount < props.meetings.length
+                  ? Math.min(props.meetings.length, visibleCount + 12)
+                  : visibleCount + 12,
+              )}
           >
-            ${t("professor.showMore", {
-              count: String(Math.min(12, props.meetings.length - visibleCount)),
-            })}
+            ${props.loadingMore
+              ? t("adminbotMeetings.loading")
+              : t("professor.showMore", {
+                  count: String(Math.min(12, props.meetings.length - visibleCount || 12)),
+                })}
           </button>`
         : nothing}
     </section>

@@ -33,6 +33,8 @@ function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement
       meetings: [MEETING],
       visibleCount: 12,
       onShowMore: vi.fn(),
+      hasMore: false,
+      loadingMore: false,
       loading: false,
       saving: false,
       error: null,
@@ -162,6 +164,22 @@ describe("renderAdminBotMeetings", () => {
     expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
     expect(onShowMore).toHaveBeenLastCalledWith(26);
     expect(renderView({ meetings, visibleCount: 26 }).querySelector(".meetings__more")).toBeNull();
+  });
+
+  it("offers the next server page and disables repeated requests while it loads", () => {
+    const onShowMore = vi.fn();
+    const meetings = Array.from({ length: 12 }, (_, index) => ({
+      ...MEETING,
+      id: `recording-${index}`,
+    }));
+    const view = renderView({ meetings, visibleCount: 12, hasMore: true, onShowMore });
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
+    button?.click();
+    expect(onShowMore).toHaveBeenCalledWith(24);
+    const loading = renderView({ meetings, visibleCount: 12, hasMore: true, loadingMore: true });
+    expect(
+      loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.disabled,
+    ).toBe(true);
   });
 
   it("shows the request error instead of claiming that no recordings exist", () => {
