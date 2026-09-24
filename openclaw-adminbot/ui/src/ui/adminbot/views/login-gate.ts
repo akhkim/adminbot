@@ -858,3 +858,25 @@ export function renderLoginGate(state: AppViewState) {
     </div>
   `;
 }
+
+// A stored token is only a claim until /auth/session verifies it. Keep protected pages blank
+// during that check rather than briefly showing sign-in or a private view from stale local state.
+export function renderSessionRestorePending(state: AppViewState) {
+  const faviconSrc = agentLogoUrl(normalizeBasePath(state.basePath ?? ""));
+  return html`
+    <div class="login-gate">
+      <main
+        class="login-gate__card"
+        data-testid="session-restore-pending"
+        role="status"
+        aria-busy="true"
+      >
+        <img class="login-gate__logo" src=${faviconSrc} alt="" />
+        <div class="login-gate__title">AdminBot</div>
+        <div class="login-gate__sub">
+          <span class="login-gate__spinner" aria-hidden="true"></span>${t("common.loading")}
+        </div>
+      </main>
+    </div>
+  `;
+}

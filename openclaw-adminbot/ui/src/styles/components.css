@@ -182,6 +182,7 @@
 }
 
 .login-gate__spinner {
+  display: inline-block;
   width: 14px;
   height: 14px;
   margin-right: var(--space-2);

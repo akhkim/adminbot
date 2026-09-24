@@ -609,6 +609,37 @@ describe("device-bound gateway token", () => {
     );
   });
 
+  it("makes a verified member available while gateway token minting is pending", async () => {
+    let finishDevice: ((response: Response) => void) | undefined;
+    const deviceResponse = new Promise<Response>((resolve) => {
+      finishDevice = resolve;
+    });
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/auth/login")) {
+        return jsonResponse(200, loginBody);
+      }
+      if (String(input).includes("/auth/device-token")) {
+        return deviceResponse;
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    });
+
+    const signingIn = submitMemberAuth(host);
+    await vi.waitFor(() =>
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("/auth/device-token"))).toBe(
+        true,
+      ),
+    );
+    expect(host.memberId).toBe("pat");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("sess");
+    expect(host.connect).not.toHaveBeenCalled();
+
+    finishDevice?.(jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }));
+    await signingIn;
+    expect(host.connect).toHaveBeenCalled();
+  });
+
   it("fails closed when the service cannot mint a device token", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     routedFetch({
@@ -1009,6 +1040,67 @@ describe("viewing the lab as another member", () => {
 });
 
 describe("refresh preserves sessions during temporary failures", () => {
+  it.each([200, 401])(
+    "ignores a stale %s response even when the stored token is unchanged",
+    async (status) => {
+      saveStoredMemberSession({ sessionToken: "same-session", expiresAt: "later" });
+      let resolveSession!: (response: Response) => void;
+      vi.spyOn(globalThis, "fetch").mockReturnValue(
+        new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        }),
+      );
+      const host = makeHost({ memberId: "current-member", memberPrivilegeLevel: "admin" });
+      let current = true;
+      const pending = resumeMemberSession(host, () => current);
+
+      current = false;
+      resolveSession(jsonResponse(status, { member: { id: "stale-member" } }));
+
+      expect(await pending).toBe("no-session");
+      expect(loadStoredMemberSession()?.sessionToken).toBe("same-session");
+      expect(host.memberId).toBe("current-member");
+      expect(host.connect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not connect or store a device token after the instance becomes stale", async () => {
+    saveStoredMemberSession({ sessionToken: "same-session", expiresAt: "later" });
+    let resolveDevice!: (response: Response) => void;
+    let deviceRequested = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = String(input);
+      if (path.includes("/auth/session")) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            expires_at: "later",
+            member: { id: "current-member", privilege_level: "member" },
+          }),
+        );
+      }
+      if (path.includes("/auth/device-token")) {
+        deviceRequested = true;
+        return new Promise<Response>((resolve) => {
+          resolveDevice = resolve;
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const host = makeHost();
+    let current = true;
+    const pending = resumeMemberSession(host, () => current);
+    await vi.waitFor(() => expect(deviceRequested).toBe(true));
+
+    current = false;
+    resolveDevice(jsonResponse(200, { token: "stale-device-token", scopes: ["operator.read"] }));
+
+    expect(await pending).toBe("resumed");
+    expect(host.connect).not.toHaveBeenCalled();
+    expect(localStorage.getItem("openclaw.device.auth.v1") ?? "").not.toContain(
+      "stale-device-token",
+    );
+  });
+
   it("does not restore a session that was signed out while resume was loading", async () => {
     saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
     let resolveSession: (response: Response) => void = () => {};
@@ -1042,5 +1134,40 @@ describe("refresh preserves sessions during temporary failures", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
     expect(await resumeMemberSession(makeHost())).toBe("cleared");
     expect(loadStoredMemberSession()).toBeNull();
+  });
+
+  it("drops private state and the gateway connection when a stored session is rejected", async () => {
+    saveStoredMemberSession({ sessionToken: "rejected-session", expiresAt: "later" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(401, {}));
+    const stop = vi.fn();
+    const host = makeHost({
+      memberId: "former-member",
+      memberPrivilegeLevel: "admin",
+      connected: true,
+      client: { stop },
+      adminBotData: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "private-member" } as never],
+        loadedAt: 1,
+      },
+      adminBotMemberList: {
+        ...createEmptyAdminBotMemberList(),
+        rows: [{ id: "private-member" } as never],
+        loadedAt: 1,
+      },
+      resetMemberViewSessionState: vi.fn(),
+    });
+
+    expect(await resumeMemberSession(host)).toBe("cleared");
+    expect(loadStoredMemberSession()).toBeNull();
+    expect(host.memberId).toBeNull();
+    expect(host.memberPrivilegeLevel).toBeNull();
+    expect(host.adminBotData?.members).toEqual([]);
+    expect(host.adminBotMemberList?.rows).toEqual([]);
+    expect(host.resetMemberViewSessionState).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(host.connected).toBe(false);
+    expect(host.client).toBeNull();
+    expect(host.applySettings).toHaveBeenCalledWith(expect.objectContaining({ token: "" }));
   });
 });
