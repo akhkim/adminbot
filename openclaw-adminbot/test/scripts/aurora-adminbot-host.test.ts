@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const root = process.cwd();
 const hostScript = path.join(root, "scripts/aurora-adminbot-host.sh");
 const installer = path.join(root, "deploy/aurora/install-user-services.sh");
+const pollerInstaller = path.join(root, "deploy/aurora/install-member-sheet-poller.sh");
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
@@ -101,8 +102,10 @@ function runDeploy(clone: string, ref: string): { status: number | null; stderr:
 }
 
 describe("Aurora AdminBot hosting", () => {
-  it("keeps both shell entrypoints syntactically valid", () => {
-    expect(() => execFileSync("bash", ["-n", hostScript, installer])).not.toThrow();
+  it("keeps the Aurora shell entrypoints syntactically valid", () => {
+    expect(() =>
+      execFileSync("bash", ["-n", hostScript, installer, pollerInstaller]),
+    ).not.toThrow();
   });
 
   it("deploys committed revisions and keeps services stopped until explicit start", () => {
@@ -304,6 +307,31 @@ describe("Aurora AdminBot hosting", () => {
     );
     expect(forged.stderr).toContain("installer does not own the AdminBot writer lock");
     expect(fs.readFileSync(path.join(lock, "owner"), "utf8")).toBe("parent-run\n");
+    const directPoller = spawnSync(
+      "bash",
+      [pollerInstaller, "--root", requestedRoot, "--env-file", "/synthetic/env", "--no-start"],
+      { encoding: "utf8", env },
+    );
+    expect(directPoller.stderr).toContain("requires --writer-lock-token");
+    const forgedPoller = spawnSync(
+      "bash",
+      [
+        pollerInstaller,
+        "--root",
+        requestedRoot,
+        "--env-file",
+        "/synthetic/env",
+        "--writer-lock-token",
+        "other-run",
+      ],
+      { encoding: "utf8", env },
+    );
+    expect(forgedPoller.stderr).toContain("does not own the AdminBot writer lock");
+    expect(
+      fs.existsSync(
+        path.join(directory, ".config/systemd/user/jinesis-adminbot-sheet-poller.service"),
+      ),
+    ).toBe(false);
   });
 
   it("keeps direct installation locked after checking units so a concurrent start cannot pass", () => {
@@ -344,7 +372,7 @@ describe("Aurora AdminBot hosting", () => {
     const harness = path.join(directory, "race.sh");
     fs.writeFileSync(
       harness,
-      '#!/usr/bin/env bash\nset -u\nbash "$INSTALLER" --root "$RELEASE" --state "$RELEASE/state" --no-start >"$WORK/installer.out" 2>&1 &\ninstaller_pid=$!\nfor ((i=0; i<200; i++)); do\n  [[ -f "$AFTER_CHECK" ]] && break\n  sleep 0.02\ndone\n[[ -f "$AFTER_CHECK" ]] || { kill "$installer_pid" 2>/dev/null || true; exit 70; }\nbash "$HOST_SCRIPT" --user tester --host example.invalid start >"$WORK/start.out" 2>&1\necho "$?" >"$WORK/start.code"\ncat <"$FIFO" >/dev/null &\nwait "$installer_pid"\n',
+      '#!/usr/bin/env bash\nset -u\nbash "$INSTALLER" --root "$RELEASE" --state "$RELEASE/state" --no-start >"$WORK/installer.out" 2>&1 &\ninstaller_pid=$!\nfor ((i=0; i<200; i++)); do\n  [[ -f "$AFTER_CHECK" ]] && break\n  sleep 0.02\ndone\n[[ -f "$AFTER_CHECK" ]] || { kill "$installer_pid" 2>/dev/null || true; exit 70; }\nbash "$HOST_SCRIPT" --user tester --host example.invalid start >"$WORK/start.out" 2>&1\necho "$?" >"$WORK/start.code"\nbash "$POLLER_INSTALLER" --root "$RELEASE" --env-file "$WORK/poller.env" --no-start >"$WORK/poller.out" 2>&1\necho "$?" >"$WORK/poller.code"\n[[ ! -e "$HOME/.config/systemd/user/jinesis-adminbot-sheet-poller.service" ]] || exit 71\ncat <"$FIFO" >/dev/null &\nwait "$installer_pid"\n',
     );
     const result = spawnSync("bash", [harness], {
       encoding: "utf8",
@@ -357,6 +385,7 @@ describe("Aurora AdminBot hosting", () => {
         RELEASE: release,
         FIFO: fifo,
         INSTALLER: installer,
+        POLLER_INSTALLER: pollerInstaller,
         HOST_SCRIPT: hostScript,
         SHOW_COUNT: path.join(directory, "show-count"),
         AFTER_CHECK: path.join(directory, "after-check"),
@@ -368,10 +397,73 @@ describe("Aurora AdminBot hosting", () => {
     expect(fs.readFileSync(path.join(directory, "start.out"), "utf8")).toContain(
       "another AdminBot writer operation holds the account lock",
     );
+    expect(Number(fs.readFileSync(path.join(directory, "poller.code"), "utf8"))).not.toBe(0);
+    expect(fs.readFileSync(path.join(directory, "poller.out"), "utf8")).toContain(
+      "poller installer requires --writer-lock-token",
+    );
     expect(fs.existsSync(path.join(directory, ".config/jinesis-adminbot/.writer.lock"))).toBe(
       false,
     );
   }, 20_000);
+
+  it("starts the member Sheet poller only with the inherited account lock", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aurora-poller-lock-"));
+    temporaryDirectories.push(directory);
+    const release = path.join(directory, "release");
+    const bin = path.join(directory, "bin");
+    const lock = path.join(directory, ".config/jinesis-adminbot/.writer.lock");
+    fs.mkdirSync(path.join(release, "node_modules/.bin"), { recursive: true });
+    fs.mkdirSync(path.join(release, "scripts"));
+    fs.mkdirSync(bin);
+    fs.mkdirSync(lock, { recursive: true });
+    fs.writeFileSync(path.join(lock, "owner"), "parent-run\n");
+    fs.writeFileSync(path.join(release, "scripts/adminbot-member-sheet-poller.ts"), "");
+    const tsx = path.join(release, "node_modules/.bin/tsx");
+    fs.writeFileSync(tsx, "#!/usr/bin/env bash\nexit 0\n");
+    fs.chmodSync(tsx, 0o755);
+    const envFile = path.join(directory, "poller.env");
+    fs.writeFileSync(
+      envFile,
+      "ADMINBOT_MEMBER_SHEET_ID=fictional\nADMINBOT_MEMBER_SHEET_RANGE='Members!A:Z'\nADMINBOT_SERVICE_TOKEN=fictional\n",
+    );
+    const calls = path.join(directory, "systemctl-calls");
+    const stubs: Record<string, string> = {
+      readlink: '#!/usr/bin/env bash\n[[ "$1" == -f ]] || exit 2\ncd "$2" && pwd -P\n',
+      systemctl: '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"$SYSTEMCTL_CALLS"\nexit 0\n',
+    };
+    for (const [name, source] of Object.entries(stubs)) {
+      const file = path.join(bin, name);
+      fs.writeFileSync(file, source);
+      fs.chmodSync(file, 0o755);
+    }
+    const result = spawnSync(
+      "bash",
+      [
+        pollerInstaller,
+        "--root",
+        release,
+        "--env-file",
+        envFile,
+        "--writer-lock-token",
+        "parent-run",
+        "--start",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: directory,
+          PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+          SYSTEMCTL_CALLS: calls,
+        },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.readFileSync(calls, "utf8")).toContain(
+      "--user enable --now jinesis-adminbot-sheet-poller.timer",
+    );
+    expect(fs.readFileSync(path.join(lock, "owner"), "utf8")).toBe("parent-run\n");
+  });
 
   it("requires an authoritative, quiescent source before attempting database sync", () => {
     const result = spawnSync(

@@ -314,6 +314,7 @@ poller_args=(
   --root "$ROOT"
   --env-file "$ENV_FILE"
   --adminbot-port "$ADMINBOT_PORT"
+  --writer-lock-token "$WRITER_LOCK_TOKEN"
   --no-start
 )
 "$ROOT/deploy/aurora/install-member-sheet-poller.sh" "${poller_args[@]}"
@@ -371,6 +372,7 @@ if [[ "$START_MODE" == "yes" ]]; then
     --root "$ROOT" \
     --env-file "$ENV_FILE" \
     --adminbot-port "$ADMINBOT_PORT" \
+    --writer-lock-token "$WRITER_LOCK_TOKEN" \
     --start
   # The reviewing-cycle pass is scheduled as an OpenClaw cron job, not a systemd timer,
   # so it shows up in the Control UI with its run history. Warn when its inputs are

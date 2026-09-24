@@ -162,7 +162,9 @@ interrupted run leaves the lock behind, inspect the state, units, and `current`
 before an operator removes it; do not blindly retry. This lock cannot prevent
 processes started outside the host script from writing to the database. Direct
 service-installer runs acquire the same account lock; the host script passes its
-lock token to the nested installer during deploy and start.
+lock token to the nested installer during deploy and start. The member Sheet
+poller installer accepts only that inherited token, so run it through the
+locked service installer.
 
 `sync-adminbot-data` replaces an existing database only on approved local
 storage. Before running it, confirm the local source is authoritative, stop
