@@ -1966,11 +1966,15 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/ops/llm-load") {
-    sendJson(
-      res,
-      200,
-      process.env.LLM_GATEWAY_URL ? await readLlmGatewayStatus() : ctx.llmRouter.status(),
-    );
+    if (!process.env.LLM_GATEWAY_URL) {
+      sendJson(res, 200, ctx.llmRouter.status());
+      return;
+    }
+    try {
+      sendJson(res, 200, await readLlmGatewayStatus());
+    } catch {
+      sendJson(res, 502, { error: { message: "shared LLM gateway is unreachable" } });
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/ops/failed-requests") {
