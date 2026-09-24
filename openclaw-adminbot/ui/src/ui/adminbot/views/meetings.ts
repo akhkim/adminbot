@@ -26,6 +26,8 @@ export type MeetingsRosterMember = { id: string; name: string };
 
 export type AdminBotMeetingsProps = {
   meetings: MeetingRecord[];
+  visibleCount: number;
+  onShowMore: (nextCount: number) => void;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -469,6 +471,7 @@ function renderArchiveLinks() {
 }
 
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
+  const visibleCount = Math.min(props.meetings.length, props.visibleCount);
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
@@ -478,10 +481,22 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
       ${props.loading && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`
         : nothing}
-      ${!props.loading && props.meetings.length === 0
+      ${!props.loading && !props.error && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
-      ${props.meetings.map((meeting) => renderMeeting(props, meeting))}
+      ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
+      ${visibleCount < props.meetings.length
+        ? html`<button
+            class="btn meetings__more"
+            type="button"
+            data-testid="meetings-show-more"
+            @click=${() => props.onShowMore(Math.min(props.meetings.length, visibleCount + 12))}
+          >
+            ${t("professor.showMore", {
+              count: String(Math.min(12, props.meetings.length - visibleCount)),
+            })}
+          </button>`
+        : nothing}
     </section>
   `;
 }

@@ -537,6 +537,7 @@ export type AppViewState = {
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render

@@ -392,6 +392,7 @@ export class OpenClawApp extends LitElement {
   @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
+  @state() adminBotMeetingsVisibleCount = 12;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];

@@ -31,6 +31,8 @@ function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement
   render(
     renderAdminBotMeetings({
       meetings: [MEETING],
+      visibleCount: 12,
+      onShowMore: vi.fn(),
       loading: false,
       saving: false,
       error: null,
@@ -140,6 +142,32 @@ describe("renderAdminBotMeetings", () => {
     expect(renderView({ meetings: [], loading: false }).textContent).toContain(
       "No meeting recordings yet",
     );
+  });
+
+  it("renders recordings in bounded batches and lets the reader request the next batch", () => {
+    const meetings = Array.from({ length: 26 }, (_, index) => ({
+      ...MEETING,
+      id: `recording-${index}`,
+      topic: `Recording ${index}`,
+    }));
+    const onShowMore = vi.fn();
+    const view = renderView({ meetings, visibleCount: 12, onShowMore });
+    expect(view.querySelectorAll(".meetings__card")).toHaveLength(12);
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
+    expect(button?.textContent).toContain("Show 12 more");
+    button?.click();
+    expect(onShowMore).toHaveBeenCalledWith(24);
+    const expanded = renderView({ meetings, visibleCount: 24, onShowMore });
+    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(24);
+    expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
+    expect(onShowMore).toHaveBeenLastCalledWith(26);
+    expect(renderView({ meetings, visibleCount: 26 }).querySelector(".meetings__more")).toBeNull();
+  });
+
+  it("shows the request error instead of claiming that no recordings exist", () => {
+    const view = renderView({ meetings: [], error: "Service unavailable" });
+    expect(view.textContent).toContain("Service unavailable");
+    expect(view.textContent).not.toContain("No meeting recordings yet");
   });
 
   it("explains a meeting with no transcript rather than showing an empty summary", () => {

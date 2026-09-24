@@ -239,6 +239,7 @@ export type MemberAuthHost = {
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetings?: import("./session.ts").MeetingRecord[];
+  adminBotMeetingsVisibleCount?: number;
   adminBotMeetingsLoading?: boolean;
   adminBotMeetingsSaving?: boolean;
   adminBotMeetingsError?: string | null;
@@ -647,6 +648,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
   host.adminBotMeetings = undefined;
+  host.adminBotMeetingsVisibleCount = 12;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;

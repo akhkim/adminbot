@@ -3854,6 +3854,10 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotMeetings" && !rosterPendingForTab
           ? renderAdminBotMeetings({
               meetings: state.adminBotMeetings ?? [],
+              visibleCount: state.adminBotMeetingsVisibleCount,
+              onShowMore: (nextCount) => {
+                state.adminBotMeetingsVisibleCount = nextCount;
+              },
               loading: state.adminBotMeetingsLoading,
               saving: state.adminBotMeetingsSaving,
               error: state.adminBotMeetingsError,
