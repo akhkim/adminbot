@@ -832,6 +832,7 @@ export type GuestReimbursementHost = {
 };
 
 export type AdminBotHost = {
+  requestUpdate?: () => void;
   client: GatewayBrowserClient | null;
   connected: boolean;
   // The dashboard's member-map card, loaded alongside the roster. See data/member-map.ts.
@@ -1237,7 +1238,7 @@ async function loadAdminBotOverSession(
     };
   };
   try {
-    const [selfResponse, papers] = await Promise.all([readSelf(), read("/papers")]);
+    const selfResponse = await readSelf();
     if (!isCurrent()) {
       return;
     }
@@ -1248,13 +1249,22 @@ async function loadAdminBotOverSession(
     const memberRows = host.adminBotRosterLoadedAt
       ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
       : [self];
+    // The profile and public deadlines can render while the larger paper read is still pending.
+    host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
+    host.requestUpdate?.();
+    const papers = await read("/papers");
+    if (!isCurrent()) {
+      return;
+    }
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      members: memberRows,
+      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      // Admin queues still need their own read before the dashboard is complete.
+      loadedAt: mode === "general" ? Date.now() : null,
+    };
+    host.requestUpdate?.();
     if (mode === "general") {
-      host.adminBotData = {
-        ...createEmptyAdminBotDashboardData(),
-        members: memberRows,
-        papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-        loadedAt: Date.now(),
-      };
       return;
     }
     const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =

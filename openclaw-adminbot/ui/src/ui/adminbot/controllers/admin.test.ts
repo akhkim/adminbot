@@ -325,6 +325,37 @@ describe("loadAdminBot over the member session", () => {
     );
   });
 
+  it("makes the own profile available before a slow paper read completes", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    host.requestUpdate = vi.fn();
+    let resolvePapers: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/lab/members/self")) {
+        return Promise.resolve(json({ member: { id: "pat", name: "Pat" } }));
+      }
+      if (url.includes("/papers")) {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+
+    const pending = loadAdminBot(host, "general");
+    await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
+    expect(host.adminBotData.loadedAt).toBeNull();
+    expect(host.adminBotLoading).toBe(true);
+    expect(host.requestUpdate).toHaveBeenCalled();
+
+    resolvePapers(json({ papers: [{ id: "paper-1" }] }));
+    await pending;
+    expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+  });
+
   it("uses the legacy roster only when the self route is absent during rollout", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

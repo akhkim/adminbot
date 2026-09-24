@@ -45,6 +45,25 @@ describe("renderDashboard", () => {
     expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
   });
 
+  it("shows the member's profile action while papers are still loading", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ id: "m1", name: "Ada" }],
+        },
+        adminBotLoading: true,
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(
+      container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Loading your papers");
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
   it("shows a retryable failure instead of zero work after the first read fails", () => {
     const onRetry = vi.fn();
     const container = document.createElement("div");

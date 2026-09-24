@@ -640,8 +640,10 @@ function renderBroadcast(state: AppViewState) {
 
 export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?: () => void) {
   if (role !== "anonymous" && state.adminBotData?.loadedAt === null) {
+    const ownProfile = findOwnMember(state);
+    const profileItem = ownProfile ? mandatoryFieldsItem(state) : null;
     return html`<div class="dashboard">
-      ${renderBroadcast(state)}
+      ${renderBroadcast(state)} ${ownProfile ? renderNudgeWarning(state, role) : nothing}
       <section class="dashboard__attention" aria-live="polite">
         ${state.adminBotError
           ? html`<div class="callout danger" role="alert" data-testid="dashboard-load-error">
@@ -652,8 +654,14 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
                   </button>`
                 : nothing}
             </div>`
-          : html`<p role="status" data-testid="dashboard-loading">Loading your dashboard…</p>`}
+          : html`<p role="status" data-testid="dashboard-loading">
+              ${ownProfile ? "Loading your papers…" : "Loading your dashboard…"}
+            </p>`}
+        ${profileItem
+          ? html`<div class="dashboard__stack">${renderAttentionCard(profileItem)}</div>`
+          : nothing}
       </section>
+      ${ownProfile ? renderNextDeadlines(state) : nothing}
     </div>`;
   }
   return html`
