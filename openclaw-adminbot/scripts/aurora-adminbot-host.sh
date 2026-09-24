@@ -344,6 +344,26 @@ done
 REMOTE_UNITS_MATCH_ROOT
 }
 
+assert_remote_writers_stopped() {
+  "${SSH[@]}" bash -s <<'REMOTE_WRITERS_STOPPED'
+set -euo pipefail
+systemctl --user show-environment >/dev/null || {
+  echo 'Refusing to rewrite units: user systemd is unavailable.' >&2
+  exit 1
+}
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing to rewrite units while %s is %s. Stop writers first.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_WRITERS_STOPPED
+}
+
 # All commands that can alter the live configuration, database, or writer lifecycle share one
 # account-wide lock. `deploy` runs for different roots on the same account cannot race each other.
 case "$COMMAND" in
@@ -1253,6 +1273,7 @@ REMOTE_ADMINBOT_DATA
 
   install-services)
     (($# == 0)) || die "install-services takes no arguments"
+    assert_remote_writers_stopped
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
       --state "$REMOTE_STATE" \
@@ -1264,6 +1285,7 @@ REMOTE_ADMINBOT_DATA
   start)
     (($# == 0)) || die "start takes no arguments"
     assert_remote_state_ready
+    assert_remote_writers_stopped
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
       --state "$REMOTE_STATE" \

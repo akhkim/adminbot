@@ -225,6 +225,65 @@ describe("Aurora AdminBot hosting", () => {
     expect(runLock(release).status).toBe(0);
   });
 
+  it("refuses to rewrite units for another root while a managed writer is active", () => {
+    const host = fs.readFileSync(hostScript, "utf8");
+    const installerSource = fs.readFileSync(installer, "utf8");
+    const firstUnitWrite = installerSource.indexOf('cat >"$UNIT_DIR/jinesis-ollama.service"');
+    expect(installerSource.lastIndexOf("assert_writers_stopped", firstUnitWrite)).toBeGreaterThan(
+      installerSource.indexOf('chmod 600 "$ENV_FILE"'),
+    );
+    const writerGuard = host.match(
+      /<<'REMOTE_WRITERS_STOPPED'\n([\s\S]*?)\nREMOTE_WRITERS_STOPPED/u,
+    )?.[1];
+    expect(writerGuard).toBeDefined();
+    for (const command of ["install-services", "start"]) {
+      const start = host.indexOf(`\n  ${command})`);
+      const branch = host.slice(start, host.indexOf("    ;;", start));
+      expect(branch.indexOf("assert_remote_writers_stopped")).toBeGreaterThan(0);
+      expect(branch.indexOf("assert_remote_writers_stopped")).toBeLessThan(
+        branch.indexOf("$(remote_install_script)"),
+      );
+    }
+
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aurora-active-units-"));
+    temporaryDirectories.push(directory);
+    const requestedRoot = path.join(directory, "new-release");
+    const fakeBin = path.join(directory, "bin");
+    fs.mkdirSync(requestedRoot);
+    fs.mkdirSync(fakeBin);
+    const systemctl = path.join(fakeBin, "systemctl");
+    const readlink = path.join(fakeBin, "readlink");
+    fs.writeFileSync(
+      systemctl,
+      '#!/usr/bin/env bash\nif [[ "$2" == show-environment ]]; then exit 0; fi\nif [[ "$2" == show ]]; then if [[ "$3" == jinesis-adminbot.service ]]; then echo active; else echo inactive; fi; exit 0; fi\nexit 2\n',
+    );
+    fs.writeFileSync(
+      readlink,
+      '#!/usr/bin/env bash\n[[ "$1" == -f ]] || exit 2\ncd "$2" && pwd -P\n',
+    );
+    fs.chmodSync(systemctl, 0o755);
+    fs.chmodSync(readlink, 0o755);
+    const env = {
+      ...process.env,
+      HOME: directory,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    };
+    const guardResult = spawnSync("bash", ["-s"], { input: writerGuard, encoding: "utf8", env });
+    expect(guardResult.status).not.toBe(0);
+    expect(guardResult.stderr).toContain("jinesis-adminbot.service is active");
+
+    const installResult = spawnSync(
+      "bash",
+      [installer, "--root", requestedRoot, "--state", path.join(requestedRoot, "state")],
+      { encoding: "utf8", env },
+    );
+    expect(installResult.status).not.toBe(0);
+    expect(installResult.stderr).toContain("jinesis-adminbot.service is active");
+    expect(
+      fs.existsSync(path.join(directory, ".config/systemd/user/jinesis-adminbot.service")),
+    ).toBe(false);
+  });
+
   it("requires an authoritative, quiescent source before attempting database sync", () => {
     const result = spawnSync(
       "bash",

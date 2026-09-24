@@ -230,7 +230,10 @@ scripts/aurora-adminbot-host.sh --user <cs-user> status
 
 The start command refuses to proceed while the env file contains
 `REPLACE_ME`, while `openclaw.json` is missing, or while gog authentication is
-unavailable.
+unavailable. `start` and `install-services` also refuse to rewrite unit files
+while any managed database writer is active. Use `stop` before installing units
+or switching release roots; use `restart` for a service already running from
+the current release.
 
 Inspect logs independently:
 

@@ -84,6 +84,21 @@ STATE_DIR="${STATE_DIR:-$HOME/.openclaw/state}"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 
+# This installer is also callable directly, without aurora-adminbot-host.sh's account lock.
+# Rewriting units while old-root writers are active can switch their release on a later restart.
+assert_writers_stopped() {
+  systemctl --user show-environment >/dev/null || die "user systemd is unavailable"
+  for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+    jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+    jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+    state="$(systemctl --user show "$unit" -p ActiveState --value)" || die "cannot inspect $unit"
+    [[ "$state" == inactive || "$state" == failed ]] ||
+      die "refusing to rewrite units while $unit is $state; stop writers first"
+  done
+}
+assert_writers_stopped
+
 NODE_BIN="$(command -v node || true)"
 OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
 # GPU 0 carries vLLM on this host; default the embedding server to the next one.
@@ -158,6 +173,7 @@ else
   chmod 600 "$ENV_FILE"
 fi
 
+assert_writers_stopped
 cat >"$UNIT_DIR/jinesis-ollama.service" <<EOF
 [Unit]
 Description=Jinesis Ollama (guidebook embeddings)
