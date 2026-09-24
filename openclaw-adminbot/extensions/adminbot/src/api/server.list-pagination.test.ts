@@ -113,18 +113,18 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
         summary.body.members.find((member: { id: string }) => member.id === "cy").onboarding,
       ).toBeNull();
 
-      const claim = mock.auth.claim({
+      const claim = await mock.auth.claim({
         member_id: "ada",
         email: "ada@example.org",
         password: "correcthorse",
       });
       expect(claim.ok).toBe(true);
-      const registration = mock.auth
-        .listRegistrations("pending")
-        .find((entry) => entry.member_id === "ada");
+      const registration = (await mock.auth.listRegistrations("pending")).find(
+        (entry) => entry.member_id === "ada",
+      );
       expect(registration).toBeDefined();
-      expect(mock.auth.approveRegistration(registration!.id, "test-admin").ok).toBe(true);
-      const login = mock.auth.login({ email: "ada@example.org", password: "correcthorse" });
+      expect((await mock.auth.approveRegistration(registration!.id, "test-admin")).ok).toBe(true);
+      const login = await mock.auth.login({ email: "ada@example.org", password: "correcthorse" });
       if (!login.ok) {
         throw new Error(login.error.message);
       }

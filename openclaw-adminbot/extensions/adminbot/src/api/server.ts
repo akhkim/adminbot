@@ -763,15 +763,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   );
   const auth = new AdminBotAuthService({
     store,
-    // Signup approval mints a roster member through the same governed path as any admin edit so
-    // access grants and validation stay identical.
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    // Prepare the governed profile without writing; approval commits the member, credential, and
+    // decision together before the profile hooks run.
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
@@ -1120,7 +1121,7 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
 
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal) {
     if (!isAnonymousRoute(req.method, url.pathname)) {
       sendJson(res, 401, { error: { message: "authentication required" } });
@@ -1164,13 +1165,13 @@ async function handleAuthRoute(
       sendJson(res, 400, { error: { message: "roster search is too long" } });
       return;
     }
-    sendJson(res, 200, { members: ctx.auth.listRoster(query) });
+    sendJson(res, 200, { members: await ctx.auth.listRoster(query) });
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/claim") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.claim({
+    const result = await ctx.auth.claim({
       member_id: asString(body.member_id),
       email: asString(body.email),
       password: asString(body.password),
@@ -1182,7 +1183,7 @@ async function handleAuthRoute(
   if (req.method === "POST" && url.pathname === "/auth/signup") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.signup({
+    const result = await ctx.auth.signup({
       profile: readRecord(body.profile),
       email: asString(body.email),
       password: asString(body.password),
@@ -1194,7 +1195,7 @@ async function handleAuthRoute(
   if (req.method === "POST" && url.pathname === "/auth/login") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.login({
+    const result = await ctx.auth.login({
       email: asString(body.email),
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
@@ -1212,7 +1213,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/auth/session") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1224,7 +1225,7 @@ async function handleAuthRoute(
   // requirePrivileged: the admin check lives in the auth service, which is also where the
   // no-nesting and not-yourself rules are, so all four refusals are stated in one place.
   if (req.method === "POST" && url.pathname === "/auth/impersonate") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1232,7 +1233,7 @@ async function handleAuthRoute(
     const body = readRecord(await readJson(req));
     sendAuthResult(
       res,
-      ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
+      await ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1247,7 +1248,7 @@ async function handleAuthRoute(
     // be closable, and the auth service refuses anything that is not an impersonation row anyway.
     sendAuthResult(
       res,
-      ctx.auth.endImpersonation(token),
+      await ctx.auth.endImpersonation(token),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1261,14 +1262,14 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/logout") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
     const token = bearerToken(req) ?? cookieToken(req);
     if (token) {
-      ctx.auth.logout(token);
+      await ctx.auth.logout(token);
     }
     clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     sendJson(res, 200, { logged_out: true });
@@ -1279,7 +1280,7 @@ async function handleAuthRoute(
   // unknown addresses, so neither leaks roster membership.
   if (req.method === "POST" && url.pathname === "/auth/password-reset") {
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.requestPasswordReset({
+    const result = await ctx.auth.requestPasswordReset({
       email: asString(body.email),
       ...(() => {
         const ip = remoteIp(req, ctx.trustProxyHeaders);
@@ -1291,7 +1292,7 @@ async function handleAuthRoute(
   }
   if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.resetPassword({
+    const result = await ctx.auth.resetPassword({
       token: asString(body.token),
       newPassword: asString(body.new_password),
     });
@@ -1299,7 +1300,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1308,7 +1309,7 @@ async function handleAuthRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.changePassword(
+    const result = await ctx.auth.changePassword(
       principal.member.id,
       asString(body.current_password),
       asString(body.new_password),
@@ -1320,7 +1321,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/email") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal) {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1334,7 +1335,7 @@ async function handleAuthRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.changeEmail(
+    const result = await ctx.auth.changeEmail(
       principal.member.id,
       asString(body.new_email),
       asString(body.current_password),
@@ -1354,7 +1355,7 @@ async function handleRegistrationRoute(
   ctx: AdminBotRouteContext,
   url: URL,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal) {
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
@@ -1368,7 +1369,7 @@ async function handleRegistrationRoute(
     const status = adminBotRegistrationStatuses.includes(raw as AdminBotRegistrationStatus)
       ? (raw as AdminBotRegistrationStatus)
       : "pending";
-    sendJson(res, 200, { registrations: ctx.auth.listRegistrations(status) });
+    sendJson(res, 200, { registrations: await ctx.auth.listRegistrations(status) });
     return;
   }
   const approve = /^\/auth\/registrations\/([^/]+)\/approve$/u.exec(url.pathname);
@@ -1378,7 +1379,7 @@ async function handleRegistrationRoute(
     }
     sendAuthResult(
       res,
-      ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
+      await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1390,7 +1391,7 @@ async function handleRegistrationRoute(
     }
     sendAuthResult(
       res,
-      ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
+      await ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1467,7 +1468,7 @@ async function handlePairDeviceRoute(
   res: ServerResponse,
   ctx: AdminBotRouteContext,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal || principal.kind !== "member") {
     sendJson(res, 401, { error: { message: "member session required" } });
     return;
@@ -1517,7 +1518,7 @@ async function handleDeviceTokenRoute(
   res: ServerResponse,
   ctx: AdminBotRouteContext,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal || principal.kind !== "member") {
     sendJson(res, 401, { error: { message: "member session required" } });
     return;
@@ -6055,10 +6056,10 @@ function deadlineProposalInput(body: Record<string, unknown>): DeadlineProposalI
   };
 }
 
-function resolvePrincipal(
+async function resolvePrincipal(
   req: IncomingMessage,
   ctx: AdminBotRouteContext,
-): AdminBotPrincipal | undefined {
+): Promise<AdminBotPrincipal | undefined> {
   const bearer = bearerToken(req);
   if (bearer) {
     // Service-principal check first with a constant-time compare. If the env token is unset the
@@ -6066,7 +6067,7 @@ function resolvePrincipal(
     if (ctx.serviceToken && constantTimeEqual(bearer, ctx.serviceToken)) {
       return { kind: "service" };
     }
-    const member = ctx.auth.resolveSession(bearer);
+    const member = await ctx.auth.resolveSession(bearer);
     if (member) {
       // Every authenticated request lands here, which is what makes it the place to notice an
       // account being used from somewhere new. noteAccountUse is a no-op unless the address
@@ -6077,7 +6078,7 @@ function resolvePrincipal(
   }
   const cookie = cookieToken(req);
   if (cookie) {
-    const member = ctx.auth.resolveSession(cookie);
+    const member = await ctx.auth.resolveSession(cookie);
     if (member) {
       ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
       return member;

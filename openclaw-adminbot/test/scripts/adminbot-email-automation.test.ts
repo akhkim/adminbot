@@ -353,11 +353,13 @@ describe("adminbot email automation", () => {
 // The scan window is resumable now, so what it remembers is part of the contract: a pass that
 // failed on something must not leave behind a watermark that carries the mailbox past it.
 describe("mailbox scan watermark", () => {
-  function store(): { state: StateStore; cleanup: () => void } {
+  function store(): { state: StateStore; databasePath: string; cleanup: () => void } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-scan-"));
-    const state = new StateStore(path.join(dir, "state.sqlite"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const state = new StateStore(databasePath);
     return {
       state,
+      databasePath,
       cleanup: () => {
         state.close();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -379,6 +381,37 @@ describe("mailbox scan watermark", () => {
       "2026-07-18T12:00:00.000Z",
     );
     cleanup();
+  });
+
+  it("does not rewind when another process advanced the watermark after an old read", () => {
+    const { state, databasePath, cleanup } = store();
+    const other = new StateStore(databasePath);
+    try {
+      state.markScannedThrough(new Date("2026-07-18T09:00:00Z"));
+      vi.spyOn(state, "scannedThrough").mockReturnValue(new Date("2026-07-18T09:00:00Z"));
+      other.markScannedThrough(new Date("2026-07-18T12:00:00Z"));
+      state.markScannedThrough(new Date("2026-07-18T10:00:00Z"));
+      expect(other.scannedThrough()?.toISOString()).toBe("2026-07-18T12:00:00.000Z");
+    } finally {
+      other.close();
+      cleanup();
+    }
+  });
+
+  it("reports a processing message across store connections", () => {
+    const { state, databasePath, cleanup } = store();
+    const other = new StateStore(databasePath);
+    const input = message({ id: "shared" });
+    const classification = { category: "unknown", reason: "test" };
+    try {
+      expect(state.begin(input, classification)).toBe(true);
+      expect(other.hasInProgressMessages()).toBe(true);
+      state.finish("shared", "completed");
+      expect(other.hasInProgressMessages()).toBe(false);
+    } finally {
+      other.close();
+      cleanup();
+    }
   });
 
   it("treats a settled message as done and a retryable one as not", () => {

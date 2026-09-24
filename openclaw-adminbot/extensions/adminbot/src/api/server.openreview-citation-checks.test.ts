@@ -101,7 +101,7 @@ async function sessionFor(
     })
   ).json()) as { registrations: Array<{ id: string; member_id?: string }> };
   const registration = pending.registrations.find((entry) => entry.member_id === id)!;
-  expect(app.auth.approveRegistration(registration.id, "synthetic-admin").ok).toBe(true);
+  expect((await app.auth.approveRegistration(registration.id, "synthetic-admin")).ok).toBe(true);
   const login = await fetch(`${url}/auth/login`, {
     method: "POST",
     headers: json,

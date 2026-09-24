@@ -450,6 +450,14 @@ export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "
 // The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
 type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
 
+export type AdminBotMeetingArtifactRecord = {
+  file_id: string;
+  file_name: string;
+  meeting_id?: string;
+  status: "attached" | "unmatched" | "empty";
+  processed_at: string;
+};
+
 export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
@@ -491,6 +499,20 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   ): boolean;
   releaseExecutionClaim(effectKey: string, actionId: string): void;
   saveLabMember(member: AdminBotLabMember): void;
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Pick<AdminBotLabMember, "updated_at"> &
+      Partial<
+        Pick<
+          AdminBotLabMember,
+          | "last_login_at"
+          | "last_login_country"
+          | "last_login_continent"
+          | "last_login_city"
+          | "last_login_timezone"
+        >
+      >,
+  ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
   searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
@@ -640,6 +662,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     minimumMinutes: number;
   }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  hasAttachedMeetingArtifact(fileId: string): boolean;
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
    * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
    * replaces its own row rather than stacking a second copy of the same sentence.
@@ -675,12 +699,33 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   pruneAuditEventsBefore(cutoffIso: string): number;
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
+  /** Member IDs with portal credentials, for the public unclaimed-roster picker. */
+  listCredentialMemberIds(): string[];
   saveCredential(credential: AdminBotMemberCredential): void;
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean;
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken";
   savePasswordReset(reset: AdminBotPasswordReset): void;
   getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
   markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean;
   saveAccountRegistration(registration: AdminBotAccountRegistration): void;
+  /** Insert a pending claim/signup only when no pending email or claim-member collision exists. */
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean;
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
   listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
   updateAccountRegistrationDecision(
@@ -688,10 +733,22 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void;
+  ): boolean;
+  /** Approve one pending request and insert its credential/member in one database transaction. */
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" };
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
   getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
   saveSession(session: AdminBotAuthSession): void;
+  /** Prevent a stale verified password from minting a session after a concurrent password change. */
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean;
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
@@ -2839,6 +2896,26 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: next };
   }
 
+  /** Validate and materialize a signup profile without writing it before approval commits. */
+  prepareLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
+    if (this.store.getLabMember(member.id)) {
+      return serviceError(409, "member already exists");
+    }
+    return this.upsertLabMember(member, {}, true);
+  }
+
+  /** Run the existing profile hooks only after a signup's member and credential commit together. */
+  afterMemberCreated(member: AdminBotLabMember): void {
+    this.afterLabMemberWritten(
+      undefined,
+      member,
+      member,
+      member.privilege_level,
+      member.updated_at,
+      {},
+    );
+  }
+
   /**
    * The one funnel every profile write goes through -- the member's own form, an admin, the
    * spreadsheet importer, the CV scan.
@@ -2851,6 +2928,7 @@ export class AdminBotService {
   upsertLabMember(
     member: AdminBotLabMemberInput,
     origin: AdminBotWriteOrigin = {},
+    prepareOnly = false,
   ): AdminBotServiceResponse<AdminBotLabMember> {
     if (Array.isArray(member.milestones)) {
       member = {
@@ -2944,7 +3022,22 @@ export class AdminBotService {
     if (stored.availability_notes !== undefined && !stored.availability_notes.trim()) {
       delete stored.availability_notes;
     }
+    if (prepareOnly) {
+      return { ok: true, status: 200, payload: stored };
+    }
     this.store.saveLabMember(stored);
+    this.afterLabMemberWritten(existing, member, stored, privilegeLevel, now, origin);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private afterLabMemberWritten(
+    existing: AdminBotLabMember | undefined,
+    member: AdminBotLabMemberInput,
+    stored: AdminBotLabMember,
+    privilegeLevel: AdminBotPrivilegeLevel,
+    now: string,
+    origin: AdminBotWriteOrigin,
+  ): void {
     this.clearResolvedProfileNotifications(stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
@@ -3018,7 +3111,6 @@ export class AdminBotService {
         source: origin.source ?? "import",
       },
     });
-    return { ok: true, status: 200, payload: stored };
   }
 
   /**

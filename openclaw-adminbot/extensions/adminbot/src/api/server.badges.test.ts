@@ -97,7 +97,7 @@ async function approveClaim(
   if (!registration) {
     throw new Error(`no pending registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "seed-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -227,7 +227,11 @@ describe("AdminBot badge routes", () => {
     const assign = await fetch(`${baseUrl}/badges/assignments`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
-      body: JSON.stringify({ member_id: "pat", badge_id: badge.id, evidence: "Shipped the guide." }),
+      body: JSON.stringify({
+        member_id: "pat",
+        badge_id: badge.id,
+        evidence: "Shipped the guide.",
+      }),
     });
     expect(assign.status).toBe(200);
     await expect(assign.json()).resolves.toMatchObject({

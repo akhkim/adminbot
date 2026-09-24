@@ -76,6 +76,7 @@ import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
   AdminBotLabMemberSummary,
   AdminBotListPage,
+  AdminBotMeetingArtifactRecord,
   AdminBotMeetingCursor,
   AdminBotServiceStore,
   AdminBotSlackChannelNamingRecord,
@@ -231,6 +232,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
   private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
+  private readonly meetingArtifacts = new Map<string, AdminBotMeetingArtifactRecord>();
   private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
@@ -347,6 +349,18 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   saveLabMember(member: AdminBotLabMember): void {
     this.labMembers.set(member.id, member);
+  }
+
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
+  ): boolean {
+    const member = this.labMembers.get(memberId);
+    if (!member) {
+      return false;
+    }
+    this.labMembers.set(memberId, { ...member, ...patch });
+    return true;
   }
 
   getLabMember(memberId: string): AdminBotLabMember | undefined {
@@ -1191,6 +1205,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.meetings.delete(meetingId);
   }
 
+  hasAttachedMeetingArtifact(fileId: string): boolean {
+    return this.meetingArtifacts.get(fileId)?.status === "attached";
+  }
+
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void {
+    this.meetingArtifacts.set(record.file_id, structuredClone(record));
+  }
+
   saveMemberNotification(notification: AdminBotMemberNotification): void {
     this.memberNotifications.set(notification.id, notification);
   }
@@ -1333,9 +1355,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.credentialsByMemberId.get(memberId);
   }
 
+  listCredentialMemberIds(): string[] {
+    return [...this.credentialsByMemberId.keys()];
+  }
+
   saveCredential(credential: AdminBotMemberCredential): void {
     this.credentialsByMemberId.set(credential.member_id, credential);
     this.credentialsByEmail.set(credential.email.toLowerCase(), credential);
+  }
+
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean {
+    const credential = this.credentialsByMemberId.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: updatedAt });
+    this.revokeSessionsForMember(memberId, updatedAt);
+    return true;
   }
 
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
@@ -1354,8 +1395,50 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.credentialsByEmail.set(updated.email, updated);
   }
 
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken" {
+    const credential = this.credentialsByMemberId.get(memberId);
+    const member = this.labMembers.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash || !member) {
+      return "stale";
+    }
+    const email = newEmail.toLowerCase();
+    const holder = this.credentialsByEmail.get(email);
+    if ((holder && holder.member_id !== memberId) || this.getPendingRegistrationByEmail(email)) {
+      return "taken";
+    }
+    this.updateCredentialEmail(memberId, email, updatedAt);
+    this.labMembers.set(memberId, { ...member, email, updated_at: updatedAt });
+    return "changed";
+  }
+
   saveAccountRegistration(registration: AdminBotAccountRegistration): void {
     this.registrations.set(registration.id, registration);
+  }
+
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean {
+    if (registration.status !== "pending") {
+      throw new Error("only pending registrations can be inserted here");
+    }
+    if (
+      this.registrations.has(registration.id) ||
+      this.getCredentialByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getCredentialByMemberId(registration.member_id)) ||
+      this.getPendingRegistrationByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getPendingRegistrationByMemberId(registration.member_id))
+    ) {
+      return false;
+    }
+    this.registrations.set(registration.id, registration);
+    return true;
   }
 
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
@@ -1374,13 +1457,57 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void {
+  ): boolean {
     const registration = this.registrations.get(id);
-    if (registration) {
-      registration.status = status;
-      registration.decided_by = decidedBy;
-      registration.decided_at = decidedAt;
+    if (!registration || registration.status !== "pending") {
+      return false;
     }
+    this.registrations.set(id, {
+      ...registration,
+      status,
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return true;
+  }
+
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" } {
+    const registration = this.registrations.get(id);
+    if (!registration || registration.status !== "pending") {
+      return { ok: false, reason: "not_pending" };
+    }
+    const memberId = registration.kind === "claim" ? registration.member_id : preparedMember?.id;
+    if (
+      !memberId ||
+      (registration.kind === "signup" && (!preparedMember || this.labMembers.has(memberId))) ||
+      (registration.kind === "claim" && !this.labMembers.has(memberId)) ||
+      this.credentialsByMemberId.has(memberId) ||
+      this.credentialsByEmail.has(registration.email.toLowerCase())
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (preparedMember && registration.kind === "signup") {
+      this.labMembers.set(memberId, preparedMember);
+    }
+    this.saveCredential({
+      member_id: memberId,
+      email: registration.email,
+      password_scrypt: registration.password_scrypt,
+      claimed_at: decidedAt,
+      updated_at: decidedAt,
+    });
+    this.registrations.set(id, {
+      ...registration,
+      status: "approved",
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return { ok: true, member_id: memberId };
   }
 
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
@@ -1398,6 +1525,20 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   saveSession(session: AdminBotAuthSession): void {
     this.sessions.set(session.token_hash, session);
+  }
+
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean {
+    if (
+      this.credentialsByMemberId.get(session.member_id)?.password_scrypt !== expectedPasswordHash ||
+      this.sessions.has(session.token_hash)
+    ) {
+      return false;
+    }
+    this.sessions.set(session.token_hash, session);
+    return true;
   }
 
   getSession(tokenHash: string): AdminBotAuthSession | undefined {
@@ -1440,6 +1581,22 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         reset.used_at = usedAt;
       }
     }
+  }
+
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean {
+    const reset = this.passwordResets.get(tokenHash);
+    const credential = reset && this.credentialsByMemberId.get(reset.member_id);
+    if (!reset || reset.used_at || reset.expires_at <= usedAt || !credential) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: usedAt });
+    this.markPasswordResetsUsedForMember(reset.member_id, usedAt);
+    this.revokeSessionsForMember(reset.member_id, usedAt);
+    return true;
   }
 
   pruneSessionsBefore(cutoffIso: string): number {
