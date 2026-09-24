@@ -27,10 +27,6 @@ import type {
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
 import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
-import {
-  createFailedRequestLedgerFromDatabase,
-  type FailedExternalRequestLedger,
-} from "./failed-requests.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
@@ -56,6 +52,11 @@ import {
   type AdminBotSlackChannelNamingRecord,
 } from "../kernel/service.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
+import {
+  createFailedRequestLedgerFromDatabase,
+  type FailedExternalRequestLedger,
+} from "./failed-requests.js";
+import { createMemberDraftStore } from "./member-drafts.js";
 
 const require = createRequire(import.meta.url);
 
@@ -94,6 +95,10 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  memberDraftStore() {
+    return createMemberDraftStore(this.db);
+  }
+
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
 
