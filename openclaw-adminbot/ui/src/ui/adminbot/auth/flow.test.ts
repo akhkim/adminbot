@@ -316,6 +316,9 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotLocationDrift: { current_city: "A's city" } as never,
       adminBotLocationDrifts: [{ current_city: "A's city" }] as never,
       adminBotMeetings: [{ id: "A's meeting", recording: { passcode: "private" } }] as never,
+      adminBotMeetingsVisibleCount: 24,
+      adminBotMeetingsNextCursor: { started_at: "2026-08-12T14:00:00Z", id: "A's meeting" },
+      adminBotMeetingsLoadingMore: true,
       adminBotMeetingNudgePreview: { members: [{ id: "a" }] } as never,
       calendarEvents: [{ id: "A's event", summary: "private" }] as never,
       calendarMessages: [{ role: "user", content: "A's private prompt" }],
@@ -379,6 +382,9 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotLocationDrift).toBeUndefined();
     expect(host.adminBotLocationDrifts).toBeUndefined();
     expect(host.adminBotMeetings).toBeUndefined();
+    expect(host.adminBotMeetingsVisibleCount).toBe(12);
+    expect(host.adminBotMeetingsNextCursor).toBeNull();
+    expect(host.adminBotMeetingsLoadingMore).toBe(false);
     expect(host.adminBotMeetingNudgePreview).toBeNull();
     expect(host.calendarEvents).toBeUndefined();
     expect(host.calendarMessages).toEqual([]);
