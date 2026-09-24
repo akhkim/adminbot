@@ -64,7 +64,7 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
-  it("maps calendar invites and cancellations with explicit notifications", async () => {
+  it("maps calendar invites and cancellations without emailing anyone", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
 
@@ -84,11 +84,49 @@ describe("createGogAdminBotExecutor", () => {
     );
 
     expect(run.mock.calls[0]?.[0]).toEqual(
-      expect.arrayContaining(["calendar.create", "--send-updates", "all"]),
+      expect.arrayContaining(["calendar.create", "--send-updates", "none"]),
     );
     expect(run.mock.calls[1]?.[0]).toEqual(
-      expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "all"]),
+      expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "none"]),
     );
+  });
+
+  // No calendar action emails anyone: guests see the change on their calendar, and nothing lands
+  // in their inbox. One place pins every type, so a new calendar action cannot quietly opt in.
+  it.each([
+    [
+      "calendar.create_tentative_hold",
+      { summary: "Hold", from: "2026-06-22T14:00:00-04:00", to: "2026-06-22T15:00:00-04:00" },
+    ],
+    [
+      "calendar.create_birthday",
+      { summary: "Ada's birthday", from: "2026-06-22", to: "2026-06-23", all_day: true },
+    ],
+    [
+      "calendar.send_invite",
+      {
+        summary: "Review",
+        from: "2026-06-22T14:00:00-04:00",
+        to: "2026-06-22T14:30:00-04:00",
+        attendees: ["a@example.com"],
+      },
+    ],
+    [
+      "calendar.reschedule",
+      { event_id: "event-1", from: "2026-06-23T14:00:00-04:00", to: "2026-06-23T14:30:00-04:00" },
+    ],
+    ["calendar.add_attendees", { event_id: "event-1", attendees: ["a@example.com"] }],
+    ["calendar.cancel", { event_id: "event-1" }],
+  ] as const)("sends no email for %s", async (type, payload) => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(proposal(type, payload));
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+    expect(args).not.toContain("all");
+    expect(args).not.toContain("externalOnly");
   });
 
   // Inviting people to a standing meeting must not uninvite everyone already on it, which is what
@@ -115,7 +153,7 @@ describe("createGogAdminBotExecutor", () => {
         "--add-attendee",
         "ada@cs.toronto.edu,mei@cs.toronto.edu",
         "--send-updates",
-        "all",
+        "none",
       ]),
     );
     expect(args).not.toContain("--attendees");

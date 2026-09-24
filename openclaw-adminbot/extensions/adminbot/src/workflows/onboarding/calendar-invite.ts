@@ -16,23 +16,14 @@ const GWS_MAX_OUTPUT_BYTES = 1024 * 1024;
 // deployment approves members without a calendar invite instead of failing the approval.
 export const ADMINBOT_LAB_EMAIL_ENV = "ADMINBOT_LAB_EMAIL";
 
-export type CalendarInviteOptions = {
-  /**
-   * Whether Google mails the person about the share. Defaults to true.
-   *
-   * True is right for onboarding: the notification is how a new member finds out the calendar
-   * exists, arriving alongside everything else their first day. It is wrong for the backfill,
-   * which grants access somebody should have had months ago -- a share notification landing years
-   * after an alumnus left reads as a mistake, and 150 of them at once reads as a compromise.
-   * Access still appears in their calendar list either way; only the announcement is suppressed.
-   */
-  sendNotifications?: boolean;
-};
-
-export type CalendarInviteRunner = (
-  email: string,
-  options?: CalendarInviteOptions,
-) => Promise<void>;
+/**
+ * Grants reader access to the lab calendar, silently.
+ *
+ * Google's "shared a calendar with you" email is never sent: AdminBot's calendar writes do not
+ * email anyone (see CALENDAR_SEND_UPDATES in connectors/gog.ts). The calendar still appears in the
+ * member's calendar list; the onboarding checklist is what tells them it is there.
+ */
+export type CalendarInviteRunner = (email: string) => Promise<void>;
 
 /**
  * The configured lab calendar, or undefined when this deployment has none.
@@ -72,7 +63,7 @@ function resolveGwsExecutable(env: NodeJS.ProcessEnv | undefined): string {
  */
 export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInviteRunner {
   const gws = resolveGwsExecutable(env);
-  return async (email, options) => {
+  return async (email) => {
     const trimmed = email.trim();
     if (!trimmed) {
       throw new Error("calendar invite requires a non-empty email");
@@ -91,12 +82,7 @@ export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInv
           "acl",
           "insert",
           "--params",
-          JSON.stringify({
-            calendarId,
-            // Defaulted here rather than at the call site so a caller that says nothing keeps the
-            // onboarding behaviour; only the backfill opts out.
-            sendNotifications: options?.sendNotifications ?? true,
-          }),
+          JSON.stringify({ calendarId, sendNotifications: false }),
           "--json",
           JSON.stringify({ role: "reader", scope: { type: "user", value: trimmed } }),
         ],
