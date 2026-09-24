@@ -1,3 +1,4 @@
+import { createGatewayFetch } from "./broker.gateway.js";
 import type {
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
@@ -50,7 +51,7 @@ export const defaultAdminBotPrivacyBrokerConfig = {
   localModel: "nvidia/Qwen3.5-122B-A10B-NVFP4",
   localApiKeyEnv: "VLLM_API_KEY",
   remoteBaseUrl: "https://integrate.api.nvidia.com/v1",
-  remoteModel: "minimaxai/minimax-m3",
+  remoteModel: "nvidia/nemotron-3-ultra-550b-a55b",
   remoteApiKeyEnv: "NVIDIA_API_KEY",
   publicBaseUrl: "https://openrouter.ai/api/v1",
   publicModel: "openai/gpt-5.4-mini",
@@ -76,11 +77,11 @@ export function createAdminBotPrivacyBroker(
   config: AdminBotPrivacyBrokerConfig = defaultAdminBotPrivacyBrokerConfig,
   options: AdminBotPrivacyBrokerOptions = {},
 ): AdminBotPrivacyBroker {
-  const fetchImpl = wrapFetchWithLlmSlots(
-    options.fetchImpl ?? (globalThis.fetch as PrivacyBrokerFetch),
-    options.llmRouter,
-  );
   const env = options.env ?? process.env;
+  const directFetch = options.fetchImpl ?? (globalThis.fetch as PrivacyBrokerFetch);
+  const fetchImpl = env.LLM_GATEWAY_URL
+    ? createGatewayFetch(directFetch, config, env)
+    : wrapFetchWithLlmSlots(directFetch, options.llmRouter);
   return createPrivacyBrokerHandler(config, fetchImpl, env, options.sensitiveTermsProvider);
 }
 
@@ -390,7 +391,15 @@ function wrapFetchWithLlmSlots(
     const kind = LOOPBACK_HOSTS.has(host) ? "local" : "public";
     const lease = await router.acquire(kind, init?.signal);
     try {
-      return await fetchImpl(input, init);
+      const response = await fetchImpl(input, init);
+      // Fetch resolves at headers; keep capacity reserved through the complete generation.
+      const body = await response.text();
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        text: async () => body,
+      };
     } finally {
       lease.release();
     }
