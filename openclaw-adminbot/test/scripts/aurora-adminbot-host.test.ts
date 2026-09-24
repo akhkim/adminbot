@@ -8,6 +8,8 @@ const root = process.cwd();
 const hostScript = path.join(root, "scripts/aurora-adminbot-host.sh");
 const installer = path.join(root, "deploy/aurora/install-user-services.sh");
 const pollerInstaller = path.join(root, "deploy/aurora/install-member-sheet-poller.sh");
+const qwenRestart = path.join(root, "deploy/aurora/restart-adminbot-after-vllm.sh");
+const qwenSetup = path.join(root, "deploy/aurora/setup-qwen35-vllm.sh");
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
@@ -106,6 +108,7 @@ describe("Aurora AdminBot hosting", () => {
     expect(() =>
       execFileSync("bash", ["-n", hostScript, installer, pollerInstaller]),
     ).not.toThrow();
+    expect(() => execFileSync("bash", ["-n", qwenRestart])).not.toThrow();
   });
 
   it("deploys committed revisions and keeps services stopped until explicit start", () => {
@@ -183,6 +186,57 @@ describe("Aurora AdminBot hosting", () => {
     expect(fs.existsSync(lock)).toBe(true);
     expect(run(release, "first-root", "first-run").status).toBe(0);
     expect(fs.existsSync(lock)).toBe(false);
+  });
+
+  it("blocks a Qwen-triggered writer restart while a deploy holds the account lock", () => {
+    expect(fs.readFileSync(qwenSetup, "utf8")).toContain(
+      '"$ROOT/deploy/aurora/restart-adminbot-after-vllm.sh"',
+    );
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aurora-qwen-restart-"));
+    temporaryDirectories.push(directory);
+    const fakeBin = path.join(directory, "bin");
+    fs.mkdirSync(fakeBin);
+    const systemctl = path.join(fakeBin, "systemctl");
+    const calls = path.join(directory, "systemctl-calls");
+    fs.writeFileSync(
+      systemctl,
+      '#!/usr/bin/env bash\n[[ -f "$HOME/.config/jinesis-adminbot/.writer.lock/owner" ]] || exit 7\nprintf "%s\\n" "$*" >>"$CALLS"\n',
+    );
+    fs.chmodSync(systemctl, 0o755);
+    const env = {
+      ...process.env,
+      HOME: directory,
+      CALLS: calls,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    };
+    const source = fs.readFileSync(hostScript, "utf8");
+    const acquire = source.match(/<<'REMOTE_DEPLOY_LOCK'\n([\s\S]*?)\nREMOTE_DEPLOY_LOCK/u)?.[1];
+    const release = source.match(
+      /<<'REMOTE_DEPLOY_UNLOCK'\n([\s\S]*?)\nREMOTE_DEPLOY_UNLOCK/u,
+    )?.[1];
+    const runLock = (body: string | undefined) =>
+      spawnSync("bash", ["-s", "--", "/synthetic/root", "deploy-owner"], {
+        input: body,
+        encoding: "utf8",
+        env,
+      });
+    const restart = () => spawnSync("bash", [qwenRestart], { encoding: "utf8", env });
+
+    expect(runLock(acquire).status).toBe(0);
+    const blocked = restart();
+    expect(blocked.status).not.toBe(0);
+    expect(blocked.stderr).toContain("another writer operation holds the account lock");
+    expect(fs.existsSync(calls)).toBe(false);
+    expect(runLock(release).status).toBe(0);
+
+    const resumed = restart();
+    expect(resumed.status, resumed.stderr).toBe(0);
+    expect(fs.readFileSync(calls, "utf8")).toBe(
+      "--user try-restart jinesis-adminbot.service jinesis-openclaw-gateway.service\n",
+    );
+    expect(fs.existsSync(path.join(directory, ".config/jinesis-adminbot/.writer.lock"))).toBe(
+      false,
+    );
   });
 
   it("blocks start, restart, and database sync while another writer owns the lock", () => {
