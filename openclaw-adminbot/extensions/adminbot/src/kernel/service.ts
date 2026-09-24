@@ -490,6 +490,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
   countLabMembers(q?: string): number;
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;

@@ -1159,7 +1159,12 @@ async function handleAuthRoute(
   url: URL,
 ): Promise<void> {
   if (req.method === "GET" && url.pathname === "/auth/roster") {
-    sendJson(res, 200, { members: ctx.auth.listRoster() });
+    const query = (url.searchParams.get("q") ?? "").trim();
+    if (query.length > 80) {
+      sendJson(res, 400, { error: { message: "roster search is too long" } });
+      return;
+    }
+    sendJson(res, 200, { members: ctx.auth.listRoster(query) });
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/claim") {

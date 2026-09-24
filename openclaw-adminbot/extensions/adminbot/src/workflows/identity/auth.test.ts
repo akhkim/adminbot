@@ -258,6 +258,40 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(roster).toEqual([{ id: "c", name: "c" }]);
   });
 
+  it("returns at most 20 matching names after excluding pending and claimed members", () => {
+    const { store, auth } = setup();
+    for (let index = 0; index < 30; index += 1) {
+      store.saveLabMember(
+        member(`m-${String(index).padStart(2, "0")}`, `m${index}@example.invalid`, {
+          name: `Ada ${String(index).padStart(2, "0")}`,
+        }),
+      );
+    }
+    store.saveCredential({
+      member_id: "m-00",
+      email: "m0@example.invalid",
+      password_scrypt: "synthetic",
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    store.saveAccountRegistration({
+      id: "pending-1",
+      kind: "claim",
+      member_id: "m-01",
+      email: "m1@example.invalid",
+      password_scrypt: "synthetic",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    expect(auth.listRoster()).toHaveLength(20);
+    const matches = auth.listRoster("aDa 2");
+    expect(matches.map((entry) => entry.name)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `Ada 2${index}`),
+    );
+    expect(auth.listRoster("Ada").some((entry) => entry.id === "m-00")).toBe(false);
+    expect(auth.listRoster("Ada").some((entry) => entry.id === "m-01")).toBe(false);
+  });
+
   it("rejects short passwords for claim and signup", () => {
     const { store, auth } = setup();
     store.saveLabMember(member("ada", "ada@example.com"));

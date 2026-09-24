@@ -425,12 +425,19 @@ function buildSignupProfile(host: MemberAuthHost): SignupProfile {
 // Loads the unclaimed roster for the claim picker. Called when the user enters
 // claim mode; leaves an existing selection untouched on refresh.
 export async function loadRoster(host: MemberAuthHost): Promise<void> {
+  const query = host.rosterFilter.trim();
   host.rosterLoading = true;
   host.memberAuthFailure = null;
   try {
-    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings));
+    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings), query);
+    if (host.rosterFilter.trim() !== query) {
+      return;
+    }
     if (result.ok) {
-      host.rosterMembers = result.value;
+      const selected = host.rosterMembers.find((member) => member.id === host.selectedMemberId);
+      host.rosterMembers = selected
+        ? [selected, ...result.value.filter((member) => member.id !== selected.id)]
+        : result.value;
       host.rosterError = null;
       return;
     }
@@ -441,7 +448,9 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
       host.memberAuthFailure = { kind: "adminbot-unreachable" };
     }
   } finally {
-    host.rosterLoading = false;
+    if (host.rosterFilter.trim() === query) {
+      host.rosterLoading = false;
+    }
   }
 }
 

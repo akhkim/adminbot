@@ -30,6 +30,51 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("searches only eligible roster names before applying the public result cap", () => {
+    const instance = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    for (let index = 0; index < 26; index += 1) {
+      unwrap(
+        instance.service.upsertLabMember({
+          id: `m-${String(index).padStart(2, "0")}`,
+          name: `Ada ${String(index).padStart(2, "0")}`,
+          privilege_level: "member",
+        }),
+      );
+    }
+    unwrap(
+      instance.service.upsertLabMember({
+        id: "unicode",
+        name: "Δelta",
+        privilege_level: "member",
+      }),
+    );
+    instance.store.saveCredential({
+      member_id: "m-00",
+      email: "m0@example.invalid",
+      password_scrypt: "synthetic",
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    instance.store.saveAccountRegistration({
+      id: "pending-1",
+      kind: "claim",
+      member_id: "m-01",
+      email: "m1@example.invalid",
+      password_scrypt: "synthetic",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    const first = instance.store.searchUnclaimedRoster("", 20);
+    expect(first).toHaveLength(20);
+    expect(first[0]?.id).toBe("m-02");
+    expect(first.every((entry) => Object.keys(entry).join(",") === "id,name")).toBe(true);
+    expect(instance.store.searchUnclaimedRoster("ada 2", 20)).toHaveLength(6);
+    expect(instance.store.searchUnclaimedRoster("δEL", 20)).toEqual([
+      { id: "unicode", name: "Δelta" },
+    ]);
+    instance.close();
+  });
+
   it("keeps verified submission metadata across restarts and removes stale metadata", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });

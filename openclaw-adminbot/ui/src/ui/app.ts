@@ -417,6 +417,7 @@ export class OpenClawApp extends LitElement {
   @state() rosterError: RosterError = null;
   @state() rosterFilter = "";
   @state() selectedMemberId: string | null = null;
+  private rosterSearchTimer?: ReturnType<typeof setTimeout>;
   @state() memberName = "";
   @state() memberSlackUserId = "";
   @state() memberRole = "";
@@ -1357,6 +1358,13 @@ export class OpenClawApp extends LitElement {
 
   async loadRoster() {
     await loadRosterInternal(this as unknown as Parameters<typeof loadRosterInternal>[0]);
+  }
+
+  scheduleRosterSearch() {
+    clearTimeout(this.rosterSearchTimer);
+    this.rosterSearchTimer = setTimeout(() => {
+      void this.loadRoster();
+    }, 200);
   }
 
   handleChatScroll(event: Event) {
