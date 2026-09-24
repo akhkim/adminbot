@@ -409,7 +409,7 @@ function renderMonth(state: AppViewState) {
               data-testid=${`calendar-day-${day.key}`}
             >
               <span class="adminbot-calendar__day-number">${day.day}</span>
-              ${renderDayTrips(state, day.key)}
+              ${state.adminBotRosterLoadedAt ? renderDayTrips(state, day.key) : nothing}
               ${events.slice(0, CHIPS_PER_DAY).map((event) => renderChip(state, event, timezone))}
               ${events.length > CHIPS_PER_DAY
                 ? html`<button
