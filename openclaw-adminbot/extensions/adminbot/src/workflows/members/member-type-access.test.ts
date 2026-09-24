@@ -150,10 +150,27 @@ describe("privilegeForMemberTypeChange", () => {
     });
   });
 
-  it("never moves an admin, and leaves types that say nothing about access alone", () => {
-    expect(privilegeForMemberTypeChange(member({ privilege_level: "admin" }), "alumni")).toBe(
-      undefined,
-    );
+  it("grants admin from the admin tag, and takes it away when the tag goes", () => {
+    expect(privilegeForMemberTypeChange(member(), "full, adminbot-admin")).toEqual({
+      privilege_level: "admin",
+    });
+    // The legacy spelling on the live roster means the same.
+    expect(privilegeForMemberTypeChange(member(), "full, admin")).toEqual({
+      privilege_level: "admin",
+    });
+    const admin = member({ privilege_level: "admin" });
+    expect(privilegeForMemberTypeChange(admin, "full")).toEqual({ privilege_level: "member" });
+    expect(privilegeForMemberTypeChange(admin, "alumni")).toEqual({
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "alumni",
+    });
+    // No other signal: least privilege, not a kept admin.
+    expect(privilegeForMemberTypeChange(admin, "mailing-list")).toEqual({
+      privilege_level: "external_collaborator",
+    });
+  });
+
+  it("leaves types that say nothing about access alone", () => {
     expect(privilegeForMemberTypeChange(external(), "mailing-list")).toBeUndefined();
     expect(privilegeForMemberTypeChange(external(), "")).toBeUndefined();
   });

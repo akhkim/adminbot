@@ -47,6 +47,7 @@ import {
   generateAdminBotReimbursement,
   loadAdminBot,
   loadAdminBotMemberList,
+  loadAdminBotStandingMeetings,
   loadAdminBotRoster,
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
@@ -2839,6 +2840,17 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
   }
+  // The member editor's Meetings checkboxes read the lab calendar. Admin-only, like the route.
+  if (
+    adminBotPanel === "members" &&
+    state.memberPrivilegeLevel === "admin" &&
+    hasMemberSession &&
+    !state.adminBotStandingMeetings.loading &&
+    !state.adminBotStandingMeetings.loadedAt &&
+    !state.adminBotStandingMeetings.error
+  ) {
+    void loadAdminBotStandingMeetings(state).finally(() => requestHostUpdate?.());
+  }
   // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
   // opening the tab drew an empty month and only the Refresh button or a month step would fetch
   // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
@@ -4200,6 +4212,8 @@ export function renderApp(state: AppViewState) {
               error: state.adminBotError,
               data: state.adminBotData,
               memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
+              standingMeetings:
+                adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
               rosterLoadedAt: state.adminBotRosterLoadedAt,
               rosterLoading: state.adminBotRosterLoading,
               rosterError: state.adminBotRosterError,

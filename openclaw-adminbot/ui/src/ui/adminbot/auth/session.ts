@@ -165,6 +165,38 @@ export type BadgeNominationView = {
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
 /**
+ * One of the lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) and who is on it.
+ * Mirrors `AdminBotStandingMeeting` (extensions/adminbot/src/workflows/calendar/standing-meetings.ts).
+ */
+export type StandingMeeting = {
+  id: string;
+  title: string;
+  kind: "group" | "theme" | "project";
+  event_ids: string[];
+  /** Lowercased addresses. */
+  attendees: string[];
+};
+
+/** The Meetings checkboxes' options. Admin session only; a failed read is an error, not []. */
+export async function fetchStandingMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<StandingMeeting[]>> {
+  const result = await authedJson(baseUrl, "/lab/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const meetings = (result.body as { meetings?: unknown }).meetings;
+  return { ok: true, value: Array.isArray(meetings) ? (meetings as StandingMeeting[]) : [] };
+}
+
+/**
  * What a Member Type change on the Lab Members tab did, step by step. Mirrors the service's
  * `MemberTypeChangeResult` (extensions/adminbot/src/api/server.member-type-change.ts).
  */
@@ -174,7 +206,7 @@ export type MemberTypeChangeSummary = {
   privilege_level: { from: string; to: string };
   collaborator_subgroup: { from?: string; to?: string };
   steps: Array<{
-    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail";
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
     target?: string;
     status: "done" | "skipped" | "failed";
     detail?: string;
@@ -273,6 +305,11 @@ export type ProfilePhotoPolishResult = {
 // member self-edit), so this type being permissive here is not itself a trust
 // boundary.
 export type AdminLabMemberUpdate = {
+  /**
+   * Ids of the standing meetings to be on, from the Meetings checkboxes. Applied to the calendar,
+   * never stored on the record; sent only when the list was loaded.
+   */
+  meetings?: string[];
   name?: string;
   email?: string;
   slack_user_id?: string;
@@ -674,7 +711,14 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LabMember & { member_type_change?: MemberTypeChangeSummary }>> {
+): Promise<
+  AuthResult<
+    LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    }
+  >
+> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}`,
@@ -696,7 +740,10 @@ export async function upsertLabMemberAsAdmin(
   }
   return {
     ok: true,
-    value: result.body as LabMember & { member_type_change?: MemberTypeChangeSummary },
+    value: result.body as LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    },
   };
 }
 

@@ -7,6 +7,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
+  createEmptyAdminBotStandingMeetings,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
@@ -147,6 +148,7 @@ export type MemberAuthHost = {
   adminBotLoading?: boolean;
   adminBotError?: string | null;
   adminBotMemberList?: AdminBotMemberListState;
+  adminBotStandingMeetings?: import("../controllers/admin.ts").AdminBotStandingMeetingsState;
   adminBotMemberNudge?: AdminBotMemberNudgeState;
   resetMemberViewSessionState?: () => void;
   adminBotBusyActionId?: string | null;
@@ -552,6 +554,10 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotError = null;
   if (host.adminBotMemberList) {
     host.adminBotMemberList = createEmptyAdminBotMemberList();
+  }
+  // Guest lists name people; the next session on this browser reads its own.
+  if (host.adminBotStandingMeetings) {
+    host.adminBotStandingMeetings = createEmptyAdminBotStandingMeetings();
   }
   host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
   host.resetMemberViewSessionState?.();

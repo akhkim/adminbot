@@ -29,6 +29,7 @@ import {
   executeActionAsMember,
   removePendingAction,
   fetchMemberResource,
+  fetchStandingMeetings,
   loadStoredMemberSession,
   cancelWorkshopNudges,
   previewWorkshopNudges,
@@ -63,6 +64,7 @@ import {
   upsertLabMemberAsAdmin,
   type ConferenceRoster,
 } from "../auth/session.ts";
+import type { StandingMeeting } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { describeMemberTypeChange } from "../data/member-type-change.ts";
@@ -510,6 +512,11 @@ export type AdminBotLabMemberSaveInput = {
    */
   memberType?: string;
   /**
+   * Standing meetings to be on, by id, from the Meetings checkboxes. Undefined when the list did
+   * not load -- which must send nothing, since an empty list means "take them off every meeting".
+   */
+  meetings?: string[];
+  /**
    * Whether AdminBot may send this person anything at all.
    *
    * Governance, and spelled out here rather than carried in the profile bag for the same reason
@@ -834,8 +841,21 @@ export type GuestReimbursementHost = {
   guestReimbursementBaseUrl: string;
 };
 
+/** The Meetings checkboxes' options, loaded with the Lab Members panel. */
+export type AdminBotStandingMeetingsState = {
+  meetings: StandingMeeting[];
+  loading: boolean;
+  error: string | null;
+  loadedAt: number | null;
+};
+
+export function createEmptyAdminBotStandingMeetings(): AdminBotStandingMeetingsState {
+  return { meetings: [], loading: false, error: null, loadedAt: null };
+}
+
 export type AdminBotHost = {
   requestUpdate?: () => void;
+  adminBotStandingMeetings?: AdminBotStandingMeetingsState;
   client: GatewayBrowserClient | null;
   connected: boolean;
   // The dashboard's member-map card. Undefined means it has not been requested yet.
@@ -1105,6 +1125,43 @@ export async function loadAdminBotMemberList(
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Load the standing meetings the Lab Members form offers as checkboxes.
+ *
+ * Only for a signed-in admin: the route is admin-only and names people's addresses. A failure is
+ * kept as an error rather than an empty list, and the form then leaves the Meetings field out of
+ * the save altogether -- see AdminBotLabMemberSaveInput.meetings.
+ */
+export async function loadAdminBotStandingMeetings(host: AdminBotHost): Promise<void> {
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  const previous = host.adminBotStandingMeetings ?? createEmptyAdminBotStandingMeetings();
+  const pending = { ...previous, loading: true, error: null };
+  host.adminBotStandingMeetings = pending;
+  const result = await fetchStandingMeetings(
+    session.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (
+    host.adminBotStandingMeetings !== pending ||
+    loadStoredMemberSession()?.sessionToken !== session.sessionToken
+  ) {
+    return;
+  }
+  host.adminBotStandingMeetings = result.ok
+    ? { meetings: result.value, loading: false, error: null, loadedAt: Date.now() }
+    : {
+        ...pending,
+        loading: false,
+        error:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : (result.message ?? "Could not load the lab's meetings."),
+      };
 }
 
 function adminBotUnavailableError(host: Pick<AdminBotHost, "connected" | "client">): string | null {
@@ -2531,6 +2588,8 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.notes ? { notes: member.notes } : {}),
     ...(member.status ? { status: member.status } : {}),
     ...(member.memberType ? { member_type: member.memberType } : {}),
+    // `!== undefined`, not truthiness: [] is "on no meetings", which is an answer.
+    ...(member.meetings !== undefined ? { meetings: member.meetings } : {}),
     // `!== undefined`, not truthiness: `false` is how somebody is taken *off* the list, and a
     // truthiness check would silently turn every removal into a no-op.
     ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
@@ -2655,11 +2714,16 @@ export async function saveAdminBotMember(
     // A Member Type change is applied on the spot -- access level, sheet, rooms, meeting -- and the
     // notice says what each of those did rather than a bare "saved".
     const typeChange = result.value.member_type_change;
+    const meetingChanges = result.value.meeting_changes;
     const notice = options.onboard
       ? await onboardSavedMember(host, member.id, stored.sessionToken)
-      : typeChange
-        ? describeMemberTypeChange(member.id, typeChange)
+      : typeChange || meetingChanges?.length
+        ? describeMemberTypeChange(member.id, typeChange, meetingChanges)
         : { kind: "success" as const, text: `Saved member ${member.id}.` };
+    if (meetingChanges?.length) {
+      // The calendar moved; the checkboxes must be re-read from it rather than from the last load.
+      void loadAdminBotStandingMeetings(host).finally(() => host.requestUpdate?.());
+    }
     if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
       return;
     }
