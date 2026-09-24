@@ -2788,8 +2788,12 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
   }
+  // Availability can show the signed-in member's schedule while the admin picker fills in.
   const rosterPendingForTab =
-    hasMemberSession && needsRosterForTab && !state.adminBotRosterLoadedAt;
+    hasMemberSession &&
+    needsRosterForTab &&
+    !state.adminBotRosterLoadedAt &&
+    state.tab !== "adminbotTimeAvailability";
   if (
     adminBotPanel === "members" &&
     (hasMemberSession || state.adminBotData.loadedAt) &&
