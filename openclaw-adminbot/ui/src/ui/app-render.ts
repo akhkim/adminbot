@@ -2780,7 +2780,7 @@ export function renderApp(state: AppViewState) {
   }
   if (
     hasMemberSession &&
-    state.adminBotData.loadedAt &&
+    state.adminBotData.members.some((member) => member.id === state.memberId) &&
     needsRosterForTab &&
     !state.adminBotRosterLoadedAt &&
     !state.adminBotRosterLoading &&

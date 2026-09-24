@@ -1249,6 +1249,9 @@ async function loadAdminBotOverSession(
     const memberRows = host.adminBotRosterLoadedAt
       ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
       : [self];
+    // A roster request can finish while the slower paper request is in flight.
+    const currentMemberRows = () =>
+      host.adminBotRosterLoadedAt ? host.adminBotData.members : memberRows;
     // The profile and public deadlines can render while the larger paper read is still pending.
     host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
     host.requestUpdate?.();
@@ -1258,7 +1261,7 @@ async function loadAdminBotOverSession(
     }
     host.adminBotData = {
       ...createEmptyAdminBotDashboardData(),
-      members: memberRows,
+      members: currentMemberRows(),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       // Admin queues still need their own read before the dashboard is complete.
       loadedAt: mode === "general" ? Date.now() : null,
@@ -1294,7 +1297,7 @@ async function loadAdminBotOverSession(
         emailReview,
         "recent_resolutions",
       ),
-      members: memberRows,
+      members: currentMemberRows(),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
