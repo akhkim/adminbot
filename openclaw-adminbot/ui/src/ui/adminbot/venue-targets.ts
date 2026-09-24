@@ -14,7 +14,7 @@
 
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import { aoeInstantMs } from "./data/deadline-time.ts";
-import { DEADLINE_VENUES, type DeadlineVenue } from "./data/deadlines.ts";
+import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./data/deadlines-summary.ts";
 import { parseVenue } from "./data/venue-catalog.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
@@ -195,7 +195,7 @@ export type PreRegistrationVenue = {
 
 /** The deadline-board rows that describe one venue. An id can name several (abstract, paper). */
 function deadlineRowsFor(venueId: string) {
-  return DEADLINE_VENUES.filter((venue) =>
+  return DEADLINE_SUMMARIES.filter((venue) =>
     venueTargetMatches({ venue_id: venue.id, label: venue.name, confidence: 0 }, venueId),
   );
 }
@@ -237,7 +237,7 @@ export function venueOpenUntilMs(venueId: string): number | undefined {
  * `conference` is deliberately not one of them. A venue stops being a pre-registration once the
  * answer is known; what happens at the conference four months later belongs to the travel flow.
  */
-function decisionInstantMs(venue: DeadlineVenue): number | undefined {
+function decisionInstantMs(venue: DeadlineSummaryVenue): number | undefined {
   const dates = [
     venue.notification_aoe?.trim(),
     ...venue.schedule
@@ -390,7 +390,7 @@ function venueYear(value: string): number | undefined {
 
 export function canonicalVenueId(value: string): string {
   const candidate = value.trim().toLowerCase();
-  for (const deadline of DEADLINE_VENUES) {
+  for (const deadline of DEADLINE_SUMMARIES) {
     if (deadline.venue_aliases.some((alias) => alias.toLowerCase() === candidate)) {
       return deadline.venue_id.toLowerCase();
     }
