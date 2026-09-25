@@ -6434,6 +6434,12 @@ function createIclrIntegrityWatch(
     ...(threshold > 0 && threshold < 1 ? { threshold } : {}),
     // An unparseable date ends the check now rather than letting it run forever.
     until: Number.isNaN(until.getTime()) ? new Date(0) : until,
+    // Operator Slack ids for the hourly digest. Anything that is not a user id is dropped rather
+    // than handed to Slack.
+    reportTo: (process.env.ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
   });
 }
 

@@ -168,6 +168,12 @@ without `--dry-run`.
   `not_found` reference. Each reason alerts at most once per version, and a citation result that
   lands after the score still alerts on the next hourly run. If nobody on the paper has a linked
   Slack account, the alert waits and the reason is stored as `alert_error`.
+- **Hourly digest.** After every sweep, the Slack user ids in
+  `ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS` (comma-separated; unset means none) get a DM, as the
+  auto-approved `paper_integrity.report` action, listing each ICLR submission with a PDF: its
+  current Pangram score and its citation status. It goes out on quiet hours too. It is for
+  operators, not authors, and a send that fails is stored on the sweep as `report_error` without
+  failing the sweep.
 - **Cutoff.** The check stops for good at `ADMINBOT_ICLR_INTEGRITY_UNTIL`, which defaults to
   2026-09-26 08:00 Toronto time (the end of the ICLR 2027 run). After that time a run starts
   nothing and answers `ended_at`, and a sweep that crosses the cutoff stops before its next paper.

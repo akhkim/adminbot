@@ -1201,6 +1201,10 @@ const DEFAULT_ACTION_POLICIES = {
   // list, and the text is composed from the stored scores -- and each version alerts at most once
   // per reason. T1 for the mechanical reason: resolvePolicy only honors auto_allowed below T2.
   "paper_integrity.alert": autoPolicy("T1"),
+  // Auto-approved: an hourly digest that waited on an approval would describe a sweep that has
+  // already been superseded. The recipients are the operator-configured Slack ids, never a caller's
+  // input, and the text is composed from stored scores. T1 for the same mechanical reason.
+  "paper_integrity.report": autoPolicy("T1"),
   // Auto-approved on the same reasoning: the member and the channel are computed here from the
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.
