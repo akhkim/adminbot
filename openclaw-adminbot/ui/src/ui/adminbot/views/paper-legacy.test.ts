@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 // The flat view of My Projects & Papers: that every field is on the page, and that what is typed
 // reaches the right one of the two stores behind it.
-import { render } from "lit";
+import { html, render } from "lit";
 import { describe, expect, it } from "vitest";
 import { adminBotPaperSlots } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { PaperCycle } from "../auth/session.ts";
@@ -208,6 +208,25 @@ describe("collectLegacyWrites", () => {
     expect(writes.slots).toEqual([
       { slot: "arxiv", input: { url: "https://arxiv.org/abs/2401.00001" } },
     ]);
+  });
+
+  // The controller reads `isArchival === "true"`. This form used to send "yes", so renaming an
+  // archival paper quietly recorded it as non-archival.
+  it("keeps an archival paper archival when another field is saved", () => {
+    const state = emptyPaperLegacyState();
+    state.edits.set("p1", new Map([["title", "Renamed"]]));
+    const writes = collectLegacyWrites(state, paper({ is_archival: true }), cycle());
+    expect(writes.record?.isArchival).toBe("true");
+  });
+
+  // An older record holds the track in `presentation_type`. The write splits it: the track goes to
+  // its own field and the format, which that record never had, goes out blank.
+  it("splits a combined track into its own field", () => {
+    const state = emptyPaperLegacyState();
+    state.edits.set("p1", new Map([["title", "Renamed"]]));
+    const writes = collectLegacyWrites(state, paper({ presentation_type: "findings" }), cycle());
+    expect(writes.record?.publicationTrack).toBe("findings");
+    expect(writes.record?.presentationType).toBe("");
   });
 
   it("sends no slot writes when only the record changed", () => {
@@ -461,5 +480,51 @@ describe("folding one section of a paper", () => {
     type(drawn.container, "paper-legacy-p1-title", "Renamed");
     heading(drawn.container, "p1", "project").click();
     expect(drawn.saved.at(-1)?.title).toBe("Renamed");
+  });
+});
+
+describe("the card's own controls", () => {
+  function drawWithExtras(): Drawn & { rerender: () => void } {
+    document.body.replaceChildren();
+    const state = emptyPaperLegacyState();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const props = {
+      state,
+      papers: [paper()],
+      slots: { p1: cycle() },
+      onSavePaper: () => {},
+      onSaveSlot: () => {},
+      onChange: () => render(renderPaperLegacy(props), container),
+      onExit: () => {},
+      renderPaperExtras: (record: AdminBotPaperRecord) => ({
+        top: html`<p data-testid=${`top-${record.id}`}></p>`,
+        bottom: html`<p data-testid=${`bottom-${record.id}`}></p>`,
+      }),
+    };
+    const rerender = () => render(renderPaperLegacy(props), container);
+    rerender();
+    return { container, state, saved: [], slotWrites: [], loaded: [], exits: 0, rerender };
+  }
+
+  it("draws them above and below the form", () => {
+    const { container } = drawWithExtras();
+    const top = container.querySelector('[data-testid="top-p1"]');
+    const form = container.querySelector(".profile__form");
+    const bottom = container.querySelector(
+      '[data-testid="paper-legacy-extras-p1"] [data-testid="bottom-p1"]',
+    );
+    expect(top && form && bottom).toBeTruthy();
+    expect(top!.compareDocumentPosition(form!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(form!.compareDocumentPosition(bottom!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // A folded card is one line; its controls fold with it.
+  it("folds them away with the card", () => {
+    const drawn = drawWithExtras();
+    drawn.state.collapsed.add("p1");
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="top-p1"]')).toBeNull();
+    expect(drawn.container.querySelector('[data-testid="bottom-p1"]')).toBeNull();
   });
 });
