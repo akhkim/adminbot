@@ -111,6 +111,20 @@ describe("OpenReview submission reader", () => {
     expect(String(error)).not.toContain(env.OPENREVIEW_USERNAME);
   });
 
+  it("keeps the author ids in author order", () => {
+    expect(
+      toSubmission({
+        id: "x1234",
+        content: {
+          title: { value: "A paper" },
+          pdf: { value: "/pdf/x.pdf" },
+          venueid: { value: "ICLR.cc/2027/Conference/Submission" },
+          authorids: { value: ["~Ada_Lovelace1", " ada@example.test ", 7, ""] },
+        },
+      }),
+    ).toMatchObject({ author_ids: ["~Ada_Lovelace1", "ada@example.test"] });
+  });
+
   it("ignores notes without an id or title", () => {
     expect(toSubmission(null)).toBeUndefined();
     expect(

@@ -138,6 +138,37 @@ Register the job on the host after deploying with
 `scripts/adminbot-cron-sync.sh --dry-run --only adminbot-citation-checks`, then the same command
 without `--dry-run`.
 
+### ICLR pre-deadline integrity check
+
+`workflows/papers/iclr-integrity-watch.ts`, opt-in with `ADMINBOT_ICLR_INTEGRITY_CHECKS=1` and
+`PANGRAM_API_KEY`, on top of the OpenReview credentials.
+
+- **Scope.** Only ICLR main-conference papers still under review
+  (`ICLR.cc/<year>/Conference/Submission`). Accepted and rejected ICLR papers have moved venue, so
+  the account's history is never scored.
+- **AI-text score.** The main text (everything before the last References heading, review-mode
+  line numbers stripped, capped at 60,000 characters) goes to Pangram's `/task` API with
+  `public_dashboard_link: false`. The PDF itself never leaves the host. Each uploaded version is
+  scored once, and identical bytes under a new path reuse the earlier score. Pangram bills per
+  started 1,000 words, so an unchanged paper costs nothing per hourly run. A placeholder or a text
+  under 300 words is recorded as `unreadable` and not sent. A Pangram failure (bad key, out of
+  credits, rate limit, timeout) is `failed` and retried by the next three sweeps.
+- **Alert.** A Slack group DM, as the auto-approved `paper_integrity.alert` action, goes to the
+  head professor (the `head_professor_member_id` setting) and the first two lab members, in author
+  order, whose Member Type includes `full` or `coauthor-major`. Authors are matched on the roster's
+  `openreview_id`, `email` or `calendar_email`. It is raised when Pangram's `fraction_ai` exceeds
+  `ADMINBOT_ICLR_AI_THRESHOLD` (default 0.5), or when this version's citation check found a
+  `not_found` reference. Each reason alerts at most once per version, and a citation result that
+  lands after the score still alerts on the next hourly run. If nobody on the paper has a linked
+  Slack account, the alert waits and the reason is stored as `alert_error`.
+- **Cutoff.** The check stops for good at `ADMINBOT_ICLR_INTEGRITY_UNTIL`, which defaults to
+  2026-09-26 08:00 Toronto time (the end of the ICLR 2027 run). After that time a run starts
+  nothing and answers `ended_at`, and a sweep that crosses the cutoff stops before its next paper.
+  Set the variable to a later date to reopen it for another cycle.
+- **Scheduling and results.** The `adminbot-iclr-integrity` cron job (`12 * * * *`) calls
+  `POST /openreview/integrity-checks/run`. `GET /openreview/integrity-checks` (service token or
+  admin session) lists every scored version.
+
 ## What is saved and how repeats work
 
 The table has four columns: `submission_id`, `pdf_sha256`, `status`, and nullable `result_json`.

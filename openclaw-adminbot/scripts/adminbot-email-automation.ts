@@ -903,9 +903,10 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
+        // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
         JSON.stringify({
           calendarId: jinesisCalendar(),
-          sendNotifications: true,
+          sendNotifications: false,
         }),
         "--json",
         JSON.stringify({

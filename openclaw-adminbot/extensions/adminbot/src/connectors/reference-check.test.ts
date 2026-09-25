@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { cooldownFor, lookupContext, referenceFetch } from "./reference-check.http.js";
 import {
   createPdfReferenceChecker,
+  extractPdfMainText,
   extractPdfReferences,
+  mainTextBeforeReferences,
   NO_TEXT_LAYER,
   requiredDatabasesPausedUntil,
 } from "./reference-check.js";
@@ -50,6 +52,32 @@ describe("References-Validation integration", () => {
     expect(refs).toHaveLength(2);
     expect(refs[0]).toContain("Testing synthetic reference matching");
     expect(refs.join(" ")).not.toContain("Private");
+  });
+
+  it("gives the AI-text score the prose before the last References heading", async () => {
+    const pdf = referencePdfPages([
+      ["Introduction", "We study synthetic reference matching in depth."],
+      ["References", `[1] ${citation}`, "[2] Doe, J. (2023). A second synthetic reference."],
+    ]);
+    const text = await extractPdfMainText(pdf);
+    expect(text).toContain("We study synthetic reference matching in depth.");
+    expect(text).not.toContain("Journal of Tests");
+    expect(text).not.toContain("second synthetic reference");
+  });
+
+  it("strips review-mode line numbers from the scored prose", () => {
+    const text = [
+      "001 Introduction",
+      "002 We study synthetic reference matching.",
+      "003 More prose about the method.",
+      "004 References",
+      "005 [1] Lovelace, A. (2024). Testing synthetic reference matching.",
+      "006 [2] Doe, J. (2023). A second synthetic reference.",
+      "007 [3] Roe, R. (2022). A third synthetic reference.",
+    ].join("\n");
+    expect(mainTextBeforeReferences(text)).toBe(
+      "Introduction\nWe study synthetic reference matching.\nMore prose about the method.",
+    );
   });
 
   it("reads a bibliography that starts after page 20", async () => {

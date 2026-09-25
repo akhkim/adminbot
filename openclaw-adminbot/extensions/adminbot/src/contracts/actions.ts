@@ -91,6 +91,11 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // The Slack group DM -- the head professor and a paper's first two full / coauthor-major lab
+  // authors -- raised when an ICLR submission's AI-text score or citation check trips before the
+  // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
+  // what evidence" is a question the audit log has to answer on its own row.
+  "paper_integrity.alert",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
@@ -2399,6 +2404,8 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.revised"
     | "deadline_proposal.published"
     | "lab_member.upserted"
+    // A Lab Members type change applied on the spot: access level, sheet, Slack, meeting, mail.
+    | "lab_member.member_type_applied"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
     // One pass of a standing local event's guest list against where people actually are.
@@ -2409,6 +2416,10 @@ export type AdminBotAuditEvent = {
     | "lab_member.merged"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
+    | "lab_member_request.submitted"
+    | "lab_member_request.approved"
+    | "lab_member_request.rejected"
+    | "lab_member_request.withdrawn"
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"

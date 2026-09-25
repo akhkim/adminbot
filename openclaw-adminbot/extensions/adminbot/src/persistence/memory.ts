@@ -57,6 +57,10 @@ import {
   type LabDirectorStatus,
 } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type {
+  AdminBotMemberRequest,
+  AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
 import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -67,6 +71,7 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
@@ -152,6 +157,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
+  private readonly paperAiTextChecks = new Map<string, PaperAiTextCheck>();
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    const check = this.paperAiTextChecks.get(JSON.stringify([submissionId, pdfPath]));
+    return check ? structuredClone(check) : undefined;
+  }
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return [...this.paperAiTextChecks.values()]
+      .filter((check) => submissionId === undefined || check.submission_id === submissionId)
+      .sort((a, b) => b.checked_at.localeCompare(a.checked_at))
+      .map((check) => structuredClone(check));
+  }
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    this.paperAiTextChecks.set(
+      JSON.stringify([check.submission_id, check.pdf_path]),
+      structuredClone(check),
+    );
+  }
+
   private readonly helpInterests = new Map<string, LabHelpInterest>();
   saveHelpInterest(interest: LabHelpInterest): void {
     this.helpInterests.set(
@@ -215,6 +238,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
   private readonly badgeSuggestions = new Map<string, AdminBotBadgeSuggestion>();
   private readonly opportunities = new Map<string, AdminBotOpportunity>();
+  private readonly memberRequests = new Map<string, AdminBotMemberRequest>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
@@ -550,6 +574,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteOpportunity(opportunityId: string): boolean {
     return this.opportunities.delete(opportunityId);
+  }
+
+  saveMemberRequest(request: AdminBotMemberRequest): void {
+    this.memberRequests.set(request.id, request);
+  }
+
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined {
+    return this.memberRequests.get(requestId);
+  }
+
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[] {
+    return [...this.memberRequests.values()]
+      .filter(
+        (request) =>
+          (!params?.requestedBy || request.requested_by === params.requestedBy) &&
+          (!params?.status || request.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteMemberRequest(requestId: string): boolean {
+    return this.memberRequests.delete(requestId);
   }
 
   deleteLabMember(memberId: string): boolean {

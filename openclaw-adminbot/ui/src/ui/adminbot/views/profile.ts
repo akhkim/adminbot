@@ -37,7 +37,6 @@ import type { Tab } from "../../navigation.ts";
 import type {
   AssignedBadge,
   BadgeDefinition,
-  BadgeNominationView,
   BadgeSuggestionInput,
   LabMember,
   MemberProfileUpdate,
@@ -494,12 +493,6 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
 
 function assignedBadgeLabel(badge: Pick<AssignedBadge, "name" | "tier">): string {
   return badge.tier ? `${badge.name} · ${badge.tier}` : badge.name;
-}
-
-function nominationBadgeLabel(nomination: BadgeNominationView): string {
-  return nomination.badge_tier
-    ? `${nomination.badge_name} · ${nomination.badge_tier}`
-    : nomination.badge_name;
 }
 
 /**
@@ -1416,7 +1409,7 @@ function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | u
 }
 
 /**
- * The nomination form, and the nominations this viewer can see.
+ * The nomination form. Past and pending nominations are not listed on the profile.
  *
  * It used to be self-only, which quietly made the board a record of what people were willing to
  * claim about themselves. Most of what these badges recognise is somebody else's to notice -- the
@@ -1429,7 +1422,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
   const forSelf = nominee.id === member.id;
   const nomineeName = nominee.name ?? nominee.id ?? "";
   const available = availableBadgeDefinitions(state, nominee);
-  const nominations = state.profileBadgeNominations ?? [];
   // Alumni are on the roster and can absolutely be nominated for something they did; only the
   // viewer is filtered out, because they are already the default and a picker that lists you twice
   // is a picker that reads as broken.
@@ -1563,60 +1555,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
               ? t("profile.badges.nominateNoneAvailable")
               : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
           </p>`}
-      <div class="profile-badge-nominations">
-        <h3 class="profile__group-title">${t("profile.badges.nominationsTitle")}</h3>
-        ${nominations.length
-          ? html`<ul class="profile-badge-nominations__list">
-              ${nominations.map(
-                (nomination) => html`<li class="profile-badge-nominations__item">
-                  <div class="profile-badge-nominations__head">
-                    <span class="profile-badge">
-                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-                      ${nominationBadgeLabel(nomination)}
-                    </span>
-                    <span class=${`ab-chip ab-chip--${nomination.status}`}>
-                      ${t(`profile.badges.status.${nomination.status}`)}
-                    </span>
-                  </div>
-                  <!-- The list now holds both directions, so every row that is not the plain
-                       self-nomination says which one it is. -->
-                  ${nomination.member_id !== member.id
-                    ? html`<p
-                        class="profile-badge-nominations__who"
-                        data-testid="profile-badge-nomination-sent"
-                      >
-                        ${t("profile.badges.nominationFor", {
-                          name: nomination.member_name || nomination.member_id,
-                        })}
-                      </p>`
-                    : nomination.nominated_by
-                      ? html`<p
-                          class="profile-badge-nominations__who"
-                          data-testid="profile-badge-nomination-received"
-                        >
-                          ${t("profile.badges.nominationBy", {
-                            name: nomination.nominator_name ?? nomination.nominated_by,
-                          })}
-                        </p>`
-                      : nothing}
-                  <p class="profile-badge-nominations__description">
-                    ${nomination.badge_description}
-                  </p>
-                  ${nomination.evidence
-                    ? html`<p class="profile-badge-nominations__description">
-                        <strong>${t("adminbotBadges.field.evidence")}:</strong>
-                        ${nomination.evidence}
-                      </p>`
-                    : nothing}
-                  <div class="profile-badge-nominations__meta">
-                    ${nominationMeta("submittedAt", nomination.created_at)}
-                    ${nominationMeta("decidedAt", nomination.decided_at)}
-                  </div>
-                </li>`,
-              )}
-            </ul>`
-          : html`<p class="profile__badges-empty">${t("adminbotBadges.emptyNominations")}</p>`}
-      </div>
     </section>
   `;
 }

@@ -1330,7 +1330,7 @@ describe("renderProfile visual structure", () => {
       expect(container.textContent).toContain("Mei Chen already holds");
     });
 
-    it("says which way round each nomination in the list runs", () => {
+    it("keeps the nomination form but shows no nomination record", () => {
       const { state } = lab({
         profileBadgeNominations: [
           {
@@ -1363,12 +1363,13 @@ describe("renderProfile visual structure", () => {
       } as unknown as Partial<AppViewState>);
       const container = renderPage(state, vi.fn());
 
+      // The form stays; the list of past and pending nominations is not part of the profile.
+      expect(container.querySelector('[data-testid="profile-badge-nominee"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="profile-badge-nomination-sent"]')).toBeNull();
       expect(
-        container.querySelector('[data-testid="profile-badge-nomination-sent"]')?.textContent,
-      ).toContain("You nominated Mei Chen");
-      expect(
-        container.querySelector('[data-testid="profile-badge-nomination-received"]')?.textContent,
-      ).toContain("Nominated by Mei Chen");
+        container.querySelector('[data-testid="profile-badge-nomination-received"]'),
+      ).toBeNull();
+      expect(container.querySelector(".profile-badge-nominations__item")).toBeNull();
     });
   });
 

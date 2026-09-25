@@ -1804,24 +1804,14 @@ describe("AdminBotAuthService impersonation", () => {
 describe("lab calendar invite backfill", () => {
   // The repair path's whole reason for existing: these members were approved while
   // ADMINBOT_LAB_EMAIL was unset, so every invite failed and nothing ever tried again.
-  function labWith(
-    invites: string[],
-    fail?: (email: string) => string,
-    // Records the options each grant was made with, so a test can assert on the notification flag
-    // without every other test having to care about it.
-    notified?: Array<boolean | undefined>,
-  ) {
+  function labWith(invites: string[], fail?: (email: string) => string) {
     const { store, auth } = setup();
-    const inviteToLabCalendar = async (
-      email: string,
-      options?: { sendNotifications?: boolean },
-    ) => {
+    const inviteToLabCalendar = async (email: string) => {
       const message = fail?.(email);
       if (message) {
         throw new Error(message);
       }
       invites.push(email);
-      notified?.push(options?.sendNotifications);
     };
     const withRunner = new AdminBotAuthService({
       store,
@@ -1981,33 +1971,6 @@ describe("lab calendar invite backfill", () => {
     }
     expect(invites).toHaveLength(2);
     expect(result.payload.remaining).toBe(1);
-  });
-
-  it("grants silently, unlike the invite onboarding sends", async () => {
-    const invites: string[] = [];
-    const notified: Array<boolean | undefined> = [];
-    const { store, auth } = labWith(invites, undefined, notified);
-    seed(store, "ada");
-    await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
-    // The share notification is how a *new* member finds out the calendar exists. On a backfill it
-    // announces a months-old oversight to people who may have left the lab a year ago, and 150 at
-    // once reads as a compromise. The access is granted either way.
-    expect(notified).toEqual([false]);
-  });
-
-  it("leaves the onboarding invite noisy, which is the half that should be", async () => {
-    const invites: string[] = [];
-    const notified: Array<boolean | undefined> = [];
-    const { store, auth } = labWith(invites, undefined, notified);
-    store.saveLabMember(member("ada", "ada@cs.toronto.edu"));
-    await auth.claim({ member_id: "ada", email: "ada@cs.toronto.edu", password: "correcthorse" });
-    await auth.approveRegistration(await pendingIdForMember(auth, "ada"), "root");
-    await flushMicrotasks();
-    // Undefined, not false: the approval path says nothing and the runner defaults to notifying.
-    // Asserted because the two paths differing is the whole point of the option -- a later change
-    // that flipped the default would silence onboarding without any test noticing.
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
-    expect(notified).toEqual([undefined]);
   });
 
   it("refuses when the deployment has no calendar runner at all", async () => {

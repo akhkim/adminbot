@@ -47,6 +47,7 @@ import {
   generateAdminBotReimbursement,
   loadAdminBot,
   loadAdminBotMemberList,
+  loadAdminBotStandingMeetings,
   loadAdminBotRoster,
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
@@ -93,6 +94,13 @@ import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
 } from "./adminbot/controllers/mailing-list.ts";
+import {
+  approveAdminBotMemberRequest,
+  loadAdminBotMemberRequests,
+  rejectAdminBotMemberRequest,
+  submitAdminBotMemberRequest,
+  withdrawAdminBotMemberRequest,
+} from "./adminbot/controllers/member-requests.ts";
 import {
   circulateAdminBotSocialDraft,
   loadAdminBotNudgeBatches,
@@ -2839,6 +2847,28 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
   }
+  // The member editor's Meetings checkboxes read the lab calendar. Admin-only, like the route.
+  if (
+    adminBotPanel === "members" &&
+    state.memberPrivilegeLevel === "admin" &&
+    hasMemberSession &&
+    !state.adminBotStandingMeetings.loading &&
+    !state.adminBotStandingMeetings.loadedAt &&
+    !state.adminBotStandingMeetings.error
+  ) {
+    void loadAdminBotStandingMeetings(state).finally(() => requestHostUpdate?.());
+  }
+  // Member requests: an admin's review queue, or a member's own requests. Any member session --
+  // the service scopes what each one sees.
+  if (
+    adminBotPanel === "members" &&
+    hasMemberSession &&
+    !state.adminBotMemberRequests.loading &&
+    !state.adminBotMemberRequests.loadedAt &&
+    !state.adminBotMemberRequests.error
+  ) {
+    void loadAdminBotMemberRequests(state).finally(() => requestHostUpdate?.());
+  }
   // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
   // opening the tab drew an empty month and only the Refresh button or a month step would fetch
   // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
@@ -4200,6 +4230,33 @@ export function renderApp(state: AppViewState) {
               error: state.adminBotError,
               data: state.adminBotData,
               memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
+              standingMeetings:
+                adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
+              memberRequests:
+                adminBotPanel === "members" && hasMemberSession
+                  ? {
+                      state: state.adminBotMemberRequests,
+                      onSubmit: (input) =>
+                        submitAdminBotMemberRequest(state, input).finally(() =>
+                          requestHostUpdate?.(),
+                        ),
+                      onApprove: (request, options) => {
+                        void approveAdminBotMemberRequest(state, request, options).finally(() =>
+                          requestHostUpdate?.(),
+                        );
+                      },
+                      onReject: (request, note) => {
+                        void rejectAdminBotMemberRequest(state, request, note).finally(() =>
+                          requestHostUpdate?.(),
+                        );
+                      },
+                      onWithdraw: (request) => {
+                        void withdrawAdminBotMemberRequest(state, request).finally(() =>
+                          requestHostUpdate?.(),
+                        );
+                      },
+                    }
+                  : undefined,
               rosterLoadedAt: state.adminBotRosterLoadedAt,
               rosterLoading: state.adminBotRosterLoading,
               rosterError: state.adminBotRosterError,

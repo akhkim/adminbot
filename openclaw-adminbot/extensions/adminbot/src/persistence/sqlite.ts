@@ -52,6 +52,10 @@ import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discover
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type {
+  AdminBotMemberRequest,
+  AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
 import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -62,6 +66,7 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type {
   AdminBotPaperSlot,
   AdminBotPaperSlotRecord,
@@ -111,6 +116,12 @@ import {
   listOpenReviewCitationChecks,
   saveOpenReviewCitationCheck,
 } from "./openreview-citation-checks.js";
+import {
+  ensurePaperAiTextCheckSchema,
+  getPaperAiTextCheck,
+  listPaperAiTextChecks,
+  savePaperAiTextCheck,
+} from "./paper-ai-text-checks.js";
 import {
   ensureReferenceScanSchema,
   getReferenceScan,
@@ -379,6 +390,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_badge_suggestions(status, created_at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_badge_suggestions_member_idx
         ON adminbot_badge_suggestions(suggested_by, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_member_requests (
+        id TEXT PRIMARY KEY,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_member_requests_status_idx
+        ON adminbot_member_requests(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_member_requests_requester_idx
+        ON adminbot_member_requests(requested_by, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_opportunities (
         id TEXT PRIMARY KEY,
@@ -843,6 +868,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDirectorStatusSchema(this.db);
     ensureReferenceScanSchema(this.db);
     ensureOpenReviewCitationCheckSchema(this.db);
+    ensurePaperAiTextCheckSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
@@ -1660,6 +1686,74 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(...values) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotBadgeSuggestion>(row.payload_json));
+  }
+
+  saveMemberRequest(request: AdminBotMemberRequest): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_member_requests (
+          id,
+          requested_by,
+          status,
+          created_at,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          requested_by = excluded.requested_by,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        request.id,
+        request.requested_by,
+        request.status,
+        request.created_at,
+        request.updated_at,
+        JSON.stringify(request),
+      );
+  }
+
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_member_requests WHERE id = ?")
+      .get(requestId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotMemberRequest>(row.payload_json) : undefined;
+  }
+
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[] {
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (params?.requestedBy) {
+      clauses.push("requested_by = ?");
+      values.push(params.requestedBy);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_member_requests
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMemberRequest>(row.payload_json));
+  }
+
+  deleteMemberRequest(requestId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_member_requests WHERE id = ?")
+      .run(requestId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
   }
 
   saveOpportunity(opportunity: AdminBotOpportunity): void {
@@ -2749,6 +2843,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
     saveOpenReviewCitationCheck(this.db, check);
+  }
+
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    return getPaperAiTextCheck(this.db, submissionId, pdfPath);
+  }
+
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return listPaperAiTextChecks(this.db, submissionId);
+  }
+
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    savePaperAiTextCheck(this.db, check);
   }
 
   saveHelpInterest(interest: LabHelpInterest): void {

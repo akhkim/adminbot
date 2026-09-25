@@ -1175,11 +1175,8 @@ export class AdminBotAuthService {
           // Awaited, unlike the approval-time invite: this call *is* the request, so a failure
           // belongs in its response rather than in a log the caller never sees. Sequential for the
           // same reason -- a hundred parallel ACL writes is how a quota gets spent.
-          // Silently, unlike the onboarding invite. This grants access somebody should already
-          // have had, so Google's share notification would announce a months-old oversight to a
-          // roster that includes people who left the lab a year ago. The access lands the same
-          // way; only the mail is suppressed. See CalendarInviteOptions.
-          await this.inviteToLabCalendar(candidate.email, { sendNotifications: false });
+          // Silent, like every calendar grant (see CalendarInviteRunner).
+          await this.inviteToLabCalendar(candidate.email);
           await this.audit("auth.calendar_invite_sent", params.actorId, {
             member_id: candidate.id,
             email: candidate.email,
