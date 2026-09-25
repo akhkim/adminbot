@@ -140,6 +140,14 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     sort_order: 50,
   },
   {
+    id: "community_building__lab_engagement",
+    category: "Community Building",
+    name: "Lab Engagement",
+    description:
+      "Has talked to Zhijing face-to-face in at least three group meeting occasions, including in person and online.",
+    sort_order: 55,
+  },
+  {
     id: "causality__level_1",
     category: "Causality",
     name: "Causality",
