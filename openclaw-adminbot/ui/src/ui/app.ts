@@ -87,6 +87,10 @@ import {
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
 import {
+  createEmptyAdminBotMemberRequests,
+  type AdminBotMemberRequestsState,
+} from "./adminbot/controllers/member-requests.ts";
+import {
   addMemberSheetRow as addMemberSheetRowController,
   editMemberSheetCell as editMemberSheetCellController,
   loadMemberSheet as loadMemberSheetController,
@@ -684,6 +688,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
   @state() adminBotStandingMeetings: AdminBotStandingMeetingsState =
     createEmptyAdminBotStandingMeetings();
+  @state() adminBotMemberRequests: AdminBotMemberRequestsState =
+    createEmptyAdminBotMemberRequests();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;

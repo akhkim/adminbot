@@ -57,6 +57,10 @@ import {
   type LabDirectorStatus,
 } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type {
+  AdminBotMemberRequest,
+  AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
 import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
 import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
@@ -215,6 +219,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
   private readonly badgeSuggestions = new Map<string, AdminBotBadgeSuggestion>();
   private readonly opportunities = new Map<string, AdminBotOpportunity>();
+  private readonly memberRequests = new Map<string, AdminBotMemberRequest>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
@@ -550,6 +555,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteOpportunity(opportunityId: string): boolean {
     return this.opportunities.delete(opportunityId);
+  }
+
+  saveMemberRequest(request: AdminBotMemberRequest): void {
+    this.memberRequests.set(request.id, request);
+  }
+
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined {
+    return this.memberRequests.get(requestId);
+  }
+
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[] {
+    return [...this.memberRequests.values()]
+      .filter(
+        (request) =>
+          (!params?.requestedBy || request.requested_by === params.requestedBy) &&
+          (!params?.status || request.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteMemberRequest(requestId: string): boolean {
+    return this.memberRequests.delete(requestId);
   }
 
   deleteLabMember(memberId: string): boolean {

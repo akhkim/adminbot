@@ -24,6 +24,7 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
@@ -149,6 +150,7 @@ export type MemberAuthHost = {
   adminBotError?: string | null;
   adminBotMemberList?: AdminBotMemberListState;
   adminBotStandingMeetings?: import("../controllers/admin.ts").AdminBotStandingMeetingsState;
+  adminBotMemberRequests?: import("../controllers/member-requests.ts").AdminBotMemberRequestsState;
   adminBotMemberNudge?: AdminBotMemberNudgeState;
   resetMemberViewSessionState?: () => void;
   adminBotBusyActionId?: string | null;
@@ -558,6 +560,10 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   // Guest lists name people; the next session on this browser reads its own.
   if (host.adminBotStandingMeetings) {
     host.adminBotStandingMeetings = createEmptyAdminBotStandingMeetings();
+  }
+  // Requests name the people proposed and who proposed them; the next session reads its own.
+  if (host.adminBotMemberRequests) {
+    host.adminBotMemberRequests = createEmptyAdminBotMemberRequests();
   }
   host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
   host.resetMemberViewSessionState?.();

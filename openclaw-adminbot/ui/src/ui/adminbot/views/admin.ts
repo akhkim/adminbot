@@ -72,6 +72,12 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import {
+  MEMBER_REQUEST_POPOVER_ID,
+  type MemberRequestsProps,
+  renderMemberRequestForm,
+  renderMemberRequests,
+} from "./member-requests.ts";
 import { renderRecentEditsBody } from "./recent-edits.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
@@ -188,6 +194,11 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   /** The member editor's Meetings checkboxes; absent outside the Lab Members panel. */
   standingMeetings?: AdminBotStandingMeetingsState;
+  /**
+   * Requests to add somebody to the roster, and the calls that file and decide them. Absent
+   * outside the Lab Members panel and for a visitor with no member session, who can do neither.
+   */
+  memberRequests?: Omit<MemberRequestsProps, "isAdmin">;
   /** Search and page over the full roster; absent for callers with a complete local roster. */
   memberList?: {
     rows: AdminBotLabMember[];
@@ -2162,10 +2173,16 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
+  const requests = props.memberRequests
+    ? { ...props.memberRequests, isAdmin: props.mode === "admin" }
+    : undefined;
   // The spreadsheet is the single roster view for every mode: admins edit any row, members
-  // edit their own row inline, everyone else reads. Only the Add-member popover is admin-only.
+  // edit their own row inline, everyone else reads. Adding a member is open to any signed-in
+  // member, but only an admin's Add member writes the roster; anyone else's files a request.
   if (props.mode === "general") {
-    return spreadsheet;
+    return requests
+      ? html`${renderMemberRequests(requests)}${spreadsheet}${renderMemberRequestForm(requests)}`
+      : spreadsheet;
   }
   const fullRosterChecks =
     props.memberList && !props.rosterLoadedAt
@@ -2193,7 +2210,9 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
           props,
           members,
         )}`;
-  return html`${spreadsheet}${fullRosterChecks}
+  return html`${requests
+      ? renderMemberRequests(requests)
+      : nothing}${spreadsheet}${fullRosterChecks}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button
@@ -3818,7 +3837,10 @@ export function renderAdminBot(props: AdminBotProps) {
   // came for -- and the strapline over it described the whole product rather than the page, which
   // is a thing you read once and then scroll past forever.
   const isLabOverview = props.panel === "papers";
-  const addMember = !general && props.panel === "members";
+  // Everybody signed in gets Add member; for a non-admin it opens the request form, and the member
+  // is added only once an admin approves (views/member-requests.ts).
+  const addMember =
+    props.panel === "members" && (!general || (props.signedInMemberId && props.memberRequests));
   const addPaper = props.panel === "papers" && (!general || props.signedInMemberId);
   return html`
     <section class="adminbot-shell" aria-busy=${props.loading ? "true" : "false"}>
@@ -3827,7 +3849,7 @@ export function renderAdminBot(props: AdminBotProps) {
           ? html`<button
               class="btn btn--sm primary"
               type="button"
-              popovertarget="adminbot-add-member"
+              popovertarget=${general ? MEMBER_REQUEST_POPOVER_ID : "adminbot-add-member"}
             >
               Add member
             </button>`
