@@ -286,6 +286,16 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     return row ? (JSON.parse(row.payload_json) as AdminBotSettings) : undefined;
   }
 
+  async saveSettings(settings: AdminBotSettings): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO ${this.table("adminbot_settings")} (id, updated_at, payload_json)
+       VALUES ('default', $1, $2)
+       ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at,
+         payload_json = EXCLUDED.payload_json`,
+      [settings.updated_at, JSON.stringify(settings)],
+    );
+  }
+
   async recordAudit(event: AdminBotAuditEvent): Promise<void> {
     await this.pool.query(
       `INSERT INTO ${this.table("adminbot_audit_events")}
