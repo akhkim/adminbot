@@ -74,6 +74,11 @@ export type IclrIntegrityWatchDeps = {
    * about it is only an accusation.
    */
   until?: Date;
+  /**
+   * Slack user ids sent a digest DM after every sweep: each submission's current score and
+   * citation status. Operators only -- authors hear about their own paper through the alert.
+   */
+  reportTo?: string[];
 };
 
 export type IclrIntegritySweepStart = {
@@ -152,6 +157,9 @@ export class IclrIntegrityWatch {
     this.current = summary;
     this.running = this.sweep(submissions, summary)
       .catch(() => undefined)
+      // After the sweep, whatever it did: a digest is most useful on the hours nothing changed.
+      .then(() => this.report(submissions, summary))
+      .catch(() => undefined)
       .finally(() => {
         summary.finished_at = this.now().toISOString();
         this.last = summary;
@@ -168,6 +176,42 @@ export class IclrIntegrityWatch {
 
   private now() {
     return (this.deps.now ?? (() => new Date()))();
+  }
+
+  /** The digest DM; a failure is noted on the sweep summary and never fails the sweep. */
+  private async report(submissions: OpenReviewSubmission[], summary: PaperIntegritySweepSummary) {
+    const userIds = [...new Set(this.deps.reportTo ?? [])];
+    if (!userIds.length) {
+      return;
+    }
+    const { store, service } = this.deps;
+    const message = buildIntegrityReportMessage({
+      at: this.now(),
+      summary,
+      threshold: this.threshold(),
+      rows: submissions
+        .toSorted((a, b) => a.title.localeCompare(b.title))
+        .map((submission) => ({
+          submission,
+          check: store.getPaperAiTextCheck(submission.id, submission.pdf_path),
+          citations: store.getOpenReviewCitationCheck(submission.id, submission.pdf_path),
+        })),
+    });
+    const proposed = service.createProposal({
+      type: "paper_integrity.report",
+      summary: `Hourly ICLR integrity digest (${submissions.length} submissions)`,
+      target: { service: "slack", channel: "slack", target: userIds.join(",") },
+      proposed_payload: { channel: "slack", user_ids: userIds, message },
+      undo_plan: "A digest is informational; nothing to undo.",
+    });
+    if (!proposed.ok) {
+      summary.report_error = proposed.error.message;
+      return;
+    }
+    const executed = await service.execute(proposed.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      summary.report_error = executed.error.message;
+    }
   }
 
   private threshold() {
@@ -478,6 +522,67 @@ function percent(fraction: number | undefined) {
   return `${Math.round((fraction ?? 0) * 100)}%`;
 }
 
+/**
+ * The hourly digest: one line per submission, the current version's score and citation status.
+ * Plain Slack mrkdwn, composed only from stored results.
+ */
+export function buildIntegrityReportMessage(input: {
+  at: Date;
+  summary: PaperIntegritySweepSummary;
+  threshold: number;
+  rows: Array<{
+    submission: OpenReviewSubmission;
+    check?: PaperAiTextCheck;
+    citations?: OpenReviewCitationCheck;
+  }>;
+}): string {
+  const { at, summary, threshold, rows } = input;
+  const when = at.toLocaleString("en-US", {
+    timeZone: "America/Toronto",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const lines = [
+    `:bar_chart: ICLR integrity check, ${when} Toronto`,
+    `${summary.submissions} submissions with a PDF · ${summary.scored} scored this run · ${summary.reused} reused · ${summary.failed} failed · ${summary.alerts} alerts (threshold ${percent(threshold)} AI)`,
+    "",
+  ];
+  for (const { submission, check, citations } of rows) {
+    lines.push(`• *${submission.title}*`);
+    lines.push(`   Pangram: ${describeScore(check, threshold)}`);
+    lines.push(`   Citations: ${describeCitations(citations)}`);
+  }
+  if (!rows.length) {
+    lines.push("No ICLR submission under review has a PDF yet.");
+  }
+  return lines.join("\n");
+}
+
+function describeScore(check: PaperAiTextCheck | undefined, threshold: number): string {
+  if (!check) {
+    return "not scored yet";
+  }
+  if (check.status === "completed") {
+    const over = (check.fraction_ai ?? 0) > threshold ? " :warning: over threshold" : "";
+    const scope = check.scored_from === "pdf" ? "whole PDF" : "main text";
+    return `${percent(check.fraction_ai)} AI, ${percent(check.fraction_ai_assisted)} AI-assisted (${check.words_scored ?? 0} words, ${scope})${over}`;
+  }
+  return `${check.status}${check.error ? ` -- ${check.error}` : ""}`;
+}
+
+function describeCitations(check: OpenReviewCitationCheck | undefined): string {
+  if (!check) {
+    return "not checked yet";
+  }
+  if (check.status === "completed") {
+    const missing = notFoundCitations(check).length;
+    return missing ? `:warning: ${missing} not found in any database` : "all found";
+  }
+  return `${check.status === "failed" ? "partial, retrying" : check.status}${check.error ? ` -- ${check.error}` : ""}`;
+}
+
 export function buildIntegrityAlertMessage(input: {
   submission: OpenReviewSubmission;
   check: PaperAiTextCheck;
@@ -504,8 +609,8 @@ export function buildIntegrityAlertMessage(input: {
   if (check.status === "completed") {
     const over = (check.fraction_ai ?? 0) > threshold;
     lines.push(
-      `• *AI-generated text:* Pangram classifies ${percent(check.fraction_ai)} of the main text as AI-written` +
-        ` and ${percent(check.fraction_ai_assisted)} as AI-assisted (${check.words_scored ?? 0} words, before the references).` +
+      `• *AI-generated text:* Pangram classifies ${percent(check.fraction_ai)} of the ${check.scored_from === "pdf" ? "paper" : "main text"} as AI-written` +
+        ` and ${percent(check.fraction_ai_assisted)} as AI-assisted (${check.words_scored ?? 0} words, ${check.scored_from === "pdf" ? "the whole PDF" : "before the references"}).` +
         (over
           ? ` That is over the ${percent(threshold)} alert threshold.`
           : ` That is under the ${percent(threshold)} alert threshold.`),

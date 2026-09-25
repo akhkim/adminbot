@@ -45,12 +45,21 @@ function setup(options: {
   extractText?: (pdf: Uint8Array) => Promise<string>;
   pdf?: (id: string) => Uint8Array | Promise<Uint8Array>;
   slackFails?: boolean;
+  reportTo?: string[];
 }) {
   const store = new AdminBotMemoryStore();
   const sent: AdminBotStoredProposal[] = [];
+  const reports: AdminBotStoredProposal[] = [];
   const service = new AdminBotService(store, {
     executor: {
       execute: async (proposal) => {
+        if (proposal.type === "paper_integrity.report") {
+          if (options.slackFails) {
+            throw new Error("Slack DM open failed 500: internal_error");
+          }
+          reports.push(proposal);
+          return { handled: true };
+        }
         if (proposal.type !== "paper_integrity.alert") {
           return { handled: false };
         }
@@ -108,13 +117,20 @@ function setup(options: {
       (async () => ({ fraction_ai: 0.72, fraction_ai_assisted: 0.1, fraction_human: 0.18 })),
   );
   const extractText = vi.fn(options.extractText ?? (async () => LONG_TEXT));
-  const watch = new IclrIntegrityWatch({ store, service, reader, score, extractText });
+  const watch = new IclrIntegrityWatch({
+    store,
+    service,
+    reader,
+    score,
+    extractText,
+    ...(options.reportTo ? { reportTo: options.reportTo } : {}),
+  });
   const sweep = async () => {
     const started = await watch.start();
     await watch.idle();
     return started;
   };
-  return { store, service, reader, score, extractText, watch, sweep, sent };
+  return { store, service, reader, score, extractText, watch, sweep, sent, reports };
 }
 
 describe("ICLR integrity watch", () => {
@@ -143,7 +159,9 @@ describe("ICLR integrity watch", () => {
     // Ada and Grace, in author order; Alan (external-prof) and the external author are skipped.
     expect(payload.user_ids).toEqual(["UZHIJING", "UADA", "UGRACE"]);
     expect(payload.message).toContain("For Zhijing Jin, Ada Lovelace, Grace Hopper.");
-    expect(payload.message).toContain("72% of the main text as AI-written");
+    // Scored from the whole PDF, and the message says so rather than "before the references".
+    expect(payload.message).toContain("72% of the paper as AI-written");
+    expect(payload.message).toContain("the whole PDF");
     expect(payload.message).toContain("over the 50% alert threshold");
     expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "completed",
@@ -241,6 +259,58 @@ describe("ICLR integrity watch", () => {
     await sweep();
     expect(score).not.toHaveBeenCalled();
     expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.status).toBe("unreadable");
+  });
+
+  describe("the hourly digest", () => {
+    it("DMs the configured operators after every sweep, with each paper's scores", async () => {
+      const { sweep, reports, watch } = setup({
+        submissions: [
+          submission(),
+          submission({ id: "paperBBBB", title: "Second synthetic paper", modified_at: 2 }),
+        ],
+        score: async () => ({
+          fraction_ai: 0.105,
+          fraction_ai_assisted: 0.013,
+          fraction_human: 0.882,
+          words_scored: 20_424,
+        }),
+        reportTo: ["UOPERATOR1"],
+      });
+
+      await sweep();
+      // A second hour with nothing new still reports: that is when "still fine" is the news.
+      await sweep();
+
+      expect(reports).toHaveLength(2);
+      const [first] = reports;
+      expect(first.status).toBe("executed");
+      expect(first.proposed_payload).toMatchObject({ user_ids: ["UOPERATOR1"] });
+      const message = (first.proposed_payload as { message: string }).message;
+      expect(message).toContain("Second synthetic paper");
+      expect(message).toContain("Synthetic paper");
+      expect(message).toContain("11% AI, 1% AI-assisted (20424 words, whole PDF)");
+      expect(message).toContain("Citations: not checked yet");
+      expect(watch.status().last_sweep?.report_error).toBeUndefined();
+    });
+
+    it("sends nothing when no operator is configured", async () => {
+      const { sweep, reports } = setup({ submissions: [submission()] });
+      await sweep();
+      expect(reports).toHaveLength(0);
+    });
+
+    // A digest that cannot be sent is noted on the sweep, and the scoring it reports on stands.
+    it("records a failed send without failing the sweep", async () => {
+      const { store, sweep, watch } = setup({
+        submissions: [submission()],
+        score: async () => ({ fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 }),
+        reportTo: ["UOPERATOR1"],
+        slackFails: true,
+      });
+      await sweep();
+      expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.status).toBe("completed");
+      expect(watch.status().last_sweep?.report_error).toMatch(/Slack DM open failed/u);
+    });
   });
 
   describe("a version scored from its main text before the switch", () => {
