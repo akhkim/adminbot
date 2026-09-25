@@ -109,16 +109,16 @@ async function listPending(baseUrl: string): Promise<RegistrationView[]> {
   return ((await res.json()) as { registrations: RegistrationView[] }).registrations;
 }
 
-function approveRegistration(baseUrl: string, id: string): { member_id: string } {
-  const result = mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
+async function approveRegistration(baseUrl: string, id: string): Promise<{ member_id: string }> {
+  const result = await mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`approve failed for ${id}: ${result.error.message}`);
   }
   return result.payload;
 }
 
-function rejectRegistration(baseUrl: string, id: string): void {
-  const result = mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
+async function rejectRegistration(baseUrl: string, id: string): Promise<void> {
+  const result = await mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`reject failed for ${id}: ${result.error.message}`);
   }
@@ -134,7 +134,7 @@ async function approveClaim(baseUrl: string, memberId: string, email: string): P
   if (!registration) {
     throw new Error(`no pending claim for ${memberId}`);
   }
-  approveRegistration(baseUrl, registration.id);
+  await approveRegistration(baseUrl, registration.id);
 }
 
 async function loginToken(baseUrl: string, email: string): Promise<string> {
@@ -219,6 +219,35 @@ describe("AdminBot mock service", () => {
     await expect(members.json()).resolves.toEqual({
       error: { message: "authentication required" },
     });
+  });
+
+  it("waits for a session lookup before deciding access to a protected route", async () => {
+    const { baseUrl, mock } = await startService();
+    const original = mock.auth.resolveSession.bind(mock.auth);
+    let lookupStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
+    let releaseLookup!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    Object.defineProperty(mock.auth, "resolveSession", {
+      value: async (token: string) => {
+        lookupStarted();
+        await blocked;
+        return original(token);
+      },
+    });
+    const request = fetch(`${baseUrl}/settings`, {
+      headers: { Authorization: "Bearer invalid-member-session" },
+    });
+    try {
+      await started;
+    } finally {
+      releaseLookup();
+    }
+    expect((await request).status).toBe(401);
   });
 
   it("accepts Slack channel naming events for the service principal", async () => {
@@ -311,7 +340,7 @@ describe("AdminBot mock service", () => {
     const pending = await listPending(baseUrl);
     const registration = pending.find((entry) => entry.member_id === "ada");
     expect(registration?.kind).toBe("claim");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -333,6 +362,19 @@ describe("AdminBot mock service", () => {
     expect((viewBody.member as { id: string }).id).toBe("ada");
   });
 
+  it("searches the public claim roster without exposing full member profiles", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "ada", { name: "Ada Lovelace", privilege_level: "member" });
+    await seedMember(baseUrl, "alan", { name: "Alan Turing", privilege_level: "member" });
+    const response = await fetch(`${baseUrl}/auth/roster?q=ada`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      members: [{ id: "ada", name: "Ada Lovelace" }],
+    });
+    const overlong = await fetch(`${baseUrl}/auth/roster?q=${"x".repeat(81)}`);
+    expect(overlong.status).toBe(400);
+  });
+
   it("signup then approval creates a member reachable by login", async () => {
     const { baseUrl } = await startService();
     const signup = await fetch(`${baseUrl}/auth/signup`, {
@@ -349,7 +391,7 @@ describe("AdminBot mock service", () => {
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
     expect(registration).toBeDefined();
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
 
     const members = await (
       await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
@@ -381,7 +423,7 @@ describe("AdminBot mock service", () => {
     expect(signup.status).toBe(200);
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
 
     // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
     await Promise.resolve();
@@ -416,7 +458,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
     await Promise.resolve();
@@ -444,7 +486,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -503,7 +545,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "nope");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -527,7 +569,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "mk");
-    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
+    expect(await approveRegistration(baseUrl, registration!.id)).toEqual({
       status: "approved",
       member_id: "mk",
     });
@@ -551,7 +593,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
     expect(approveBody).toEqual({ status: "approved", member_id: "rk" });
     expect(await loginToken(baseUrl, "rk@cs.toronto.edu")).toBeTruthy();
   });
@@ -569,7 +611,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rj");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -3313,6 +3355,140 @@ describe("the meetings routes", () => {
       },
     ]);
     expect(body.meetings[0]?.attendee_count).toBe(2);
+  });
+
+  it("pages recordings without repeating or skipping rows when a newer one arrives", async () => {
+    const { baseUrl } = await startService();
+    const adminToken = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    const memberTokenValue = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const attendees = [
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+      { member_id: "bo", display_name: "Bo Other", source: "manual", present: true },
+    ];
+    fileMeeting(baseUrl, {
+      id: "older-a",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "older-b",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "short",
+      started_at: "2026-08-11T14:00:00Z",
+      duration_minutes: 2,
+    });
+    fileMeeting(baseUrl, {
+      id: "newest",
+      started_at: "2026-08-12T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    const headers = { Authorization: `Bearer ${memberTokenValue}` };
+    const first = await fetch(`${baseUrl}/meetings?limit=2`, { headers });
+    expect(first.status).toBe(200);
+    const page1 = (await first.json()) as {
+      meetings: Array<{
+        id: string;
+        attendees: Array<{ member_id?: string }>;
+        attendee_count: number;
+      }>;
+      next_cursor: { started_at: string; id: string };
+    };
+    expect(page1.meetings.map((meeting) => meeting.id)).toEqual(["newest", "older-b"]);
+    expect(page1.meetings[0]?.attendees).toEqual([
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+    ]);
+    expect(page1.meetings[0]?.attendee_count).toBe(2);
+    fileMeeting(baseUrl, {
+      id: "arrived-later",
+      started_at: "2026-08-13T14:00:00Z",
+      duration_minutes: 30,
+    });
+    const cursor = new URLSearchParams({
+      limit: "2",
+      before_started_at: page1.next_cursor.started_at,
+      before_id: page1.next_cursor.id,
+    });
+    const second = await fetch(`${baseUrl}/meetings?${cursor}`, { headers });
+    const page2 = (await second.json()) as {
+      meetings: Array<{ id: string }>;
+      next_cursor?: unknown;
+    };
+    expect(page2.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
+    expect(page2.next_cursor).toBeUndefined();
+
+    const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    expect(adminPage.meetings[0]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
+    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(legacy.meetings).toHaveLength(4);
+    expect(legacy.next_cursor).toBeUndefined();
+  });
+
+  it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const dated = fileMeeting(baseUrl, { id: "dated", duration_minutes: 30 });
+    const store = mockFor(baseUrl).store;
+    for (const [id, started_at] of [
+      ["z-invalid", "not-a-date"],
+      ["y-blank", ""],
+      ["x-invalid", "malformed"],
+    ]) {
+      store.saveMeeting({ ...dated, id, started_at });
+    }
+
+    const seen: string[] = [];
+    let cursor: { started_at: string; id: string } | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const query = new URLSearchParams({ limit: "1" });
+      if (cursor) {
+        query.set("before_started_at", cursor.started_at);
+        query.set("before_id", cursor.id);
+      }
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as {
+        meetings: Array<{ id: string }>;
+        next_cursor?: { started_at: string; id: string };
+      };
+      seen.push(...page.meetings.map((meeting) => meeting.id));
+      cursor = page.next_cursor;
+      if (!cursor) {
+        break;
+      }
+    }
+    expect(seen).toEqual(["dated", "z-invalid", "y-blank", "x-invalid"]);
+    expect(cursor).toBeUndefined();
+  });
+
+  it("rejects malformed recording page requests", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    for (const query of [
+      "limit=0",
+      "limit=51",
+      "before_id=x",
+      "limit=2&before_id=x",
+      "limit=2&before_started_at=bad",
+      `limit=2&before_started_at=${"x".repeat(101)}&before_id=x`,
+    ]) {
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(400);
+    }
   });
 
   it("refuses an anonymous read", async () => {

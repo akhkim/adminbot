@@ -566,14 +566,11 @@ export class StateStore {
    * must not rewind the mailbox.
    */
   markScannedThrough(at: Date): void {
-    const current = this.scannedThrough();
-    if (current && current.getTime() >= at.getTime()) {
-      return;
-    }
     this.db
       .prepare(
         `INSERT INTO adminbot_email_scan (id, scanned_through) VALUES (1, ?)
-         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through`,
+         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through
+         WHERE excluded.scanned_through > adminbot_email_scan.scanned_through`,
       )
       .run(at.toISOString());
   }
@@ -583,8 +580,8 @@ export class StateStore {
    *
    * Asked before the classifier rather than only inside `begin`, which is where the same question
    * used to be settled: the window can now overlap by design, so a message already dealt with must
-   * cost a row lookup and not a 122B model call. `processing` and `failed` are deliberately not
-   * settled -- both are retried, exactly as `begin` has always allowed.
+   * cost a row lookup and not a 122B model call. `failed` can be retried; `processing` needs
+   * reconciliation before a replay because its external effect may already have happened.
    */
   isSettled(messageId: string): boolean {
     const row = this.db
@@ -596,6 +593,12 @@ export class StateStore {
       row?.status === "completed" ||
       row?.status === "needs_review" ||
       row?.status === "reviewed"
+    );
+  }
+
+  hasInProgressMessages(): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM adminbot_email_messages WHERE status = 'processing' LIMIT 1").get(),
     );
   }
 
@@ -640,19 +643,7 @@ export class StateStore {
     message: EmailMessage,
     classification: { category: string; reason: string },
   ): boolean {
-    const existing = this.db
-      .prepare(
-        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
-      )
-      .get(message.id) as { status?: string } | undefined;
-    if (
-      existing?.status === "completed" ||
-      existing?.status === "needs_review" ||
-      existing?.status === "reviewed" ||
-      existing?.status === "processing"
-    )
-      return false;
-    this.db
+    const claimed = this.db
       .prepare(
         `INSERT INTO adminbot_email_messages
       (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
@@ -662,7 +653,9 @@ export class StateStore {
         thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
         reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
         attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
-        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`,
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at
+      WHERE adminbot_email_messages.status NOT IN
+        ('completed', 'needs_review', 'reviewed', 'processing')`,
       )
       .run(
         message.id,
@@ -675,8 +668,8 @@ export class StateStore {
           ? new Date(Number(message.internalDate)).toISOString()
           : null,
         new Date().toISOString(),
-      );
-    return true;
+      ).changes;
+    return claimed === 1;
   }
 
   finish(
@@ -696,26 +689,29 @@ export class StateStore {
     key: string,
     operation: () => Promise<T>,
   ): Promise<T | undefined> {
-    const existing = this.db
+    const claimed = this.db
       .prepare(
-        "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
+      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO NOTHING`,
       )
-      .get(messageId, key) as
-      { status: string; result_json?: string } | undefined;
-    if (existing?.status === "completed")
-      return existing.result_json
-        ? (JSON.parse(existing.result_json) as T)
-        : undefined;
-    if (existing?.status === "started")
+      .run(messageId, key, new Date().toISOString()).changes;
+    if (claimed !== 1) {
+      const existing = this.db
+        .prepare(
+          "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        )
+        .get(messageId, key) as
+        | { status: string; result_json?: string }
+        | undefined;
+      if (existing?.status === "completed") {
+        return existing.result_json
+          ? (JSON.parse(existing.result_json) as T)
+          : undefined;
+      }
       throw new Error(
         `effect ${key} was started previously; manual review prevents a duplicate`,
       );
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
-      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`,
-      )
-      .run(messageId, key, new Date().toISOString());
+    }
     const result = await operation();
     this.db
       .prepare(
@@ -906,9 +902,10 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
+        // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
         JSON.stringify({
           calendarId: jinesisCalendar(),
-          sendNotifications: true,
+          sendNotifications: false,
         }),
         "--json",
         JSON.stringify({
@@ -1757,6 +1754,12 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     // window is a message that still has to be seen again, and advancing past it is exactly the
     // silent drop this is here to stop. The mark is the moment the scan *started*, so mail that
     // landed while the pass was running is read by the next one rather than skipped.
+    // A crashed pass can leave a message in processing. begin() refuses to replay it because its
+    // external effect may have happened, so keep the scan window open for manual reconciliation.
+    if (state.hasInProgressMessages()) {
+      summary.failed += 1;
+      summary.errors.push("an email remains in processing; review its effects before retrying");
+    }
     if (summary.failed === 0) {
       state.markScannedThrough(runStart);
       summary.scanned_through = runStart.toISOString();

@@ -29,6 +29,7 @@ import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
   CalendarEventDraft,
   LabBroadcast,
@@ -47,6 +48,7 @@ import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
+  createEmptyAdminBotStandingMeetings,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
@@ -60,6 +62,7 @@ import {
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
   type AdminBotMemberListState,
+  type AdminBotStandingMeetingsState,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -79,9 +82,14 @@ import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
+  loadMoreAdminBotMeetings,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
+import {
+  createEmptyAdminBotMemberRequests,
+  type AdminBotMemberRequestsState,
+} from "./adminbot/controllers/member-requests.ts";
 import {
   addMemberSheetRow as addMemberSheetRowController,
   editMemberSheetCell as editMemberSheetCellController,
@@ -392,6 +400,10 @@ export class OpenClawApp extends LitElement {
   @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
+  adminBotMeetingsRequestVersion = 0;
+  @state() adminBotMeetingsLoadingMore = false;
+  @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
+  @state() adminBotMeetingsVisibleCount = 12;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -417,6 +429,7 @@ export class OpenClawApp extends LitElement {
   @state() rosterError: RosterError = null;
   @state() rosterFilter = "";
   @state() selectedMemberId: string | null = null;
+  private rosterSearchTimer?: ReturnType<typeof setTimeout>;
   @state() memberName = "";
   @state() memberSlackUserId = "";
   @state() memberRole = "";
@@ -673,10 +686,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotRosterError: string | null = null;
   adminBotRosterRequestId = 0;
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
+  @state() adminBotStandingMeetings: AdminBotStandingMeetingsState =
+    createEmptyAdminBotStandingMeetings();
+  @state() adminBotMemberRequests: AdminBotMemberRequestsState =
+    createEmptyAdminBotMemberRequests();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
-  @state() adminBotMemberMap: MemberMap | null = null;
+  @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
+  adminBotMemberMapRequestId = 0;
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -1359,6 +1377,13 @@ export class OpenClawApp extends LitElement {
     await loadRosterInternal(this as unknown as Parameters<typeof loadRosterInternal>[0]);
   }
 
+  scheduleRosterSearch() {
+    clearTimeout(this.rosterSearchTimer);
+    this.rosterSearchTimer = setTimeout(() => {
+      void this.loadRoster();
+    }, 200);
+  }
+
   handleChatScroll(event: Event) {
     handleChatScrollInternal(
       this as unknown as Parameters<typeof handleChatScrollInternal>[0],
@@ -1817,6 +1842,12 @@ export class OpenClawApp extends LitElement {
 
   loadMeetings(): Promise<void> {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  loadMoreMeetings(): Promise<void> {
+    return loadMoreAdminBotMeetings(
+      this as unknown as Parameters<typeof loadMoreAdminBotMeetings>[0],
+    );
   }
 
   loadMeetingNudges(): Promise<void> {

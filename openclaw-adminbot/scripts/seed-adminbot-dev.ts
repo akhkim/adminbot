@@ -100,11 +100,11 @@ export function parseDevMembers(value: unknown): DevMember[] {
   });
 }
 
-export function seedAdminBotDev(options: {
+export async function seedAdminBotDev(options: {
   password: string;
   databasePath?: string;
   fixturePath?: string;
-}): { databasePath: string; members: number; accountsCreated: number } {
+}): Promise<{ databasePath: string; members: number; accountsCreated: number }> {
   if (!options.password || options.password.length < 10) {
     throw new Error("ADMINBOT_DEV_PASSWORD must be at least 10 characters");
   }
@@ -125,7 +125,8 @@ export function seedAdminBotDev(options: {
   const { service, store, close } = createAdminBotSqliteService({ databasePath });
   const auth = new AdminBotAuthService({
     store,
-    createMember: (input) => unwrap(service.upsertLabMember(input)),
+    prepareMember: (input) => unwrap(service.prepareLabMember(input)),
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
   });
   try {
     // Refuse identity collisions before updating any profile. An email change needs deliberate
@@ -159,12 +160,14 @@ export function seedAdminBotDev(options: {
       if (store.getCredentialByMemberId(member.id)) {
         continue;
       }
-      unwrap(auth.claim({ member_id: member.id, email: member.email, password: options.password }));
+      unwrap(
+        await auth.claim({ member_id: member.id, email: member.email, password: options.password }),
+      );
       const pending = store.getPendingRegistrationByMemberId(member.id);
       if (!pending) {
         throw new Error(`Missing fixture registration for ${member.id}`);
       }
-      unwrap(auth.approveRegistration(pending.id, "dev-fixtures"));
+      unwrap(await auth.approveRegistration(pending.id, "dev-fixtures"));
       accountsCreated += 1;
     }
     return { databasePath, members: members.length, accountsCreated };
@@ -173,13 +176,13 @@ export function seedAdminBotDev(options: {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   if (process.argv.length > 2) {
     throw new Error(
       "Configure this script with ADMINBOT_DEV_PASSWORD, ADMINBOT_DEV_DATABASE and ADMINBOT_DEV_FIXTURE",
     );
   }
-  const result = seedAdminBotDev({
+  const result = await seedAdminBotDev({
     password: process.env.ADMINBOT_DEV_PASSWORD ?? "",
     databasePath: process.env.ADMINBOT_DEV_DATABASE?.trim() || undefined,
     fixturePath: process.env.ADMINBOT_DEV_FIXTURE?.trim() || undefined,
@@ -189,10 +192,8 @@ function main(): void {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  try {
-    main();
-  } catch (error) {
+  void main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-  }
+  });
 }

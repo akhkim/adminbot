@@ -1534,11 +1534,12 @@ export function adminBotConsoleScript(): string {
       }
     }
 
+    let rosterRequest = 0;
+    let rosterTimer;
+
     function renderRoster() {
-      const filter = String(document.getElementById("claim-filter").value || "").trim().toLowerCase();
       const selected = document.getElementById("claim-member-id").value;
-      const matches = state.roster.filter((member) =>
-        !filter || String(member.name || "").toLowerCase().includes(filter));
+      const matches = state.roster;
       document.getElementById("claim-list").innerHTML = matches.length
         ? matches.map((member) =>
             '<button type="button" class="roster-option' + (member.id === selected ? " selected" : "") +
@@ -1547,10 +1548,15 @@ export function adminBotConsoleScript(): string {
     }
 
     async function loadRoster() {
+      const request = ++rosterRequest;
+      const query = String(document.getElementById("claim-filter").value || "").trim();
+      document.getElementById("claim-list").textContent = "Searching…";
       try {
-        const roster = await api("/auth/roster");
+        const roster = await api("/auth/roster" + (query ? "?q=" + encodeURIComponent(query) : ""));
+        if (request !== rosterRequest) return;
         state.roster = roster.members || [];
       } catch (error) {
+        if (request !== rosterRequest) return;
         state.roster = [];
         setStatus("auth-status", "Could not load the roster. " + error.message, "error");
       }
@@ -1561,7 +1567,14 @@ export function adminBotConsoleScript(): string {
     document.getElementById("auth-to-signup").addEventListener("click", () => setAuthMode("signup"));
     document.getElementById("auth-to-login").addEventListener("click", () => setAuthMode("login"));
 
-    document.getElementById("claim-filter").addEventListener("input", renderRoster);
+    document.getElementById("claim-filter").addEventListener("input", () => {
+      clearTimeout(rosterTimer);
+      rosterRequest += 1;
+      state.roster = [];
+      document.getElementById("claim-member-id").value = "";
+      document.getElementById("claim-list").textContent = "Searching…";
+      rosterTimer = setTimeout(loadRoster, 200);
+    });
 
     document.getElementById("claim-list").addEventListener("click", (event) => {
       const option = event.target.closest(".roster-option");

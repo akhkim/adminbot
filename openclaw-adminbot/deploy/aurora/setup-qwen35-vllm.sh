@@ -112,6 +112,8 @@ done
   die "/mfs1/u/$USER is missing; ask Aurora administrators to provision the model filesystem"
 [[ -f "$ROOT/deploy/aurora/configure-openclaw-qwen35.mjs" ]] ||
   die "OpenClaw Qwen configuration helper is missing from $ROOT"
+[[ -x "$ROOT/deploy/aurora/restart-adminbot-after-vllm.sh" ]] ||
+  die "AdminBot restart helper is missing from $ROOT"
 [[ "$GPU" =~ ^[A-Za-z0-9._,:-]+$ ]] || die "GPU selector contains unsupported characters"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "port must be numeric"
 [[ "$MAX_MODEL_LEN" =~ ^[0-9]+$ ]] || die "max model length must be numeric"
@@ -309,7 +311,7 @@ if [[ "$DELETE_OLD_CHECKPOINT" == "yes" && "$OLD_MODEL_ID" != "$MODEL_ID" ]]; th
     --yes
 fi
 
-systemctl --user try-restart jinesis-adminbot.service jinesis-openclaw-gateway.service || true
+"$ROOT/deploy/aurora/restart-adminbot-after-vllm.sh"
 
 printf 'vllm_url=http://127.0.0.1:%s/v1\n' "$PORT"
 printf 'model=%s\n' "$MODEL_ID"

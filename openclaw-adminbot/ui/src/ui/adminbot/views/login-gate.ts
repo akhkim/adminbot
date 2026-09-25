@@ -375,10 +375,7 @@ function renderRosterPicker(state: AppViewState) {
       </div>
     `;
   }
-  const filter = state.rosterFilter.trim().toLowerCase();
-  const matches = filter
-    ? state.rosterMembers.filter((member) => member.name.toLowerCase().includes(filter))
-    : state.rosterMembers;
+  const matches = state.rosterMembers;
   return html`
     <div class="field login-gate__picker">
       <span>${t("login.member.roster.label")}</span>
@@ -389,6 +386,8 @@ function renderRosterPicker(state: AppViewState) {
         .value=${state.rosterFilter}
         @input=${(e: Event) => {
           state.rosterFilter = (e.target as HTMLInputElement).value;
+          state.rosterLoading = true;
+          state.scheduleRosterSearch();
         }}
         placeholder=${t("login.member.roster.searchPlaceholder")}
       />
@@ -422,7 +421,6 @@ function renderRosterPicker(state: AppViewState) {
                         class="login-gate__picker-option"
                         @click=${() => {
                           state.selectedMemberId = member.id;
-                          state.rosterFilter = "";
                         }}
                       >
                         ${member.name}
@@ -855,6 +853,28 @@ export function renderLoginGate(state: AppViewState) {
           ? renderPendingNotice(state)
           : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}`}
       </div>
+    </div>
+  `;
+}
+
+// A stored token is only a claim until /auth/session verifies it. Keep protected pages blank
+// during that check rather than briefly showing sign-in or a private view from stale local state.
+export function renderSessionRestorePending(state: AppViewState) {
+  const faviconSrc = agentLogoUrl(normalizeBasePath(state.basePath ?? ""));
+  return html`
+    <div class="login-gate">
+      <main
+        class="login-gate__card"
+        data-testid="session-restore-pending"
+        role="status"
+        aria-busy="true"
+      >
+        <img class="login-gate__logo" src=${faviconSrc} alt="" />
+        <div class="login-gate__title">AdminBot</div>
+        <div class="login-gate__sub">
+          <span class="login-gate__spinner" aria-hidden="true"></span>${t("common.loading")}
+        </div>
+      </main>
     </div>
   `;
 }

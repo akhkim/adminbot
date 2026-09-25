@@ -602,6 +602,87 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
 }
 
 /**
+ * A one-off, hand-written notice for one member. Temporary: delete after it expires.
+ *
+ * SuperSycophantic was accepted at NeurIPS with no Drive PDF on file, and the first author and the
+ * PI are not the ones to chase, so this asks the second author directly. It is matched on the
+ * signed-in member's own roster record, stops showing once Oscar dismisses it, and stops showing
+ * for everyone once it expires -- after that it is dead code.
+ */
+export const ONE_OFF_NOTICE_EXPIRES_AT = Date.parse("2026-09-28T04:00:00Z"); // end of Sep 27, Toronto
+const ONE_OFF_NOTICE_DISMISS_KEY = "adminbot.oneOffNotice.supersycophanticDrivePdf";
+
+export function isOneOffNoticeRecipient(state: AppViewState): boolean {
+  // An admin viewing the lab as Oscar is not Oscar.
+  if (state.memberImpersonatedBy) {
+    return false;
+  }
+  // The roster record, not `state.memberName` -- that is the sign-up form's name box, which
+  // anybody can type anything into.
+  const name = (findOwnMember(state)?.name ?? "").trim().toLowerCase().replace(/\s+/gu, " ");
+  return name === "oscar yasunaga";
+}
+
+function oneOffNoticeDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(ONE_OFF_NOTICE_DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function renderOneOffNotice(state: AppViewState, role: AccessRole) {
+  if (
+    role === "anonymous" ||
+    Date.now() >= ONE_OFF_NOTICE_EXPIRES_AT ||
+    !isOneOffNoticeRecipient(state) ||
+    oneOffNoticeDismissed()
+  ) {
+    return nothing;
+  }
+  const dismiss = (event: Event) => {
+    try {
+      window.localStorage.setItem(ONE_OFF_NOTICE_DISMISS_KEY, "1");
+    } catch {
+      // Storage blocked: it still disappears for this page view, and expires on its own anyway.
+    }
+    // Hidden rather than removed: lit owns this node, and the next render drops it via the check
+    // above.
+    const section = (event.currentTarget as HTMLElement).closest("section");
+    if (section) {
+      section.hidden = true;
+    }
+  };
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-one-off-notice"
+      role="status"
+    >
+      <strong
+        >SuperSycophantic was accepted at NeurIPS 🎉. Please add its Drive PDF by Sep 27.</strong
+      >
+      <ul>
+        <li>
+          AdminBot still has no Google Drive PDF for
+          <em
+            >SuperSycophantic: Stress-Testing Frontier LLMs from Single- to Multi-Turn
+            Sycophancy</em
+          >. Please upload the de-anonymized camera-ready (full author list) to Drive and paste the
+          link into the paper's "Drive copy of the paper PDF" field under My Projects &amp; Papers.
+          We need it before we can post about the paper on social media.
+        </li>
+      </ul>
+      <button class="btn btn--sm" type="button" @click=${() => state.setTab("myWork")}>
+        Open My Projects &amp; Papers
+      </button>
+      <button class="btn btn--sm" type="button" @click=${dismiss}>Got it</button>
+    </section>
+  `;
+}
+
+/**
  * The lab-wide broadcast, above everything else on the page.
  *
  * Top of the dashboard rather than a banner on every tab: this page is home for anyone signed in,
@@ -643,7 +724,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
     const ownProfile = findOwnMember(state);
     const profileItem = ownProfile ? mandatoryFieldsItem(state) : null;
     return html`<div class="dashboard">
-      ${renderBroadcast(state)} ${ownProfile ? renderNudgeWarning(state, role) : nothing}
+      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${ownProfile ? renderNudgeWarning(state, role) : nothing}
       <section class="dashboard__attention" aria-live="polite">
         ${state.adminBotError
           ? html`<div class="callout danger" role="alert" data-testid="dashboard-load-error">
@@ -666,7 +748,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
   }
   return html`
     <div class="dashboard">
-      ${renderBroadcast(state)} ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
+      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}

@@ -353,11 +353,13 @@ describe("adminbot email automation", () => {
 // The scan window is resumable now, so what it remembers is part of the contract: a pass that
 // failed on something must not leave behind a watermark that carries the mailbox past it.
 describe("mailbox scan watermark", () => {
-  function store(): { state: StateStore; cleanup: () => void } {
+  function store(): { state: StateStore; databasePath: string; cleanup: () => void } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-scan-"));
-    const state = new StateStore(path.join(dir, "state.sqlite"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const state = new StateStore(databasePath);
     return {
       state,
+      databasePath,
       cleanup: () => {
         state.close();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -381,6 +383,37 @@ describe("mailbox scan watermark", () => {
     cleanup();
   });
 
+  it("does not rewind when another process advanced the watermark after an old read", () => {
+    const { state, databasePath, cleanup } = store();
+    const other = new StateStore(databasePath);
+    try {
+      state.markScannedThrough(new Date("2026-07-18T09:00:00Z"));
+      vi.spyOn(state, "scannedThrough").mockReturnValue(new Date("2026-07-18T09:00:00Z"));
+      other.markScannedThrough(new Date("2026-07-18T12:00:00Z"));
+      state.markScannedThrough(new Date("2026-07-18T10:00:00Z"));
+      expect(other.scannedThrough()?.toISOString()).toBe("2026-07-18T12:00:00.000Z");
+    } finally {
+      other.close();
+      cleanup();
+    }
+  });
+
+  it("reports a processing message across store connections", () => {
+    const { state, databasePath, cleanup } = store();
+    const other = new StateStore(databasePath);
+    const input = message({ id: "shared" });
+    const classification = { category: "unknown", reason: "test" };
+    try {
+      expect(state.begin(input, classification)).toBe(true);
+      expect(other.hasInProgressMessages()).toBe(true);
+      state.finish("shared", "completed");
+      expect(other.hasInProgressMessages()).toBe(false);
+    } finally {
+      other.close();
+      cleanup();
+    }
+  });
+
   it("treats a settled message as done and a retryable one as not", () => {
     const { state, cleanup } = store();
     state.begin(message({ id: "settled" }), {
@@ -396,6 +429,9 @@ describe("mailbox scan watermark", () => {
     });
     state.finish("broke", "failed", "boom");
     expect(state.isSettled("broke")).toBe(false);
+    expect(
+      state.begin(message({ id: "broke" }), { category: "unknown", reason: "retry" }),
+    ).toBe(true);
     expect(state.isSettled("never-seen")).toBe(false);
     cleanup();
   });
@@ -427,5 +463,78 @@ describe("mailbox scan watermark", () => {
       status: "needs_review",
     });
     cleanup();
+  });
+});
+
+describe("email automation claims", () => {
+  it("allows only one run to claim an interleaved message", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-email-claim-"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const first = new StateStore(databasePath);
+    const second = new StateStore(databasePath);
+    const item = message({ id: "race" });
+    const kind = { category: "student_reachout", reason: "test" };
+    let competingClaim: boolean | undefined;
+    const prepare = first.db.prepare.bind(first.db);
+    vi.spyOn(first.db, "prepare").mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (String(sql).includes("SELECT status FROM adminbot_email_messages WHERE message_id")) {
+        const get = statement.get.bind(statement);
+        vi.spyOn(statement, "get").mockImplementation((...args) => {
+          const row = get(...args);
+          competingClaim = second.begin(item, kind);
+          return row;
+        });
+      }
+      return statement;
+    });
+    try {
+      const firstClaim = first.begin(item, kind);
+      const secondClaim = competingClaim ?? second.begin(item, kind);
+      expect(Number(firstClaim) + Number(secondClaim)).toBe(1);
+    } finally {
+      first.close();
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("starts an external effect only once when two runs interleave", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-email-effect-"));
+    const databasePath = path.join(dir, "state.sqlite");
+    const first = new StateStore(databasePath);
+    const second = new StateStore(databasePath);
+    let executions = 0;
+    let competingEffect: Promise<string | undefined> | undefined;
+    const operation = async () => {
+      executions += 1;
+      return "sent";
+    };
+    const prepare = first.db.prepare.bind(first.db);
+    vi.spyOn(first.db, "prepare").mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (String(sql).includes("SELECT status, result_json FROM adminbot_email_effects")) {
+        const get = statement.get.bind(statement);
+        vi.spyOn(statement, "get").mockImplementation((...args) => {
+          const row = get(...args);
+          competingEffect = second.effect("race", "send", operation);
+          return row;
+        });
+      }
+      return statement;
+    });
+    try {
+      const firstEffect = first.effect("race", "send", operation);
+      competingEffect ??= second.effect("race", "send", operation);
+      const results = await Promise.allSettled([firstEffect, competingEffect]);
+      expect(executions).toBe(1);
+      expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+      expect(await second.effect("race", "send", operation)).toBe("sent");
+      expect(executions).toBe(1);
+    } finally {
+      first.close();
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

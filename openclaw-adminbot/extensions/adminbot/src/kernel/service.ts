@@ -176,6 +176,11 @@ import {
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
 import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
+import {
+  type AdminBotMemberRequest,
+  type AdminBotMemberRequestStatus,
+  readAdminBotMemberRequest,
+} from "../contracts/member-requests.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
 import type { OpenReviewCitationCheckStore } from "../contracts/openreview-citation-checks.js";
 import {
@@ -211,6 +216,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
@@ -289,6 +295,7 @@ import {
   byMostRecent,
   meetsDurationFloor,
   mergeMeeting,
+  normalizedMeetingStartedAt,
   redactMeetingForMember,
   validateMeeting,
 } from "../workflows/meetings/records.js";
@@ -444,8 +451,20 @@ export type AdminBotServiceResponse<T> =
   | { ok: true; status: number; payload: T }
   | { ok: false; status: number; error: { message: string } };
 
+export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "id">;
+
 // The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
-type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
+type AdminBotCitationCheckStores = ReferenceScanStore &
+  OpenReviewCitationCheckStore &
+  PaperAiTextCheckStore;
+
+export type AdminBotMeetingArtifactRecord = {
+  file_id: string;
+  file_name: string;
+  meeting_id?: string;
+  status: "attached" | "unmatched" | "empty";
+  processed_at: string;
+};
 
 export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveHelpInterest(interest: LabHelpInterest): void;
@@ -488,8 +507,23 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   ): boolean;
   releaseExecutionClaim(effectKey: string, actionId: string): void;
   saveLabMember(member: AdminBotLabMember): void;
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Pick<AdminBotLabMember, "updated_at"> &
+      Partial<
+        Pick<
+          AdminBotLabMember,
+          | "last_login_at"
+          | "last_login_country"
+          | "last_login_continent"
+          | "last_login_city"
+          | "last_login_timezone"
+        >
+      >,
+  ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
   countLabMembers(q?: string): number;
   saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
@@ -506,6 +540,13 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     status?: AdminBotOpportunityStatus;
   }): AdminBotOpportunity[];
   deleteOpportunity(opportunityId: string): boolean;
+  saveMemberRequest(request: AdminBotMemberRequest): void;
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined;
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[];
+  deleteMemberRequest(requestId: string): boolean;
   saveBadgeNomination(nomination: AdminBotBadgeNomination): void;
   getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
   listBadgeNominations(params?: {
@@ -630,7 +671,14 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  hasAttachedMeetingArtifact(fileId: string): boolean;
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
    * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
    * replaces its own row rather than stacking a second copy of the same sentence.
@@ -666,12 +714,33 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   pruneAuditEventsBefore(cutoffIso: string): number;
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
+  /** Member IDs with portal credentials, for the public unclaimed-roster picker. */
+  listCredentialMemberIds(): string[];
   saveCredential(credential: AdminBotMemberCredential): void;
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean;
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken";
   savePasswordReset(reset: AdminBotPasswordReset): void;
   getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
   markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean;
   saveAccountRegistration(registration: AdminBotAccountRegistration): void;
+  /** Insert a pending claim/signup only when no pending email or claim-member collision exists. */
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean;
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
   listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
   updateAccountRegistrationDecision(
@@ -679,10 +748,22 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void;
+  ): boolean;
+  /** Approve one pending request and insert its credential/member in one database transaction. */
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" };
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
   getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
   saveSession(session: AdminBotAuthSession): void;
+  /** Prevent a stale verified password from minting a session after a concurrent password change. */
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean;
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
@@ -1114,6 +1195,12 @@ const DEFAULT_ACTION_POLICIES = {
   // safe is that nothing can create one of these except the sweep -- see escalateStaleNudges --
   // and an escalation that waited on an admin's approval would be a reminder nobody sent.
   "member_nudge.escalate": autoPolicy("T1"),
+  // Auto-approved: it exists to land in the last hours before a deadline, when an approval queue
+  // nobody is watching would hold it until it is useless. Nothing about it comes from a caller --
+  // the recipients are the head-professor setting and the roster's matches for the paper's author
+  // list, and the text is composed from the stored scores -- and each version alerts at most once
+  // per reason. T1 for the mechanical reason: resolvePolicy only honors auto_allowed below T2.
+  "paper_integrity.alert": autoPolicy("T1"),
   // Auto-approved on the same reasoning: the member and the channel are computed here from the
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.
@@ -2830,6 +2917,26 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: next };
   }
 
+  /** Validate and materialize a signup profile without writing it before approval commits. */
+  prepareLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
+    if (this.store.getLabMember(member.id)) {
+      return serviceError(409, "member already exists");
+    }
+    return this.upsertLabMember(member, {}, true);
+  }
+
+  /** Run the existing profile hooks only after a signup's member and credential commit together. */
+  afterMemberCreated(member: AdminBotLabMember): void {
+    this.afterLabMemberWritten(
+      undefined,
+      member,
+      member,
+      member.privilege_level,
+      member.updated_at,
+      {},
+    );
+  }
+
   /**
    * The one funnel every profile write goes through -- the member's own form, an admin, the
    * spreadsheet importer, the CV scan.
@@ -2842,6 +2949,7 @@ export class AdminBotService {
   upsertLabMember(
     member: AdminBotLabMemberInput,
     origin: AdminBotWriteOrigin = {},
+    prepareOnly = false,
   ): AdminBotServiceResponse<AdminBotLabMember> {
     if (Array.isArray(member.milestones)) {
       member = {
@@ -2935,7 +3043,22 @@ export class AdminBotService {
     if (stored.availability_notes !== undefined && !stored.availability_notes.trim()) {
       delete stored.availability_notes;
     }
+    if (prepareOnly) {
+      return { ok: true, status: 200, payload: stored };
+    }
     this.store.saveLabMember(stored);
+    this.afterLabMemberWritten(existing, member, stored, privilegeLevel, now, origin);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private afterLabMemberWritten(
+    existing: AdminBotLabMember | undefined,
+    member: AdminBotLabMemberInput,
+    stored: AdminBotLabMember,
+    privilegeLevel: AdminBotPrivilegeLevel,
+    now: string,
+    origin: AdminBotWriteOrigin,
+  ): void {
     this.clearResolvedProfileNotifications(stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
@@ -3009,7 +3132,6 @@ export class AdminBotService {
         source: origin.source ?? "import",
       },
     });
-    return { ok: true, status: 200, payload: stored };
   }
 
   /**
@@ -3784,6 +3906,186 @@ export class AdminBotService {
       details: { opportunity_id: opportunityId },
     });
     return { ok: true, status: 200, payload: { deleted: true } };
+  }
+
+  /**
+   * A non-admin's proposal to add somebody to the roster. Nothing reaches the roster here: the
+   * request waits for an admin, and approval is the admin's own Add member save (see
+   * POST /lab/members/requests/:id/approve in api/server.ts).
+   */
+  submitMemberRequest(
+    requesterId: string,
+    body: Record<string, unknown>,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    if (!this.store.getLabMember(requesterId)) {
+      return serviceError(404, `unknown member ${requesterId}`);
+    }
+    const read = readAdminBotMemberRequest(body);
+    if (!read.ok) {
+      return serviceError(400, read.error);
+    }
+    const email = read.profile.email.toLowerCase();
+    // Both checks are courtesy, not integrity -- approval re-runs the roster's own validation. They
+    // exist so the requester hears "already here" now rather than an admin finding a duplicate later.
+    if (
+      this.store.listLabMembers().some((member) => member.email?.trim().toLowerCase() === email)
+    ) {
+      return serviceError(409, `${read.profile.email} is already on the roster`);
+    }
+    if (
+      this.store
+        .listMemberRequests({ status: "pending" })
+        .some((request) => request.profile.email.toLowerCase() === email)
+    ) {
+      return serviceError(
+        409,
+        `a request to add ${read.profile.email} is already waiting for review`,
+      );
+    }
+    const now = new Date().toISOString();
+    const request: AdminBotMemberRequest = {
+      id: `mreq_${randomUUID()}`,
+      status: "pending",
+      requested_by: requesterId,
+      profile: read.profile,
+      ...(read.meetings ? { meetings: read.meetings } : {}),
+      ...(read.note ? { note: read.note } : {}),
+      created_at: now,
+      updated_at: now,
+    };
+    this.store.saveMemberRequest(request);
+    this.recordAudit({
+      type: "lab_member_request.submitted",
+      actor: requesterId,
+      details: { request_id: request.id, name: request.profile.name, email: request.profile.email },
+    });
+    return { ok: true, status: 201, payload: { request } };
+  }
+
+  /** An admin reads every request; anyone else reads only their own. */
+  listMemberRequests(viewer: {
+    memberId: string;
+    isAdmin: boolean;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotServiceResponse<{ requests: AdminBotMemberRequest[] }> {
+    const requests = this.store.listMemberRequests({
+      ...(viewer.isAdmin ? {} : { requestedBy: viewer.memberId }),
+      ...(viewer.status ? { status: viewer.status } : {}),
+    });
+    return { ok: true, status: 200, payload: { requests } };
+  }
+
+  /**
+   * Marks a pending request approved before its member is written, so a second admin pressing
+   * Approve on the same card gets a 409 instead of creating the person twice. The caller settles it
+   * with `settleMemberRequestApproval` once the save has either landed or failed.
+   */
+  claimMemberRequest(
+    requestId: string,
+    adminId: string,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, `this request was already ${existing.status}`);
+    }
+    const now = new Date().toISOString();
+    const claimed: AdminBotMemberRequest = {
+      ...existing,
+      status: "approved",
+      decided_at: now,
+      decided_by: adminId,
+      updated_at: now,
+    };
+    this.store.saveMemberRequest(claimed);
+    return { ok: true, status: 200, payload: { request: claimed } };
+  }
+
+  settleMemberRequestApproval(
+    request: AdminBotMemberRequest,
+    outcome: { memberId: string } | { failed: true },
+  ): AdminBotMemberRequest {
+    if ("failed" in outcome) {
+      // Back in the queue exactly as it was, so the admin can fix whatever the roster refused and
+      // try again, rather than the request vanishing into an "approved" that created nobody.
+      const { decided_at: _at, decided_by: _by, ...rest } = request;
+      const reopened: AdminBotMemberRequest = {
+        ...rest,
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      };
+      this.store.saveMemberRequest(reopened);
+      return reopened;
+    }
+    const approved: AdminBotMemberRequest = { ...request, member_id: outcome.memberId };
+    this.store.saveMemberRequest(approved);
+    this.recordAudit({
+      type: "lab_member_request.approved",
+      actor: request.decided_by ?? "",
+      details: {
+        request_id: request.id,
+        member_id: outcome.memberId,
+        requested_by: request.requested_by,
+      },
+    });
+    return approved;
+  }
+
+  rejectMemberRequest(
+    requestId: string,
+    adminId: string,
+    note: string | undefined,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, `this request was already ${existing.status}`);
+    }
+    const now = new Date().toISOString();
+    const trimmed = note?.trim();
+    const rejected: AdminBotMemberRequest = {
+      ...existing,
+      status: "rejected",
+      decided_at: now,
+      decided_by: adminId,
+      updated_at: now,
+      ...(trimmed ? { decision_note: trimmed } : {}),
+    };
+    this.store.saveMemberRequest(rejected);
+    this.recordAudit({
+      type: "lab_member_request.rejected",
+      actor: adminId,
+      details: { request_id: requestId, requested_by: existing.requested_by },
+    });
+    return { ok: true, status: 200, payload: { request: rejected } };
+  }
+
+  /** The requester taking back their own request while it is still waiting. */
+  withdrawMemberRequest(
+    requestId: string,
+    memberId: string,
+  ): AdminBotServiceResponse<{ withdrawn: true }> {
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.requested_by !== memberId) {
+      return serviceError(403, "not your request");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, `this request was already ${existing.status}`);
+    }
+    this.store.deleteMemberRequest(requestId);
+    this.recordAudit({
+      type: "lab_member_request.withdrawn",
+      actor: memberId,
+      details: { request_id: requestId },
+    });
+    return { ok: true, status: 200, payload: { withdrawn: true } };
   }
 
   decideBadgeNomination(
@@ -8385,12 +8687,23 @@ export class AdminBotService {
    * each time. mergeMeeting is what keeps the earlier fields.
    */
   upsertMeeting(input: AdminBotMeetingRecordInput): AdminBotServiceResponse<AdminBotMeetingRecord> {
-    const validation = validateMeeting(input);
+    const existing = input.id?.trim() ? this.store.getMeeting(input.id) : undefined;
+    // An artifact update repeats the stored start time. Preserve historical nonstandard values
+    // until an explicit data repair, rather than moving old recordings during an unrelated update.
+    const unchangedHistoricalDate =
+      existing !== undefined && input.started_at === existing.started_at;
+    const validation = validateMeeting(input, unchangedHistoricalDate);
     if (validation) {
       return serviceError(400, validation);
     }
-    const existing = this.store.getMeeting(input.id);
-    const stored = mergeMeeting(existing, input, new Date().toISOString());
+    const startedAt = unchangedHistoricalDate
+      ? input.started_at
+      : normalizedMeetingStartedAt(input.started_at)!;
+    const stored = mergeMeeting(
+      existing,
+      { ...input, started_at: startedAt },
+      new Date().toISOString(),
+    );
     this.store.saveMeeting(stored);
     this.recordAudit({
       type: existing ? "meeting.updated" : "meeting.recorded",
@@ -8443,6 +8756,54 @@ export class AdminBotService {
           redactMeetingForMember(meeting, memberId),
         ),
       },
+    };
+  }
+
+  /** A bounded archive read for the UI; the unpaged methods above still serve existing callers. */
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+  }): AdminBotServiceResponse<{
+    meetings: AdminBotMeetingRecord[];
+    next_cursor?: AdminBotMeetingCursor;
+  }> {
+    return { ok: true, status: 200, payload: this.listedMeetingsPage(options) };
+  }
+
+  listMeetingsPageForMember(
+    memberId: string,
+    options: { limit: number; before?: AdminBotMeetingCursor },
+  ): AdminBotServiceResponse<{
+    meetings: AdminBotMeetingRecord[];
+    next_cursor?: AdminBotMeetingCursor;
+  }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const page = this.listedMeetingsPage(options);
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        ...page,
+        meetings: page.meetings.map((meeting) => redactMeetingForMember(meeting, memberId)),
+      },
+    };
+  }
+
+  private listedMeetingsPage(options: { limit: number; before?: AdminBotMeetingCursor }) {
+    const eligible = this.store.listMeetingsPage({
+      limit: options.limit + 1,
+      ...(options.before ? { before: options.before } : {}),
+      minimumMinutes: this.resolveSettings().meeting_minimum_minutes ?? 0,
+    });
+    const meetings = eligible.slice(0, options.limit);
+    const last = meetings.at(-1);
+    return {
+      meetings,
+      ...(eligible.length > options.limit && last
+        ? { next_cursor: { started_at: last.started_at, id: last.id } }
+        : {}),
     };
   }
 

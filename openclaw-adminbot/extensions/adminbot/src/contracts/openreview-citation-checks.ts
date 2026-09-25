@@ -58,6 +58,11 @@ export type OpenReviewSubmission = {
   pdf_path: string;
   /** OpenReview's `tmdate`, used to check the most recently changed papers first. */
   modified_at: number;
+  /**
+   * `content.authorids` in author order: tilde profile ids (`~Jane_Doe1`) or, for an author
+   * without a profile, an email address. The integrity alert maps these back to the roster.
+   */
+  author_ids?: string[];
 };
 
 export type OpenReviewSubmissionReader = {

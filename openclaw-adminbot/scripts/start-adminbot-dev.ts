@@ -56,9 +56,9 @@ const app = createAdminBotMockService({
   accountApprovedEmailRunner: async () => {},
 });
 
-let login = app.auth.login({ email, password });
+let login = await app.auth.login({ email, password });
 if (!login.ok) {
-  const signup = app.auth.signup({
+  const signup = await app.auth.signup({
     email,
     password,
     profile: { name, role: "Lab Manager" },
@@ -70,19 +70,19 @@ if (!login.ok) {
     );
   }
 
-  const registration = app.auth
-    .listRegistrations("pending")
-    .find((candidate) => candidate.email === email);
+  const registration = (await app.auth.listRegistrations("pending")).find(
+    (candidate) => candidate.email === email,
+  );
   if (!registration) {
     throw new Error("Local account registration was not persisted");
   }
 
-  const approval = app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
+  const approval = await app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
   if (!approval.ok) {
     throw new Error(`Could not approve the local account: ${approval.error.message}`);
   }
 
-  login = app.auth.login({ email, password });
+  login = await app.auth.login({ email, password });
 }
 
 if (!login.ok) {

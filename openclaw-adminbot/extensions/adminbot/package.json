@@ -7,10 +7,12 @@
   "dependencies": {
     "clawpdf": "0.3.0",
     "fast-xml-parser": "5.7.0",
+    "pg": "^8.23.0",
     "typebox": "1.1.39"
   },
   "devDependencies": {
     "@openclaw/plugin-sdk": "workspace:*",
+    "@types/pg": "^8.23.1",
     "ts-node": "^10.9.2"
   },
   "openclaw": {

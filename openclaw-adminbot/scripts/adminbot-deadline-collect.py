@@ -139,6 +139,23 @@ CONFERENCES = [
          venue_family="ARR", submission_type="direct",
          deadline_label="ARR submission", deadline_aoe="2026-08-03 23:59:59",
          notification_aoe="", link="https://aclrollingreview.org/dates"),
+    # The August cycle's author response is its own row, for the same reason the NeurIPS
+    # rebuttal above is: the board counts down to one date per row, and a window the lab is
+    # inside right now is not planning information -- it is the next thing that can be missed.
+    #
+    # The date is the *initial* response, not the end of the window. ARR's table gives the
+    # period as "September 14-September 24" and then says "the initial author response is due
+    # on September 19", because "in August 2026 cycle, the author response period is split into
+    # 3 phases" with the later phases emailed to authors individually. Counting down to the
+    # 24th would sail an author straight past the obligation that actually falls first, and the
+    # phases after it are not public, so this is the one public date worth a countdown. The
+    # full window rides alongside in SCHEDULES below.
+    # Source: https://aclrollingreview.org/dates
+    dict(id="arr_2026_august_rebuttal", name="ARR — August 2026 cycle (author response)",
+         venue_type="rebuttal", venue_group="ARR August 2026", track="rebuttal",
+         venue_family="ARR",
+         deadline_label="initial author response", deadline_aoe="2026-09-19 23:59:59",
+         notification_aoe="", link="https://aclrollingreview.org/dates"),
     dict(id="arr_2026_october", name="ARR — October 2026 cycle (direct submission)",
          venue_type="conference", venue_group="ARR October 2026", track="cycle",
          venue_family="ARR", submission_type="direct",
@@ -269,6 +286,9 @@ SCHEDULES = {
         dict(milestone="reviews", label="Reviews due", date="2026-09-07", kind="date"),
         dict(milestone="rebuttal", label="Author response",
              starts="2026-09-14", ends="2026-09-24", kind="period"),
+        # Inside that window, and the only phase ARR names publicly; see the rebuttal row above.
+        dict(milestone="rebuttal", label="Initial author response due", date="2026-09-19",
+             kind="date"),
         dict(milestone="notification", label="Meta-reviews released", date="2026-10-08",
              kind="date"),
         dict(milestone="cycle_end", label="Cycle ends", date="2026-10-11", kind="date"),
@@ -296,6 +316,13 @@ SCHEDULES = {
              kind="deadline"),
         dict(milestone="conference", label="Main conference",
              starts="2026-10-24", ends="2026-10-29", kind="period"),
+    ],
+    "arr_2026_august_rebuttal": [
+        dict(milestone="rebuttal", label="Author response period",
+             starts="2026-09-14", ends="2026-09-24", kind="period"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-10-08",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-10-11", kind="date"),
     ],
     "neurips2026_rebuttal": NEURIPS_2026_SCHEDULE,
     "iclr2027_abstract": ICLR_2027_SCHEDULE,
@@ -1861,7 +1888,7 @@ def write_outputs(items):
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
             "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
             "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
-            "deadline_source_evidence", "deadline_official_url", "deadline_official_evidence",
+            "deadline_official_url",
             "deadline_extended", "deadline_history_status",
             "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
     # "" is the right empty for every string field here; `schedule` is a list, and a
@@ -1927,12 +1954,34 @@ def write_outputs(items):
                 "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
                 "  source_url?: string;\n  source_checked_at?: string;\n"
                 "  deadline_source_kind?: string;\n  deadline_source_status?: string;\n"
-                "  deadline_source_precision?: string;\n  deadline_source_evidence?: string;\n"
-                "  deadline_official_url?: string;\n  deadline_official_evidence?: string;\n"
+                "  deadline_source_precision?: string;\n"
+                "  deadline_official_url?: string;\n"
                 "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n\n"
                 "export const DEADLINE_VENUES: DeadlineVenue[] = "
                 + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
     print(f"wrote {ui_ds}")
+
+    # The dashboard, availability, and paper controls load on every signed-in visit. Keep their
+    # deadline projection out of the full board chunk. Revision history belongs to the lazy board;
+    # source excerpts are kept in the canonical dataset because no Control UI view reads them.
+    summary_keys = ["id", "deadline_id", "venue_id", "venue_aliases", "name",
+                    "venue_type", "venue_group", "entry_type", "archival_status", "archival",
+                    "milestone", "schedule",
+                    "deadline_label", "deadline_aoe", "notification_aoe", "link"]
+    summaries = [{key: item.get(key, [] if key in ("venue_aliases", "schedule") else "")
+                  for key in summary_keys} for item in items]
+    summary_path = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines-summary.ts")
+    with open(summary_path, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                'import type { DeadlineVenue } from "./deadlines.ts";\n\n'
+                "export type DeadlineSummaryVenue = Pick<DeadlineVenue,\n  "
+                + " |\n  ".join(json.dumps(key) for key in summary_keys)
+                + ">;\n\n"
+                "export const DEADLINE_SUMMARIES: DeadlineSummaryVenue[] = [\n  "
+                + ",\n  ".join(json.dumps(row, ensure_ascii=False, separators=(",", ": "))
+                                for row in summaries) + "\n];\n")
+    print(f"wrote {summary_path}")
 
 
 

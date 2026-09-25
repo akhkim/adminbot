@@ -51,6 +51,41 @@ describe("createAdminBotSlackAdminExecutor", () => {
     );
   });
 
+  it("opens one group DM for a paper integrity alert", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true,"channel":{"id":"G1"}}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true}',
+      });
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl,
+    });
+
+    const result = await executor.execute(
+      proposal("paper_integrity.alert", {
+        user_ids: ["UZHIJING", "UADA", "UGRACE", "UADA"],
+        message: "ICLR pre-deadline check",
+      }),
+    );
+
+    expect(result).toEqual({ handled: true });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ users: "UZHIJING,UADA,UGRACE" });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+      channel: "G1",
+      text: "ICLR pre-deadline check",
+    });
+  });
+
   it("DMs the owner for naming notices", async () => {
     const fetchImpl = vi
       .fn()

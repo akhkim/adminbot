@@ -198,6 +198,27 @@ function addressesOf(member: AdminBotLabMember): string[] {
 }
 
 /**
+ * The sheet row that is this member, matched the way `planRosterSync` matches: id, then any address.
+ *
+ * Undefined when no row matches, and also when more than one does -- writing the type onto one of
+ * two duplicate rows would leave the other to flip it back on the next sync.
+ */
+export function rosterRowForMember(
+  sheet: RosterSheetParse,
+  member: AdminBotLabMember,
+): RosterSheetRow | undefined {
+  const byId = sheet.rows.filter((row) => row.member_id === member.id);
+  if (byId.length > 0) {
+    return byId.length === 1 ? byId[0] : undefined;
+  }
+  const addresses = new Set(addressesOf(member));
+  const byAddress = sheet.rows.filter(
+    (row) => !row.member_id && row.emails.some((email) => addresses.has(email)),
+  );
+  return byAddress.length === 1 ? byAddress[0] : undefined;
+}
+
+/**
  * What would have to change for the database to agree with the sheet.
  *
  * Matching is id first, then any address against any address. Both directions are reported: a sheet

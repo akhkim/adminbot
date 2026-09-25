@@ -6,6 +6,7 @@ import {
   meetingDurationMinutes,
   meetsDurationFloor,
   mergeMeeting,
+  normalizedMeetingStartedAt,
   redactMeetingForMember,
   validateMeeting,
 } from "./records.js";
@@ -29,6 +30,19 @@ describe("validateMeeting", () => {
 
   it("refuses an unparseable start time", () => {
     expect(validateMeeting({ ...NOTICE, started_at: "last tuesday" })).toMatch(/RFC3339/u);
+  });
+
+  it("requires an explicit timezone and a SQLite-compatible year", () => {
+    for (const started_at of [
+      "September 10, 2026",
+      "2026-09-10T14:00:00",
+      "+010000-01-01T00:00:00Z",
+    ]) {
+      expect(validateMeeting({ ...NOTICE, started_at })).toMatch(/RFC3339/u);
+    }
+    expect(normalizedMeetingStartedAt("2026-09-10T14:00:00+02:00")).toBe(
+      "2026-09-10T12:00:00.000Z",
+    );
   });
 
   it("accepts a Drive copy as the only link, since that is what outlives Zoom's retention", () => {
@@ -91,9 +105,7 @@ describe("mergeMeeting", () => {
       undefined,
       {
         ...NOTICE,
-        attendees: [
-          { member_id: "ada", display_name: "Ada", source: "manual", present: true },
-        ],
+        attendees: [{ member_id: "ada", display_name: "Ada", source: "manual", present: true }],
       },
       "2026-08-12T15:00:00.000Z",
     );

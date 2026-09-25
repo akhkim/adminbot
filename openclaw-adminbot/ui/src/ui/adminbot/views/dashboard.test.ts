@@ -727,3 +727,67 @@ describe("the lab-wide broadcast", () => {
     expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
   });
 });
+
+describe("one-off Drive PDF notice", () => {
+  const NOTICE = '[data-testid="dashboard-one-off-notice"]';
+  const members = [
+    { id: "oscar", name: "Oscar Yasunaga" },
+    { id: "terry", name: "Terry Jingchen Zhang" },
+    { id: "zhijing-jin", name: "Zhijing Jin" },
+  ];
+  const signedInAs = (memberId: string, extra: Partial<AppViewState> = {}) =>
+    createState({
+      memberId,
+      adminBotData: { ...createEmptyAdminBotDashboardData(), members },
+      ...extra,
+    } as unknown as Partial<AppViewState>);
+
+  it("shows only to Oscar", () => {
+    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).not.toBeNull();
+    for (const other of ["terry", "zhijing-jin"]) {
+      expect(renderPage(signedInAs(other), "member").querySelector(NOTICE)).toBeNull();
+      expect(renderPage(signedInAs(other), "admin").querySelector(NOTICE)).toBeNull();
+    }
+    expect(renderPage(createState(), "anonymous").querySelector(NOTICE)).toBeNull();
+  });
+
+  it("ignores a typed sign-up name and an admin viewing as Oscar", () => {
+    expect(
+      renderPage(
+        signedInAs("terry", { memberName: "Oscar Yasunaga" } as Partial<AppViewState>),
+        "member",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+    expect(
+      renderPage(
+        signedInAs("oscar", {
+          memberImpersonatedBy: { id: "zhijing-jin", name: "Zhijing Jin" },
+        } as Partial<AppViewState>),
+        "admin",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+  });
+
+  it("is gone once dismissed or expired", () => {
+    // This file's jsdom has no localStorage; the notice needs one to remember the dismissal.
+    const stored = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+    const page = renderPage(signedInAs("oscar"), "member");
+    page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
+    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+    stored.clear();
+
+    vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
+    try {
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
