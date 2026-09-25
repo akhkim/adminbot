@@ -31,8 +31,13 @@ export type PaperAiTextCheck = {
   fraction_human?: number;
   /** Pangram's short label ("AI", "AI-Assisted", "Human", "Mixed"). */
   prediction?: string;
-  /** Words sent to Pangram: the main text, before the bibliography. */
+  /** Words Pangram scored: its own extraction of the whole PDF (the main text for "text"). */
   words_scored?: number;
+  /**
+   * What was sent to Pangram. "pdf" is the whole file, scored the way Pangram's website scores
+   * an upload; "text" (or absent) is the older main-text-only score, which is re-scored once.
+   */
+  scored_from?: "pdf" | "text";
   /** A fixed, operator-facing message; never provider or manuscript text. */
   error?: string;
   /** Reasons a Slack alert has already been raised for, so none is repeated. */
@@ -54,10 +59,12 @@ export type AiTextScore = {
   fraction_ai_assisted: number;
   fraction_human: number;
   prediction?: string;
+  /** Words the provider scored, from its own extraction of the file. */
+  words_scored?: number;
 };
 
-/** Scores a passage of text. Rejects on any provider or network failure. */
-export type AiTextScorer = (text: string, signal: AbortSignal) => Promise<AiTextScore>;
+/** Scores a whole PDF. Rejects on any provider or network failure. */
+export type AiTextScorer = (pdf: Uint8Array, signal: AbortSignal) => Promise<AiTextScore>;
 
 export type PaperIntegritySweepSummary = {
   started_at: string;

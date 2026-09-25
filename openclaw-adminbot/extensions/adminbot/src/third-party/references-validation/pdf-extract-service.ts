@@ -122,19 +122,48 @@ const endsReferences = (lines: string[], i: number): boolean => {
 };
 
 /**
+ * The ICLR review template's margin numbers, which PDFium emits as a column of their own: runs of
+ * lines holding nothing but a number, each one more than the last ("000", "001", ... "053"). A
+ * 39-page ICLR submission carries over a thousand of them, and left in they are text to every
+ * reader of it -- the reference splitter and the AI-text score alike. Only a counting run of five
+ * or more goes, so a lone page number or a table column of unrelated figures is left alone.
+ */
+const dropNumberColumns = (lines: string[]): string[] => {
+  const MIN_RUN = 5;
+  const value = (line: string) => (/^\s*\d{1,4}\s*$/.test(line) ? Number(line) : undefined);
+  const drop = new Set<number>();
+  let start = 0;
+  while (start < lines.length) {
+    let end = start;
+    while (
+      end + 1 < lines.length &&
+      value(lines[end]) !== undefined &&
+      value(lines[end + 1]) === (value(lines[end]) as number) + 1
+    ) {
+      end++;
+    }
+    if (end - start + 1 >= MIN_RUN) {
+      for (let i = start; i <= end; i++) drop.add(i);
+    }
+    start = end + 1;
+  }
+  return drop.size ? lines.filter((_, i) => !drop.has(i)) : lines;
+};
+
+/**
  * Review-mode submissions (ARR, NeurIPS, ICML) number every line in the margin, and PDFium emits
  * the number at the start or end of the line -- or right after a hyphenation mark. Left in, it
  * breaks every entry boundary. Stripped only when most lines carry one, so a camera-ready paper
  * whose lines happen to end in page ranges is left alone.
  */
 export const stripLineNumbers = (text: string): string => {
-  const lines = text.replace(/\r/g, "").split("\n");
+  const lines = dropNumberColumns(text.replace(/\r/g, "").split("\n"));
   const filled = lines.filter((line) => line.trim());
   const leading = filled.filter((line) => /^\s*\d{1,4}\s+\S/.test(line)).length;
   const trailing = filled.filter((line) => /\S\s+\d{1,4}\s*$/.test(line)).length;
   // ARR numbers the left column on the left and the right column on the right.
   if (leading + trailing < filled.length * 0.4) {
-    return text;
+    return lines.join("\n");
   }
   const stripLeading = leading >= filled.length * 0.15;
   const stripTrailing = trailing >= filled.length * 0.15;

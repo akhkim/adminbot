@@ -215,6 +215,34 @@ describe("stripLineNumbers", () => {
     }
   });
 
+  // The ICLR review template: PDFium emits the margin numbers as a column of their own lines, one
+  // block per page. A 39-page submission carried over a thousand of them into what was scored.
+  it("removes the ICLR template's column of margin numbers", () => {
+    const column = (from: number) =>
+      Array.from({ length: 54 }, (_, i) => String(from + i).padStart(3, "0"));
+    const text = [
+      ...column(0),
+      "Under review as a conference paper at ICLR 2027",
+      "GROUP ALIGNMENT: INTERNAL AND EXTERNAL INCENTIVES",
+      "Paper under double-blind review",
+      ...column(54),
+      "AI agents are becoming increasingly autonomous.",
+    ].join("\n");
+    expect(stripLineNumbers(text)).toBe(
+      [
+        "Under review as a conference paper at ICLR 2027",
+        "GROUP ALIGNMENT: INTERNAL AND EXTERNAL INCENTIVES",
+        "Paper under double-blind review",
+        "AI agents are becoming increasingly autonomous.",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps numbers that are not a counting column", () => {
+    const text = ["Table 1", "12", "40", "7", "2024", "Results", "1", "2", "3"].join("\n");
+    expect(stripLineNumbers(text)).toBe(text);
+  });
+
   it("leaves a camera-ready paper alone", () => {
     const text = "A title\nSome text ending in a range 12\nMore text\nAnd more\nFinal line";
     expect(stripLineNumbers(text)).toBe(text);
