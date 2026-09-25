@@ -771,6 +771,7 @@ describe("one-off Drive PDF notice", () => {
   it("is gone once dismissed or expired", () => {
     // This file's jsdom has no localStorage; the notice needs one to remember the dismissal.
     const stored = new Map<string, string>();
+    const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       value: {
@@ -778,16 +779,21 @@ describe("one-off Drive PDF notice", () => {
         setItem: (key: string, value: string) => stored.set(key, value),
       },
     });
-    const page = renderPage(signedInAs("oscar"), "member");
-    page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
-    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
-    stored.clear();
-
-    vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
     try {
+      const page = renderPage(signedInAs("oscar"), "member");
+      page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+      stored.clear();
+
+      vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
       expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
     } finally {
       vi.useRealTimers();
+      if (originalStorage) {
+        Object.defineProperty(window, "localStorage", originalStorage);
+      } else {
+        Reflect.deleteProperty(window, "localStorage");
+      }
     }
   });
 });
