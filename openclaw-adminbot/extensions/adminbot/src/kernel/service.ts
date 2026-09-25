@@ -1205,6 +1205,10 @@ const DEFAULT_ACTION_POLICIES = {
   // already been superseded. The recipients are the operator-configured Slack ids, never a caller's
   // input, and the text is composed from stored scores. T1 for the same mechanical reason.
   "paper_integrity.report": autoPolicy("T1"),
+  // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
+  // refuses anything but single cells in the one score column, so it can fill that column and
+  // nothing else. The sheet id comes from the environment and the values from stored scores.
+  "paper_integrity.sheet_scores": autoPolicy("T1"),
   // Auto-approved on the same reasoning: the member and the channel are computed here from the
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.

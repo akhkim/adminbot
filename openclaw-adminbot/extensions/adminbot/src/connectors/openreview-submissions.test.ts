@@ -125,6 +125,47 @@ describe("OpenReview submission reader", () => {
     ).toMatchObject({ author_ids: ["~Ada_Lovelace1", "ada@example.test"] });
   });
 
+  // ICLR 2027 leaves `authorids` empty and gives each author as an object. Reading only the old
+  // shape found no authors on those papers, so the integrity alert could reach nobody but the PI.
+  it("reads names and ids from ICLR 2027's author objects", () => {
+    expect(
+      toSubmission({
+        id: "x1234",
+        content: {
+          title: { value: "A paper" },
+          pdf: { value: "/pdf/x.pdf" },
+          venueid: { value: "ICLR.cc/2027/Conference/Submission" },
+          authorids: { value: [] },
+          authors: {
+            value: [
+              { username: "~Ada_Lovelace1", fullname: "Ada Lovelace", institutions: [] },
+              { username: "~Grace_Hopper1", fullname: "Grace Hopper" },
+              { fullname: "  " },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      author_ids: ["~Ada_Lovelace1", "~Grace_Hopper1"],
+      author_names: ["Ada Lovelace", "Grace Hopper"],
+    });
+  });
+
+  it("keeps plain-string author names from older venues", () => {
+    expect(
+      toSubmission({
+        id: "x1234",
+        content: {
+          title: { value: "A paper" },
+          pdf: { value: "/pdf/x.pdf" },
+          venueid: { value: "ICLR.cc/2025/Conference/Submission" },
+          authorids: { value: ["~Ada_Lovelace1"] },
+          authors: { value: ["Ada Lovelace"] },
+        },
+      }),
+    ).toMatchObject({ author_ids: ["~Ada_Lovelace1"], author_names: ["Ada Lovelace"] });
+  });
+
   it("ignores notes without an id or title", () => {
     expect(toSubmission(null)).toBeUndefined();
     expect(
