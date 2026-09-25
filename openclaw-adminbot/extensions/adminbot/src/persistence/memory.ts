@@ -71,6 +71,7 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
@@ -151,6 +152,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
   saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
     this.openReviewCitationChecks.set(
+      JSON.stringify([check.submission_id, check.pdf_path]),
+      structuredClone(check),
+    );
+  }
+
+  private readonly paperAiTextChecks = new Map<string, PaperAiTextCheck>();
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    const check = this.paperAiTextChecks.get(JSON.stringify([submissionId, pdfPath]));
+    return check ? structuredClone(check) : undefined;
+  }
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return [...this.paperAiTextChecks.values()]
+      .filter((check) => submissionId === undefined || check.submission_id === submissionId)
+      .sort((a, b) => b.checked_at.localeCompare(a.checked_at))
+      .map((check) => structuredClone(check));
+  }
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    this.paperAiTextChecks.set(
       JSON.stringify([check.submission_id, check.pdf_path]),
       structuredClone(check),
     );

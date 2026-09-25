@@ -1112,6 +1112,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                             |
 | `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                       |
 | `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                |
+| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations |
 | `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                            |
 | `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                          |
 | `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                        |

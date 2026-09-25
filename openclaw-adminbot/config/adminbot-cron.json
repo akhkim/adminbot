@@ -34,6 +34,13 @@
       "timeoutSeconds": 300
     },
     {
+      "name": "adminbot-iclr-integrity",
+      "description": "Score each new ICLR submission version with Pangram and alert Slack on AI text or hallucinated citations, hourly",
+      "cron": "12 * * * *",
+      "argv": ["bash", "scripts/adminbot-iclr-integrity-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-meeting-artifacts",
       "description": "Meeting artifact drop-folder pass",
       "cron": "20 * * * *",

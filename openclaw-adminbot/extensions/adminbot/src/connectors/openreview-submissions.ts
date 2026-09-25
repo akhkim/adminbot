@@ -1,9 +1,12 @@
 // Reads the submissions the configured OpenReview account is an author of, and their PDFs.
 //
 // Authenticated, unlike `reference-scan.ts`'s public reader: almost every one of these papers is
-// under blind review and invisible anonymously. What comes back is restricted manuscript content,
-// so the only consumer is the local CheckIfExist extraction -- the PDF itself never leaves the
-// host, and nothing here may hand it to an upload-style scanner such as GPTZero.
+// under blind review and invisible anonymously. What comes back is restricted manuscript content.
+// The PDF itself never leaves the host and is never handed to an upload-style scanner such as
+// GPTZero. Two local consumers read it: the CheckIfExist extraction, which sends only citation
+// strings out, and -- when an operator opts in with ADMINBOT_ICLR_INTEGRITY_CHECKS=1 -- the ICLR
+// integrity watch, which sends the extracted main text of an ICLR submission under review to
+// Pangram for an AI-text score (see workflows/papers/iclr-integrity-watch.ts).
 //
 // Plain API2 HTTP rather than `openreview-py`, for the reasons given in `openreview-notes.ts`.
 
@@ -170,13 +173,22 @@ export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
   if (!pdfPath || !title || SETTLED_VENUE.test(venueId)) {
     return undefined;
   }
+  const authorIds = values(content.authorids).map((entry) => entry.trim());
   return {
     id,
     title,
     venue_id: venueId,
     pdf_path: pdfPath,
     modified_at: typeof record.tmdate === "number" ? record.tmdate : 0,
+    ...(authorIds.length ? { author_ids: authorIds } : {}),
   };
+}
+
+function values(field: unknown): string[] {
+  const raw = field && typeof field === "object" ? (field as { value?: unknown }).value : undefined;
+  return Array.isArray(raw)
+    ? raw.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
+    : [];
 }
 
 function value(field: unknown): string | undefined {
