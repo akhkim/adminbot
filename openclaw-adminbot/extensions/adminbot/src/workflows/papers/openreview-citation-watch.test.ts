@@ -486,6 +486,44 @@ describe("OpenReview citation watch", () => {
     expect(order).toEqual(["fresh", "retry"]);
   });
 
+  // What the first version of the fix got wrong on the live account: 327 submissions, most of a
+  // PI's history never checked. "Never tried first" put a retry on a paper due tomorrow behind
+  // every one of them.
+  it("retries a paper under active revision before the never-checked backlog", async () => {
+    const now = Date.parse("2026-09-25T21:00:00.000Z");
+    const order: string[] = [];
+    const { store, sweep } = setup({
+      submissions: [
+        submission({ id: "dueTomorrow", modified_at: now - 60 * 60_000 }),
+        submission({ id: "from2021", modified_at: Date.parse("2021-05-01T00:00:00.000Z") }),
+        submission({ id: "from2023", modified_at: Date.parse("2023-05-01T00:00:00.000Z") }),
+        submission({ id: "uploadedToday", modified_at: now - 30 * 60_000 }),
+      ],
+      pdf: (id) => {
+        order.push(id);
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    store.saveOpenReviewCitationCheck({
+      submission_id: "dueTomorrow",
+      pdf_path: "/pdf/v1.pdf",
+      title: "dueTomorrow",
+      venue_id: "ICLR.cc/2027/Conference/Submission",
+      status: "failed",
+      error: "About 9 of 37 references could not be checked.",
+      checked_at: "2026-09-25T20:00:00.000Z",
+      attempts: 2,
+      extractor_version: CITATION_EXTRACTOR_VERSION,
+    });
+    vi.useFakeTimers({ now, toFake: ["Date"] });
+    try {
+      await sweep();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(order).toEqual(["uploadedToday", "dueTomorrow", "from2023", "from2021"]);
+  });
+
   // Unanswered lookups are the databases' fault; a broken download or checker error is not.
   it("gives a partial check more retries than a hard failure", async () => {
     const unavailable = { ...notFound, status: "unavailable" as const };

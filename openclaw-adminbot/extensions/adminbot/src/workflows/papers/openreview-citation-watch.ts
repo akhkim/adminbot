@@ -35,6 +35,9 @@ export const MAX_CITATION_CHECK_ATTEMPTS = 3;
 // limit hardest when every lab is checking at once. Three tries spent on a bad hour left papers
 // permanently unchecked, so these get more. Still bounded, because each try is dozens of lookups.
 export const MAX_PARTIAL_CHECK_ATTEMPTS = 10;
+// A paper edited within this window is live work -- under review, being revised for a deadline --
+// and is checked ahead of the historical backlog, retries included.
+const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60_000;
 // Bump when extraction improves: a version it could not read before is read again once. 1 is the
 // first release, which could not split review-mode or ACL-style bibliographies at all.
 // 3 splits review-mode and team-report bibliographies and sizes merged chunks by entries.
@@ -168,20 +171,25 @@ export class OpenReviewCitationWatch {
   }
 
   /**
-   * Sort key for what to check next: a version never tried, newest upload first; then retries,
-   * least recently tried first.
+   * Sort key for what to check next, compared element by element.
    *
-   * Retries used to go newest-upload-first too, and a sweep stops at the first database back-off.
-   * So the paper edited most recently was retried every sweep, hit the back-off, and ended it --
-   * and the older papers behind it were never reached again, for days. Ordering retries by when
-   * they were last tried sends the one just tried to the back, so every waiting paper gets a turn.
+   * First, papers edited in the last month ahead of the historical backlog. A PI's history is
+   * hundreds of never-checked papers, and without this a retry on a paper due tomorrow waited
+   * behind all of them.
+   *
+   * Then, within each of those, a version never tried (newest upload first) ahead of retries, and
+   * retries least recently tried first. Retries used to go newest-upload-first, and a sweep stops at
+   * the first database back-off, so the paper edited most recently was retried every sweep, hit the
+   * back-off and ended it -- and the papers behind it were not reached again for days. Ordering
+   * retries by when they were last tried sends the one just tried to the back.
    */
-  private priority(submission: OpenReviewSubmission): [number, number] {
+  private priority(submission: OpenReviewSubmission): [number, number, number] {
+    const active = this.now().getTime() - submission.modified_at < ACTIVE_WINDOW_MS ? 0 : 1;
     const prior = this.deps.store.getOpenReviewCitationCheck(submission.id, submission.pdf_path);
     if (!prior) {
-      return [0, -submission.modified_at];
+      return [active, 0, -submission.modified_at];
     }
-    return [1, Date.parse(prior.checked_at) || 0];
+    return [active, 1, Date.parse(prior.checked_at) || 0];
   }
 
   private async sweep(initial: OpenReviewSubmission[], summary: OpenReviewCitationSweepSummary) {
@@ -194,7 +202,9 @@ export class OpenReviewCitationWatch {
           (submission) => !attempted.has(versionKey(submission)) && this.needsCheck(submission),
         )
         .map((submission) => ({ submission, key: this.priority(submission) }))
-        .toSorted((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1])[0]?.submission;
+        .toSorted(
+          (a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2],
+        )[0]?.submission;
       if (!next || this.deps.pausedUntil?.()) {
         // Paused: the next scheduled run resumes once the databases are answering again.
         return;
