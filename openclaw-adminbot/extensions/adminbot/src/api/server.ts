@@ -53,6 +53,10 @@ import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
+import {
+  adminBotMemberRequestStatuses,
+  type AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
 import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
 import {
   isAdminBotOpportunityCategory,
@@ -94,6 +98,11 @@ import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import {
+  type AdminBotStandingMeeting,
+  memberAttends,
+  standingMeetings,
+} from "../workflows/calendar/standing-meetings.js";
 import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
@@ -110,10 +119,13 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
+import { privilegeForMemberTypeChange } from "../workflows/members/member-type-access.js";
+import { sameMemberType } from "../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../workflows/members/travel-history.js";
 import {
   ADMINBOT_LAB_EMAIL_ENV,
   adminBotLabCalendarId,
+  type CalendarInviteRunner,
   createCalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster-sheet.js";
@@ -192,6 +204,7 @@ import {
   readMemberSheet,
   readRosterSheet,
 } from "./server.member-sheet.js";
+import { applyMeetingSelection, applyMemberTypeChange } from "./server.member-type-change.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
@@ -601,6 +614,8 @@ type AdminBotRouteContext = {
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
+  /** Grants lab-calendar read access, silently. Shared with auth so both use one runner. */
+  inviteToLabCalendar: CalendarInviteRunner;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
@@ -771,6 +786,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
       DEFAULT_ALLOWED_ORIGINS,
   );
+  const calendarInviteRunner = options.calendarInviteRunner ?? createCalendarInviteRunner();
   const auth = new AdminBotAuthService({
     store,
     // Prepare the governed profile without writing; approval commits the member, credential, and
@@ -786,7 +802,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
-    inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
+    inviteToLabCalendar: calendarInviteRunner,
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
@@ -973,6 +989,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
     readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
     labCalendar: resolveLabCalendar(),
+    inviteToLabCalendar: calendarInviteRunner,
     draftCalendarEvent:
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
@@ -1570,6 +1587,98 @@ async function handleDeviceTokenRoute(
 
 // An approval must name a real person, so the shared service principal (which every agent tool
 // call authenticates as) cannot supply one.
+/**
+ * The Monday group meeting as it stands: every live series id and the union of their guests.
+ *
+ * Shared by the membership sweep and a Lab Members type change, so both write to the same series.
+ * A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead is
+ * kept, not just the first: once somebody edits the meeting "this and following" in Google, the
+ * later Mondays belong to a new `<series>_R<instant>` series and the configured id names a series
+ * that has already ended. Writing to that id is what used to happen -- it re-sent the dead series
+ * to everyone on it and left the live meeting untouched, so the same removals were proposed again
+ * the next morning.
+ */
+async function readGroupMeetingSeries(
+  ctx: AdminBotRouteContext,
+  calendarId: string,
+  eventId?: string,
+): Promise<
+  | { calendarId: string; seriesId: string; targets: string[]; attendees: string[] }
+  | { error: { status: number; message: string } }
+> {
+  if (!ctx.readCalendarEvents) {
+    return { error: { status: 503, message: "calendar reading is not configured" } };
+  }
+  const seriesId = groupMeetingSeriesId(eventId || resolveGroupMeetingEventId());
+  let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
+  try {
+    events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+  } catch (error) {
+    // Plans are computed from this read. A failed read must not become "the meeting has no
+    // attendees", which is a proposal to empty it.
+    return {
+      error: {
+        status: 502,
+        message: `could not read the calendar: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    };
+  }
+  const occurrences = events.filter((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
+  if (occurrences.length === 0) {
+    return {
+      error: {
+        status: 404,
+        message: `no event ${seriesId} on calendar ${calendarId} in the read window`,
+      },
+    };
+  }
+  const targets = [
+    ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
+  ];
+  // The union, so somebody who is only on a later split still gets reconciled.
+  const attendees = [
+    ...new Map(
+      occurrences
+        .flatMap((occurrence) => occurrence.attendees ?? [])
+        .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
+    ).values(),
+  ];
+  return { calendarId, seriesId, targets, attendees };
+}
+
+/**
+ * The lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) with who is on each.
+ *
+ * What the Lab Members form's Meetings checkboxes offer. A failed read is an error, never an empty
+ * list: an empty list would read as "on no meetings" and a save would then remove them from all.
+ */
+async function readStandingMeetings(
+  ctx: AdminBotRouteContext,
+): Promise<
+  | { calendarId: string; meetings: AdminBotStandingMeeting[] }
+  | { error: { status: number; message: string } }
+> {
+  if (!ctx.readCalendarEvents) {
+    return { error: { status: 503, message: "calendar reading is not configured" } };
+  }
+  const calendarId = ctx.labCalendar.id;
+  try {
+    const events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+    return { calendarId, meetings: standingMeetings(events, resolveGroupMeetingEventId()) };
+  } catch (error) {
+    return {
+      error: {
+        status: 502,
+        message: `could not read the calendar: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    };
+  }
+}
+
 function approverIdentityFor(
   principal: AdminBotPrincipal,
 ): { approver_role: string; approver_id: string } | undefined {
@@ -3383,6 +3492,21 @@ async function handleAuthenticatedRoute(
     await handleLabSharingRoute(req, res, url, service, principal.member.id);
     return;
   }
+  // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
+  // every /lab/members/:id pattern so "requests" is never read as a member id. A member session
+  // throughout -- the service principal speaks for whoever is chatting, so it can neither file a
+  // request in a real member's name nor approve one.
+  if (
+    url.pathname === "/lab/members/requests" ||
+    url.pathname.startsWith("/lab/members/requests/")
+  ) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    await handleMemberRequestRoute(req, res, ctx, url, principal);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab/members/self") {
     if (principal.kind !== "member") {
       sendJson(res, 403, { error: { message: "member session required" } });
@@ -3469,6 +3593,21 @@ async function handleAuthenticatedRoute(
           }
         : result,
     );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/meetings") {
+    // The Lab Members form's Meetings checkboxes. Guest lists name real people's addresses, so
+    // this is for an admin session only, like the form that uses it.
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "the meeting list needs an admin session" } });
+      return;
+    }
+    const standing = await readStandingMeetings(ctx);
+    if ("error" in standing) {
+      sendJson(res, standing.error.status, { error: { message: standing.error.message } });
+      return;
+    }
+    sendJson(res, 200, { meetings: standing.meetings });
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members/duplicates") {
@@ -4182,17 +4321,8 @@ async function handleAuthenticatedRoute(
     // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
     // to the database and do not come through here.
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      sendServiceResult(
-        res,
-        service.upsertLabMember(
-          { ...(body as AdminBotLabMemberInput), id: memberId },
-          // An admin correcting somebody's record is not that member adopting the tool, so this is
-          // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
-          // "who typed this" has an answer either way -- and comes from principalActor so that an
-          // admin doing this while viewing as another admin is still recorded as themselves.
-          { source: "admin", actor: principalActor(principal) },
-        ),
-      );
+      const saved = await saveLabMemberAsAdmin(ctx, principal, memberId, body);
+      sendJson(res, saved.status, saved.body);
       return;
     }
     if (principal.kind === "service") {
@@ -4348,57 +4478,18 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.readCalendarEvents) {
-      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
-      return;
-    }
     const body = readRecord(await readJsonOrEmpty(req));
     const surface = asString(body.surface) === "lab_calendar" ? "lab_calendar" : "group_meeting";
-    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
-    const seriesId = groupMeetingSeriesId(asString(body.event_id) || resolveGroupMeetingEventId());
-
-    let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
-    try {
-      events = await ctx.readCalendarEvents({ calendarId, max: 250 });
-    } catch (error) {
-      // The plan is computed from this read. A failed read must not become "the meeting has no
-      // attendees", which is a proposal to empty it.
-      sendJson(res, 502, {
-        error: {
-          message: `could not read the calendar: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      });
-      return;
-    }
-
-    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead
-    // is kept, not just the first: once somebody edits the meeting "this and following" in Google,
-    // the later Mondays belong to a new `<series>_R<instant>` series and the configured id names a
-    // series that has already ended. Writing to that id is what used to happen -- it re-sent the
-    // dead series to everyone on it and left the live meeting untouched, so the same removals were
-    // proposed again the next morning.
-    const occurrences = events.filter(
-      (candidate) => groupMeetingSeriesId(candidate.id) === seriesId,
+    const meeting = await readGroupMeetingSeries(
+      ctx,
+      asString(body.calendar_id) || ctx.labCalendar.id,
+      asString(body.event_id) || undefined,
     );
-    if (occurrences.length === 0) {
-      sendJson(res, 404, {
-        error: { message: `no event ${seriesId} on calendar ${calendarId} in the read window` },
-      });
+    if ("error" in meeting) {
+      sendJson(res, meeting.error.status, { error: { message: meeting.error.message } });
       return;
     }
-    const targets = [
-      ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
-    ];
-    // The union, so somebody who is only on a later split still gets reconciled.
-    const attendees = [
-      ...new Map(
-        occurrences
-          .flatMap((occurrence) => occurrence.attendees ?? [])
-          .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
-      ).values(),
-    ];
+    const { calendarId, seriesId, targets, attendees } = meeting;
 
     sendServiceResult(
       res,
@@ -6076,6 +6167,237 @@ function createOpenReviewCitationWatch(
       }),
     ...(notifyEmail ? { notifyEmail } : {}),
   });
+}
+
+async function handleMemberRequestRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  url: URL,
+  principal: AdminBotMemberPrincipal,
+): Promise<void> {
+  const { service } = ctx;
+  const isAdmin = principal.member.privilege_level === "admin";
+  if (req.method === "GET" && url.pathname === "/lab/members/requests") {
+    const status = url.searchParams.get("status");
+    const result = service.listMemberRequests({
+      memberId: principal.member.id,
+      isAdmin,
+      ...(adminBotMemberRequestStatuses.includes(status as AdminBotMemberRequestStatus)
+        ? { status: status as AdminBotMemberRequestStatus }
+        : {}),
+    });
+    if (!result.ok) {
+      sendServiceResult(res, result);
+      return;
+    }
+    // What approving would grant, worked out the same way the save will work it out, so the admin
+    // reads "this makes them an admin" on the card rather than finding out afterwards.
+    sendJson(res, 200, {
+      requests: result.payload.requests.map((request) => ({
+        ...request,
+        requested_by_name: ctx.store.getLabMember(request.requested_by)?.name,
+        access_level:
+          privilegeForMemberTypeChange(
+            { privilege_level: "external_collaborator" },
+            request.profile.member_type,
+          )?.privilege_level ?? "external_collaborator",
+      })),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/lab/members/requests") {
+    sendServiceResult(
+      res,
+      service.submitMemberRequest(principal.member.id, readRecord(await readJson(req))),
+    );
+    return;
+  }
+  const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
+  if (req.method === "POST" && decision?.[1] && decision[2]) {
+    if (!isAdmin) {
+      sendJson(res, 403, { error: { message: "only an admin can decide a member request" } });
+      return;
+    }
+    const requestId = decodeURIComponent(decision[1]);
+    const body = readRecord(await readJson(req));
+    if (decision[2] === "reject") {
+      const note = typeof body.note === "string" ? body.note : undefined;
+      sendServiceResult(res, service.rejectMemberRequest(requestId, principal.member.id, note));
+      return;
+    }
+    const claimed = service.claimMemberRequest(requestId, principal.member.id);
+    if (!claimed.ok) {
+      sendServiceResult(res, claimed);
+      return;
+    }
+    const request = claimed.payload.request;
+    // The same id scheme self-signup uses: the requester never picks one, so there is nothing to
+    // collide with an existing member's.
+    const memberId = `mem_${randomUUID()}`;
+    let saved: { status: number; body: unknown };
+    try {
+      saved = await saveLabMemberAsAdmin(ctx, principal, memberId, {
+        ...request.profile,
+        ...(request.meetings ? { meetings: request.meetings } : {}),
+      });
+    } catch (error) {
+      service.settleMemberRequestApproval(request, { failed: true });
+      throw error;
+    }
+    if (saved.status >= 400) {
+      service.settleMemberRequestApproval(request, { failed: true });
+      sendJson(res, saved.status, saved.body);
+      return;
+    }
+    const approved = service.settleMemberRequestApproval(request, { memberId });
+    sendJson(res, 200, { request: approved, member: saved.body });
+    return;
+  }
+  const withdraw = /^\/lab\/members\/requests\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && withdraw?.[1]) {
+    sendServiceResult(
+      res,
+      service.withdrawMemberRequest(decodeURIComponent(withdraw[1]), principal.member.id),
+    );
+    return;
+  }
+  sendJson(res, 404, { error: { message: "not found" } });
+}
+
+/**
+ * The admin's write of one roster record: the Add member and Edit member forms, and the approval of
+ * a member request, which is the same save made on the requester's behalf. One function so that
+ * approving a request can never do less (or more) than an admin typing the record in themselves --
+ * Member Type still sets the access level, and the Meetings boxes still reach the calendar.
+ */
+async function saveLabMemberAsAdmin(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotMemberPrincipal,
+  memberId: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  const { service } = ctx;
+  const existing = ctx.store.getLabMember(memberId);
+  // `meetings` is not a field on the record: it is the Meetings checkboxes, applied to the
+  // calendar below, and must not be stored on the member.
+  const { meetings: meetingField, ...fields } = body;
+  const input = fields as AdminBotLabMemberInput;
+  const selectedMeetings = Array.isArray(meetingField)
+    ? meetingField.filter((value): value is string => typeof value === "string")
+    : undefined;
+  // Member Type decides the access level: the form has no separate Privilege field. A change is
+  // re-onboarding without the welcome mail -- the rooms, meeting and sheet row are brought into
+  // line below, approved by this admin's click. A new record takes its level from the type too.
+  const typeChanged =
+    typeof input.member_type === "string" &&
+    (existing
+      ? !sameMemberType(existing.member_type, input.member_type)
+      : input.member_type.trim() !== "");
+  const implied = typeChanged
+    ? privilegeForMemberTypeChange(
+        existing ?? { privilege_level: "external_collaborator" },
+        input.member_type,
+      )
+    : undefined;
+  const explicitPrivilege =
+    input.privilege_level !== undefined && input.privilege_level !== existing?.privilege_level;
+  const explicitSubgroup =
+    input.collaborator_subgroup !== undefined &&
+    input.collaborator_subgroup !== existing?.collaborator_subgroup;
+  const nextPrivilege =
+    implied && !explicitPrivilege
+      ? implied.privilege_level
+      : (input.privilege_level ?? existing?.privilege_level);
+  // An admin cannot take away their own admin access: done by mistake, nobody is left signed in
+  // who can put it back. Another admin can.
+  if (
+    memberId === principal.member.id &&
+    existing?.privilege_level === "admin" &&
+    nextPrivilege !== "admin"
+  ) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          message: "You can't remove your own admin access. Ask another admin to change it.",
+        },
+      },
+    };
+  }
+  const saved = service.upsertLabMember(
+    {
+      ...input,
+      ...(implied && !explicitPrivilege
+        ? {
+            privilege_level: implied.privilege_level,
+            ...(explicitSubgroup || !implied.collaborator_subgroup
+              ? {}
+              : { collaborator_subgroup: implied.collaborator_subgroup }),
+          }
+        : {}),
+      id: memberId,
+    },
+    // An admin correcting somebody's record is not that member adopting the tool, so this is
+    // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
+    // "who typed this" has an answer either way -- and comes from principalActor so that an
+    // admin doing this while viewing as another admin is still recorded as themselves.
+    { source: "admin", actor: principalActor(principal) },
+  );
+  const approver = approverIdentityFor(principal);
+  if (!saved.ok || !approver || (!(typeChanged && existing) && !selectedMeetings)) {
+    return saved.ok
+      ? { status: saved.status, body: saved.payload }
+      : { status: saved.status, body: { error: saved.error } };
+  }
+  const actor = principalActor(principal);
+  const standing = selectedMeetings ? await readStandingMeetings(ctx) : undefined;
+  // The Monday meeting has two possible sources in one save: the type, and its checkbox. The
+  // checkbox wins only when the admin actually changed it; otherwise the type decides and the
+  // unchanged tick must not undo that.
+  const groupMeeting =
+    standing && !("error" in standing)
+      ? standing.meetings.find((meeting) => meeting.kind === "group")
+      : undefined;
+  const groupMeetingExplicit =
+    groupMeeting !== undefined &&
+    (selectedMeetings ?? []).includes(groupMeeting.id) !==
+      memberAttends(groupMeeting, existing ?? saved.payload);
+  const response: Record<string, unknown> = { ...saved.payload };
+  if (typeChanged && existing) {
+    response.member_type_change = await applyMemberTypeChange(
+      {
+        service,
+        approver,
+        actor,
+        ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
+        readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
+        inviteToLabCalendar: ctx.inviteToLabCalendar,
+        skipGroupMeeting: groupMeetingExplicit,
+        recordAudit: (event) =>
+          ctx.store.recordAudit({
+            id: `aud_${randomUUID()}`,
+            timestamp: new Date().toISOString(),
+            ...event,
+          }),
+      },
+      existing,
+      saved.payload,
+    );
+  }
+  if (selectedMeetings && standing) {
+    response.meeting_changes =
+      "error" in standing
+        ? [{ step: "meeting", status: "failed", detail: standing.error.message }]
+        : await applyMeetingSelection(
+            { service, approver },
+            saved.payload,
+            standing.calendarId,
+            standing.meetings.filter((meeting) => meeting.kind !== "group" || groupMeetingExplicit),
+            selectedMeetings,
+          );
+  }
+  return { status: 200, body: response };
 }
 
 /**

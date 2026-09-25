@@ -567,6 +567,17 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   return args;
 }
 
+/**
+ * AdminBot's calendar writes never email anyone.
+ *
+ * Every create, invite, reschedule, attendee change and cancellation passes this to gog's
+ * `--send-updates`. The event still appears on, moves on, or disappears from each guest's
+ * calendar; Google just does not mail them about it. With `all`, one approved change emailed the
+ * whole guest list -- e.g. the Monday meeting sent a fresh invite to every member whenever
+ * somebody was added.
+ */
+const CALENDAR_SEND_UPDATES = "none";
+
 function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
   const payload = requirePayload(proposal);
   const attendees = recipients(payload.attendees);
@@ -583,7 +594,7 @@ function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
     "--to",
     requireString(payload, "to"),
     "--send-updates",
-    proposal.type === "calendar.send_invite" ? "all" : "none",
+    CALENDAR_SEND_UPDATES,
   );
   appendOptional(args, "--attendees", attendees);
   appendOptional(args, "--description", optionalString(payload, "description"));
@@ -610,7 +621,7 @@ function buildCalendarUpdateArgs(proposal: AdminBotStoredProposal): string[] {
     "--to",
     requireString(payload, "to"),
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   appendOptional(args, "--summary", optionalString(payload, "summary"));
   appendOptional(args, "--attendees", recipients(payload.attendees));
@@ -642,7 +653,7 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
     "--add-attendee",
     attendees,
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   return args;
 }
@@ -661,7 +672,7 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
  * `event_ids` rather than one id because a standing meeting edited "this and following" becomes
  * several series, and a departure has to come off every one that still has Mondays ahead.
  *
- * Silent (`--send-updates none`). Google treats a whole-list replace as an edit for every guest,
+ * Silent (CALENDAR_SEND_UPDATES). Google treats a whole-list replace as an edit for every guest,
  * so with `all` every remaining member got a fresh copy of the Monday meeting invite each time
  * somebody else was dropped. The people removed are not told either: a membership sweep tidying
  * the guest list is not news to anyone. gog sends bare `{email}` objects, so the write does reset
@@ -714,7 +725,7 @@ async function removeCalendarAttendees(
       "--attendees",
       keep.map(attendeeSpec).join(","),
       "--send-updates",
-      "none",
+      CALENDAR_SEND_UPDATES,
     );
     await run(args);
   }
@@ -761,7 +772,7 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
     optionalString(payload, "calendar_id") ?? "primary",
     requireString(payload, "event_id"),
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   return args;
 }

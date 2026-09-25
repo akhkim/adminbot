@@ -164,6 +164,56 @@ export type BadgeNominationView = {
 
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
+/**
+ * One of the lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) and who is on it.
+ * Mirrors `AdminBotStandingMeeting` (extensions/adminbot/src/workflows/calendar/standing-meetings.ts).
+ */
+export type StandingMeeting = {
+  id: string;
+  title: string;
+  kind: "group" | "theme" | "project";
+  event_ids: string[];
+  /** Lowercased addresses. */
+  attendees: string[];
+};
+
+/** The Meetings checkboxes' options. Admin session only; a failed read is an error, not []. */
+export async function fetchStandingMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<StandingMeeting[]>> {
+  const result = await authedJson(baseUrl, "/lab/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const meetings = (result.body as { meetings?: unknown }).meetings;
+  return { ok: true, value: Array.isArray(meetings) ? (meetings as StandingMeeting[]) : [] };
+}
+
+/**
+ * What a Member Type change on the Lab Members tab did, step by step. Mirrors the service's
+ * `MemberTypeChangeResult` (extensions/adminbot/src/api/server.member-type-change.ts).
+ */
+export type MemberTypeChangeSummary = {
+  from?: string;
+  to?: string;
+  privilege_level: { from: string; to: string };
+  collaborator_subgroup: { from?: string; to?: string };
+  steps: Array<{
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
+    target?: string;
+    status: "done" | "skipped" | "failed";
+    detail?: string;
+    proposal_id?: string;
+  }>;
+};
+
 export type LabMember = {
   id?: string;
   name?: string | null;
@@ -255,6 +305,11 @@ export type ProfilePhotoPolishResult = {
 // member self-edit), so this type being permissive here is not itself a trust
 // boundary.
 export type AdminLabMemberUpdate = {
+  /**
+   * Ids of the standing meetings to be on, from the Meetings checkboxes. Applied to the calendar,
+   * never stored on the record; sent only when the list was loaded.
+   */
+  meetings?: string[];
   name?: string;
   email?: string;
   slack_user_id?: string;
@@ -656,7 +711,14 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LabMember>> {
+): Promise<
+  AuthResult<
+    LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    }
+  >
+> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}`,
@@ -676,7 +738,13 @@ export async function upsertLabMemberAsAdmin(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body as LabMember };
+  return {
+    ok: true,
+    value: result.body as LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    },
+  };
 }
 
 /**
@@ -1069,6 +1137,139 @@ export async function queueMemberOnboardingGuide(
     };
   }
   return { ok: true, value: result.body as MemberOnboardingGuideQueued };
+}
+
+/**
+ * A request to add somebody to the roster, as GET /lab/members/requests returns it. Mirrors
+ * `AdminBotMemberRequest` (extensions/adminbot/src/contracts/member-requests.ts) plus the two
+ * fields the route adds for the reader.
+ */
+export type MemberRequestView = {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  requested_by: string;
+  requested_by_name?: string;
+  profile: {
+    name: string;
+    email: string;
+    member_type?: string;
+    affiliation?: string;
+    research_topics?: string;
+    personal_website?: string;
+  };
+  meetings?: string[];
+  note?: string;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  decision_note?: string;
+  member_id?: string;
+  /** The access level approving would grant, worked out from the requested Member Type. */
+  access_level?: string;
+};
+
+export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
+
+/**
+ * One call to /lab/members/requests. Every refusal the service makes here names the problem --
+ * "already on the roster", "already waiting for review", "this request was already approved" --
+ * so its sentence is passed through whatever the status, as queueMemberOnboardingGuide does.
+ */
+async function memberRequestCall<T>(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST" | "DELETE",
+  sessionToken: string,
+  body?: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/requests${path}`,
+    method,
+    sessionToken,
+    body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    const message = typeof refusal === "string" && refusal.trim() ? refusal.trim() : undefined;
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden", ...(message ? { message } : {}) };
+    }
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(message ? { message } : {}),
+    };
+  }
+  return { ok: true, value: result.body as T };
+}
+
+export async function fetchMemberRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberRequestView[]>> {
+  const result = await memberRequestCall<{ requests?: MemberRequestView[] }>(
+    baseUrl,
+    "",
+    "GET",
+    sessionToken,
+  );
+  return result.ok
+    ? { ok: true, value: Array.isArray(result.value.requests) ? result.value.requests : [] }
+    : result;
+}
+
+export async function submitMemberRequest(
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
+}
+
+export async function approveMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/approve`,
+    "POST",
+    sessionToken,
+    {},
+  );
+}
+
+export async function rejectMemberRequest(
+  requestId: string,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/reject`,
+    "POST",
+    sessionToken,
+    note ? { note } : {},
+  );
+}
+
+export async function withdrawMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: true }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}`,
+    "DELETE",
+    sessionToken,
+  );
 }
 
 // Approvals go over the member session rather than the gateway tool: the service records the

@@ -8,7 +8,11 @@
  * reach what -- the approval card is where that gets a second pair of eyes. Onboarding produces
  * `email.send` proposals for the same reason: nothing reaches Gmail without passing the gate.
  */
-import type { AdminBotSheetValueRange, AdminBotStoredProposal } from "../contracts/actions.js";
+import type {
+  AdminBotLabMember,
+  AdminBotSheetValueRange,
+  AdminBotStoredProposal,
+} from "../contracts/actions.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
   planSheetEdits,
@@ -16,7 +20,12 @@ import {
   toSheetGrid,
   touchesAccess,
 } from "../workflows/members/member-sheet-grid.js";
-import { parseRosterSheet, type RosterSheetParse } from "../workflows/members/roster-sync.js";
+import {
+  parseRosterSheet,
+  rosterRowForMember,
+  type RosterSheetParse,
+  sameMemberType,
+} from "../workflows/members/roster-sync.js";
 import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import { memberIdForRow } from "../workflows/onboarding/onboarding-sweep.js";
@@ -452,11 +461,12 @@ const ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
  * Propose, approve as the clicking admin, and execute, in one call.
  *
  * Add row is one deliberate click by an administrator on a form that says everything it will do,
- * and "immediately" is the requirement -- so the click is the approval. It still goes through the
+ * and "immediately" is the requirement -- so the click is the approval. A Member Type change saved
+ * on the Lab Members tab is applied the same way (server.member-type-change.ts). It still goes through the
  * gate rather than around it: a typed proposal, an approval naming the admin, an execution and its
  * audit, exactly what Pending Actions records when the same admin approves there.
  */
-async function approveAndExecute(
+export async function approveAndExecute(
   service: AdminBotService,
   proposal: AdminBotStoredProposal,
   approver: MemberSheetApprover,
@@ -672,4 +682,79 @@ export async function addMemberSheetRow(
 /** Same rule as `a1Range`: quote a tab title only when Sheets requires it. */
 function quoteTab(tab: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]*$/u.test(tab) ? tab : `'${tab.replace(/'/gu, "''")}'`;
+}
+
+/** How writing a Member Type back to the sheet went. */
+export type MemberTypeSheetWrite =
+  | { status: "done"; proposal_id: string; sheet_row: number }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string; proposal_id?: string };
+
+/**
+ * Put a member's new Member Type on their sheet row, approved by the admin who changed it.
+ *
+ * The nightly roster sync copies the sheet's Member Type onto the database. A type changed on the
+ * Lab Members tab and left off the sheet is therefore undone the next morning -- and the sync then
+ * files the reverse access changes as proposals. Writing the cell keeps the two agreeing.
+ *
+ * Guarded like a grid edit: the cell must still hold what the sheet said when it was read, so a
+ * concurrent edit by somebody working in the spreadsheet is not overwritten.
+ */
+export async function writeMemberTypeToSheet(
+  service: AdminBotService,
+  source: MemberSheetSource,
+  member: AdminBotLabMember,
+  approver: MemberSheetApprover,
+  actor: string,
+): Promise<MemberTypeSheetWrite> {
+  const target = await resolveTarget(source);
+  const grid = toSheetGrid(await source.read(rangeFor(target.tab)));
+  const typeAt = grid.header.indexOf(MEMBER_TYPE_HEADER);
+  if (typeAt < 0) {
+    return { status: "failed", reason: `the sheet has no "${MEMBER_TYPE_HEADER}" column` };
+  }
+  let parsed: RosterSheetParse;
+  try {
+    parsed = parseRosterSheet(
+      grid.header,
+      grid.rows.map((row) => ({ sheetRow: row.sheetRow, cells: row.cells })),
+    );
+  } catch (error) {
+    return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
+  }
+  const row = rosterRowForMember(parsed, member);
+  if (!row) {
+    return {
+      status: "skipped",
+      reason: "no single sheet row matches this member's id or addresses",
+    };
+  }
+  const value = member.member_type ?? "";
+  if (sameMemberType(row.member_type, value)) {
+    return { status: "skipped", reason: `row ${row.sheet_row} already says "${row.member_type}"` };
+  }
+  const planned = await proposeMemberSheetEdits(
+    service,
+    source,
+    {
+      edits: [{ sheet_row: row.sheet_row, column: typeAt, value }],
+      expected: { [`${row.sheet_row}:${typeAt}`]: row.member_type },
+    },
+    actor,
+  );
+  if ("error" in planned) {
+    return { status: "failed", reason: planned.error.message };
+  }
+  if (!planned.proposal) {
+    return {
+      status: "skipped",
+      reason: planned.conflicts.length
+        ? `row ${row.sheet_row} changed while it was being read; left as it is`
+        : "nothing to write",
+    };
+  }
+  const ran = await approveAndExecute(service, planned.proposal, approver);
+  return ran.ok
+    ? { status: "done", proposal_id: planned.proposal.id, sheet_row: row.sheet_row }
+    : { status: "failed", reason: ran.reason, proposal_id: planned.proposal.id };
 }

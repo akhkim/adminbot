@@ -3,8 +3,10 @@ import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   hasAccessConsequences,
   lostSurfaces,
+  memberAccessDelta,
   memberTypeAccessDelta,
   memberTypeAccessProfile,
+  privilegeForMemberTypeChange,
 } from "./member-type-access.js";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -117,5 +119,95 @@ describe("memberTypeAccessDelta", () => {
 
     expect(delta.slack_channels_to_remove).toEqual([]);
     expect(delta.slack_channels_to_add).toContain("jinesis-active");
+  });
+});
+
+describe("privilegeForMemberTypeChange", () => {
+  const external = (overrides: Partial<AdminBotLabMember> = {}) =>
+    member({
+      privilege_level: "external_collaborator",
+      member_type: "coauthor-minor",
+      collaborator_subgroup: "coauthor_minor",
+      ...overrides,
+    });
+
+  it("makes a full member a member, and keeps somebody on trial on trial", () => {
+    expect(privilegeForMemberTypeChange(external(), "full")).toEqual({ privilege_level: "member" });
+    expect(privilegeForMemberTypeChange(member({ privilege_level: "trial" }), "full")).toEqual({
+      privilege_level: "trial",
+    });
+  });
+
+  it("files a collaboration type under external_collaborator with that type's subgroup", () => {
+    expect(privilegeForMemberTypeChange(member(), "alumni")).toEqual({
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "alumni",
+    });
+    // Most-committed token wins, as on the live roster.
+    expect(privilegeForMemberTypeChange(member(), "alumni, coauthor-major")).toEqual({
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "coauthor_major",
+    });
+  });
+
+  it("grants admin from the admin tag, and takes it away when the tag goes", () => {
+    expect(privilegeForMemberTypeChange(member(), "full, adminbot-admin")).toEqual({
+      privilege_level: "admin",
+    });
+    // The legacy spelling on the live roster means the same.
+    expect(privilegeForMemberTypeChange(member(), "full, admin")).toEqual({
+      privilege_level: "admin",
+    });
+    const admin = member({ privilege_level: "admin" });
+    expect(privilegeForMemberTypeChange(admin, "full")).toEqual({ privilege_level: "member" });
+    expect(privilegeForMemberTypeChange(admin, "alumni")).toEqual({
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "alumni",
+    });
+    // No other signal: least privilege, not a kept admin.
+    expect(privilegeForMemberTypeChange(admin, "mailing-list")).toEqual({
+      privilege_level: "external_collaborator",
+    });
+  });
+
+  it("leaves types that say nothing about access alone", () => {
+    expect(privilegeForMemberTypeChange(external(), "mailing-list")).toBeUndefined();
+    expect(privilegeForMemberTypeChange(external(), "")).toBeUndefined();
+  });
+});
+
+describe("memberAccessDelta", () => {
+  it("does not take a newly full member out of the lab's own rooms", () => {
+    const before = member({
+      privilege_level: "external_collaborator",
+      member_type: "coauthor-major",
+      collaborator_subgroup: "coauthor_major",
+    });
+    const after = member({ privilege_level: "member", member_type: "full" });
+
+    const delta = memberAccessDelta(before, after);
+
+    // coauthor_major's matrix rows are gone, but a full member is entitled to more than any row.
+    expect(delta.revoked.length).toBeGreaterThan(0);
+    expect(delta.slack_channels_to_remove).toEqual([]);
+    expect(delta.lab_calendar).toBe("gained");
+  });
+
+  it("follows a subgroup that moved with the type, which the type-only diff cannot see", () => {
+    const before = member({
+      privilege_level: "external_collaborator",
+      member_type: "coauthor-major",
+      collaborator_subgroup: "coauthor_major",
+    });
+    const after = { ...before, member_type: "alumni", collaborator_subgroup: "alumni" as const };
+
+    // The type-only diff keeps the pinned subgroup, so it sees no matrix change at all.
+    expect(memberTypeAccessDelta(before, "alumni").revoked).toEqual([]);
+    const delta = memberAccessDelta(before, after);
+    expect(delta.group_meeting).toBe("lost");
+    expect(delta.revoked.map((grant) => grant.item)).toContain("active_channels");
+    expect(delta.slack_channels_to_remove).toEqual(
+      expect.arrayContaining(["jinesis-active", "random-active"]),
+    );
   });
 });
