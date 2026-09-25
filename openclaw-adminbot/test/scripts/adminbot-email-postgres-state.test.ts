@@ -54,8 +54,10 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
         internalDate: "1789754400000",
       };
       const classification = { category: "unknown", reason: "synthetic" };
+      expect(await postgres.status(message.id)).toBe(sqlite.status(message.id));
       expect(await postgres.isSettled(message.id)).toBe(sqlite.isSettled(message.id));
       expect(await postgres.hasInProgressMessages()).toBe(sqlite.hasInProgressMessages());
+      expect(await postgres.status(message.id)).toBe(sqlite.status(message.id));
       expect(await postgres.begin(message, classification)).toBe(
         sqlite.begin(message, classification),
       );
@@ -70,6 +72,7 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
       );
       sqlite.finish(message.id, "completed");
       await postgres.finish(message.id, "completed");
+      expect(await postgres.status(message.id)).toBe(sqlite.status(message.id));
       expect(await postgres.isSettled(message.id)).toBe(sqlite.isSettled(message.id));
       expect(await postgres.hasInProgressMessages()).toBe(sqlite.hasInProgressMessages());
       expect(await postgres.begin(message, classification)).toBe(

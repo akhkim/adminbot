@@ -39,11 +39,15 @@ export class AdminBotPostgresEmailState {
   }
 
   async isSettled(messageId: string): Promise<boolean> {
+    return ["completed", "needs_review", "reviewed"].includes((await this.status(messageId)) ?? "");
+  }
+
+  async status(messageId: string): Promise<string | undefined> {
     const result = await this.pool.query<{ status: string }>(
       `SELECT status FROM ${this.messageTable} WHERE message_id = $1`,
       [messageId],
     );
-    return ["completed", "needs_review", "reviewed"].includes(result.rows[0]?.status ?? "");
+    return result.rows[0]?.status;
   }
 
   async hasInProgressMessages(): Promise<boolean> {

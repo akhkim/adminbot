@@ -584,16 +584,17 @@ export class StateStore {
    * reconciliation before a replay because its external effect may already have happened.
    */
   isSettled(messageId: string): boolean {
-    const row = this.db
-      .prepare(
-        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
-      )
-      .get(messageId) as { status?: string } | undefined;
+    const status = this.status(messageId);
     return (
-      row?.status === "completed" ||
-      row?.status === "needs_review" ||
-      row?.status === "reviewed"
+      status === "completed" ||
+      status === "needs_review" ||
+      status === "reviewed"
     );
+  }
+
+  status(messageId: string): string | undefined {
+    return (this.db.prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .get(messageId) as { status?: string } | undefined)?.status;
   }
 
   hasInProgressMessages(): boolean {
@@ -1667,12 +1668,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
         try {
           if (fileRecordingNotice(message, state, databasePath)) {
-            const outcome = state.db
-              .prepare(
-                "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-              )
-              .get(message.id) as { status?: string } | undefined;
-            if (outcome?.status === "needs_review") {
+            if (state.status(message.id) === "needs_review") {
               summary.needs_review += 1;
               await file(message.id, "needs_review");
             } else {
@@ -1718,26 +1714,17 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           summary.skipped += 1;
           continue;
         }
-        const status = state.db
-          .prepare(
-            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-          )
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "completed") {
+        const status = state.status(message.id);
+        if (status === "completed") {
           summary.completed += 1;
           await file(message.id, "completed");
         }
-        if (status?.status === "needs_review") {
+        if (status === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         }
       } catch (error) {
-        const status = state.db
-          .prepare(
-            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-          )
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "needs_review") {
+        if (state.status(message.id) === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         } else {
