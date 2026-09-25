@@ -6440,10 +6440,38 @@ function createIclrIntegrityWatch(
       .split(",")
       .map((id) => id.trim())
       .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
+    ...integritySheet(),
+    // Operator Slack ids for confirmed hallucinated citations, filtered the same way.
+    citationReportTo: (process.env.ADMINBOT_ICLR_CITATION_REPORT_SLACK_USERS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
   });
 }
 
 const DEFAULT_ICLR_INTEGRITY_UNTIL = "2026-09-26T08:00:00-04:00";
+
+/**
+ * The lab's paper sheet the integrity sweep writes scores into, when one is configured. The tab
+ * defaults to the one the lab keeps its ICLR papers on.
+ */
+function integritySheet():
+  | { sheet: { spreadsheetId: string; tab: string; read: () => Promise<string[][]> } }
+  | Record<string, never> {
+  const spreadsheetId = process.env.ADMINBOT_ICLR_INTEGRITY_SHEET_ID?.trim();
+  if (!spreadsheetId || !/^[A-Za-z0-9_-]{20,}$/u.test(spreadsheetId)) {
+    return {};
+  }
+  const tab = process.env.ADMINBOT_ICLR_INTEGRITY_SHEET_TAB?.trim() || "Papers-iclr-feedback";
+  return {
+    sheet: {
+      spreadsheetId,
+      tab,
+      read: () =>
+        readGogSheetRows(spreadsheetId, { range: `'${tab.replace(/'/gu, "''")}'!A1:Z1000` }),
+    },
+  };
+}
 
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {

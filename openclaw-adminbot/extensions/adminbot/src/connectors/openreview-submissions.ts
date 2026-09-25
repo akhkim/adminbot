@@ -173,7 +173,18 @@ export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
   if (!pdfPath || !title || SETTLED_VENUE.test(venueId)) {
     return undefined;
   }
-  const authorIds = values(content.authorids).map((entry) => entry.trim());
+  // Two shapes. Older venues list names in `authors` and ids in `authorids`; ICLR 2027 leaves
+  // `authorids` empty and makes each `authors` entry an object carrying both (`fullname`,
+  // `username`). Reading only the old shape found no authors at all on those papers -- which left
+  // the integrity alert with nobody but the professor to tell.
+  const people = authorEntries(content.authors);
+  const listedIds = values(content.authorids).map((entry) => entry.trim());
+  const authorIds = listedIds.length
+    ? listedIds
+    : people.map((person) => person.id).filter((id): id is string => Boolean(id));
+  const authorNames = people
+    .map((person) => person.name)
+    .filter((name): name is string => Boolean(name));
   return {
     id,
     title,
@@ -181,7 +192,28 @@ export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
     pdf_path: pdfPath,
     modified_at: typeof record.tmdate === "number" ? record.tmdate : 0,
     ...(authorIds.length ? { author_ids: authorIds } : {}),
+    ...(authorNames.length ? { author_names: authorNames } : {}),
   };
+}
+
+/** `content.authors` in either shape: plain names, or `{ fullname, username }` objects. */
+function authorEntries(field: unknown): Array<{ name?: string; id?: string }> {
+  const raw = field && typeof field === "object" ? (field as { value?: unknown }).value : undefined;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((entry) => {
+    if (typeof entry === "string") {
+      return entry.trim() ? [{ name: entry.trim() }] : [];
+    }
+    if (entry && typeof entry === "object") {
+      const record = entry as Record<string, unknown>;
+      const name = typeof record.fullname === "string" ? record.fullname.trim() : "";
+      const id = typeof record.username === "string" ? record.username.trim() : "";
+      return name || id ? [{ ...(name ? { name } : {}), ...(id ? { id } : {}) }] : [];
+    }
+    return [];
+  });
 }
 
 function values(field: unknown): string[] {

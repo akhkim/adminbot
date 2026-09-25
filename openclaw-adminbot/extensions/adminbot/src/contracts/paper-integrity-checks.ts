@@ -13,7 +13,11 @@
 export type PaperAiTextCheckStatus = "completed" | "unreadable" | "failed";
 
 /** What the integrity alert was raised for. Each is raised at most once per version. */
-export type PaperIntegrityAlertReason = "ai_text" | "citations";
+/**
+ * "ai_text" and "citations" are the group alert to the PI and authors; "citations_reported" is the
+ * operator DM about a confirmed fabricated reference (IclrIntegrityWatchDeps.citationReportTo).
+ */
+export type PaperIntegrityAlertReason = "ai_text" | "citations" | "citations_reported";
 
 export type PaperAiTextCheck = {
   submission_id: string;
@@ -80,4 +84,9 @@ export type PaperIntegritySweepSummary = {
   alerts: number;
   /** Set when the sweep's digest DM could not be sent; see IclrIntegrityWatchDeps.reportTo. */
   report_error?: string;
+  /** Score cells written to the lab's paper sheet this sweep; see IclrIntegrityWatchDeps.sheet. */
+  sheet_updated?: number;
+  /** Titles of submissions no sheet row could be matched to, by title or by authors. */
+  sheet_unmatched?: string[];
+  sheet_error?: string;
 };

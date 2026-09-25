@@ -36,6 +36,15 @@ import type {
   PaperIntegritySweepSummary,
 } from "../../contracts/paper-integrity-checks.js";
 import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service.js";
+import {
+  cellRange,
+  citationCellText,
+  columnLetter,
+  matchSheetRows,
+  scoreCellText,
+  sheetColumns,
+  sheetPaperRows,
+} from "./integrity-sheet.js";
 
 /**
  * An ICLR main-conference paper still under review. Accepted papers move to
@@ -83,6 +92,17 @@ export type IclrIntegrityWatchDeps = {
    * citation status. Operators only -- authors hear about their own paper through the alert.
    */
   reportTo?: string[];
+  /**
+   * The lab's paper sheet, whose score column each sweep fills in (see integrity-sheet.ts for how
+   * rows are matched). Absent: nothing is written.
+   */
+  sheet?: { spreadsheetId: string; tab: string; read: () => Promise<string[][]> };
+  /**
+   * Slack user ids DMed the exact references once a citation check confirms them fabricated --
+   * a completed check whose references no database has. A check that could not reach the
+   * databases confirms nothing and sends nothing. Once per version.
+   */
+  citationReportTo?: string[];
 };
 
 export type IclrIntegritySweepStart = {
@@ -162,6 +182,8 @@ export class IclrIntegrityWatch {
     this.running = this.sweep(submissions, summary)
       .catch(() => undefined)
       // After the sweep, whatever it did: a digest is most useful on the hours nothing changed.
+      // The sheet first, so the digest can say what it wrote and what it could not place.
+      .then(() => this.updateSheet(submissions, summary))
       .then(() => this.report(submissions, summary))
       .catch(() => undefined)
       .finally(() => {
@@ -180,6 +202,119 @@ export class IclrIntegrityWatch {
 
   private now() {
     return (this.deps.now ?? (() => new Date()))();
+  }
+
+  /**
+   * Fills the sheet's score column for every submission a row can be matched to. Only cells whose
+   * text changed are written, so an unchanged hour is no write at all; a failure is noted on the
+   * summary and never fails the sweep.
+   */
+  private async updateSheet(
+    submissions: OpenReviewSubmission[],
+    summary: PaperIntegritySweepSummary,
+  ) {
+    const sheet = this.deps.sheet;
+    if (!sheet) {
+      return;
+    }
+    const { store, service } = this.deps;
+    try {
+      const grid = await sheet.read();
+      const columns = sheetColumns(grid[0] ?? []);
+      const { matched, unmatched } = matchSheetRows(sheetPaperRows(grid, columns), submissions);
+      summary.sheet_unmatched = unmatched.map((submission) => submission.title);
+      const updates = submissions.flatMap((submission) => {
+        const row = matched.get(submission.id);
+        if (!row) {
+          return [];
+        }
+        const score = scoreCellText(store.getPaperAiTextCheck(submission.id, submission.pdf_path));
+        const cited = citationCellText(
+          notFoundCitations(store.getOpenReviewCitationCheck(submission.id, submission.pdf_path)),
+        );
+        return [
+          ...(score && score !== row.current
+            ? [{ range: cellRange(sheet.tab, columns.score, row.row), values: [[score]] }]
+            : []),
+          ...(cited && cited !== row.currentCitations
+            ? [{ range: cellRange(sheet.tab, columns.citations, row.row), values: [[cited]] }]
+            : []),
+        ];
+      });
+      summary.sheet_updated = 0;
+      if (!updates.length) {
+        return;
+      }
+      const proposed = service.createProposal({
+        type: "paper_integrity.sheet_scores",
+        summary: `Pangram scores for ${updates.length} paper(s) in the lab sheet`,
+        target: { service: "google", channel: "sheets", target: sheet.spreadsheetId },
+        proposed_payload: {
+          spreadsheet_id: sheet.spreadsheetId,
+          columns: [columnLetter(columns.score), columnLetter(columns.citations)],
+          updates,
+        },
+        undo_plan: "Edit the cells back in the sheet; the version history keeps the old values.",
+      });
+      if (!proposed.ok) {
+        summary.sheet_error = proposed.error.message;
+        return;
+      }
+      const executed = await service.execute(proposed.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        summary.sheet_error = executed.error.message;
+        return;
+      }
+      summary.sheet_updated = updates.length;
+    } catch (error) {
+      summary.sheet_error =
+        error instanceof Error ? error.message.slice(0, 200) : "The sheet could not be read.";
+    }
+  }
+
+  /**
+   * DMs the configured operators the exact references a completed citation check found in no
+   * database. "Confirmed" is the whole condition: notFoundCitations reads only a completed check,
+   * and only its `not_found` findings -- a reference the databases could not be asked about is
+   * `unavailable`, and a check that reached too few of them is `failed`, and neither sends.
+   */
+  private async reportCitationsIfDue(submission: OpenReviewSubmission) {
+    const userIds = [...new Set(this.deps.citationReportTo ?? [])];
+    if (!userIds.length) {
+      return;
+    }
+    const { store, service } = this.deps;
+    const check = store.getPaperAiTextCheck(submission.id, submission.pdf_path);
+    const notFound = notFoundCitations(
+      store.getOpenReviewCitationCheck(submission.id, submission.pdf_path),
+    );
+    // The stamp lives on the version's score row, so a version not scored yet waits a sweep.
+    if (!check || !notFound.length || check.alerted_for?.includes("citations_reported")) {
+      return;
+    }
+    const message = [
+      `:warning: Confirmed hallucinated citation${notFound.length === 1 ? "" : "s"} in “${submission.title}”`,
+      `https://openreview.net/forum?id=${submission.id}`,
+      "",
+      `${notFound.length === 1 ? "This reference is" : `These ${notFound.length} references are`} in no scholarly database the check reached (Crossref and DBLP both answered):`,
+      ...notFound.map((citation) => `• ${citation}`),
+    ].join("\n");
+    const proposed = service.createProposal({
+      type: "paper_integrity.report",
+      summary: `Confirmed hallucinated citations in “${submission.title}”`,
+      target: { service: "slack", channel: "slack", target: userIds.join(",") },
+      proposed_payload: { channel: "slack", user_ids: userIds, message },
+      undo_plan: "Send a follow-up if a reference turns out to exist.",
+    });
+    if (!proposed.ok) {
+      return;
+    }
+    // Stamped before the send, as the alert is: one duplicate is worse than one to re-send by hand.
+    store.savePaperAiTextCheck({
+      ...check,
+      alerted_for: [...(check.alerted_for ?? []), "citations_reported"],
+    });
+    await service.execute(proposed.payload.id, { dry_run: false });
   }
 
   /** The digest DM; a failure is noted on the sweep summary and never fails the sweep. */
@@ -248,6 +383,7 @@ export class IclrIntegrityWatch {
       // Every sweep, not only after a fresh score: the citation watch finishes on its own
       // schedule, and its result for an already-scored version still has to reach the authors.
       await this.alertIfDue(submission, summary).catch(() => undefined);
+      await this.reportCitationsIfDue(submission).catch(() => undefined);
     }
   }
 
@@ -561,6 +697,17 @@ export function buildIntegrityReportMessage(input: {
   }
   if (!rows.length) {
     lines.push("No ICLR submission under review has a PDF yet.");
+  }
+  if (summary.sheet_updated !== undefined || summary.sheet_error) {
+    lines.push("");
+    lines.push(
+      summary.sheet_error
+        ? `Lab sheet: not updated -- ${summary.sheet_error}`
+        : `Lab sheet: ${summary.sheet_updated} score cell(s) updated.`,
+    );
+    if (summary.sheet_unmatched?.length) {
+      lines.push(`No sheet row found for: ${summary.sheet_unmatched.join("; ")}`);
+    }
   }
   return lines.join("\n");
 }

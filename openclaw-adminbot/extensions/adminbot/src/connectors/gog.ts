@@ -448,6 +448,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildSheetUpdateArgs(proposal);
     case "sheet.append_rows":
       return buildSheetAppendArgs(proposal);
+    case "paper_integrity.sheet_scores":
+      return buildIntegrityScoreArgs(proposal);
     default:
       return undefined;
   }
@@ -487,6 +489,41 @@ export function buildSheetAppendArgs(proposal: AdminBotStoredProposal): string[]
     JSON.stringify(values),
   );
   return args;
+}
+
+/**
+ * The auto-approved score write: the same batch update as `sheet.update_cells`, refused unless
+ * every update is one cell in the column the payload names. That constraint is what makes skipping
+ * the approval safe -- a malformed or hostile payload cannot reach any other cell of the sheet.
+ */
+export function buildIntegrityScoreArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const columns = Array.isArray(payload.columns) ? payload.columns : [];
+  if (
+    columns.length < 1 ||
+    columns.length > 2 ||
+    columns.some((column) => typeof column !== "string" || !/^[A-Z]{1,2}$/u.test(column))
+  ) {
+    throw new Error("paper_integrity.sheet_scores columns must be one or two column letters");
+  }
+  const column = (columns as string[]).join("|");
+  const updates = Array.isArray(payload.updates) ? payload.updates : [];
+  const cell = new RegExp(`^'(?:[^']|'')+'!(?:${column})[1-9][0-9]*$`, "u");
+  for (const entry of updates) {
+    const update = (entry ?? {}) as Record<string, unknown>;
+    const values = update.values;
+    const single =
+      Array.isArray(values) &&
+      values.length === 1 &&
+      Array.isArray(values[0]) &&
+      (values[0] as unknown[]).length === 1;
+    if (typeof update.range !== "string" || !cell.test(update.range) || !single) {
+      throw new Error(
+        `paper_integrity.sheet_scores may only write single cells in column ${column}`,
+      );
+    }
+  }
+  return buildSheetUpdateArgs(proposal);
 }
 
 /**

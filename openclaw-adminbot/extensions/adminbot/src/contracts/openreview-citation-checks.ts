@@ -63,6 +63,8 @@ export type OpenReviewSubmission = {
    * without a profile, an email address. The integrity alert maps these back to the roster.
    */
   author_ids?: string[];
+  /** `content.authors`, the display names in the same order. Matches the lab's own sheet. */
+  author_names?: string[];
 };
 
 export type OpenReviewSubmissionReader = {

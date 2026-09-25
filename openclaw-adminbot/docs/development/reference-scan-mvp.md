@@ -176,6 +176,21 @@ without `--dry-run`.
   current Pangram score and its citation status. It goes out on quiet hours too. It is for
   operators, not authors, and a send that fails is stored on the sweep as `report_error` without
   failing the sweep.
+- **Lab sheet.** With `ADMINBOT_ICLR_INTEGRITY_SHEET_ID` set (tab
+  `ADMINBOT_ICLR_INTEGRITY_SHEET_TAB`, default `Papers-iclr-feedback`), every sweep writes each
+  submission's score into the `Pangram Score` column (H by default) and, for a completed citation
+  check, the exact references no database has into column I, one per line — as the auto-approved
+  `paper_integrity.sheet_scores` action, whose executor refuses anything but single cells in those
+  two columns. Rows are matched by title first (exact, the part before a colon, or most words
+  shared), then — for submissions a title cannot settle — by distinctive authors: at least two in
+  common, ignoring anyone on a quarter or more of the rows (the PI, a lead), with one row clearly
+  ahead. Anything else is left unwritten and named in the digest. Only changed cells are written.
+  ICLR 2027 notes carry authors as `{ fullname, username }` objects with an empty `authorids`; the
+  reader takes names and ids from those.
+- **Confirmed hallucinated citations.** The Slack ids in
+  `ADMINBOT_ICLR_CITATION_REPORT_SLACK_USERS` get a DM with the exact references, once per version,
+  when a completed citation check (Crossref and DBLP both answered) has `not_found` findings. A
+  `failed` check, an `unavailable` lookup or a `review` finding sends nothing.
 - **Cutoff.** The check stops for good at `ADMINBOT_ICLR_INTEGRITY_UNTIL`, which defaults to
   2026-09-26 08:00 Toronto time (the end of the ICLR 2027 run). After that time a run starts
   nothing and answers `ended_at`, and a sweep that crosses the cutoff stops before its next paper.
