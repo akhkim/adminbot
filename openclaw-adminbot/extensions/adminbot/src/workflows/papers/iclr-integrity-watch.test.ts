@@ -202,6 +202,132 @@ describe("ICLR integrity watch", () => {
     expect(sent).toHaveLength(1);
   });
 
+  // The fix for a paper Pangram's website put at 22% and the watch at 0%: the website scores the
+  // uploaded file, appendix and all, and so does the watch now.
+  it("sends Pangram the PDF itself and records that it did", async () => {
+    const bytes = Buffer.from("%PDF-whole-file");
+    const { store, score, sweep } = setup({ submissions: [submission()], pdf: () => bytes });
+
+    await sweep();
+
+    expect(score.mock.calls[0]?.[0]).toBe(bytes);
+    expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "completed",
+      scored_from: "pdf",
+    });
+  });
+
+  it("uses the word count Pangram reports for the file", async () => {
+    const { store, sweep } = setup({
+      submissions: [submission()],
+      score: async () => ({
+        fraction_ai: 0.1,
+        fraction_ai_assisted: 0,
+        fraction_human: 0.9,
+        words_scored: 20_424,
+      }),
+    });
+    await sweep();
+    expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.words_scored).toBe(20_424);
+  });
+
+  it("still skips a placeholder without paying to score it", async () => {
+    const { store, score, sweep } = setup({
+      submissions: [submission()],
+      extractText: async () => {
+        throw new ReferenceCheckError(NO_TEXT_LAYER);
+      },
+    });
+    await sweep();
+    expect(score).not.toHaveBeenCalled();
+    expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.status).toBe("unreadable");
+  });
+
+  describe("a version scored from its main text before the switch", () => {
+    const textEra = {
+      submission_id: "paperAAAA",
+      pdf_path: "/pdf/v1.pdf",
+      pdf_sha256: "0".repeat(64),
+      title: "Synthetic paper",
+      venue_id: ICLR,
+      status: "completed" as const,
+      checked_at: "2026-09-25T04:38:00.000Z",
+      attempts: 1,
+      fraction_ai: 0.72,
+      fraction_ai_assisted: 0.1,
+      fraction_human: 0.18,
+      words_scored: 6_324,
+      alerted_for: ["ai_text" as const],
+      alert_proposal_ids: ["proposal-1"],
+    };
+
+    it("is scored again from the PDF, once", async () => {
+      const { store, score, sweep } = setup({
+        submissions: [submission()],
+        score: async () => ({ fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 }),
+      });
+      store.savePaperAiTextCheck(textEra);
+
+      await sweep();
+      await sweep();
+
+      expect(score).toHaveBeenCalledTimes(1);
+      expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+        scored_from: "pdf",
+        fraction_ai: 0.1,
+      });
+    });
+
+    // Same version, same PDF: the Slack alert it already raised is not raised a second time.
+    it("keeps the alerts it already raised", async () => {
+      const { store, sweep, sent } = setup({ submissions: [submission()] });
+      store.savePaperAiTextCheck(textEra);
+
+      await sweep();
+
+      expect(sent).toHaveLength(0);
+      expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+        scored_from: "pdf",
+        alerted_for: ["ai_text"],
+        alert_proposal_ids: ["proposal-1"],
+      });
+    });
+
+    it("keeps its old score when the re-score fails", async () => {
+      const { store, sweep } = setup({
+        submissions: [submission()],
+        score: async () => {
+          throw new PangramError("The Pangram account is out of credits.");
+        },
+      });
+      store.savePaperAiTextCheck(textEra);
+
+      await sweep();
+
+      expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+        status: "completed",
+        fraction_ai: 0.72,
+      });
+    });
+
+    it("is not reused for identical bytes under a new path", async () => {
+      const bytes = Buffer.from("%PDF-identical");
+      const { createHash } = await import("node:crypto");
+      const { store, score, sweep } = setup({
+        submissions: [submission({ pdf_path: "/pdf/v2.pdf", modified_at: 2 })],
+        pdf: () => bytes,
+      });
+      store.savePaperAiTextCheck({
+        ...textEra,
+        pdf_sha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+
+      await sweep();
+
+      expect(score).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("alerts on hallucinated citations once the citation watch has stored them", async () => {
     const { store, sweep, sent } = setup({
       submissions: [submission()],

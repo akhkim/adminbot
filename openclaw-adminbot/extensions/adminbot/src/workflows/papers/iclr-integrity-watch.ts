@@ -10,8 +10,10 @@
 // paper's first two full / coauthor-major lab authors. Each reason alerts at most once per version:
 // a second message about the same PDF is the lab nagging, not a warning.
 //
-// What leaves the host: the main text (before the bibliography) goes to Pangram, never the PDF.
-// The citation strings are looked up by the citation watch, not here -- this reads its stored rows.
+// What leaves the host: the submission PDF goes to Pangram, whole, the way its website scores an
+// upload (see connectors/pangram.ts for why not just the main text). The text is still read here
+// first, only to recognize a placeholder before paying to score it. The citation strings are
+// looked up by the citation watch, not here -- this reads its stored rows.
 
 import { createHash } from "node:crypto";
 import { PangramError } from "../../connectors/pangram.js";
@@ -40,15 +42,17 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
  * `ICLR.cc/<year>/Conference` and rejected ones to `.../Rejected_Submission`, so a PI's history of
  * past ICLR papers -- hundreds of billable scores -- never matches.
  */
+/** A completed score of the extracted main text, from before scoring moved to the whole PDF. */
+function isTextScore(check: PaperAiTextCheck): boolean {
+  return check.status === "completed" && check.scored_from !== "pdf";
+}
+
 export const ICLR_UNDER_REVIEW = /^ICLR\.cc\/\d{4}\/Conference\/Submission$/u;
 /** Alert when Pangram classifies more than this share of the main text as AI-written. */
 export const DEFAULT_AI_THRESHOLD = 0.5;
 export const MAX_AI_CHECK_ATTEMPTS = 3;
 // Below this the PDF is a placeholder or an abstract-only upload; a score of it means nothing.
 const MIN_WORDS = 300;
-// About ten thousand words: a full ICLR main text. Bounds the bill if a PDF is mostly appendix
-// with no References heading to stop at.
-const MAX_SCORED_CHARS = 60_000;
 const DEFAULT_SCORE_TIMEOUT_MS = 15 * 60_000;
 const MAX_LISTED_CITATIONS = 8;
 // The alert names at most this many lab authors, besides the head professor.
@@ -176,7 +180,11 @@ export class IclrIntegrityWatch {
 
   private needsScore(submission: OpenReviewSubmission): boolean {
     const existing = this.deps.store.getPaperAiTextCheck(submission.id, submission.pdf_path);
-    return !existing || (existing.status === "failed" && existing.attempts < MAX_AI_CHECK_ATTEMPTS);
+    return (
+      !existing ||
+      (existing.status === "failed" && existing.attempts < MAX_AI_CHECK_ATTEMPTS) ||
+      isTextScore(existing)
+    );
   }
 
   private async sweep(submissions: OpenReviewSubmission[], summary: PaperIntegritySweepSummary) {
@@ -201,13 +209,21 @@ export class IclrIntegrityWatch {
   ) {
     const { store } = this.deps;
     const prior = store.getPaperAiTextCheck(submission.id, submission.pdf_path);
+    // A re-score of a text-era result is the same version, so what was already alerted about it
+    // carries over: without this, the new row would forget the alert and raise it a second time.
+    const rescoring = prior && isTextScore(prior) ? prior : undefined;
     const base = {
       submission_id: submission.id,
       pdf_path: submission.pdf_path,
       title: submission.title,
       venue_id: submission.venue_id,
-      attempts: (prior?.attempts ?? 0) + 1,
+      attempts: rescoring ? 1 : (prior?.attempts ?? 0) + 1,
       checked_at: this.now().toISOString(),
+      ...(rescoring?.alerted_for ? { alerted_for: rescoring.alerted_for } : {}),
+      ...(rescoring?.alert_proposal_ids
+        ? { alert_proposal_ids: rescoring.alert_proposal_ids }
+        : {}),
+      ...(rescoring?.alert_error ? { alert_error: rescoring.alert_error } : {}),
     };
     let bytes: Uint8Array;
     try {
@@ -226,7 +242,10 @@ export class IclrIntegrityWatch {
     // and what was already alerted, rather than paying for it and messaging about it twice.
     const identical = store
       .listPaperAiTextChecks(submission.id)
-      .find((check) => check.pdf_sha256 === pdfSha256 && check.status !== "failed");
+      .find(
+        (check) =>
+          check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isTextScore(check),
+      );
     if (identical) {
       summary.reused++;
       store.savePaperAiTextCheck({
@@ -236,9 +255,11 @@ export class IclrIntegrityWatch {
       });
       return;
     }
+    // Read locally only to recognize a placeholder: an abstract-only or text-less upload is not
+    // worth paying Pangram to score. What Pangram scores is the PDF itself, below.
     let text: string;
     try {
-      text = (await this.deps.extractText(bytes)).slice(0, MAX_SCORED_CHARS);
+      text = await this.deps.extractText(bytes);
     } catch (error) {
       summary.scored++;
       store.savePaperAiTextCheck({
@@ -268,13 +289,14 @@ export class IclrIntegrityWatch {
     }
     const signal = AbortSignal.timeout(this.deps.scoreTimeoutMs ?? DEFAULT_SCORE_TIMEOUT_MS);
     try {
-      const score = await this.deps.score(text, signal);
+      const score = await this.deps.score(bytes, signal);
       summary.scored++;
       store.savePaperAiTextCheck({
         ...base,
         pdf_sha256: pdfSha256,
         status: "completed",
-        words_scored: words,
+        scored_from: "pdf",
+        words_scored: score.words_scored ?? words,
         fraction_ai: score.fraction_ai,
         fraction_ai_assisted: score.fraction_ai_assisted,
         fraction_human: score.fraction_human,
@@ -282,6 +304,11 @@ export class IclrIntegrityWatch {
       });
     } catch (error) {
       summary.failed++;
+      // A failed re-score leaves the text-era score standing rather than replacing a real number
+      // with an error; the next sweep tries again.
+      if (rescoring) {
+        return;
+      }
       store.savePaperAiTextCheck({
         ...base,
         pdf_sha256: pdfSha256,
