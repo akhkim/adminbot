@@ -69,7 +69,7 @@ export function createAdminBotSlackAdminExecutor(
         await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
-      if (proposal.type === "member_nudge.escalate") {
+      if (proposal.type === "member_nudge.escalate" || proposal.type === "paper_integrity.alert") {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
         await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
@@ -346,7 +346,7 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("member_nudge.escalate requires an object proposed_payload");
+    throw new Error(`${proposal.type} requires an object proposed_payload`);
   }
   const raw = (payload as Record<string, unknown>).user_ids;
   const userIds = Array.isArray(raw)
@@ -358,7 +358,7 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   // escalation queue on their own page -- so the only person this can reach is the member it is
   // about, which is the direction the old rule was protecting.
   if (userIds.length < 1) {
-    throw new Error("member_nudge.escalate requires at least one Slack user id");
+    throw new Error(`${proposal.type} requires at least one Slack user id`);
   }
   return {
     user_ids: userIds,

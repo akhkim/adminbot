@@ -9,8 +9,10 @@ import {
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
 import { createOpenReviewSubmissionReader } from "../connectors/openreview-submissions.js";
+import { createPangramScorer } from "../connectors/pangram.js";
 import {
   createPdfReferenceChecker,
+  extractPdfMainText,
   requiredDatabasesPausedUntil,
   type PdfReferenceChecker,
 } from "../connectors/reference-check.js";
@@ -58,6 +60,7 @@ import {
 } from "../contracts/opportunities.js";
 import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
+import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
 import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
@@ -121,6 +124,7 @@ import {
   type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
+import { IclrIntegrityWatch } from "../workflows/papers/iclr-integrity-watch.js";
 import {
   createImportColumnMapper,
   type ImportColumnMapper,
@@ -268,6 +272,10 @@ export type AdminBotMockServiceOptions = {
   openReviewSubmissionReader?: OpenReviewSubmissionReader;
   citationWatchChecker?: PdfReferenceChecker;
   citationWatchNotifyEmail?: string;
+  // The ICLR pre-deadline integrity check. Injecting a scorer enables it (with the reader above);
+  // otherwise it needs ADMINBOT_ICLR_INTEGRITY_CHECKS=1, PANGRAM_API_KEY and OpenReview credentials.
+  aiTextScorer?: AiTextScorer;
+  integrityTextExtractor?: (pdf: Uint8Array) => Promise<string>;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -599,6 +607,7 @@ type AdminBotRouteContext = {
   referenceScans: ReferenceScans;
   checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
   openReviewCitationWatch?: OpenReviewCitationWatch;
+  iclrIntegrityWatch?: IclrIntegrityWatch;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -744,6 +753,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       }),
   );
   const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
+  const iclrIntegrityWatch = createIclrIntegrityWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -923,6 +933,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     referenceScans,
     checkUploadedPdf,
     ...(openReviewCitationWatch ? { openReviewCitationWatch } : {}),
+    ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -1641,6 +1652,46 @@ async function handleAuthenticatedRoute(
         error: {
           message:
             "OpenReview citation checks are off — set ADMINBOT_OPENREVIEW_CITATION_CHECKS=1, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await watch.start());
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: error instanceof Error ? error.message : "could not list OpenReview submissions",
+        },
+      });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/openreview/integrity-checks") {
+    // AI-text scores of restricted manuscripts: admins (or the service token) only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.iclrIntegrityWatch;
+    sendJson(res, 200, {
+      enabled: Boolean(watch),
+      ...(watch ? watch.status() : { running: false }),
+      checks: ctx.store.listPaperAiTextChecks(),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/openreview/integrity-checks/run") {
+    // Started by the hourly job; safe to call repeatedly, like the citation run above -- a running
+    // sweep is not restarted, a version is scored once, and each alert is raised once.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.iclrIntegrityWatch;
+    if (!watch) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "ICLR integrity checks are off — set ADMINBOT_ICLR_INTEGRITY_CHECKS=1, PANGRAM_API_KEY, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
         },
       });
       return;
@@ -6024,6 +6075,36 @@ function createOpenReviewCitationWatch(
           : {}),
       }),
     ...(notifyEmail ? { notifyEmail } : {}),
+  });
+}
+
+/**
+ * Opt-in on its own flag, separate from the citation checks: it sends the main text of restricted
+ * ICLR submissions to Pangram, a third-party AI-text detector, which the operator has to have
+ * agreed to on top of the citation lookups.
+ */
+function createIclrIntegrityWatch(
+  options: AdminBotMockServiceOptions,
+  store: AdminBotServiceStore,
+  service: AdminBotService,
+): IclrIntegrityWatch | undefined {
+  const enabled = process.env.ADMINBOT_ICLR_INTEGRITY_CHECKS?.trim() === "1";
+  const apiKey = process.env.PANGRAM_API_KEY?.trim();
+  const score =
+    options.aiTextScorer ?? (enabled && apiKey ? createPangramScorer({ apiKey }) : undefined);
+  const reader =
+    options.openReviewSubmissionReader ?? (score ? createOpenReviewSubmissionReader() : undefined);
+  if (!score || !reader) {
+    return undefined;
+  }
+  const threshold = Number(process.env.ADMINBOT_ICLR_AI_THRESHOLD);
+  return new IclrIntegrityWatch({
+    store,
+    service,
+    reader,
+    score,
+    extractText: options.integrityTextExtractor ?? ((pdf) => extractPdfMainText(pdf)),
+    ...(threshold > 0 && threshold < 1 ? { threshold } : {}),
   });
 }
 

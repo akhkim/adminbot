@@ -3,6 +3,7 @@ import {
   condenseAuthorRuns,
   findReferencesSection,
   splitIntoReferences,
+  stripLineNumbers,
 } from "../third-party/references-validation/pdf-extract-service.js";
 import { parseGeneric } from "../third-party/references-validation/plain-text-parser.js";
 import { checkWithFallback } from "../third-party/references-validation/search-service.js";
@@ -112,6 +113,62 @@ export async function extractPdfReferences(
   } finally {
     await engine.destroy();
   }
+}
+
+/**
+ * The paper's own prose: everything before the last References heading, with review-mode line
+ * numbers stripped, capped at `maxChars`. For the AI-text score, which should read what the authors
+ * wrote -- a bibliography is mostly titles and names, and scoring it dilutes the answer.
+ *
+ * A paper with no References heading is scored in full rather than refused: unlike a citation
+ * lookup, a stray paragraph here cannot turn into a misleading database query.
+ */
+export async function extractPdfMainText(
+  pdf: Uint8Array,
+  limits: { maxChars?: number } = {},
+): Promise<string> {
+  const maxChars = limits.maxChars ?? 60_000;
+  const engine = await createEngine();
+  try {
+    const document = await engine.open(pdf);
+    try {
+      if (document.pageCount > 200) {
+        throw new ReferenceCheckError("Use a PDF with at most 200 pages.");
+      }
+      const text = document.text({ maxChars: 600_001, maxPages: document.pageCount });
+      if (!text.trim()) {
+        throw new ReferenceCheckError(NO_TEXT_LAYER);
+      }
+      return mainTextBeforeReferences(text).slice(0, maxChars);
+    } finally {
+      document.destroy();
+    }
+  } catch (error) {
+    if (error instanceof ReferenceCheckError) {
+      throw error;
+    }
+    throw new ReferenceCheckError(
+      "The PDF could not be read. Check that it is valid and not password protected.",
+    );
+  } finally {
+    await engine.destroy();
+  }
+}
+
+/** Exported for tests; see extractPdfMainText. */
+export function mainTextBeforeReferences(text: string): string {
+  // The same cleaning findReferencesSection applies, so the heading it reports is found here.
+  const clean = stripLineNumbers(text.replace(/---\s*PAGE BREAK\s*---/g, "\n"));
+  const section = findReferencesSection(text);
+  const lines = clean.split("\n");
+  const heading = section.found
+    ? lines.findLastIndex((line) => line.trim() === section.headingMatch)
+    : -1;
+  return (heading > 0 ? lines.slice(0, heading) : lines)
+    .join("\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function createPdfReferenceChecker(

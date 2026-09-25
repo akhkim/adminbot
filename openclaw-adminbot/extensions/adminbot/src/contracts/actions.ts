@@ -91,6 +91,11 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // The Slack group DM -- the head professor and a paper's first two full / coauthor-major lab
+  // authors -- raised when an ICLR submission's AI-text score or citation check trips before the
+  // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
+  // what evidence" is a question the audit log has to answer on its own row.
+  "paper_integrity.alert",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
