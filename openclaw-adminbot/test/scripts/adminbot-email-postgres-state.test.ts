@@ -26,6 +26,10 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
         attempts bigint NOT NULL DEFAULT 0, last_error text, received_at text,
         resolved_at text, resolved_by text, resolution text, updated_at text NOT NULL
       )`);
+      await pool.query(`CREATE TABLE "${schema}".adminbot_onboarding_threads (
+        thread_id text PRIMARY KEY, candidate_email text NOT NULL, decision text NOT NULL,
+        source_message_id text NOT NULL, status text NOT NULL, updated_at text NOT NULL
+      )`);
       const postgres = new AdminBotPostgresEmailState(pool, schema);
       expect(await postgres.scannedThrough()).toEqual(sqlite.scannedThrough());
       const first = new Date("2026-09-24T10:00:00.000Z");
@@ -82,6 +86,16 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
           ])
         ).toSorted(),
       ).toEqual([false, true]);
+
+      expect(await postgres.getOnboarding("thread-1")).toEqual(sqlite.getOnboarding("thread-1"));
+      sqlite.saveOnboarding("thread-1", "student@invalid.test", "trial", message.id);
+      await postgres.saveOnboarding("thread-1", "student@invalid.test", "trial", message.id);
+      expect(await postgres.getOnboarding("student@invalid.test")).toEqual(
+        sqlite.getOnboarding("student@invalid.test"),
+      );
+      sqlite.saveOnboarding("thread-1", "student@invalid.test", "direct", message.id);
+      await postgres.saveOnboarding("thread-1", "student@invalid.test", "direct", message.id);
+      expect(await postgres.getOnboarding("thread-1")).toEqual(sqlite.getOnboarding("thread-1"));
     } finally {
       sqlite.close();
       await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

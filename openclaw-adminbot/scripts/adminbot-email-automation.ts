@@ -134,7 +134,7 @@ export type EmailMessage = {
   internalDate?: string;
 };
 
-type OnboardingDecision = "trial" | "direct" | "decline";
+export type OnboardingDecision = "trial" | "direct" | "decline";
 
 type Classification = ModelClassification;
 

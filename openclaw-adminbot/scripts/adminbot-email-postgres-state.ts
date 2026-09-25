@@ -1,10 +1,11 @@
 import type { Pool } from "pg";
-import type { EmailMessage } from "./adminbot-email-automation.js";
+import type { EmailMessage, OnboardingDecision } from "./adminbot-email-automation.js";
 
 /** Staging replacement for the email job's SQLite checkpoints and message claims. */
 export class AdminBotPostgresEmailState {
   private readonly scanTable: string;
   private readonly messageTable: string;
+  private readonly onboardingTable: string;
 
   constructor(
     private readonly pool: Pool,
@@ -15,6 +16,7 @@ export class AdminBotPostgresEmailState {
     }
     this.scanTable = `"${schema}"."adminbot_email_scan"`;
     this.messageTable = `"${schema}"."adminbot_email_messages"`;
+    this.onboardingTable = `"${schema}"."adminbot_onboarding_threads"`;
   }
 
   async scannedThrough(): Promise<Date | undefined> {
@@ -47,6 +49,37 @@ export class AdminBotPostgresEmailState {
       `SELECT 1 FROM ${this.messageTable} WHERE status = 'processing' LIMIT 1`,
     );
     return result.rowCount !== 0;
+  }
+
+  async getOnboarding(
+    threadId: string,
+  ): Promise<{ candidate_email: string; decision: OnboardingDecision } | undefined> {
+    const result = await this.pool.query<{
+      candidate_email: string;
+      decision: OnboardingDecision;
+    }>(
+      `SELECT candidate_email, decision FROM ${this.onboardingTable}
+       WHERE thread_id = $1 OR candidate_email = $1`,
+      [threadId],
+    );
+    return result.rows[0];
+  }
+
+  async saveOnboarding(
+    threadId: string,
+    candidateEmail: string,
+    decision: OnboardingDecision,
+    sourceId: string,
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO ${this.onboardingTable}
+         (thread_id, candidate_email, decision, source_message_id, status, updated_at)
+       VALUES ($1, $2, $3, $4, 'waiting', $5)
+       ON CONFLICT (thread_id) DO UPDATE SET candidate_email = EXCLUDED.candidate_email,
+         decision = EXCLUDED.decision, source_message_id = EXCLUDED.source_message_id,
+         status = 'waiting', updated_at = EXCLUDED.updated_at`,
+      [threadId, candidateEmail, decision, sourceId, new Date().toISOString()],
+    );
   }
 
   async begin(
