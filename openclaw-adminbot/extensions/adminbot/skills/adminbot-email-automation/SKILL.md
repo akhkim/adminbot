@@ -84,8 +84,12 @@ scripts/aurora-adminbot-host.sh --user <cs-user> sync-cron-jobs
    - decline: send a polite rejection;
    - non-DCS follow-up: explain that the department will send account-creation
      instructions and ask the candidate to reply again.
-3. Calendar requests: create on the lab calendar (`ADMINBOT_LAB_EMAIL`), preserve exact times,
-   and use all-day only when the source states no time.
+3. Calendar requests: read the text and any image attachments (screenshots of bookings or
+   programs), create every event asked for, preserve exact times and each end's time zone, and use
+   all-day only when the source states no time. Travel and anything asked for "my"/personal
+   calendar goes on Zhijing's personal calendar (`ADMINBOT_PERSONAL_CALENDAR_ID`, "Jin Trips and
+   Advising Meetings"), and only from a configured sender; everything else goes on the lab
+   calendar (`ADMINBOT_LAB_EMAIL`).
 4. Reimbursements: read the email and attachments, fill copies of the installed
    `Compute_Expense_Form.xlsx` and `Trip_Summary_Form.docx` templates, leave
    funding source, business-officer accounting fields, claimant signature, and
