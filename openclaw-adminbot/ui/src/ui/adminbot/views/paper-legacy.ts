@@ -25,7 +25,6 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
-  adminBotPaperPresentationTypes,
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
@@ -42,6 +41,12 @@ import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import {
+  PRESENTATION_FORMATS,
+  PUBLICATION_TRACKS,
+  presentationFormat,
+  publicationTrack,
+} from "../paper-classification.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderOpenReviewIdentity } from "./paper-slots.ts";
 
@@ -80,7 +85,12 @@ const VENUE_DECISION_LABELS: Record<string, string> = {
   reject: "Rejected",
 };
 
-const YES_NO = ["yes", "no"] as const;
+/**
+ * The values the save path parses, not the words shown for them: the controller reads
+ * `isArchival === "true"`, so "yes" here was written as *false* on every save of the record.
+ */
+const ARCHIVAL_VALUES = ["true", "false"] as const;
+const ARCHIVAL_LABELS: Record<string, string> = { true: "Yes", false: "No" };
 
 const POSTER_STATE_LABELS: Record<string, string> = {
   not_needed: "Not needed",
@@ -232,20 +242,31 @@ const RECORD_GROUPS: LegacyGroup[] = [
         key: "isArchival",
         label: "Archival",
         control: "select",
-        options: YES_NO,
-        optionLabel: title,
+        options: ARCHIVAL_VALUES,
+        optionLabel: (value) => ARCHIVAL_LABELS[value] ?? value,
         hint: "Whether this counts as a publication. The same workshop can be either.",
-        value: (paper) =>
-          typeof paper.is_archival === "boolean" ? (paper.is_archival ? "yes" : "no") : "",
+        value: (paper) => (typeof paper.is_archival === "boolean" ? String(paper.is_archival) : ""),
+      },
+      // Track and format are two answers, as they are on the card and the sheet. Older records
+      // stored the track in `presentation_type`; the readers below find it there, and the service
+      // moves it to `publication_track` the first time the format is written over it.
+      {
+        kind: "record",
+        key: "publicationTrack",
+        label: "Publication track",
+        control: "select",
+        options: PUBLICATION_TRACKS,
+        optionLabel: title,
+        value: publicationTrack,
       },
       {
         kind: "record",
         key: "presentationType",
         label: "Presentation",
         control: "select",
-        options: adminBotPaperPresentationTypes,
+        options: PRESENTATION_FORMATS,
         optionLabel: title,
-        value: (paper) => paper.presentation_type ?? "",
+        value: presentationFormat,
       },
     ],
   },
@@ -467,6 +488,7 @@ export function collectLegacyWrites(
       // "2026" would otherwise land as a decision about the paper.
       ...(/^\d{4}$/u.test(year) ? { acceptedYear: year } : {}),
       isArchival: read("isArchival"),
+      publicationTrack: read("publicationTrack"),
       presentationType: read("presentationType"),
     };
   }
@@ -526,6 +548,14 @@ export type PaperLegacyProps = {
   ) => void;
   onChange: () => void;
   onExit: () => void;
+  /**
+   * The card's own controls that are not fields on the record or a slot -- blockers, the
+   * conference branch (who is going, the trip and its aid request, reimbursements), social drafts,
+   * weekly updates, completion, history. Drawn by the host rather than rebuilt here: they are the
+   * card's components with the card's handlers, so the two views cannot drift apart on what a
+   * click does. `top` sits above the form, `bottom` below it.
+   */
+  renderPaperExtras?: (paper: AdminBotPaperRecord) => { top?: unknown; bottom?: unknown };
 };
 
 /**
@@ -751,6 +781,8 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
     }
   };
   const collapsed = props.state.collapsed.has(paper.id);
+  // Only built for an open card: the extras are forms and lists, and a folded card shows none.
+  const extras = collapsed ? undefined : props.renderPaperExtras?.(paper);
   /**
    * Fold this card shut, or open it again.
    *
@@ -840,6 +872,7 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
         : html`<!-- Inside the fold rather than above it. This line is one of the paper's own
                     answers -- which OpenReview account the submission sits under -- so a folded
                     card that kept it would be a card that is not actually folded. -->
+            ${extras?.top ?? nothing}
             ${renderOpenReviewIdentity({
               paperTitle: paper.title,
               slots: props.slots?.[paper.id]?.slots ?? [],
@@ -923,7 +956,15 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
                   Save
                 </button>
               </div>
-            </form>`}
+            </form>
+            ${extras?.bottom
+              ? html`<div
+                  class="paper-legacy__extras"
+                  data-testid=${`paper-legacy-extras-${paper.id}`}
+                >
+                  ${extras.bottom}
+                </div>`
+              : nothing}`}
     </section>
   `;
 }
