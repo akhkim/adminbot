@@ -310,6 +310,14 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     return rows.map((row) => JSON.parse(row.event_json) as AdminBotAuditEvent);
   }
 
+  async pruneAuditEventsBefore(cutoffIso: string): Promise<number> {
+    const result = await this.pool.query(
+      `DELETE FROM ${this.table("adminbot_audit_events")} WHERE timestamp < $1`,
+      [cutoffIso],
+    );
+    return result.rowCount ?? 0;
+  }
+
   async getCredentialByEmail(email: string): Promise<AdminBotMemberCredential | undefined> {
     return this.first<AdminBotMemberCredential>(
       `SELECT member_id, email, password_scrypt, claimed_at, updated_at
