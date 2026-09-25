@@ -553,7 +553,9 @@ export type PaperLegacyProps = {
    * conference branch (who is going, the trip and its aid request, reimbursements), social drafts,
    * weekly updates, completion, history. Drawn by the host rather than rebuilt here: they are the
    * card's components with the card's handlers, so the two views cannot drift apart on what a
-   * click does. `top` sits above the form, `bottom` below it.
+   * click does. `top` sits above the form, `bottom` below it. Both land inside
+   * `.paper-legacy__card-parts`, which the card's descendant styles also match -- without it the
+   * card's disclosure chevrons render as unsized SVGs.
    */
   renderPaperExtras?: (paper: AdminBotPaperRecord) => { top?: unknown; bottom?: unknown };
 };
@@ -872,7 +874,9 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
         : html`<!-- Inside the fold rather than above it. This line is one of the paper's own
                     answers -- which OpenReview account the submission sits under -- so a folded
                     card that kept it would be a card that is not actually folded. -->
-            ${extras?.top ?? nothing}
+            ${extras?.top
+              ? html`<div class="paper-legacy__card-parts paper-legacy__top">${extras.top}</div>`
+              : nothing}
             ${renderOpenReviewIdentity({
               paperTitle: paper.title,
               slots: props.slots?.[paper.id]?.slots ?? [],
@@ -959,7 +963,7 @@ function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): Templ
             </form>
             ${extras?.bottom
               ? html`<div
-                  class="paper-legacy__extras"
+                  class="paper-legacy__card-parts paper-legacy__extras"
                   data-testid=${`paper-legacy-extras-${paper.id}`}
                 >
                   ${extras.bottom}

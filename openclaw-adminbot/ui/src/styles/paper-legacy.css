@@ -213,10 +213,17 @@
   justify-content: flex-end;
 }
 
+.paper-legacy__top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
 .paper-legacy__extras {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+  /* No rule of its own: the completion row that opens this block already draws one. */
+  padding-top: var(--space-2);
 }
