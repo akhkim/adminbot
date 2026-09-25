@@ -463,6 +463,50 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+### Changing a Member Type
+
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
+the welcome mail, and applies it on the spot. The admin's save is the approval: each external
+step is still a typed proposal, approved by that admin, executed and audited, the same way Add
+row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+genuine admin session and only when the type actually changes (compared token-wise, so
+`Coauthor-Major ` is not a change). The service token still cannot set the field.
+
+- **Access level follows the type.** The form has no Privilege or Collaborator subgroup field;
+  Member type is a set of checkboxes and decides both. `adminbot-admin` (or the legacy `admin`) is
+  admin. `full` is `member`, or stays `trial`. Any collaboration type is `external_collaborator`
+  with that type's subgroup, and the most-committed token wins. Removing the admin tag demotes, but
+  **an admin cannot remove their own**: the service answers `409`, so nobody locks themselves out.
+  An admin whose type predates the tag has it pre-ticked, so saving keeps their access. New
+  members also get their access level from the type.
+- **The sheet row is updated.** Member Type is written back to the person's row on the member
+  sheet, so the 06:10 roster sync does not put the old type back. It is guarded against concurrent
+  edits like a grid edit.
+- **Slack rooms** named by the access matrix are joined or left (`slack.invite_to_channel` /
+  `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
+- **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
+  `calendar.remove_attendees`, both `--send-updates none`).
+- **Lab calendar** read access is granted silently when they gain it. No action revokes a calendar
+  share, so a loss is reported in the notice for someone to handle by hand.
+- **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
+  (`onboarding.send_guide`). Every other change sends nothing.
+
+**Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
+group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
+A box is ticked when any of the member's addresses is on that meeting's guest list. Saving adds
+the member to newly ticked meetings and removes them from unticked ones, silently, on every live
+series. If the list could not be read, the field is left out of the save entirely, so a failed
+read is never taken as "on no meetings". A Monday box the admin actually changed wins over what
+the type would imply; an unchanged box leaves the Monday meeting to the type.
+
+Member type and Meetings are never autosaved. The editor autosaves other fields as they are
+typed, but these two apply only when **Save member** is pressed, so a half-ticked set of boxes
+never moves anybody.
+
+Each step is reported separately in the save notice. A failed step does not undo the save or stop
+the others, and it turns the notice red. The whole change is recorded as
+`lab_member.member_type_applied` in the audit log.
+
 ### Roster sync
 
 `scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads

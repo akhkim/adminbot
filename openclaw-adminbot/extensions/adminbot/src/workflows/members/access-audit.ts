@@ -126,12 +126,30 @@ export function resolveSubgroup(member: AdminBotLabMember): {
   if (tokens.has("full")) {
     return { source: "full_member" };
   }
-  for (const [token, subgroup] of SUBGROUP_BY_TOKEN) {
-    if (tokens.has(token)) {
-      return { subgroup, source: "member_type" };
-    }
+  const subgroup = subgroupForMemberType(member.member_type);
+  return subgroup ? { subgroup, source: "member_type" } : { source: "unknown" };
+}
+
+/**
+ * The subgroup a Member Type maps to, ignoring any subgroup already on the record.
+ *
+ * `resolveSubgroup` lets a stored `collaborator_subgroup` win, which is right for grading. A type
+ * change is the case where the stored value is the stale one, so it asks the column directly.
+ * Undefined for `full` (a full member has no subgroup) and for types no subgroup covers.
+ */
+export function subgroupForMemberType(
+  memberType: string | undefined,
+): AdminBotExternalCollaboratorSubgroup | undefined {
+  const tokens = new Set(
+    (memberType ?? "")
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (tokens.has("full")) {
+    return undefined;
   }
-  return { source: "unknown" };
+  return SUBGROUP_BY_TOKEN.find(([token]) => tokens.has(token))?.[1];
 }
 
 // The member-type tokens the onboarding sheet uses, and the subgroup row each grades against.
