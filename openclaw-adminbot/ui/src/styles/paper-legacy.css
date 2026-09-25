@@ -203,3 +203,20 @@
 .paper-legacy__group--collapsed .profile__group-title {
   margin-bottom: 0;
 }
+
+/* The card's own controls, carried onto the flat view: a row of paper-level buttons above the
+   form, and the lists that hang off a paper (drafts, who is going, reimbursements) below it. */
+.paper-legacy__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.paper-legacy__extras {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}

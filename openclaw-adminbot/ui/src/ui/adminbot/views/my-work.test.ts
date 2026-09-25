@@ -79,6 +79,8 @@ type DrawOptions = {
   viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
+  /** Wires the trip handlers, which is what makes the card draw the reader's own trip. */
+  trip?: boolean;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -149,6 +151,9 @@ function draw(options: DrawOptions = {}) {
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
+    ...(options.trip
+      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
+      : {}),
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -1694,6 +1699,62 @@ describe("the flat view", () => {
       resetMyWorkSessionState();
       vi.useRealTimers();
     }
+  });
+
+  // The flat view is where the page opens, so anything only the card draws is something a member
+  // never sees. The conference branch is the one that mattered: an accepted paper's attendance,
+  // trip and aid request, and reimbursements lived on the card alone.
+  it("carries the card's conference branch once a paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster",
+    });
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ papers: [accepted], slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
+    expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
+    // The step picker is already a legacy row; the card's second copy of it stays off this page.
+    expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  it("keeps the conference branch shut until the paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
   });
 
   it("offers the button beside the spreadsheet one", () => {

@@ -331,7 +331,11 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 // resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
 // where AdminBot lives when the console is served from anywhere but the service itself, so every
 // draft died as "AdminBot is not reachable" before the request left the browser.
-function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
+function renderStepControls(
+  paper: AdminBotPaperRecord,
+  props: MyWorkProps,
+  options: { picker?: boolean } = {},
+) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -361,41 +365,45 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
            current_step still buckets blockers and drives the Active Papers view, and it has to
            be movable in both directions -- a mis-click, or a rejection that sends a paper back to
            writing. Jumping *forward* past unfinished steps still asks first, because that is the
-           move that asserts work happened. -->
-      <label class="my-work-item__step">
-        <span class="sr-only">Pipeline step</span>
-        <select
-          class="target__select"
-          data-testid=${`my-work-step-${paper.id}`}
-          @change=${(event: Event) => {
-            const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
-            const targetIndex = paperSteps.indexOf(target);
-            if (targetIndex - index > 1) {
-              const names = paperSteps
-                .slice(index, targetIndex)
-                .map((value) => stepLabel(value))
-                .join(", ");
-              if (
-                !globalThis.confirm(
-                  `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
-                )
-              ) {
-                (event.target as HTMLSelectElement).value = paper.current_step;
-                return;
-              }
-            }
-            saveStep(props, paper, target);
-          }}
-        >
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+           move that asserts work happened.
+           Left off where the page already has a Current step control -- the legacy view -- so
+           one field is not two dropdowns that can disagree while one of them is mid-edit. -->
+      ${options.picker === false
+        ? nothing
+        : html`<label class="my-work-item__step">
+            <span class="sr-only">Pipeline step</span>
+            <select
+              class="target__select"
+              data-testid=${`my-work-step-${paper.id}`}
+              @change=${(event: Event) => {
+                const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
+                const targetIndex = paperSteps.indexOf(target);
+                if (targetIndex - index > 1) {
+                  const names = paperSteps
+                    .slice(index, targetIndex)
+                    .map((value) => stepLabel(value))
+                    .join(", ");
+                  if (
+                    !globalThis.confirm(
+                      `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
+                    )
+                  ) {
+                    (event.target as HTMLSelectElement).value = paper.current_step;
+                    return;
+                  }
+                }
+                saveStep(props, paper, target);
+              }}
+            >
+              ${paperSteps.map(
+                (step) => html`
+                  <option value=${step} ?selected=${step === paper.current_step}>
+                    ${stepLabel(step)}
+                  </option>
+                `,
+              )}
+            </select>
+          </label>`}
     </div>
   `;
 }
@@ -1381,6 +1389,66 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
       </div>
     </article>
   `;
+}
+
+/**
+ * What the card has that the legacy view's fields do not: everything that is not one answer on the
+ * record or one evidence slot.
+ *
+ * The same renderers the card calls, with the same handlers, so the legacy view is the card drawn
+ * flat rather than a second implementation of it. Left out on purpose: the card's project-details
+ * form and its acceptance fields, because the legacy form already carries every one of those as a
+ * row and two controls for one field is two answers waiting to disagree. Completion comes along
+ * without them -- it is a timestamp, not a field the legacy form has.
+ */
+function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
+  return {
+    top: html`
+      <div class="paper-legacy__actions">
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-report-${paper.id}`}
+          @click=${() => {
+            state.myWorkBlockerDraft = { paperId: paper.id, text: "" };
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.blockers.report")}
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-hide-${paper.id}`}
+          title=${t("myWork.hidden.hideTitle")}
+          @click=${() => {
+            toggleHiddenPaper(props.memberId, paper.id);
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.hidden.hide")}
+        </button>
+      </div>
+      ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
+      ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+      ${renderPaperTimeline({
+        paperId: paper.id,
+        slots: props.slots[paper.id]?.slots ?? [],
+        paper,
+      })}
+      ${renderNextStep(paper)}
+    `,
+    bottom: html`
+      ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
+      ${renderCycle(state, paper, props)} ${renderStepControls(paper, props, { picker: false })}
+      ${renderRecentEdits({
+        ...(state.adminBotRecentEdits?.[recentEditsKey("paper", paper.id)] ?? EMPTY_RECENT_EDITS),
+        subject: "paper",
+        onOpen: () => props.onLoadRecentEdits?.("paper", paper.id),
+      })}
+      ${renderDeletePaper(paper, props)}
+    `,
+  };
 }
 
 /**
@@ -2773,13 +2841,25 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
            column of label-and-control rows, which wants the same readable measure the profile
            uses rather than the card list's summaries. -->
       <div class="my-work my-work--legacy">
-        <div class="my-work__section-actions">${renderAddButton(state)}</div>
+        <div class="my-work__section-actions">
+          ${renderNudgeButton(props)} ${renderAddButton(state)}
+        </div>
         <adminbot-paper-visibility
           .papers=${items}
           .memberId=${props.memberId}
           @visibility-changed=${rerender}
         ></adminbot-paper-visibility>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        <!-- Everything the card list says to the reader above its cards, said here too: the
+             legacy view is where the page opens now, so a decision banner left on the cards is an
+             OpenReview acceptance nobody is asked about. -->
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${renderBlockers(state, items)} ${renderNudgePreview(props)}
+        ${props.slotsNotice
+          ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+          : nothing}
         ${props.slotsError
           ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
           : nothing}
@@ -2794,7 +2874,24 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
           onSaveSlot: props.onSaveSlot,
           onChange: rerender,
           onExit: () => exitLegacy(rerender),
+          renderPaperExtras: (paper) => renderLegacyExtras(state, paper, props),
         })}
+        ${tucked.length
+          ? html`<p class="my-work__hidden-line" data-testid="my-work-hidden-line">
+              ${t("myWork.hidden.count", { count: String(tucked.length) })}
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="my-work-show-hidden"
+                @click=${() => {
+                  clearHiddenPapers(props.memberId);
+                  props.onRerender?.();
+                }}
+              >
+                ${t("myWork.hidden.showAll")}
+              </button>
+            </p>`
+          : nothing}
       </div>
     `;
   }
