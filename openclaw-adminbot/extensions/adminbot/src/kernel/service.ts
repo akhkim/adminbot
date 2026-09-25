@@ -211,6 +211,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
@@ -448,7 +449,9 @@ export type AdminBotServiceResponse<T> =
 export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "id">;
 
 // The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
-type AdminBotCitationCheckStores = ReferenceScanStore & OpenReviewCitationCheckStore;
+type AdminBotCitationCheckStores = ReferenceScanStore &
+  OpenReviewCitationCheckStore &
+  PaperAiTextCheckStore;
 
 export type AdminBotMeetingArtifactRecord = {
   file_id: string;
@@ -1180,6 +1183,12 @@ const DEFAULT_ACTION_POLICIES = {
   // safe is that nothing can create one of these except the sweep -- see escalateStaleNudges --
   // and an escalation that waited on an admin's approval would be a reminder nobody sent.
   "member_nudge.escalate": autoPolicy("T1"),
+  // Auto-approved: it exists to land in the last hours before a deadline, when an approval queue
+  // nobody is watching would hold it until it is useless. Nothing about it comes from a caller --
+  // the recipients are the head-professor setting and the roster's matches for the paper's author
+  // list, and the text is composed from the stored scores -- and each version alerts at most once
+  // per reason. T1 for the mechanical reason: resolvePolicy only honors auto_allowed below T2.
+  "paper_integrity.alert": autoPolicy("T1"),
   // Auto-approved on the same reasoning: the member and the channel are computed here from the
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.

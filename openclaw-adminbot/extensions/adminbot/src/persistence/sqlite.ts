@@ -62,6 +62,7 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type {
   AdminBotPaperSlot,
   AdminBotPaperSlotRecord,
@@ -111,6 +112,12 @@ import {
   listOpenReviewCitationChecks,
   saveOpenReviewCitationCheck,
 } from "./openreview-citation-checks.js";
+import {
+  ensurePaperAiTextCheckSchema,
+  getPaperAiTextCheck,
+  listPaperAiTextChecks,
+  savePaperAiTextCheck,
+} from "./paper-ai-text-checks.js";
 import {
   ensureReferenceScanSchema,
   getReferenceScan,
@@ -843,6 +850,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDirectorStatusSchema(this.db);
     ensureReferenceScanSchema(this.db);
     ensureOpenReviewCitationCheckSchema(this.db);
+    ensurePaperAiTextCheckSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
@@ -2749,6 +2757,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
     saveOpenReviewCitationCheck(this.db, check);
+  }
+
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    return getPaperAiTextCheck(this.db, submissionId, pdfPath);
+  }
+
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return listPaperAiTextChecks(this.db, submissionId);
+  }
+
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    savePaperAiTextCheck(this.db, check);
   }
 
   saveHelpInterest(interest: LabHelpInterest): void {
