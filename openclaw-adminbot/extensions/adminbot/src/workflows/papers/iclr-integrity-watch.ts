@@ -103,6 +103,15 @@ export type IclrIntegrityWatchDeps = {
    * databases confirms nothing and sends nothing. Once per version.
    */
   citationReportTo?: string[];
+  /**
+   * A Slack channel the digest lives in as one message, edited every sweep rather than posted
+   * again. `message` remembers which message that is across restarts; a lost or deleted message
+   * is simply posted anew.
+   */
+  reportChannel?: {
+    channelId: string;
+    message: { load: () => string | undefined; save: (ts: string) => void };
+  };
 };
 
 export type IclrIntegritySweepStart = {
@@ -320,7 +329,8 @@ export class IclrIntegrityWatch {
   /** The digest DM; a failure is noted on the sweep summary and never fails the sweep. */
   private async report(submissions: OpenReviewSubmission[], summary: PaperIntegritySweepSummary) {
     const userIds = [...new Set(this.deps.reportTo ?? [])];
-    if (!userIds.length) {
+    const channel = this.deps.reportChannel;
+    if (!userIds.length && !channel) {
       return;
     }
     const { store, service } = this.deps;
@@ -336,20 +346,40 @@ export class IclrIntegrityWatch {
           citations: store.getOpenReviewCitationCheck(submission.id, submission.pdf_path),
         })),
     });
-    const proposed = service.createProposal({
-      type: "paper_integrity.report",
-      summary: `Hourly ICLR integrity digest (${submissions.length} submissions)`,
-      target: { service: "slack", channel: "slack", target: userIds.join(",") },
-      proposed_payload: { channel: "slack", user_ids: userIds, message },
-      undo_plan: "A digest is informational; nothing to undo.",
-    });
-    if (!proposed.ok) {
-      summary.report_error = proposed.error.message;
-      return;
+    const send = async (
+      payload: Record<string, unknown>,
+      target: string,
+    ): Promise<Record<string, string> | undefined> => {
+      const proposed = service.createProposal({
+        type: "paper_integrity.report",
+        summary: `Hourly ICLR integrity digest (${submissions.length} submissions)`,
+        target: { service: "slack", channel: "slack", target },
+        proposed_payload: { channel: "slack", message, ...payload },
+        undo_plan: "A digest is informational; nothing to undo.",
+      });
+      if (!proposed.ok) {
+        summary.report_error = proposed.error.message;
+        return undefined;
+      }
+      const executed = await service.execute(proposed.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        summary.report_error = executed.error.message;
+        return undefined;
+      }
+      return executed.payload.artifacts;
+    };
+    if (channel) {
+      const previous = channel.message.load();
+      const artifacts = await send(
+        { channel_id: channel.channelId, ...(previous ? { update_ts: previous } : {}) },
+        channel.channelId,
+      );
+      if (artifacts?.slack_ts) {
+        channel.message.save(artifacts.slack_ts);
+      }
     }
-    const executed = await service.execute(proposed.payload.id, { dry_run: false });
-    if (!executed.ok) {
-      summary.report_error = executed.error.message;
+    if (userIds.length) {
+      await send({ user_ids: userIds }, userIds.join(","));
     }
   }
 

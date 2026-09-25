@@ -27,14 +27,12 @@ function proposal(
 
 describe("createAdminBotSlackAdminExecutor", () => {
   it("renames a channel", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        text: async () => '{"ok":true}',
-      });
+    const fetchImpl = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => '{"ok":true}',
+    });
     const executor = createAdminBotSlackAdminExecutor({
       env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
       fetchImpl,
@@ -229,5 +227,93 @@ describe("createAdminBotSlackAdminExecutor", () => {
     );
     expect(result).toEqual({ handled: false });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("the ICLR digest as one channel message", () => {
+  const reply = (body: Record<string, unknown>) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => JSON.stringify(body),
+  });
+  const executorWith = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl,
+    });
+
+  it("posts the first digest and reports the message it created", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(reply({ ok: true, ts: "1758841200.000100" }));
+    const result = await executorWith(fetchImpl).execute(
+      proposal("paper_integrity.report", { channel_id: "C0ACTIVE1", message: "Digest 1" }),
+    );
+    expect(result).toEqual({
+      handled: true,
+      artifacts: { slack_channel: "C0ACTIVE1", slack_ts: "1758841200.000100" },
+    });
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://slack.com/api/chat.postMessage");
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+      channel: "C0ACTIVE1",
+      text: "Digest 1",
+    });
+  });
+
+  it("edits the same message on the next sweep instead of posting another", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(reply({ ok: true, ts: "1758841200.000100" }));
+    const result = await executorWith(fetchImpl).execute(
+      proposal("paper_integrity.report", {
+        channel_id: "C0ACTIVE1",
+        message: "Digest 2",
+        update_ts: "1758841200.000100",
+      }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://slack.com/api/chat.update");
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+      channel: "C0ACTIVE1",
+      ts: "1758841200.000100",
+      text: "Digest 2",
+    });
+    expect(result.artifacts?.slack_ts).toBe("1758841200.000100");
+  });
+
+  // Somebody deleted the digest: post a new one rather than fail every hour until the deadline.
+  it("posts anew when the message to edit is gone", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(reply({ ok: false, error: "message_not_found" }))
+      .mockResolvedValueOnce(reply({ ok: true, ts: "1758844800.000200" }));
+    const result = await executorWith(fetchImpl).execute(
+      proposal("paper_integrity.report", {
+        channel_id: "C0ACTIVE1",
+        message: "Digest 3",
+        update_ts: "1758841200.000100",
+      }),
+    );
+    expect(fetchImpl.mock.calls[1][0]).toBe("https://slack.com/api/chat.postMessage");
+    expect(result.artifacts?.slack_ts).toBe("1758844800.000200");
+  });
+
+  it("does not paper over any other failure with a new post", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(reply({ ok: false, error: "not_in_channel" }));
+    await expect(
+      executorWith(fetchImpl).execute(
+        proposal("paper_integrity.report", {
+          channel_id: "C0ACTIVE1",
+          message: "Digest",
+          update_ts: "1758841200.000100",
+        }),
+      ),
+    ).rejects.toThrow(/not_in_channel/u);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a channel id that is not one", async () => {
+    await expect(
+      executorWith(vi.fn()).execute(
+        proposal("paper_integrity.report", { channel_id: "#jinesis-active", message: "x" }),
+      ),
+    ).rejects.toThrow(/channel_id must be a Slack channel id/u);
   });
 });

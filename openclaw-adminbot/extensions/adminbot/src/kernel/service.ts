@@ -2712,6 +2712,9 @@ export class AdminBotService {
     const result: AdminBotExecutionResult = {
       ...baseResult,
       status: "executed",
+      // Handed back to the caller that asked for the execution -- the hourly digest keeps the
+      // Slack message it posted so the next hour can edit that message rather than add another.
+      ...(Object.keys(artifacts).length ? { artifacts } : {}),
     };
     this.recordExecutedArtifacts(proposal, artifacts, now);
     proposal.status = "executed";
