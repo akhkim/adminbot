@@ -2390,6 +2390,8 @@ export type AdminBotExecutionResult = {
   dry_run: boolean;
   idempotency_key?: string;
   executed_at: string;
+  /** What the connector reported creating (see AdminBotExecutorOutcome.artifacts). */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotAuditEvent = {
