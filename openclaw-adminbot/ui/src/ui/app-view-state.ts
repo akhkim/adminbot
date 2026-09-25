@@ -451,6 +451,7 @@ export type AppViewState = {
   adminBotRosterRequestId: number;
   adminBotMemberList: AdminBotMemberListState;
   adminBotStandingMeetings: AdminBotStandingMeetingsState;
+  adminBotMemberRequests: import("./adminbot/controllers/member-requests.ts").AdminBotMemberRequestsState;
   // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
   // search query for finding other members' requests, and the list of members invited to help on
   // the member's own request. The list of requests the member has already responded to, and the

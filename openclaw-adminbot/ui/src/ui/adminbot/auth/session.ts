@@ -1139,6 +1139,139 @@ export async function queueMemberOnboardingGuide(
   return { ok: true, value: result.body as MemberOnboardingGuideQueued };
 }
 
+/**
+ * A request to add somebody to the roster, as GET /lab/members/requests returns it. Mirrors
+ * `AdminBotMemberRequest` (extensions/adminbot/src/contracts/member-requests.ts) plus the two
+ * fields the route adds for the reader.
+ */
+export type MemberRequestView = {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  requested_by: string;
+  requested_by_name?: string;
+  profile: {
+    name: string;
+    email: string;
+    member_type?: string;
+    affiliation?: string;
+    research_topics?: string;
+    personal_website?: string;
+  };
+  meetings?: string[];
+  note?: string;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  decision_note?: string;
+  member_id?: string;
+  /** The access level approving would grant, worked out from the requested Member Type. */
+  access_level?: string;
+};
+
+export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
+
+/**
+ * One call to /lab/members/requests. Every refusal the service makes here names the problem --
+ * "already on the roster", "already waiting for review", "this request was already approved" --
+ * so its sentence is passed through whatever the status, as queueMemberOnboardingGuide does.
+ */
+async function memberRequestCall<T>(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST" | "DELETE",
+  sessionToken: string,
+  body?: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/requests${path}`,
+    method,
+    sessionToken,
+    body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    const message = typeof refusal === "string" && refusal.trim() ? refusal.trim() : undefined;
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden", ...(message ? { message } : {}) };
+    }
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(message ? { message } : {}),
+    };
+  }
+  return { ok: true, value: result.body as T };
+}
+
+export async function fetchMemberRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberRequestView[]>> {
+  const result = await memberRequestCall<{ requests?: MemberRequestView[] }>(
+    baseUrl,
+    "",
+    "GET",
+    sessionToken,
+  );
+  return result.ok
+    ? { ok: true, value: Array.isArray(result.value.requests) ? result.value.requests : [] }
+    : result;
+}
+
+export async function submitMemberRequest(
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
+}
+
+export async function approveMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/approve`,
+    "POST",
+    sessionToken,
+    {},
+  );
+}
+
+export async function rejectMemberRequest(
+  requestId: string,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/reject`,
+    "POST",
+    sessionToken,
+    note ? { note } : {},
+  );
+}
+
+export async function withdrawMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: true }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}`,
+    "DELETE",
+    sessionToken,
+  );
+}
+
 // Approvals go over the member session rather than the gateway tool: the service records the
 // approver from the authenticated principal, and the shared service principal every agent tool
 // call uses cannot name a person (extensions/adminbot/src/api/server.ts).
