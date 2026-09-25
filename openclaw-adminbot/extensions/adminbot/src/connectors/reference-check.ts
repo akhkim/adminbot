@@ -117,17 +117,36 @@ export async function extractPdfReferences(
 
 /**
  * The paper's own prose: everything before the last References heading, with review-mode line
- * numbers stripped, capped at `maxChars`. For the AI-text score, which should read what the authors
- * wrote -- a bibliography is mostly titles and names, and scoring it dilutes the answer.
+ * numbers stripped, capped at `maxChars`.
  *
- * A paper with no References heading is scored in full rather than refused: unlike a citation
+ * A paper with no References heading is returned in full rather than refused: unlike a citation
  * lookup, a stray paragraph here cannot turn into a misleading database query.
  */
 export async function extractPdfMainText(
   pdf: Uint8Array,
   limits: { maxChars?: number } = {},
 ): Promise<string> {
-  const maxChars = limits.maxChars ?? 60_000;
+  return readPdfText(pdf, mainTextBeforeReferences, limits.maxChars ?? 60_000);
+}
+
+/**
+ * The whole document -- bibliography and appendix included -- with review-mode line numbers
+ * stripped, capped at `maxChars`. For the AI-text score: Pangram's website scores an uploaded
+ * paper end to end, and a score of the main body alone missed what the website flags. Scored with
+ * Pangram 4 this text matches the website (82% against 82% on one ICLR submission).
+ */
+export async function extractPdfFullText(
+  pdf: Uint8Array,
+  limits: { maxChars?: number } = {},
+): Promise<string> {
+  return readPdfText(pdf, wholeDocumentText, limits.maxChars ?? 600_000);
+}
+
+async function readPdfText(
+  pdf: Uint8Array,
+  shape: (text: string) => string,
+  maxChars: number,
+): Promise<string> {
   const engine = await createEngine();
   try {
     const document = await engine.open(pdf);
@@ -139,7 +158,7 @@ export async function extractPdfMainText(
       if (!text.trim()) {
         throw new ReferenceCheckError(NO_TEXT_LAYER);
       }
-      return mainTextBeforeReferences(text).slice(0, maxChars);
+      return shape(text).slice(0, maxChars);
     } finally {
       document.destroy();
     }
@@ -153,6 +172,14 @@ export async function extractPdfMainText(
   } finally {
     await engine.destroy();
   }
+}
+
+/** Exported for tests; see extractPdfFullText. */
+export function wholeDocumentText(text: string): string {
+  return stripLineNumbers(text.replace(/---\s*PAGE BREAK\s*---/g, "\n"))
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Exported for tests; see extractPdfMainText. */

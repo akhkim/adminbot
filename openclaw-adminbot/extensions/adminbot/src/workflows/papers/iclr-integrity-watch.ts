@@ -10,10 +10,10 @@
 // paper's first two full / coauthor-major lab authors. Each reason alerts at most once per version:
 // a second message about the same PDF is the lab nagging, not a warning.
 //
-// What leaves the host: the submission PDF goes to Pangram, whole, the way its website scores an
-// upload (see connectors/pangram.ts for why not just the main text). The text is still read here
-// first, only to recognize a placeholder before paying to score it. The citation strings are
-// looked up by the citation watch, not here -- this reads its stored rows.
+// What leaves the host: the whole document's text, extracted here with the review-mode line numbers
+// stripped, goes to Pangram 4 -- the model and the coverage that match Pangram's website (see
+// connectors/pangram.ts). The PDF itself never leaves. The citation strings are looked up by the
+// citation watch, not here -- this reads its stored rows.
 
 import { createHash } from "node:crypto";
 import { PangramError } from "../../connectors/pangram.js";
@@ -42,12 +42,16 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
  * `ICLR.cc/<year>/Conference` and rejected ones to `.../Rejected_Submission`, so a PI's history of
  * past ICLR papers -- hundreds of billable scores -- never matches.
  */
-/** A completed score of the extracted main text, from before scoring moved to the whole PDF. */
-function isTextScore(check: PaperAiTextCheck): boolean {
-  return check.status === "completed" && check.scored_from !== "pdf";
-}
 
 export const ICLR_UNDER_REVIEW = /^ICLR\.cc\/\d{4}\/Conference\/Submission$/u;
+
+/**
+ * A completed score from an earlier pipeline -- the main body only, or the file endpoint's
+ * Pangram 3.3.2 -- which disagreed with the website and is re-scored once.
+ */
+function isOutdatedScore(check: PaperAiTextCheck): boolean {
+  return check.status === "completed" && check.scored_from !== "full_text";
+}
 /** Alert when Pangram classifies more than this share of the main text as AI-written. */
 export const DEFAULT_AI_THRESHOLD = 0.5;
 export const MAX_AI_CHECK_ATTEMPTS = 3;
@@ -227,7 +231,7 @@ export class IclrIntegrityWatch {
     return (
       !existing ||
       (existing.status === "failed" && existing.attempts < MAX_AI_CHECK_ATTEMPTS) ||
-      isTextScore(existing)
+      isOutdatedScore(existing)
     );
   }
 
@@ -255,7 +259,7 @@ export class IclrIntegrityWatch {
     const prior = store.getPaperAiTextCheck(submission.id, submission.pdf_path);
     // A re-score of a text-era result is the same version, so what was already alerted about it
     // carries over: without this, the new row would forget the alert and raise it a second time.
-    const rescoring = prior && isTextScore(prior) ? prior : undefined;
+    const rescoring = prior && isOutdatedScore(prior) ? prior : undefined;
     const base = {
       submission_id: submission.id,
       pdf_path: submission.pdf_path,
@@ -288,7 +292,7 @@ export class IclrIntegrityWatch {
       .listPaperAiTextChecks(submission.id)
       .find(
         (check) =>
-          check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isTextScore(check),
+          check.pdf_sha256 === pdfSha256 && check.status !== "failed" && !isOutdatedScore(check),
       );
     if (identical) {
       summary.reused++;
@@ -299,8 +303,8 @@ export class IclrIntegrityWatch {
       });
       return;
     }
-    // Read locally only to recognize a placeholder: an abstract-only or text-less upload is not
-    // worth paying Pangram to score. What Pangram scores is the PDF itself, below.
+    // The whole document's text. A placeholder or abstract-only upload is caught here, before
+    // paying Pangram for it.
     let text: string;
     try {
       text = await this.deps.extractText(bytes);
@@ -333,14 +337,15 @@ export class IclrIntegrityWatch {
     }
     const signal = AbortSignal.timeout(this.deps.scoreTimeoutMs ?? DEFAULT_SCORE_TIMEOUT_MS);
     try {
-      const score = await this.deps.score(bytes, signal);
+      const score = await this.deps.score(text, signal);
       summary.scored++;
       store.savePaperAiTextCheck({
         ...base,
         pdf_sha256: pdfSha256,
         status: "completed",
-        scored_from: "pdf",
-        words_scored: score.words_scored ?? words,
+        scored_from: "full_text",
+        words_scored: words,
+        ...(score.model_version ? { model_version: score.model_version } : {}),
         fraction_ai: score.fraction_ai,
         fraction_ai_assisted: score.fraction_ai_assisted,
         fraction_human: score.fraction_human,
@@ -566,7 +571,12 @@ function describeScore(check: PaperAiTextCheck | undefined, threshold: number): 
   }
   if (check.status === "completed") {
     const over = (check.fraction_ai ?? 0) > threshold ? " :warning: over threshold" : "";
-    const scope = check.scored_from === "pdf" ? "whole PDF" : "main text";
+    const scope =
+      check.scored_from === "full_text"
+        ? `whole paper, Pangram ${check.model_version ?? "4"}`
+        : check.scored_from === "pdf"
+          ? "whole PDF, Pangram 3.3.2"
+          : "main text only";
     return `${percent(check.fraction_ai)} AI, ${percent(check.fraction_ai_assisted)} AI-assisted (${check.words_scored ?? 0} words, ${scope})${over}`;
   }
   return `${check.status}${check.error ? ` -- ${check.error}` : ""}`;
@@ -609,8 +619,8 @@ export function buildIntegrityAlertMessage(input: {
   if (check.status === "completed") {
     const over = (check.fraction_ai ?? 0) > threshold;
     lines.push(
-      `• *AI-generated text:* Pangram classifies ${percent(check.fraction_ai)} of the ${check.scored_from === "pdf" ? "paper" : "main text"} as AI-written` +
-        ` and ${percent(check.fraction_ai_assisted)} as AI-assisted (${check.words_scored ?? 0} words, ${check.scored_from === "pdf" ? "the whole PDF" : "before the references"}).` +
+      `• *AI-generated text:* Pangram classifies ${percent(check.fraction_ai)} of the ${check.scored_from === "text" || !check.scored_from ? "main text" : "paper"} as AI-written` +
+        ` and ${percent(check.fraction_ai_assisted)} as AI-assisted (${check.words_scored ?? 0} words, ${check.scored_from === "text" || !check.scored_from ? "before the references" : "the whole paper"}).` +
         (over
           ? ` That is over the ${percent(threshold)} alert threshold.`
           : ` That is under the ${percent(threshold)} alert threshold.`),
