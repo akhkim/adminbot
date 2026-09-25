@@ -265,7 +265,10 @@ export function renderMemberRequests(props: MemberRequestsProps) {
   if (requests.length === 0 && !state.error) {
     return nothing;
   }
-  return html`<section class="adminbot-panel" data-testid="member-requests">
+  return html`<section
+    class="adminbot-card adminbot-member-requests-panel"
+    data-testid="member-requests"
+  >
     <div class="card-title">
       ${props.isAdmin ? `Member requests waiting for review (${requests.length})` : "Your requests"}
     </div>
