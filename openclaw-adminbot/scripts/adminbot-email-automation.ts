@@ -1344,10 +1344,10 @@ async function processMessage(
   model: AdminBotEmailModel,
   databasePath: string,
 ): Promise<boolean> {
-  if (!state.begin(message, classification)) return false;
+  if (!(await state.begin(message, classification))) return false;
   try {
     if (classification.category === "unknown") {
-      state.finish(message.id, "needs_review", classification.reason);
+      await state.finish(message.id, "needs_review", classification.reason);
       return true;
     }
     if (classification.category === "student_reachout") {
@@ -1405,7 +1405,7 @@ async function processMessage(
           google.send(email, draft.subject, draft.body),
         );
         const threadId = extractResultThreadId(sent) ?? message.threadId;
-        state.saveOnboarding(threadId, email, "direct", message.id);
+        await state.saveOnboarding(threadId, email, "direct", message.id);
         await state.effect(message.id, "calendar_reader", () =>
           google.addCalendarReader(email),
         );
@@ -1541,11 +1541,11 @@ async function processMessage(
     await state.effect(message.id, "mark_read", () =>
       google.markRead(message.id),
     );
-    state.finish(message.id, "completed");
+    await state.finish(message.id, "completed");
     return true;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    state.finish(
+    await state.finish(
       message.id,
       reason.includes("manual review") || reason.includes("queued for review")
         ? "needs_review"
@@ -1566,11 +1566,11 @@ async function processMessage(
  * Returns false when the mail turns out not to be a notice after all, so the caller falls through
  * to the normal path rather than swallowing the message.
  */
-function fileRecordingNotice(
+async function fileRecordingNotice(
   message: EmailMessage,
   state: StateStore,
   databasePath: string,
-): boolean {
+): Promise<boolean> {
   const meeting = noticeToMeeting({
     id: message.id,
     subject: message.subject,
@@ -1583,17 +1583,17 @@ function fileRecordingNotice(
     return false;
   }
   if (
-    !state.begin(message, {
+    !(await state.begin(message, {
       category: "meeting_recording",
       reason: "Zoom cloud recording notice",
-    })
+    }))
   ) {
     return true;
   }
   const { service, close } = createAdminBotSqliteService({ databasePath });
   try {
     const result = service.upsertMeeting(meeting);
-    state.finish(
+    await state.finish(
       message.id,
       result.ok ? "completed" : "needs_review",
       result.ok ? undefined : result.error.message,
@@ -1624,10 +1624,10 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   const runStart = new Date();
   // Where this pass starts reading: the watermark when there is one, an hour back when there is
   // not. gmailScanQuery clamps how far back a long outage may reach.
-  const since =
-    state.scannedThrough() ??
-    new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
   try {
+    const since =
+      (await state.scannedThrough()) ??
+      new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
     const messages = await google.search(since);
     summary.found = messages.length;
     summary.scanned_since = since.toISOString();
@@ -1659,7 +1659,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       // common case for most of what a resumed scan returns -- and it has to cost a row lookup
       // rather than a classification, or a catching-up pass would re-bill the model for a week of
       // settled mail.
-      if (state.isSettled(message.id)) {
+      if (await state.isSettled(message.id)) {
         summary.skipped += 1;
         continue;
       }
@@ -1667,8 +1667,8 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       // the classifier, which would file it as unknown and park it for a human.
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
         try {
-          if (fileRecordingNotice(message, state, databasePath)) {
-            if (state.status(message.id) === "needs_review") {
+          if (await fileRecordingNotice(message, state, databasePath)) {
+            if ((await state.status(message.id)) === "needs_review") {
               summary.needs_review += 1;
               await file(message.id, "needs_review");
             } else {
@@ -1687,8 +1687,8 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         }
       }
       const onboarding =
-        state.getOnboarding(message.threadId) ??
-        state.getOnboarding(normalizeAddress(message.from));
+        (await state.getOnboarding(message.threadId)) ??
+        (await state.getOnboarding(normalizeAddress(message.from)));
       try {
         const modelClassification = await model.classify(
           message,
@@ -1714,7 +1714,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           summary.skipped += 1;
           continue;
         }
-        const status = state.status(message.id);
+        const status = await state.status(message.id);
         if (status === "completed") {
           summary.completed += 1;
           await file(message.id, "completed");
@@ -1724,7 +1724,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           await file(message.id, "needs_review");
         }
       } catch (error) {
-        if (state.status(message.id) === "needs_review") {
+        if ((await state.status(message.id)) === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         } else {
@@ -1742,12 +1742,12 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     // landed while the pass was running is read by the next one rather than skipped.
     // A crashed pass can leave a message in processing. begin() refuses to replay it because its
     // external effect may have happened, so keep the scan window open for manual reconciliation.
-    if (state.hasInProgressMessages()) {
+    if (await state.hasInProgressMessages()) {
       summary.failed += 1;
       summary.errors.push("an email remains in processing; review its effects before retrying");
     }
     if (summary.failed === 0) {
-      state.markScannedThrough(runStart);
+      await state.markScannedThrough(runStart);
       summary.scanned_through = runStart.toISOString();
     }
   } finally {
