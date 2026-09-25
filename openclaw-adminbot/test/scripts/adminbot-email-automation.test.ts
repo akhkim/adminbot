@@ -5,6 +5,9 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   calendarCommandRefusal,
+  PERSONAL_CALENDAR_DEFAULT,
+  resolveCalendarTarget,
+  validTimeZone,
   formatTalkLatex,
   outcomeLabelChange,
   resolveEmailAutomationSlackAccount,
@@ -238,6 +241,40 @@ describe("adminbot email automation", () => {
         }),
       ).category,
     ).toBe("reimbursement");
+  });
+
+  // Zhijing's personal calendar holds her travel. A trusted sender may target it; anybody else is
+  // held for a person, never quietly moved onto the lab calendar every member can read.
+  it("lets only a configured sender write to the personal calendar", () => {
+    const trusted = new Set(["pi@example.edu"]);
+    expect(resolveCalendarTarget("pi@example.edu", "personal", trusted)).toBe(
+      "personal",
+    );
+    expect(
+      resolveCalendarTarget("Pi <PI@example.edu>", "personal", trusted),
+    ).toBe("personal");
+    expect(() =>
+      resolveCalendarTarget("stranger@example.com", "personal", trusted),
+    ).toThrow(/queued for review/u);
+    // The lab calendar keeps its old rule: the sender gate for it lives in the classifier.
+    expect(resolveCalendarTarget("stranger@example.com", "lab", trusted)).toBe(
+      "lab",
+    );
+  });
+
+  // The real model named "Europe/Frankfurt" for a Frankfurt departure. Not a zone: dropped, so the
+  // event falls back to the default label instead of being rejected.
+  it("drops a time zone name the runtime does not know", () => {
+    expect(validTimeZone("Europe/Berlin")).toBe("Europe/Berlin");
+    expect(validTimeZone("America/Los_Angeles")).toBe("America/Los_Angeles");
+    expect(validTimeZone("Europe/Frankfurt")).toBeUndefined();
+    expect(validTimeZone(null)).toBeUndefined();
+  });
+
+  it("names the personal calendar even when the environment does not", () => {
+    expect(PERSONAL_CALENDAR_DEFAULT).toMatch(
+      /^a716d322[0-9a-f]+@group\.calendar\.google\.com$/u,
+    );
   });
 
   it("refuses any calendar command that is not a create or a read", () => {
