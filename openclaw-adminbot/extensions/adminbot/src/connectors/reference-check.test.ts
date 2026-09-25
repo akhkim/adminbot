@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { cooldownFor, lookupContext, referenceFetch } from "./reference-check.http.js";
 import {
   createPdfReferenceChecker,
+  extractPdfFullText,
   extractPdfMainText,
   extractPdfReferences,
   mainTextBeforeReferences,
+  wholeDocumentText,
   NO_TEXT_LAYER,
   requiredDatabasesPausedUntil,
 } from "./reference-check.js";
@@ -77,6 +79,27 @@ describe("References-Validation integration", () => {
     ].join("\n");
     expect(mainTextBeforeReferences(text)).toBe(
       "Introduction\nWe study synthetic reference matching.\nMore prose about the method.",
+    );
+  });
+
+  // The AI-text score reads the whole document -- what Pangram's website scores -- so the
+  // bibliography and anything after it stay, and only the margin numbers go.
+  it("keeps the whole document for the AI-text score", async () => {
+    const pdf = referencePdfPages([
+      ["We study synthetic reference matching in depth."],
+      ["References", `[1] ${citation}`, "[2] Doe, J. (2023). A second synthetic reference."],
+      ["A Appendix", "Prompt template used for every model."],
+    ]);
+    const text = await extractPdfFullText(pdf);
+    expect(text).toContain("We study synthetic reference matching in depth.");
+    expect(text).toContain("second synthetic reference");
+    expect(text).toContain("Prompt template used for every model.");
+  });
+
+  it("strips the ICLR margin-number column from the whole document", () => {
+    const column = Array.from({ length: 8 }, (_, i) => String(i).padStart(3, "0"));
+    expect(wholeDocumentText([...column, "Title", "Body text."].join("\n"))).toBe(
+      "Title\nBody text.",
     );
   });
 

@@ -12,7 +12,7 @@ import { createOpenReviewSubmissionReader } from "../connectors/openreview-submi
 import { createPangramScorer } from "../connectors/pangram.js";
 import {
   createPdfReferenceChecker,
-  extractPdfMainText,
+  extractPdfFullText,
   requiredDatabasesPausedUntil,
   type PdfReferenceChecker,
 } from "../connectors/reference-check.js";
@@ -6430,7 +6430,7 @@ function createIclrIntegrityWatch(
     service,
     reader,
     score,
-    extractText: options.integrityTextExtractor ?? ((pdf) => extractPdfMainText(pdf)),
+    extractText: options.integrityTextExtractor ?? ((pdf) => extractPdfFullText(pdf)),
     ...(threshold > 0 && threshold < 1 ? { threshold } : {}),
     // An unparseable date ends the check now rather than letting it run forever.
     until: Number.isNaN(until.getTime()) ? new Date(0) : until,

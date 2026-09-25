@@ -161,7 +161,7 @@ describe("ICLR integrity watch", () => {
     expect(payload.message).toContain("For Zhijing Jin, Ada Lovelace, Grace Hopper.");
     // Scored from the whole PDF, and the message says so rather than "before the references".
     expect(payload.message).toContain("72% of the paper as AI-written");
-    expect(payload.message).toContain("the whole PDF");
+    expect(payload.message).toContain("the whole paper");
     expect(payload.message).toContain("over the 50% alert threshold");
     expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "completed",
@@ -220,33 +220,40 @@ describe("ICLR integrity watch", () => {
     expect(sent).toHaveLength(1);
   });
 
-  // The fix for a paper Pangram's website put at 22% and the watch at 0%: the website scores the
-  // uploaded file, appendix and all, and so does the watch now.
-  it("sends Pangram the PDF itself and records that it did", async () => {
-    const bytes = Buffer.from("%PDF-whole-file");
-    const { store, score, sweep } = setup({ submissions: [submission()], pdf: () => bytes });
+  // The website scored a paper 82% with Pangram 4 on the whole document; the watch now sends that
+  // same text (never the PDF) and records which model scored it.
+  it("sends the whole document's text and records the model that scored it", async () => {
+    const { store, score, sweep } = setup({
+      submissions: [submission()],
+      score: async () => ({
+        fraction_ai: 0.82,
+        fraction_ai_assisted: 0,
+        fraction_human: 0.18,
+        model_version: "4.0",
+      }),
+    });
 
     await sweep();
 
-    expect(score.mock.calls[0]?.[0]).toBe(bytes);
+    expect(score.mock.calls[0]?.[0]).toBe(LONG_TEXT);
     expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "completed",
-      scored_from: "pdf",
+      scored_from: "full_text",
+      model_version: "4.0",
+      words_scored: 400,
     });
   });
 
-  it("uses the word count Pangram reports for the file", async () => {
-    const { store, sweep } = setup({
+  // A response without a version must not leave the score looking outdated, or the paper would be
+  // re-scored, and billed, every hour.
+  it("does not re-score a Pangram 4 result that came back without a version", async () => {
+    const { score, sweep } = setup({
       submissions: [submission()],
-      score: async () => ({
-        fraction_ai: 0.1,
-        fraction_ai_assisted: 0,
-        fraction_human: 0.9,
-        words_scored: 20_424,
-      }),
+      score: async () => ({ fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 }),
     });
     await sweep();
-    expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.words_scored).toBe(20_424);
+    await sweep();
+    expect(score).toHaveBeenCalledTimes(1);
   });
 
   it("still skips a placeholder without paying to score it", async () => {
@@ -272,7 +279,7 @@ describe("ICLR integrity watch", () => {
           fraction_ai: 0.105,
           fraction_ai_assisted: 0.013,
           fraction_human: 0.882,
-          words_scored: 20_424,
+          model_version: "4.0",
         }),
         reportTo: ["UOPERATOR1"],
       });
@@ -288,7 +295,7 @@ describe("ICLR integrity watch", () => {
       const message = (first.proposed_payload as { message: string }).message;
       expect(message).toContain("Second synthetic paper");
       expect(message).toContain("Synthetic paper");
-      expect(message).toContain("11% AI, 1% AI-assisted (20424 words, whole PDF)");
+      expect(message).toContain("11% AI, 1% AI-assisted (400 words, whole paper, Pangram 4.0)");
       expect(message).toContain("Citations: not checked yet");
       expect(watch.status().last_sweep?.report_error).toBeUndefined();
     });
@@ -313,7 +320,7 @@ describe("ICLR integrity watch", () => {
     });
   });
 
-  describe("a version scored from its main text before the switch", () => {
+  describe("a version scored by an earlier pipeline", () => {
     const textEra = {
       submission_id: "paperAAAA",
       pdf_path: "/pdf/v1.pdf",
@@ -331,7 +338,7 @@ describe("ICLR integrity watch", () => {
       alert_proposal_ids: ["proposal-1"],
     };
 
-    it("is scored again from the PDF, once", async () => {
+    it("is scored again from the whole text, once", async () => {
       const { store, score, sweep } = setup({
         submissions: [submission()],
         score: async () => ({ fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 }),
@@ -343,9 +350,21 @@ describe("ICLR integrity watch", () => {
 
       expect(score).toHaveBeenCalledTimes(1);
       expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
-        scored_from: "pdf",
+        scored_from: "full_text",
         fraction_ai: 0.1,
       });
+    });
+
+    // The file endpoint's scores: whole PDF, but Pangram 3.3.2, which read 0% where the website
+    // read 82%. Re-scored like the main-text ones.
+    it("re-scores a Pangram 3.3.2 file score too", async () => {
+      const { store, score, sweep } = setup({ submissions: [submission()] });
+      store.savePaperAiTextCheck({ ...textEra, scored_from: "pdf", alerted_for: [] });
+
+      await sweep();
+
+      expect(score).toHaveBeenCalledTimes(1);
+      expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")?.scored_from).toBe("full_text");
     });
 
     // Same version, same PDF: the Slack alert it already raised is not raised a second time.
@@ -357,7 +376,7 @@ describe("ICLR integrity watch", () => {
 
       expect(sent).toHaveLength(0);
       expect(store.getPaperAiTextCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
-        scored_from: "pdf",
+        scored_from: "full_text",
         alerted_for: ["ai_text"],
         alert_proposal_ids: ["proposal-1"],
       });

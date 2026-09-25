@@ -31,13 +31,16 @@ export type PaperAiTextCheck = {
   fraction_human?: number;
   /** Pangram's short label ("AI", "AI-Assisted", "Human", "Mixed"). */
   prediction?: string;
-  /** Words Pangram scored: its own extraction of the whole PDF (the main text for "text"). */
+  /** Words sent to Pangram. */
   words_scored?: number;
   /**
-   * What was sent to Pangram. "pdf" is the whole file, scored the way Pangram's website scores
-   * an upload; "text" (or absent) is the older main-text-only score, which is re-scored once.
+   * What was scored. "full_text" is the whole document's text under Pangram 4, which matches the
+   * website. The earlier two are re-scored once: "pdf" (the file endpoint, stuck on Pangram 3.3.2)
+   * and "text" or absent (the main body only, before the References heading).
    */
-  scored_from?: "pdf" | "text";
+  scored_from?: "full_text" | "pdf" | "text";
+  /** Pangram's reported model version for this score ("4.0"). */
+  model_version?: string;
   /** A fixed, operator-facing message; never provider or manuscript text. */
   error?: string;
   /** Reasons a Slack alert has already been raised for, so none is repeated. */
@@ -59,12 +62,12 @@ export type AiTextScore = {
   fraction_ai_assisted: number;
   fraction_human: number;
   prediction?: string;
-  /** Words the provider scored, from its own extraction of the file. */
-  words_scored?: number;
+  /** The provider's model version, as it reported it. */
+  model_version?: string;
 };
 
-/** Scores a whole PDF. Rejects on any provider or network failure. */
-export type AiTextScorer = (pdf: Uint8Array, signal: AbortSignal) => Promise<AiTextScore>;
+/** Scores a document's text. Rejects on any provider or network failure. */
+export type AiTextScorer = (text: string, signal: AbortSignal) => Promise<AiTextScore>;
 
 export type PaperIntegritySweepSummary = {
   started_at: string;

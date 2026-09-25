@@ -146,20 +146,22 @@ without `--dry-run`.
 - **Scope.** Only ICLR main-conference papers still under review
   (`ICLR.cc/<year>/Conference/Submission`). Accepted and rejected ICLR papers have moved venue, so
   the account's history is never scored.
-- **AI-text score.** The submission PDF itself goes to Pangram's file endpoint
-  (`https://file-external.api.pangram.com/`), uploaded as `submission.pdf` with
-  `public_dashboard_link: false` — the same scoring Pangram's website gives an upload, appendix
-  included. It used to send only the extracted main text, before the References heading; on one
-  ICLR submission that read 0% where the website read 22%, because every AI-flagged window was in
-  the appendix. Scores from that era (`scored_from` unset) are re-scored once from the PDF, keeping
-  any alert already raised; a failed re-score leaves the old score in place. Each uploaded version
-  is scored once, and identical bytes under a new path reuse the earlier score. Pangram bills per
-  started 1,000 words of its own extraction — a 39-page paper is about 20,000 — so an unchanged
-  paper costs nothing per hourly run. The text is still read locally first, only to recognize a
-  placeholder: one with no text or under 300 words is recorded as `unreadable` and not sent.
-  Note that a whole-file score counts prompt templates, code listings and model transcripts in an
-  appendix, which Pangram classifies as AI-generated. A Pangram failure (bad key, out of
-  credits, rate limit, timeout) is `failed` and retried by the next three sweeps.
+- **AI-text score.** The whole document's text — bibliography and appendix included, extracted
+  on the host with review-mode line numbers stripped (including the ICLR template's column of
+  number-only lines) — goes to Pangram's `/task` API with `model: "pangram-4"` and
+  `public_dashboard_link: false`. The PDF itself never leaves the host. This is what matches
+  Pangram's website, which runs Pangram 4 over the whole upload: on one ICLR submission the website
+  read 82% and this text under Pangram 4 read 82%. Two earlier pipelines did not, and their scores
+  (`scored_from` of `text`, `pdf` or unset) are re-scored once, keeping any alert already raised; a
+  failed re-score leaves the old number in place. They were the main body only (0% on that paper),
+  and Pangram's file endpoint, which ignores `model` and always runs the retiring Pangram 3.3.2
+  (also 0%). The API's default model is still 3.3.2 until 30 September 2026, which is why the model
+  is pinned. Each uploaded version is scored once, and identical bytes under a new path reuse the
+  earlier score. Pangram 4 bills per started 100 words, so an unchanged paper costs nothing per
+  hourly run. A placeholder or a text under 300 words is recorded as `unreadable` and not sent. A
+  whole-document score counts prompt templates, code listings and model transcripts in an
+  appendix. A Pangram failure (bad key, out of credits, rate limit, timeout) is `failed` and
+  retried by the next three sweeps.
 - **Alert.** A Slack group DM, as the auto-approved `paper_integrity.alert` action, goes to the
   head professor (the `head_professor_member_id` setting) and the first two lab members, in author
   order, whose Member Type includes `full` or `coauthor-major`. Authors are matched on the roster's
