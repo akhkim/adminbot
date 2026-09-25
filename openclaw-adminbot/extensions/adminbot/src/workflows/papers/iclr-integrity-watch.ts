@@ -64,12 +64,20 @@ export type IclrIntegrityWatchDeps = {
   threshold?: number;
   now?: () => Date;
   scoreTimeoutMs?: number;
+  /**
+   * When the check stops for good: the submission deadline it exists to protect. After it,
+   * nothing is scored (and billed) or alerted -- a paper can no longer be fixed, so a message
+   * about it is only an accusation.
+   */
+  until?: Date;
 };
 
 export type IclrIntegritySweepStart = {
   started: boolean;
   submissions: number;
   pending: number;
+  /** Set when the check is past its `until` and will not run again. */
+  ended_at?: string;
   last_sweep?: PaperIntegritySweepSummary;
 };
 
@@ -85,6 +93,7 @@ export class IclrIntegrityWatch {
     return {
       running: Boolean(this.running || this.starting),
       threshold: this.threshold(),
+      ...(this.deps.until ? { until: this.deps.until.toISOString(), ended: this.ended() } : {}),
       ...(this.current ? { current_sweep: { ...this.current } } : {}),
       ...(this.last ? { last_sweep: { ...this.last } } : {}),
     };
@@ -100,6 +109,15 @@ export class IclrIntegrityWatch {
    * caller) and starts a background sweep that scores new versions and raises due alerts.
    */
   async start(): Promise<IclrIntegritySweepStart> {
+    if (this.ended()) {
+      return {
+        started: false,
+        submissions: 0,
+        pending: 0,
+        ended_at: this.deps.until!.toISOString(),
+        ...(this.last ? { last_sweep: { ...this.last } } : {}),
+      };
+    }
     if (this.running || this.starting) {
       return {
         started: false,
@@ -152,6 +170,10 @@ export class IclrIntegrityWatch {
     return this.deps.threshold ?? DEFAULT_AI_THRESHOLD;
   }
 
+  private ended() {
+    return Boolean(this.deps.until && this.now().getTime() >= this.deps.until.getTime());
+  }
+
   private needsScore(submission: OpenReviewSubmission): boolean {
     const existing = this.deps.store.getPaperAiTextCheck(submission.id, submission.pdf_path);
     return !existing || (existing.status === "failed" && existing.attempts < MAX_AI_CHECK_ATTEMPTS);
@@ -160,6 +182,10 @@ export class IclrIntegrityWatch {
   private async sweep(submissions: OpenReviewSubmission[], summary: PaperIntegritySweepSummary) {
     // Most recently changed first: near a deadline that is the paper somebody is still fixing.
     for (const submission of submissions.toSorted((a, b) => b.modified_at - a.modified_at)) {
+      // Checked per paper: a sweep that straddles the cutoff stops rather than alerting late.
+      if (this.ended()) {
+        return;
+      }
       if (this.needsScore(submission)) {
         await this.scoreVersion(submission, summary);
       }

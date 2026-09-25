@@ -6098,6 +6098,11 @@ function createIclrIntegrityWatch(
     return undefined;
   }
   const threshold = Number(process.env.ADMINBOT_ICLR_AI_THRESHOLD);
+  // The ICLR 2027 run ends at 08:00 Toronto time on 26 September 2026. A default rather than only an
+  // env line, so a host that never had the line set still stops; the env reopens it for a later cycle.
+  const until = new Date(
+    process.env.ADMINBOT_ICLR_INTEGRITY_UNTIL?.trim() || DEFAULT_ICLR_INTEGRITY_UNTIL,
+  );
   return new IclrIntegrityWatch({
     store,
     service,
@@ -6105,8 +6110,12 @@ function createIclrIntegrityWatch(
     score,
     extractText: options.integrityTextExtractor ?? ((pdf) => extractPdfMainText(pdf)),
     ...(threshold > 0 && threshold < 1 ? { threshold } : {}),
+    // An unparseable date ends the check now rather than letting it run forever.
+    until: Number.isNaN(until.getTime()) ? new Date(0) : until,
   });
 }
+
+const DEFAULT_ICLR_INTEGRITY_UNTIL = "2026-09-26T08:00:00-04:00";
 
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {

@@ -161,6 +161,10 @@ without `--dry-run`.
   `not_found` reference. Each reason alerts at most once per version, and a citation result that
   lands after the score still alerts on the next hourly run. If nobody on the paper has a linked
   Slack account, the alert waits and the reason is stored as `alert_error`.
+- **Cutoff.** The check stops for good at `ADMINBOT_ICLR_INTEGRITY_UNTIL`, which defaults to
+  2026-09-26 08:00 Toronto time (the end of the ICLR 2027 run). After that time a run starts
+  nothing and answers `ended_at`, and a sweep that crosses the cutoff stops before its next paper.
+  Set the variable to a later date to reopen it for another cycle.
 - **Scheduling and results.** The `adminbot-iclr-integrity` cron job (`12 * * * *`) calls
   `POST /openreview/integrity-checks/run`. `GET /openreview/integrity-checks` (service token or
   admin session) lists every scored version.

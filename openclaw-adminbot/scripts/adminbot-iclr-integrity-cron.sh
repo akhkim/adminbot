@@ -54,7 +54,9 @@ except json.JSONDecodeError:
     print(f"ICLR integrity checks: unreadable response: {sys.argv[1][:300]}", file=sys.stderr)
     raise SystemExit(1)
 
-if result.get("started"):
+if result.get("ended_at"):
+    print(f"ICLR integrity checks: ended at {result['ended_at']}; nothing more is checked")
+elif result.get("started"):
     print(
         f"ICLR integrity checks: sweep started, {result.get('pending', 0)} of "
         f"{result.get('submissions', 0)} ICLR submission(s) need a score"

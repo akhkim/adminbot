@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
 import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import { createAdminBotMockService } from "./server.js";
@@ -9,7 +9,13 @@ import { createAdminBotMockService } from "./server.js";
 const token = "synthetic-service-token";
 const instances: ReturnType<typeof createAdminBotMockService>[] = [];
 const dirs: string[] = [];
+beforeEach(() => {
+  // Independent of the wall clock: the built-in default cutoff is a real date.
+  vi.stubEnv("ADMINBOT_ICLR_INTEGRITY_UNTIL", "2999-01-01T00:00:00Z");
+});
+
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const instance of instances.splice(0)) {
     if (instance.server.listening) {
       await new Promise<void>((resolve) => {
@@ -111,6 +117,18 @@ describe("ICLR integrity check routes", () => {
         words_scored: 500,
       }),
     ]);
+  });
+
+  it("stops for good once the cutoff has passed", async () => {
+    vi.stubEnv("ADMINBOT_ICLR_INTEGRITY_UNTIL", "2020-01-01T00:00:00Z");
+    const { score, call } = await setup();
+    const run = await call("/openreview/integrity-checks/run", { method: "POST" });
+    expect(run.status).toBe(202);
+    expect(await run.json()).toMatchObject({
+      started: false,
+      ended_at: "2020-01-01T00:00:00.000Z",
+    });
+    expect(score).not.toHaveBeenCalled();
   });
 
   it("answers 503 naming the settings when the check is off", async () => {

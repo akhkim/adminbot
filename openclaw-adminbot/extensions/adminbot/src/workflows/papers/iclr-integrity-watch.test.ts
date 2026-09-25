@@ -323,6 +323,66 @@ describe("ICLR integrity watch", () => {
     expect(check?.alert_error).toBeTruthy();
   });
 
+  it("scores and alerts nothing once the deadline has passed", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    const reader = {
+      profileId: vi.fn(async () => "~Zhijing_Jin1"),
+      listSubmissions: vi.fn(async () => [submission()]),
+      readPdf: vi.fn(async () => Buffer.from("%PDF-x")),
+    } satisfies OpenReviewSubmissionReader;
+    const score = vi.fn<AiTextScorer>();
+    const watch = new IclrIntegrityWatch({
+      store,
+      service,
+      reader,
+      score,
+      extractText: async () => LONG_TEXT,
+      until: new Date("2026-09-26T12:00:00Z"),
+      now: () => new Date("2026-09-26T12:00:00Z"),
+    });
+
+    expect(await watch.start()).toMatchObject({
+      started: false,
+      ended_at: "2026-09-26T12:00:00.000Z",
+    });
+    expect(reader.listSubmissions).not.toHaveBeenCalled();
+    expect(score).not.toHaveBeenCalled();
+  });
+
+  it("stops a sweep that crosses the deadline before the next paper", async () => {
+    let clock = new Date("2026-09-26T11:59:00Z");
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    const reader = {
+      profileId: vi.fn(async () => "~Zhijing_Jin1"),
+      listSubmissions: vi.fn(async () => [
+        submission({ id: "newerBBBB", modified_at: 2 }),
+        submission({ id: "olderAAAA", modified_at: 1 }),
+      ]),
+      readPdf: vi.fn(async (id: string) => Buffer.from(`%PDF-${id}`)),
+    } satisfies OpenReviewSubmissionReader;
+    const score = vi.fn<AiTextScorer>(async () => {
+      clock = new Date("2026-09-26T12:00:01Z");
+      return { fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 };
+    });
+    const watch = new IclrIntegrityWatch({
+      store,
+      service,
+      reader,
+      score,
+      extractText: async () => LONG_TEXT,
+      until: new Date("2026-09-26T12:00:00Z"),
+      now: () => clock,
+    });
+
+    await watch.start();
+    await watch.idle();
+
+    expect(score).toHaveBeenCalledTimes(1);
+    expect(store.getPaperAiTextCheck("olderAAAA", "/pdf/v1.pdf")).toBeUndefined();
+  });
+
   it("normalizes tilde ids, profile URLs and emails alike", () => {
     expect(normalizeAuthorId("https://openreview.net/profile?id=~Ada_Lovelace1")).toBe(
       "~ada_lovelace1",
