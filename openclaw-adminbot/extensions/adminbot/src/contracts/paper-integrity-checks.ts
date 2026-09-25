@@ -75,4 +75,6 @@ export type PaperIntegritySweepSummary = {
   reused: number;
   failed: number;
   alerts: number;
+  /** Set when the sweep's digest DM could not be sent; see IclrIntegrityWatchDeps.reportTo. */
+  report_error?: string;
 };

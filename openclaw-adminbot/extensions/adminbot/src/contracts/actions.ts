@@ -96,6 +96,11 @@ export const adminBotActionTypes = [
   // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
   // what evidence" is a question the audit log has to answer on its own row.
   "paper_integrity.alert",
+  // A Slack DM, after every hourly integrity sweep, listing each ICLR submission's current AI-text
+  // score and citation status -- to the operators named in ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS,
+  // never to authors. Its own type so a routine digest and a warning about one paper are never the
+  // same row in the audit log.
+  "paper_integrity.report",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.

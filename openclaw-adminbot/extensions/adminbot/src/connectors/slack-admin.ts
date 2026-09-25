@@ -69,7 +69,11 @@ export function createAdminBotSlackAdminExecutor(
         await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
-      if (proposal.type === "member_nudge.escalate" || proposal.type === "paper_integrity.alert") {
+      if (
+        proposal.type === "member_nudge.escalate" ||
+        proposal.type === "paper_integrity.alert" ||
+        proposal.type === "paper_integrity.report"
+      ) {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
         await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
