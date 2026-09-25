@@ -451,7 +451,8 @@ describe("renderAdminBot members panel — the edit form waits to be asked for",
       expect(names, field.key).toContain(field.key);
     }
     expect(names).toContain("id");
-    expect(names).toContain("privilegeLevel");
+    expect(names).toContain("memberType");
+    expect(names).not.toContain("privilegeLevel");
   });
 });
 
@@ -479,447 +480,157 @@ describe("renderAdminBot members panel — edit affordance", () => {
     const nameInput = popover?.querySelector<HTMLInputElement>('input[name="name"]');
     expect(nameInput?.value).toBe("Pat Doe");
 
-    const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    expect(privilege?.value).toBe("admin");
+    // Access is a Member type now: an admin whose type predates the tag has it ticked, so saving
+    // keeps their access.
+    const ticked = [
+      ...(popover?.querySelectorAll<HTMLInputElement>('input[name="memberType"]') ?? []),
+    ]
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+    expect(ticked).toContain("adminbot-admin");
 
     // The Add-member popover still exists alongside per-row editing.
     expect(container.querySelector("#adminbot-add-member")).not.toBeNull();
   });
 
-  it("defaults a new member's privilege select to external_collaborator", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    const privilege = container.querySelector<HTMLSelectElement>(
-      '#adminbot-add-member select[name="privilegeLevel"]',
-    );
-
-    expect(privilege?.value).toBe("external_collaborator");
-    expect([...(privilege?.options ?? [])].map((option) => option.value)).toEqual([
-      "external_collaborator",
-      "trial",
-      "member",
-      "admin",
-    ]);
-  });
-
-  it("offers the collaborator subgroup only while the privilege select says external collaborator", () => {
+  it("asks for Member type as checkboxes, with no Privilege or subgroup field", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const form = container.querySelector<HTMLElement>("#adminbot-add-member");
-    const field = form?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
-    const subgroup = form?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]');
 
-    // A new member defaults to external_collaborator, so the field starts visible.
-    expect(field?.hidden).toBe(false);
-    expect([...(subgroup?.options ?? [])].map((option) => option.value)).toEqual([
-      "",
-      "interviewee",
-      "slightly_better_than_emails",
-      "acquaintance",
-      "alumni",
-      "own_pace_advisee",
-      "coauthor_minor",
-      "coauthor_major",
-      "coauthor_discussant_designer",
-      "disappearing_coauthor",
-      "external_prof",
-    ]);
-    expect([...(subgroup?.options ?? [])].map((option) => option.textContent?.trim())).toContain(
-      "Slightly Better Than Emails",
+    expect(form?.querySelector('[name="privilegeLevel"]')).toBeNull();
+    expect(form?.querySelector('[name="collaboratorSubgroup"]')).toBeNull();
+    const boxes = [...(form?.querySelectorAll<HTMLInputElement>('input[name="memberType"]') ?? [])];
+    expect(boxes.map((box) => box.value)).toEqual(
+      expect.arrayContaining(["full", "alumni", "coauthor-major", "adminbot-admin"]),
     );
-
-    const privilege = form?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    privilege!.value = "member";
-    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(field?.hidden).toBe(true);
-
-    // The prefilled edit popover for a core member starts hidden for the same reason.
-    const editField = container.querySelector<HTMLElement>(
-      "#adminbot-edit-member-0 [data-collaborator-subgroup-field]",
-    );
-    expect(editField?.hidden).toBe(true);
+    expect(boxes.some((box) => box.checked)).toBe(false);
   });
 
-  // The roster is written down two paths that do not know about each other, so one person can be
-  // two half-records. The panel is a comparison an admin resolves, never an automatic merge.
-  it("offers to combine two records that look like one person", () => {
-    const saved: Array<[string, string]> = [];
+  it("sends every ticked member type, and no Privilege or subgroup", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(
       baseProps({
         mode: "admin",
         data: {
           ...createEmptyAdminBotDashboardData(),
           members: [
-            member({ id: "terry-jingchen-zhang", name: "Terry Jingchen Zhang", email: "t@lab.co" }),
             member({
-              id: "terry-zhang",
-              name: "Terry Zhang",
-              email: "terry@cs.test",
-              slack_user_id: "U09",
+              privilege_level: "external_collaborator",
+              collaborator_subgroup: "coauthor_major",
+              member_type: "coauthor-major",
             }),
           ],
           loadedAt: Date.now(),
         },
-        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
+        onSaveMember: (input) => saved.push(input),
       }),
     );
-    const panel = container.querySelector('[data-testid="member-duplicates"]');
-    expect(panel).not.toBeNull();
-    // Either record can be the survivor -- only a human knows which spelling the lab uses.
-    expect(
-      panel?.querySelector('[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]'),
-    ).not.toBeNull();
-    expect(
-      panel?.querySelector('[data-testid="member-merge-terry-zhang-terry-jingchen-zhang"]'),
-    ).not.toBeNull();
-
-    globalThis.confirm = () => true;
-    panel
-      ?.querySelector<HTMLButtonElement>(
-        '[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]',
-      )
-      ?.click();
-    expect(saved).toEqual([["terry-jingchen-zhang", "terry-zhang"]]);
-  });
-
-  it("renders only one page of a huge duplicate set and can reach its last pair", () => {
-    const roster = Array.from({ length: 100 }, (_, i) =>
-      member({ id: `same-${i}`, name: "Same Name", email: `same-${i}@lab.test` }),
-    );
-    const props = baseProps({
-      mode: "admin",
-      data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
-      memberList: {
-        rows: roster.slice(0, 20),
-        total: roster.length,
-        limit: 20,
-        offset: 0,
-        query: "",
-        loading: false,
-        error: null,
-      },
-      rosterLoadedAt: Date.now(),
-      onMergeMembers: () => undefined,
-      onRerender: () => undefined,
-    });
-    const container = document.createElement("div");
-    const draw = () => render(renderAdminBot(props), container);
-    const pairIds = (row: Element | undefined) =>
-      [...(row?.querySelectorAll(".adminbot-duplicate__id") ?? [])].map((node) =>
-        node.textContent?.trim(),
-      );
-    draw();
-    const panel = container.querySelector('[data-testid="member-duplicates"]');
-    expect(panel?.querySelector(".card-sub")?.textContent).toContain("4950 pairs");
-    expect(panel?.querySelectorAll(".adminbot-duplicates__list > li")).toHaveLength(20);
-    panel
-      ?.querySelector<HTMLButtonElement>('nav[aria-label="Duplicate pair pages"] button:last-child')
-      ?.click();
-    draw();
-    expect(
-      pairIds(container.querySelector(".adminbot-duplicates__list > li") ?? undefined),
-    ).toEqual(["same-0", "same-21"]);
-    const page = container.querySelector<HTMLInputElement>(
-      'nav[aria-label="Duplicate pair pages"] input',
-    );
-    page!.value = page!.max;
-    page!.dispatchEvent(new Event("change", { bubbles: true }));
-    draw();
-    const rows = [...container.querySelectorAll(".adminbot-duplicates__list > li")];
-    expect(rows).toHaveLength(10);
-    expect(pairIds(rows.at(-1))).toEqual(["same-98", "same-99"]);
-  });
-
-  it("opens paged members without a full roster and loads roster-wide checks only on request", () => {
-    let requested = 0;
-    const props = baseProps({
-      mode: "admin",
-      data: {
-        ...createEmptyAdminBotDashboardData(),
-        members: [member({ id: "pat", name: "Pat Doe" })],
-        loadedAt: Date.now(),
-      },
-      memberList: {
-        rows: [member({ id: "lee", name: "Lee River", email: "lee@lab.test" })],
-        total: 10_000,
-        limit: 50,
-        offset: 0,
-        query: "",
-        loading: false,
-        error: null,
-      },
-      rosterLoadedAt: null,
-      onLoadFullRoster: () => {
-        requested += 1;
-      },
-      onMergeMembers: () => undefined,
-    });
-    const container = renderToDiv(props);
-    expect(container.textContent).toContain("Lee River");
-    expect(container.textContent).toContain("of 10000");
-    expect(container.querySelector('[data-testid="member-duplicates"]')).toBeNull();
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="member-roster-checks-on-demand"] button')
-      ?.click();
-    expect(requested).toBe(1);
-  });
-
-  it("offers the address-less purge only when there is something in it, and previews without a confirm", () => {
-    const calls: boolean[] = [];
-    const reachable = renderToDiv(
-      baseProps({
-        mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [member({ id: "pat", email: "pat@lab.co" })],
-          loadedAt: Date.now(),
-        },
-        onPurgeMembersWithoutEmail: (dryRun) => calls.push(dryRun),
-      }),
-    );
-    expect(reachable.querySelector('[data-testid="members-without-email"]')).toBeNull();
-
-    const container = renderToDiv(
-      baseProps({
-        mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({ id: "pat", email: "pat@lab.co" }),
-            // Reachable at one address each, so neither is a candidate.
-            member({ id: "cal", email: undefined, calendar_email: "cal@lab.co" }),
-            member({ id: "corr", email: undefined, correspondence_email: "corr@lab.co" }),
-            member({ id: "ghost", name: "Ghost Row", email: undefined }),
-          ],
-          loadedAt: Date.now(),
-        },
-        onPurgeMembersWithoutEmail: (dryRun) => calls.push(dryRun),
-      }),
-    );
-    const panel = container.querySelector('[data-testid="members-without-email"]');
-    expect(panel).not.toBeNull();
-    expect(panel?.textContent).toContain("1 members with no email on file");
-    expect(panel?.textContent).toContain("Ghost Row");
-
-    // Preview is a read, so it asks nothing.
-    globalThis.confirm = () => false;
-    panel
-      ?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-preview"]')
-      ?.click();
-    expect(calls).toEqual([true]);
-
-    // The delete does, and a refused confirm deletes nothing.
-    panel?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-purge"]')?.click();
-    expect(calls).toEqual([true]);
-
-    globalThis.confirm = () => true;
-    panel?.querySelector<HTMLButtonElement>('[data-testid="members-without-email-purge"]')?.click();
-    expect(calls).toEqual([true, false]);
-  });
-
-  it("deletes a member from the edit card, and only on a confirmation", () => {
-    const deleted: string[] = [];
-    const container = renderToDiv(
-      baseProps({
-        mode: "admin",
-        onDeleteMember: (target) => deleted.push(target.id),
-      }),
-    );
-    const button = container.querySelector<HTMLButtonElement>('[data-testid="member-delete-pat"]');
-    expect(button).not.toBeNull();
-
-    globalThis.confirm = () => false;
-    button?.click();
-    expect(deleted).toEqual([]);
-
-    globalThis.confirm = () => true;
-    button?.click();
-    expect(deleted).toEqual(["pat"]);
-  });
-
-  it("renders no delete affordance without a handler", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    expect(container.querySelector('[data-testid="member-delete-pat"]')).toBeNull();
-    expect(container.querySelector('[data-testid="members-without-email"]')).toBeNull();
-  });
-
-  it("merges nothing without a confirmation", () => {
-    const saved: Array<[string, string]> = [];
-    const container = renderToDiv(
-      baseProps({
-        mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({ id: "miu-nicole-takagi", name: "Miu Nicole Takagi" }),
-            member({ id: "miu-takagi", name: "Miu Takagi", email: "miu@cs.test" }),
-          ],
-          loadedAt: Date.now(),
-        },
-        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
-      }),
-    );
-    globalThis.confirm = () => false;
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="member-merge-miu-takagi-miu-nicole-takagi"]')
-      ?.click();
-    expect(saved).toEqual([]);
-  });
-
-  it("keeps the panel off the page when there is nothing to combine", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    expect(container.querySelector('[data-testid="member-duplicates"]')).toBeNull();
-  });
-
-  // The whole point of the shared registry: the roster editor and the member's own profile page
-  // ask for the same facts. It used to be twenty fields against twenty-seven, so an admin looking
-  // at a record could not fill in a preferred name, a CV link or any social but GitHub.
-  it("offers every member field the profile page does", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
     const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const missing = PROFILE_FIELDS.filter(
-      (field) => !popover?.querySelector(`[name="${field.key}"]`),
-    ).map((field) => field.key);
-    expect(missing).toEqual([]);
+    popover!.querySelector<HTMLInputElement>('input[name="memberType"][value="alumni"]')!.checked =
+      true;
+    popover
+      ?.querySelector<HTMLFormElement>("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(saved[0]?.memberType).toBe("alumni, coauthor-major");
+    expect(saved[0]).not.toHaveProperty("privilegeLevel");
+    expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
+    // The roster still shows the subgroup next to the access level it qualifies.
+    expect(container.querySelector("tbody tr")?.textContent).toContain("Coauthor Major");
   });
 
-  // adminBotAdminOwnedProfileFields is empty at present -- `linkedin_urn` was its last entry and is
-  // now an ordinary required field -- so the first half of this asserts a rule over nothing today.
-  // It stays anyway: the rule is what makes the list safe to repopulate, and a test that only ran
-  // while a particular field happened to be on it would be gone by the time it mattered.
-  it("keeps admin-only fields out of a member's own edit form", () => {
-    const container = renderToDiv(
-      // `mode` is admin-or-general; the self-edit popover is what a non-admin gets on their own
-      // row, which is the general roster view plus a signed-in member id.
-      baseProps({ mode: "general", signedInMemberId: "pat" }),
-    );
-    const popover = container.querySelector<HTMLElement>("#adminbot-self-edit-member-0");
-    for (const owned of PROFILE_FIELDS.filter((field) => field.adminOnly)) {
-      expect(popover?.querySelector(`[name="${owned.key}"]`)).toBeNull();
-    }
-    // Everything else is still there -- the restriction is the flag, not a shorter list. With the
-    // list empty that is every field in the registry, the URN among them.
-    const missing = PROFILE_FIELDS.filter(
-      (field) => !field.adminOnly && !popover?.querySelector(`[name="${field.key}"]`),
-    ).map((field) => field.key);
-    expect(missing).toEqual([]);
-    expect(popover?.querySelector('[name="linkedin_urn"]')).not.toBeNull();
-  });
-
-  // The nudge allowlist. Its whole value is that somebody chose each name, so the editor has to be
-  // able to say "no" as clearly as it says "yes" -- and an unchecked box submits nothing at all,
-  // which is the case that silently turns a removal into a no-op if the collector reads truthiness.
-  describe("nudge list checkbox", () => {
-    function submitWith(checked: boolean): AdminBotLabMemberSaveInput[] {
+  it("never autosaves a Member type or Meetings tick", () => {
+    vi.useFakeTimers();
+    try {
       const saved: AdminBotLabMemberSaveInput[] = [];
       const container = renderToDiv(
         baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
       );
-      const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-      const box = popover?.querySelector<HTMLInputElement>('[name="receivesNudges"]');
-      box!.checked = checked;
-      popover
-        ?.querySelector<HTMLFormElement>("form")
-        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      return saved;
+      const box = container.querySelector<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="memberType"][value="alumni"]',
+      );
+      box!.checked = true;
+      box!.dispatchEvent(new Event("change", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toEqual([]);
+
+      // An ordinary field still autosaves -- without the type in the payload.
+      const name = container.querySelector<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="name"]',
+      );
+      name!.value = "Pat D.";
+      name!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).not.toHaveProperty("memberType");
+      expect(saved[0]).not.toHaveProperty("meetings");
+    } finally {
+      vi.useRealTimers();
     }
-
-    it("puts somebody on the list", () => {
-      expect(submitWith(true)[0]?.receivesNudges).toBe(true);
-    });
-
-    it("takes somebody off it, rather than leaving the field unsaid", () => {
-      expect(submitWith(false)[0]?.receivesNudges).toBe(false);
-    });
   });
 
-  it("sends registry fields in the service's wire shape, typed by the registry", () => {
-    const saved: AdminBotLabMemberSaveInput[] = [];
-    const container = renderToDiv(
-      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
-    );
-    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const set = (key: string, value: string) => {
-      const input = popover?.querySelector<HTMLInputElement>(`[name="${key}"]`);
-      input!.value = value;
-    };
-    set("preferred_name", "Pat");
-    set("research_topics", "robotics, world models");
-    set("hours_per_week", "12");
-    popover
-      ?.querySelector<HTMLFormElement>("form")
-      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-
-    expect(saved[0]?.profile).toMatchObject({
-      preferred_name: "Pat",
-      research_topics: ["robotics", "world models"],
-      hours_per_week: 12,
-    });
-    // A field the admin left blank is absent, not "" -- the service reads an empty string as
-    // "clear this", so sending every untouched field would wipe the record on each save.
-    expect(saved[0]?.profile).not.toHaveProperty("scholar_url");
-  });
-
-  it("prefills the subgroup of an external collaborator and sends it with the save", () => {
+  it("offers the lab's meetings, ticked where they are on the guest list", () => {
     const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(
       baseProps({
         mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({
-              privilege_level: "external_collaborator",
-              collaborator_subgroup: "coauthor_major",
-            }),
+        onSaveMember: (input) => saved.push(input),
+        standingMeetings: {
+          meetings: [
+            {
+              id: "monday",
+              title: "Group meeting",
+              kind: "group",
+              event_ids: ["monday"],
+              attendees: ["pat@lab.co"],
+            },
+            {
+              id: "theme1",
+              title: "Theme: Causal Inference",
+              kind: "theme",
+              event_ids: ["theme1"],
+              attendees: [],
+            },
           ],
+          loading: false,
+          error: null,
           loadedAt: Date.now(),
         },
-        onSaveMember: (input) => saved.push(input),
       }),
     );
     const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const field = popover?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
-    expect(field?.hidden).toBe(false);
-    expect(
-      popover?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]')?.value,
-    ).toBe("coauthor_major");
+    const boxes = [
+      ...(popover?.querySelectorAll<HTMLInputElement>('input[name="meetings"]') ?? []),
+    ];
+    expect(boxes.map((box) => [box.value, box.checked])).toEqual([
+      ["monday", true],
+      ["theme1", false],
+    ]);
+    expect(popover?.textContent).toContain("Theme: Causal Inference");
 
+    boxes[1]!.checked = true;
     popover
       ?.querySelector<HTMLFormElement>("form")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    expect(saved[0]?.collaboratorSubgroup).toBe("coauthor_major");
-
-    // The roster shows the subgroup next to the privilege it qualifies.
-    expect(container.querySelector("tbody tr")?.textContent).toContain("Coauthor Major");
+    expect(saved[0]?.meetings).toEqual(["monday", "theme1"]);
   });
 
-  it("keeps the subgroup out of the payload once the privilege is no longer collaborator", () => {
+  it("sends no meetings at all when the list could not be read", () => {
     const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(
       baseProps({
         mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({
-              privilege_level: "external_collaborator",
-              collaborator_subgroup: "coauthor_major",
-            }),
-          ],
-          loadedAt: Date.now(),
-        },
         onSaveMember: (input) => saved.push(input),
+        standingMeetings: { meetings: [], loading: false, error: "calendar down", loadedAt: null },
       }),
     );
     const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    privilege!.value = "member";
-    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(popover?.textContent).toContain("calendar down");
     popover
       ?.querySelector<HTMLFormElement>("form")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
+    // An unread list must not read as "on no meetings": that would remove them from every one.
+    expect(saved[0]).not.toHaveProperty("meetings");
   });
 
   it("hides the subgroup of a member whose privilege is not collaborator", () => {
@@ -1125,14 +836,13 @@ describe("renderAdminBot members panel — edit affordance", () => {
   // the form that creates a member has to be able to say what they are.
   it("offers the member type on the add-member form", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
-    const select = container.querySelector<HTMLSelectElement>(
-      '#adminbot-add-member select[name="memberType"]',
-    );
-    expect(select?.value).toBe("");
-    const options = [...(select?.options ?? [])].map((option) => option.value);
-    expect(options[0]).toBe("");
-    expect(options).toContain("full");
-    expect(options).toContain("alumni");
+    const values = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        '#adminbot-add-member input[name="memberType"]',
+      ),
+    ].map((box) => box.value);
+    expect(values).toContain("full");
+    expect(values).toContain("alumni");
   });
 
   // The column is a comma-separated list and the lab uses tokens before anybody adds them to the
@@ -1143,15 +853,19 @@ describe("renderAdminBot members panel — edit affordance", () => {
         mode: "admin",
         data: {
           ...createEmptyAdminBotDashboardData(),
-          members: [member({ member_type: "alumni, coauthor-major" })],
+          members: [member({ privilege_level: "member", member_type: "full, eurosafeai" })],
           loadedAt: Date.now(),
         },
       }),
     );
-    const select = container.querySelector<HTMLSelectElement>(
-      '#adminbot-edit-member-0 select[name="memberType"]',
-    );
-    expect(select?.value).toBe("alumni, coauthor-major");
+    const ticked = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="memberType"]',
+      ),
+    ]
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+    expect(ticked).toEqual(["full", "eurosafeai"]);
   });
 
   // Adding somebody to the roster and onboarding them used to be two separate errands.
@@ -1226,7 +940,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(container.querySelector('[id^="adminbot-self-edit-member"]')).toBeNull();
     // Admin popovers keep the governance field set.
     expect(
-      container.querySelector('#adminbot-edit-member-1 select[name="privilegeLevel"]'),
+      container.querySelector('#adminbot-edit-member-1 input[name="memberType"]'),
     ).not.toBeNull();
   });
 

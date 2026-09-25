@@ -21,6 +21,11 @@ import {
 } from "../contracts/actions.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
+  type AdminBotStandingMeeting,
+  memberAddresses,
+  planMeetingMembership,
+} from "../workflows/calendar/standing-meetings.js";
+import {
   hasAccessConsequences,
   memberAccessDelta,
 } from "../workflows/members/member-type-access.js";
@@ -34,7 +39,7 @@ import {
 } from "./server.member-sheet.js";
 
 export type MemberTypeChangeStep = {
-  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail";
+  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
   /** The channel, series or address the step was about. */
   target?: string;
   status: "done" | "skipped" | "failed";
@@ -61,20 +66,14 @@ export type MemberTypeChangeDeps = {
     | { error: { status: number; message: string } }
   >;
   inviteToLabCalendar?: CalendarInviteRunner;
+  /**
+   * Leave the Monday meeting to the Meetings checkboxes: the admin ticked or unticked it in the
+   * same save, and that explicit answer outranks what the type would have implied.
+   */
+  skipGroupMeeting?: boolean;
   /** Writes one audit row; the id and timestamp are the caller's to stamp. */
   recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
 };
-
-/** Every address the roster knows for a member; an invite may carry any of them. */
-function addressesOf(member: AdminBotLabMember): string[] {
-  return [
-    ...new Set(
-      [member.calendar_email, member.email, member.correspondence_email]
-        .map((email) => (email ?? "").trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
-}
 
 /** The Google identity to invite: an ACL or a guest slot is granted to a Google account. */
 function calendarAddress(member: AdminBotLabMember): string | undefined {
@@ -84,7 +83,7 @@ function calendarAddress(member: AdminBotLabMember): string | undefined {
 }
 
 async function runAction(
-  deps: MemberTypeChangeDeps,
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver">,
   step: MemberTypeChangeStep["step"],
   target: string,
   proposal: Parameters<AdminBotService["createProposal"]>[0],
@@ -189,8 +188,8 @@ export async function applyMemberTypeChange(
     );
   }
 
-  // 3. The Monday group meeting.
-  if (delta.group_meeting !== "unchanged") {
+  // 3. The Monday group meeting, unless the same save set it explicitly.
+  if (delta.group_meeting !== "unchanged" && !deps.skipGroupMeeting) {
     const meeting = deps.readGroupMeeting
       ? await deps.readGroupMeeting()
       : { error: { status: 503, message: "calendar reading is not configured" } };
@@ -208,7 +207,7 @@ export async function applyMemberTypeChange(
             event_ids: meeting.targets,
             meeting_series: meeting.seriesId,
             // Every address on file: the executor subtracts whichever the live guest list carries.
-            removed_attendees: addressesOf(before),
+            removed_attendees: memberAddresses(before),
           },
           undo_plan: "Re-invite the member with calendar.add_attendees.",
         }),
@@ -341,4 +340,65 @@ export async function applyMemberTypeChange(
     },
     steps,
   };
+}
+
+/**
+ * Put a member on exactly the standing meetings the admin ticked, and take them off the rest.
+ *
+ * Like the type change above, the save is the approval: each add or removal is a typed calendar
+ * proposal approved by this admin and executed now. Both are silent (`--send-updates none`). An
+ * add goes to every live series of the meeting, so a meeting split "this and following" is joined
+ * on the split that actually has Mondays ahead.
+ */
+export async function applyMeetingSelection(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver">,
+  member: AdminBotLabMember,
+  calendarId: string,
+  meetings: readonly AdminBotStandingMeeting[],
+  selected: readonly string[],
+): Promise<MemberTypeChangeStep[]> {
+  const plan = planMeetingMembership(meetings, member, selected);
+  const steps: MemberTypeChangeStep[] = [];
+  const label = member.name || member.id;
+  const address = calendarAddress(member);
+  for (const meeting of plan.add) {
+    if (!address) {
+      steps.push({
+        step: "meeting",
+        target: meeting.title,
+        status: "skipped",
+        detail: "no address on file",
+      });
+      continue;
+    }
+    for (const eventId of meeting.event_ids) {
+      steps.push(
+        await runAction(deps, "meeting", meeting.title, {
+          type: "calendar.add_attendees",
+          summary: `Add ${label} to ${meeting.title}`,
+          target: { service: "calendar", channel: "calendar", target: eventId },
+          proposed_payload: { calendar_id: calendarId, event_id: eventId, attendees: [address] },
+          undo_plan: "Remove the member with calendar.remove_attendees.",
+        }),
+      );
+    }
+  }
+  for (const meeting of plan.remove) {
+    steps.push(
+      await runAction(deps, "meeting", meeting.title, {
+        type: "calendar.remove_attendees",
+        summary: `Remove ${label} from ${meeting.title}`,
+        target: { service: "calendar", channel: "calendar", target: meeting.event_ids[0] ?? "" },
+        proposed_payload: {
+          calendar_id: calendarId,
+          event_id: meeting.event_ids[0],
+          event_ids: meeting.event_ids,
+          meeting_series: meeting.id,
+          removed_attendees: memberAddresses(member),
+        },
+        undo_plan: "Re-invite the member with calendar.add_attendees.",
+      }),
+    );
+  }
+  return steps;
 }

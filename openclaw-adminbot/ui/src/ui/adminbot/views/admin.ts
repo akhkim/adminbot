@@ -3,7 +3,6 @@
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
-  adminBotExternalCollaboratorSubgroups,
   adminBotIsAlumniMember,
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
@@ -41,7 +40,6 @@ import {
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
-  AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMember,
   AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
@@ -49,11 +47,11 @@ import type {
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
-  AdminBotPrivilegeLevel,
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
   AdminBotSettingsSaveInput,
+  AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
 import {
@@ -74,6 +72,12 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import {
+  MEMBER_REQUEST_POPOVER_ID,
+  type MemberRequestsProps,
+  renderMemberRequestForm,
+  renderMemberRequests,
+} from "./member-requests.ts";
 import { renderRecentEditsBody } from "./recent-edits.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
@@ -188,6 +192,13 @@ export type AdminBotProps = {
   loading: boolean;
   error: string | null;
   data: AdminBotDashboardData;
+  /** The member editor's Meetings checkboxes; absent outside the Lab Members panel. */
+  standingMeetings?: AdminBotStandingMeetingsState;
+  /**
+   * Requests to add somebody to the roster, and the calls that file and decide them. Absent
+   * outside the Lab Members panel and for a visitor with no member session, who can do neither.
+   */
+  memberRequests?: Omit<MemberRequestsProps, "isAdmin">;
   /** Search and page over the full roster; absent for callers with a complete local roster. */
   memberList?: {
     rows: AdminBotLabMember[];
@@ -304,20 +315,6 @@ const privilegeLabels: Record<string, string> = {
   member: "Member",
   admin: "Admin",
 };
-
-const privilegeLevels: AdminBotPrivilegeLevel[] = [
-  "external_collaborator",
-  "trial",
-  "member",
-  "admin",
-];
-
-// The service's own list, in its own order (least- to most-engaged), rather than a copy. It was a
-// hand-written copy until two subgroups were added to the contract and never reached this
-// dropdown, which made them impossible to assign from the members panel. Labels come from
-// `friendly()` so the vocabulary still lives in one place.
-const collaboratorSubgroups: readonly AdminBotExternalCollaboratorSubgroup[] =
-  adminBotExternalCollaboratorSubgroups;
 
 const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "active", label: "Full time" },
@@ -480,6 +477,10 @@ function queueMemberAutosave(event: Event, props: AdminBotProps): void {
   if (!(form instanceof HTMLFormElement)) {
     return;
   }
+  // Ticking Member type or Meetings is not a keystroke to save: see saveMemberForm.
+  if (event.target instanceof Element && event.target.closest("[data-no-autosave]")) {
+    return;
+  }
   const pending = memberAutosaveTimers.get(form);
   if (pending !== undefined) {
     clearTimeout(pending);
@@ -488,7 +489,7 @@ function queueMemberAutosave(event: Event, props: AdminBotProps): void {
     form,
     setTimeout(() => {
       memberAutosaveTimers.delete(form);
-      saveMemberForm(form, props);
+      saveMemberForm(form, props, { explicit: false });
     }, 800),
   );
 }
@@ -500,7 +501,13 @@ function queueMemberAutosave(event: Event, props: AdminBotProps): void {
  * simply left out of the patch, so an incomplete record saves as-is instead of being held
  * hostage by its empty fields.
  */
-function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
+function saveMemberForm(
+  form: HTMLFormElement,
+  props: AdminBotProps,
+  // Autosave leaves Member type and Meetings out: they move access, rooms and calendars, so they
+  // land only when the admin presses Save -- never on a half-ticked set of boxes.
+  { explicit }: { explicit: boolean } = { explicit: true },
+): boolean {
   const data = new FormData(form);
   const id = getFormValue(data, "id");
   const name = getFormValue(data, "name");
@@ -527,28 +534,24 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
       ...(getFormValue(data, "slackUserId")
         ? { slackUserId: getFormValue(data, "slackUserId") }
         : {}),
-      ...(getFormValue(data, "privilegeLevel")
-        ? {
-            privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel,
-          }
-        : {}),
-      // The hidden field still submits, so the privilege check is what keeps a subgroup out of the
-      // payload for a non-collaborator — the service rejects the pair outright.
-      ...(getFormValue(data, "privilegeLevel") === "external_collaborator" &&
-      getFormValue(data, "collaboratorSubgroup")
-        ? {
-            collaboratorSubgroup: getFormValue(
-              data,
-              "collaboratorSubgroup",
-            ) as AdminBotExternalCollaboratorSubgroup,
-          }
-        : {}),
       ...(getFormValue(data, "status")
         ? {
             status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"],
           }
         : {}),
-      ...(getFormValue(data, "memberType") ? { memberType: getFormValue(data, "memberType") } : {}),
+      // Checkboxes now: every ticked token, in the order the vocabulary offers them.
+      ...(explicit && data.getAll("memberType").length > 0
+        ? {
+            memberType: data
+              .getAll("memberType")
+              .map((value) => String(value).trim())
+              .filter(Boolean)
+              .join(", "),
+          }
+        : {}),
+      ...(explicit && data.has("meetingsLoaded")
+        ? { meetings: data.getAll("meetings").map((value) => String(value)) }
+        : {}),
       // A checkbox submits nothing when it is clear, so its absence is the "off" answer rather than
       // a field the form did not ask about -- which is what lets this editor take somebody off the
       // list, not just put them on it.
@@ -561,21 +564,6 @@ function saveMemberForm(form: HTMLFormElement, props: AdminBotProps): boolean {
     { onboard: data.has("startOnboarding") },
   );
   return true;
-}
-
-// A subgroup only means something on an external collaborator, so the field follows the privilege
-// select. Cosmetic only: the service is what rejects the field on any other level.
-function syncCollaboratorSubgroupField(event: Event): void {
-  const select = event.currentTarget;
-  if (!(select instanceof HTMLSelectElement)) {
-    return;
-  }
-  const field = select
-    .closest("form")
-    ?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
-  if (field) {
-    field.hidden = select.value !== "external_collaborator";
-  }
 }
 
 /**
@@ -1205,18 +1193,88 @@ function renderRegistryField(
 }
 
 /**
- * What the Member type select offers: the shared vocabulary, plus this record's own value.
+ * Member type, as checkboxes: the one field that decides both what somebody is and what they may
+ * do. There is no separate Privilege field -- the service derives it (`adminbot-admin` = admin,
+ * `full` = member, a collaboration type = external collaborator with that subgroup).
  *
- * A floor, not a ceiling -- the same rule the Onboarding grid's dropdown follows. The column is a
- * comma-separated list ("alumni, coauthor-major") and the lab adds tokens to it before anybody
- * adds them to `adminBotMemberTypes`, so a select built from the vocabulary alone would quietly
- * rewrite a value it had no option for the moment an admin saved anything else on the row.
+ * The vocabulary is a floor, not a ceiling: tokens the record holds that the list does not (the
+ * sheet gains tags before the code does) keep a box, checked, so saving does not drop them. An
+ * admin whose type predates the tag gets `adminbot-admin` ticked, so their first save keeps their
+ * access rather than quietly removing it.
  */
-function memberTypeOptions(current: string | undefined): string[] {
-  const held = current?.trim();
-  return held && !(adminBotMemberTypes as readonly string[]).includes(held)
-    ? [held, ...adminBotMemberTypes]
-    : [...adminBotMemberTypes];
+function renderMemberTypeField(member?: AdminBotLabMember) {
+  const held = (member?.member_type ?? "")
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const hasAdminTag = held.some((token) =>
+    ["adminbot-admin", "admin"].includes(token.toLowerCase()),
+  );
+  if (member?.privilege_level === "admin" && !hasAdminTag) {
+    held.push("adminbot-admin");
+  }
+  return html`<div class="adminbot-form__field" data-no-autosave>
+    <span>Member type</span>
+    ${renderMultiSelectField({
+      name: "memberType",
+      label: "Member type",
+      placeholder: "Not set",
+      options: multiSelectOptionsFor(adminBotMemberTypes, held),
+      selected: new Set(held.map((token) => token.toLowerCase())),
+      rootClass: "adminbot-form__multi",
+      optionClass: "adminbot-form__multi-option",
+      testId: "member-form-member-type",
+    })}
+    <small
+      >Sets their access: adminbot-admin is admin, full is a lab member, anything else is an
+      external collaborator. Applied when you press Save member.</small
+    >
+  </div>`;
+}
+
+/**
+ * The standing meetings they are on, as checkboxes, read from the lab calendar's guest lists.
+ *
+ * Only rendered when the list actually loaded. The `meetingsLoaded` marker is what tells the save
+ * to send the ticks at all: without it a failed calendar read would submit "no meetings", and the
+ * service would take the person off every one.
+ */
+function renderMeetingsField(
+  member: AdminBotLabMember | undefined,
+  standing: AdminBotStandingMeetingsState | undefined,
+) {
+  if (!standing) {
+    return nothing;
+  }
+  if (!standing.loadedAt) {
+    return html`<div class="adminbot-form__field">
+      <span>Meetings</span>
+      <small>${standing.error ?? "Loading the lab's meetings…"}</small>
+    </div>`;
+  }
+  const addresses = new Set(
+    [member?.calendar_email, member?.email, member?.correspondence_email]
+      .map((email) => (email ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const attending = standing.meetings.filter((meeting) =>
+    meeting.attendees.some((address) => addresses.has(address)),
+  );
+  return html`<div class="adminbot-form__field" data-no-autosave>
+    <span>Meetings</span>
+    <input type="hidden" name="meetingsLoaded" value="1" />
+    ${renderMultiSelectField({
+      name: "meetings",
+      label: "Meetings",
+      placeholder: "None",
+      options: standing.meetings.map((meeting) => ({ value: meeting.id, label: meeting.title })),
+      selected: new Set(attending.map((meeting) => meeting.id.toLowerCase())),
+      rootClass: "adminbot-form__multi",
+      optionClass: "adminbot-form__multi-option",
+      testId: "member-form-meetings",
+    })}
+    <small>Adds or removes them on the calendar, without an email. Applied on Save member.</small>
+  </div>`;
 }
 
 // Shared roster fields for the admin add/edit-member popovers. When a member is
@@ -1229,7 +1287,10 @@ function memberTypeOptions(current: string | undefined): string[] {
 // the roster editor stopped at twenty fields and reassembled five of them into `notes` lines, so
 // an admin could not fill in a preferred name, a correspondence email, a CV link or any social
 // but GitHub -- on a record where the member themselves could.
-function renderMemberFormFields(member?: AdminBotLabMember) {
+function renderMemberFormFields(
+  member?: AdminBotLabMember,
+  standingMeetings?: AdminBotStandingMeetingsState,
+) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
   // Old records still carry these as "Label: value" lines in `notes`. The columns are the truth
@@ -1276,51 +1337,7 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         ><span>Slack user id</span
         ><input name="slackUserId" placeholder="U0123456789" .value=${member?.slack_user_id ?? ""}
       /></label>
-      <label class="adminbot-form__field">
-        <span>Privilege</span>
-        <select name="privilegeLevel" @change=${syncCollaboratorSubgroupField}>
-          ${privilegeLevels.map(
-            (level) =>
-              html`<option
-                value=${level}
-                ?selected=${level === (member?.privilege_level ?? "external_collaborator")}
-              >
-                ${privilegeLabels[level] ?? friendly(level)}
-              </option>`,
-          )}
-        </select>
-      </label>
-      <label
-        class="adminbot-form__field"
-        data-collaborator-subgroup-field
-        ?hidden=${(member?.privilege_level ?? "external_collaborator") !== "external_collaborator"}
-      >
-        <span>Collaborator subgroup</span>
-        <select name="collaboratorSubgroup">
-          <option value="" ?selected=${!member?.collaborator_subgroup}>Not set</option>
-          ${collaboratorSubgroups.map(
-            (subgroup) =>
-              html`<option
-                value=${subgroup}
-                ?selected=${member?.collaborator_subgroup === subgroup}
-              >
-                ${friendly(subgroup)}
-              </option>`,
-          )}
-        </select>
-      </label>
-      <label class="adminbot-form__field"
-        ><span>Member type</span
-        ><select name="memberType" data-testid="member-form-member-type">
-          <option value="" ?selected=${!member?.member_type}>Not set</option>
-          ${memberTypeOptions(member?.member_type).map(
-            (option) =>
-              html`<option value=${option} ?selected=${option === member?.member_type}>
-                ${option}
-              </option>`,
-          )}
-        </select></label
-      >
+      ${renderMemberTypeField(member)} ${renderMeetingsField(member, standingMeetings)}
       <label class="adminbot-form__field adminbot-form__field--check">
         <input type="checkbox" name="receivesNudges" ?checked=${member?.receives_nudges === true} />
         <span>AdminBot may contact them</span>
@@ -1419,7 +1436,7 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
               @input=${(event: Event) => queueMemberAutosave(event, props)}
               @change=${(event: Event) => queueMemberAutosave(event, props)}
             >
-              ${renderMemberFormFields(member)}
+              ${renderMemberFormFields(member, props.standingMeetings)}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>
@@ -2156,10 +2173,16 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
+  const requests = props.memberRequests
+    ? { ...props.memberRequests, isAdmin: props.mode === "admin" }
+    : undefined;
   // The spreadsheet is the single roster view for every mode: admins edit any row, members
-  // edit their own row inline, everyone else reads. Only the Add-member popover is admin-only.
+  // edit their own row inline, everyone else reads. Adding a member is open to any signed-in
+  // member, but only an admin's Add member writes the roster; anyone else's files a request.
   if (props.mode === "general") {
-    return spreadsheet;
+    return requests
+      ? html`${renderMemberRequests(requests)}${spreadsheet}${renderMemberRequestForm(requests)}`
+      : spreadsheet;
   }
   const fullRosterChecks =
     props.memberList && !props.rosterLoadedAt
@@ -2187,7 +2210,9 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
           props,
           members,
         )}`;
-  return html`${spreadsheet}${fullRosterChecks}
+  return html`${requests
+      ? renderMemberRequests(requests)
+      : nothing}${spreadsheet}${fullRosterChecks}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button
@@ -2201,7 +2226,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
         <div class="card-title">Add member</div>
         <div class="card-sub">Create a roster entry and seed its privilege-derived access.</div>
         <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
-          ${renderMemberFormFields()}
+          ${renderMemberFormFields(undefined, props.standingMeetings)}
           <label class="adminbot-form__field adminbot-form__field--check">
             <input
               type="checkbox"
@@ -3812,7 +3837,10 @@ export function renderAdminBot(props: AdminBotProps) {
   // came for -- and the strapline over it described the whole product rather than the page, which
   // is a thing you read once and then scroll past forever.
   const isLabOverview = props.panel === "papers";
-  const addMember = !general && props.panel === "members";
+  // Everybody signed in gets Add member; for a non-admin it opens the request form, and the member
+  // is added only once an admin approves (views/member-requests.ts).
+  const addMember =
+    props.panel === "members" && (!general || (props.signedInMemberId && props.memberRequests));
   const addPaper = props.panel === "papers" && (!general || props.signedInMemberId);
   return html`
     <section class="adminbot-shell" aria-busy=${props.loading ? "true" : "false"}>
@@ -3821,7 +3849,7 @@ export function renderAdminBot(props: AdminBotProps) {
           ? html`<button
               class="btn btn--sm primary"
               type="button"
-              popovertarget="adminbot-add-member"
+              popovertarget=${general ? MEMBER_REQUEST_POPOVER_ID : "adminbot-add-member"}
             >
               Add member
             </button>`

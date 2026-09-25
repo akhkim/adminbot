@@ -237,21 +237,56 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(mailed).toEqual([]);
   });
 
-  it("lets an explicit Privilege in the same save win, and never demotes an admin", async () => {
-    const { baseUrl, mock, mailed } = await startService();
+  it("lets an explicit Privilege in the same save win", async () => {
+    const { baseUrl, mock } = await startService();
     const token = await adminToken(mock, baseUrl);
 
     const explicit = (await (
       await save(baseUrl, token, "cora", { member_type: "full", privilege_level: "trial" })
     ).json()) as ChangeBody;
     expect(explicit.privilege_level).toBe("trial");
+  });
 
-    const admin = (await (
-      await save(baseUrl, token, "admin", { member_type: "alumni", privilege_level: "admin" })
+  it("grants admin from the admin tag, and refuses an admin removing their own", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const promoted = (await (
+      await save(baseUrl, token, "cora", { member_type: "full, adminbot-admin" })
     ).json()) as ChangeBody;
-    expect(admin.privilege_level).toBe("admin");
-    // Moving into alumni still mails, even when the access level stays put.
-    expect(mailed.map((entry) => entry.email)).toEqual(["admin@cs.toronto.edu"]);
+    expect(promoted.privilege_level).toBe("admin");
+
+    const self = await save(baseUrl, token, "admin", { member_type: "alumni" });
+    expect(self.status).toBe(409);
+    expect(mock.service.getLabMemberView("admin").ok).toBe(true);
+    const stillAdmin = mock.service.listLabMembers();
+    expect(
+      stillAdmin.ok && stillAdmin.payload.members.find((row) => row.id === "admin"),
+    ).toMatchObject({ privilege_level: "admin", member_type: "full" });
+    expect(mailed).toEqual([]);
+
+    // Another admin can take it away.
+    const demoted = (await (
+      await save(baseUrl, token, "cora", { member_type: "full" })
+    ).json()) as ChangeBody;
+    expect(demoted.privilege_level).toBe("member");
+  });
+
+  it("gives a new member the access level their type implies", async () => {
+    const { baseUrl, mock } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const created = (await (
+      await save(baseUrl, token, "newbie", {
+        name: "New Person",
+        email: "newbie@cs.toronto.edu",
+        member_type: "full",
+      })
+    ).json()) as ChangeBody;
+
+    expect(created.privilege_level).toBe("member");
+    // A new record is onboarded through Add member, not re-onboarded here.
+    expect(created.member_type_change).toBeUndefined();
   });
 
   it("does nothing outside the database when the type did not change", async () => {
@@ -280,5 +315,53 @@ describe("PUT /lab/members/:id changing Member Type", () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(executed).toEqual([]);
+  });
+
+  it("lists the standing meetings for an admin only", async () => {
+    const { baseUrl, mock } = await startService({ meeting: ["cora@lab.test"] });
+    const token = await adminToken(mock, baseUrl);
+
+    const listed = await fetch(`${baseUrl}/lab/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { meetings: Array<{ id: string; kind: string }> };
+    expect(body.meetings).toMatchObject([{ id: SERIES, kind: "group" }]);
+
+    const service = await fetch(`${baseUrl}/lab/meetings`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    expect(service.status).toBe(403);
+  });
+
+  it("applies the Meetings checkboxes, and a changed Monday box outranks the type", async () => {
+    const { baseUrl, mock, executed } = await startService({
+      sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
+      meeting: ["admin@cs.toronto.edu"],
+    });
+    const token = await adminToken(mock, baseUrl);
+
+    // Cora is not on the Monday meeting; the admin ticks it while also making her alumni, which on
+    // its own would keep her off it.
+    const response = await save(baseUrl, token, "cora", {
+      member_type: "alumni",
+      meetings: [SERIES],
+    });
+    const body = (await response.json()) as ChangeBody & {
+      meeting_changes?: Array<{ step: string; status: string }>;
+      meetings?: unknown;
+    };
+
+    expect(body.meetings).toBeUndefined();
+    expect(body.meeting_changes).toEqual([
+      expect.objectContaining({ step: "meeting", status: "done" }),
+    ]);
+    const types = executed.map((proposal) => proposal.type);
+    expect(types).toContain("calendar.add_attendees");
+    expect(types).not.toContain("calendar.remove_attendees");
+    const stored = mock.service.listLabMembers();
+    expect(stored.ok && stored.payload.members.find((row) => row.id === "cora")).not.toHaveProperty(
+      "meetings",
+    );
   });
 });

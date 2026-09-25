@@ -48,6 +48,7 @@ import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
+  createEmptyAdminBotStandingMeetings,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
@@ -61,6 +62,7 @@ import {
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
   type AdminBotMemberListState,
+  type AdminBotStandingMeetingsState,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -84,6 +86,10 @@ import {
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
+import {
+  createEmptyAdminBotMemberRequests,
+  type AdminBotMemberRequestsState,
+} from "./adminbot/controllers/member-requests.ts";
 import {
   addMemberSheetRow as addMemberSheetRowController,
   editMemberSheetCell as editMemberSheetCellController,
@@ -680,6 +686,10 @@ export class OpenClawApp extends LitElement {
   @state() adminBotRosterError: string | null = null;
   adminBotRosterRequestId = 0;
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
+  @state() adminBotStandingMeetings: AdminBotStandingMeetingsState =
+    createEmptyAdminBotStandingMeetings();
+  @state() adminBotMemberRequests: AdminBotMemberRequestsState =
+    createEmptyAdminBotMemberRequests();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;

@@ -245,23 +245,30 @@ function accessDeltaBetween(
   };
 }
 
+/** Member Type tokens that mean "runs AdminBot": admin access. `admin` is the legacy spelling. */
+export const ADMINBOT_ADMIN_MEMBER_TYPE_TOKENS: readonly string[] = ["adminbot-admin", "admin"];
+
 /**
- * The access level a new Member Type implies, or undefined to leave it as it is.
+ * The access level a Member Type implies, or undefined to leave it as it is.
  *
- * Read off how the live roster already pairs the two (2026-09-24, 180 rows): every `full` row is
- * `member` or `admin`, and every other collaboration type is `external_collaborator` with the
- * subgroup its token names. So:
+ * The Lab Members form has one Member Type field and no separate Privilege field, so the type is
+ * the whole answer. Read off how the live roster already pairs the two (2026-09-24, 180 rows):
+ * every `full` row is `member` or `admin`, and every other collaboration type is
+ * `external_collaborator` with the subgroup its token names. So:
  *
+ *   - `adminbot-admin` (or the legacy `admin`) -> `admin`.
  *   - `full` -> `member`, or stays `trial` for somebody still on trial.
  *   - a collaboration type -> `external_collaborator` + that subgroup (most-committed token wins).
- *   - anything else (blank, `mailing-list`, the operational tags) -> no change: the column does not
- *     say what access somebody should have.
+ *   - anything else (blank, `mailing-list`, other operational tags) -> no change, because the
+ *     column does not say what access somebody should have -- except for an admin whose admin tag
+ *     was just removed, who drops to the least-privileged level rather than keeping rights the
+ *     form says they no longer have.
  *
- * An admin is never moved. Taking somebody's admin rights away -- possibly the admin making the
- * edit -- is a decision to make in the Privilege field, not a side effect of a Member Type cell.
+ * The route refuses an admin removing their own admin tag; that check needs the session, so it
+ * lives there rather than here.
  */
 export function privilegeForMemberTypeChange(
-  member: AdminBotLabMember,
+  member: Pick<AdminBotLabMember, "privilege_level">,
   nextMemberType: string | undefined,
 ):
   | {
@@ -269,16 +276,19 @@ export function privilegeForMemberTypeChange(
       collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
     }
   | undefined {
-  if (member.privilege_level === "admin") {
-    return undefined;
-  }
   const tokens = adminBotMemberTypeTokens(nextMemberType);
+  if (tokens.some((token) => ADMINBOT_ADMIN_MEMBER_TYPE_TOKENS.includes(token))) {
+    return { privilege_level: "admin" };
+  }
   if (tokens.includes("full")) {
     return { privilege_level: member.privilege_level === "trial" ? "trial" : "member" };
   }
   const subgroup = subgroupForMemberType(nextMemberType);
-  return subgroup
-    ? { privilege_level: "external_collaborator", collaborator_subgroup: subgroup }
+  if (subgroup) {
+    return { privilege_level: "external_collaborator", collaborator_subgroup: subgroup };
+  }
+  return member.privilege_level === "admin"
+    ? { privilege_level: "external_collaborator" }
     : undefined;
 }
 
