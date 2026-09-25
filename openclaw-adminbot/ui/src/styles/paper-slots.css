@@ -1281,3 +1281,40 @@
   flex-wrap: wrap;
   margin-top: var(--space-1);
 }
+
+/* Baseline for the disclosure head these groups share (paper slots, the cycle's groups, weekly
+   updates). The full look is scoped to the containers that draw them -- see
+   `:is(.my-work-item, .paper-legacy__card-parts)` in layout.css -- but the chevron is a bare SVG
+   with no intrinsic size, so any container that misses that scope drew it as a page-sized
+   triangle. `:where()` keeps these at zero specificity: they only fill in where nothing else
+   applies. */
+:where(.paper-slots__group-head) {
+  display: flex;
+  align-items: center;
+  /* Space-between, as the card does, rather than an auto margin on the chevron: a margin here
+     would still apply inside the card, whose own rules never set one. */
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+:where(.paper-slots__group-head)::-webkit-details-marker {
+  display: none;
+}
+
+:where(.paper-slots__group-chevron) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+:where(.paper-slots__group-chevron) svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
