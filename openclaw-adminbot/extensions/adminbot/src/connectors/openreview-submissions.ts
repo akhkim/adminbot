@@ -2,11 +2,11 @@
 //
 // Authenticated, unlike `reference-scan.ts`'s public reader: almost every one of these papers is
 // under blind review and invisible anonymously. What comes back is restricted manuscript content.
-// The PDF itself never leaves the host and is never handed to an upload-style scanner such as
-// GPTZero. Two local consumers read it: the CheckIfExist extraction, which sends only citation
-// strings out, and -- when an operator opts in with ADMINBOT_ICLR_INTEGRITY_CHECKS=1 -- the ICLR
-// integrity watch, which sends the extracted main text of an ICLR submission under review to
-// Pangram for an AI-text score (see workflows/papers/iclr-integrity-watch.ts).
+// Two consumers read the PDF: the CheckIfExist extraction, which parses it on this host and sends
+// only citation strings out, and -- when an operator opts in with ADMINBOT_ICLR_INTEGRITY_CHECKS=1
+// -- the ICLR integrity watch, which uploads the PDF of an ICLR submission under review to
+// Pangram for an AI-text score, the same way Pangram's website scores it (see
+// connectors/pangram.ts). No other scanner, such as GPTZero, is ever handed the PDF.
 //
 // Plain API2 HTTP rather than `openreview-py`, for the reasons given in `openreview-notes.ts`.
 
