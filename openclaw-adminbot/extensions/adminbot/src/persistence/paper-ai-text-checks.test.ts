@@ -9,7 +9,7 @@ import {
 describe("paper AI-text check persistence", () => {
   // The live database was created before scoring moved to the whole PDF. Its rows have to survive
   // the new column, and read back as text-era scores so the watch re-scores them once.
-  it("adds the scored_from column to an existing table, keeping its rows", () => {
+  it("adds the scoring columns to an existing table, keeping its rows", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(`CREATE TABLE adminbot_paper_ai_text_checks (
       submission_id TEXT NOT NULL, pdf_path TEXT NOT NULL, pdf_sha256 TEXT, title TEXT NOT NULL,
@@ -28,10 +28,18 @@ describe("paper AI-text check persistence", () => {
     expect(old).toMatchObject({ status: "completed", fraction_ai: 0.03 });
     expect(old?.scored_from).toBeUndefined();
 
-    savePaperAiTextCheck(db, { ...old!, scored_from: "pdf", fraction_ai: 0.105 });
+    expect(old?.model_version).toBeUndefined();
+
+    savePaperAiTextCheck(db, {
+      ...old!,
+      scored_from: "full_text",
+      model_version: "4.0",
+      fraction_ai: 0.82,
+    });
     expect(getPaperAiTextCheck(db, "p1", "/pdf/v1.pdf")).toMatchObject({
-      scored_from: "pdf",
-      fraction_ai: 0.105,
+      scored_from: "full_text",
+      model_version: "4.0",
+      fraction_ai: 0.82,
     });
   });
 });

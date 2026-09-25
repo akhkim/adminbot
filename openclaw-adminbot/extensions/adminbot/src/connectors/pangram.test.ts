@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPangramScorer, PangramError } from "./pangram.js";
+import { createPangramScorer, PANGRAM_MODEL, PangramError } from "./pangram.js";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -8,87 +8,108 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const pdf = new Uint8Array(Buffer.from("%PDF-1.6 synthetic manuscript"));
-
-// The shape Pangram's file endpoint returned for a real 39-page submission: one result per file,
-// with its own extraction of the text.
-const result = {
-  filename: "submission.pdf",
-  prediction_short: "Mixed",
-  fraction_ai: 0.105,
-  fraction_ai_assisted: 0.013,
-  fraction_human: 0.882,
-  text: "one two three four five",
-  windows: [],
-};
-
 describe("Pangram scorer", () => {
-  it("uploads the whole PDF and returns the fractions and the words Pangram scored", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json([result]));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
+  it("scores with Pangram 4, polls to success and returns the fractions and version", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ task_id: "task-1" }))
+      .mockResolvedValueOnce(json({ stage: "STAGE_PREPROCESSING" }))
+      .mockResolvedValueOnce(
+        json({
+          stage: "STAGE_SUCCESS",
+          version: "4.0",
+          prediction_short: "AI",
+          fraction_ai: 0.82,
+          fraction_ai_assisted: 0,
+          fraction_human: 0.18,
+          text: "echoed manuscript text",
+        }),
+      );
+    const score = createPangramScorer({ apiKey: "key-1", fetchImpl, pollIntervalMs: 0 });
 
-    await expect(score(pdf, AbortSignal.timeout(5_000))).resolves.toEqual({
-      fraction_ai: 0.105,
-      fraction_ai_assisted: 0.013,
-      fraction_human: 0.882,
-      prediction: "Mixed",
-      words_scored: 5,
+    await expect(score("Some text.", AbortSignal.timeout(5_000))).resolves.toEqual({
+      fraction_ai: 0.82,
+      fraction_ai_assisted: 0,
+      fraction_human: 0.18,
+      prediction: "AI",
+      model_version: "4.0",
     });
     const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe("https://file-external.api.pangram.com/");
+    expect(url).toBe("https://text.external-api.pangram.com/task");
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ "x-api-key": "key-1" });
-    const form = init?.body as FormData;
-    const file = form.get("files") as File;
-    // A fixed name: the paper's title is not something to hand a third party with the file.
-    expect(file.name).toBe("submission.pdf");
-    expect(new Uint8Array(await file.arrayBuffer())).toEqual(pdf);
-    // Never a shareable dashboard page of a restricted manuscript.
-    expect(form.get("public_dashboard_link")).toBe("false");
-  });
-
-  it("reads a result wrapped in an object as well as a bare list", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ results: [result] }));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
-
-    await expect(score(pdf, AbortSignal.timeout(5_000))).resolves.toMatchObject({
-      fraction_ai: 0.105,
+    // The model is pinned: the API's default is Pangram 3.3.2, which scored a paper the website
+    // put at 82% as 0%. Never a shareable dashboard page of a restricted manuscript.
+    expect(PANGRAM_MODEL).toBe("pangram-4");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: "Some text.",
+      model: "pangram-4",
+      public_dashboard_link: false,
     });
+    expect(fetchImpl.mock.calls[2][0]).toBe("https://text.external-api.pangram.com/task/task-1");
   });
 
   it("reports an exhausted account as a fixed message", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ detail: "x" }, 402));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
+    const score = createPangramScorer({ apiKey: "key-1", fetchImpl, pollIntervalMs: 0 });
 
-    await expect(score(pdf, AbortSignal.timeout(5_000))).rejects.toEqual(
+    await expect(score("Some text.", AbortSignal.timeout(5_000))).rejects.toEqual(
       new PangramError("The Pangram account is out of credits."),
     );
   });
 
-  it("reports a file Pangram will not take as a fixed message", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ detail: "x" }, 413));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
+  it("fails a task Pangram could not classify", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ task_id: "task-1" }))
+      .mockResolvedValueOnce(json({ stage: "STAGE_FAILED" }));
+    const score = createPangramScorer({ apiKey: "key-1", fetchImpl, pollIntervalMs: 0 });
 
-    await expect(score(pdf, AbortSignal.timeout(5_000))).rejects.toEqual(
-      new PangramError("The PDF is larger than Pangram accepts."),
+    await expect(score("Some text.", AbortSignal.timeout(5_000))).rejects.toBeInstanceOf(
+      PangramError,
+    );
+  });
+
+  it("gives up on a task that never finishes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/task")
+        ? json({ task_id: "task-1" })
+        : json({ stage: "STAGE_RUNNING" }),
+    );
+    const score = createPangramScorer({
+      apiKey: "key-1",
+      fetchImpl,
+      pollIntervalMs: 1,
+      maxWaitMs: 5,
+    });
+
+    await expect(score("Some text.", AbortSignal.timeout(5_000))).rejects.toEqual(
+      new PangramError("Pangram did not finish in time."),
     );
   });
 
   it("refuses a result without an AI fraction rather than reading it as human", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(json([{ ...result, fraction_ai: undefined }]));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
+      .mockResolvedValueOnce(json({ task_id: "task-1" }))
+      .mockResolvedValueOnce(json({ stage: "STAGE_SUCCESS" }));
+    const score = createPangramScorer({ apiKey: "key-1", fetchImpl, pollIntervalMs: 0 });
 
-    await expect(score(pdf, AbortSignal.timeout(5_000))).rejects.toBeInstanceOf(PangramError);
+    await expect(score("Some text.", AbortSignal.timeout(5_000))).rejects.toBeInstanceOf(
+      PangramError,
+    );
   });
 
-  it("refuses an empty or unreadable response", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json([]));
-    const score = createPangramScorer({ apiKey: "key-1", fetchImpl });
+  it("drops a version string that is not a version", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ task_id: "task-1" }))
+      .mockResolvedValueOnce(
+        json({ stage: "STAGE_SUCCESS", version: "<script>", fraction_ai: 0.1 }),
+      );
+    const score = createPangramScorer({ apiKey: "key-1", fetchImpl, pollIntervalMs: 0 });
 
-    await expect(score(pdf, AbortSignal.timeout(5_000))).rejects.toEqual(
-      new PangramError("Pangram returned an unreadable response."),
-    );
+    const result = await score("Some text.", AbortSignal.timeout(5_000));
+    expect(result.model_version).toBeUndefined();
   });
 });

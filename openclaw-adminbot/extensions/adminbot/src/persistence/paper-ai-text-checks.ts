@@ -24,19 +24,22 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS adminbot_paper_ai_text_checks (
   alert_proposal_ids_json TEXT,
   alert_error TEXT,
   scored_from TEXT,
+  model_version TEXT,
   PRIMARY KEY (submission_id, pdf_path)
 )`;
 
 export function ensurePaperAiTextCheckSchema(db: DatabaseSync): void {
   db.exec(SCHEMA);
-  // Added when scoring moved from the extracted main text to the whole PDF. Existing rows keep
-  // NULL, which is what marks them as text scores due one re-score.
+  // Added as scoring changed (see PaperAiTextCheck.scored_from). Existing rows keep NULL, which
+  // marks them as scores from an earlier pipeline, due one re-score.
   const columns = db
     .prepare(`PRAGMA table_info(adminbot_paper_ai_text_checks)`)
     .all()
     .map((row) => String((row as { name: unknown }).name));
-  if (!columns.includes("scored_from")) {
-    db.exec(`ALTER TABLE adminbot_paper_ai_text_checks ADD COLUMN scored_from TEXT`);
+  for (const column of ["scored_from", "model_version"]) {
+    if (!columns.includes(column)) {
+      db.exec(`ALTER TABLE adminbot_paper_ai_text_checks ADD COLUMN ${column} TEXT`);
+    }
   }
 }
 
@@ -44,8 +47,8 @@ export function savePaperAiTextCheck(db: DatabaseSync, check: PaperAiTextCheck) 
   db.prepare(`INSERT INTO adminbot_paper_ai_text_checks (submission_id, pdf_path, pdf_sha256,
       title, venue_id, status, checked_at, attempts, fraction_ai, fraction_ai_assisted,
       fraction_human, prediction, words_scored, error, alerted_for_json, alert_proposal_ids_json,
-      alert_error, scored_from)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      alert_error, scored_from, model_version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(submission_id, pdf_path) DO UPDATE SET
       pdf_sha256=excluded.pdf_sha256, title=excluded.title, venue_id=excluded.venue_id,
       status=excluded.status, checked_at=excluded.checked_at, attempts=excluded.attempts,
@@ -54,7 +57,8 @@ export function savePaperAiTextCheck(db: DatabaseSync, check: PaperAiTextCheck) 
       words_scored=excluded.words_scored, error=excluded.error,
       alerted_for_json=excluded.alerted_for_json,
       alert_proposal_ids_json=excluded.alert_proposal_ids_json,
-      alert_error=excluded.alert_error, scored_from=excluded.scored_from`).run(
+      alert_error=excluded.alert_error, scored_from=excluded.scored_from,
+      model_version=excluded.model_version`).run(
     check.submission_id,
     check.pdf_path,
     check.pdf_sha256 ?? null,
@@ -73,6 +77,7 @@ export function savePaperAiTextCheck(db: DatabaseSync, check: PaperAiTextCheck) 
     check.alert_proposal_ids?.length ? JSON.stringify(check.alert_proposal_ids) : null,
     check.alert_error ?? null,
     check.scored_from ?? null,
+    check.model_version ?? null,
   );
 }
 
@@ -131,5 +136,8 @@ function fromRow(row: Record<string, unknown>): PaperAiTextCheck {
     ...(row.scored_from === null || row.scored_from === undefined
       ? {}
       : { scored_from: row.scored_from as PaperAiTextCheck["scored_from"] }),
+    ...(row.model_version === null || row.model_version === undefined
+      ? {}
+      : { model_version: String(row.model_version) }),
   };
 }
