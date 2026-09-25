@@ -1,5 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
@@ -6441,6 +6443,7 @@ function createIclrIntegrityWatch(
       .map((id) => id.trim())
       .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
     ...integritySheet(),
+    ...integrityDigestChannel(options.databasePath),
     // Operator Slack ids for confirmed hallucinated citations, filtered the same way.
     citationReportTo: (process.env.ADMINBOT_ICLR_CITATION_REPORT_SLACK_USERS ?? "")
       .split(",")
@@ -6450,6 +6453,62 @@ function createIclrIntegrityWatch(
 }
 
 const DEFAULT_ICLR_INTEGRITY_UNTIL = "2026-09-26T08:00:00-04:00";
+
+/**
+ * The channel the hourly digest lives in, as one message edited each sweep. Which message that is
+ * is kept in a small file beside the database, so a restart edits it rather than starting another;
+ * without a database (tests, a memory store) it is remembered for the life of the process only.
+ */
+function integrityDigestChannel(databasePath: string | undefined):
+  | {
+      reportChannel: {
+        channelId: string;
+        message: { load: () => string | undefined; save: (ts: string) => void };
+      };
+    }
+  | Record<string, never> {
+  const channelId = process.env.ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_CHANNEL?.trim();
+  if (!channelId || !/^[CG][A-Z0-9]{2,}$/u.test(channelId)) {
+    return {};
+  }
+  const file = databasePath
+    ? path.join(path.dirname(databasePath), "iclr-integrity-digest.json")
+    : undefined;
+  let remembered: string | undefined;
+  return {
+    reportChannel: {
+      channelId,
+      message: {
+        load: () => {
+          if (remembered || !file) {
+            return remembered;
+          }
+          try {
+            const saved = JSON.parse(fs.readFileSync(file, "utf8")) as {
+              channel?: string;
+              ts?: string;
+            };
+            // A digest moved to another channel starts a new message there.
+            remembered = saved.channel === channelId ? saved.ts : undefined;
+          } catch {
+            remembered = undefined;
+          }
+          return remembered;
+        },
+        save: (ts) => {
+          remembered = ts;
+          if (file) {
+            try {
+              fs.writeFileSync(file, JSON.stringify({ channel: channelId, ts }));
+            } catch {
+              // Remembered in memory regardless; the worst case after a restart is one new message.
+            }
+          }
+        },
+      },
+    },
+  };
+}
 
 /**
  * The lab's paper sheet the integrity sweep writes scores into, when one is configured. The tab

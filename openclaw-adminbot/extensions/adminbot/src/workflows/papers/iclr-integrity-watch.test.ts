@@ -48,6 +48,7 @@ function setup(options: {
   reportTo?: string[];
   citationReportTo?: string[];
   sheetGrid?: string[][];
+  reportChannel?: { saved: string[]; initial?: string };
 }) {
   const store = new AdminBotMemoryStore();
   const sent: AdminBotStoredProposal[] = [];
@@ -65,7 +66,13 @@ function setup(options: {
             throw new Error("Slack DM open failed 500: internal_error");
           }
           reports.push(proposal);
-          return { handled: true };
+          const payload = proposal.proposed_payload as { channel_id?: string; update_ts?: string };
+          return payload.channel_id
+            ? {
+                handled: true,
+                artifacts: { slack_ts: payload.update_ts ?? "1758841200.000100" },
+              }
+            : { handled: true };
         }
         if (proposal.type !== "paper_integrity.alert") {
           return { handled: false };
@@ -132,6 +139,19 @@ function setup(options: {
     extractText,
     ...(options.reportTo ? { reportTo: options.reportTo } : {}),
     ...(options.citationReportTo ? { citationReportTo: options.citationReportTo } : {}),
+    ...(options.reportChannel
+      ? {
+          reportChannel: {
+            channelId: "C0ACTIVE1",
+            message: {
+              load: () => options.reportChannel!.saved.at(-1) ?? options.reportChannel!.initial,
+              save: (ts: string) => {
+                options.reportChannel!.saved.push(ts);
+              },
+            },
+          },
+        }
+      : {}),
     ...(options.sheetGrid
       ? {
           sheet: {
@@ -315,6 +335,37 @@ describe("ICLR integrity watch", () => {
       expect(message).toContain("11% AI, 1% AI-assisted (400 words, whole paper, Pangram 4.0)");
       expect(message).toContain("Citations: not checked yet");
       expect(watch.status().last_sweep?.report_error).toBeUndefined();
+    });
+
+    // One message in the lab channel, edited every hour, rather than a new post per sweep.
+    it("posts to the channel once and edits that message on every later sweep", async () => {
+      const saved: string[] = [];
+      const { sweep, reports } = setup({
+        submissions: [submission()],
+        score: async () => ({ fraction_ai: 0.1, fraction_ai_assisted: 0, fraction_human: 0.9 }),
+        reportChannel: { saved },
+      });
+
+      await sweep();
+      await sweep();
+
+      expect(reports).toHaveLength(2);
+      expect(reports[0].proposed_payload).toMatchObject({ channel_id: "C0ACTIVE1" });
+      expect(reports[0].proposed_payload).not.toHaveProperty("update_ts");
+      expect(reports[1].proposed_payload).toMatchObject({
+        channel_id: "C0ACTIVE1",
+        update_ts: "1758841200.000100",
+      });
+      expect(saved).toEqual(["1758841200.000100", "1758841200.000100"]);
+    });
+
+    it("edits the message a previous process posted", async () => {
+      const { sweep, reports } = setup({
+        submissions: [submission()],
+        reportChannel: { saved: [], initial: "1758800000.000001" },
+      });
+      await sweep();
+      expect(reports[0].proposed_payload).toMatchObject({ update_ts: "1758800000.000001" });
     });
 
     it("sends nothing when no operator is configured", async () => {
