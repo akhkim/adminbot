@@ -30,6 +30,10 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
         thread_id text PRIMARY KEY, candidate_email text NOT NULL, decision text NOT NULL,
         source_message_id text NOT NULL, status text NOT NULL, updated_at text NOT NULL
       )`);
+      await pool.query(`CREATE TABLE "${schema}".adminbot_email_effects (
+        message_id text NOT NULL, effect_key text NOT NULL, status text NOT NULL,
+        result_json text, updated_at text NOT NULL, PRIMARY KEY (message_id, effect_key)
+      )`);
       const postgres = new AdminBotPostgresEmailState(pool, schema);
       expect(await postgres.scannedThrough()).toEqual(sqlite.scannedThrough());
       const first = new Date("2026-09-24T10:00:00.000Z");
@@ -96,6 +100,35 @@ describe.skipIf(!url)("PostgreSQL email job state", () => {
       sqlite.saveOnboarding("thread-1", "student@invalid.test", "direct", message.id);
       await postgres.saveOnboarding("thread-1", "student@invalid.test", "direct", message.id);
       expect(await postgres.getOnboarding("thread-1")).toEqual(sqlite.getOnboarding("thread-1"));
+
+      let calls = 0;
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const operation = async () => {
+        calls += 1;
+        started.resolve();
+        await release.promise;
+        return "synthetic-result";
+      };
+      const firstEffect = postgres.effect(message.id, "send", operation);
+      await started.promise;
+      await expect(postgres.effect(message.id, "send", operation)).rejects.toThrow(
+        "manual review prevents a duplicate",
+      );
+      release.resolve();
+      expect(await firstEffect).toBe("synthetic-result");
+      expect(await postgres.effect(message.id, "send", operation)).toBe(
+        await sqlite.effect(message.id, "send", async () => "synthetic-result"),
+      );
+      expect(calls).toBe(1);
+      await expect(
+        postgres.effect(message.id, "uncertain", async () => {
+          throw new Error("synthetic failure after claim");
+        }),
+      ).rejects.toThrow("synthetic failure after claim");
+      await expect(postgres.effect(message.id, "uncertain", operation)).rejects.toThrow(
+        "manual review prevents a duplicate",
+      );
     } finally {
       sqlite.close();
       await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

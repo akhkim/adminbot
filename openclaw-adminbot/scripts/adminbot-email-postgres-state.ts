@@ -6,6 +6,7 @@ export class AdminBotPostgresEmailState {
   private readonly scanTable: string;
   private readonly messageTable: string;
   private readonly onboardingTable: string;
+  private readonly effectTable: string;
 
   constructor(
     private readonly pool: Pool,
@@ -17,6 +18,7 @@ export class AdminBotPostgresEmailState {
     this.scanTable = `"${schema}"."adminbot_email_scan"`;
     this.messageTable = `"${schema}"."adminbot_email_messages"`;
     this.onboardingTable = `"${schema}"."adminbot_onboarding_threads"`;
+    this.effectTable = `"${schema}"."adminbot_email_effects"`;
   }
 
   async scannedThrough(): Promise<Date | undefined> {
@@ -128,5 +130,39 @@ export class AdminBotPostgresEmailState {
        WHERE message_id = $4`,
       [status, error ?? null, new Date().toISOString(), messageId],
     );
+  }
+
+  async effect<T>(
+    messageId: string,
+    key: string,
+    operation: () => Promise<T>,
+  ): Promise<T | undefined> {
+    const claimed = await this.pool.query(
+      `INSERT INTO ${this.effectTable} (message_id, effect_key, status, updated_at)
+       VALUES ($1, $2, 'started', $3)
+       ON CONFLICT (message_id, effect_key) DO NOTHING`,
+      [messageId, key, new Date().toISOString()],
+    );
+    if (claimed.rowCount !== 1) {
+      const existing = await this.pool.query<{ status: string; result_json: string | null }>(
+        `SELECT status, result_json FROM ${this.effectTable}
+         WHERE message_id = $1 AND effect_key = $2`,
+        [messageId, key],
+      );
+      if (existing.rows[0]?.status === "completed") {
+        return existing.rows[0].result_json
+          ? (JSON.parse(existing.rows[0].result_json) as T)
+          : undefined;
+      }
+      throw new Error(`effect ${key} was started previously; manual review prevents a duplicate`);
+    }
+    const result = await operation();
+    await this.pool.query(
+      `UPDATE ${this.effectTable}
+       SET status = 'completed', result_json = $1, updated_at = $2
+       WHERE message_id = $3 AND effect_key = $4`,
+      [JSON.stringify(result ?? null), new Date().toISOString(), messageId, key],
+    );
+    return result;
   }
 }
