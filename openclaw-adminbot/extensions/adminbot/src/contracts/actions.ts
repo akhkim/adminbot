@@ -101,6 +101,11 @@ export const adminBotActionTypes = [
   // never to authors. Its own type so a routine digest and a warning about one paper are never the
   // same row in the audit log.
   "paper_integrity.report",
+  // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
+  // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
+  // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
+  // column the payload names, nothing else.
+  "paper_integrity.sheet_scores",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.

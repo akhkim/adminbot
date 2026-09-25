@@ -9,6 +9,7 @@ import {
   createGogAdminBotExecutor,
   createGogDriveProbe,
   appendGogSheetRows,
+  buildIntegrityScoreArgs,
   readGogSheetRows,
   readGogSheetTabs,
 } from "./gog.js";
@@ -792,5 +793,40 @@ describe("the Drive probe", () => {
       status: "unreadable",
       reason: "not a Drive file id",
     });
+  });
+});
+
+describe("paper_integrity.sheet_scores", () => {
+  const proposal = (payload: Record<string, unknown>) =>
+    ({ type: "paper_integrity.sheet_scores", proposed_payload: payload }) as never;
+  const cell = (range: string, value = "82% AI") => ({ range, values: [[value]] });
+
+  it("writes single cells in the score and citation columns", () => {
+    const args = buildIntegrityScoreArgs(
+      proposal({
+        spreadsheet_id: "sheet-1",
+        columns: ["H", "I"],
+        updates: [cell("'Papers-iclr-feedback'!H2"), cell("'Papers-iclr-feedback'!I2", "Ref.")],
+      }),
+    );
+    expect(args).toContain("batch-update");
+    expect(args).toContain("RAW");
+  });
+
+  // Auto-approved, so this is the boundary: nothing but those two columns, one cell at a time.
+  it.each([
+    ["another column", { columns: ["H"], updates: [cell("'Tab'!A2")] }],
+    ["a range", { columns: ["H"], updates: [cell("'Tab'!H2:H9")] }],
+    [
+      "a block of values",
+      { columns: ["H"], updates: [{ range: "'Tab'!H2", values: [["a", "b"]] }] },
+    ],
+    ["an unquoted tab", { columns: ["H"], updates: [cell("Tab!H2")] }],
+    ["three columns", { columns: ["H", "I", "J"], updates: [cell("'Tab'!H2")] }],
+    ["no columns", { columns: [], updates: [cell("'Tab'!H2")] }],
+  ])("refuses %s", (_label, payload) => {
+    expect(() =>
+      buildIntegrityScoreArgs(proposal({ spreadsheet_id: "sheet-1", ...payload })),
+    ).toThrow(/paper_integrity\.sheet_scores/u);
   });
 });

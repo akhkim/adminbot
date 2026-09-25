@@ -46,13 +46,20 @@ function setup(options: {
   pdf?: (id: string) => Uint8Array | Promise<Uint8Array>;
   slackFails?: boolean;
   reportTo?: string[];
+  citationReportTo?: string[];
+  sheetGrid?: string[][];
 }) {
   const store = new AdminBotMemoryStore();
   const sent: AdminBotStoredProposal[] = [];
   const reports: AdminBotStoredProposal[] = [];
+  const sheetWrites: AdminBotStoredProposal[] = [];
   const service = new AdminBotService(store, {
     executor: {
       execute: async (proposal) => {
+        if (proposal.type === "paper_integrity.sheet_scores") {
+          sheetWrites.push(proposal);
+          return { handled: true };
+        }
         if (proposal.type === "paper_integrity.report") {
           if (options.slackFails) {
             throw new Error("Slack DM open failed 500: internal_error");
@@ -124,13 +131,23 @@ function setup(options: {
     score,
     extractText,
     ...(options.reportTo ? { reportTo: options.reportTo } : {}),
+    ...(options.citationReportTo ? { citationReportTo: options.citationReportTo } : {}),
+    ...(options.sheetGrid
+      ? {
+          sheet: {
+            spreadsheetId: "sheet-1",
+            tab: "Papers-iclr-feedback",
+            read: async () => options.sheetGrid as string[][],
+          },
+        }
+      : {}),
   });
   const sweep = async () => {
     const started = await watch.start();
     await watch.idle();
     return started;
   };
-  return { store, service, reader, score, extractText, watch, sweep, sent, reports };
+  return { store, service, reader, score, extractText, watch, sweep, sent, reports, sheetWrites };
 }
 
 describe("ICLR integrity watch", () => {
@@ -414,6 +431,154 @@ describe("ICLR integrity watch", () => {
       await sweep();
 
       expect(score).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("confirmed hallucinated citations", () => {
+    const citationCheck = (overrides: Record<string, unknown> = {}) => ({
+      submission_id: "paperAAAA",
+      pdf_path: "/pdf/v1.pdf",
+      title: "Synthetic paper",
+      venue_id: ICLR,
+      status: "completed" as const,
+      checked_at: "2026-09-25T00:00:00.000Z",
+      attempts: 1,
+      findings: [
+        {
+          citation: "Nobody. A paper that does not exist. 2031.",
+          status: "not_found" as const,
+          explanation: "",
+        },
+        { citation: "Real. A real paper. 2020.", status: "matched" as const, explanation: "" },
+      ],
+      ...overrides,
+    });
+
+    it("DMs the exact reference to the configured operator, once per version", async () => {
+      const { store, sweep, reports } = setup({
+        submissions: [submission()],
+        score: async () => ({ fraction_ai: 0.05, fraction_ai_assisted: 0, fraction_human: 0.95 }),
+        citationReportTo: ["UCITATIONS1"],
+      });
+      store.saveOpenReviewCitationCheck(citationCheck());
+
+      await sweep();
+      await sweep();
+
+      expect(reports).toHaveLength(1);
+      expect(reports[0].proposed_payload).toMatchObject({ user_ids: ["UCITATIONS1"] });
+      const message = (reports[0].proposed_payload as { message: string }).message;
+      expect(message).toContain("Confirmed hallucinated citation");
+      expect(message).toContain("• Nobody. A paper that does not exist. 2031.");
+      expect(message).not.toContain("A real paper");
+    });
+
+    // The whole point of "confirmed": a check that could not reach the databases, or a reference
+    // they could not be asked about, is not evidence that anything is fabricated.
+    it("sends nothing when the check failed or only could not reach a database", async () => {
+      for (const check of [
+        citationCheck({
+          status: "failed",
+          error: "About 18 of 47 references could not be checked.",
+        }),
+        citationCheck({
+          findings: [
+            { citation: "Unasked. 2024.", status: "unavailable", explanation: "" },
+            { citation: "Close call. 2023.", status: "review", explanation: "" },
+          ],
+        }),
+      ]) {
+        const { store, sweep, reports } = setup({
+          submissions: [submission()],
+          score: async () => ({ fraction_ai: 0.05, fraction_ai_assisted: 0, fraction_human: 0.95 }),
+          citationReportTo: ["UCITATIONS1"],
+        });
+        store.saveOpenReviewCitationCheck(check);
+        await sweep();
+        expect(reports).toHaveLength(0);
+      }
+    });
+  });
+
+  describe("the lab sheet", () => {
+    const grid = [
+      ["Title", "Venue", "Authors", "D", "E", "F", "G", "Pangram Score"],
+      ["Synthetic paper", "", "Ada Lovelace, Grace Hopper"],
+      ["An unrelated paper", "", "Someone Else"],
+    ];
+
+    it("writes the score to H and a confirmed reference to I, in the matched row", async () => {
+      const { store, sweep, sheetWrites, watch } = setup({
+        submissions: [submission()],
+        score: async () => ({
+          fraction_ai: 0.82,
+          fraction_ai_assisted: 0,
+          fraction_human: 0.18,
+          model_version: "4.0",
+        }),
+        sheetGrid: grid,
+      });
+      store.saveOpenReviewCitationCheck({
+        submission_id: "paperAAAA",
+        pdf_path: "/pdf/v1.pdf",
+        title: "Synthetic paper",
+        venue_id: ICLR,
+        status: "completed",
+        checked_at: "2026-09-25T00:00:00.000Z",
+        attempts: 1,
+        findings: [{ citation: "Nobody. 2031.", status: "not_found", explanation: "" }],
+      });
+
+      await sweep();
+
+      expect(sheetWrites).toHaveLength(1);
+      expect(sheetWrites[0].status).toBe("executed");
+      expect(sheetWrites[0].proposed_payload).toMatchObject({
+        spreadsheet_id: "sheet-1",
+        columns: ["H", "I"],
+        updates: [
+          {
+            range: "'Papers-iclr-feedback'!H2",
+            values: [["82% AI, 0% AI-assisted (Pangram 4.0)"]],
+          },
+          { range: "'Papers-iclr-feedback'!I2", values: [["Nobody. 2031."]] },
+        ],
+      });
+      expect(watch.status().last_sweep).toMatchObject({ sheet_updated: 2, sheet_unmatched: [] });
+    });
+
+    it("writes nothing when the cells already say it", async () => {
+      const { sweep, sheetWrites } = setup({
+        submissions: [submission()],
+        score: async () => ({
+          fraction_ai: 0.82,
+          fraction_ai_assisted: 0,
+          fraction_human: 0.18,
+          model_version: "4.0",
+        }),
+        sheetGrid: [
+          grid[0],
+          [...grid[1], "", "", "", "", "82% AI, 0% AI-assisted (Pangram 4.0)"],
+          grid[2],
+        ],
+      });
+      await sweep();
+      expect(sheetWrites).toHaveLength(0);
+    });
+
+    it("names a submission no row matches instead of guessing", async () => {
+      const { sweep, sheetWrites, watch } = setup({
+        submissions: [
+          submission({
+            title: "A title the sheet never had",
+            author_ids: ["~Nobody_Listed1", "~Also_Absent1"],
+          }),
+        ],
+        sheetGrid: grid,
+      });
+      await sweep();
+      expect(sheetWrites).toHaveLength(0);
+      expect(watch.status().last_sweep?.sheet_unmatched).toEqual(["A title the sheet never had"]);
     });
   });
 
