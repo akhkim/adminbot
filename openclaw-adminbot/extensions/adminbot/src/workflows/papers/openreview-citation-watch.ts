@@ -30,6 +30,14 @@ import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service
 // A transient failure (download, timeout, every database down) is retried by later sweeps, but
 // not forever: a PDF that keeps failing is an operator's problem, not an hourly retry loop's.
 export const MAX_CITATION_CHECK_ATTEMPTS = 3;
+// A partial check -- the paper read fine, but too many lookups went unanswered -- is the databases'
+// failure, not the paper's, and before a deadline it is the common one: the free databases rate
+// limit hardest when every lab is checking at once. Three tries spent on a bad hour left papers
+// permanently unchecked, so these get more. Still bounded, because each try is dozens of lookups.
+export const MAX_PARTIAL_CHECK_ATTEMPTS = 10;
+// A paper edited within this window is live work -- under review, being revised for a deadline --
+// and is checked ahead of the historical backlog, retries included.
+const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60_000;
 // Bump when extraction improves: a version it could not read before is read again once. 1 is the
 // first release, which could not split review-mode or ACL-style bibliographies at all.
 // 3 splits review-mode and team-report bibliographies and sizes merged chunks by entries.
@@ -157,9 +165,31 @@ export class OpenReviewCitationWatch {
     const existing = this.deps.store.getOpenReviewCitationCheck(submission.id, submission.pdf_path);
     return (
       !existing ||
-      (existing.status === "failed" && existing.attempts < MAX_CITATION_CHECK_ATTEMPTS) ||
+      (existing.status === "failed" && existing.attempts < attemptLimit(existing)) ||
       isStale(existing)
     );
+  }
+
+  /**
+   * Sort key for what to check next, compared element by element.
+   *
+   * First, papers edited in the last month ahead of the historical backlog. A PI's history is
+   * hundreds of never-checked papers, and without this a retry on a paper due tomorrow waited
+   * behind all of them.
+   *
+   * Then, within each of those, a version never tried (newest upload first) ahead of retries, and
+   * retries least recently tried first. Retries used to go newest-upload-first, and a sweep stops at
+   * the first database back-off, so the paper edited most recently was retried every sweep, hit the
+   * back-off and ended it -- and the papers behind it were not reached again for days. Ordering
+   * retries by when they were last tried sends the one just tried to the back.
+   */
+  private priority(submission: OpenReviewSubmission): [number, number, number] {
+    const active = this.now().getTime() - submission.modified_at < ACTIVE_WINDOW_MS ? 0 : 1;
+    const prior = this.deps.store.getOpenReviewCitationCheck(submission.id, submission.pdf_path);
+    if (!prior) {
+      return [active, 0, -submission.modified_at];
+    }
+    return [active, 1, Date.parse(prior.checked_at) || 0];
   }
 
   private async sweep(initial: OpenReviewSubmission[], summary: OpenReviewCitationSweepSummary) {
@@ -171,7 +201,10 @@ export class OpenReviewCitationWatch {
         .filter(
           (submission) => !attempted.has(versionKey(submission)) && this.needsCheck(submission),
         )
-        .toSorted((a, b) => b.modified_at - a.modified_at)[0];
+        .map((submission) => ({ submission, key: this.priority(submission) }))
+        .toSorted(
+          (a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2],
+        )[0]?.submission;
       if (!next || this.deps.pausedUntil?.()) {
         // Paused: the next scheduled run resumes once the databases are answering again.
         return;
@@ -373,6 +406,18 @@ export class OpenReviewCitationWatch {
     });
     return result.ok ? result.payload.id : undefined;
   }
+}
+
+/**
+ * How many tries a failed version gets. The two messages matched here are the ones this file
+ * writes for a paper that was read but mostly went unanswered; every other failure (download,
+ * timeout, checker error) keeps the tight limit.
+ */
+function attemptLimit(check: OpenReviewCitationCheck): number {
+  const partial =
+    check.error === "No reference could be checked." ||
+    /^About \d+ of \d+ references could not be checked\.$/u.test(check.error ?? "");
+  return partial ? MAX_PARTIAL_CHECK_ATTEMPTS : MAX_CITATION_CHECK_ATTEMPTS;
 }
 
 /** Unreadable or failed under an older extractor: read again once, with fresh retries. */

@@ -14,6 +14,7 @@ import { AdminBotMemoryStore } from "../../persistence/memory.js";
 import {
   CITATION_EXTRACTOR_VERSION,
   MAX_CITATION_CHECK_ATTEMPTS,
+  MAX_PARTIAL_CHECK_ATTEMPTS,
   OpenReviewCitationWatch,
 } from "./openreview-citation-watch.js";
 
@@ -407,6 +408,159 @@ describe("OpenReview citation watch", () => {
     });
     await sweep();
     expect(order).toEqual(["newPaper", "lateUpload", "oldPaper"]);
+  });
+
+  // What happened before the ICLR deadline: the paper edited last kept being retried first, hit
+  // a database back-off, and ended the sweep, so the papers behind it waited for days.
+  it("retries the paper tried least recently first, so a back-off cannot starve the rest", async () => {
+    const store = new AdminBotMemoryStore();
+    const failedAt = (id: string, at: string) =>
+      store.saveOpenReviewCitationCheck({
+        submission_id: id,
+        pdf_path: "/pdf/v1.pdf",
+        title: id,
+        venue_id: "Synthetic.cc/2027/Conference/Submission",
+        status: "failed",
+        error: "About 9 of 37 references could not be checked.",
+        checked_at: at,
+        attempts: 1,
+        extractor_version: CITATION_EXTRACTOR_VERSION,
+      });
+    failedAt("editedLast", "2026-09-25T18:55:00.000Z");
+    failedAt("waitingSinceMonday", "2026-09-23T18:32:00.000Z");
+    let pausedUntil: number | undefined;
+    const order: string[] = [];
+    const watch = new OpenReviewCitationWatch({
+      store,
+      service: new AdminBotService(store),
+      reader: {
+        profileId: async () => "~Synthetic_Author1",
+        listSubmissions: async () => [
+          submission({ id: "editedLast", modified_at: 9 }),
+          submission({ id: "waitingSinceMonday", modified_at: 1 }),
+        ],
+        readPdf: async (id) => {
+          order.push(id);
+          return Buffer.from(`%PDF-${id}`);
+        },
+      },
+      check: async () => {
+        // Every check trips the back-off, so each sweep gets exactly one paper.
+        pausedUntil = Date.now() + 60_000;
+        return { findings: [matched, { ...notFound, status: "unavailable" as const }] };
+      },
+      pausedUntil: () => pausedUntil,
+    });
+    for (let i = 0; i < 2; i++) {
+      pausedUntil = undefined;
+      await watch.start();
+      await watch.idle();
+    }
+    expect(order).toEqual(["waitingSinceMonday", "editedLast"]);
+  });
+
+  it("still checks a new upload before any retry", async () => {
+    const order: string[] = [];
+    const { store, sweep } = setup({
+      submissions: [
+        submission({ id: "retry", modified_at: 9 }),
+        submission({ id: "fresh", modified_at: 1 }),
+      ],
+      pdf: (id) => {
+        order.push(id);
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    store.saveOpenReviewCitationCheck({
+      submission_id: "retry",
+      pdf_path: "/pdf/v1.pdf",
+      title: "retry",
+      venue_id: "Synthetic.cc/2027/Conference/Submission",
+      status: "failed",
+      error: "About 9 of 37 references could not be checked.",
+      checked_at: "2026-09-20T00:00:00.000Z",
+      attempts: 1,
+      extractor_version: CITATION_EXTRACTOR_VERSION,
+    });
+    await sweep();
+    expect(order).toEqual(["fresh", "retry"]);
+  });
+
+  // What the first version of the fix got wrong on the live account: 327 submissions, most of a
+  // PI's history never checked. "Never tried first" put a retry on a paper due tomorrow behind
+  // every one of them.
+  it("retries a paper under active revision before the never-checked backlog", async () => {
+    const now = Date.parse("2026-09-25T21:00:00.000Z");
+    const order: string[] = [];
+    const { store, sweep } = setup({
+      submissions: [
+        submission({ id: "dueTomorrow", modified_at: now - 60 * 60_000 }),
+        submission({ id: "from2021", modified_at: Date.parse("2021-05-01T00:00:00.000Z") }),
+        submission({ id: "from2023", modified_at: Date.parse("2023-05-01T00:00:00.000Z") }),
+        submission({ id: "uploadedToday", modified_at: now - 30 * 60_000 }),
+      ],
+      pdf: (id) => {
+        order.push(id);
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    store.saveOpenReviewCitationCheck({
+      submission_id: "dueTomorrow",
+      pdf_path: "/pdf/v1.pdf",
+      title: "dueTomorrow",
+      venue_id: "ICLR.cc/2027/Conference/Submission",
+      status: "failed",
+      error: "About 9 of 37 references could not be checked.",
+      checked_at: "2026-09-25T20:00:00.000Z",
+      attempts: 2,
+      extractor_version: CITATION_EXTRACTOR_VERSION,
+    });
+    vi.useFakeTimers({ now, toFake: ["Date"] });
+    try {
+      await sweep();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(order).toEqual(["uploadedToday", "dueTomorrow", "from2023", "from2021"]);
+  });
+
+  // Unanswered lookups are the databases' fault; a broken download or checker error is not.
+  it("gives a partial check more retries than a hard failure", async () => {
+    const unavailable = { ...notFound, status: "unavailable" as const };
+    const { store, check, sweep } = setup({
+      submissions: [submission()],
+      check: async () => ({ findings: [matched, unavailable, unavailable] }),
+    });
+    for (let i = 0; i < MAX_PARTIAL_CHECK_ATTEMPTS + 2; i++) {
+      await sweep();
+    }
+    expect(MAX_PARTIAL_CHECK_ATTEMPTS).toBeGreaterThan(MAX_CITATION_CHECK_ATTEMPTS);
+    expect(check).toHaveBeenCalledTimes(MAX_PARTIAL_CHECK_ATTEMPTS);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "failed",
+      attempts: MAX_PARTIAL_CHECK_ATTEMPTS,
+    });
+  });
+
+  // Evaluation Awareness had spent all three tries on unanswered lookups; it is owed more.
+  it("picks a partial check back up that had used up the old limit", async () => {
+    const { store, check, sweep } = setup({ submissions: [submission()] });
+    store.saveOpenReviewCitationCheck({
+      submission_id: "paperAAAA",
+      pdf_path: "/pdf/v1.pdf",
+      title: "Synthetic paper",
+      venue_id: "Synthetic.cc/2027/Conference/Submission",
+      status: "failed",
+      error: "About 16 of 58 references could not be checked.",
+      checked_at: "2026-09-25T18:25:00.000Z",
+      attempts: MAX_CITATION_CHECK_ATTEMPTS,
+      extractor_version: CITATION_EXTRACTOR_VERSION,
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "completed",
+    });
   });
 
   it("runs one sweep at a time and surfaces listing failures to the caller", async () => {
