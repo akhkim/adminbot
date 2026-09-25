@@ -135,8 +135,7 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     id: "community_building__media_impact",
     category: "Community Building",
     name: "Media Impact",
-    description:
-      "Research was covered by press or cited in a policy or industry document.",
+    description: "Research was covered by press or cited in a policy or industry document.",
     sort_order: 50,
   },
   {
