@@ -1214,6 +1214,44 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-letters"
     >
+      <section
+        class="logistics-request__section"
+        aria-labelledby="logistics-letters-guide-title"
+        data-testid="logistics-letters-guide"
+      >
+        <h3 class="card-title" id="logistics-letters-guide-title">
+          ${t("logistics.lettersGuide.title")}
+        </h3>
+        <p class="card-sub">${t("logistics.lettersGuide.sub")}</p>
+        <p>
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.open")}
+            <span aria-hidden="true">${icons.externalLink}</span>
+          </a>
+        </p>
+        <ul>
+          <li>${t("logistics.lettersGuide.folder")}</li>
+          <li>${t("logistics.lettersGuide.schools")}</li>
+          <li>${t("logistics.lettersGuide.materials")}</li>
+          <li>${t("logistics.lettersGuide.facts")}</li>
+        </ul>
+        <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
+        <p>
+          ${t("logistics.lettersGuide.portal")}
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.portalLink")}
+            <span aria-hidden="true">${icons.externalLink}</span>
+          </a>
+        </p>
+      </section>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
     </div>

@@ -821,10 +821,10 @@ describe("list of schools", () => {
     ];
   }
 
-  it("leads the letters container, above Save and Submit", () => {
+  it("follows the Guidebook guidance, above Save and Submit", () => {
     const { container } = drawLetters();
     const card = container.querySelector<HTMLElement>("[data-testid='logistics-letters']");
-    expect(card?.firstElementChild?.querySelector(".card-title")?.textContent?.trim()).toBe(
+    expect(card?.children[1]?.querySelector(".card-title")?.textContent?.trim()).toBe(
       "List of Schools",
     );
     expect(card?.lastElementChild?.classList.contains("logistics-request__actions")).toBe(true);
@@ -1012,6 +1012,7 @@ describe("letter request links", () => {
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
+      "logistics-letters-guide",
       "logistics-schools",
       // What the member did comes before where the letter is written and stored: it is the part
       // only they can supply, and the two links are plumbing for it.
@@ -1659,5 +1660,46 @@ describe("book meeting", () => {
   it("opens empty rather than stamping a request nobody made", () => {
     const { container } = drawMeeting();
     expect(container.querySelector(".logistics-schools__empty")).not.toBeNull();
+  });
+});
+
+describe("recommendation letter Guidebook guidance", () => {
+  it("shows preparation and exact section links before school fields, including edits", () => {
+    for (const editing of [false, true]) {
+      const { container } = drawLetters({ editing });
+      const guide = container.querySelector<HTMLElement>(
+        "[data-testid='logistics-letters-guide']",
+      )!;
+      expect(guide).not.toBeNull();
+      expect(guide.textContent).toContain("before submitting this request");
+      expect(guide.textContent).toContain("grad_app_[yourname]");
+      expect(guide.textContent).toContain("earliest deadline");
+      expect(guide.textContent).toContain("Statement of Purpose");
+      expect(guide.textContent).toContain("zjin.admin@cs.toronto.edu");
+      const links = [...guide.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links.map((link) => link.href)).toEqual([
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o",
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy",
+      ]);
+      for (const link of links) {
+        expect(link.target).toBe("_blank");
+        expect(link.rel).toContain("noopener");
+      }
+      const schoolSection = container.querySelector("[data-testid='logistics-schools']")!;
+      expect(
+        guide.compareDocumentPosition(schoolSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("does not show recommendation instructions on other request forms or the request list", () => {
+    for (const options of [
+      { template: "documentSignature" },
+      { template: "bookMeeting" },
+      { template: "recommendationLetters", mode: "view" },
+    ] as DrawOptions[]) {
+      const { container } = draw(options);
+      expect(container.querySelector("[data-testid='logistics-letters-guide']")).toBeNull();
+    }
   });
 });
