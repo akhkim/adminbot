@@ -17,6 +17,14 @@ describe("AdminBotService badges", () => {
     const badges = unwrap(service.listBadgeDefinitions()).badges;
 
     expect(badges.map((badge) => badge.id)).toContain("team_contributor__infra_builder");
+    expect(badges.find((badge) => badge.id === "community_building__lab_engagement")).toMatchObject(
+      {
+        category: "Community Building",
+        name: "Lab Engagement",
+        description:
+          "Has talked to Zhijing face-to-face in at least three group meeting occasions, including in person and online.",
+      },
+    );
     expect(
       badges.filter((badge) => badge.family_key === "causality").map((badge) => badge.tier),
     ).toEqual(["Level 1", "Level 2", "Level 3"]);
