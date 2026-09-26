@@ -348,6 +348,9 @@ export class OpenReviewCitationWatch {
         attempts: backingOff ? base.attempts - 1 : base.attempts,
         pdf_sha256: pdfSha256,
         status: "failed",
+        // Kept so the lab sheet can name the references that could not be confirmed. A failed
+        // check still raises no email and is never read as clean -- that is keyed on status.
+        findings,
         error:
           unchecked === total
             ? "No reference could be checked."

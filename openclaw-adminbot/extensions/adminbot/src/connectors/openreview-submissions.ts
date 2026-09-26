@@ -102,7 +102,7 @@ export function createOpenReviewSubmissionReader(
   return {
     profileId: async () => (await current()).profileId,
 
-    async listSubmissions() {
+    async listSubmissions(options: { includeWithoutPdf?: boolean } = {}) {
       const { profileId } = await current();
       const submissions: OpenReviewSubmission[] = [];
       for (let offset = 0; offset < MAX_NOTES; offset += PAGE_SIZE) {
@@ -121,7 +121,7 @@ export function createOpenReviewSubmissionReader(
         ) as { notes?: unknown };
         const notes = Array.isArray(body.notes) ? body.notes : [];
         for (const note of notes) {
-          const submission = toSubmission(note);
+          const submission = toSubmission(note, options);
           if (submission) {
             submissions.push(submission);
           }
@@ -156,7 +156,10 @@ export function createOpenReviewSubmissionReader(
 }
 
 /** A root submission with a PDF that can still be desk rejected, or undefined. */
-export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
+export function toSubmission(
+  note: unknown,
+  options: { includeWithoutPdf?: boolean } = {},
+): OpenReviewSubmission | undefined {
   if (!note || typeof note !== "object") {
     return undefined;
   }
@@ -170,7 +173,7 @@ export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
   const pdfPath = value(content.pdf);
   const title = value(content.title);
   const venueId = value(content.venueid) ?? "";
-  if (!pdfPath || !title || SETTLED_VENUE.test(venueId)) {
+  if ((!pdfPath && !options.includeWithoutPdf) || !title || SETTLED_VENUE.test(venueId)) {
     return undefined;
   }
   // Two shapes. Older venues list names in `authors` and ids in `authorids`; ICLR 2027 leaves
@@ -189,7 +192,7 @@ export function toSubmission(note: unknown): OpenReviewSubmission | undefined {
     id,
     title,
     venue_id: venueId,
-    pdf_path: pdfPath,
+    pdf_path: pdfPath ?? "",
     modified_at: typeof record.tmdate === "number" ? record.tmdate : 0,
     ...(authorIds.length ? { author_ids: authorIds } : {}),
     ...(authorNames.length ? { author_names: authorNames } : {}),

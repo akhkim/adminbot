@@ -151,6 +151,24 @@ describe("OpenReview submission reader", () => {
     });
   });
 
+  // The lab sheet lists every submission; the checks only read the ones with a PDF.
+  it("lists an abstract-only submission only when asked to", () => {
+    const note = {
+      id: "x1234",
+      content: {
+        title: { value: "Abstract only" },
+        venueid: { value: "ICLR.cc/2027/Conference/Submission" },
+        authors: { value: [{ fullname: "Ada Lovelace", username: "~Ada_Lovelace1" }] },
+      },
+    };
+    expect(toSubmission(note)).toBeUndefined();
+    expect(toSubmission(note, { includeWithoutPdf: true })).toMatchObject({
+      id: "x1234",
+      pdf_path: "",
+      author_names: ["Ada Lovelace"],
+    });
+  });
+
   it("keeps plain-string author names from older venues", () => {
     expect(
       toSubmission({

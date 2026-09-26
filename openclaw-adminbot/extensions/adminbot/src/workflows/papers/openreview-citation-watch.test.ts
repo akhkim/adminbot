@@ -335,6 +335,12 @@ describe("OpenReview citation watch", () => {
       status: "failed",
       error: "About 2 of 5 references could not be checked.",
     });
+    // Kept, so the lab sheet can name the references that could not be confirmed.
+    expect(
+      store
+        .getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")
+        ?.findings?.filter((finding) => finding.status === "unavailable"),
+    ).toHaveLength(2);
     await sweep();
     expect(check).toHaveBeenCalledTimes(2);
   });

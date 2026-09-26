@@ -37,13 +37,10 @@ import type {
 } from "../../contracts/paper-integrity-checks.js";
 import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service.js";
 import {
-  cellRange,
   citationCellText,
-  columnLetter,
-  matchSheetRows,
+  planSheet,
   scoreCellText,
-  sheetColumns,
-  sheetPaperRows,
+  unconfirmedCellText,
 } from "./integrity-sheet.js";
 
 /**
@@ -228,40 +225,39 @@ export class IclrIntegrityWatch {
     }
     const { store, service } = this.deps;
     try {
-      const grid = await sheet.read();
-      const columns = sheetColumns(grid[0] ?? []);
-      const { matched, unmatched } = matchSheetRows(sheetPaperRows(grid, columns), submissions);
-      summary.sheet_unmatched = unmatched.map((submission) => submission.title);
-      const updates = submissions.flatMap((submission) => {
-        const row = matched.get(submission.id);
-        if (!row) {
-          return [];
+      // Every ICLR submission under review gets a row, the abstract-only ones included; the
+      // scored list the sweep works from holds only those with a PDF.
+      const all = (await this.deps.reader.listSubmissions({ includeWithoutPdf: true }))
+        .filter((submission) => ICLR_UNDER_REVIEW.test(submission.venue_id))
+        .toSorted((a, b) => a.title.localeCompare(b.title));
+      const withPdf = new Map(submissions.map((submission) => [submission.id, submission]));
+      const entries = all.map((listed) => {
+        const submission = withPdf.get(listed.id) ?? listed;
+        if (!submission.pdf_path) {
+          return { submission };
         }
-        const score = scoreCellText(store.getPaperAiTextCheck(submission.id, submission.pdf_path));
-        const cited = citationCellText(
-          notFoundCitations(store.getOpenReviewCitationCheck(submission.id, submission.pdf_path)),
-        );
-        return [
-          ...(score && score !== row.current
-            ? [{ range: cellRange(sheet.tab, columns.score, row.row), values: [[score]] }]
-            : []),
-          ...(cited && cited !== row.currentCitations
-            ? [{ range: cellRange(sheet.tab, columns.citations, row.row), values: [[cited]] }]
-            : []),
-        ];
+        const citations = store.getOpenReviewCitationCheck(submission.id, submission.pdf_path);
+        return {
+          submission,
+          score: scoreCellText(store.getPaperAiTextCheck(submission.id, submission.pdf_path)),
+          citations: citationCellText(citations),
+          unconfirmed: unconfirmedCellText(citations),
+        };
       });
+      const plan = planSheet(await sheet.read(), sheet.tab, entries);
       summary.sheet_updated = 0;
-      if (!updates.length) {
+      summary.sheet_added = plan.added;
+      if (!plan.updates.length) {
         return;
       }
       const proposed = service.createProposal({
         type: "paper_integrity.sheet_scores",
-        summary: `Pangram scores for ${updates.length} paper(s) in the lab sheet`,
+        summary: `ICLR submissions and integrity results in the lab sheet (${plan.updates.length} cells)`,
         target: { service: "google", channel: "sheets", target: sheet.spreadsheetId },
         proposed_payload: {
           spreadsheet_id: sheet.spreadsheetId,
-          columns: [columnLetter(columns.score), columnLetter(columns.citations)],
-          updates,
+          columns: plan.columns,
+          updates: plan.updates,
         },
         undo_plan: "Edit the cells back in the sheet; the version history keeps the old values.",
       });
@@ -274,7 +270,7 @@ export class IclrIntegrityWatch {
         summary.sheet_error = executed.error.message;
         return;
       }
-      summary.sheet_updated = updates.length;
+      summary.sheet_updated = plan.updates.length;
     } catch (error) {
       summary.sheet_error =
         error instanceof Error ? error.message.slice(0, 200) : "The sheet could not be read.";
@@ -733,10 +729,10 @@ export function buildIntegrityReportMessage(input: {
     lines.push(
       summary.sheet_error
         ? `Lab sheet: not updated -- ${summary.sheet_error}`
-        : `Lab sheet: ${summary.sheet_updated} score cell(s) updated.`,
+        : `Lab sheet: ${summary.sheet_updated} cell(s) updated.`,
     );
-    if (summary.sheet_unmatched?.length) {
-      lines.push(`No sheet row found for: ${summary.sheet_unmatched.join("; ")}`);
+    if (summary.sheet_added?.length) {
+      lines.push(`Added to the sheet: ${summary.sheet_added.join("; ")}`);
     }
   }
   return lines.join("\n");

@@ -86,7 +86,7 @@ export type PaperIntegritySweepSummary = {
   report_error?: string;
   /** Score cells written to the lab's paper sheet this sweep; see IclrIntegrityWatchDeps.sheet. */
   sheet_updated?: number;
-  /** Titles of submissions no sheet row could be matched to, by title or by authors. */
-  sheet_unmatched?: string[];
+  /** Submissions given a new entry in the sheet this sweep. */
+  sheet_added?: string[];
   sheet_error?: string;
 };
