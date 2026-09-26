@@ -70,7 +70,11 @@ export type OpenReviewSubmission = {
 export type OpenReviewSubmissionReader = {
   /** The profile the credentials belong to, e.g. `~Jane_Doe1`. */
   profileId(): Promise<string>;
-  listSubmissions(): Promise<OpenReviewSubmission[]>;
+  /**
+   * Submissions with a PDF, which is what the checks read. `includeWithoutPdf` adds the
+   * abstract-only ones, with an empty `pdf_path`, for listing the lab's submissions.
+   */
+  listSubmissions(options?: { includeWithoutPdf?: boolean }): Promise<OpenReviewSubmission[]>;
   readPdf(submissionId: string): Promise<Uint8Array>;
 };
 

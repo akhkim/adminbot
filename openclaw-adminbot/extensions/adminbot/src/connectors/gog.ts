@@ -501,10 +501,10 @@ export function buildIntegrityScoreArgs(proposal: AdminBotStoredProposal): strin
   const columns = Array.isArray(payload.columns) ? payload.columns : [];
   if (
     columns.length < 1 ||
-    columns.length > 2 ||
+    columns.length > 8 ||
     columns.some((column) => typeof column !== "string" || !/^[A-Z]{1,2}$/u.test(column))
   ) {
-    throw new Error("paper_integrity.sheet_scores columns must be one or two column letters");
+    throw new Error("paper_integrity.sheet_scores columns must be one to eight column letters");
   }
   const column = (columns as string[]).join("|");
   const updates = Array.isArray(payload.updates) ? payload.updates : [];

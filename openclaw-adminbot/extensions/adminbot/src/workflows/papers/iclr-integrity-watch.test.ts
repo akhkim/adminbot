@@ -552,23 +552,33 @@ describe("ICLR integrity watch", () => {
   });
 
   describe("the lab sheet", () => {
-    const grid = [
-      ["Title", "Venue", "Authors", "D", "E", "F", "G", "Pangram Score"],
-      ["Synthetic paper", "", "Ada Lovelace, Grace Hopper"],
-      ["An unrelated paper", "", "Someone Else"],
+    const header = [
+      "Title",
+      "Venue",
+      "Authors",
+      "D",
+      "E",
+      "F",
+      "G",
+      "Pangram Score",
+      "Hallucinated citations",
+      "Unconfirmed references",
+      "OpenReview",
     ];
-
-    it("writes the score to H and a confirmed reference to I, in the matched row", async () => {
-      const { store, sweep, sheetWrites, watch } = setup({
-        submissions: [submission()],
-        score: async () => ({
-          fraction_ai: 0.82,
-          fraction_ai_assisted: 0,
-          fraction_human: 0.18,
-          model_version: "4.0",
-        }),
-        sheetGrid: grid,
-      });
+    const linkedRow = (h = "", i = "", j = "") => [
+      "Synthetic paper",
+      "",
+      "Ada Lovelace",
+      "",
+      "",
+      "",
+      "",
+      h,
+      i,
+      j,
+      "https://openreview.net/forum?id=paperAAAA",
+    ];
+    const withCitations = (store: ReturnType<typeof setup>["store"]) =>
       store.saveOpenReviewCitationCheck({
         submission_id: "paperAAAA",
         pdf_path: "/pdf/v1.pdf",
@@ -577,8 +587,24 @@ describe("ICLR integrity watch", () => {
         status: "completed",
         checked_at: "2026-09-25T00:00:00.000Z",
         attempts: 1,
-        findings: [{ citation: "Nobody. 2031.", status: "not_found", explanation: "" }],
+        findings: [
+          { citation: "Nobody. 2031.", status: "not_found", explanation: "" },
+          { citation: "Unasked. 2024.", status: "unavailable", explanation: "" },
+        ],
       });
+
+    it("fills the linked row: score in H, fabricated in I, unconfirmed in J", async () => {
+      const { store, sweep, sheetWrites, watch } = setup({
+        submissions: [submission()],
+        score: async () => ({
+          fraction_ai: 0.82,
+          fraction_ai_assisted: 0,
+          fraction_human: 0.18,
+          model_version: "4.0",
+        }),
+        sheetGrid: [header, linkedRow()],
+      });
+      withCitations(store);
 
       await sweep();
 
@@ -586,20 +612,20 @@ describe("ICLR integrity watch", () => {
       expect(sheetWrites[0].status).toBe("executed");
       expect(sheetWrites[0].proposed_payload).toMatchObject({
         spreadsheet_id: "sheet-1",
-        columns: ["H", "I"],
         updates: [
           {
             range: "'Papers-iclr-feedback'!H2",
             values: [["82% AI, 0% AI-assisted (Pangram 4.0)"]],
           },
           { range: "'Papers-iclr-feedback'!I2", values: [["Nobody. 2031."]] },
+          { range: "'Papers-iclr-feedback'!J2", values: [["could not check: Unasked. 2024."]] },
         ],
       });
-      expect(watch.status().last_sweep).toMatchObject({ sheet_updated: 2, sheet_unmatched: [] });
+      expect(watch.status().last_sweep).toMatchObject({ sheet_updated: 3, sheet_added: [] });
     });
 
     it("writes nothing when the cells already say it", async () => {
-      const { sweep, sheetWrites } = setup({
+      const { store, sweep, sheetWrites } = setup({
         submissions: [submission()],
         score: async () => ({
           fraction_ai: 0.82,
@@ -608,28 +634,48 @@ describe("ICLR integrity watch", () => {
           model_version: "4.0",
         }),
         sheetGrid: [
-          grid[0],
-          [...grid[1], "", "", "", "", "82% AI, 0% AI-assisted (Pangram 4.0)"],
-          grid[2],
+          header,
+          linkedRow(
+            "82% AI, 0% AI-assisted (Pangram 4.0)",
+            "Nobody. 2031.",
+            "could not check: Unasked. 2024.",
+          ),
         ],
       });
+      withCitations(store);
       await sweep();
       expect(sheetWrites).toHaveLength(0);
     });
 
-    it("names a submission no row matches instead of guessing", async () => {
-      const { sweep, sheetWrites, watch } = setup({
-        submissions: [
-          submission({
-            title: "A title the sheet never had",
-            author_ids: ["~Nobody_Listed1", "~Also_Absent1"],
-          }),
-        ],
-        sheetGrid: grid,
+    // Every submission gets an entry -- the abstract-only ones too -- in the rows the lab emptied.
+    it("adds a submission without a row as a new entry, abstract-only ones included", async () => {
+      const abstractOnly = {
+        ...submission({ id: "paperBBBB", title: "Abstract only" }),
+        pdf_path: "",
+        author_names: ["Grace Hopper"],
+      };
+      const { reader, sweep, sheetWrites, watch } = setup({
+        submissions: [submission()],
+        sheetGrid: [header, [], ["The lab's own row"]],
       });
+      reader.listSubmissions.mockImplementation(async (options?: { includeWithoutPdf?: boolean }) =>
+        options?.includeWithoutPdf ? [submission(), abstractOnly] : [submission()],
+      );
+
       await sweep();
-      expect(sheetWrites).toHaveLength(0);
-      expect(watch.status().last_sweep?.sheet_unmatched).toEqual(["A title the sheet never had"]);
+
+      const cells = Object.fromEntries(
+        (
+          sheetWrites[0].proposed_payload as {
+            updates: Array<{ range: string; values: string[][] }>;
+          }
+        ).updates.map((update) => [update.range, update.values[0][0]]),
+      );
+      expect(cells["'Papers-iclr-feedback'!A2"]).toBe("Abstract only");
+      expect(cells["'Papers-iclr-feedback'!K2"]).toBe("https://openreview.net/forum?id=paperBBBB");
+      expect(cells["'Papers-iclr-feedback'!A4"]).toBe("Synthetic paper");
+      expect(Object.keys(cells).some((range) => /!\w+3$/u.test(range))).toBe(false);
+      expect(watch.status().last_sweep?.sheet_added).toEqual(["Abstract only", "Synthetic paper"]);
     });
   });
 

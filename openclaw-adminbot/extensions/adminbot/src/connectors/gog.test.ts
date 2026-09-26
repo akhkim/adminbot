@@ -822,7 +822,10 @@ describe("paper_integrity.sheet_scores", () => {
       { columns: ["H"], updates: [{ range: "'Tab'!H2", values: [["a", "b"]] }] },
     ],
     ["an unquoted tab", { columns: ["H"], updates: [cell("Tab!H2")] }],
-    ["three columns", { columns: ["H", "I", "J"], updates: [cell("'Tab'!H2")] }],
+    [
+      "nine columns",
+      { columns: ["A", "B", "C", "D", "E", "F", "G", "H", "I"], updates: [cell("'Tab'!H2")] },
+    ],
     ["no columns", { columns: [], updates: [cell("'Tab'!H2")] }],
   ])("refuses %s", (_label, payload) => {
     expect(() =>
