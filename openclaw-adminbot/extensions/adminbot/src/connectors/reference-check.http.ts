@@ -74,11 +74,19 @@ export const lookupContext = new AsyncLocalStorage<LookupContext>();
 export const DBLP_HOSTS = ["dblp.org", "dblp.uni-trier.de"] as const;
 const DBLP = "dblp.org";
 
+/**
+ * DBLP's SPARQL endpoint: the same data, and the one DBLP interface that still answered Aurora
+ * when both search-API hosts served every request -- identified or not -- a "Making sure you're
+ * not a bot" challenge page. Used only for search lookups those hosts could not answer.
+ */
+const DBLP_SPARQL = "sparql.dblp.org";
+
 const hosts = new Set([
   "api.crossref.org",
   "api.semanticscholar.org",
   "api.openalex.org",
   ...DBLP_HOSTS,
+  DBLP_SPARQL,
   "export.arxiv.org",
 ]);
 
@@ -122,8 +130,162 @@ export async function referenceFetch(input: string, init?: RequestInit): Promise
       }
     }
   }
+  const query = url.pathname === "/search/publ/api" ? url.searchParams.get("q") : null;
+  if (query && !context.signal.aborted) {
+    try {
+      return await searchDblpViaSparql(context, query);
+    } catch (error) {
+      lastError = error;
+    }
+  }
   context.failures.add(DBLP);
   throw lastError;
+}
+
+const STOP_WORDS = new Set([
+  "about",
+  "after",
+  "also",
+  "among",
+  "and",
+  "are",
+  "for",
+  "from",
+  "have",
+  "into",
+  "its",
+  "not",
+  "over",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "this",
+  "through",
+  "towards",
+  "under",
+  "using",
+  "via",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "with",
+  "within",
+  "without",
+]);
+
+/** The title's most distinctive words: at least four characters, longest first. */
+export function dblpSearchWords(title: string, count: number): string[] {
+  const words = title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((word) => word.length >= 4 && !STOP_WORDS.has(word));
+  return [...new Set(words)].toSorted((a, b) => b.length - a.length).slice(0, count);
+}
+
+function sparqlQuery(words: string[]): string {
+  const where = words.map((word) => `?text ql:contains-word "${word}" .`).join(" ");
+  return `PREFIX dblp: <https://dblp.org/rdf/schema#>
+PREFIX ql: <http://qlever.cs.uni-freiburg.de/builtin-functions/>
+SELECT ?pub ?title (SAMPLE(?y) AS ?year) (SAMPLE(?v) AS ?venue) (SAMPLE(?d) AS ?doi)
+  (GROUP_CONCAT(DISTINCT CONCAT(STR(?ord), "\\t", ?name); separator="\\n") AS ?authors) WHERE {
+  ?pub dblp:title ?title . ?text ql:contains-entity ?title . ${where}
+  OPTIONAL { ?pub dblp:yearOfPublication ?y }
+  OPTIONAL { ?pub dblp:publishedIn ?v }
+  OPTIONAL { ?pub dblp:doi ?d }
+  OPTIONAL { ?pub dblp:hasSignature ?sig . ?sig dblp:signatureOrdinal ?ord .
+             ?sig dblp:signatureCreator ?a . ?a dblp:primaryCreatorName ?name }
+} GROUP BY ?pub ?title LIMIT 40`;
+}
+
+type SparqlRow = Record<string, { value?: string } | undefined>;
+
+/** Share of distinctive title words a SPARQL row must have in common to count as a match. */
+const SPARQL_MIN_OVERLAP = 0.8;
+
+/**
+ * A DBLP title search answered through SPARQL, returned in the search API's own shape so the
+ * vendored DBLP client reads it unchanged.
+ *
+ * Positive evidence only. The keyword search here is exact where DBLP's search API is fuzzy: on
+ * one ICLR submission it missed "Transformers can do Bayesian inference" (the PDF split the word
+ * across a line) and two MIT Press books, and let through as "not found" they would have been
+ * reported as fabricated citations -- to the PI and the authors. So only a confident match (most
+ * of the title's distinctive words shared, both ways) is returned. Anything else throws, which
+ * counts as DBLP not having answered: the reference stays "not fully checked", exactly what it
+ * was before this fallback existed, and a "not found" still needs DBLP's own search.
+ */
+async function searchDblpViaSparql(context: LookupContext, title: string): Promise<Response> {
+  const run = async (words: string[]): Promise<SparqlRow[]> => {
+    const url = new URL(`https://${DBLP_SPARQL}/sparql`);
+    url.searchParams.set("query", sparqlQuery(words));
+    const response = await fetchFromHost(
+      context,
+      url,
+      { headers: { Accept: "application/sparql-results+json" } },
+      DBLP,
+    );
+    const data = (await response.json()) as { results: { bindings: SparqlRow[] } };
+    return data.results.bindings;
+  };
+  const all = dblpSearchWords(title, 5);
+  let rows: SparqlRow[] = [];
+  if (all.length >= 2) {
+    rows = await run(all);
+    if (!rows.length && all.length > 3) {
+      rows = await run(all.slice(0, 3));
+    }
+  }
+  const wanted = new Set(dblpSearchWords(title, 50));
+  // Shared distinctive words over the larger of the two sets, so neither a longer DBLP title
+  // nor a longer citation title can stand in for the other.
+  const overlap = (text: string) => {
+    const words = new Set(dblpSearchWords(text, 50));
+    const shared = [...words].filter((word) => wanted.has(word)).length;
+    return shared / Math.max(words.size, wanted.size, 1);
+  };
+  const hits = rows
+    .map((row) => {
+      const value = (key: string) => row[key]?.value ?? "";
+      const authors = value("authors")
+        .split("\n")
+        .map((line) => line.split("\t"))
+        .filter((parts) => parts.length === 2 && parts[1])
+        .toSorted((a, b) => Number(a[0]) - Number(b[0]))
+        .map((parts) => ({ text: parts[1] }));
+      const pub = value("pub");
+      return {
+        score: overlap(value("title")),
+        hit: {
+          "@id": pub,
+          info: {
+            title: value("title"),
+            year: value("year"),
+            venue: value("venue"),
+            type: "",
+            key: pub.replace(/^https:\/\/dblp\.org\/rec\//u, ""),
+            url: pub,
+            ...(value("doi") ? { ee: value("doi") } : {}),
+            authors: { author: authors },
+          },
+        },
+      };
+    })
+    .filter((entry) => entry.score >= SPARQL_MIN_OVERLAP)
+    .toSorted((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((entry) => entry.hit);
+  if (!hits.length) {
+    throw new Error("DBLP SPARQL found no confident match");
+  }
+  return Response.json({
+    result: { hits: { "@total": String(hits.length), ...(hits.length ? { hit: hits } : {}) } },
+  });
 }
 
 /**
@@ -219,7 +381,18 @@ async function fetchFromHost(
       await reader?.cancel();
     }
     const body = Buffer.concat(chunks).toString("utf8");
-    if (response.ok) {
+    // DBLP's bot wall answers 200 with an HTML page. Treated as the host refusing, with the same
+    // back-off, so every lookup does not go on knocking on a host that has stopped answering.
+    if (response.ok && source === DBLP && host !== DBLP_SPARQL && /not a bot/iu.test(body)) {
+      context.cooldowns?.set(host, Date.now() + DEFAULT_COOLDOWN_MS);
+      throw new Error("DBLP answered with a bot challenge");
+    }
+    if (response.ok && host === DBLP_SPARQL) {
+      const data = JSON.parse(body);
+      if (!Array.isArray(data.results?.bindings)) {
+        throw new Error("Invalid database response");
+      }
+    } else if (response.ok) {
       // Upstream catches parsing errors; detect malformed responses here before they disappear.
       if (source !== "export.arxiv.org") {
         const data = JSON.parse(body);
@@ -251,7 +424,12 @@ async function fetchFromHost(
     if (error instanceof TypeError && !context.signal.aborted) {
       context.cooldowns?.set(
         host,
-        Date.now() + (source === DBLP ? DEFAULT_COOLDOWN_MS : BLIP_COOLDOWN_MS),
+        // The search-API hosts reset connections when they have blocked a client; anything else,
+        // the SPARQL endpoint included, is treated as a blip the sweep can wait out.
+        Date.now() +
+          ((DBLP_HOSTS as readonly string[]).includes(host)
+            ? DEFAULT_COOLDOWN_MS
+            : BLIP_COOLDOWN_MS),
       );
     }
     // The engine swallows this, so the cause never reaches an API response.
