@@ -563,6 +563,37 @@ describe("OpenReview citation watch", () => {
     });
   });
 
+  // A 429's minute used to end the sweep, and the next paper waited for the next scheduled run.
+  it("waits out a short back-off between papers instead of ending the sweep", async () => {
+    const store = new AdminBotMemoryStore();
+    let pausedUntil: number | undefined;
+    const order: string[] = [];
+    const watch = new OpenReviewCitationWatch({
+      store,
+      service: new AdminBotService(store),
+      reader: {
+        profileId: async () => "~Synthetic_Author1",
+        listSubmissions: async () => [
+          submission({ id: "first", modified_at: 2 }),
+          submission({ id: "second", modified_at: 1 }),
+        ],
+        readPdf: async (id) => {
+          order.push(id);
+          return Buffer.from(`%PDF-${id}`);
+        },
+      },
+      check: async () => {
+        pausedUntil = Date.now() + 100;
+        return { findings: [matched] };
+      },
+      pausedUntil: () => (pausedUntil && pausedUntil > Date.now() ? pausedUntil : undefined),
+      maxPauseWaitMs: 5_000,
+    });
+    await watch.start();
+    await watch.idle();
+    expect(order).toEqual(["first", "second"]);
+  });
+
   it("runs one sweep at a time and surfaces listing failures to the caller", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

@@ -64,6 +64,11 @@ export type OpenReviewCitationWatchDeps = {
   pausedUntil?: () => number | undefined;
   /** Gap between papers, so a backfill stays well inside the free databases' limits. */
   pauseBetweenMs?: number;
+  /**
+   * A back-off at most this long is waited out between papers rather than ending the sweep --
+   * a 429's minute otherwise cost the next paper a whole scheduled interval.
+   */
+  maxPauseWaitMs?: number;
 };
 
 export type OpenReviewCitationSweepStart = {
@@ -205,7 +210,13 @@ export class OpenReviewCitationWatch {
         .toSorted(
           (a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2],
         )[0]?.submission;
-      if (!next || this.deps.pausedUntil?.()) {
+      const paused = this.deps.pausedUntil?.();
+      const wait = paused ? paused - Date.now() : 0;
+      if (next && paused && wait > 0 && wait <= (this.deps.maxPauseWaitMs ?? 0)) {
+        await delay(wait);
+        continue;
+      }
+      if (!next || paused) {
         // Paused: the next scheduled run resumes once the databases are answering again.
         return;
       }
