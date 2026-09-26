@@ -1230,7 +1230,6 @@ function renderLettersRequest(props: LettersProps) {
             rel="noreferrer noopener"
           >
             ${t("logistics.lettersGuide.open")}
-            <span aria-hidden="true">${icons.externalLink}</span>
           </a>
         </p>
         <ul>
@@ -1248,7 +1247,6 @@ function renderLettersRequest(props: LettersProps) {
             rel="noreferrer noopener"
           >
             ${t("logistics.lettersGuide.portalLink")}
-            <span aria-hidden="true">${icons.externalLink}</span>
           </a>
         </p>
       </section>
