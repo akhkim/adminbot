@@ -1,4 +1,5 @@
 import { createEngine } from "clawpdf";
+import { resolveAdminBotDriveAccount } from "../contracts/actions.js";
 import {
   condenseAuthorRuns,
   findReferencesSection,
@@ -7,7 +8,12 @@ import {
 } from "../third-party/references-validation/pdf-extract-service.js";
 import { parseGeneric } from "../third-party/references-validation/plain-text-parser.js";
 import { checkWithFallback } from "../third-party/references-validation/search-service.js";
-import { lookupContext } from "./reference-check.http.js";
+import {
+  lookupContext,
+  referenceUserAgent,
+  REQUIRED_SOURCES,
+  sourceCooldownUntil,
+} from "./reference-check.http.js";
 
 export type ReferenceFinding = {
   citation: string;
@@ -39,13 +45,17 @@ export const OVERSIZED_REFERENCE = 2000;
 // Crossref (journals, the ACL Anthology) and DBLP (CS venues, arXiv) have generous anonymous limits.
 // OpenAlex now allows an anonymous IP only a tiny shared daily budget, and Semantic Scholar and
 // arXiv throttle constantly: requiring any of them would leave most references unchecked.
-const REQUIRED_DATABASES = new Set(["api.crossref.org", "dblp.org"]);
+const REQUIRED_DATABASES = REQUIRED_SOURCES;
 /** When the databases a "not found" depends on can next be asked; undefined if they can now. */
 export function requiredDatabasesPausedUntil(
   cooldowns: Map<string, number>,
   now = Date.now(),
 ): number | undefined {
-  const until = Math.max(0, ...[...REQUIRED_DATABASES].map((host) => cooldowns.get(host) ?? 0));
+  // Per source, not per host: DBLP is paused only when every one of its hosts is.
+  const until = Math.max(
+    0,
+    ...[...REQUIRED_DATABASES].map((source) => sourceCooldownUntil(cooldowns, source)),
+  );
   return until > now ? until : undefined;
 }
 
@@ -207,6 +217,10 @@ export function createPdfReferenceChecker(
     maxReferences?: number;
     /** Report "not found" only when Crossref and DBLP answered; otherwise "unavailable". */
     requireAllDatabases?: boolean;
+    /** See LookupContext.maxCooldownWaitMs: wait out a required database's short back-off. */
+    maxCooldownWaitMs?: number;
+    /** The contact in the User-Agent; defaults to the bot mailbox (ADMINBOT_BOT_EMAIL). */
+    contactEmail?: string;
     /**
      * Check the entries that split cleanly and report an unsplittable chunk as unavailable, rather
      * than rejecting the paper. For the unattended sweep, which weighs how much went unchecked.
@@ -217,6 +231,7 @@ export function createPdfReferenceChecker(
     cooldowns?: Map<string, number>;
   } = {},
 ): PdfReferenceChecker {
+  const userAgent = referenceUserAgent(options.contactEmail ?? resolveAdminBotDriveAccount());
   return async (pdf, signal, onProgress) => {
     const references = await (options.extract ?? extractPdfReferences)(pdf, {
       maxReferences: options.maxReferences,
@@ -255,6 +270,8 @@ export function createPdfReferenceChecker(
           fetch: options.fetch ?? globalThis.fetch,
           ...(options.openAlexApiKey ? { openAlexApiKey: options.openAlexApiKey } : {}),
           ...(options.cooldowns ? { cooldowns: options.cooldowns } : {}),
+          ...(options.maxCooldownWaitMs ? { maxCooldownWaitMs: options.maxCooldownWaitMs } : {}),
+          userAgent,
         },
         () =>
           checkWithFallback(parsed.title || citation, parsed.title ? parsed : undefined, citation),

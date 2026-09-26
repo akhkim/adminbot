@@ -6156,6 +6156,7 @@ function createOpenReviewCitationWatch(
     reader,
     pausedUntil: () => requiredDatabasesPausedUntil(cooldowns),
     pauseBetweenMs: options.citationWatchChecker ? 0 : 60_000,
+    maxPauseWaitMs: options.citationWatchChecker ? 0 : 90_000,
     check:
       options.citationWatchChecker ??
       createPdfReferenceChecker({
@@ -6163,6 +6164,8 @@ function createOpenReviewCitationWatch(
         requireAllDatabases: true,
         allowOversized: true,
         cooldowns,
+        // Unattended: a minute's wait for Crossref or DBLP beats a paper left half-checked.
+        maxCooldownWaitMs: 90_000,
         ...(process.env.OPENALEX_API_KEY?.trim()
           ? { openAlexApiKey: process.env.OPENALEX_API_KEY.trim() }
           : {}),
