@@ -1869,6 +1869,24 @@ export const tr: TranslationMap = {
       remove: "Remove {name}",
       clear: "Remove all",
     },
+    lettersGuide: {
+      title: "Before requesting a recommendation letter",
+      sub: "Please follow the Guidebook's preparation steps before submitting this request.",
+      open: "Open the Guidebook: How to ask for Rec Letters",
+      folder:
+        "Create grad_app_[yourname] with edit access for your letter writer, ideally also linked from your shared Zhijing-[yourname] folder.",
+      schools:
+        "Prepare a school/program spreadsheet sorted by the earliest deadline, including application and letter deadlines, statuses, program links, and any special requirements.",
+      materials:
+        "Include your transcript, editable CV, Statement of Purpose, information about your other letter writers, and any supporting materials you want to highlight.",
+      facts:
+        "Prepare concrete facts about your project contributions and a factual first draft of the letter, following the Guidebook's letter-writing guidance.",
+      reminders:
+        "The section also covers reminder emails with deadline times and time zones, a presentation when needed, and optional Interfolio use subject to university rules.",
+      portal:
+        "For Zhijing's application-portal invitations, use zjin.admin@cs.toronto.edu. Her main email does not handle letter requests.",
+      portalLink: "Check the Guidebook's recommender details",
+    },
     schools: {
       title: "List of Schools",
       sub: "Every school this request covers, and where each one stands.",
