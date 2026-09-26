@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { cooldownFor, lookupContext, referenceFetch } from "./reference-check.http.js";
+import {
+  cooldownFor,
+  dblpSearchWords,
+  lookupContext,
+  referenceFetch,
+} from "./reference-check.http.js";
 import {
   createPdfReferenceChecker,
   extractPdfFullText,
@@ -401,6 +406,165 @@ describe("References-Validation integration", () => {
     expect(await agents("not an address\r\nX-Injected: 1")).toEqual(
       new Set(["JinesisAdminBot/1.0 (reference checker)"]),
     );
+  });
+
+  describe("DBLP through SPARQL when its search API shows a bot challenge", () => {
+    const challenge = () =>
+      new Response("<!doctype html><title>Making sure you're not a bot!</title>", {
+        headers: { "content-type": "text/html" },
+      });
+    const sparqlRow = (title: string) => ({
+      pub: { value: "https://dblp.org/rec/conf/cvpr/HeZRS16" },
+      title: { value: title },
+      year: { value: "2016" },
+      venue: { value: "CVPR" },
+      doi: { value: "https://doi.org/10.1109/CVPR.2016.90" },
+      authors: { value: "2\tXiangyu Zhang\n1\tKaiming He" },
+    });
+
+    // The fallback's search is exact where DBLP's is fuzzy: on a real ICLR submission it missed
+    // "Transformers can do Bayesian inference" and two MIT Press books. A miss there must leave a
+    // reference unchecked -- never report it as fabricated.
+    it("never turns a SPARQL miss into 'not found', and backs the challenged hosts off", async () => {
+      const cooldowns = new Map<string, number>();
+      const queries: string[] = [];
+      const fetcher = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.hostname === "dblp.org" || url.hostname === "dblp.uni-trier.de") {
+          return challenge();
+        }
+        if (url.hostname === "sparql.dblp.org") {
+          queries.push(url.searchParams.get("query") ?? "");
+          return Response.json({ results: { bindings: [] } });
+        }
+        return emptyDatabase(input);
+      });
+      const check = createPdfReferenceChecker({
+        extract: async () => ["Doe, J. (2024). An entirely invented synthetic research title."],
+        cooldowns,
+        requestIntervalMs: 0,
+        requireAllDatabases: true,
+        fetch: fetcher,
+      });
+
+      const { findings } = await check(new Uint8Array(), signal());
+
+      expect(findings[0]?.status).toBe("unavailable");
+      expect(queries.length).toBeGreaterThan(0);
+      expect(queries[0]).toContain('ql:contains-word "synthetic"');
+      expect(cooldowns.get("dblp.org")).toBeGreaterThan(Date.now());
+      expect(cooldowns.get("dblp.uni-trier.de")).toBeGreaterThan(Date.now());
+    });
+
+    it("returns SPARQL rows in the search API's shape, authors in order", async () => {
+      const response = await lookupContext.run(
+        {
+          signal: signal(),
+          failures: new Set(),
+          available: new Set(),
+          lastRequest: new Map(),
+          requestIntervalMs: 0,
+          cooldowns: new Map([
+            ["dblp.org", Date.now() + 60_000],
+            ["dblp.uni-trier.de", Date.now() + 60_000],
+          ]),
+          fetch: vi.fn(async () =>
+            Response.json({
+              results: { bindings: [sparqlRow("Deep Residual Learning for Image Recognition.")] },
+            }),
+          ),
+        },
+        () =>
+          referenceFetch(
+            "https://dblp.org/search/publ/api?q=Deep%20Residual%20Learning%20for%20Image%20Recognition&format=json&h=5",
+          ),
+      );
+      const data = (await response.json()) as {
+        result: { hits: { hit: Array<{ info: Record<string, unknown> }> } };
+      };
+      expect(data.result.hits.hit[0].info).toMatchObject({
+        title: "Deep Residual Learning for Image Recognition.",
+        year: "2016",
+        venue: "CVPR",
+        ee: "https://doi.org/10.1109/CVPR.2016.90",
+        authors: { author: [{ text: "Kaiming He" }, { text: "Xiangyu Zhang" }] },
+      });
+    });
+
+    // One misspelled word in a citation should not cost the match; a miss after that is still
+    // DBLP not having answered.
+    it("retries on the three longest words, then counts a miss as no answer", async () => {
+      const seen: string[][] = [];
+      const lookup = lookupContext.run(
+        {
+          signal: signal(),
+          failures: new Set(),
+          available: new Set(),
+          lastRequest: new Map(),
+          requestIntervalMs: 0,
+          cooldowns: new Map([
+            ["dblp.org", Date.now() + 60_000],
+            ["dblp.uni-trier.de", Date.now() + 60_000],
+          ]),
+          fetch: vi.fn(async (input: string | URL | Request) => {
+            const query = new URL(String(input)).searchParams.get("query") ?? "";
+            seen.push([...query.matchAll(/contains-word "([a-z0-9]+)"/gu)].map((m) => m[1]));
+            return Response.json({ results: { bindings: [] } });
+          }),
+        },
+        () =>
+          referenceFetch(
+            "https://dblp.org/search/publ/api?q=Scalable%20Variational%20Traning%20for%20Language%20Models&format=json&h=5",
+          ),
+      );
+      await expect(lookup).rejects.toThrow();
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toHaveLength(5);
+      expect(seen[1]).toEqual(seen[0].slice(0, 3));
+    });
+
+    it("counts only a confident SPARQL match as DBLP finding the work", async () => {
+      const lookup = (row: ReturnType<typeof sparqlRow>) =>
+        lookupContext.run(
+          {
+            signal: signal(),
+            failures: new Set(),
+            available: new Set(),
+            lastRequest: new Map(),
+            requestIntervalMs: 0,
+            cooldowns: new Map([
+              ["dblp.org", Date.now() + 60_000],
+              ["dblp.uni-trier.de", Date.now() + 60_000],
+            ]),
+            fetch: vi.fn(async () => Response.json({ results: { bindings: [row] } })),
+          },
+          () =>
+            referenceFetch(
+              "https://dblp.org/search/publ/api?q=Deep%20Residual%20Learning%20for%20Image%20Recognition&format=json&h=5",
+            ),
+        );
+      await expect(
+        lookup(sparqlRow("Deep Residual Learning for Image Recognition.")),
+      ).resolves.toBeInstanceOf(Response);
+      // Shares the keywords, is a different paper: not evidence of anything.
+      await expect(
+        lookup(
+          sparqlRow(
+            "Multi-View Deep Residual Learning for Urine Sediment Image Recognition in Microscopy",
+          ),
+        ),
+      ).rejects.toThrow(/no confident match/u);
+    });
+
+    it("picks the title's distinctive words, longest first", () => {
+      expect(dblpSearchWords("Deep Residual Learning for Image Recognition", 5)).toEqual([
+        "recognition",
+        "residual",
+        "learning",
+        "image",
+        "deep",
+      ]);
+    });
   });
 
   it("bounds Retry-After and reads HTTP dates", () => {
