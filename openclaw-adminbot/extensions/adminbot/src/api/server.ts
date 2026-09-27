@@ -3670,8 +3670,12 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
+    const abort = new AbortController();
+    const disconnect = () => abort.abort();
+    res.once("close", disconnect);
+    if (res.destroyed) disconnect();
     try {
-      const output = await ctx.localChat.complete(messages);
+      const output = await ctx.localChat.complete(messages, abort.signal);
       sendJson(res, 200, { output, model: ctx.localChat.model, route: "local" });
     } catch (error) {
       const busy = error instanceof Error && error.message === "local chat busy";
@@ -3682,6 +3686,8 @@ async function handleAuthenticatedRoute(
             : "The local model could not answer. No external model was used. Retry or contact the operator.",
         },
       });
+    } finally {
+      res.off("close", disconnect);
     }
     return;
   }

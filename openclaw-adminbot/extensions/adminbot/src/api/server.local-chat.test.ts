@@ -99,7 +99,7 @@ describe("Zhijing-only local chat route", () => {
       route: "local",
       model: "synthetic-local",
     });
-    expect(complete).toHaveBeenCalledWith(question.messages);
+    expect(complete).toHaveBeenCalledWith(question.messages, expect.any(AbortSignal));
     expect(mock.store.listAuditEvents()).toHaveLength(before);
     expect(
       (await request(url, tokens.professor, { messages: [{ role: "system", content: "no" }] }))
@@ -109,6 +109,36 @@ describe("Zhijing-only local chat route", () => {
     const failed = await request(url, tokens.professor, question);
     expect(failed.status).toBe(503);
     expect(await failed.text()).not.toContain("private data");
+  });
+
+  it("aborts inference when the browser disconnects", async () => {
+    let started!: (signal: AbortSignal) => void;
+    const start = new Promise<AbortSignal>((resolve) => (started = resolve));
+    const { url, tokens } = await setup({
+      model: "synthetic-local",
+      complete: async (_messages, signal) => {
+        started(signal!);
+        return await new Promise<string>((_resolve, reject) =>
+          signal!.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
+        );
+      },
+    });
+    const controller = new AbortController();
+    const call = fetch(`${url}/local-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokens.professor}` },
+      body: JSON.stringify(question),
+      signal: controller.signal,
+    });
+    const rejected = expect(call).rejects.toThrow();
+    const signal = await start;
+    const aborted = new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true }),
+    );
+    controller.abort();
+    await rejected;
+    await aborted;
+    expect(signal.aborted).toBe(true);
   });
   it.skipIf(!process.env.ADMINBOT_TEST_LOCAL_CHAT_URL)(
     "answers through the authenticated route using the real local model",

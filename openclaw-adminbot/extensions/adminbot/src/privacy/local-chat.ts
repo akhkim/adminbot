@@ -42,7 +42,7 @@ export function createLocalChat(
   let active = false;
   return {
     model,
-    async complete(messages: LocalChatMessage[]) {
+    async complete(messages: LocalChatMessage[], signal?: AbortSignal) {
       // ponytail: one active turn for this single-user route; per-user limits if access expands.
       if (active) throw new Error("local chat busy");
       const url = new URL(assertLoopbackUrl(baseUrl, "local chat"));
@@ -63,7 +63,9 @@ export function createLocalChat(
             },
             ...messages,
           ],
-          signal: AbortSignal.timeout(60000),
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
+            : AbortSignal.timeout(60000),
           maxTokens: 2048,
           verifyModel: true,
           purposeLabel: "local chat",

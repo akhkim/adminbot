@@ -1,13 +1,29 @@
 # Local chat for the head professor
 
-My Desk includes a separate text-only **Local chat** card for the configured head professor.
+My Desk includes a separate **Local chat** workspace for the configured head professor.
 The server checks `head_professor_member_id`, admin privilege, and a non-impersonated member
 session on every request. Other members, other admins, service tokens, and impersonated sessions
 cannot use it. Missing configuration denies access.
 
+## Interface
+
+The Open WebUI-style layout uses AdminBot's theme tokens, icons, and installed Markdown parser.
+It includes a searchable conversation sidebar, separate drafts and context per conversation,
+new/clear actions, copy buttons, Markdown and code blocks, a fixed composer, mobile drawer,
+and a native full-screen dialog. Enter sends; Shift+Enter adds a line. There is no additional
+application server, identity system, or dependency.
+
+Up to 12 conversations stay in this component's memory. Clear chat resets only the current
+conversation; Clear all chats wipes the session and exits full screen. Stop cancels the browser
+request, which aborts the API's local-model HTTP request. A late answer cannot enter another
+conversation. Model output is sanitized, raw HTML is disabled, and image tags are suppressed
+before rendering so replies cannot automatically fetch external images. It has no shared
+transcript-rendering cache. Only the configured model is offered; tools, uploads, and saved
+account history are not enabled by this change.
+
 ## Routing and privacy
 
-This card calls the AdminBot service directly, bypassing gateway agents and the privacy broker.
+This workspace calls the AdminBot service directly, bypassing gateway agents and the privacy broker.
 It sends only the displayed conversation and a fixed system instruction to a loopback model
 endpoint. There are no tools, retrieval, external providers, or fallback calls. Remote endpoints,
 redirects, and a response from a different model fail closed. Local failures return a fixed error
@@ -17,7 +33,7 @@ Conversations stay in component memory. AdminBot does not write them to its data
 ledger. Clear chat, session changes, and leaving My Desk clear the component history; late
 responses are discarded. This does not promise that the local model operator or reverse proxy
 has disabled its own logging. Review that separately before sharing secrets. The ordinary chat
-and other tools retain their existing routing; the local-only guarantee applies to this card.
+and other tools retain their existing routing; the local-only guarantee applies to this workspace.
 
 The service allows one active turn, a 60-second timeout, 2,048 output tokens, up to 23 alternating
 messages, 8,000 characters per message, and 32,000 characters per request. An overlapping request
@@ -41,7 +57,7 @@ remote call. No gateway default-model change is needed.
 
 ```sh
 node scripts/run-vitest.mjs run extensions/adminbot/src/api/server.local-chat.test.ts extensions/adminbot/src/privacy/local-chat.test.ts extensions/adminbot/src/guidebook/guidebook.test.ts
-node scripts/run-vitest.mjs run ui/src/ui/adminbot/views/local-chat.test.ts ui/src/ui/adminbot/views/professor.test.ts
+node scripts/run-vitest.mjs run ui/src/ui/adminbot/views/local-chat.test.ts ui/src/ui/adminbot/views/professor.test.ts ui/src/ui/adminbot/auth/local-chat-client.test.ts
 OPENCLAW_BUILD_ALL_NO_PNPM=1 node scripts/build-all.mjs
 ```
 
@@ -50,5 +66,8 @@ and set `ADMINBOT_TEST_LOCAL_CHAT_URL=http://127.0.0.1:19000/v1` for the API tes
 synthetic in-memory records and asks for a harmless fixed token. Do not use production sessions
 or copy production records for this test.
 
-[Desktop evidence](../assets/adminbot/local-chat/desktop.png) ·
-[Mobile evidence](../assets/adminbot/local-chat/mobile.png).
+[Original card](../assets/adminbot/local-chat/desktop.png) ·
+[Desktop workspace](../assets/adminbot/local-chat/workspace-dark.jpg) ·
+[Light mode](../assets/adminbot/local-chat/workspace-light.jpg) ·
+[Mobile](../assets/adminbot/local-chat/workspace-mobile.jpg) ·
+[Mobile drawer](../assets/adminbot/local-chat/workspace-mobile-drawer.jpg).

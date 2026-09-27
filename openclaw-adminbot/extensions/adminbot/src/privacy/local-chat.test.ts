@@ -64,4 +64,21 @@ describe("strict local chat", () => {
     fetchImpl.mockResolvedValueOnce(reply());
     expect(await chat.complete(messages)).toBe("Local answer");
   });
+  it("cancels the local inference request and releases the GPU slot", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+        }),
+    );
+    const chat = createLocalChat({ env: { ADMINBOT_LOCAL_MODEL: "test-local" }, fetchImpl });
+    const controller = new AbortController();
+    const request = chat.complete(messages, controller.signal);
+    controller.abort();
+    await expect(request).rejects.toThrow("aborted");
+    fetchImpl.mockResolvedValueOnce(reply());
+    expect(await chat.complete(messages)).toBe("Local answer");
+  });
 });

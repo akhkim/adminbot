@@ -48,11 +48,12 @@ describe("local chat UI", () => {
       [{ role: "user", content: "Synthetic question" }],
       mocks.token,
       "http://127.0.0.1:8765",
+      expect.any(AbortSignal),
     );
     expect(element.textContent).toContain("<script>plain text</script>");
     expect(element.querySelector("script")).toBeNull();
     expect(element.querySelector("textarea")!.value).toBe("");
-    element.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
+    element.querySelector<HTMLButtonElement>('[aria-label="Clear chat"]')!.click();
     await flush();
     expect(element.textContent).not.toContain("plain text</script>");
   });
@@ -94,5 +95,87 @@ describe("local chat UI", () => {
     await flush();
     expect(element.textContent).not.toContain("must disappear");
     expect(element.querySelector("form")).toBeNull();
+  });
+  it("keeps conversations and drafts separate, supports search, and clears all session history", async () => {
+    send();
+    await flush();
+    element.querySelector<HTMLButtonElement>(".lc-new")!.click();
+    await flush();
+    const input = element.querySelector("textarea")!;
+    input.value = "Second private draft";
+    input.dispatchEvent(new Event("input"));
+    await flush();
+    const first = [...element.querySelectorAll<HTMLButtonElement>(".lc-conversation")].find((row) =>
+      row.textContent?.includes("Synthetic question"),
+    )!;
+    first.click();
+    await flush();
+    expect(element.querySelector("textarea")!.value).toBe("");
+    expect(element.querySelector(".lc-message-body")?.textContent).toContain("Synthetic question");
+    const search = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+    search.value = "Second private";
+    search.dispatchEvent(new Event("input"));
+    await flush();
+    expect(element.querySelectorAll(".lc-conversation")).toHaveLength(1);
+    element.querySelector<HTMLButtonElement>(".lc-conversation")!.click();
+    await flush();
+    expect(element.querySelector("textarea")!.value).toBe("Second private draft");
+    expect(element.querySelectorAll(".lc-message")).toHaveLength(0);
+    element.querySelector<HTMLButtonElement>(".lc-clear-all")!.click();
+    await flush();
+    expect(element.textContent).not.toContain("Second private");
+    expect(element.querySelectorAll(".lc-conversation")).toHaveLength(1);
+  });
+  it("formats Markdown without HTML execution or remote image loading", async () => {
+    mocks.send.mockResolvedValue({
+      ok: true,
+      value: {
+        route: "local",
+        model: "synthetic-local",
+        output:
+          "**Bold answer**\n\n```python\nprint(42)\n```\n\n![remote](https://example.test/private)\n\n<script>alert(1)</script>",
+      },
+    });
+    send();
+    await flush();
+    expect(element.querySelector(".lc-message--assistant strong")?.textContent).toBe("Bold answer");
+    expect(element.querySelector("pre code")?.textContent).toContain("print(42)");
+    expect(element.querySelector("img, iframe, script")).toBeNull();
+    expect(element.textContent).toContain("[Image omitted]");
+  });
+  it("aborts stopped work and never applies its late answer to another conversation", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.send.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    send();
+    await flush();
+    const signal = mocks.send.mock.calls[0]![3] as AbortSignal;
+    element.querySelector<HTMLButtonElement>('[aria-label="Stop generation"]')!.click();
+    await flush();
+    expect(signal.aborted).toBe(true);
+    expect(element.querySelector("textarea")!.disabled).toBe(false);
+    expect(element.querySelector("textarea")!.value).toBe("Synthetic question");
+    element.querySelector<HTMLButtonElement>(".lc-new")!.click();
+    await flush();
+    finish({ ok: true, value: { model: "synthetic-local", output: "Late private answer" } });
+    await flush();
+    expect(element.textContent).not.toContain("Late private answer");
+  });
+  it("closes the full-screen dialog when clearing all chats", async () => {
+    const dialog = element.querySelector("dialog")!;
+    dialog.showModal = vi.fn(() => {
+      dialog.open = true;
+    });
+    dialog.close = vi.fn(() => {
+      dialog.open = false;
+      dialog.dispatchEvent(new Event("close"));
+    });
+    element.querySelector<HTMLButtonElement>('[aria-label="Expand chat"]')!.click();
+    await flush();
+    expect(dialog.showModal).toHaveBeenCalledOnce();
+    expect(dialog.querySelector("form")).not.toBeNull();
+    dialog.querySelector<HTMLButtonElement>(".lc-clear-all")!.click();
+    await flush();
+    expect(dialog.open).toBe(false);
+    expect(element.querySelectorAll("form")).toHaveLength(1);
   });
 });

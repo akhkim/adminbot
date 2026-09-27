@@ -1,14 +1,25 @@
 # Local chat UI verification — 2026-09-27
 
-These are browser screenshots of the actual Lit local-chat component with the production
-AdminBot stylesheet, mounted in a temporary development fixture. The fixture uses a synthetic,
-approved head-professor account in an in-memory AdminBot service. Its model calls go through an
-SSH loopback forward to Aurora's actual `nvidia/Qwen3.5-122B-A10B-NVFP4` endpoint.
+These are computer-use screenshots of the actual Lit component and production AdminBot
+stylesheet. The temporary fixture uses a synthetic, approved head-professor account in an
+in-memory AdminBot API. Its model calls go through an SSH loopback forward to Aurora's actual
+`nvidia/Qwen3.5-122B-A10B-NVFP4` endpoint. No production account, private query, record,
+credential, or external model was used. This is implementation evidence, not a deployed release.
 
-The fixed-token request returned `LOCAL_UI_OK_42`. A follow-up also recalled that exact token.
-Keyboard submission, loading status, clearing history, and a 390-pixel mobile layout were
-checked. No production account, private query, record, credential, or external model was used.
-These screenshots are component evidence, not proof of production deployment.
+The rebuilt interface follows Open WebUI's sidebar / conversation / composer layout, with
+AdminBot theme tokens and icons. No upstream source was copied or new dependency installed.
+Verified in the browser: real Qwen Markdown replies, copy feedback, conversation search,
+switching and draft retention, stopping a running inference request and sending afterward,
+full-screen open/close and Escape, light mode, mobile drawer open/close, and readable controls.
+The desktop breakpoint is 1280×800; mobile is 390×844. Screenshots were visually inspected.
 
-- [Desktop](desktop.png)
-- [Mobile](mobile.png)
+- [Before: small card](desktop.png)
+- [After: desktop](workspace-dark.jpg)
+- [After: light mode](workspace-light.jpg)
+- [Empty state](workspace-empty.jpg)
+- [Mobile conversation](workspace-mobile.jpg)
+- [Mobile drawer](workspace-mobile-drawer.jpg)
+
+The original card's fixed-token test returned `LOCAL_UI_OK_42`; a follow-up recalled the token.
+The rebuilt workspace's code example and message history are synthetic test content. The second
+sidebar item in the final screenshots is a preserved draft, demonstrating independent drafts.
