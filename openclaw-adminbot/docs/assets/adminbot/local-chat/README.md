@@ -23,3 +23,13 @@ The desktop breakpoint is 1280×800; mobile is 390×844. Screenshots were visual
 The original card's fixed-token test returned `LOCAL_UI_OK_42`; a follow-up recalled the token.
 The rebuilt workspace's code example and message history are synthetic test content. The second
 sidebar item in the final screenshots is a preserved draft, demonstrating independent drafts.
+
+## Readable review details
+
+`review-context.jpg` is a fresh 1280×720 capture of the actual component with
+production styles, synthetic authentication, and a real Aurora Qwen reply.
+`review-response-detail.jpg` (825×260) and `review-composer-detail.jpg` (825×165)
+are native-resolution crops of that image; content and styles were not altered.
+These preserve legible text at typical PR widths. The older compact-card image
+is historical context with different framing/theme, not a controlled visual
+benchmark. Verify the rendered PR after publishing these assets.
