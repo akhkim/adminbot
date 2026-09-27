@@ -460,7 +460,7 @@ describe("new member creation", () => {
       body: JSON.stringify({ slack_project_channels: ["#theme-causality"] }),
     });
     expect(queued.status).toBe(200);
-    const proposals = mock.service.listProposals();
+    const proposals = mock.service.listPending();
     expect(
       proposals.ok &&
         proposals.payload.proposals.find((proposal) => proposal.type === "onboarding.send_guide")
