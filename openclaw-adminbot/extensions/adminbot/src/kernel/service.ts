@@ -176,6 +176,7 @@ import {
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
 import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
+import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
 import {
   type AdminBotMemberRequest,
   type AdminBotMemberRequestStatus,
@@ -2970,6 +2971,7 @@ export class AdminBotService {
           [],
       };
     }
+    member = normalizeMemberProfileValues(member);
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
@@ -11864,6 +11866,7 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    slackChannels?: readonly string[];
   }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
     const member = this.store.getLabMember(params.memberId);
     if (!member) {
@@ -11931,6 +11934,13 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.slackChannels?.length
+          ? {
+              slack_project_channels: [
+                ...new Set(params.slackChannels.map((channel) => channel.trim())),
+              ],
+            }
+          : {}),
       },
       undo_plan:
         "None: the mail is sent and the Slack invite minted. Follow up with the recipient directly.",

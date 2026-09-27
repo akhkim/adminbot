@@ -37,13 +37,12 @@ const events: AdminBotCalendarEvent[] = [
 ];
 
 describe("standingMeetings", () => {
-  it("lists the group, theme and project meetings, splits merged, nothing else", () => {
+  it("lists the group and theme meetings, excluding project calls, splits merged, nothing else", () => {
     const meetings = standingMeetings(events, GROUP);
 
     expect(meetings.map((meeting) => [meeting.id, meeting.kind])).toEqual([
       [GROUP, "group"],
       ["theme1", "theme"],
-      ["proj1", "project"],
     ]);
     expect(meetings[0]?.event_ids).toEqual([
       `${GROUP}_20261005T133000Z`,

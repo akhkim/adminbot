@@ -2239,7 +2239,7 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Role",
+      role: "Career stage / lab role",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
@@ -2513,7 +2513,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Role",
+        role: "Career stage / lab role",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",

@@ -365,3 +365,114 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     );
   });
 });
+
+describe("new member creation", () => {
+  it("generates unique IDs, defaults joined month, and preserves explicit dates and custom profile text", async () => {
+    const { mock, baseUrl } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    const create = async (body: object) =>
+      fetch(`${baseUrl}/lab/members`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const first = await create({
+      name: "Alex Smith",
+      email: "one@example.test",
+      location: "Zürich",
+      affiliation: "U of T",
+    });
+    expect(first.status).toBe(200);
+    const one = await first.json();
+    expect(one).toMatchObject({
+      id: "alex-smith",
+      location: "Zurich",
+      affiliation: "University of Toronto",
+      joined_month: new Date().toISOString().slice(0, 7),
+    });
+    const second = await create({
+      name: "Alex Smith",
+      email: "two@example.test",
+      joined_month: "2025-01",
+      affiliation: "Custom Institute",
+    });
+    expect(await second.json()).toMatchObject({
+      id: `alex-smith-${new Date().getUTCFullYear()}`,
+      joined_month: "2025-01",
+      affiliation: "Custom Institute",
+    });
+    const duplicate = await create({ name: "Changed Name", email: "ONE@example.test" });
+    expect(duplicate.status).toBe(409);
+    const taken = await create({ id: "alex-smith", name: "Someone Else" });
+    expect(taken.status).toBe(409);
+    const roster = mock.service.listLabMembers();
+    expect(
+      roster.ok && roster.payload.members.find((member) => member.id === "alex-smith"),
+    ).toMatchObject({ name: "Alex Smith" });
+    const missing = await create({});
+    expect(missing.status).toBe(409);
+  });
+  it("denies shared-service and non-admin sessions without creating a record", async () => {
+    const { mock, baseUrl } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    const headers = { "Content-Type": "application/json" };
+    const request = (authorization?: string) =>
+      fetch(`${baseUrl}/lab/members`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          ...(authorization ? { Authorization: `Bearer ${authorization}` } : {}),
+        },
+        body: JSON.stringify({ name: "Denied Member" }),
+      });
+    expect((await request()).status).toBe(401);
+    expect((await request(SERVICE_TOKEN)).status).toBe(403);
+    mock.service.upsertLabMember({ id: "admin", name: "Admin", privilege_level: "member" });
+    expect((await request(token)).status).toBe(403);
+    const roster = mock.service.listLabMembers();
+    expect(
+      roster.ok && roster.payload.members.some((member) => member.id === "denied-member"),
+    ).toBe(false);
+  });
+  it("enrolls a new full member through the existing typed calendar path and exposes admin-only guide status", async () => {
+    const { mock, baseUrl, executed } = await startService({ meeting: ["admin@cs.toronto.edu"] });
+    const token = await adminToken(mock, baseUrl);
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const response = await fetch(`${baseUrl}/lab/members`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: "New Full Member",
+        email: "new@example.test",
+        member_type: "full",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(executed.some((proposal) => proposal.type === "calendar.add_attendees")).toBe(true);
+    const url = `${baseUrl}/lab/members/new-full-member/onboarding/guide`;
+    expect(
+      (await fetch(url, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } })).status,
+    ).toBe(403);
+    expect(await (await fetch(url, { headers })).json()).toMatchObject({ status: "not_queued" });
+    const queued = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ slack_project_channels: ["#theme-causality"] }),
+    });
+    expect(queued.status).toBe(200);
+    const proposals = mock.service.listProposals();
+    expect(
+      proposals.ok &&
+        proposals.payload.proposals.find((proposal) => proposal.type === "onboarding.send_guide")
+          ?.proposed_payload,
+    ).toMatchObject({ slack_project_channels: ["#theme-causality"] });
+    expect(await (await fetch(url, { headers })).json()).toMatchObject({ status: "pending" });
+    expect(executed.some((proposal) => proposal.type === "onboarding.send_guide")).toBe(false);
+    const invalid = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ slack_project_channels: [123] }),
+    });
+    expect(invalid.status).toBe(400);
+  });
+});
