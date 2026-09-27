@@ -19,17 +19,24 @@ export function memberGuideStatus(
     payload.template_id === template.templateId &&
     typeof payload.email === "string" &&
     emails.includes(payload.email.trim().toLowerCase());
-  const attempts = audit
-    .filter((event) => {
-      const details = event.details as Record<string, unknown> | undefined;
-      return (
-        event.type === "onboarding.guide_sent" &&
-        details &&
-        matches({ ...details, email: details.recipient })
-      );
-    })
-    .toSorted((a, b) => b.timestamp.localeCompare(a.timestamp));
-  const attempt = attempts.find((event) => event.details?.sent === true) ?? attempts[0];
+  let attempt: AdminBotAuditEvent | undefined;
+  for (const event of audit) {
+    const details = event.details;
+    if (
+      event.type !== "onboarding.guide_sent" ||
+      !details ||
+      !matches({ ...details, email: details.recipient })
+    )
+      continue;
+    const sent = details.sent === true;
+    const previousSent = attempt?.details?.sent === true;
+    if (
+      !attempt ||
+      (sent && !previousSent) ||
+      (sent === previousSent && event.timestamp.localeCompare(attempt.timestamp) > 0)
+    )
+      attempt = event;
+  }
   if (attempt?.details?.sent === true)
     return {
       status: "sent",
@@ -37,9 +44,14 @@ export function memberGuideStatus(
       recorded_at: attempt.timestamp,
       detail: "AdminBot recorded a successful send. Delivery and reading are not confirmed.",
     };
-  const proposal = proposals
-    .filter((row) => matches(row.proposed_payload as Record<string, unknown>))
-    .toSorted((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  let proposal: AdminBotStoredProposal | undefined;
+  for (const row of proposals) {
+    if (
+      matches(row.proposed_payload as Record<string, unknown>) &&
+      (!proposal || row.created_at.localeCompare(proposal.created_at) > 0)
+    )
+      proposal = row;
+  }
   if (proposal)
     return {
       status: proposal.status,

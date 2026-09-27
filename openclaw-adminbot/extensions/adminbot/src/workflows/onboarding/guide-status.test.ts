@@ -47,4 +47,36 @@ describe("onboarding send status", () => {
       ).status,
     ).toBe("not_queued");
   });
+  it("selects the newest successful send or proposal regardless of input order", () => {
+    const event = (timestamp: string, sent: boolean) =>
+      ({
+        id: timestamp,
+        type: "onboarding.guide_sent",
+        timestamp,
+        details: { template_id: "member", recipient: member.email, sent },
+      }) as AdminBotAuditEvent;
+    const audit = [
+      event("2026-01-03", false),
+      event("2026-01-01", true),
+      event("2026-01-02", true),
+    ];
+    for (const ordered of [audit, audit.toReversed()]) {
+      expect(memberGuideStatus(member, ordered, [])).toMatchObject({
+        status: "sent",
+        recorded_at: "2026-01-02",
+      });
+    }
+    const proposals = ["2026-01-02", "2026-01-01"].map(
+      (created_at) =>
+        ({
+          id: created_at,
+          status: "pending",
+          created_at,
+          proposed_payload: { template_id: "member", email: member.email },
+        }) as AdminBotStoredProposal,
+    );
+    for (const ordered of [proposals, proposals.toReversed()]) {
+      expect(memberGuideStatus(member, [], ordered)).toMatchObject({ proposal_id: "2026-01-02" });
+    }
+  });
 });
