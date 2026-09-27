@@ -90,6 +90,7 @@ import {
 } from "../kernel/service.js";
 import { createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
+import { createLocalChat, localChatMessages } from "../privacy/local-chat.js";
 import {
   createAdminBotSensitiveInfoDocument,
   type AdminBotSensitiveInfoDocument,
@@ -265,6 +266,7 @@ export type AdminBotMockServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   privacyBroker?: AdminBotPrivacyBroker;
+  localChat?: ReturnType<typeof createLocalChat>;
   sensitiveInfoPath?: string;
   sensitiveInfoDocument?: AdminBotSensitiveInfoDocument;
   emailAutomationRunner?: () => Promise<unknown>;
@@ -573,6 +575,7 @@ type AdminBotRouteContext = {
   store: AdminBotServiceStore;
   auth: AdminBotAuthService;
   privacyBroker: AdminBotPrivacyBroker;
+  localChat: ReturnType<typeof createLocalChat>;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
   runEmailAutomation?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
@@ -947,6 +950,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     auth,
     privacyBroker,
+    localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
     referenceScans,
     checkUploadedPdf,
@@ -3633,6 +3637,52 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
+    return;
+  }
+  if (url.pathname === "/local-chat" && (req.method === "GET" || req.method === "POST")) {
+    const settings = service.getSettings();
+    if (
+      principal.kind !== "member" ||
+      principal.impersonator ||
+      principal.member.privilege_level !== "admin" ||
+      !settings.ok ||
+      !isTravelHistorySubject(principal.member.id, settings.payload)
+    ) {
+      sendJson(res, 404, { error: { message: "Local chat is not available for this account." } });
+      return;
+    }
+    if (req.method === "GET") {
+      sendJson(res, 200, {
+        model: ctx.localChat.model,
+        route: "local",
+        history: "not_saved",
+        tools: false,
+      });
+      return;
+    }
+    const messages = localChatMessages(await readJson(req));
+    if (!messages) {
+      sendJson(res, 400, {
+        error: {
+          message:
+            "Use up to 23 alternating messages, 8000 characters each and 32000 in total, ending with your question.",
+        },
+      });
+      return;
+    }
+    try {
+      const output = await ctx.localChat.complete(messages);
+      sendJson(res, 200, { output, model: ctx.localChat.model, route: "local" });
+    } catch (error) {
+      const busy = error instanceof Error && error.message === "local chat busy";
+      sendJson(res, busy ? 429 : 503, {
+        error: {
+          message: busy
+            ? "Local chat is busy. Retry shortly."
+            : "The local model could not answer. No external model was used. Retry or contact the operator.",
+        },
+      });
+    }
     return;
   }
   const memberTravel = /^\/lab\/members\/([^/]+)\/travel$/u.exec(url.pathname);

@@ -131,10 +131,12 @@ export async function completeLocally(params: {
   baseUrl: string;
   model: string;
   apiKey?: string;
-  messages: Array<{ role: "system" | "user"; content: string }>;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   signal?: AbortSignal;
   /** Opens every error this call can raise. Defaults to the guidebook, which was the first caller. */
   purposeLabel?: string;
+  /** Fail closed if the server answers with a different model. */
+  verifyModel?: boolean;
   /** Sampling temperature. Left at the guidebook's 0.2 unless a caller needs otherwise. */
   temperature?: number;
   /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
@@ -163,7 +165,10 @@ export async function completeLocally(params: {
     },
     params.purposeLabel ?? "guidebook answer",
     params.signal,
-  )) as { choices?: Array<{ message?: { content?: unknown } }> };
+  )) as { model?: string; choices?: Array<{ message?: { content?: unknown } }> };
+  if (params.verifyModel && parsed.model !== params.model) {
+    throw new Error("local model response did not match the configured model");
+  }
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
     throw new Error(`${params.purposeLabel ?? "guidebook answer"} model returned no content`);
