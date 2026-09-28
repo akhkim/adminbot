@@ -31,7 +31,9 @@ describe("AWS standby scripts", () => {
 
   it("builds from a committed ref and ships the adminbot entrypoint", () => {
     const source = read("build-release.sh");
-    expect(source).toContain('git -C "$APP_ROOT" archive --format=tar "${commit}:${prefix}"');
+    // From the top level: run in the subdirectory, git archive silently produces an empty tree.
+    expect(source).toContain('git -C "$toplevel" archive --format=tar "${commit}:${prefix}"');
+    expect(source).toContain("has no package.json or pnpm-lock.yaml");
     expect(source).toContain("--frozen-lockfile");
     expect(source).toContain("dist/extensions/adminbot/api.js");
     expect(source).toContain("sha256sum");

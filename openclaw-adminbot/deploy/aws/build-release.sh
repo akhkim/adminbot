@@ -60,13 +60,18 @@ commit="$(git -C "$APP_ROOT" rev-parse --verify "${REF}^{commit}")" ||
   die "not a committed Git revision: $REF"
 sha="$(git -C "$APP_ROOT" rev-parse --short=12 "$commit")"
 # This tree is a subdirectory of the lab repository and the root of the dev repository. Archiving
-# the tree at its prefix gives the same release layout from either.
+# the tree at its prefix gives the same release layout from either. It must run from the top level:
+# run from the subdirectory, git archive also narrows to that subdirectory *inside* the given tree,
+# looks for openclaw-adminbot/openclaw-adminbot/, and produces an empty archive without complaint.
 prefix="$(git -C "$APP_ROOT" rev-parse --show-prefix)"
+toplevel="$(git -C "$APP_ROOT" rev-parse --show-toplevel)"
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/$sha" "$OUT_DIR"
-git -C "$APP_ROOT" archive --format=tar "${commit}:${prefix}" | tar -x -C "$work/$sha"
+git -C "$toplevel" archive --format=tar "${commit}:${prefix}" | tar -x -C "$work/$sha"
+[[ -f "$work/$sha/package.json" && -f "$work/$sha/pnpm-lock.yaml" ]] ||
+  die "the archive of ${commit}:${prefix} has no package.json or pnpm-lock.yaml"
 
 pnpm_cmd=(pnpm)
 command -v pnpm >/dev/null || pnpm_cmd=(corepack pnpm)
