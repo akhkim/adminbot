@@ -116,7 +116,8 @@ if grep -q '^VLLM_API_KEY=vllm-local$' "$env_file"; then
   printf 'warning: VLLM_API_KEY is still the vllm-local default; set /adminbot/VLLM_API_KEY to the key Aurora'\''s vLLM uses\n' >&2
 fi
 unit_dir="$HOME/.config/systemd/user"
-if [[ -f "$unit_dir/jinesis-model-tunnel-vllm.service" ]] && grep -q '^ADMINBOT_TUNNEL_TARGET=.' "$env_file"; then
+if [[ -f "$unit_dir/jinesis-model-tunnel-vllm.service" ]] && command -v cloudflared >/dev/null &&
+  grep -q '^ADMINBOT_MODEL_HOST_VLLM=.' "$env_file" && grep -q '^TUNNEL_SERVICE_TOKEN_ID=.' "$env_file"; then
   systemctl --user enable jinesis-model-tunnel-vllm.service jinesis-model-tunnel-ollama.service
   systemctl --user restart jinesis-model-tunnel-vllm.service jinesis-model-tunnel-ollama.service
 fi

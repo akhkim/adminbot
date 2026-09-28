@@ -120,26 +120,27 @@ mv -T -- "$ROOT_DIR/current.next" "$ROOT_DIR/current"
 
 "$release/deploy/aurora/install-user-services.sh" --root "$ROOT_DIR/current" --state "$ROOT_DIR/state" --no-start
 
-# The two relays to Aurora. They run from the resolved release, like every other unit, and read the
-# tailnet target from the same env file; the tunnel itself refuses a non-tailnet target.
+# The two model links to Aurora: `cloudflared access tcp` clients that listen on loopback, where
+# every private model path expects the model, and reach Aurora's Access-guarded hostnames with the
+# host's service token. The listener address is fixed here rather than configurable: anywhere but
+# loopback would hand Aurora's models to whatever else can reach this box. The token comes from the
+# env file as TUNNEL_SERVICE_TOKEN_ID/SECRET, which cloudflared reads itself, so it never appears on
+# a command line.
 env_file="$HOME/.config/jinesis-adminbot/adminbot.env"
 unit_dir="$HOME/.config/systemd/user"
-for model in vllm:8000 ollama:11434; do
-  name="${model%%:*}"
-  port="${model##*:}"
+cloudflared_bin="$(command -v cloudflared || true)"
+for model in vllm:8000:ADMINBOT_MODEL_HOST_VLLM ollama:11434:ADMINBOT_MODEL_HOST_OLLAMA; do
+  IFS=: read -r name port host_var <<<"$model"
   cat >"$unit_dir/jinesis-model-tunnel-$name.service" <<EOF
 [Unit]
-Description=AdminBot $name tunnel to Aurora (127.0.0.1:$port)
+Description=AdminBot $name link to Aurora over Cloudflare Access (127.0.0.1:$port)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 EnvironmentFile=$env_file
-Environment=ADMINBOT_TUNNEL_LISTEN_HOST=127.0.0.1
-Environment=ADMINBOT_TUNNEL_LISTEN_PORT=$port
-Environment=ADMINBOT_TUNNEL_TARGET_PORT=$port
-ExecStart=$(command -v node) $release/scripts/adminbot-model-tunnel.mjs
+ExecStart=${cloudflared_bin:-/usr/bin/cloudflared} --no-autoupdate access tcp --hostname \${$host_var} --url 127.0.0.1:$port
 Restart=always
 RestartSec=5
 UMask=0077
@@ -150,11 +151,14 @@ WantedBy=default.target
 EOF
 done
 systemctl --user daemon-reload
-if grep -q '^ADMINBOT_TUNNEL_TARGET=.' "$env_file" 2>/dev/null; then
+if [[ -z "$cloudflared_bin" ]]; then
+  printf 'note: cloudflared is not installed; rerun deploy/aws/bootstrap-host.sh as root, then this\n' >&2
+elif grep -q '^ADMINBOT_MODEL_HOST_VLLM=.' "$env_file" 2>/dev/null &&
+  grep -q '^TUNNEL_SERVICE_TOKEN_ID=.' "$env_file" 2>/dev/null; then
   systemctl --user enable jinesis-model-tunnel-vllm.service jinesis-model-tunnel-ollama.service
   systemctl --user restart jinesis-model-tunnel-vllm.service jinesis-model-tunnel-ollama.service
 else
-  printf 'note: ADMINBOT_TUNNEL_TARGET is not set yet; run deploy/aws/render-env.sh, then the tunnels start\n' >&2
+  printf 'note: model hostnames or the Access service token are not set yet; run deploy/aws/render-env.sh\n' >&2
 fi
 
 # Prune the oldest releases, never the one `current` names.

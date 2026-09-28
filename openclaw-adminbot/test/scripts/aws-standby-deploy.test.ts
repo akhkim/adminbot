@@ -61,6 +61,52 @@ describe("AWS standby scripts", () => {
     }
   });
 
+  it("links to Aurora's models with cloudflared access clients on loopback, token off argv", () => {
+    const source = read("install-release.sh");
+    const execStart = /^ExecStart=.*$/m.exec(source)?.[0] ?? "";
+    expect(execStart).toContain("access tcp --hostname \\${$host_var} --url 127.0.0.1:$port");
+    expect(execStart).not.toMatch(/TOKEN|--service-token|--id |--secret/);
+    expect(source).not.toContain("ADMINBOT_TUNNEL_TARGET");
+    expect(source).toContain("vllm:8000:ADMINBOT_MODEL_HOST_VLLM");
+    expect(source).toContain("ollama:11434:ADMINBOT_MODEL_HOST_OLLAMA");
+  });
+
+  it("installs cloudflared from Cloudflare's signed apt repository", () => {
+    const source = read("bootstrap-host.sh");
+    expect(source).toContain("signed-by=$keyring] https://pkg.cloudflare.com/cloudflared");
+    expect(source).not.toMatch(/cloudflared service install|systemctl[^\n]*cloudflared/);
+  });
+
+  // status.sh puts ~/.local/bin first on PATH, so a fake HOME can supply the process listing.
+  it.each([
+    [
+      "an access client",
+      "101 /usr/bin/cloudflared --no-autoupdate access tcp --hostname vllm.example.test --url 127.0.0.1:8000",
+      "ok    no cloudflared tunnel served from this host",
+    ],
+    [
+      "a served tunnel",
+      "202 /usr/bin/cloudflared --no-autoupdate --config /x/config.yml tunnel run",
+      "FAIL  cloudflared is serving a tunnel on this host",
+    ],
+  ])("status.sh with %s running reports it correctly", (_label, listing, expected) => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "aws-status-"));
+    const bin = path.join(home, ".local/bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "pgrep"), `#!/bin/sh\necho '${listing}'\n`, { mode: 0o755 });
+    const result = spawnSync(
+      "bash",
+      [path.join(dir, "status.sh"), "--root", path.join(home, "root")],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HOME: home },
+        timeout: 60_000,
+      },
+    );
+    fs.rmSync(home, { recursive: true, force: true });
+    expect(result.stdout).toContain(expected);
+  });
+
   it("refuses a tarball whose name does not carry a commit, before touching systemd", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "aws-install-"));
     fs.mkdirSync(path.join(root, "releases"));
@@ -129,7 +175,7 @@ describe("render-env.sh", () => {
     const { run, envFile } = setup([
       { name: "/adminbot/OPENCLAW_GATEWAY_TOKEN", value: "synthetic-token-123" },
       { name: "/adminbot/VLLM_API_KEY", value: "synthetic-vllm-key" },
-      { name: "/adminbot/ADMINBOT_TUNNEL_TARGET", value: "100.101.102.103" },
+      { name: "/adminbot/ADMINBOT_MODEL_HOST_VLLM", value: "vllm.example.test" },
       { name: "/adminbot/ADMINBOT_SLACK_INVITE_URL", value: "https://example.test/join?a=1&b=2" },
     ]);
     const result = run();
@@ -139,13 +185,13 @@ describe("render-env.sh", () => {
         "OPENCLAW_GATEWAY_TOKEN=synthetic-token-123",
         `GOG_BIN=${path.dirname(path.dirname(path.dirname(envFile)))}/.local/bin/gog`,
         "VLLM_API_KEY=synthetic-vllm-key",
-        "ADMINBOT_TUNNEL_TARGET=100.101.102.103",
+        "ADMINBOT_MODEL_HOST_VLLM=vllm.example.test",
         'ADMINBOT_SLACK_INVITE_URL="https://example.test/join?a=1&b=2"',
         "",
       ].join("\n"),
     );
     expect(fs.statSync(envFile).mode & 0o777).toBe(0o600);
-    expect(result.stdout).toContain("ADMINBOT_TUNNEL_TARGET");
+    expect(result.stdout).toContain("ADMINBOT_MODEL_HOST_VLLM");
     expect(result.stdout + result.stderr).not.toContain("synthetic-token-123");
   });
 
