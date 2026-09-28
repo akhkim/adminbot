@@ -895,7 +895,7 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/lab/members/grace");
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
     expect(host.adminBotNotice?.kind).toBe("success");
-    expect(host.adminBotNotice?.text).toMatch(/waiting for approval/i);
+    expect(host.adminBotNotice?.text).toMatch(/queued in Pending Actions/i);
   });
 
   it("carries the member type, which is what decides the template", async () => {
@@ -1634,5 +1634,32 @@ describe("removeSelectedPendingAdminBotActions", () => {
     await pending;
     expect(host.adminBotMemberNudge).toEqual(createEmptyAdminBotMemberNudgeState());
     expect(host.adminBotNotice).toBeNull();
+  });
+});
+
+describe("member editor background saves", () => {
+  it("writes once without refreshing the roster or clearing the current notice", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "admin-background", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotNotice = { kind: "success", text: "Previous action" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "ada", name: "Ada" }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    try {
+      await saveAdminBotMember(
+        host,
+        { id: "ada", profile: { location: "Zurich" } },
+        { background: true },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(host.adminBotNotice?.text).toBe("Previous action");
+      expect(host.adminBotLoading).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
   });
 });

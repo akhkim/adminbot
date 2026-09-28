@@ -884,6 +884,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
 
     const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
     form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Grace Hopper";
     form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(saved).toEqual([{ id: "grace", onboard: true }]);
   });
@@ -898,6 +899,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     );
     const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
     form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Grace Hopper";
     form!.querySelector<HTMLInputElement>('[data-testid="member-form-onboard"]')!.checked = false;
     form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(saved).toEqual([{ onboard: false }]);
@@ -2337,5 +2339,39 @@ describe("pending actions bulk clear", () => {
     expect(
       host.querySelector<HTMLButtonElement>(".adminbot-action-bulk button")?.textContent,
     ).toContain("Removing");
+  });
+});
+
+describe("onboarding additions", () => {
+  it("submits a new member without a manual ID and offers city/institution suggestions", () => {
+    const saves: unknown[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (member, options) => {
+          saves.push({ member, options });
+        },
+      }),
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form")!;
+    const id = form.querySelector<HTMLInputElement>('input[name="id"]')!;
+    expect(id.required).toBe(false);
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Alex Example";
+    expect(form.querySelector<HTMLInputElement>('input[name="joined_month"]')!.value).toBe(
+      new Date().toISOString().slice(0, 7),
+    );
+    expect(form.querySelector<HTMLInputElement>('input[name="receivesNudges"]')!.checked).toBe(
+      false,
+    );
+    expect(form.querySelector('datalist option[value="Tübingen"]')).not.toBeNull();
+    expect(form.querySelector('datalist option[value="ETH Zurich"]')).not.toBeNull();
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saves).toEqual([
+      expect.objectContaining({
+        member: expect.objectContaining({ id: "", name: "Alex Example" }),
+        options: { onboard: true, create: true, slackChannels: [] },
+      }),
+    ]);
+    expect(container.textContent).toContain("Background / reason for adding this person");
   });
 });

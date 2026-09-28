@@ -25,6 +25,10 @@ import {
   ADMINBOT_BADGE_RATIONALE_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/badges.js";
 import {
+  MEMBER_CITY_OPTIONS,
+  MEMBER_AFFILIATION_OPTIONS,
+} from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
+import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
@@ -837,12 +841,30 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         <input
           class="input"
           name=${field.key}
+          list=${ifDefined(
+            field.key === "location"
+              ? "profile-city-options"
+              : field.key === "affiliation"
+                ? "profile-affiliation-options"
+                : undefined,
+          )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
+        ${field.key === "location"
+          ? html`<datalist id="profile-city-options">
+              ${MEMBER_CITY_OPTIONS.map((option) => html`<option value=${option}></option>`)}
+            </datalist>`
+          : field.key === "affiliation"
+            ? html`<datalist id="profile-affiliation-options">
+                ${MEMBER_AFFILIATION_OPTIONS.map(
+                  (option) => html`<option value=${option}></option>`,
+                )}
+              </datalist>`
+            : nothing}
       `;
   }
 }

@@ -3,9 +3,8 @@ import type { AdminBotLabMember } from "../../contracts/actions.js";
  * The lab's standing meetings, and who is on each -- what the Lab Members form's Meetings
  * checkboxes offer and tick.
  *
- * Three families live on the lab calendar and nothing else there is a meeting a member is "on": the
- * Monday group meeting (the configured series), the Wednesday `Theme:` meetings and the `Proj:`
- * project calls. Birthdays and deadlines are recurring too, which is why this goes by family rather
+ * Two families are offered on the lab calendar and nothing else there is a meeting a member is "on": the
+ * Monday group meeting (the configured series), the Wednesday `Theme:` meetings. Project calls are managed separately. Birthdays and deadlines are recurring too, which is why this goes by family rather
  * than by "recurs".
  *
  * A meeting is keyed by its base series id. Editing a meeting "this and following" in Google
@@ -14,7 +13,7 @@ import type { AdminBotLabMember } from "../../contracts/actions.js";
  * group-meeting membership sweep documents.
  */
 import { groupMeetingSeriesId } from "../../contracts/group-meeting.js";
-import { projectOfEvent, themeOfEvent } from "../members/topic-channels.js";
+import { themeOfEvent } from "../members/topic-channels.js";
 import type { AdminBotCalendarEvent } from "./events.js";
 
 export type AdminBotStandingMeeting = {
@@ -40,9 +39,7 @@ export function standingMeetings(
         ? "group"
         : event.recurring_event_id && themeOfEvent(event.summary)
           ? "theme"
-          : event.recurring_event_id && projectOfEvent(event.summary)
-            ? "project"
-            : undefined;
+          : undefined;
     if (!kind) {
       continue;
     }

@@ -1,3 +1,4 @@
+import "./member-guide-status.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
@@ -10,6 +11,10 @@ import {
   findDuplicateMembers,
   type MemberDuplicatePair,
 } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
+import {
+  MEMBER_CITY_OPTIONS,
+  MEMBER_AFFILIATION_OPTIONS,
+} from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
@@ -61,6 +66,7 @@ import {
 } from "../controllers/recent-edits.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
@@ -229,7 +235,15 @@ export type AdminBotProps = {
   onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
   // `options.onboard` is the Add-member form's tick: save the record, then put them through
   // onboarding. Absent on every other caller, which is what keeps an edit from re-mailing anyone.
-  onSaveMember: (member: AdminBotLabMemberSaveInput, options?: { onboard?: boolean }) => void;
+  onSaveMember: (
+    member: AdminBotLabMemberSaveInput,
+    options?: {
+      onboard?: boolean;
+      background?: boolean;
+      create?: boolean;
+      slackChannels?: string[];
+    },
+  ) => unknown;
   /**
    * Folds one roster record into another. Absent for a caller that cannot merge (anything but a
    * signed-in admin), which is what takes the panel off the page rather than a disabled button.
@@ -418,7 +432,7 @@ export function collectRegistryFields(data: FormData): Record<string, unknown> {
   return patch;
 }
 
-function submitMemberForm(event: Event, props: AdminBotProps): void {
+async function submitMemberForm(event: Event, props: AdminBotProps): Promise<void> {
   event.preventDefault();
   const form = event.currentTarget;
   if (!(form instanceof HTMLFormElement)) {
@@ -429,9 +443,13 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     clearTimeout(pending);
     memberAutosaveTimers.delete(form);
   }
-  if (!saveMemberForm(form, props)) {
+  const pendingWrite = waitForMemberSave(form);
+  if (pendingWrite) await pendingWrite;
+  const saved = saveMemberForm(form, props);
+  if (saved === false) {
     return;
   }
+  if (saved instanceof Promise && (await saved) === false) return;
   form.closest<HTMLElement>("[popover]")?.hidePopover();
 }
 
@@ -489,7 +507,7 @@ function queueMemberAutosave(event: Event, props: AdminBotProps): void {
     form,
     setTimeout(() => {
       memberAutosaveTimers.delete(form);
-      saveMemberForm(form, props, { explicit: false });
+      saveMemberInBackground(form, () => saveMemberForm(form, props, { explicit: false }));
     }, 800),
   );
 }
@@ -507,13 +525,13 @@ function saveMemberForm(
   // Autosave leaves Member type and Meetings out: they move access, rooms and calendars, so they
   // land only when the admin presses Save -- never on a half-ticked set of boxes.
   { explicit }: { explicit: boolean } = { explicit: true },
-): boolean {
+): boolean | Promise<unknown> {
   const data = new FormData(form);
   const id = getFormValue(data, "id");
   const name = getFormValue(data, "name");
-  if (!id) {
-    return false;
-  }
+  const creating = form.closest("#adminbot-add-member") !== null;
+  if (!id && !creating) return false;
+  if (creating && !name) return false;
   // notes is free prose. Each fact that used to be encoded into it as a "Label: value" line now
   // has a column and a registry field of its own, so writing them back here would recreate the
   // two-sources-of-truth problem migrateMemberNotesToFields exists to end.
@@ -524,7 +542,7 @@ function saveMemberForm(
   // question rather than an established fact.
   const emailInput = form.elements.namedItem("email");
   const emailEditable = emailInput instanceof HTMLInputElement && !emailInput.readOnly;
-  props.onSaveMember(
+  const saved = props.onSaveMember(
     {
       id,
       ...(name ? { name } : {}),
@@ -561,9 +579,21 @@ function saveMemberForm(
     },
     // Only the Add-member form carries this box, so an edit never re-onboards anybody: a checkbox
     // that is not in the form submits nothing, which is the "no" answer here.
-    { onboard: data.has("startOnboarding") },
+    {
+      onboard: data.has("startOnboarding"),
+      ...(!explicit ? { background: true } : {}),
+      ...(creating
+        ? {
+            create: true,
+            slackChannels: getFormValue(data, "slackChannels")
+              .split(",")
+              .map((channel) => channel.trim())
+              .filter(Boolean),
+          }
+        : {}),
+    },
   );
-  return true;
+  return saved instanceof Promise ? saved : true;
 }
 
 /**
@@ -1111,7 +1141,9 @@ function renderRegistryField(
     : raw === undefined || raw === null
       ? fallback
       : String(raw);
-  const label = html`<span>${t(field.labelKey)}</span>`;
+  const label = html`<span
+    >${field.key === "role" ? "Career stage / lab role" : t(field.labelKey)}</span
+  >`;
   const control = (() => {
     switch (field.type) {
       case "dropdown":
@@ -1142,7 +1174,12 @@ function renderRegistryField(
           // The same empty-answer wording the single-answer dropdown above uses, so a record with
           // no role reads identically whichever control is asking.
           placeholder: "Not set",
-          options: multiSelectOptionsFor(field.options ?? [], held),
+          options: multiSelectOptionsFor(
+            (field.options ?? []).filter(
+              (option) => field.key !== "role" || option !== "External Collaborator",
+            ),
+            held,
+          ),
           selected: new Set(held.map((entry) => entry.toLowerCase())),
           rootClass: "adminbot-form__multi",
           optionClass: "adminbot-form__multi-option",
@@ -1181,7 +1218,29 @@ function renderRegistryField(
       // refuses the whole record over one empty box. The blanks still count against profile
       // completion — being save-able and being chased are separate questions.
       default:
-        return html`<input name=${field.key} placeholder=${field.example} .value=${value} />`;
+        return html`<input
+            name=${field.key}
+            placeholder=${field.example}
+            .value=${value}
+            ?required=${field.key === "name" && !member}
+            list=${ifDefined(
+              field.key === "location"
+                ? `member-city-options-${member?.id ?? "new"}`
+                : field.key === "affiliation"
+                  ? `member-affiliation-options-${member?.id ?? "new"}`
+                  : undefined,
+            )}
+          />${field.key === "location"
+            ? html`<datalist id=${`member-city-options-${member?.id ?? "new"}`}>
+                ${MEMBER_CITY_OPTIONS.map((option) => html`<option value=${option}></option>`)}
+              </datalist>`
+            : field.key === "affiliation"
+              ? html`<datalist id=${`member-affiliation-options-${member?.id ?? "new"}`}>
+                  ${MEMBER_AFFILIATION_OPTIONS.map(
+                    (option) => html`<option value=${option}></option>`,
+                  )}
+                </datalist>`
+              : nothing}`;
     }
   })();
   // A `<label>` wrapping the multi-answer control would forward a click on the word "Role" to the
@@ -1214,7 +1273,7 @@ function renderMemberTypeField(member?: AdminBotLabMember) {
     held.push("adminbot-admin");
   }
   return html`<div class="adminbot-form__field" data-no-autosave>
-    <span>Member type</span>
+    <span>Membership / access</span>
     ${renderMultiSelectField({
       name: "memberType",
       label: "Member type",
@@ -1273,7 +1332,15 @@ function renderMeetingsField(
       optionClass: "adminbot-form__multi-option",
       testId: "member-form-meetings",
     })}
-    <small>Adds or removes them on the calendar, without an email. Applied on Save member.</small>
+    <small>Theme meetings and Monday only. Project calls are managed separately.</small>
+    <details>
+      <summary>Calendar invitations</summary>
+      <small
+        >Changes apply on Save member. Full membership adds Monday through its access workflow.
+        Zurich lunch uses the configured location-based sweep and approval queue; setting a city
+        does not immediately send an invitation.</small
+      >
+    </details>
   </div>`;
 }
 
@@ -1298,7 +1365,7 @@ function renderMemberFormFields(
   // that predates them -- saving writes the column and the line stops being read.
   const legacyFallback: Record<string, string> = {
     location: noteDraft.location,
-    joined_month: noteDraft.joinedMonth,
+    joined_month: noteDraft.joinedMonth || (!editing ? new Date().toISOString().slice(0, 7) : ""),
     research_topics: noteDraft.researchInterests,
     calendar_email: noteDraft.calendarEmail,
     whatsapp: noteDraft.whatsapp,
@@ -1311,11 +1378,16 @@ function renderMemberFormFields(
         ><span>Member id</span
         ><input
           name="id"
-          placeholder="pat"
+          placeholder=${member ? "pat" : "Generated automatically"}
           .value=${member?.id ?? ""}
           ?readonly=${editing}
-          required
-      /></label>
+          ?required=${editing}
+        /><small
+          >${editing
+            ? "Permanent account ID. Edit the name below to correct their displayed name; this ID links their papers and account and stays unchanged."
+            : "Optional. Generated from their name; duplicate names get a unique suffix."}</small
+        ></label
+      >
       <label class="adminbot-form__field"
         ><span>Email</span
         ><input
@@ -1365,7 +1437,14 @@ function renderMemberFormFields(
       )}
     </div>
     <label class="adminbot-form__field"
-      ><span>Additional notes</span><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
+      ><span>Background / reason for adding this person</span
+      ><textarea
+        name="notes"
+        rows="4"
+        placeholder="Brief background, collaboration context, and why they are joining"
+      >
+${noteDraft.notes}</textarea
+      >
     </label>
   `;
 }
@@ -1436,6 +1515,10 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
               @input=${(event: Event) => queueMemberAutosave(event, props)}
               @change=${(event: Event) => queueMemberAutosave(event, props)}
             >
+              <adminbot-member-guide-status
+                style="grid-column: 1 / -1"
+                .memberId=${member.id}
+              ></adminbot-member-guide-status>
               ${renderMemberFormFields(member, props.standingMeetings)}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
@@ -2242,6 +2325,13 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
               onboarded.</small
             >
           </label>
+          <label class="adminbot-form__field"
+            ><span>Slack groups for onboarding (optional)</span
+            ><input name="slackChannels" placeholder="#theme-causality, #proj-example" /><small
+              >Comma-separated channel names or IDs. Invitations are part of the onboarding draft
+              and only run after approval and execution.</small
+            ></label
+          >
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>

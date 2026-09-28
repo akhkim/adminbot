@@ -918,7 +918,7 @@ describe("AdminBot mock service", () => {
       projects: ["Project Atlas"],
       hours_per_week: 20,
       location: "Zurich",
-      affiliation: "ETH",
+      affiliation: "ETH Zurich",
       timezone: "Europe/Zurich",
       personal_website: "https://boss.example.com",
       notes: "on sabbatical",

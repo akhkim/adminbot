@@ -2681,9 +2681,14 @@ function serializeMemberSave(
 export async function saveAdminBotMember(
   host: AdminBotHost,
   member: AdminBotLabMemberSaveInput,
-  options: { onboard?: boolean } = {},
-): Promise<void> {
-  host.adminBotNotice = null;
+  options: {
+    onboard?: boolean;
+    background?: boolean;
+    create?: boolean;
+    slackChannels?: string[];
+  } = {},
+): Promise<boolean> {
+  if (!options.background) host.adminBotNotice = null;
   const stored = loadStoredMemberSession();
   if (stored) {
     const result = await upsertLabMemberAsAdmin(
@@ -2691,9 +2696,10 @@ export async function saveAdminBotMember(
       adminMemberUpdatePayload(member),
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
+      options.create,
     );
     if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
-      return;
+      return false;
     }
     if (!result.ok) {
       const message =
@@ -2709,27 +2715,40 @@ export async function saveAdminBotMember(
                 // broken. Same reasoning as saveAdminBotOwnProfile.
                 (result.message ?? "Couldn't save this member. Check the values and try again.");
       host.adminBotNotice = { kind: "error", text: message };
-      return;
+      return false;
     }
+    if (options.background) return true;
+    const savedId = result.value.id || member.id;
     // A Member Type change is applied on the spot -- access level, sheet, rooms, meeting -- and the
     // notice says what each of those did rather than a bare "saved".
     const typeChange = result.value.member_type_change;
     const meetingChanges = result.value.meeting_changes;
-    const notice = options.onboard
-      ? await onboardSavedMember(host, member.id, stored.sessionToken)
+    let notice = options.onboard
+      ? await onboardSavedMember(host, savedId, stored.sessionToken, options.slackChannels)
       : typeChange || meetingChanges?.length
-        ? describeMemberTypeChange(member.id, typeChange, meetingChanges)
-        : { kind: "success" as const, text: `Saved member ${member.id}.` };
+        ? describeMemberTypeChange(savedId, typeChange, meetingChanges)
+        : { kind: "success" as const, text: `Saved member ${savedId}.` };
+    if (options.onboard && (typeChange || meetingChanges?.length)) {
+      const changes = describeMemberTypeChange(savedId, typeChange, meetingChanges);
+      notice = {
+        kind: changes.kind === "error" ? "error" : notice.kind,
+        text: `${notice.text} ${changes.text}`,
+      };
+    }
     if (meetingChanges?.length) {
       // The calendar moved; the checkboxes must be re-read from it rather than from the last load.
       void loadAdminBotStandingMeetings(host).finally(() => host.requestUpdate?.());
     }
     if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
-      return;
+      return false;
     }
     host.adminBotNotice = notice;
     await loadAdminBot(host);
-    return;
+    return true;
+  }
+  if (options.create) {
+    host.adminBotNotice = { kind: "error", text: "Sign in with an admin account to add a member." };
+    return false;
   }
   const startingClient = host.client;
   const gatewaySaveIsCurrent = () =>
@@ -2746,9 +2765,8 @@ export async function saveAdminBotMember(
       ...(member.status ? { status: member.status } : {}),
       ...toolProfileParams(member.profile),
     });
-    if (!gatewaySaveIsCurrent()) {
-      return;
-    }
+    if (!gatewaySaveIsCurrent()) return false;
+    if (options.background) return true;
     // The break-glass path cannot onboard: queueing a guide needs an admin member session, and
     // this one is the shared service principal, which the route refuses. Said out loud rather
     // than dropped, so a tick nobody acted on is not mistaken for one that worked.
@@ -2759,6 +2777,7 @@ export async function saveAdminBotMember(
         }
       : { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
+    return true;
   } catch (err) {
     if (gatewaySaveIsCurrent()) {
       host.adminBotNotice = {
@@ -2767,6 +2786,7 @@ export async function saveAdminBotMember(
       };
     }
   }
+  return false;
 }
 
 /** Queues the onboarding guide for a member just saved, and says what became of it. */
@@ -2774,11 +2794,13 @@ async function onboardSavedMember(
   host: AdminBotHost,
   memberId: string,
   sessionToken: string,
+  slackChannels?: string[],
 ): Promise<{ kind: "success" | "error"; text: string }> {
   const result = await queueMemberOnboardingGuide(
     memberId,
     sessionToken,
     resolveAdminBotBaseUrl(host.settings),
+    slackChannels,
   );
   if (!result.ok) {
     const reason =
@@ -2796,7 +2818,7 @@ async function onboardSavedMember(
   }
   return {
     kind: "success",
-    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding guide is waiting for approval.`,
+    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
   };
 }
 

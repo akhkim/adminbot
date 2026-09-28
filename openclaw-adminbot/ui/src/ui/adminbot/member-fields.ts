@@ -148,7 +148,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
     type: "multi_dropdown",
-    options: adminBotMemberRoles,
+    options: adminBotMemberRoles.filter((role) => role !== "External Collaborator"),
     group: "identity",
   },
   {

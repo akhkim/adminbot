@@ -138,6 +138,7 @@ import {
   type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
+import { memberGuideStatus } from "../workflows/onboarding/guide-status.js";
 import { IclrIntegrityWatch } from "../workflows/papers/iclr-integrity-watch.js";
 import {
   createImportColumnMapper,
@@ -170,6 +171,7 @@ import type {
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
 import { type CallSheetSource, defaultCallSheet } from "./call-sheet-config.js";
+import { newMemberIdentity } from "./member-create.js";
 import {
   describeMemberSheetReadFailure,
   memberSheetSource,
@@ -4300,6 +4302,21 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPapersRelevantToMember(principal.member.id));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/lab/members") {
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "An admin member session is required." } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const identity = newMemberIdentity(body, ctx.store.listLabMembers());
+    if (identity.error) {
+      sendJson(res, 409, { error: { message: identity.error } });
+      return;
+    }
+    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body, true);
+    sendJson(res, saved.status, saved.body);
+    return;
+  }
   const labMember = /^\/lab\/members\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "PUT" && labMember?.[1]) {
     const memberId = decodeURIComponent(labMember[1]);
@@ -4929,8 +4946,41 @@ async function handleAuthenticatedRoute(
   // authenticates every agent tool call regardless of who is chatting, so accepting it here
   // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
   const memberOnboardingGuide = /^\/lab\/members\/([^/]+)\/onboarding\/guide$/u.exec(url.pathname);
+  if (req.method === "GET" && memberOnboardingGuide?.[1]) {
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "An admin member session is required." } });
+      return;
+    }
+    const member = ctx.store.getLabMember(decodeURIComponent(memberOnboardingGuide[1]));
+    if (!member) {
+      sendJson(res, 404, { error: { message: "Member not found." } });
+      return;
+    }
+    sendJson(
+      res,
+      200,
+      memberGuideStatus(
+        member,
+        ctx.store.listAuditEvents(),
+        ctx.store.listProposalsByType("onboarding.send_guide"),
+      ),
+    );
+    return;
+  }
   if (req.method === "POST" && memberOnboardingGuide?.[1]) {
     if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    if (
+      body.slack_project_channels !== undefined &&
+      (!Array.isArray(body.slack_project_channels) ||
+        body.slack_project_channels.length > 20 ||
+        body.slack_project_channels.some(
+          (channel) => typeof channel !== "string" || !channel.trim() || channel.length > 128,
+        ))
+    ) {
+      sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
     sendServiceResult(
@@ -4938,6 +4988,7 @@ async function handleAuthenticatedRoute(
       service.queueOnboardingGuideForMember({
         memberId: decodeURIComponent(memberOnboardingGuide[1]),
         actor: principalActor(principal),
+        slackChannels: body.slack_project_channels as string[] | undefined,
       }),
     );
     return;
@@ -6281,6 +6332,7 @@ async function saveLabMemberAsAdmin(
   principal: AdminBotMemberPrincipal,
   memberId: string,
   body: Record<string, unknown>,
+  enrollNew = false,
 ): Promise<{ status: number; body: unknown }> {
   const { service } = ctx;
   const existing = ctx.store.getLabMember(memberId);
@@ -6342,6 +6394,9 @@ async function saveLabMemberAsAdmin(
           }
         : {}),
       id: memberId,
+      ...(!existing && !input.joined_month
+        ? { joined_month: new Date().toISOString().slice(0, 7) }
+        : {}),
     },
     // An admin correcting somebody's record is not that member adopting the tool, so this is
     // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
@@ -6350,7 +6405,7 @@ async function saveLabMemberAsAdmin(
     { source: "admin", actor: principalActor(principal) },
   );
   const approver = approverIdentityFor(principal);
-  if (!saved.ok || !approver || (!(typeChanged && existing) && !selectedMeetings)) {
+  if (!saved.ok || !approver || (!(typeChanged && (existing || enrollNew)) && !selectedMeetings)) {
     return saved.ok
       ? { status: saved.status, body: saved.payload }
       : { status: saved.status, body: { error: saved.error } };
@@ -6369,7 +6424,7 @@ async function saveLabMemberAsAdmin(
     (selectedMeetings ?? []).includes(groupMeeting.id) !==
       memberAttends(groupMeeting, existing ?? saved.payload);
   const response: Record<string, unknown> = { ...saved.payload };
-  if (typeChanged && existing) {
+  if (typeChanged && (existing || enrollNew)) {
     response.member_type_change = await applyMemberTypeChange(
       {
         service,
@@ -6386,7 +6441,12 @@ async function saveLabMemberAsAdmin(
             ...event,
           }),
       },
-      existing,
+      existing ?? {
+        ...saved.payload,
+        member_type: "",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: undefined,
+      },
       saved.payload,
     );
   }

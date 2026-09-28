@@ -711,6 +711,7 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
+  create = false,
 ): Promise<
   AuthResult<
     LabMember & {
@@ -721,10 +722,10 @@ export async function upsertLabMemberAsAdmin(
 > {
   const result = await authedJson(
     baseUrl,
-    `/lab/members/${encodeURIComponent(memberId)}`,
-    "PUT",
+    create ? "/lab/members" : `/lab/members/${encodeURIComponent(memberId)}`,
+    create ? "POST" : "PUT",
     sessionToken,
-    fields,
+    create ? { ...fields, ...(memberId ? { id: memberId } : {}) } : fields,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -1114,13 +1115,14 @@ export async function queueMemberOnboardingGuide(
   memberId: string,
   sessionToken: string,
   baseUrl: string,
+  slackChannels?: string[],
 ): Promise<AuthResult<MemberOnboardingGuideQueued>> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}/onboarding/guide`,
     "POST",
     sessionToken,
-    {},
+    slackChannels?.length ? { slack_project_channels: slackChannels } : {},
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
