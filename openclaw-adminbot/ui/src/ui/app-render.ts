@@ -3615,6 +3615,7 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
           ? renderProfessorView({
+              localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
               requests: state.adminBotLogisticsRequests ?? [],
               requestsLoading: state.adminBotLogisticsRequestsLoading,
               papers: state.adminBotData?.papers ?? [],
