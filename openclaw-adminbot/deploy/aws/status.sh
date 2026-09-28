@@ -50,20 +50,22 @@ fi
 if curl -fsS --max-time 10 -H "Authorization: Bearer $vllm_key" http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
   ok "vLLM on Aurora answers through 127.0.0.1:8000"
 else
-  bad "vLLM tunnel (127.0.0.1:8000) does not answer; check jinesis-model-tunnel-vllm and Tailscale"
+  bad "vLLM link (127.0.0.1:8000) does not answer; check jinesis-model-tunnel-vllm and the Access service token"
 fi
 if curl -fsS --max-time 10 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   ok "Ollama on Aurora answers through 127.0.0.1:11434"
 else
-  bad "Ollama tunnel (127.0.0.1:11434) does not answer; check jinesis-model-tunnel-ollama"
+  bad "Ollama link (127.0.0.1:11434) does not answer; check jinesis-model-tunnel-ollama"
 fi
 
-# The production hostnames belong to Aurora until failover. A cloudflared here would split their
-# traffic between two backends with two databases.
-if pgrep -x cloudflared >/dev/null 2>&1; then
-  bad "cloudflared is running on this host; the production tunnel must stay on Aurora until failover"
+# The production hostnames belong to Aurora until failover. A cloudflared *serving a tunnel* here
+# would split their traffic between two backends with two databases. The model links are
+# cloudflared too, but as `access tcp` clients they serve nothing, so only those are allowed.
+serving="$(pgrep -a -x cloudflared 2>/dev/null | grep -v ' access tcp ' || true)"
+if [[ -n "$serving" ]]; then
+  bad "cloudflared is serving a tunnel on this host; the production tunnel must stay on Aurora until failover"
 else
-  ok "no cloudflared running on this host"
+  ok "no cloudflared tunnel served from this host"
 fi
 
 if [[ -f "$ROOT_DIR/state/adminbot.sqlite" ]]; then

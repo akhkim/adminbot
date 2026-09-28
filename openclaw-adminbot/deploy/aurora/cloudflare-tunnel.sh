@@ -18,9 +18,27 @@
 # The DNS step is opt-in because admin.safe.eu currently points at
 # 3.221.59.247 (an EC2 box running Caddy). Repointing it is an immediate,
 # public cutover. Record the old value before you do it.
+#
+# Model hostnames (optional). MODEL_VLLM_HOST / MODEL_OLLAMA_HOST publish Aurora's vLLM and Ollama
+# as private TCP services for the AWS standby, which reaches them with `cloudflared access tcp` and a
+# service token. This script does not touch their DNS: route each one to this tunnel yourself, and
+# put it behind a Cloudflare Access application whose only policy is Service Auth. Without Access
+# the model endpoint is on the open internet, so before writing an ingress rule the script probes
+# each hostname from outside and refuses unless Access is what answers.
 set -euo pipefail
 
+case "${1:-}" in
+  -h | --help)
+    sed -n '3,/^set -euo pipefail/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+esac
+
 TUNNEL_NAME="${TUNNEL_NAME:-aurora-adminbot}"
+MODEL_VLLM_HOST="${MODEL_VLLM_HOST:-}"
+MODEL_OLLAMA_HOST="${MODEL_OLLAMA_HOST:-}"
+VLLM_PORT="${VLLM_PORT:-8000}"
+OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 ADMIN_HOST="${ADMIN_HOST:-admin.safe.eu}"
 
 # Optional second hostname fronting the OpenClaw gateway (Control UI shell + the
@@ -127,6 +145,46 @@ CREDS="$CF_DIR/${UUID}.json"
 [ -f "$CREDS" ] || { echo "credentials file missing: $CREDS" >&2; exit 1; }
 chmod 600 "$CREDS"
 
+# ---------------------------------------------------------- model hostnames --
+# Access is enforced at Cloudflare's edge, before the tunnel. A routed hostname with no ingress rule
+# yet therefore shows which side answers: Access (a redirect to cloudflareaccess.com, 401 or 403) or
+# this origin's catch-all 404, which means nothing guards it.
+access_guards() {
+  local host="$1" out code location
+  out="$(curl -sS -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' "https://${host}/" 2>/dev/null)" || {
+    printf '  %s did not resolve or answer; route it to this tunnel first\n' "$host" >&2
+    return 1
+  }
+  code="${out%% *}"
+  location="${out#* }"
+  case "$code" in
+    401 | 403) return 0 ;;
+    301 | 302 | 303 | 307) [[ "$location" == *".cloudflareaccess.com/"* ]] && return 0 ;;
+  esac
+  printf '  %s answered %s from the origin side, not Access\n' "$host" "$code" >&2
+  return 1
+}
+
+MODEL_ROUTES=()
+for pair in "vllm:${MODEL_VLLM_HOST}:${VLLM_PORT}" "ollama:${MODEL_OLLAMA_HOST}:${OLLAMA_PORT}"; do
+  IFS=: read -r model host port <<<"$pair"
+  [ -n "$host" ] || continue
+  say "model hostname ${host} (${model})"
+  if ! access_guards "$host"; then
+    cat >&2 <<EOF
+
+  Refusing to publish ${model} at ${host}: Cloudflare Access does not guard it.
+  In Zero Trust -> Access -> Applications, add a self-hosted application for
+  ${host} whose only policy is "Service Auth" with the AWS host's service token,
+  make sure ${host} is routed to tunnel ${TUNNEL_NAME}, then re-run.
+  Nothing was written to the ingress config.
+EOF
+    exit 1
+  fi
+  echo "  Access guards ${host}"
+  MODEL_ROUTES+=("${host} ${port}")
+done
+
 # ------------------------------------------------------------------- config --
 say "ingress config"
 {
@@ -149,6 +207,13 @@ say "ingress config"
     echo "      # The gateway holds long-lived WebSocket sessions."
     echo "      connectTimeout: 30s"
   fi
+  for route in ${MODEL_ROUTES[@]+"${MODEL_ROUTES[@]}"}; do
+    echo
+    echo "  # Private model endpoint for the AWS standby. Cloudflare Access (Service Auth"
+    echo "  # only) was verified to guard this hostname before this rule was written."
+    echo "  - hostname: ${route% *}"
+    echo "    service: tcp://127.0.0.1:${route#* }"
+  done
   echo
   echo "  # Mandatory catch-all: anything not named above is refused at the edge rather"
   echo "  # than reaching whatever else listens on this host."

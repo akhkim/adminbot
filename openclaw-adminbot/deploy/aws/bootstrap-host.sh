@@ -16,7 +16,9 @@ Usage: sudo deploy/aws/bootstrap-host.sh [--user <name>] [--root <dir>]
 
 Creates the unprivileged AdminBot account (default: adminbot), its deployment
 root (default: /srv/adminbot) and enables systemd lingering so its user services
-survive logout. Refuses to continue if the account is in the docker group.
+survive logout, and installs cloudflared from Cloudflare's signed apt
+repository for the model links to Aurora. Refuses to continue if the account
+is in the docker group.
 EOF
 }
 
@@ -73,7 +75,17 @@ for tool in python3 curl tar sha256sum; do
 done
 command -v aws >/dev/null ||
   printf 'note: the AWS CLI is missing; render-env.sh needs it (snap install aws-cli --classic)\n' >&2
-command -v tailscale >/dev/null ||
-  printf 'note: Tailscale is not installed; the model tunnels cannot reach Aurora without it\n' >&2
+# cloudflared carries the model links to Aurora (`access tcp` clients). Installed from Cloudflare's
+# signed apt repository, so apt verifies it. The package enables no service: nothing here starts
+# serving a tunnel, and status.sh fails if one does.
+if ! command -v cloudflared >/dev/null; then
+  keyring=/usr/share/keyrings/cloudflare-main.gpg
+  [[ -f "$keyring" ]] || curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o "$keyring"
+  echo "deb [signed-by=$keyring] https://pkg.cloudflare.com/cloudflared any main" \
+    >/etc/apt/sources.list.d/cloudflared.list
+  apt-get update -qq
+  apt-get install -y -qq cloudflared
+fi
+printf 'cloudflared: %s\n' "$(cloudflared --version 2>&1 | head -1)"
 
 printf 'ready: user=%s root=%s\n' "$SERVICE_USER" "$ROOT_DIR"
