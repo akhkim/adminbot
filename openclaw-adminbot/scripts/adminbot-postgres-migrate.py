@@ -35,10 +35,17 @@ CHECKS = {
     "adminbot_email_scan": ["id = 1"],
     "adminbot_reference_scans": ["status IN ('running', 'completed', 'failed')"],
     "adminbot_openreview_citation_checks": ["status IN ('completed', 'unreadable', 'failed')"],
+    "adminbot_paper_ai_text_checks": ["status IN ('completed', 'unreadable', 'failed')"],
 }
 # Only these non-unique SQLite expression indexes exist in the deployed AdminBot schema.
 # They are access paths, not constraints; the PG runtime queries still need their own review.
 EXPRESSION_INDEXES = {
+    # The source uses julianday for cursor order; keep its two-column access path while the
+    # PostgreSQL meeting pager defines how it will sort historical malformed dates.
+    "adminbot_meetings_page_idx": (
+        "COALESCE(julianday(started_at), 0) DESC, id DESC",
+        '"started_at" COLLATE "C" DESC, "id" DESC',
+    ),
     "adminbot_help_requests_status_hours_idx": (
         "json_extract(payload_json, '$.status'), json_extract(payload_json, '$.hours_per_week'), paper_id",
         "((payload_json::jsonb ->> 'status') COLLATE \"C\") NULLS FIRST, "

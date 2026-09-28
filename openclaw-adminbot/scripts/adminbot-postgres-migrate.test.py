@@ -115,7 +115,7 @@ class MigrationTest(unittest.TestCase):
         before = migrate.digest(self.path)
         result = self.run_script("plan", "--sqlite", str(self.path))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("tables=54", result.stdout)
+        self.assertIn("tables=56", result.stdout)
         self.assertNotIn("Ada", result.stdout)
         self.assertEqual(migrate.digest(self.path), before)
         self.assertFalse(Path(str(self.path) + "-shm").exists())
@@ -128,7 +128,7 @@ class MigrationTest(unittest.TestCase):
         sidecar.unlink()
         refused = self.run_script(
             "apply", "--sqlite", str(self.path), "--source-sha256", "0" * 64,
-            "--expected-tables", "54", "--schema", "adminbot_migration_wrong_hash",
+            "--expected-tables", "56", "--schema", "adminbot_migration_wrong_hash",
         )
         self.assertIn("SHA-256 does not match", refused.stderr)
 
@@ -148,7 +148,7 @@ class MigrationTest(unittest.TestCase):
         fake_psql.chmod(0o755)
         refused = self.run_script(
             "apply", "--sqlite", str(other), "--source-sha256", migrate.digest(other),
-            "--expected-tables", "54", "--schema", "adminbot_migration_attack",
+            "--expected-tables", "56", "--schema", "adminbot_migration_attack",
             "--psql-command", str(fake_psql),
         )
         self.assertNotEqual(refused.returncode, 0)
@@ -262,7 +262,7 @@ class MigrationTest(unittest.TestCase):
         schema = "adminbot_migration_unverified_test"
         result = self.run_script(
             "apply", "--sqlite", str(self.path), "--source-sha256", migrate.digest(self.path),
-            "--expected-tables", "54", "--schema", schema,
+            "--expected-tables", "56", "--schema", schema,
             "--psql-command", str(fake_psql),
         )
         self.assertNotEqual(result.returncode, 0)
@@ -287,10 +287,10 @@ class MigrationTest(unittest.TestCase):
         source_hash = migrate.digest(self.path)
         result = self.run_script(
             "apply", "--sqlite", str(self.path), "--source-sha256", source_hash,
-            "--expected-tables", "54", "--schema", schema, "--psql-command", command,
+            "--expected-tables", "56", "--schema", schema, "--psql-command", command,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("verified exact row values in all 54 tables", result.stdout)
+        self.assertIn("verified exact row values in all 56 tables", result.stdout)
         self.assertNotIn("person@example.invalid", result.stdout)
         source_db = sqlite3.connect(f"file:{self.path}?mode=ro&immutable=1", uri=True)
         source_order = [row[0] for row in source_db.execute(
@@ -398,7 +398,7 @@ class MigrationTest(unittest.TestCase):
         rejected(f"INSERT INTO {schema}.adminbot_director_status VALUES (2, '{{}}')")
         duplicate = self.run_script(
             "apply", "--sqlite", str(self.path), "--source-sha256", source_hash,
-            "--expected-tables", "54", "--schema", schema, "--psql-command", command,
+            "--expected-tables", "56", "--schema", schema, "--psql-command", command,
         )
         self.assertNotEqual(duplicate.returncode, 0)
         self.assertIn("transaction rolled back", duplicate.stderr)
